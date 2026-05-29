@@ -319,6 +319,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Otherwise, set `qgate_validation_required: true` in the return TOON. The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag after the phase returns and dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level Task. The orchestrator aggregates the validator's `qgate_pending_count` into the phase's running count before re-evaluating the existing 3-iteration auto-loop predicate.
 
+### Special-deliverable-class recognition rules (track-agnostic, thin)
+
+Two deliverable classes carry a recurring engineering hazard that the outline MUST recognize at authoring time and route to its canonical dev-general home. These rules fire on **both** tracks — Simple Track Step 7 and Complex Track Step 10 — when a deliverable being authored matches the trigger. They are recognition triggers ONLY: the substance (mitigation menu, enumeration procedure) lives once in the dev-general-* standards and MUST NOT be restated here or in the deliverable.
+
+1. **Cooperative-lock deliverable class** — Trigger: the deliverable's narrative introduces or modifies a cooperative cross-process lock or shared-state coordination primitive (merge locks, worktree allocation, plan-id reservation, leader election, any "claim a shared resource" flow). Required authoring action: emit a `**Concurrency-correctness note:**` block on the deliverable that names the check-then-act / TOCTOU window and points to the chosen mitigation. The note MUST cross-reference the TOCTOU / check-then-act mitigation menu in [`dev-general-code-quality/standards/code-organization.md`](../dev-general-code-quality/standards/code-organization.md) — **do NOT duplicate the mitigation menu**.
+
+2. **Value-change deliverable class** — Trigger: the deliverable changes a default value, constant, or enum member that tests may assert against. Required authoring action: scope the old-value test assertions into the deliverable's `**Affected files:**` so the production change and its test-consumer updates form one atomic deliverable. The note MUST cross-reference the enumeration discipline in [`dev-general-module-testing/standards/testing-methodology.md`](../dev-general-module-testing/standards/testing-methodology.md) — **do NOT duplicate the enumeration procedure**.
+
+The matching trigger predicates and authoring actions are documented as track-agnostic siblings to the Step 9c / Step 10b procedures in [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#special-deliverable-class-recognition-rules-detail).
+
 **CRITICAL**: If Complex Track skill workflow fails, do NOT fall back to grep/search. Fail clearly.
 
 - Domain-specific ext-outline-workflow skills MUST emit `**Intent gloss:**` per the deliverable template when a deliverable title contains a compound word whose head morpheme is a planning-domain verb (review, check, validate, approve, merge, …). The gloss is a single sentence (≤15 words) that restates the deliverable's goal using the tail morpheme's meaning, and phase-4-plan copies it verbatim into every derived task.description.

@@ -923,6 +923,18 @@ When all four conditions hold, **auto-decompose** the deliverable into the canon
 
 **Cross-reference**: this sub-pattern complements the **Integration Deliverable Narrative Constraint** above. The integration constraint prevents *new* enforcement-critical content from being inlined; the migration sub-pattern catches *existing* inlined content during renames so the drift surface is collapsed back to the central source.
 
+## Default-Value / Constant / Enum-Member Change Sub-pattern
+
+**Applies when**: a deliverable changes a **default value, a named constant, an enum member, or a threshold literal** that existing tests assert against. This is a sibling of the Path / Constant Migration Sub-pattern above, scoped to *value* changes rather than *name/path* renames: the production edit is small, but an unknown set of tests pin the old value, and a green local module run says nothing about test consumers elsewhere in the tree. The failure mode this sub-pattern fires against is a planner that schedules only the production change and lets the broken test assertions surface in CI, forcing a follow-up remediation commit.
+
+**Three-step decomposition at trigger granularity** (the planner folds these into the deliverable's task touch set — it does NOT inline the enumeration procedure):
+
+1. **Discovery** — grep the test tree for BOTH the symbol name AND the old literal value (a consumer can assert via the named symbol or via an inlined literal; searching only one misses half the consumers). Run across the whole test source root, not just the module under change.
+2. **Enumeration** — classify each match as an *old-default assertion* (update to the new value) versus an *intentional explicit override* (a test that deliberately supplies the old value as an input — leave untouched). Add the update set to the deliverable's task touch set / `**Affected files:**`.
+3. **Atomicity** — the production change and all forced test updates form a single atomic deliverable so verify passes on the first cut and every commit is independently buildable; never a production task followed by a separate "fix the tests" task.
+
+**Cross-reference**: the substance of the discovery → classification → atomicity procedure — the two-pronged grep, the old-default-vs-override classification rule, and the single-atomic-change discipline — lives once in [`../dev-general-module-testing/standards/testing-methodology.md`](../dev-general-module-testing/standards/testing-methodology.md) § "Enumerate Existing Test Consumers Before Changing a Default / Constant / Enum Value". This sub-pattern carries only the recognition trigger and the touch-set shape — **do NOT duplicate the enumeration procedure detail here**.
+
 ## Skill Resolution Guidelines
 
 Skills are resolved from architecture based on `module` + `profile`:

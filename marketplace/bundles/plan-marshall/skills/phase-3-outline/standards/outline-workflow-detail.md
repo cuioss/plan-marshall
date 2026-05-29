@@ -782,6 +782,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 When the predicate does NOT fire (deliverable is additive or matches the heuristic but is not breaking), no prompt is raised — proceed directly to Step 11.
 
+### Special-deliverable-class recognition rules (detail)
+
+These two recognition triggers are track-agnostic siblings to the Step 9c (design-intent) and Step 10b (self-modifying) procedures above: they fire at deliverable-authoring time on **both** the Simple Track (Step 7) and the Complex Track (Step 10). Each rule is a thin trigger predicate plus the required authoring action and a pointer to the dev-general-* home where the substance lives. The mitigation menu and the enumeration procedure are NOT restated here — only the trigger and the cross-reference.
+
+#### Cooperative-lock deliverable class
+
+**Trigger predicate**: the deliverable's narrative (`Change per file:` / summary / success criteria) introduces or modifies a cooperative cross-process lock or a shared-state coordination primitive — merge locks, worktree allocation, plan-id reservation, leader election, or any "claim a shared resource" flow where two processes can race for the same slot.
+
+**Required authoring action**: emit a `**Concurrency-correctness note:**` block on the deliverable that (a) names the check-then-act / TOCTOU window the new coordination opens, and (b) points to the mitigation the deliverable will adopt. The note MUST cross-reference the TOCTOU / check-then-act mitigation menu in [`../../dev-general-code-quality/standards/code-organization.md`](../../dev-general-code-quality/standards/code-organization.md) for the mitigation substance — **do NOT duplicate the post-write-double-check / deterministic-tiebreaker / atomic-primitive menu here or on the deliverable**.
+
+#### Value-change deliverable class
+
+**Trigger predicate**: the deliverable changes a default value, a named constant, an enum member, or a threshold literal that existing tests may assert against.
+
+**Required authoring action**: scope the old-value test assertions into the deliverable's `**Affected files:**` list so the production change and its test-consumer updates form one atomic deliverable that verifies on the first cut. Cross-reference the enumerate-existing-test-consumers discipline in [`../../dev-general-module-testing/standards/testing-methodology.md`](../../dev-general-module-testing/standards/testing-methodology.md) for the discovery → classification → atomicity procedure — **do NOT restate the grep-symbol-and-literal / classify / atomic-update sequence here or on the deliverable**.
+
 ### Step 11: Q-Gate Verification
 
 **Purpose**: Verify skill output meets quality standards.
