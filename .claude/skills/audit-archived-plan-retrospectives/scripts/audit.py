@@ -410,7 +410,7 @@ def verdict_for(inputs: PlanInputs) -> tuple[str, str]:
 def detect_name_drift(inputs: PlanInputs) -> str | None:
     if not inputs.manifest_phase_5:
         return None
-    canon_hits = sum(1 for s in inputs.manifest_phase_5 if s in CANON_QUALITY_GATE)
+    canon_hits = sum(1 for s in inputs.manifest_phase_5 if s.split(":")[-1] in CANON_QUALITY_GATE)
     if canon_hits == 0 and inputs.manifest_phase_5:
         return (
             f"phase_5 uses renamed candidates {inputs.manifest_phase_5} — "
@@ -849,16 +849,23 @@ def dormate_plan(repo_root: Path, plan_id: str, confirmed: bool) -> dict[str, An
             "plan_id": plan_id,
             "reason": "dormation requires --confirmed; the move function is inert without it",
         }
-    src = repo_root / ".plan/local/archived-plans" / plan_id
-    if not src.is_dir():
+    src_parent = (repo_root / ".plan/local/archived-plans").resolve()
+    src = (src_parent / plan_id).resolve()
+    if not src.is_relative_to(src_parent) or not src.is_dir():
         return {
             "status": "error",
             "plan_id": plan_id,
-            "reason": f"source not found: {src}",
+            "reason": f"source not found or invalid: {src}",
         }
-    dest_root = repo_root / ".plan/temp/dormated-plans"
-    dest_root.mkdir(parents=True, exist_ok=True)
-    dest = dest_root / plan_id
+    dest_parent = (repo_root / ".plan/temp/dormated-plans").resolve()
+    dest = (dest_parent / plan_id).resolve()
+    if not dest.is_relative_to(dest_parent):
+        return {
+            "status": "error",
+            "plan_id": plan_id,
+            "reason": f"invalid destination: {dest}",
+        }
+    dest_parent.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         return {
             "status": "error",
