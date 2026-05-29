@@ -89,8 +89,12 @@ def get_next_id() -> str:
     1. Live lesson files: ``lessons-learned/{prefix}-*.md`` stems.
     2. Tombstones: ``lessons-learned/.tombstones/{prefix}-*.json`` basenames
        (``remove``/``supersede``/``convert-to-plan`` all write these).
-    3. Plan-derived directories: ``plans/lesson-{prefix}-*/`` directory names
-       (the ``lesson-`` prefix is stripped to recover the bare id).
+    3. Plan-derived lesson files: ``plans/*/lesson-{prefix}-*.md`` files inside
+       any plan directory (the ``lesson-`` prefix is stripped from the filename
+       stem to recover the bare id). Globbing files rather than directories
+       captures lessons placed under arbitrary-named plan directories by
+       ``convert-to-plan`` (e.g. ``plans/my-plan/lesson-{id}.md``), not just the
+       canonical ``lesson-{id}`` directory name.
 
     Each scan is guarded by an ``.exists()`` check so a missing directory yields
     an empty contribution. The return shape is unchanged — a single id string.
@@ -116,9 +120,9 @@ def get_next_id() -> str:
     plans_dir = base_path('plans')
     if plans_dir.exists():
         existing_ids.update(
-            d.name[len('lesson-'):]
-            for d in plans_dir.glob(f'lesson-{prefix}-*')
-            if d.is_dir()
+            f.stem[len('lesson-'):]
+            for f in plans_dir.glob(f'*/lesson-{prefix}-*.md')
+            if f.is_file()
         )
 
     if not existing_ids:
