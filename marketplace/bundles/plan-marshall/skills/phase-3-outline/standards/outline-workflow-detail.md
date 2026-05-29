@@ -380,6 +380,10 @@ Use template from `plan-marshall:manage-solution-outline/templates/deliverable-t
 - {Specific criterion 2}
 ```
 
+#### Design notes for skill-touching deliverables (track-agnostic — mandatory on Simple Track)
+
+For each deliverable whose `**Affected files:**` list touches an existing skill (any `marketplace/bundles/{bundle}/skills/{skill}/**` path, including `standards/**/*.md`), the outline agent MUST run the [Step 9c: Read Target Skill Design Intent](#step-9c-read-target-skill-design-intent) procedure and emit the resulting `**Design notes:**` block on the deliverable. Step 9c is **track-agnostic**: although it lives under the Complex Track Procedures heading, it applies in full to Simple Track Step 7. Emitting the `**Design notes:**` block here is what lets a Simple-Track deliverable self-satisfy the §2.17 Architecture-Mismatch validator on the first validation pass — without it, the validator emits a blocking finding and forces a re-outline round-trip.
+
 #### Intent gloss for compound-word titles
 
 For each deliverable whose title contains a compound word whose head morpheme is a common planning-domain verb (review, check, validate, approve, merge, …), author a single-sentence `**Intent gloss:**` (≤15 words) that restates the deliverable's goal using the tail morpheme's meaning. This gloss is copied verbatim into every derived task.description by phase-4-plan, preventing compound-word mis-interpretation.
@@ -544,9 +548,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 9c: Read Target Skill Design Intent
 
-**Purpose**: Before authoring any deliverable that adds capability to an existing skill, classify the target skill's design model so the proposed implementation extends (rather than contradicts) the existing model. The classification is recorded on the deliverable in a `**Design notes:**` block and is the input the q-gate validation agent's `architecture-mismatch-validator` (§2.17, see `plan-marshall/workflow/q-gate-validation.md`) consumes to surface design-model violations as blocking findings.
+> **Track-agnostic activation**: although this procedure is documented under the Complex Track Procedures heading for historical reasons, it is **NOT Complex-Track-only**. It applies equally to **Simple Track Step 7** (Create Deliverables): whenever a Simple-Track deliverable touches an existing skill, the outline agent MUST run this same classification procedure and emit the resulting `**Design notes:**` block. Reading and following this procedure on the Simple Track is what lets a Simple-Track deliverable self-satisfy the §2.17 Architecture-Mismatch validator on the first validation pass, eliminating an otherwise-guaranteed re-outline round-trip.
 
-**When to apply**: this step fires for every deliverable that lists at least one `marketplace/bundles/{bundle}/skills/{skill}/**` path under `**Affected files:**`. Deliverables that touch only standards documentation in an existing skill (`standards/**/*.md`) ALSO count — design-intent classification applies to the standards body, not just executable code. Deliverables that do not touch existing skills (brand-new skill creation, docs-only outside a skill, non-marketplace changes) skip this step.
+**Purpose**: Before authoring any deliverable that touches an existing skill, classify the target skill's design model so the proposed implementation extends (rather than contradicts) the existing model. The classification is recorded on the deliverable in a `**Design notes:**` block and is the input the q-gate validation agent's `architecture-mismatch-validator` (§2.17, see `plan-marshall/workflow/q-gate-validation.md`) consumes to surface design-model violations as blocking findings.
+
+**When to apply** (track-agnostic): this step fires for every deliverable — on EITHER the Simple Track (Step 7) or the Complex Track (Steps 9-11) — that lists at least one `marketplace/bundles/{bundle}/skills/{skill}/**` path under `**Affected files:**`. Deliverables that touch only standards documentation in an existing skill (`standards/**/*.md`) ALSO count — design-intent classification applies to the standards body, not just executable code. Deliverables that do not touch existing skills (brand-new skill creation, docs-only outside a skill, non-marketplace changes) skip this step.
 
 **Procedure** (run once per qualifying deliverable, before its `**Change per file:**` block is finalised):
 

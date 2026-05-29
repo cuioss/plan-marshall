@@ -139,18 +139,19 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Deliverable Validation
 
-**MANDATORY** before writing solution_outline.md — verify EVERY deliverable has ALL 6 required sections (from solution-outline-standard.md):
+**MANDATORY** before writing solution_outline.md — verify EVERY deliverable has ALL 6 required sections (from solution-outline-standard.md), plus the conditional `**Design notes:**` section when the deliverable touches an existing skill:
 
 | Section | Check |
 |---------|-------|
 | `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid. `execution_mode` must be one of: `automated`, `manual`, `mixed` (NOTE: `verification` is a valid change_type but NOT a valid execution_mode) |
+| `**Design notes:**` *(conditional — required when the deliverable touches an existing skill)* | Required for any deliverable whose `**Affected files:**` list includes at least one `marketplace/bundles/{bundle}/skills/{skill}/**` path (including `standards/**/*.md`), on EITHER the Simple or Complex track. The block MUST name the target skill's design model (`script-deterministic`, `LLM-driven`, or `hybrid`) and a specific one-sentence rationale showing the implementation extends, not contradicts, that model — per [Step 9c: Read Target Skill Design Intent](../../plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent). Emitting it here guarantees the domain-composed deliverable self-satisfies the §2.17 Architecture-Mismatch validator on the first validation pass. Omit only for deliverables that do not touch an existing skill (brand-new skill, docs-only outside a skill). |
 | `**Profiles:**` | At least one profile listed |
 | `**Affected files:**` | Explicit paths, no wildcards, no glob patterns. **Every path MUST exist on disk** (verify with Glob tool). Use paths from inventory scan — do NOT guess or construct paths from component names. |
 | `**Change per file:**` | Entry for each affected file |
 | `**Verification:**` | Both Command and Criteria present |
 | `**Success Criteria:**` | At least one criterion |
 
-If ANY section is missing, add it before proceeding.
+If ANY required section is missing — or the conditional `**Design notes:**` section is missing on a deliverable that touches an existing skill — add it before proceeding.
 
 ## Audit Checklist for Structural-Rule Audits
 

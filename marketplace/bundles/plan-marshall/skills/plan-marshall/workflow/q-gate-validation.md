@@ -85,9 +85,57 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ---
 
+### Step 3.5: Per-Deliverable Content-Hash Skip on Re-validation (FIX 4-lite)
+
+> **HARD DEPENDENCY on FIX 3 (the Step 4 full-coverage guarantee)**: this skip is only safe because the full-coverage guarantee ensures that any *prior* full validation pass already ran AND recorded EVERY applicable validator against each deliverable. Therefore "deliverable D has zero pending findings after the prior full pass" reliably means "D passed everything" — not merely "D passed the validators that happened to run before a short-circuit". If FIX 3's guarantee is ever removed, this skip becomes unsound and MUST be removed with it.
+
+This step lets a re-entry (the orchestrator's auto-loop re-dispatches q-gate-validation after a re-outline) SKIP the full validator battery for deliverables that are both **unchanged** and **clean**, so untouched deliverables are not re-validated wholesale. The skip is **deliverable-level**, NOT validator-level — there is no edit→invalidation dependency map; a deliverable is either fully re-validated or fully skipped.
+
+**On entry — read the prior content-hash artifact** (a small plan-scoped TOON file persisted by this same step on the previous pass; absent on the first pass):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
+  --plan-id {plan_id} --file work/deliverable-hashes.toon
+```
+
+Parse the prior `hashes[]{deliverable,hash}` rows into a `stored_hash(D)` lookup. When the file does not exist (first pass / `exists: false`), treat `stored_hash(D)` as empty for every deliverable — nothing is skipped on the first pass.
+
+**Per-deliverable skip predicate** — for each deliverable D parsed from solution_outline.md (Step 3 §1.1), compute `hash(D)` over D's current deliverable text (the full markdown block from its `### {N}.` heading through the line before the next deliverable heading; SHA-256 of the UTF-8 bytes, hex digest). Then query D's pending findings — pending = recorded but not yet resolved:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list \
+  --plan-id {plan_id} --phase {phase} --resolution pending
+```
+
+Filter the returned rows to those whose finding targets deliverable D (by deliverable number / affected-file membership). Then apply the skip predicate exactly:
+
+> **SKIP full re-validation of D iff `hash(D) == stored_hash(D)` AND D has zero pending findings.** Otherwise (hash changed, OR D has ≥1 pending finding, OR D is new / has no stored hash) D is **fully re-validated** in Step 4.
+
+When D is skipped, log the decision and do NOT run any §2.x validator against D:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(execution-context.q-gate-validation:hash-skip) Skipped re-validation of deliverable {N}: content hash unchanged and zero pending findings" \
+  --audit-plan-id {plan_id}
+```
+
+**After the Step 4 pass — write the current hash set back to the artifact** (covers both validated and skipped deliverables, so the next re-entry has a complete fingerprint set). Author the TOON body via the Write tool to a `.plan/temp/` file, then persist it through `manage-files write` (never assemble multi-line content inside a shell argument):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
+  --plan-id {plan_id} --file work/deliverable-hashes.toon --content-file {temp_hashes_file}
+```
+
+The artifact uses existing `manage-files` read/write I/O only — **no validator-result cache subsystem and no new script surface are introduced**. The persisted fingerprint is per-deliverable content only; it carries no validator-result state.
+
+---
+
 ### Step 4: Verify Deliverables
 
-For each deliverable in solution_outline.md:
+> **FULL-COVERAGE GUARANTEE (anti-short-circuit) — MANDATORY**: You MUST execute AND record findings from EVERY applicable validator (§2.1 through §2.17, scoped to the active phase's validator subset) before returning — even when an error-level / blocking finding is already present. Do NOT stop at the first failing validator class. Encountering a blocking §2.17 finding does NOT permit skipping a later §2.12 under-coverage warning: run the remaining applicable validators and record their findings in the SAME pass. The goal is that a single validation pass surfaces ALL finding classes at once, collapsing what would otherwise be N sequential re-validation round-trips (one per finding class discovered) into 1. **This full-coverage guarantee is the precondition that FIX 4-lite (per-deliverable content-hash skip) relies on**: "zero pending findings for deliverable D after a full pass" is only a trustworthy "D passed everything" signal because this guarantee ensures every applicable validator actually ran and recorded against D.
+
+For each deliverable in solution_outline.md that was NOT skipped by [Step 3.5](#step-35-per-deliverable-content-hash-skip-on-re-validation-fix-4-lite) (unchanged-and-clean deliverables are skipped wholesale on re-entry), run every applicable validator (do not short-circuit on the first failure):
 
 #### 2.1 Request Alignment Check
 
@@ -808,7 +856,7 @@ qgate_pending_count: {count}
 
 `display_detail` shape: `"{flagged}/{N} flagged, {qgate_pending_count} pending"` (e.g. `"2/7 flagged, 3 pending"`); ≤80 chars, ASCII, no trailing period.
 
-**OUTPUT RULE**: Do NOT output verbose text. All verification details are logged to decision.log and findings to artifacts/qgate-3-outline.jsonl. Only output the final TOON summary block.
+**OUTPUT RULE**: Do NOT output verbose text. All verification details are logged to decision.log and findings to artifacts/qgate-3-outline.jsonl. Only output the final TOON summary block. The summary block MUST reflect a FULL pass — every applicable validator (§2.1–§2.17, scoped to the active phase) must have run and recorded its findings before this block is emitted, even when blocking findings are already present (see the full-coverage guarantee in Step 4). `qgate_pending_count` is only trustworthy as a complete tally because of that guarantee; FIX 4-lite's per-deliverable skip depends on it.
 
 ---
 
@@ -856,6 +904,7 @@ context:
 
 ### MUST DO
 - Verify every deliverable individually
+- **Run AND record findings from EVERY applicable validator (§2.1–§2.17, scoped to the active phase's subset) before returning — never short-circuit on the first failing validator class. A single pass MUST surface all finding classes at once, collapsing N sequential round-trips into 1. This full-coverage guarantee is the precondition FIX 4-lite (per-deliverable content-hash skip) relies on.**
 - Log each verification decision
 - Record findings for any issues
 - Persist only verified affected_files
