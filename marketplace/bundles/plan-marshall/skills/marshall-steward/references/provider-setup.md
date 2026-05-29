@@ -1,12 +1,12 @@
 # Provider Setup Reference
 
-Extracted provider-related wizard logic covering discovery, activation, CI detection, and credential setup. Referenced by `wizard-flow.md` Steps 5b, 14, and 15.
+Extracted provider-related wizard logic covering discovery, activation, CI detection, and credential setup. Referenced by `wizard-flow.md` Steps 7 and 13.
 
-## Provider Discovery and Activation (Step 5b)
+## Provider Discovery and Activation (Step 7)
 
-Scan executor SCRIPTS entries for `*_provider.py` files, group discovered providers by category, and persist only the activated subset to `marshal.json`. This must run after the executor is generated (Step 4) and marshal.json is initialized (Step 5), but before CI detection (Step 14) or credential setup (Step 15) which read from the providers list.
+Scan executor SCRIPTS entries for `*_provider.py` files, group discovered providers by category, and persist only the activated subset to `marshal.json`. This must run after the executor is generated (Step 4) and marshal.json is initialized (Step 5), but before CI detection or credential setup (both Step 13) which read from the providers list.
 
-### Step 5b-1: Discover available providers
+### Step 7-1: Discover available providers
 
 Discovery-only mode — no persistence:
 
@@ -14,7 +14,7 @@ Discovery-only mode — no persistence:
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials discover-and-persist
 ```
 
-### Step 5b-2: Group discovered providers by category
+### Step 7-2: Group discovered providers by category
 
 Partition the discovered providers into three categories based on each provider's `category` field. Provider `skill_name` values use bundle-prefixed format (e.g., `plan-marshall:workflow-integration-github`):
 
@@ -24,7 +24,7 @@ Partition the discovered providers into three categories based on each provider'
 | `ci` | github, gitlab | Single-select with skip option |
 | `other` | sonar, etc. | Multi-select |
 
-### Step 5b-3: Auto-select version-control providers
+### Step 7-3: Auto-select version-control providers
 
 The `version-control` category requires exactly one provider and is always active. Inform the user without prompting:
 
@@ -32,11 +32,11 @@ The `version-control` category requires exactly one provider and is always activ
 
 No `AskUserQuestion` for this category.
 
-### Step 5b-4: Auto-select CI provider with manual fallback
+### Step 7-4: Auto-select CI provider with manual fallback
 
-Begin with a pre-prompt CI detection. When detection returns high confidence and the matched provider is present in the ci-category providers from Step 5b-2, auto-select it and skip the prompt. Otherwise, fall back to the manual single-select block.
+Begin with a pre-prompt CI detection. When detection returns high confidence and the matched provider is present in the ci-category providers from Step 7-2, auto-select it and skip the prompt. Otherwise, fall back to the manual single-select block.
 
-**Step 5b-4a: Detect CI provider**
+**Step 7-4a: Detect CI provider**
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health detect
@@ -49,9 +49,9 @@ Capture `provider` and `confidence` from the output. Map the detected provider t
 | `github` | `plan-marshall:workflow-integration-github` |
 | `gitlab` | `plan-marshall:workflow-integration-gitlab` |
 
-**Step 5b-4b: Decide auto-select vs prompt**
+**Step 7-4b: Decide auto-select vs prompt**
 
-- **IF** `confidence == high` **AND** the mapped `skill_name` is present in the ci-category providers list from Step 5b-2:
+- **IF** `confidence == high` **AND** the mapped `skill_name` is present in the ci-category providers list from Step 7-2:
   - Auto-select that provider (add it to the activated CI selection).
   - Log the decision via `manage-logging`:
     ```bash
@@ -60,10 +60,10 @@ Capture `provider` and `confidence` from the output. Map the detected provider t
       --message "Auto-selected CI provider {skill_name}" \
       --detail "detected={provider}, confidence={confidence}, matched_skill={skill_name}"
     ```
-  - **Skip** the AskUserQuestion block in Step 5b-4c.
-- **ELSE** (confidence is `medium` or `none`, or detected provider not in the ci-category list): proceed to Step 5b-4c.
+  - **Skip** the AskUserQuestion block in Step 7-4c.
+- **ELSE** (confidence is `medium` or `none`, or detected provider not in the ci-category list): proceed to Step 7-4c.
 
-**Step 5b-4c: Manual fallback prompt**
+**Step 7-4c: Manual fallback prompt**
 
 Present CI-category providers with a "Skip" option for projects that do not use CI:
 
@@ -83,9 +83,9 @@ AskUserQuestion:
 
 If user selects "Skip", no CI provider is activated.
 
-**Note**: Step 14b intentionally re-runs `ci_health detect` for its own verification and persistence responsibilities (verifying the CLI tool and persisting CI configuration to `marshal.json`). The duplicate detect call is cheap and keeps Step 14 self-contained.
+**Note**: Step 13b intentionally re-runs `ci_health detect` for its own verification and persistence responsibilities (verifying the CLI tool and persisting CI configuration to `marshal.json`). The duplicate detect call is cheap and keeps Step 13 self-contained.
 
-### Step 5b-5: Present other providers as multiSelect
+### Step 7-5: Present other providers as multiSelect
 
 Only present this step if the `other` category contains at least one provider:
 
@@ -101,7 +101,7 @@ AskUserQuestion:
       multiSelect: true
 ```
 
-### Step 5b-6: Persist activated providers
+### Step 7-6: Persist activated providers
 
 Build the combined provider list from: auto-selected git + user-selected CI (if any) + user-selected others. Call discover-and-persist with the combined list:
 
@@ -133,25 +133,25 @@ providers:
 | `activated` | Number of providers the user selected (including auto-selected) |
 | `providers` | List of bundle-prefixed `skill_name` values for activated providers |
 
-**Why here**: Steps 14 and 15 call `list-providers` and `load_declared_providers()`, both of which read from `marshal.json`. Without this step, the providers list would be empty and CI detection / credential setup would fail.
+**Why here**: Step 13 (CI detection and credential setup) calls `list-providers` and `load_declared_providers()`, both of which read from `marshal.json`. Without this step, the providers list would be empty and CI detection / credential setup would fail.
 
 ---
 
-## CI Provider Detection (Step 14)
+## CI Provider Detection (Step 13)
 
 Detect CI provider and verify system-authenticated tools using the unified provider model.
 
-### Step 14a: Query system providers
+### Step 13a: Query system providers
 
-Read provider declarations from marshal.json (populated by Step 5b). Provider `skill_name` values use bundle-prefixed format:
+Read provider declarations from marshal.json (populated by Step 7). Provider `skill_name` values use bundle-prefixed format:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
 
-Parse the `providers` array. Filter entries where `skill_name` is `plan-marshall:workflow-integration-github` or `plan-marshall:workflow-integration-gitlab`. These are the CI provider declarations. Only activated providers (persisted in Step 5b) appear in this list.
+Parse the `providers` array. Filter entries where `skill_name` is `plan-marshall:workflow-integration-github` or `plan-marshall:workflow-integration-gitlab`. These are the CI provider declarations. Only activated providers (persisted in Step 7) appear in this list.
 
-### Step 14b: Detect CI provider from repository
+### Step 13b: Detect CI provider from repository
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health detect
@@ -159,9 +159,9 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health det
 
 This detects the CI provider (github/gitlab) from the git remote URL and CI config files.
 
-### Step 14c: Verify the detected provider's CLI tool
+### Step 13c: Verify the detected provider's CLI tool
 
-Match the detected provider to its system provider declaration from Step 14a. Run the provider's `verify_command` to check authentication:
+Match the detected provider to its system provider declaration from Step 13a. Run the provider's `verify_command` to check authentication:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health verify --tool {required_tool}
@@ -173,7 +173,7 @@ Display detection result to user. If tool not authenticated, warn:
 - "GitHub detected but 'gh' not authenticated. Run 'gh auth login' for CI operations."
 - "GitLab detected but 'glab' not authenticated. Run 'glab auth login' for CI operations."
 
-### Step 14d: Verify CI tool
+### Step 13d: Verify CI tool
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health verify-all
@@ -183,19 +183,19 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health ver
 
 ---
 
-## Credential Setup (Step 15, Optional)
+## Credential Setup (Step 13, Optional)
 
-### Step 15a: Read activated providers
+### Step 13e: Read activated providers
 
-Read activated providers from marshal.json (only providers selected by the user in Step 5b are present; filter out CI providers like `plan-marshall:workflow-integration-github` and `plan-marshall:workflow-integration-gitlab` since those are handled in Step 14):
+Read activated providers from marshal.json (only providers selected by the user in Step 7 are present; filter out CI providers like `plan-marshall:workflow-integration-github` and `plan-marshall:workflow-integration-gitlab` since those are handled in Steps 13a-13d):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
 
-Parse the `providers` array from output. If `count == 0`, skip to Step 16.
+Parse the `providers` array from output. If `count == 0`, skip to Step 15 (Summary).
 
-### Step 15b: Ask user
+### Step 13f: Ask user
 
 ```
 AskUserQuestion:
@@ -210,13 +210,13 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-If user selects "Skip" -> Continue to Step 16.
+If user selects "Skip" -> Continue to Step 15 (Summary).
 
-### Step 15c: Collect credential values
+### Step 13g: Collect credential values
 
 If user selects "Configure now", collect non-secret values step by step.
 
-**IMPORTANT**: Each AskUserQuestion below MUST be followed by the next step. Do NOT abort or skip if a user answer seems unexpected. Always proceed to Step 15e and run the configure command.
+**IMPORTANT**: Each AskUserQuestion below MUST be followed by the next step. Do NOT abort or skip if a user answer seems unexpected. Always proceed to Step 13i and run the configure command.
 
 1. Credential scope:
 
@@ -233,7 +233,7 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-Map selection to `--scope global` or `--scope project` for Step 15e.
+Map selection to `--scope global` or `--scope project` for Step 13i.
 
 2. Provider selection (only if multiple providers, otherwise use the single one):
 
@@ -243,7 +243,7 @@ AskUserQuestion:
     - question: "Which credential provider?"
       header: "Provider"
       options:
-        # Dynamic from Step 15a provider list
+        # Dynamic from Step 13e provider list
         - label: "{provider_display_name}"
           description: "{provider_description}"
       multiSelect: false
@@ -270,7 +270,7 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-### Step 15d: Auto-detect extra fields
+### Step 13h: Auto-detect extra fields
 
 Check if the selected provider has `extra_fields` in the `list-providers` output. If yes, auto-detect values and confirm with user.
 
@@ -305,7 +305,7 @@ AskUserQuestion:
 
 User can accept recommended values or type custom values via "Other".
 
-### Step 15e: Run configure
+### Step 13i: Run configure
 
 **ALWAYS execute this step** -- creates credential file with placeholder secrets.
 
@@ -323,11 +323,11 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials confi
 ```
 
 **CRITICAL**:
-- Include `--scope` from Step 15c (global or project).
+- Include `--scope` from Step 13g (global or project).
 - Omit `--extra` if the provider has no `extra_fields` in the `list-providers` output.
 - The keys used in `--extra` (e.g., `organization`, `project_key`) must match the `key` field from the provider's `extra_fields` array returned by `list-providers`.
 
-### Step 15e2: Handle editing
+### Step 13i2: Handle editing
 
 If configure returns `needs_editing: true`, tell user to edit the credential file:
 
@@ -343,19 +343,19 @@ If check returns `incomplete`, tell user which placeholders remain and ask them 
 
 If configure returns `exists_complete`, ask user whether to reuse the existing credential or reconfigure (remove + configure).
 
-### Step 15f: Verify connectivity (optional)
+### Step 13j: Verify connectivity (optional)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verify --skill {skill}
 ```
 
-### Step 15g: Add deny rules
+### Step 13k: Add deny rules
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied --target project
 ```
 
-### Step 15h: Sonar integration
+### Step 13l: Sonar integration
 
 If the configured skill was `workflow-integration-sonar`, add sonar-roundtrip to finalize steps:
 
@@ -370,6 +370,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 For reconfiguring activated providers after initial setup, use the marshall-steward menu. The menu should support:
 
-- **Add provider**: Run discovery (Step 5b-1), show only non-activated providers, activate selected ones
+- **Add provider**: Run discovery (Step 7-1), show only non-activated providers, activate selected ones
 - **Remove provider**: List activated providers, remove selected from marshal.json
-- **Reset all providers**: Clear providers list in marshal.json, re-run full Step 5b flow
+- **Reset all providers**: Clear providers list in marshal.json, re-run full Step 7 flow

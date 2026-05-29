@@ -19,6 +19,7 @@ import argparse
 from _cmd_domain_detect import cmd_domain_detect
 from _cmd_effort import cmd_effort, cmd_effort_apply_preset, cmd_effort_resolve_target
 from _cmd_ext_defaults import cmd_ext_defaults
+from _cmd_finalize_steps import cmd_finalize_steps_apply_preset
 from _cmd_init import cmd_init
 from _cmd_skill_domains import (
     cmd_list_verify_steps,
@@ -41,6 +42,7 @@ from _cmd_system_plan import cmd_plan, cmd_project, cmd_system
 # Direct imports - PYTHONPATH set by executor
 from effort_presets import EffortPresets  # type: ignore[import-not-found]
 from file_ops import output_toon, safe_main
+from finalize_step_presets import FinalizeStepPresets  # type: ignore[import-not-found]
 from input_validation import (  # type: ignore[import-not-found]
     add_domain_arg,
     add_field_arg,
@@ -371,6 +373,44 @@ def main() -> int:
         ),
     )
 
+    # --- finalize-steps ---
+    p_finalize_steps = subparsers.add_parser(
+        'finalize-steps',
+        help='Manage phase-6-finalize step lists (preset writer)',
+        allow_abbrev=False,
+    )
+    finalize_steps_sub = p_finalize_steps.add_subparsers(dest='verb', required=True, help='Operation')
+    finalize_steps_apply_preset = finalize_steps_sub.add_parser(
+        'apply-preset',
+        help='Write plan.phase-6-finalize.steps from a named preset',
+        allow_abbrev=False,
+    )
+
+    # Validation uses ``type=`` rather than ``choices=`` so the documented
+    # case-insensitive behaviour (``Local``, ``FULL``) works end-to-end
+    # through the CLI. Unknown names raise :class:`argparse.ArgumentTypeError`
+    # so argparse emits a usage error with exit code 2 (preserving the CLI
+    # contract that bogus presets are rejected at the argparse layer).
+    def _finalize_preset_arg(value: str) -> str:
+        try:
+            FinalizeStepPresets.get(value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(str(exc)) from exc
+        return value
+
+    finalize_canonical_names = ', '.join(FinalizeStepPresets.all_names())
+    finalize_steps_apply_preset.add_argument(
+        '--preset',
+        required=True,
+        type=_finalize_preset_arg,
+        metavar='PRESET',
+        help=(
+            f'Preset name (canonical: {finalize_canonical_names}; '
+            'case-insensitive; see finalize_step_presets.py for per-preset '
+            'step lists)'
+        ),
+    )
+
     # --- resolve-domain-skills ---
     p_rds = subparsers.add_parser(
         'resolve-domain-skills', help='Resolve skills for domain and profile', allow_abbrev=False
@@ -492,6 +532,15 @@ def main() -> int:
             result = cmd_effort_resolve_target(args)
         else:
             result = cmd_effort(args)
+    elif args.noun == 'finalize-steps':
+        if not args.verb:
+            p_finalize_steps.print_help()
+            return 2
+        if args.verb == 'apply-preset':
+            result = cmd_finalize_steps_apply_preset(args)
+        else:
+            p_finalize_steps.print_help()
+            return 2
     elif args.noun == 'resolve-domain-skills':
         result = cmd_resolve_domain_skills(args)
     elif args.noun == 'resolve-workflow-skill-extension':
