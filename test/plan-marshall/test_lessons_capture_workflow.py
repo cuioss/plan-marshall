@@ -94,9 +94,17 @@ class TestDispatcherGateSourcesNamed:
     sources so the manifest narrative documents which counts to read."""
 
     def test_qgate_findings_signal_named(self) -> None:
-        """Signal 1 — pending Q-Gate findings via five per-phase
-        ``manage-findings qgate list --phase {phase} --resolution pending``
-        invocations whose ``total_count`` values are summed."""
+        """Signal 1 — Q-Gate findings (pending OR resolved-in-run) via
+        per-phase ``manage-findings qgate list --phase {phase}
+        --resolution {value}`` invocations whose ``filtered_count`` values
+        are summed.
+
+        Reconciles the pre-existing test drift: the live SKILL.md prose
+        reads ``filtered_count`` (NOT ``total_count``) for the per-phase
+        counts — the call filters by ``--resolution``, so the matching
+        count lives in ``filtered_count``. This assertion now matches the
+        live contract.
+        """
         body = _read_dispatcher()
         for phase in ('2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'):
             assert phase in body, (
@@ -107,9 +115,28 @@ class TestDispatcherGateSourcesNamed:
             'Dispatcher Signal Gate must invoke '
             '"manage-findings qgate list --resolution pending"'
         )
-        assert 'total_count' in body, (
-            'Dispatcher Signal Gate must read the "total_count" field '
-            'from each per-phase manage-findings qgate list TOON output'
+        assert 'filtered_count' in body, (
+            'Dispatcher Signal Gate must read the "filtered_count" field '
+            '(NOT "total_count") from each per-phase manage-findings '
+            'qgate list TOON output — the call filters by --resolution'
+        )
+
+    def test_qgate_resolved_in_run_signal_named(self) -> None:
+        """Signal 1 symmetric facet — the dispatcher Signal Gate MUST also
+        count Q-Gate findings RESOLVED in-run (the four non-pending
+        resolutions) so Signal 1 fires on either pending OR
+        resolved-in-run findings, symmetric with Signals 2 and 3."""
+        body = _read_dispatcher()
+        for resolution in ('fixed', 'suppressed', 'accepted', 'taken_into_account'):
+            assert f'--resolution {resolution}' in body, (
+                f'Dispatcher Signal Gate must query the non-pending '
+                f'resolution "{resolution}" to count Q-Gate findings '
+                f'resolved in-run'
+            )
+        assert 'resolved-in-run' in body or 'resolved_subtotal' in body, (
+            'Dispatcher Signal Gate Signal-1 prose must name the '
+            'resolved-in-run facet (e.g. "resolved-in-run" / '
+            '"resolved_subtotal") as an additional positive trigger'
         )
 
     def test_automated_review_signal_named(self) -> None:
@@ -136,6 +163,53 @@ class TestDispatcherGateSourcesNamed:
         assert '[FAILED]' in body, (
             'Dispatcher Signal Gate must scan for "[FAILED]" markers '
             'in the work log to identify script-failure clusters'
+        )
+
+
+class TestRemediatedInRunSignalsNamed:
+    """Each of the three signals MUST count remediated-in-run evidence,
+    not only outstanding / loud-failure evidence. These assertions verify
+    the reworked prose names the resolved-in-run source/field/marker per
+    signal so the gate does NOT short-circuit to ``skipped`` on a run that
+    detected-and-remediated a defect (the highest-value lesson class)."""
+
+    def test_signal_2_names_resolution_fixed_pr_comment(self) -> None:
+        """Signal 2 (automated-review) MUST count fixed-in-run review-bot
+        findings via ``manage-findings list --type pr-comment
+        --resolution fixed``."""
+        body = _read_dispatcher()
+        assert 'manage-findings' in body and 'list' in body, (
+            'Signal-2 prose must name a manage-findings list invocation '
+            'to count fixed-in-run review-bot findings'
+        )
+        assert '--type pr-comment' in body, (
+            'Signal-2 prose must name the pr-comment finding type token'
+        )
+        assert '--resolution fixed' in body, (
+            'Signal-2 prose must name "--resolution fixed" so the '
+            'remediated-in-run review-bot findings fire the signal'
+        )
+
+    def test_signal_3_names_all_three_marker_classes(self) -> None:
+        """Signal 3 (script-failures) MUST bucket all three marker classes
+        — ``[FAILED]``, ``[ERROR] ... script_failure``, and
+        ``voluntary_checkpoint → error`` — by distinct failing notation."""
+        body = _read_dispatcher()
+        assert '[FAILED]' in body, (
+            'Signal-3 prose must preserve the "[FAILED]" marker class'
+        )
+        assert 'script_failure' in body, (
+            'Signal-3 prose must name the "[ERROR] ... script_failure" '
+            'marker class so argparse-rejection / internal-error lines '
+            'are counted'
+        )
+        assert 'voluntary_checkpoint' in body and 'error' in body, (
+            'Signal-3 prose must name the "voluntary_checkpoint → error" '
+            'reclassification marker class (dispatch-boundary no-progress)'
+        )
+        assert 'distinct' in body and 'notation' in body, (
+            'Signal-3 prose must state the three marker classes are '
+            'bucketed by distinct failing notation into signal_3_count'
         )
 
 
@@ -296,3 +370,32 @@ class TestBodyIntroNamesDispatcherMove:
                 f'lessons-capture.md intro must document the runtime '
                 f'input field {field!r}'
             )
+
+    def test_signal_automated_review_field_documents_remediated_trigger(self) -> None:
+        """The ``signal_automated_review_count`` field description MUST
+        document the remediated-in-run trigger (resolution=fixed
+        pr-comment findings), not only the outstanding-state triggers."""
+        body = _read_workflow()
+        assert '--resolution fixed' in body or 'resolution=fixed' in body, (
+            'lessons-capture.md signal_automated_review_count field '
+            'description must document the remediated-in-run trigger '
+            '(review-bot findings with resolution=fixed)'
+        )
+        assert 'remediated' in body, (
+            'lessons-capture.md signal_automated_review_count field '
+            'description must state the field fires on remediated-in-run '
+            'review-bot findings'
+        )
+
+    def test_signal_script_failure_clusters_field_documents_all_markers(self) -> None:
+        """The ``signal_script_failure_clusters_count`` field description MUST
+        document all three marker classes, not only the [FAILED] marker."""
+        body = _read_workflow()
+        assert 'script_failure' in body, (
+            'lessons-capture.md signal_script_failure_clusters_count field '
+            'description must document the [ERROR] ... script_failure marker'
+        )
+        assert 'voluntary_checkpoint' in body, (
+            'lessons-capture.md signal_script_failure_clusters_count field '
+            'description must document the voluntary_checkpoint -> error marker'
+        )
