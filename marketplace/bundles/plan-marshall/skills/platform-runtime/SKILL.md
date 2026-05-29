@@ -122,3 +122,9 @@ Platform-runtime operations satisfy: "Would this differ between Claude Code and 
 | Terminal title rendering | `manage-architecture` (architecture data) |
 | Platform-specific subagent invocation | `manage-metrics` (metrics storage) |
 | Platform health verification | `tools-script-executor` (executor regeneration) |
+
+The `session render-title` reader is one half of the terminal-title writer/reader
+split — the `manage-status` writer publishes the `title-body.txt` artifact this
+operation resolves. See `ref-workflow-architecture/standards/terminal-title-architecture.md`
+for the canonical end-to-end architecture: writer, reader, session-plan binding,
+title-body lifecycle, output channels, platform abstraction, and the 3-icon palette.

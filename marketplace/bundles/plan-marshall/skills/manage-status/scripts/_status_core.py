@@ -116,6 +116,15 @@ TITLE_BODY_TERMINAL_PHASES = frozenset({'complete', 'archived'})
 # plus active-command state.
 TITLE_BODY_FILENAME = 'title-body.txt'
 
+# Prefix of the special Completed terminal body. Unlike the active-phase
+# ``pm:{phase}[:{short}]`` bodies, a ``pm:Completed:{short}`` body is the one
+# terminal body that must survive the archive move: ``cmd_archive`` publishes
+# it BEFORE ``shutil.move`` so the per-target reader can resolve it from the
+# archived path after the live plan directory is gone. See
+# ``ref-workflow-architecture/standards/terminal-title-architecture.md``
+# (title-body lifecycle, Completed terminal body).
+COMPLETED_TITLE_BODY_PREFIX = 'pm:Completed:'
+
 
 def _render_title_body(status_data: dict[Any, Any]) -> str | None:
     """Render the title-body string from an in-memory status dict.
@@ -132,6 +141,20 @@ def _render_title_body(status_data: dict[Any, Any]) -> str | None:
     if short_description:
         return f'pm:{current_phase}:{short_description}'
     return f'pm:{current_phase}'
+
+
+def _render_completed_title_body(short_description: str | None) -> str:
+    """Render the special Completed terminal body.
+
+    Returns ``"pm:Completed:{short_description}"`` when a ``short_description``
+    is present, or the bare ``"pm:Completed"`` when it is absent. Unlike
+    ``_render_title_body``, this never returns ``None``: the Completed body is
+    a non-deletable terminal body that ``cmd_archive`` publishes before the
+    archive move so the reader can resolve it from the archived path.
+    """
+    if short_description:
+        return f'{COMPLETED_TITLE_BODY_PREFIX}{short_description}'
+    return COMPLETED_TITLE_BODY_PREFIX.rstrip(':')
 
 
 def _publish_title_body(plan_dir: Path, status_data: dict[Any, Any]) -> None:
@@ -156,6 +179,29 @@ def _publish_title_body(plan_dir: Path, status_data: dict[Any, Any]) -> None:
             return
         # ``atomic_write_file`` appends exactly one terminating ``\n`` when
         # the supplied content does not already end in one — pass ``rendered``
+        # unterminated so the artifact ends with exactly one ``\n``.
+        atomic_write_file(title_body_path, rendered)
+    except OSError:
+        # Silent no-op — consistent with the legacy terminal-title hook.
+        return
+
+
+def _publish_completed_title_body(plan_dir: Path, status_data: dict[Any, Any]) -> None:
+    """Publish the non-deletable Completed terminal body for a plan.
+
+    Writes ``pm:Completed:{short_description}`` to ``{plan_dir}/title-body.txt``
+    unconditionally — unlike ``_publish_title_body``, this never deletes the
+    artifact even though the plan is in a terminal phase. ``cmd_archive`` calls
+    this BEFORE ``shutil.move`` so the Completed body travels into the archive
+    directory with the moved plan, where the per-target reader resolves it via
+    the archived-path fallback. Failures are swallowed silently, matching the
+    existing terminal-title hook semantics.
+    """
+    title_body_path = plan_dir / TITLE_BODY_FILENAME
+    rendered = _render_completed_title_body(status_data.get('short_description'))
+    try:
+        # ``atomic_write_file`` appends exactly one terminating ``\n`` when the
+        # supplied content does not already end in one — pass ``rendered``
         # unterminated so the artifact ends with exactly one ``\n``.
         atomic_write_file(title_body_path, rendered)
     except OSError:

@@ -148,19 +148,37 @@ def test_transition_last_phase_deletes_title_body(plan_context):
 
 
 # =============================================================================
-# Test: archive deletes title-body
+# Test: archive publishes the Completed body (write-before-archive)
 # =============================================================================
 
 
-def test_archive_deletes_title_body(plan_context):
-    """cmd_archive closes the last open phase and, when every phase is
-    done, sets current_phase='complete' (terminal). The hook must then
-    delete title-body.txt BEFORE shutil.move carries the directory into
-    the archive — so no stale artifact lands in the archive tree."""
+def _archived_plan_dir(plan_context, plan_id: str) -> Path:
+    """Locate the moved plan directory inside archived-plans/ for a plan_id.
+
+    The archive name is ``{YYYY-MM-DD}-{plan_id}``; match on the exact
+    ``-{plan_id}`` suffix so a prefix collision between similarly named plans
+    cannot resolve the wrong directory.
+    """
+    archive_root = plan_context.fixture_dir / 'archived-plans'
+    assert archive_root.exists(), 'archive directory missing'
+    archived_dirs = list(archive_root.iterdir())
+    assert archived_dirs, 'archived plan directory missing'
+    target = next((d for d in archived_dirs if d.name.endswith(f'-{plan_id}')), None)
+    assert target is not None, f'archived plan not found: {[d.name for d in archived_dirs]}'
+    return target
+
+
+def test_archive_publishes_completed_title_body_before_move(plan_context):
+    """cmd_archive closes the last open phase and, when every phase is done,
+    sets current_phase='complete' (terminal). It then writes the special
+    non-deletable ``pm:Completed:{short_description}`` body to the live
+    title-body.txt BEFORE shutil.move, so the Completed body travels into the
+    archive tree with the moved directory (write-before-archive). This is the
+    one terminal transition that PUBLISHES a body rather than deleting it."""
     plan_dir = plan_context.plan_dir_for('tb-archive')
     _create_plan('tb-archive', 'Archive test', '1-init,2-finalize')
     # Drive the plan all the way to "every phase done" so cmd_archive
-    # promotes current_phase to 'complete' and the hook deletes.
+    # promotes current_phase to 'complete'.
     r0 = run_script(
         STATUS_SCRIPT, 'transition', '--plan-id', 'tb-archive', '--completed', '1-init'
     )
@@ -171,19 +189,69 @@ def test_archive_deletes_title_body(plan_context):
     result = run_script(STATUS_SCRIPT, 'archive', '--plan-id', 'tb-archive')
     assert result.success, f'archive failed: {result.stderr}'
 
-    # The plan dir was moved into archived-plans/, so the original
-    # path is gone. Look inside the archive directory and confirm
-    # title-body.txt is NOT present.
-    archive_root = plan_context.fixture_dir / 'archived-plans'
-    assert archive_root.exists(), 'archive directory missing'
-    archived_dirs = list(archive_root.iterdir())
-    assert archived_dirs, 'archived plan directory missing'
-    # Find our archived plan
-    target = next((d for d in archived_dirs if d.name.endswith('tb-archive')), None)
-    assert target is not None, f'archived plan not found: {[d.name for d in archived_dirs]}'
-    assert not (target / TITLE_BODY_FILENAME).exists(), (
-        'title-body.txt must be deleted before archive move (no stale artifact in archive)'
+    # The plan dir was moved into archived-plans/, so the original path is
+    # gone. The Completed body must have been published BEFORE the move and
+    # therefore lands inside the archived plan directory.
+    target = _archived_plan_dir(plan_context, 'tb-archive')
+    archived_body_path = target / TITLE_BODY_FILENAME
+    assert archived_body_path.exists(), (
+        'title-body.txt must be published (write-before-archive) and travel '
+        'into the archive tree with the moved directory'
     )
+    body = archived_body_path.read_text(encoding='utf-8').rstrip('\n')
+    assert body.startswith('pm:Completed:'), (
+        f'Archived body must be the Completed terminal body, got: {body!r}'
+    )
+    suffix = body[len('pm:Completed:') :]
+    assert suffix, 'Completed body must carry a non-empty short_description segment'
+
+
+def test_archive_completed_body_carries_short_description(plan_context):
+    """The published Completed body uses ``short_description`` as its name
+    token — the same token the active ``pm:{phase}:{short}`` format uses. The
+    derived short_description must survive verbatim into the archived body."""
+    import json
+
+    plan_dir = plan_context.plan_dir_for('tb-archive-short')
+    _create_plan('tb-archive-short', 'Consolidate terminal docs', '1-init,2-finalize')
+    # Read the derived short_description from the live status before archive.
+    status_path = plan_dir / 'status.json'
+    short_desc = json.loads(status_path.read_text(encoding='utf-8'))['short_description']
+    assert short_desc, 'fixture precondition: short_description must be derivable'
+
+    r0 = run_script(
+        STATUS_SCRIPT, 'transition', '--plan-id', 'tb-archive-short', '--completed', '1-init'
+    )
+    assert r0.success
+
+    result = run_script(STATUS_SCRIPT, 'archive', '--plan-id', 'tb-archive-short')
+    assert result.success, f'archive failed: {result.stderr}'
+
+    target = _archived_plan_dir(plan_context, 'tb-archive-short')
+    body = (target / TITLE_BODY_FILENAME).read_text(encoding='utf-8').rstrip('\n')
+    assert body == f'pm:Completed:{short_desc}', (
+        f'Archived Completed body must be pm:Completed:{short_desc!r}, got: {body!r}'
+    )
+
+
+def test_archive_completed_body_single_trailing_newline(plan_context):
+    """The Completed body is published via atomic_write_file, which appends
+    exactly one terminating newline — no double newline, matching the
+    active-phase publication contract."""
+    plan_context.plan_dir_for('tb-archive-nl')
+    _create_plan('tb-archive-nl', 'Newline archive test', '1-init,2-finalize')
+    r0 = run_script(
+        STATUS_SCRIPT, 'transition', '--plan-id', 'tb-archive-nl', '--completed', '1-init'
+    )
+    assert r0.success
+
+    result = run_script(STATUS_SCRIPT, 'archive', '--plan-id', 'tb-archive-nl')
+    assert result.success, f'archive failed: {result.stderr}'
+
+    target = _archived_plan_dir(plan_context, 'tb-archive-nl')
+    raw = (target / TITLE_BODY_FILENAME).read_text(encoding='utf-8')
+    assert raw.endswith('\n'), 'Completed body must end with exactly one newline'
+    assert not raw.endswith('\n\n'), 'Completed body must not end with a double newline'
 
 
 # =============================================================================
