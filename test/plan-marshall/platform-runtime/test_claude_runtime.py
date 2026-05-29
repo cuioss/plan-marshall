@@ -1295,6 +1295,264 @@ class TestSessionRenderTitleStateAwareIcon:
 
 
 # =============================================================================
+# 3d. session_render_title archived-path fallback + ✓ Completed-body pairing (D3)
+# =============================================================================
+
+
+class TestSessionRenderTitleArchivedFallback:
+    """Tests for the archived-path fallback branch of session_render_title (D3).
+
+    Once a plan is archived, the live ``.plan/local/plans/{plan_id}/`` directory
+    is gone — ``cmd_archive`` published the ``pm:Completed:{short}`` body into the
+    directory before ``shutil.move`` carried it to
+    ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/title-body.txt``. The
+    reader falls back to that archived path when the live path is absent, and the
+    ``✓`` icon pairs with the Completed body via the existing ``Stop``-event
+    ``_resolve_icon`` mapping (no icon-logic change).
+    """
+
+    @staticmethod
+    def _arrange(
+        tmp_path,
+        monkeypatch,
+        *,
+        session_id="sess-archived",
+        plan_id="archived-plan",
+        archived_body="pm:Completed:consolidate-terminal-docs",
+        date_prefix="2026-05-29",
+        write_live=False,
+        live_body="pm:5-execute:active-body",
+    ):
+        """Materialize an archived plan (and optionally a live plan) on disk.
+
+        Always writes the session-cache pointer and the archived
+        ``title-body.txt``. When ``write_live`` is True, also writes the live
+        ``.plan/local/plans/{plan_id}/title-body.txt`` so the live-path-wins
+        precedence can be exercised.
+        """
+        import claude_runtime as _cr
+
+        cache_dir = tmp_path / "sessions" / session_id
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+
+        archived_dir = (
+            tmp_path / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
+        )
+        archived_dir.mkdir(parents=True)
+        (archived_dir / "title-body.txt").write_text(archived_body, encoding="utf-8")
+
+        if write_live:
+            live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+            live_dir.mkdir(parents=True)
+            (live_dir / "title-body.txt").write_text(live_body, encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.chdir(tmp_path)
+
+    def test_falls_back_to_archived_body_when_live_absent(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """Live path absent → reader globs the archived path and emits the Completed body."""
+        archived_body = "pm:Completed:consolidate-terminal-docs"
+        self._arrange(tmp_path, monkeypatch, archived_body=archived_body)
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        # No hook stdin payload → defensive default active icon, but the BODY
+        # must come from the archived Completed file.
+        assert envelope["terminalSequence"] == f"\x1b]0;➤ {archived_body}\x07"
+
+    def test_completed_body_pairs_with_done_icon_on_stop(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A Stop hook payload over an archived Completed body emits ``✓ pm:Completed:{short}``.
+
+        This is the canonical completed-state title: the ``✓`` icon resolves
+        through the existing ``Stop``-event ``_resolve_icon`` path and pairs with
+        the Completed body read from the archived fallback.
+        """
+        from io import StringIO
+
+        archived_body = "pm:Completed:consolidate-terminal-docs"
+        self._arrange(tmp_path, monkeypatch, archived_body=archived_body)
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"hook_event_name": "Stop"})))
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == f"\x1b]0;✓ {archived_body}\x07"
+
+    def test_statusline_mode_emits_completed_body_from_archived_path(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """statusLine mode reads the archived Completed body and emits plain ``➤ {body}``."""
+        archived_body = "pm:Completed:consolidate-terminal-docs"
+        self._arrange(tmp_path, monkeypatch, archived_body=archived_body)
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=True)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        # statusLine mode never consults stdin → keeps the active icon, body
+        # sourced from the archived fallback.
+        assert captured == f"➤ {archived_body}"
+
+    def test_live_path_wins_over_archived_when_both_present(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """When both the live and archived bodies exist, the LIVE body is emitted.
+
+        The fallback is strictly a live-path-absent branch — a live
+        title-body.txt must take precedence so an in-flight re-run of a
+        previously archived plan_id never surfaces the stale Completed body.
+        """
+        live_body = "pm:5-execute:active-body"
+        archived_body = "pm:Completed:stale-completed-body"
+        self._arrange(
+            tmp_path,
+            monkeypatch,
+            archived_body=archived_body,
+            write_live=True,
+            live_body=live_body,
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert live_body in envelope["terminalSequence"]
+        assert archived_body not in captured
+
+    def test_empty_archived_body_writes_nothing(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """An archived title-body.txt that exists but is empty → no-op (empty stdout)."""
+        self._arrange(tmp_path, monkeypatch, archived_body="")
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        assert captured == ""
+
+    def test_no_live_and_no_archived_writes_nothing(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """Neither live nor archived body present → no-op (empty stdout, empty return)."""
+        import claude_runtime as _cr
+
+        session_id = "sess-no-bodies"
+        plan_id = "ghost-plan"
+        cache_dir = tmp_path / "sessions" / session_id
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+        # archived-plans/ exists but contains no matching plan dir.
+        (tmp_path / ".plan" / "local" / "archived-plans").mkdir(parents=True)
+
+        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.chdir(tmp_path)
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        assert captured == ""
+
+
+class TestResolveArchivedTitleBody:
+    """Tests for the module-level _resolve_archived_title_body helper (D3).
+
+    Resolves ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/title-body.txt``
+    by globbing ``*-{plan_id}/title-body.txt``. The matched parent name must end
+    with the exact ``-{plan_id}`` suffix to defeat a prefix collision between
+    similarly named plans.
+    """
+
+    def test_resolves_archived_body_for_dated_dir(self, tmp_path, monkeypatch):
+        """Returns the archived title-body.txt path under {date}-{plan_id}/."""
+        import claude_runtime as _cr
+
+        plan_id = "my-plan"
+        archived_dir = tmp_path / ".plan" / "local" / "archived-plans" / f"2026-05-29-{plan_id}"
+        archived_dir.mkdir(parents=True)
+        body_path = archived_dir / "title-body.txt"
+        body_path.write_text("pm:Completed:my-plan-short\n", encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        resolved = _cr._resolve_archived_title_body(plan_id)
+        assert resolved is not None
+        assert resolved.resolve() == body_path.resolve()
+
+    def test_returns_none_when_archived_base_absent(self, tmp_path, monkeypatch):
+        """No archived-plans/ directory at all → None (not an error)."""
+        import claude_runtime as _cr
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        assert _cr._resolve_archived_title_body("anything") is None
+
+    def test_does_not_match_unrelated_plan_dir(self, tmp_path, monkeypatch):
+        """The ``*-{plan_id}`` glob must not resolve a directory for a different
+        plan whose name does not end in the exact ``-{plan_id}`` suffix.
+
+        A request for plan_id 'plan' must NOT resolve an archive named
+        ``{date}-superplan`` (which ends in ``superplan``, not ``-plan``)."""
+        import claude_runtime as _cr
+
+        other_dir = tmp_path / ".plan" / "local" / "archived-plans" / "2026-05-29-superplan"
+        other_dir.mkdir(parents=True)
+        (other_dir / "title-body.txt").write_text("pm:Completed:super\n", encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        # Only the unrelated -superplan dir exists → no resolution for 'plan'.
+        assert _cr._resolve_archived_title_body("plan") is None
+
+    def test_resolves_exact_plan_when_sibling_prefixed_dir_present(self, tmp_path, monkeypatch):
+        """With both a ``{date}-superplan`` archive and a ``{date}-plan`` archive
+        present, a request for plan_id 'plan' resolves ONLY the exact ``-plan``
+        directory — the sibling whose suffix is ``superplan`` is ignored."""
+        import claude_runtime as _cr
+
+        other_dir = tmp_path / ".plan" / "local" / "archived-plans" / "2026-05-29-superplan"
+        other_dir.mkdir(parents=True)
+        (other_dir / "title-body.txt").write_text("pm:Completed:super\n", encoding="utf-8")
+
+        exact_dir = tmp_path / ".plan" / "local" / "archived-plans" / "2026-05-30-plan"
+        exact_dir.mkdir(parents=True)
+        exact_body = exact_dir / "title-body.txt"
+        exact_body.write_text("pm:Completed:plan-short\n", encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        resolved = _cr._resolve_archived_title_body("plan")
+        assert resolved is not None
+        assert resolved.resolve() == exact_body.resolve()
+
+
+# =============================================================================
 # 5. permission_configure
 # =============================================================================
 

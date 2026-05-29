@@ -542,6 +542,34 @@ def _read_active_plan(session_id: str) -> str | None:
         return None
 
 
+def _resolve_archived_title_body(plan_id: str) -> Path | None:
+    """Resolve the archived ``title-body.txt`` for a plan, or ``None``.
+
+    Once a plan is archived, the live ``.plan/local/plans/{plan_id}/`` directory
+    is gone — ``cmd_archive`` moved it to
+    ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/``. The writer published
+    the Completed body into the directory before the move, so the archived body
+    lives at ``archived-plans/{YYYY-MM-DD}-{plan_id}/title-body.txt``.
+
+    Globs ``archived-plans/*-{plan_id}/title-body.txt`` (the ``*`` matches the
+    ``YYYY-MM-DD`` date prefix) and returns the first regular file found, or
+    ``None`` when no archived body exists. The returned path's parent name must
+    end with the exact ``-{plan_id}`` suffix to avoid a prefix collision between
+    similarly named plans.
+    """
+    archived_base = Path(_PLAN_DIR_NAME) / "local" / "archived-plans"
+    if not archived_base.is_dir():
+        return None
+    suffix = f"-{plan_id}"
+    try:
+        for candidate in sorted(archived_base.glob(f"*-{plan_id}/title-body.txt")):
+            if candidate.is_file() and candidate.parent.name.endswith(suffix):
+                return candidate
+    except OSError:
+        return None
+    return None
+
+
 def _manage_status_store_session(plan_id: str, session_id: str) -> bool:
     """Store session_id in plan status.json via manage-status metadata --set.
 
@@ -1099,9 +1127,22 @@ class ClaudeRuntime(Runtime):
             return ""
 
         # Step 3: Resolve plan_id → title body via title-body.txt.
-        title_body_path = Path(_PLAN_DIR_NAME) / "local" / "plans" / plan_id / "title-body.txt"
-        if not title_body_path.is_file():
-            return ""
+        #
+        # Live path first; on absence, fall back to the archived path. The
+        # writer publishes the Completed body into the plan directory before
+        # archiving (``cmd_archive`` → ``_publish_completed_title_body``), so
+        # ``shutil.move`` carries it into
+        # ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/title-body.txt``.
+        # See ``ref-workflow-architecture/standards/terminal-title-architecture.md``
+        # (title-body lifecycle, archived-path fallback).
+        live_path = Path(_PLAN_DIR_NAME) / "local" / "plans" / plan_id / "title-body.txt"
+        if live_path.is_file():
+            title_body_path = live_path
+        else:
+            archived_path = _resolve_archived_title_body(plan_id)
+            if archived_path is None:
+                return ""
+            title_body_path = archived_path
 
         try:
             title_body = title_body_path.read_text(encoding="utf-8").strip()

@@ -13,6 +13,7 @@ from _invariants import _BLOCKING_BOUNDARIES  # type: ignore[import-not-found]
 from _references_core import read_references, write_references  # type: ignore[import-not-found]
 from _short_description import derive_short_description  # type: ignore[import-not-found]
 from _status_core import (
+    _publish_completed_title_body,
     _publish_title_body,
     get_archive_dir,
     get_status_path,
@@ -382,14 +383,16 @@ def cmd_archive(args: argparse.Namespace) -> dict | None:
         metadata = status.setdefault('metadata', {})
         metadata['archived_reason'] = reason
     write_status(args.plan_id, status)
-    # Title-body publication hook — archive always pushes ``current_phase``
-    # towards a terminal state, so the helper deletes ``title-body.txt`` from
-    # the live plan-dir BEFORE ``shutil.move`` carries the directory into the
-    # archive. Skipping this would archive a stale title-body file alongside
-    # the closed plan; the per-target reader would still find no live plan
-    # (no session-active-plan handle), but cleaning at the writer keeps the
-    # artifact's lifecycle symmetric with the rest of the mutation paths.
-    _publish_title_body(plan_dir, status)
+    # Title-body publication hook — archive is the one terminal transition that
+    # PUBLISHES a body rather than deleting it. Write the non-deletable
+    # ``pm:Completed:{short_description}`` body to the live plan-dir BEFORE
+    # ``shutil.move`` so the Completed body travels into the archive directory
+    # with the moved plan. The per-target reader resolves it from
+    # ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/title-body.txt`` via
+    # the archived-path fallback once the live plan path is gone. See
+    # ``ref-workflow-architecture/standards/terminal-title-architecture.md``
+    # (title-body lifecycle, archived-path fallback).
+    _publish_completed_title_body(plan_dir, status)
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(plan_dir), str(archive_path))
