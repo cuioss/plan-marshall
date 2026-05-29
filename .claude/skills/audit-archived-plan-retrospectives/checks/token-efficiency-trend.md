@@ -8,10 +8,26 @@ than one row per plan. The deterministic computation lives in
 
 ## Inputs the check reads
 
-For every scanned plan, the script parses `work/metrics.toon` and sums
-`total_tokens` across the recorded phases, then divides by the phase count to
-get `tokens_per_phase`. Plans without a `metrics.toon` are excluded from the
-series.
+For every scanned plan, the script parses `work/metrics.toon` and sums the
+**effective** tokens (`total_tokens - retrospective_tokens`, never negative)
+across the recorded phases, then divides by the count of phases that carry
+implementation spend to get `tokens_per_phase`. Plan-retrospective spend is
+excluded so the trend reflects implementation work only (see below). Plans
+without a `metrics.toon` are excluded from the series.
+
+### Plan-retrospective token exclusion
+
+Plan-retrospective spend is deliberate analysis and is excluded from both
+`total_tokens` and the phases divisor. The exclusion source is the
+`retrospective_tokens` sub-field `manage-metrics` records on the `[6-finalize]`
+phase section. A phase whose entire spend is retrospective
+(`effective_tokens == 0`) is dropped from the phase count, so `tokens_per_phase`
+reflects implementation phases only.
+
+**Best-effort degrade**: archived plans predating the `retrospective_tokens`
+attribution carry no such field, so their effective tokens equal the raw
+`total_tokens` and the exclusion is a no-op — the series and regression behave
+exactly as before the change, with no crash and no negative values.
 
 ## Chronological ordering
 
@@ -40,9 +56,9 @@ rows[K]{plan_id,phases,total_tokens,tokens_per_phase}
 | Column | Meaning |
 |--------|---------|
 | `plan_id` | The scanned plan's directory basename (rows are in chronological order). |
-| `phases` | Count of phases recorded in `metrics.toon`. |
-| `total_tokens` | Sum of `total_tokens` across the plan's phases. |
-| `tokens_per_phase` | `total_tokens / phases`, integer-truncated. |
+| `phases` | Count of phases carrying implementation (effective) spend — phases whose entire spend is retrospective are excluded. |
+| `total_tokens` | Sum of **effective** tokens (retrospective-excluded) across the plan's phases. |
+| `tokens_per_phase` | `total_tokens / phases` on the effective values, integer-truncated. |
 
 ## How the orchestrator interprets the rows
 

@@ -163,7 +163,9 @@ def test_end_phase_with_token_data(plan_context):
     content = metrics_file.read_text()
     assert 'total_tokens: 25514' in content
     assert 'tool_uses: 23' in content
-    assert 'agent_duration_ms: 181681' in content
+    # start→end fire back-to-back, so the wall span is ~0 and the forwarded
+    # worked window (181681 ms) is clamped to the wall span by _clamp_worked_to_wall.
+    assert 'agent_duration_ms: 0' in content
 
 
 def test_end_phase_without_start(plan_context):
@@ -570,7 +572,9 @@ class TestEndPhaseAccumulatorFallback:
         metrics = (plan_context.plan_dir_for('ep-fallback') / 'work' / 'metrics.toon').read_text()
         assert 'total_tokens: 5000' in metrics
         assert 'tool_uses: 12' in metrics
-        assert 'agent_duration_ms: 60000' in metrics
+        # start→end fire back-to-back, so the wall span is ~0 and the accumulator's
+        # worked window (60000 ms) is clamped to the wall span by _clamp_worked_to_wall.
+        assert 'agent_duration_ms: 0' in metrics
 
     def test_explicit_flags_override_accumulator(self, plan_context):
         """Explicitly passed flags always win — accumulator does not double-count."""
@@ -601,7 +605,9 @@ class TestEndPhaseAccumulatorFallback:
         metrics = (plan_context.plan_dir_for('ep-partial') / 'work' / 'metrics.toon').read_text()
         assert 'total_tokens: 10000' in metrics
         assert 'tool_uses: 20' in metrics
-        assert 'agent_duration_ms: 4000' in metrics
+        # start→end fire back-to-back, so the wall span is ~0 and the accumulator's
+        # worked window (4000 ms) is clamped to the wall span by _clamp_worked_to_wall.
+        assert 'agent_duration_ms: 0' in metrics
 
     def test_no_accumulator_no_flags_records_timestamps_only(self, plan_context):
         """When neither accumulator nor flags are present, end-phase records timestamps only."""

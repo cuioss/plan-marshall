@@ -58,6 +58,16 @@ names, anomaly classes, or verdicts that the script did not emit.
   orchestrator passes the confirmed flag.
 - Do NOT file a lesson without first running the three-gate policy
   (`lesson-creation-policy.md`) — dedup, active-plan check, then create.
+- Do NOT spot-check, skim, or sample a subset of check blocks and generalize a
+  verdict to the rest. EVERY emitted check block MUST be processed against its
+  `checks/{name}.md` sub-document.
+- Do NOT conclude "all healthy" / "no findings" / "all sensible" unless that
+  conclusion is backed by a per-check, per-row adjudication with cited evidence.
+  A blanket dismissal not grounded in per-row evidence is a contract violation.
+- Do NOT drop a candidate signal as "already covered" / "already filed" without
+  first VERIFYING that claim against the lessons corpus and the archived-plan
+  corpus (the matching lesson ID or covering active-plan ID must be named).
+  Assumption is not verification.
 
 **Constraints**:
 - The script is invoked exactly as written in the workflow steps — no
@@ -147,10 +157,31 @@ corresponding `checks/{name}.md` sub-document.
 
 ### Step 3: Interpret each check's rows
 
-For each emitted check block, open the matching `checks/{name}.md` sub-document
-and apply its interpretation guide. The sub-documents are the single source of
-truth for what each column means and which row states warrant action; this body
-does not restate them.
+The orchestrator MUST process EVERY emitted check block against its matching
+`checks/{name}.md` sub-document — no block may be skipped, sampled, or
+generalized from a peer. The sub-documents are the single source of truth for
+what each column means and which row states warrant action; this body does not
+restate them.
+
+For EVERY row that is a potential signal — `drift`, a populated `name_drift`,
+`impossible_value`, a scope mismatch, unfiled proposed lessons, a systemic
+recurring pattern, a PR-velocity flag, or a task-count outlier — explicitly state
+BOTH:
+
+1. **the verdict** — action (file a lesson / fold into an active plan / surface
+   for human review) or no-action; and
+2. **the cited evidence or cross-check** that justifies the verdict — the
+   specific sub-doc rule, the `severity` column value, the corpus match, or the
+   structured input that grounds the decision.
+
+A row may be dismissed as informational/expected ONLY with a cited reason (e.g.
+"informational per `checks/metrics.md` § How the orchestrator interprets the
+rows" or "`severity: informational` per the manifest check"). A bare "looks
+fine", a silent skip, or a generalized "the rest are the same" is a contract
+violation. The `execution-context-manifest` check's `severity` column and
+`genuine_signal_count` summary are the precision aids for this adjudication:
+`informational` rows still require a one-line cited dismissal; `genuine` rows
+require a full verdict-plus-evidence treatment.
 
 ### Step 4: File lessons through the three-gate policy
 
@@ -168,9 +199,39 @@ three-gate sequence from `plan-marshall:manage-lessons`'s
 3. **Gate 3 — create**: only when Gates 1 and 2 both clear, allocate a lesson
    file via `manage-lessons add` and write the body to the returned `path`.
 
+Any candidate signature the orchestrator is about to drop on a Gate-1 (dedup) or
+Gate-2 (active-plan / "already covered") basis MUST have that basis VERIFIED
+against the corpus before the signal is dropped: name the actual matching lesson
+ID (Gate 1) or the active plan ID that covers it (Gate 2), and record that
+verification in the adjudication. A dismissal without a named, verified
+reference is a contract violation.
+
 The quality-verification check already cross-checks each proposed lesson against
 the lessons corpus and the archived-plan corpus, so a candidate it marks as
-"already filed" or "covered by archived plan {id}" MUST NOT be re-filed.
+"already filed" or "covered by archived plan {id}" MUST NOT be re-filed — that
+marking is itself a cited verification and satisfies the obligation above.
+
+### Step 4b: Review-completeness gate
+
+Before reaching Step 5 (Interactive dormation), the orchestrator MUST satisfy
+this completeness gate. Dormation is BLOCKED until every item below is true and
+demonstrable from the adjudication produced in Steps 3–4:
+
+- [ ] Every emitted check block was examined against its `checks/{name}.md`
+      sub-document — none skipped or sampled.
+- [ ] Every genuine-signal row (`severity: genuine`, `impossible_value`, real
+      `drift`, unresolved-role `name_drift`, scope mismatch, unfiled lesson,
+      systemic pattern, PR-velocity flag, task-count outlier) was adjudicated
+      with a stated verdict AND cited evidence.
+- [ ] Every dismissal of a potential-signal row carries a cited justification —
+      no bare "looks fine" and no silent skip.
+- [ ] Every "already covered" / dedup / active-plan drop was corpus-verified with
+      the matching lesson ID or covering active-plan ID named.
+
+The gate is framed so a reviewer CANNOT truthfully reach "no findings" via a
+quick look: the per-row adjudication and the named corpus verifications are the
+evidence the gate checks for. If any item is unmet, return to Step 3/Step 4 and
+complete the adjudication before proceeding.
 
 ### Step 5: Interactive dormation
 
