@@ -66,12 +66,23 @@ CHECK_NAMES = [
 # one row per plan.
 CROSS_PLAN_CHECKS = {"recurring-pattern-detector", "token-efficiency-trend"}
 
-# Canonical phase-5 step names the standard intersects against in Rows 2/3/5.
-# Projects that rename these (e.g. `quality_check` instead of `quality-gate`)
-# will see Row 5's intersection drop to empty — flagged in the report as a
-# `name_drift` signal.
-CANON_QUALITY_GATE = {"quality-gate", "module-tests"}
-CANON_COVERAGE = "coverage"
+# The roles the phase-5 verification steps must resolve to for a manifest to be
+# considered well-composed. A phase-5 step ID is resolved to its `role:`
+# frontmatter (e.g. `quality_check` → `quality-gate`, `build_verify` →
+# `module-tests`) and intersected against this set, mirroring the composer's
+# Role-Field Intersection (`manage-execution-manifest/standards/decision-rules.md`
+# § "Role-Field Intersection"). Genuine `name_drift` is an unresolvable role or a
+# non-empty phase_5 that resolves to zero of these roles — NOT a renamed name.
+QUALITY_GATE_ROLES = {"quality-gate", "module-tests"}
+
+# Repo-relative location of the phase-5 verification-step standards docs whose
+# `role:` frontmatter the resolver reads.
+PHASE_5_STANDARDS_REL = (
+    "marketplace/bundles/plan-marshall/skills/phase-5-execute/standards"
+)
+
+# Frontmatter `role:` line shape, e.g. `role: quality-gate`.
+_ROLE_FRONTMATTER_RE = re.compile(r"^\s*role:\s*(\S+)\s*$")
 
 # Recurring-pattern systemic threshold (request: 3+ occurrences).
 SYSTEMIC_THRESHOLD = 3
@@ -186,6 +197,17 @@ class PhaseMetrics:
     duration_seconds: float = 0.0
     idle_duration_ms: float = 0.0
     agent_duration_seconds: float = 0.0
+    # Token total attributable to the plan-retrospective dispatch within the
+    # phase window (recorded by manage-metrics as a `retrospective_tokens`
+    # sub-field on `[6-finalize]`). Default 0 when absent — archived plans
+    # predating the attribution change have the spend irrecoverably co-mingled,
+    # so the metrics checks exclude nothing for them (best-effort degrade).
+    retrospective_tokens: int = 0
+
+    @property
+    def effective_tokens(self) -> int:
+        """Token total with plan-retrospective spend excluded (never negative)."""
+        return max(0, self.total_tokens - self.retrospective_tokens)
 
 
 def parse_metrics_toon(path: Path) -> list[PhaseMetrics]:
@@ -218,6 +240,8 @@ def parse_metrics_toon(path: Path) -> list[PhaseMetrics]:
         value = value.strip()
         if key == "total_tokens":
             current.total_tokens = _to_int(value)
+        elif key == "retrospective_tokens":
+            current.retrospective_tokens = _to_int(value)
         elif key == "duration_seconds":
             current.duration_seconds = _to_float(value)
         elif key == "idle_duration_ms":
@@ -407,22 +431,81 @@ def verdict_for(inputs: PlanInputs) -> tuple[str, str]:
     return "ok", f"rule={expected}"
 
 
-def detect_name_drift(inputs: PlanInputs) -> str | None:
+def _strip_step_namespace(step_id: str) -> str:
+    """Strip any namespace prefix from a phase-5 step ID.
+
+    `default:quality_check` → `quality_check`; `quality_check` → `quality_check`.
+    """
+    return step_id.split(":")[-1].strip()
+
+
+def _resolve_step_role(repo_root: Path, step_id: str, cache: dict[str, str | None]) -> str | None:
+    """Resolve a phase-5 step ID to its `role:` frontmatter value.
+
+    Reads `phase-5-execute/standards/{step}.md` and returns the `role:` value, or
+    `None` when the standards file is absent, unreadable, or carries no `role:`
+    frontmatter. Results (including unresolved `None`) are memoized in `cache`.
+    Best-effort: a missing standards directory degrades to "role unresolved"
+    rather than raising.
+    """
+    bare = _strip_step_namespace(step_id)
+    if bare in cache:
+        return cache[bare]
+    role: str | None = None
+    standards_dir = (repo_root / PHASE_5_STANDARDS_REL).resolve()
+    doc = (standards_dir / f"{bare}.md").resolve()
+    if doc.is_relative_to(standards_dir) and doc.is_file():
+        try:
+            for line in doc.read_text(encoding="utf-8").splitlines():
+                m = _ROLE_FRONTMATTER_RE.match(line)
+                if m:
+                    role = m.group(1)
+                    break
+        except OSError:
+            role = None
+    cache[bare] = role
+    return role
+
+
+def detect_name_drift(inputs: PlanInputs, repo_root: Path, role_cache: dict[str, str | None]) -> str | None:
+    """Genuine name_drift detection via role resolution.
+
+    Resolves each phase-5 step ID to its `role:` frontmatter and intersects the
+    resolved roles against {quality-gate, module-tests}, mirroring the composer.
+    Genuine drift is exactly: (a) a step ID whose role cannot be resolved, or
+    (b) a non-empty phase_5 list that resolves to zero quality-gate/module-tests
+    roles. A phase_5 of `['quality_check', 'build_verify']` resolves to
+    {quality-gate, module-tests} and is NOT flagged.
+    """
     if not inputs.manifest_phase_5:
         return None
-    canon_hits = sum(1 for s in inputs.manifest_phase_5 if s.split(":")[-1] in CANON_QUALITY_GATE)
-    if canon_hits == 0 and inputs.manifest_phase_5:
+    unresolved: list[str] = []
+    resolved_roles: set[str] = set()
+    for step_id in inputs.manifest_phase_5:
+        role = _resolve_step_role(repo_root, step_id, role_cache)
+        if role is None:
+            unresolved.append(_strip_step_namespace(step_id))
+        else:
+            resolved_roles.add(role)
+    if unresolved:
         return (
-            f"phase_5 uses renamed candidates {inputs.manifest_phase_5} — "
-            f"Row 2/3/5 intersection against {{quality-gate, module-tests}} would be empty"
+            f"phase_5 step ID(s) {unresolved} resolve to no `role:` frontmatter "
+            f"under {PHASE_5_STANDARDS_REL}/ — unresolvable role"
+        )
+    if not (resolved_roles & QUALITY_GATE_ROLES):
+        return (
+            f"phase_5 {inputs.manifest_phase_5} resolves to roles {sorted(resolved_roles)} "
+            f"— zero intersection with {{quality-gate, module-tests}}"
         )
     return None
 
 
-def check_execution_manifest(inputs: PlanInputs) -> dict[str, Any]:
+def check_execution_manifest(
+    inputs: PlanInputs, repo_root: Path, role_cache: dict[str, str | None]
+) -> dict[str, Any]:
     expected = derive_expected_rule(inputs) if inputs.manifest_present else None
     verdict, reason = verdict_for(inputs)
-    name_drift = detect_name_drift(inputs)
+    name_drift = detect_name_drift(inputs, repo_root, role_cache)
     return {
         "plan_id": inputs.plan_id,
         "verdict": verdict,
@@ -544,13 +627,18 @@ def check_metrics(inputs: PlanInputs) -> dict[str, Any]:
             "anomalies": ["no metrics.toon recorded"],
         }
 
-    total_tokens = sum(p.total_tokens for p in phases)
+    # Token-spend checks exclude plan-retrospective spend (deliberate analysis):
+    # the share, optimization-ratio, and cross-plan series compute on effective
+    # (retrospective-excluded) tokens. Plans predating the `retrospective_tokens`
+    # attribution carry 0, so the exclusion is a no-op for them.
+    effective_total = sum(p.effective_tokens for p in phases)
 
-    # (a) Disproportionate phase token usage.
+    # (a) Disproportionate phase token usage — computed on effective tokens so a
+    # retrospective neither trips the threshold nor inflates another phase's share.
     dispro = ""
-    if total_tokens > 0:
+    if effective_total > 0:
         for p in phases:
-            share = p.total_tokens / total_tokens
+            share = p.effective_tokens / effective_total
             if share >= PHASE_TOKEN_SHARE_THRESHOLD:
                 dispro = f"{p.phase}={share:.0%}"
                 anomalies.append(f"{p.phase} consumed {share:.0%} of total tokens")
@@ -578,12 +666,15 @@ def check_metrics(inputs: PlanInputs) -> dict[str, Any]:
             break
 
     # (d) Optimization signal: a phase whose token-per-second ratio is an
-    # outlier (>= 3x the median non-zero phase ratio).
+    # outlier (>= 3x the median non-zero phase ratio). Computed on effective
+    # (retrospective-excluded) tokens; a phase whose entire spend is
+    # retrospective (effective_tokens == 0) is excluded from the ratio set and
+    # the median.
     optimization = ""
     ratios = [
-        (p.phase, p.total_tokens / p.duration_seconds)
+        (p.phase, p.effective_tokens / p.duration_seconds)
         for p in phases
-        if p.duration_seconds > 0 and p.total_tokens > 0
+        if p.duration_seconds > 0 and p.effective_tokens > 0
     ]
     if len(ratios) >= 3:
         sorted_ratios = sorted(r for _, r in ratios)
@@ -801,12 +892,18 @@ def cross_token_trend(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         phases = parse_metrics_toon(inputs.plan_dir / "work" / "metrics.toon")
         if not phases:
             continue
-        total = sum(p.total_tokens for p in phases)
-        per_phase = total / len(phases) if phases else 0
+        # Exclude plan-retrospective spend: sum effective (retrospective-excluded)
+        # tokens for `total`, and count only phases that carry implementation
+        # spend in the divisor (a phase whose entire spend is retrospective is
+        # excluded). Plans predating the attribution carry 0, so the exclusion is
+        # a no-op for them.
+        total = sum(p.effective_tokens for p in phases)
+        impl_phases = sum(1 for p in phases if p.effective_tokens > 0)
+        per_phase = total / impl_phases if impl_phases else 0
         series.append(
             {
                 "plan_id": inputs.plan_id,
-                "phases": len(phases),
+                "phases": impl_phases,
                 "total_tokens": total,
                 "tokens_per_phase": int(per_phase),
             }
@@ -835,6 +932,32 @@ def cross_token_trend(all_inputs: list[PlanInputs]) -> dict[str, Any]:
 # Dormation move (the only mutating operation)
 # ---------------------------------------------------------------------------
 
+# Canonical plan-ID grammar: lowercase alphanumerics and hyphens only, starting
+# and ending on an alphanumeric (the kebab/date shape used project-wide). This is
+# a self-contained inline validator — the skill runs via direct `python3
+# .../audit.py` with NO executor PYTHONPATH, so it cannot import
+# `tools-input-validation`'s `validate_plan_id`. By construction the grammar
+# rejects any `..`, absolute-path prefix (`/`), or embedded path separator
+# (`/` or `\`), which are the path-traversal vectors this guard closes.
+_PLAN_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _validate_plan_id(plan_id: str) -> str | None:
+    """Return a refusal reason when `plan_id` violates the canonical grammar.
+
+    Returns `None` when the value is a well-formed plan ID. A non-`None` return
+    is the fail-fast front line of the belt-and-braces path-traversal defense
+    (`lesson-2026-05-29-13-001.md`): it fires before any move destination is
+    constructed, complementing the resolved-path containment guards below.
+    """
+    if not plan_id or not _PLAN_ID_RE.match(plan_id):
+        return (
+            f"invalid plan_id {plan_id!r}: must match the canonical kebab/date "
+            f"grammar (lowercase alphanumerics and hyphens, no '..', no path "
+            f"separators, no absolute prefix)"
+        )
+    return None
+
 
 def dormate_plan(repo_root: Path, plan_id: str, confirmed: bool) -> dict[str, Any]:
     """Relocate an archived plan to `.plan/temp/dormated-plans/{plan_id}`.
@@ -848,6 +971,13 @@ def dormate_plan(repo_root: Path, plan_id: str, confirmed: bool) -> dict[str, An
             "status": "refused",
             "plan_id": plan_id,
             "reason": "dormation requires --confirmed; the move function is inert without it",
+        }
+    grammar_error = _validate_plan_id(plan_id)
+    if grammar_error is not None:
+        return {
+            "status": "refused",
+            "plan_id": plan_id,
+            "reason": grammar_error,
         }
     src_parent = (repo_root / ".plan/local/archived-plans").resolve()
     src = (src_parent / plan_id).resolve()
@@ -893,13 +1023,29 @@ def _cell(value: Any) -> str:
     return f'"{s}"' if "," in s or '"' in s else s
 
 
+def _manifest_row_severity(row: dict[str, Any]) -> str:
+    """Classify a manifest row as a genuine signal or informational.
+
+    Genuine (actionable): a `drift` verdict, or a populated `name_drift` (which,
+    post role-resolution, is only ever an unresolvable role or a zero-intersection
+    phase_5). Informational: `incomplete` / `unloggable` verdicts (missing
+    artifacts, not a composition fault) and `ok` rows.
+    """
+    if row["verdict"] == "drift" or row["name_drift"]:
+        return "genuine"
+    return "informational"
+
+
 def emit_manifest_block(rows: list[dict[str, Any]]) -> str:
     counts = {"ok": 0, "drift": 0, "incomplete": 0, "unloggable": 0}
     name_drift_count = 0
+    genuine_signal_count = 0
     for r in rows:
         counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
         if r["name_drift"]:
             name_drift_count += 1
+        if _manifest_row_severity(r) == "genuine":
+            genuine_signal_count += 1
     out = ["check: execution-context-manifest", "status: success"]
     out.append(f"plans_scanned: {len(rows)}")
     out.append(f"ok_count: {counts['ok']}")
@@ -907,8 +1053,9 @@ def emit_manifest_block(rows: list[dict[str, Any]]) -> str:
     out.append(f"incomplete_count: {counts['incomplete']}")
     out.append(f"unloggable_count: {counts['unloggable']}")
     out.append(f"name_drift_count: {name_drift_count}")
+    out.append(f"genuine_signal_count: {genuine_signal_count}")
     out.append(
-        f"rows[{len(rows)}]{{plan_id,verdict,reason,expected_rule,actual_rule,change_type,scope,recipe,affected,modified,name_drift}}:"
+        f"rows[{len(rows)}]{{plan_id,verdict,severity,reason,expected_rule,actual_rule,change_type,scope,recipe,affected,modified,name_drift}}:"
     )
     for r in rows:
         out.append(
@@ -918,6 +1065,7 @@ def emit_manifest_block(rows: list[dict[str, Any]]) -> str:
                 for c in [
                     r["plan_id"],
                     r["verdict"],
+                    _manifest_row_severity(r),
                     r["reason"],
                     r["expected_rule"] or "",
                     r["actual_rule"] or "",
@@ -991,7 +1139,8 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
     blocks: list[str] = []
 
     if "execution-context-manifest" in selected:
-        rows = [check_execution_manifest(i) for i in all_inputs]
+        role_cache: dict[str, str | None] = {}
+        rows = [check_execution_manifest(i, repo_root, role_cache) for i in all_inputs]
         blocks.append(emit_manifest_block(rows))
 
     if "quality-verification-report" in selected:

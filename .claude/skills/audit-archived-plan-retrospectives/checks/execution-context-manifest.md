@@ -3,9 +3,10 @@
 Re-runs the seven-row decision matrix from
 `plan-marshall:manage-execution-manifest/standards/decision-rules.md` against
 every scanned plan and reports plans whose persisted `execution.toon` disagrees
-with the rule the inputs would fire today. Also surfaces the name-drift signal
-between the standard's canonical phase-5 candidates (`quality-gate`,
-`module-tests`, `coverage`) and project-renamed equivalents.
+with the rule the inputs would fire today. Also surfaces the `name_drift` signal
+by resolving each phase-5 step ID to its `role:` frontmatter and intersecting
+the resolved roles against `{quality-gate, module-tests}`, mirroring the
+composer's Role-Field Intersection.
 
 The deterministic re-derivation lives in `scripts/audit.py`. This sub-document
 is the interpretation guide the orchestrator applies to the rows that check
@@ -31,16 +32,20 @@ compares the derived rule key to the persisted one.
 
 ## Emitted columns
 
-The check emits one summary block plus a rows table:
+The check emits one summary block plus a rows table. The summary block carries
+`genuine_signal_count` — the number of rows that are actionable signals (a
+`drift` verdict or a populated `name_drift`), distinct from `name_drift_count`
+and the per-verdict counts:
 
 ```
-rows[N]{plan_id,verdict,reason,expected_rule,actual_rule,change_type,scope,recipe,affected,modified,name_drift}
+rows[N]{plan_id,verdict,severity,reason,expected_rule,actual_rule,change_type,scope,recipe,affected,modified,name_drift}
 ```
 
 | Column | Meaning |
 |--------|---------|
 | `plan_id` | The scanned plan's directory basename. |
 | `verdict` | One of `ok` / `drift` / `incomplete` / `unloggable` (see below). |
+| `severity` | `genuine` (actionable — a `drift` verdict or a populated `name_drift`) or `informational` (`ok` / `incomplete` / `unloggable`). |
 | `reason` | Short explanation of the verdict. |
 | `expected_rule` | The rule key the inputs would fire today (re-derived). |
 | `actual_rule` | The rule key recorded in `decision.log` (or `-` when absent). |
@@ -49,7 +54,7 @@ rows[N]{plan_id,verdict,reason,expected_rule,actual_rule,change_type,scope,recip
 | `recipe` | The plan-source / recipe-key surrogate. |
 | `affected` | `len(affected_files)`. |
 | `modified` | `len(modified_files)`. |
-| `name_drift` | `true` when `phase_5.verification_steps` contains zero canonical-set entries (see below). |
+| `name_drift` | Populated when a phase-5 step ID resolves to no `role:` frontmatter (unresolvable role) or the resolved roles have zero intersection with `{quality-gate, module-tests}` (see below). Empty otherwise. |
 
 ## Verdict columns
 
@@ -64,15 +69,32 @@ The script bins each plan into exactly one of four verdicts:
 
 ## The name_drift column
 
-The `name_drift` column flags plans whose persisted
-`phase_5.verification_steps` list contains zero entries from the standard's
-canonical set (`quality-gate`, `module-tests`). On projects that renamed their
-candidates, Row 2 / Row 3 / Row 5 of the seven-row matrix intersect against
-names that no longer match — silently producing an empty
-`phase_5.verification_steps`. The column is informational; remediation lives in
-`manage-execution-manifest/standards/decision-rules.md` (introduce a
-canonical-name alias map) or in the project's `marshal.json` (rename candidates
-back to canonical names).
+The `name_drift` column is computed by role resolution, not literal-name
+matching. For each step ID in `phase_5.verification_steps`, the script strips any
+namespace prefix (`default:quality_check` → `quality_check`) and resolves the
+step's `role:` frontmatter from
+`marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/{step}.md`
+(e.g. `quality_check.md` → `role: quality-gate`, `build_verify.md` →
+`role: module-tests`). The resolved roles are intersected against
+`{quality-gate, module-tests}`, mirroring the composer's Role-Field Intersection
+(`manage-execution-manifest/standards/decision-rules.md` § "Role-Field
+Intersection").
+
+Genuine drift is exactly one of:
+
+- **Unresolvable role** — a step ID with no standards file or no `role:`
+  frontmatter (the resolver degrades to "unresolved" rather than crashing when
+  the standards directory is absent).
+- **Zero intersection** — a non-empty `phase_5` whose resolved roles do not
+  include `quality-gate` or `module-tests`.
+
+The step IDs `quality_check` and `build_verify` are CORRECT — they resolve to
+roles `quality-gate` and `module-tests` and are NEVER flagged. There is no
+"renamed name" to alias back: a well-composed manifest using the canonical step
+IDs always intersects, regardless of the surface step-ID spelling, because the
+intersection is on roles. A populated `name_drift` therefore points at a real
+composition fault (an unknown step ID, or a manifest carrying steps that do not
+verify code), not a cosmetic rename.
 
 ## How the orchestrator interprets the rows
 
@@ -87,8 +109,17 @@ back to canonical names).
 - **`unloggable`** — informational; cross-check the reported manifest against
   the derived `expected_rule` visually. No lesson candidate unless the visual
   cross-check reveals a genuine mismatch.
-- **`name_drift: true`** — surface as a configuration signal; the remediation
-  is a config/standard change, not a per-plan fix.
+- **populated `name_drift`** (`severity: genuine`) — a real composition fault:
+  either a step ID whose `role:` cannot be resolved, or a manifest whose phase-5
+  steps resolve to no quality-gate/module-tests role. Adjudicate per-row against
+  the `name_drift` reason and treat a recurring shape as a candidate systemic
+  signal (see [`recurring-pattern-detector.md`](recurring-pattern-detector.md)).
+  It is NOT a config/rename signal — there is nothing to rename back.
+
+The `severity` column is the precision gate: only `genuine` rows (a `drift`
+verdict or a populated `name_drift`) are actionable. `informational` rows
+(`ok` / `incomplete` / `unloggable`) and the `genuine_signal_count` summary let
+the orchestrator separate real findings from expected noise.
 
 ## Critical rules
 

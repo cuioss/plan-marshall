@@ -288,6 +288,24 @@ def cmd_start_phase(args: argparse.Namespace) -> dict:
     }
 
 
+def _clamp_worked_to_wall(phase_data: dict, duration_ms: int) -> int:
+    """Bound the agent's worked window to the phase's recorded wall-clock span.
+
+    No single agent can work longer than the phase's own wall-clock span, yet the
+    1-init bootstrap ordering (`status.json.created` written *after* the init
+    agent began working) can forward a `duration_ms` that exceeds the
+    `created → end_time` wall-clock window, persisting a structurally-impossible
+    ``agent_duration_seconds > duration_seconds`` row. When ``duration_seconds`` is
+    present, clamp the worked value to it so the per-phase ``Worked <= Reported
+    (wall)`` invariant always holds; otherwise return the value unchanged. The
+    clamp only ever bounds — it never inflates a worked value below the wall span.
+    """
+    wall_seconds = phase_data.get('duration_seconds')
+    if isinstance(wall_seconds, (int, float)):
+        return min(duration_ms, int(round(float(wall_seconds) * 1000.0)))
+    return duration_ms
+
+
 def cmd_end_phase(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
     phase = args.phase
@@ -322,6 +340,7 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
     tool_uses = _resolve_token_field(args.tool_uses, accumulator, 'tool_uses')
 
     if duration_ms is not None:
+        duration_ms = _clamp_worked_to_wall(phase_data, duration_ms)
         phase_data['agent_duration_ms'] = duration_ms
         phase_data['agent_duration_seconds'] = round(duration_ms / 1000.0, 1)
 
@@ -330,6 +349,16 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
 
     if tool_uses is not None:
         phase_data['tool_uses'] = tool_uses
+
+    # Plan-retrospective spend attribution (default-absent): records the token
+    # total attributable to the plan-retrospective dispatch within this phase
+    # window. The retrospective dispatches under `--phase phase-6-finalize`, so
+    # its spend is otherwise folded into the `[6-finalize]` total with no
+    # separator. The audit's three metrics-related checks read this field to
+    # exclude deliberate-analysis spend; older metrics files simply lack it.
+    retrospective_tokens = getattr(args, 'retrospective_tokens', None)
+    if retrospective_tokens is not None:
+        phase_data['retrospective_tokens'] = retrospective_tokens
 
     data['updated'] = now
     write_metrics(plan_id, data)
@@ -344,6 +373,8 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
         result['duration_seconds'] = phase_data['duration_seconds']
     if total_tokens is not None:
         result['total_tokens'] = total_tokens
+    if retrospective_tokens is not None:
+        result['retrospective_tokens'] = retrospective_tokens
     if accumulator and args.total_tokens is None:
         result['accumulator_used'] = True
 
@@ -838,12 +869,19 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
     tool_uses = _resolve_token_field(args.tool_uses, accumulator, 'tool_uses')
 
     if duration_ms is not None:
+        duration_ms = _clamp_worked_to_wall(prev_data, duration_ms)
         prev_data['agent_duration_ms'] = duration_ms
         prev_data['agent_duration_seconds'] = round(duration_ms / 1000.0, 1)
     if total_tokens is not None:
         prev_data['total_tokens'] = total_tokens
     if tool_uses is not None:
         prev_data['tool_uses'] = tool_uses
+
+    # Plan-retrospective spend attribution on the phase being closed (symmetric
+    # with cmd_end_phase). Default-absent: older metrics files lack the field.
+    retrospective_tokens = getattr(args, 'retrospective_tokens', None)
+    if retrospective_tokens is not None:
+        prev_data['retrospective_tokens'] = retrospective_tokens
 
     # Step 2: start the next phase (mirrors cmd_start_phase semantics).
     start_now = now_utc_iso()
@@ -1514,6 +1552,12 @@ def main() -> int:
     ep.add_argument('--total-tokens', type=int, default=None, help='Total tokens from Task agent <usage>')
     ep.add_argument('--duration-ms', type=int, default=None, help='Duration in ms from Task agent <usage>')
     ep.add_argument('--tool-uses', type=int, default=None, help='Tool use count from Task agent <usage>')
+    ep.add_argument(
+        '--retrospective-tokens',
+        type=int,
+        default=None,
+        help='Tokens attributable to the plan-retrospective dispatch within this phase window (recorded as the retrospective_tokens sub-field; default-absent)',
+    )
     ep.set_defaults(func=cmd_end_phase)
 
     # generate
@@ -1577,6 +1621,12 @@ def main() -> int:
         '--duration-ms', type=int, default=None, help='Agent duration (ms) forwarded to end-phase (optional)'
     )
     pb.add_argument('--tool-uses', type=int, default=None, help='Tool use count forwarded to end-phase (optional)')
+    pb.add_argument(
+        '--retrospective-tokens',
+        type=int,
+        default=None,
+        help='Tokens attributable to the plan-retrospective dispatch within the closing phase window (recorded as the retrospective_tokens sub-field; default-absent)',
+    )
     pb.set_defaults(func=cmd_phase_boundary)
 
     # accumulate-agent-usage
