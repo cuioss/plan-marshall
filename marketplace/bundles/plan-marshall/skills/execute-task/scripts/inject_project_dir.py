@@ -127,7 +127,7 @@ def inject_project_dir(command: str, plan_id: str) -> tuple[str, bool]:
     # A command that already carries an explicit --project-dir is a legacy
     # override; respect it untouched rather than layering --plan-id on top
     # (the two are mutually exclusive on the target script).
-    if _PROJECT_DIR_FLAG in tokens:
+    if _PROJECT_DIR_FLAG in tokens or any(t.startswith(f'{_PROJECT_DIR_FLAG}=') for t in tokens):
         return command, False
 
     # No-double-injection guard: a command that already supplies --plan-id is

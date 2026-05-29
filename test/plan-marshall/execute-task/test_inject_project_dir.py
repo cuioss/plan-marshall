@@ -123,19 +123,21 @@ def test_no_double_injection_with_different_plan_id_value():
 # =============================================================================
 
 
-def test_legacy_project_dir_override_passes_through():
+@pytest.mark.parametrize(
+    'command',
+    [
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --project-dir /some/explicit/worktree --command-args "module-tests"',
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --project-dir=/some/explicit/worktree --command-args "module-tests"',
+    ],
+)
+def test_legacy_project_dir_override_passes_through(command):
     """A command carrying an explicit --project-dir is returned unchanged.
 
     The legacy explicit override is respected — the helper must not inject
     --plan-id on top of an existing --project-dir (the two are mutually
-    exclusive on the target Bucket B script).
+    exclusive on the target Bucket B script). Both the space-separated form
+    (--project-dir /path) and the equals form (--project-dir=/path) are tested.
     """
-    # Arrange
-    command = (
-        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
-        'run --project-dir /some/explicit/worktree --command-args "module-tests"'
-    )
-
     # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
