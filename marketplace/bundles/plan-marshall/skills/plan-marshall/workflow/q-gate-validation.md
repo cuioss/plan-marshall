@@ -120,7 +120,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --audit-plan-id {plan_id}
 ```
 
-**After the Step 4 pass — write the current hash set back to the artifact** (covers both validated and skipped deliverables, so the next re-entry has a complete fingerprint set). Author the TOON body via the Write tool to a `.plan/temp/` file, then persist it through `manage-files write` (never assemble multi-line content inside a shell argument):
+**After the Step 4 pass — write the current hash set back to the artifact** (covers both validated and skipped deliverables, so the next re-entry has a complete fingerprint set). Author the TOON body via the Write tool to a plan-id-scoped `.plan/temp/{plan_id}/` file (scoping the path to `{plan_id}` prevents collisions under concurrent plan execution), then persist it through `manage-files write` (never assemble multi-line content inside a shell argument):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
