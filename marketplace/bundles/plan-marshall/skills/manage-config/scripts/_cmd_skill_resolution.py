@@ -22,6 +22,7 @@ from _config_core import (
     is_nested_domain,
     load_config,
     require_initialized,
+    resolve_bundle_path,
     save_config,
     success_exit,
 )
@@ -424,12 +425,19 @@ def _discover_all_finalize_steps() -> list[dict]:
     claude_skills = Path('.claude/skills')
 
     # Source 1: Built-in steps — read order from workflow/{name}.md or
-    # standards/{name}.md frontmatter (workflow/ takes precedence).
-    skill_dir = BUNDLES_DIR / 'plan-marshall' / 'skills' / 'phase-6-finalize'
+    # standards/{name}.md frontmatter (workflow/ takes precedence). Resolve the
+    # concrete doc path per step via resolve_bundle_path so the versioned
+    # plugin-cache layout is handled (directory-level probing is brittle there).
     for step_name in BUILT_IN_FINALIZE_STEPS:
         bare = step_name.split(':', 1)[1] if ':' in step_name else step_name
-        workflow_path = skill_dir / 'workflow' / f'{bare}.md'
-        doc_path = workflow_path if workflow_path.is_file() else skill_dir / 'standards' / f'{bare}.md'
+        workflow_path = resolve_bundle_path(
+            BUNDLES_DIR, 'plan-marshall', f'skills/phase-6-finalize/workflow/{bare}.md'
+        )
+        doc_path = (
+            workflow_path
+            if workflow_path.is_file()
+            else resolve_bundle_path(BUNDLES_DIR, 'plan-marshall', f'skills/phase-6-finalize/standards/{bare}.md')
+        )
         all_steps.append(
             {
                 'name': step_name,
@@ -478,7 +486,7 @@ def _discover_all_finalize_steps() -> list[dict]:
         if ':' not in step_ref:
             continue
         bundle, skill = step_ref.split(':', 1)
-        skill_md = BUNDLES_DIR / bundle / 'skills' / skill / 'SKILL.md'
+        skill_md = resolve_bundle_path(BUNDLES_DIR, bundle, f'skills/{skill}/SKILL.md')
         description = get_skill_description(step_ref)
         # Fall back to the curated description map when SKILL.md is missing or
         # has no description field (get_skill_description returns the bare

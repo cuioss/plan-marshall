@@ -15,7 +15,10 @@ from file_ops import (  # type: ignore[import-not-found]
     get_tracked_config_dir,
     output_toon,
 )
-from marketplace_bundles import resolve_bundles_root  # type: ignore[import-not-found]
+from marketplace_bundles import (  # type: ignore[import-not-found]
+    resolve_bundle_path,
+    resolve_bundles_root,
+)
 
 # Bundle path for skill description resolution. Resolved by walking up to a
 # plan-marshall bundle ancestor instead of relying on a hard-coded depth.
@@ -168,8 +171,9 @@ def get_skill_description(skill_notation: str) -> str:
             # Project-level skill: resolve from .claude/skills/
             skill_path = Path('.claude') / 'skills' / skill / 'SKILL.md'
         else:
-            # Marketplace skill: resolve from bundles directory
-            skill_path = BUNDLES_DIR / prefix / 'skills' / skill / 'SKILL.md'
+            # Marketplace skill: resolve from bundles directory, handling the
+            # versioned plugin-cache layout via resolve_bundle_path.
+            skill_path = resolve_bundle_path(BUNDLES_DIR, prefix, f'skills/{skill}/SKILL.md')
 
         return _parse_skill_md_description(skill_path, skill_notation)
     except Exception:
