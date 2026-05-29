@@ -18,8 +18,23 @@ The five parametrised cases below cover the public surface:
   ``DEFAULT_BUILD_TIMEOUT``-derived bash timeout.
 * Bucket A ``manage-*`` notation -> legacy TOON (no augmentation).
 * Pinned hint strings match exactly so an LLM can recognise them.
+
+A sixth case (``test_cmd_resolve_cache_tree_layout_emits_augmentation``)
+pins the cache-tree regression that PR #515 closed. ``cmd_resolve``'s
+augmentation path resolves the build skill's ``_CONFIG`` via
+``_MARKETPLACE_BUNDLES_DIR`` (an import-time ``resolve_bundles_root``
+result) plus ``resolve_bundle_path``. Pre-#515 ``_cmd_client`` anchored
+that lookup with ``parents[4]`` index arithmetic that silently produced
+the wrong directory under the versioned plugin-cache layout
+(``<base>/plan-marshall/<version>/skills/...``), so ``_load_build_config``
+returned ``None`` and the four augmentation fields were dropped. The case
+constructs exactly that versioned layout from the real build skill
+scripts, points ``_MARKETPLACE_BUNDLES_DIR`` at it, and asserts all four
+fields survive — failing on the pre-#515 arithmetic, passing on the
+post-#515 ``resolve_bundle_path`` rerouting.
 """
 
+import shutil
 import sys
 import tempfile
 from argparse import Namespace
@@ -27,7 +42,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import load_script_module
+from conftest import get_scripts_dir, load_script_module
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -250,3 +265,91 @@ def test_cmd_resolve_hint_pins_recognition_token(
 
     assert result['bash_timeout_seconds'] == expected_bash_timeout
     assert result['hint'] == expected_hint
+
+
+# =============================================================================
+# Case (f): Cache-tree layout — augmentation survives the versioned plugin-cache
+#           shape (PR #515 regression).
+# =============================================================================
+
+
+# Build skills whose ``scripts/`` directories ``cmd_resolve``'s augmentation
+# path imports from. ``_load_build_config`` loads ``build-pyproject``'s
+# ``_CONFIG``; ``_lookup_bash_timeout`` then imports ``compute_command_key``
+# and the timeout helpers from ``script-shared`` (the ``build`` subtree) and
+# ``manage-run-config``. The cache-tree fixture mirrors each of these under a
+# versioned root so the live resolve path is forced through
+# ``resolve_bundle_path``'s versioned branch.
+_CACHE_TREE_SKILL_SUBPATHS: tuple[str, ...] = (
+    'skills/manage-architecture/scripts',
+    'skills/build-pyproject/scripts',
+    'skills/script-shared/scripts',
+    'skills/manage-run-config/scripts',
+)
+
+
+def _build_cache_tree(base: Path, version: str = '0.1-BETA') -> Path:
+    """Materialise a versioned plugin-cache layout of the real build skills.
+
+    Copies each skill's ``scripts/`` directory from the live marketplace
+    source into ``<base>/plan-marshall/<version>/skills/<skill>/scripts`` —
+    the installed-plugin-cache shape whose depth differs from the
+    marketplace-source shape the pre-#515 ``parents[N]`` anchor assumed.
+
+    Returns the bundles-root anchor (``<base>``) suitable for assignment to
+    ``_cmd_client._MARKETPLACE_BUNDLES_DIR``: ``resolve_bundle_path(base,
+    'plan-marshall', subpath)`` walks ``base/plan-marshall/<version>/subpath``.
+    """
+    versioned_root = base / 'plan-marshall' / version
+    for subpath in _CACHE_TREE_SKILL_SUBPATHS:
+        skill_scripts_src = get_scripts_dir('plan-marshall', subpath.split('/')[1])
+        dest = versioned_root / subpath
+        shutil.copytree(skill_scripts_src, dest, ignore=shutil.ignore_patterns('__pycache__'))
+    return base
+
+
+def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, monkeypatch):
+    """Augmentation fields survive the versioned plugin-cache layout (PR #515).
+
+    Builds the versioned ``<base>/plan-marshall/<version>/skills/...`` cache
+    tree, repoints ``_cmd_client._MARKETPLACE_BUNDLES_DIR`` at it, and runs
+    ``cmd_resolve`` for a Bucket B ``verify`` command. With a persisted
+    timeout above the ceiling, all four augmentation fields MUST be present
+    and carry the orchestrator-tier values.
+
+    Pre-#515 the ``parents[4]`` anchor resolved the build-config module path
+    to a non-existent directory under this layout, so ``_load_build_config``
+    returned ``None`` and the four fields were silently dropped — this case
+    failed. Post-#515 ``resolve_bundle_path`` reroutes through the versioned
+    subdir and the fields are emitted.
+    """
+    _set_persisted_timeout(isolated_run_config, 'python:verify_plan_marshall', 800)
+
+    original_path = list(sys.path)
+    original_modules = dict(sys.modules)
+
+    try:
+        with tempfile.TemporaryDirectory() as cache_dir:
+            cache_base = _build_cache_tree(Path(cache_dir))
+            # Repoint the bundles-root anchor at the versioned cache tree. This is
+            # the value pre-#515 arithmetic mis-resolved; resolve_bundle_path()
+            # must now find the build-config module under the <version> subdir.
+            monkeypatch.setattr(_cmd_client, '_MARKETPLACE_BUNDLES_DIR', cache_base)
+
+            with tempfile.TemporaryDirectory() as project_dir:
+                _seed_single_module(project_dir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
+
+                args = Namespace(project_dir=project_dir, resolve_command='verify', module=None)
+                result = cmd_resolve(args)
+    finally:
+        sys.path[:] = original_path
+        sys.modules.clear()
+        sys.modules.update(original_modules)
+
+    assert result['status'] == 'success'
+    assert result['executable'] == _PYPROJECT_VERIFY_EXECUTABLE
+    # The four augmentation fields MUST survive the cache-tree resolution.
+    assert result['bash_timeout_seconds'] == 1030
+    assert result['exceeds_bash_ceiling'] is True
+    assert result['execution_tier'] == 'orchestrator'
+    assert result['hint'] == 'Exceeds Bash ceiling; orchestrator-tier only'

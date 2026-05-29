@@ -279,7 +279,7 @@ Parse the TOON output. On `status: rejected` (lease violation — remote moved s
 After the force-push, wait for CI to complete on the rebased branch before proceeding to merge:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} ci wait \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} checks wait \
     --pr-number {pr_number}
 ```
 
@@ -452,7 +452,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 **Only if PR was just merged** (state was open):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} ci wait \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} checks wait \
     --pr-number {pr_number}
 ```
 
