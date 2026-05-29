@@ -325,18 +325,26 @@ def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, m
     """
     _set_persisted_timeout(isolated_run_config, 'python:verify_plan_marshall', 800)
 
-    with tempfile.TemporaryDirectory() as cache_dir:
-        cache_base = _build_cache_tree(Path(cache_dir))
-        # Repoint the bundles-root anchor at the versioned cache tree. This is
-        # the value pre-#515 arithmetic mis-resolved; resolve_bundle_path()
-        # must now find the build-config module under the <version> subdir.
-        monkeypatch.setattr(_cmd_client, '_MARKETPLACE_BUNDLES_DIR', cache_base)
+    original_path = list(sys.path)
+    original_modules = dict(sys.modules)
 
-        with tempfile.TemporaryDirectory() as project_dir:
-            _seed_single_module(project_dir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
+    try:
+        with tempfile.TemporaryDirectory() as cache_dir:
+            cache_base = _build_cache_tree(Path(cache_dir))
+            # Repoint the bundles-root anchor at the versioned cache tree. This is
+            # the value pre-#515 arithmetic mis-resolved; resolve_bundle_path()
+            # must now find the build-config module under the <version> subdir.
+            monkeypatch.setattr(_cmd_client, '_MARKETPLACE_BUNDLES_DIR', cache_base)
 
-            args = Namespace(project_dir=project_dir, resolve_command='verify', module=None)
-            result = cmd_resolve(args)
+            with tempfile.TemporaryDirectory() as project_dir:
+                _seed_single_module(project_dir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
+
+                args = Namespace(project_dir=project_dir, resolve_command='verify', module=None)
+                result = cmd_resolve(args)
+    finally:
+        sys.path[:] = original_path
+        sys.modules.clear()
+        sys.modules.update(original_modules)
 
     assert result['status'] == 'success'
     assert result['executable'] == _PYPROJECT_VERIFY_EXECUTABLE
