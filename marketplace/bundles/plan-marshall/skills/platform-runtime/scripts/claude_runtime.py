@@ -1122,7 +1122,7 @@ class ClaudeRuntime(Runtime):
         icon = _ICON_ACTIVE
         if not statusline:
             try:
-                raw_payload = sys.stdin.read()
+                raw_payload = sys.stdin.read() if not sys.stdin.isatty() else ""
                 payload = json.loads(raw_payload) if raw_payload.strip() else {}
                 if isinstance(payload, dict):
                     icon = _resolve_icon(
