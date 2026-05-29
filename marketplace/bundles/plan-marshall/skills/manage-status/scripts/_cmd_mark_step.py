@@ -84,7 +84,7 @@ def _worktree_is_dirty(worktree_path: str) -> bool:
         ['git', '-C', worktree_path, 'status', '--porcelain'],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
     )
     return bool(completed.stdout.strip())
 
