@@ -93,12 +93,12 @@ _PAIR_TOKENS: list[tuple[str, str]] = [
 # left operand of an `in` membership/substring test. The optional trailing `=`
 # (group 2) marks the equals-form variant.
 _FLAG_MEMBERSHIP_GUARD = re.compile(
-    r"""(['"])(--[A-Za-z][A-Za-z0-9-]*?)(=?)\1\s+in\b"""
+    r"""(['"])(--[A-Za-z][A-Za-z0-9_-]*)(=?)\1\s+in\b"""
 )
 # Group 1 captures the guarded `--flag` token passed to a `.startswith(...)`
 # check; the optional trailing `=` (group 2) marks the equals-form variant.
 _FLAG_STARTSWITH_GUARD = re.compile(
-    r"""\.startswith\s*\(\s*(['"])(--[A-Za-z][A-Za-z0-9-]*?)(=?)\1"""
+    r"""\.startswith\s*\(\s*(['"])(--[A-Za-z][A-Za-z0-9_-]*)(=?)\1"""
 )
 
 # Keep-identifier marker detection
