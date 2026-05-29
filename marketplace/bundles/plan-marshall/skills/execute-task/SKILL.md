@@ -108,31 +108,26 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 After all steps complete, run task verification using commands from `task.verification.commands`.
 
-**Sub-step: Auto-inject `--project-dir` for Bucket B commands**
+**Sub-step: Auto-inject `--plan-id` for Bucket B commands**
 
-When the plan resolves to an active worktree, before executing any `task.verification.commands[N]`, first resolve the worktree path from `plan_id`:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
-  --plan-id {plan_id}
-```
-
-Capture the returned `worktree_path`. If non-empty, forward it to the helper (the helper still accepts `--worktree-path` as its structural argument; the caller resolves the path from `plan_id` rather than receiving it as a leaked input):
+When the plan resolves to an active worktree, before executing any `task.verification.commands[N]`, route the command through the injection helper, passing `--plan-id {plan_id}` directly:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:execute-task:inject_project_dir \
-  run --command "{verification_command}" --worktree-path "{resolved_worktree_path}"
+  run --command "{verification_command}" --plan-id {plan_id}
 ```
+
+Injecting `--plan-id` (rather than `--project-dir {worktree_path}`) routes the executor's two-tier audit-log entry to the plan-scoped `.plan/local/plans/{plan_id}/logs/script-execution.log` — the log the `pre-commit-verify-freshness` gate reads — and lets the Bucket B script auto-resolve the worktree path itself via its `--plan-id`/`--project-dir` two-state contract. No separate `get-worktree-path` resolution is required.
 
 Parse the TOON output from the script's stdout. Use the `rewritten_command` value as the command to execute. When `injected` is `true`, log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --project-dir for {notation} (resolved from --plan-id {plan_id})"
+  --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --plan-id for {notation} (routes build log to plan-scoped script-execution.log)"
 ```
 
-The helper whitelists the eight Bucket B notations from `plan-marshall:tools-script-executor/standards/cwd-policy.md`; Bucket A `manage-*` notations and unknown notations pass through unchanged. The helper also skips injection when the command already supplies `--plan-id` (the target script's two-state contract auto-resolves the worktree itself, and adding `--project-dir` on top would trigger `mutually_exclusive_args`). See `scripts/inject_project_dir.py` for the authoritative whitelist.
+The helper whitelists the eight Bucket B notations from `plan-marshall:tools-script-executor/standards/cwd-policy.md`; Bucket A `manage-*` notations and unknown notations pass through unchanged. The helper skips injection when the command already supplies `--plan-id` (no double injection) and when it already supplies an explicit `--project-dir` (a legacy override is respected untouched). See `scripts/inject_project_dir.py` for the authoritative whitelist.
 
 **Safety net** (should not trigger in normal operation): If verification commands are missing, log a WARNING and resolve from architecture:
 
@@ -332,16 +327,16 @@ Run verification commands without modifying files.
 
    Capture the returned `worktree_path`. When `metadata.use_worktree == false` the returned path is empty — skip the auto-injection sub-step below and execute each raw `step.target` directly against the main checkout.
 
-2. **Execute Verification Steps with `--project-dir` Auto-Injection**: Steps contain verification commands (not file paths). Execute sequentially. For each `step.target`:
+2. **Execute Verification Steps with `--plan-id` Auto-Injection**: Steps contain verification commands (not file paths). Execute sequentially. For each `step.target`:
 
-   a. Route the command through the existing injection helper:
+   a. Route the command through the injection helper, passing `--plan-id {plan_id}`:
 
       ```bash
       python3 .plan/execute-script.py plan-marshall:execute-task:inject_project_dir \
-        run --command "{step.target}" --worktree-path "{resolved_worktree_path}"
+        run --command "{step.target}" --plan-id {plan_id}
       ```
 
-      Parse the `TOON` output. Use the `rewritten_command` value as the command to execute. When `worktree_path` is empty (main-checkout flow), skip the helper and execute the raw `step.target`.
+      Parse the `TOON` output. Use the `rewritten_command` value as the command to execute. When the worktree path resolved in Step 1 is empty (main-checkout flow), skip the helper and execute the raw `step.target`. Injecting `--plan-id` routes the executor's audit-log entry to the plan-scoped `script-execution.log` and lets the Bucket B script auto-resolve the worktree via its two-state contract.
 
    b. Execute the resulting command with a Bash timeout derived from the architecture-resolved canonical envelope. See `plan-marshall:dev-agent-behavior-rules` § "Bash: Timeout from architecture-resolved canonical command" for the authoritative rule: read `bash_timeout_seconds` and `execution_tier` from the resolved TOON, pass `timeout: bash_timeout_seconds * 1000` when `execution_tier=per_task`, and hand off to the orchestrator when `execution_tier=orchestrator`. The 600000ms floor still applies to ad-hoc invocations that do not flow through architecture resolve, and matches `CLAUDE.md` § Build Commands.
 
@@ -350,10 +345,10 @@ Run verification commands without modifying files.
       ```bash
       python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
         work --plan-id {plan_id} --level INFO \
-        --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --project-dir for {notation} (resolved from --plan-id {plan_id})"
+        --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --plan-id for {notation} (routes build log to plan-scoped script-execution.log)"
       ```
 
-   Check exit code and output of the executed command. This step mirrors the Common Workflow → Step: Run Verification sub-step; see that section for the authoritative whitelist of `Bucket B` notations, the no-inject pass-through rule for `Bucket A` `manage-*` notations, and the rationale for skipping injection when the command already supplies `--plan-id`.
+   Check exit code and output of the executed command. This step mirrors the Common Workflow → Step: Run Verification sub-step; see that section for the authoritative whitelist of `Bucket B` notations, the no-inject pass-through rule for `Bucket A` `manage-*` notations, and the rationale for skipping injection when the command already supplies `--plan-id` or an explicit `--project-dir`.
 
 3. **Mark Step Complete** (common step)
 4. **Handle Failures**: This is a verification task — do NOT modify source files. Report failures with structured output for triage. If verification fails, mark task as `blocked`.

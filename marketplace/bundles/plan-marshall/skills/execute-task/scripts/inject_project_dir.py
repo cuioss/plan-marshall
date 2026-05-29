@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Forward `--project-dir` to Bucket B executor invocations.
+"""Forward `--plan-id` to Bucket B executor invocations.
 
 This helper rewrites `python3 .plan/execute-script.py {notation} run ...`
 commands so that Bucket B notations (build / CI / Sonar / PR-doctor) always
-carry `--project-dir {worktree_path}` when a plan runs in an isolated git
-worktree. Bucket A `manage-*` notations are cwd-agnostic and are returned
-unchanged, as are non-executor commands and any command that already contains
-`--project-dir`.
+carry `--plan-id {plan_id}` when a plan runs in an isolated git worktree.
+Injecting `--plan-id` (rather than `--project-dir {worktree_path}`) routes the
+executor's two-tier audit-log entry to the plan-scoped
+`.plan/local/plans/{plan_id}/logs/script-execution.log` — the log the
+`pre-commit-verify-freshness` gate reads — and lets the Bucket B script
+auto-resolve the worktree path itself via its `--plan-id`/`--project-dir`
+two-state contract.
+
+Bucket A `manage-*` notations are cwd-agnostic and are returned unchanged, as
+are non-executor commands, any command that already contains `--plan-id` (no
+double injection), and any command that already contains `--project-dir` (a
+legacy explicit override is respected untouched).
 
 See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the
 authoritative Bucket A/B split.
@@ -15,13 +23,13 @@ Usage (programmatic)::
 
     from inject_project_dir import inject_project_dir
 
-    rewritten, injected = inject_project_dir(command, worktree_path)
+    rewritten, injected = inject_project_dir(command, plan_id)
 
 Usage (CLI)::
 
     python3 inject_project_dir.py run \\
         --command "python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args 'module-tests'" \\
-        --worktree-path /path/to/worktree
+        --plan-id my-plan-id
 """
 
 import argparse
@@ -73,24 +81,31 @@ def _find_notation_index(tokens: list[str]) -> int | None:
     return None
 
 
-def inject_project_dir(command: str, worktree_path: str) -> tuple[str, bool]:
-    """Forward --project-dir to Bucket B execute-script invocations.
+def inject_project_dir(command: str, plan_id: str) -> tuple[str, bool]:
+    """Forward --plan-id to Bucket B execute-script invocations.
+
+    The function name is retained as the stable module entry point — it is the
+    ``inject_project_dir`` notation referenced by ``execute-task`` and the
+    executor mappings. Despite the legacy name, the current contract injects
+    ``--plan-id`` (NOT ``--project-dir``); see the module docstring above for
+    why plan-id forwarding replaced the former worktree-path injection.
 
     Args:
         command: The original shell command string to inspect and possibly
             rewrite. Parsed with :func:`shlex.split`.
-        worktree_path: Absolute path to the active git worktree root. Inserted
-            verbatim as the value for ``--project-dir`` when injection
-            applies.
+        plan_id: Plan identifier inserted verbatim as the value for
+            ``--plan-id`` when injection applies. The Bucket B script resolves
+            the worktree path itself from this flag via its two-state contract,
+            and the executor routes the audit-log entry to the plan-scoped log.
 
     Returns:
         A tuple ``(rewritten_command, injected)``. ``injected`` is ``True``
         only when the command was actually modified. Bucket A ``manage-*``
         notations, non-Bucket-B notations, non-executor commands, any
-        command that already contains ``--project-dir``, and any command
-        that already contains ``--plan-id`` (the script will auto-resolve
-        via the two-state contract) return the original command string
-        unchanged with ``injected=False``.
+        command that already contains ``--project-dir`` (legacy explicit
+        override respected), and any command that already contains
+        ``--plan-id`` (no double injection) return the original command
+        string unchanged with ``injected=False``.
     """
     try:
         tokens = shlex.split(command)
@@ -109,25 +124,27 @@ def inject_project_dir(command: str, worktree_path: str) -> tuple[str, bool]:
     if notation not in _BUCKET_B_NOTATIONS:
         return command, False
 
-    if _PROJECT_DIR_FLAG in tokens:
+    # A command that already carries an explicit --project-dir is a legacy
+    # override; respect it untouched rather than layering --plan-id on top
+    # (the two are mutually exclusive on the target script).
+    if _PROJECT_DIR_FLAG in tokens or any(t.startswith(f'{_PROJECT_DIR_FLAG}=') for t in tokens):
         return command, False
 
-    # If the command already supplies --plan-id, the target script's
-    # two-state contract resolves the worktree path itself. Injecting
-    # --project-dir on top would trigger ``mutually_exclusive_args`` and
-    # fail the run, so we leave the command untouched.
+    # No-double-injection guard: a command that already supplies --plan-id is
+    # returned unchanged — the target script's two-state contract already
+    # resolves the worktree path itself.
     if _PLAN_ID_FLAG in tokens or any(t.startswith(f'{_PLAN_ID_FLAG}=') for t in tokens):
         return command, False
 
     # Executor contract: `{notation} run ...`. Only inject when `run` appears
     # immediately after the notation; other subcommands (e.g., help) are
-    # out-of-scope for project-dir forwarding.
+    # out-of-scope for plan-id forwarding.
     run_index = notation_index + 1
     if run_index >= len(tokens) or tokens[run_index] != 'run':
         return command, False
 
-    # Insert `--project-dir {worktree_path}` immediately after `run`.
-    rewritten_tokens = tokens[: run_index + 1] + [_PROJECT_DIR_FLAG, worktree_path] + tokens[run_index + 1 :]
+    # Insert `--plan-id {plan_id}` immediately after `run`.
+    rewritten_tokens = tokens[: run_index + 1] + [_PLAN_ID_FLAG, plan_id] + tokens[run_index + 1 :]
     return shlex.join(rewritten_tokens), True
 
 
@@ -145,7 +162,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     Callers parse the TOON and drive conditional logging off ``injected``.
     Exit code is ``0`` on success.
     """
-    rewritten, injected = inject_project_dir(args.command, args.worktree_path)
+    rewritten, injected = inject_project_dir(args.command, args.plan_id)
     print(
         serialize_toon(
             {
@@ -162,7 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser with a single `run` subcommand."""
     parser = argparse.ArgumentParser(
         description=(
-            'Forward --project-dir to Bucket B execute-script invocations. '
+            'Forward --plan-id to Bucket B execute-script invocations. '
             'Leaves Bucket A and non-executor commands unchanged.'
         ),
         allow_abbrev=False,
@@ -180,10 +197,10 @@ def build_parser() -> argparse.ArgumentParser:
         help='The original shell command string to inspect and possibly rewrite',
     )
     run_parser.add_argument(
-        '--worktree-path',
+        '--plan-id',
         required=True,
-        dest='worktree_path',
-        help='Absolute path to the active git worktree root',
+        dest='plan_id',
+        help='Plan identifier injected as the value for --plan-id',
     )
     run_parser.set_defaults(func=cmd_run)
 
