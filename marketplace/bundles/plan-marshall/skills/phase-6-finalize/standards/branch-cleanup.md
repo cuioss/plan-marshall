@@ -280,7 +280,7 @@ After the force-push, wait for CI to complete on the rebased branch before proce
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} ci wait \
-    --pr-number {pr_number}
+    --pr-number {pr_number} --timeout {ci.checks_wait_timeout_seconds}
 ```
 
 **Bash tool timeout**: 1800000ms (30-minute safety net).
@@ -412,7 +412,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} ci wait \
-    --pr-number {pr_number}
+    --pr-number {pr_number} --timeout {ci.checks_wait_timeout_seconds}
 ```
 
 **Bash tool timeout**: 1800000ms (30-minute safety net).
