@@ -2,9 +2,10 @@
 """Deterministic candidate surfacing for the pre-submission-self-review finalize step.
 
 Reads the worktree's diff against the base branch, scans added lines in modified
-files, and emits seven candidate lists (regexes, user-facing strings, markdown
-sections, symmetric-pair functions, contract sources, schema-bearing files,
-keep-identifier markers) as TOON for the LLM cognitive review pass to consume.
+files, and emits eight candidate lists (regexes, user-facing strings, markdown
+sections, symmetric-pair functions, flag-guard pairs, contract sources,
+schema-bearing files, keep-identifier markers) as TOON for the LLM cognitive
+review pass to consume.
 
 Storage: stateless — reads the worktree diff and the plan's references.modified_files.
 Output: TOON to stdout.
@@ -79,6 +80,26 @@ _PAIR_TOKENS: list[tuple[str, str]] = [
     ('open', 'close'),
     ('start', 'stop'),
 ]
+
+# Flag-guard-pair detection
+# Recognizes argument-presence guards over a `--flag` token in added .py lines:
+# membership tests (`'--flag' in args`), substring tests (`'--flag' in argv`),
+# and startswith checks (`arg.startswith('--flag')`). For each guarded flag the
+# detector classifies which flag *forms* the guard covers — the bare token
+# guards the space-separated form (`--flag value`); the `--flag=` prefix guards
+# the equals form (`--flag=value`).
+#
+# Group 1 captures the guarded `--flag` token from a quoted literal that is the
+# left operand of an `in` membership/substring test. The optional trailing `=`
+# (group 2) marks the equals-form variant.
+_FLAG_MEMBERSHIP_GUARD = re.compile(
+    r"""(['"])(--[A-Za-z][A-Za-z0-9_-]*)(=?)\1\s+in\b"""
+)
+# Group 1 captures the guarded `--flag` token passed to a `.startswith(...)`
+# check; the optional trailing `=` (group 2) marks the equals-form variant.
+_FLAG_STARTSWITH_GUARD = re.compile(
+    r"""\.startswith\s*\(\s*(['"])(--[A-Za-z][A-Za-z0-9_-]*)(=?)\1"""
+)
 
 # Keep-identifier marker detection
 # Shape: <!-- self-review: keep <identifier> -->
@@ -599,6 +620,66 @@ def _detect_symmetric_pairs(added: list[tuple[str, int, str]]) -> list[dict[str,
     return out
 
 
+def _detect_flag_guard_pairs(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
+    """Detect argument-presence guards over a ``--flag`` token and classify the
+    flag *forms* each guard covers.
+
+    Scans added ``.py`` lines for membership/substring guards
+    (``'--flag' in args``) and ``startswith`` guards
+    (``arg.startswith('--flag')``). The bare ``--flag`` token guards the
+    space-separated form (``--flag value``); the ``--flag=`` prefix guards the
+    equals form (``--flag=value``).
+
+    Aggregates per ``(file, flag)``: when a flag is guarded only by its bare
+    token the coverage is ``space``; only by its ``--flag=`` prefix it is
+    ``equals``; when both appear in the same file it is ``both``. The ``line``
+    field records the first guard occurrence for the flag in the file. The
+    aggregation is what lets the cognitive review compare form coverage across
+    two sibling guards in the same change — a ``both``/single-form asymmetry is
+    the flag-form-coverage defect class.
+    """
+    # Per (file, flag): track covered forms and the first occurrence line.
+    coverage: dict[tuple[str, str], set[str]] = {}
+    first_line: dict[tuple[str, str], int] = {}
+    order: list[tuple[str, str]] = []
+
+    def _record(path: str, lineno: int, flag: str, has_equals: bool) -> None:
+        key = (path, flag)
+        if key not in coverage:
+            coverage[key] = set()
+            first_line[key] = lineno
+            order.append(key)
+        coverage[key].add('equals' if has_equals else 'space')
+
+    for path, lineno, content in added:
+        if not path.endswith('.py'):
+            continue
+        for m in _FLAG_MEMBERSHIP_GUARD.finditer(content):
+            _record(path, lineno, m.group(2), bool(m.group(3)))
+        for m in _FLAG_STARTSWITH_GUARD.finditer(content):
+            _record(path, lineno, m.group(2), bool(m.group(3)))
+
+    out: list[dict[str, Any]] = []
+    for key in order:
+        forms = coverage[key]
+        if forms == {'space', 'equals'}:
+            forms_covered = 'both'
+        elif forms == {'equals'}:
+            forms_covered = 'equals'
+        else:
+            forms_covered = 'space'
+        path, flag = key
+        out.append(
+            {
+                'file': path,
+                'line': first_line[key],
+                'flag': flag,
+                'forms_covered': forms_covered,
+            }
+        )
+    return out
+
+
 # =============================================================================
 # Subcommand: surface
 # =============================================================================
@@ -661,6 +742,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     user_facing = _detect_user_facing_strings(added)
     md_sections = _detect_markdown_sections(added, project_dir)
     sym_pairs = _detect_symmetric_pairs(added)
+    flag_guard_pairs = _detect_flag_guard_pairs(added)
     contract_sources, schema_bearing = _detect_contract_sources(modified_files, project_dir, args.contract_radius)
     keep_markers, protected_identifiers = _detect_keep_markers(added, project_dir)
 
@@ -674,16 +756,25 @@ def _cmd_surface(args: argparse.Namespace) -> int:
             'user_facing_strings': len(user_facing),
             'markdown_sections': len(md_sections),
             'symmetric_pairs': len(sym_pairs),
+            'flag_guard_pairs': len(flag_guard_pairs),
             'contract_sources': len(contract_sources),
             'schema_bearing_files': len(schema_bearing),
             'keep_markers': len(keep_markers),
             'protected_identifiers': len(protected_identifiers),
-            'total': len(regexes) + len(user_facing) + len(md_sections) + len(sym_pairs) + len(keep_markers),
+            'total': (
+                len(regexes)
+                + len(user_facing)
+                + len(md_sections)
+                + len(sym_pairs)
+                + len(flag_guard_pairs)
+                + len(keep_markers)
+            ),
         },
         'regexes': regexes,
         'user_facing_strings': user_facing,
         'markdown_sections': md_sections,
         'symmetric_pairs': sym_pairs,
+        'flag_guard_pairs': flag_guard_pairs,
         'contract_sources': contract_sources,
         'schema_bearing_files': schema_bearing,
         'keep_markers': keep_markers,
@@ -707,7 +798,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_surface = sub.add_parser(
         'surface',
-        help='Emit candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, contract sources, schema-bearing files, keep markers) from the worktree diff as TOON.',
+        help='Emit candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers) from the worktree diff as TOON.',
         allow_abbrev=False,
     )
     add_plan_id_arg(p_surface)

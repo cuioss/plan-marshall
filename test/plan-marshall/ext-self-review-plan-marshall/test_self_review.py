@@ -6,6 +6,7 @@ from pathlib import Path  # noqa: I001
 import pytest
 from self_review import (  # type: ignore[import-not-found]
     _detect_contract_sources,
+    _detect_flag_guard_pairs,
     _detect_keep_markers,
     _detect_markdown_sections,
     _detect_regexes,
@@ -223,6 +224,76 @@ class TestDetectSymmetricPairs:
 
 
 # =============================================================================
+# Test: _detect_flag_guard_pairs
+# =============================================================================
+
+
+class TestDetectFlagGuardPairs:
+    def test_guard_covering_both_forms_is_both(self):
+        added = [
+            ('inject.py', 5, "    if '--plan-id' in args:"),
+            ('inject.py', 6, "    if '--plan-id=' in args:"),
+        ]
+        out = _detect_flag_guard_pairs(added)
+        assert len(out) == 1
+        entry = out[0]
+        assert entry['file'] == 'inject.py'
+        assert entry['flag'] == '--plan-id'
+        assert entry['forms_covered'] == 'both'
+        # line records the first guard occurrence for the flag.
+        assert entry['line'] == 5
+
+    def test_guard_covering_only_space_form_is_space(self):
+        added = [('inject.py', 10, "    if '--project-dir' in args:")]
+        out = _detect_flag_guard_pairs(added)
+        assert len(out) == 1
+        assert out[0]['flag'] == '--project-dir'
+        assert out[0]['forms_covered'] == 'space'
+        assert out[0]['line'] == 10
+
+    def test_guard_covering_only_equals_form_is_equals(self):
+        added = [('inject.py', 12, "    if '--project-dir=' in argv:")]
+        out = _detect_flag_guard_pairs(added)
+        assert len(out) == 1
+        assert out[0]['flag'] == '--project-dir'
+        assert out[0]['forms_covered'] == 'equals'
+
+    def test_startswith_guard_is_recognized(self):
+        added = [('inject.py', 3, '    if arg.startswith("--plan-id="):')]
+        out = _detect_flag_guard_pairs(added)
+        assert len(out) == 1
+        assert out[0]['flag'] == '--plan-id'
+        assert out[0]['forms_covered'] == 'equals'
+
+    def test_asymmetric_pair_one_both_one_single_form(self):
+        # Replays the PR #508 scenario: --plan-id covers both forms, while its
+        # sibling --project-dir covers only the space form.
+        added = [
+            ('inject.py', 1, "    if '--plan-id' in args or '--plan-id=' in args:"),
+            ('inject.py', 4, "    if '--project-dir' in args:"),
+        ]
+        out = _detect_flag_guard_pairs(added)
+        by_flag = {e['flag']: e['forms_covered'] for e in out}
+        assert by_flag == {'--plan-id': 'both', '--project-dir': 'space'}
+
+    def test_no_flag_guard_returns_empty(self):
+        added = [('inject.py', 1, '    total = len(items) + 1')]
+        out = _detect_flag_guard_pairs(added)
+        assert out == []
+
+    def test_skips_non_python_files(self):
+        added = [('doc.md', 1, "if '--plan-id' in args:")]
+        out = _detect_flag_guard_pairs(added)
+        assert out == []
+
+    def test_every_entry_carries_required_fields(self):
+        added = [("inject.py", 7, "    if '--flag' in args:")]
+        out = _detect_flag_guard_pairs(added)
+        assert len(out) == 1
+        assert set(out[0].keys()) == {'file', 'line', 'flag', 'forms_covered'}
+
+
+# =============================================================================
 # Test: empty diff edge case
 # =============================================================================
 
@@ -236,6 +307,7 @@ class TestEmptyDiff:
         assert _detect_user_facing_strings([]) == []
         assert _detect_markdown_sections([], tmp_path) == []
         assert _detect_symmetric_pairs([]) == []
+        assert _detect_flag_guard_pairs([]) == []
 
 
 # =============================================================================

@@ -1,6 +1,6 @@
 ---
 name: ext-self-review-plan-marshall
-description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, contract sources, schema-bearing files) for pre-submission structural self-review.
+description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files) for pre-submission structural self-review.
 user-invocable: false
 implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing
 ---
@@ -44,11 +44,11 @@ Authors can flag identifiers that are load-bearing for grep-based external tests
 - **Identifier still grep-able** → candidate kind `keep_protected`. The identifier joins the surface's `protected_identifiers` set so the LLM review knows to refuse any consolidation that would drop the token in a subsequent revision.
 - **Identifier no longer grep-able** → candidate kind `keep_violation`. The marker is orphaned — the consolidation under review has already removed the protected token. The LLM review surfaces this as a refusal-grade defect.
 
-The marker is a pure structural signal — no LLM call is added to the surface scan; the detector emits a `keep_markers` candidate list and a `protected_identifiers` set alongside the existing four heuristic lists. See the `keep_markers[]` and `protected_identifiers[]` shapes under § Output below.
+The marker is a pure structural signal — no LLM call is added to the surface scan; the detector emits a `keep_markers` candidate list and a `protected_identifiers` set alongside the other heuristic lists. See the `keep_markers[]` and `protected_identifiers[]` shapes under § Output below.
 
 ## Subcommand: `surface`
 
-Surfaces seven candidate lists from the worktree's staged diff against the base branch.
+Surfaces eight candidate lists from the worktree's staged diff against the base branch.
 
 ### Inputs
 
@@ -73,11 +73,12 @@ counts:
   user_facing_strings: N2
   markdown_sections: N3
   symmetric_pairs: N4
-  contract_sources: N5
-  schema_bearing_files: N6
-  keep_markers: N7
-  protected_identifiers: N8
-  total: N1+N2+N3+N4+N7
+  flag_guard_pairs: N5
+  contract_sources: N6
+  schema_bearing_files: N7
+  keep_markers: N8
+  protected_identifiers: N9
+  total: N1+N2+N3+N4+N5+N8
 
 regexes[N1]{file,line,pattern}:
   {repo-relative-path},{line},{regex-pattern-string}
@@ -91,20 +92,23 @@ markdown_sections[N3]{file,line,heading,siblings}:
 symmetric_pairs[N4]{file,line,name,partner}:
   {repo-relative-path},{line},{function-name},{inferred-partner-name}
 
-contract_sources[N5]{file,sources}:
+flag_guard_pairs[N5]{file,line,flag,forms_covered}:
+  {repo-relative-path},{line},{--flag},{space|equals|both}
+
+contract_sources[N6]{file,sources}:
   {repo-relative-path},{semicolon-joined-contract-source-paths}
 
-schema_bearing_files[N6]{file,format}:
+schema_bearing_files[N7]{file,format}:
   {repo-relative-path},{json|toon}
 
-keep_markers[N7]{file,line,identifier,kind}:
+keep_markers[N8]{file,line,identifier,kind}:
   {repo-relative-path},{line},{identifier},{keep_protected|keep_violation}
 
-protected_identifiers[N8]:
+protected_identifiers[N9]:
   {identifier}
 ```
 
-> The `total` count covers the five line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `keep_markers`) only. `contract_sources` and `schema_bearing_files` are review-anchor categories with their own counts; they are not summed into `total` because each modified file contributes at most one `contract_sources` entry whose payload is references rather than candidates. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
+> The `total` count covers the six line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`) only. `contract_sources` and `schema_bearing_files` are review-anchor categories with their own counts; they are not summed into `total` because each modified file contributes at most one `contract_sources` entry whose payload is references rather than candidates. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
 
 ### Detection Rules
 
@@ -132,11 +136,13 @@ protected_identifiers[N8]:
 
 4. **Symmetric-pair candidates** — added lines in `.py` files matching `^def\s+(\w+)`. The captured function name is split on `_` and inspected for any of the 6 pair tokens: `save/load`, `init/restore`, `push/pop`, `acquire/release`, `open/close`, `start/stop`. When a match is found, the `partner` field is the same function name with the matched token swapped to its pair (e.g., `save_state` → `load_state`).
 
-5. **Contract sources** — for each path in `references.modified_files`, walk up the directory tree (bounded by `--project-dir`) looking for the nearest ancestor containing `SKILL.md`. When found, the `sources` field is a `; `-joined list of repo-relative paths to that `SKILL.md` plus every `*.md` under the same skill's `standards/` subdirectory. Modified files outside any skill directory contribute no entry. The list anchors the LLM cognitive review on the contract documents that govern the changed code.
+5. **Flag-guard pairs** — added lines in `.py` files containing an argument-presence guard over a `--flag` token. Two guard shapes are recognized: membership/substring tests where a quoted `--flag` literal is the left operand of an `in` test (e.g., `'--project-dir' in args`, `'--plan-id=' in argv`) and `startswith` checks over a quoted `--flag` literal (e.g., `arg.startswith('--project-dir')`). For each guarded flag the detector classifies which flag *forms* the guard covers: the bare `--flag` token guards the **space-separated** form (`--flag value`), and the `--flag=` prefix guards the **equals** form (`--flag=value`). Coverage is aggregated per `(file, flag)` across all guards in the file — `space` when only the bare token appears, `equals` when only the `--flag=` prefix appears, and `both` when both appear. The `line` field records the first guard occurrence for the flag in the file. The list anchors the cognitive review's flag-form-coverage comparison: when one guard in a symmetric pair covers `both` forms while its sibling covers only one, the uncovered form is a defect (e.g., a `--project-dir` guard covering only the space form risks double-injection that violates the mutually-exclusive-arguments contract).
 
-6. **Schema-bearing files** — `*.md` files within `--contract-radius` directory levels of any modified file (default 3 levels up, bounded by `--project-dir`) whose content contains a fenced JSON or TOON block (`` ``` ``json` or `` ``` ``toon`). The list is deduplicated; the `format` field reports the first fence type found. Schema-bearing files surface schema/contract documents the LLM pass must cross-reference against hunks that touch the same schema (e.g., a helper output schema declared in a markdown reference).
+6. **Contract sources** — for each path in `references.modified_files`, walk up the directory tree (bounded by `--project-dir`) looking for the nearest ancestor containing `SKILL.md`. When found, the `sources` field is a `; `-joined list of repo-relative paths to that `SKILL.md` plus every `*.md` under the same skill's `standards/` subdirectory. Modified files outside any skill directory contribute no entry. The list anchors the LLM cognitive review on the contract documents that govern the changed code.
 
-7. **Keep-identifier markers** — added lines containing `<!-- self-review: keep <identifier> -->` (see § Keep-Identifier Markers above for the marker contract). For each match the detector emits an entry with `identifier`, `file`, `line`, and `kind`. The `kind` is `keep_protected` when the identifier is still present elsewhere in the file's post-image (the marker line itself is excluded from the grep) and `keep_violation` when the identifier is no longer present — the second case is an orphaned marker that signals the consolidation removed a protected token. The deduplicated, sorted set of every identifier whose marker resolved to `keep_protected` is emitted as `protected_identifiers` so the LLM cognitive review can refuse a consolidation that would drop one of them.
+7. **Schema-bearing files** — `*.md` files within `--contract-radius` directory levels of any modified file (default 3 levels up, bounded by `--project-dir`) whose content contains a fenced JSON or TOON block (`` ``` ``json` or `` ``` ``toon`). The list is deduplicated; the `format` field reports the first fence type found. Schema-bearing files surface schema/contract documents the LLM pass must cross-reference against hunks that touch the same schema (e.g., a helper output schema declared in a markdown reference).
+
+8. **Keep-identifier markers** — added lines containing `<!-- self-review: keep <identifier> -->` (see § Keep-Identifier Markers above for the marker contract). For each match the detector emits an entry with `identifier`, `file`, `line`, and `kind`. The `kind` is `keep_protected` when the identifier is still present elsewhere in the file's post-image (the marker line itself is excluded from the grep) and `keep_violation` when the identifier is no longer present — the second case is an orphaned marker that signals the consolidation removed a protected token. The deduplicated, sorted set of every identifier whose marker resolved to `keep_protected` is emitted as `protected_identifiers` so the LLM cognitive review can refuse a consolidation that would drop one of them.
 
 ### Errors
 
@@ -161,6 +167,7 @@ This script is **Bucket B** (per `tools-script-executor/standards/cwd-policy.md`
 - User-facing string detection in docstrings, `print()`, and argparse `help=`
 - Markdown section enumeration with sibling-list correctness
 - Symmetric-pair detection across all 6 pairings
+- Flag-guard-pair detection: a guard covering both forms (`both`), a guard covering only the space form (`space`), a guard covering only the equals form (`equals`), the asymmetric-pair case (one `both` guard + one single-form sibling), and the negative case (no flag guard → empty list)
 - Empty-diff edge case (no `modified_files` → empty candidate lists)
 - `--project-dir` honoring (script does not discover root from cwd)
 - Keep-identifier marker detection: `keep_protected` when the identifier is still grep-able in the post-image; `keep_violation` when the consolidation removed the token; marker syntax variations (whitespace tolerance, multiple markers per file) all recognized
