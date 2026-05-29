@@ -63,7 +63,7 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 - **Purpose**: Construct a path within the workflow base directory
 - **Input**: `*parts` - path components to join
 - **Output**: `Path` - full path including workflow base directory
-- **Example**: `base_path('plans', 'my-task', 'plan.md')` → `.plan/plans/my-task/plan.md`
+- **Example**: `base_path('plans', 'my-task', 'plan.md')` → `.plan/local/plans/my-task/plan.md`
 
 **File Operations**
 
@@ -179,7 +179,7 @@ from file_ops import base_path, atomic_write_file, output_success, output_error
 from constants import STATUS_SUCCESS, FILE_STATUS, PHASES, DIR_PLANS
 
 # Resolve plan directory paths
-plan_dir = base_path('plans', plan_id)  # Returns Path to .plan/plans/{plan_id}
+plan_dir = base_path('plans', plan_id)  # Returns Path to .plan/local/plans/{plan_id}
 artifacts = base_path('plans', plan_id, 'artifacts')
 
 # Atomic file writes (temp file + rename for crash safety)

@@ -3,7 +3,7 @@
 Manage references.json files with field-level access and list management.
 
 Tracks files, branches, and external references for a plan.
-Storage: JSON format (.plan/plans/{plan_id}/references.json)
+Storage: JSON format (.plan/local/plans/{plan_id}/references.json)
 Output: TOON format for API responses
 
 Usage:

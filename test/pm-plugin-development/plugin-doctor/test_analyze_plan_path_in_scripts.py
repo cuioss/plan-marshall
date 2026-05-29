@@ -1,20 +1,35 @@
 # ruff: noqa: I001, E402
 """Tests for the ``plan-path-in-scripts`` rule analyzer.
 
-The analyzer detects occurrences of the literal string ``.plan/plans/`` inside
-Python files in the marketplace bundle scripts tree.  Code-literal occurrences
-in production scripts are flagged (the canonical helper is
-``tools-file-ops:file_ops.get_plan_dir``); docstring-only occurrences and
-self-referential occurrences in the analyzer itself are skipped.
+The analyzer detects drift from the canonical ``tools-file-ops:file_ops``
+path helpers via AST analysis.  Two forms are detected:
+
+- **Form A** (literal bypass): an ``ast.Constant`` string node whose value
+  contains ``.plan/plans/`` (without ``/local/``).
+- **Form B** (parent-walking re-derivation): a ``Path(__file__).parent…``
+  or ``os.path.dirname(__file__)`` chain joined against a ``.plan``-domain
+  subdirectory name (``plans``, ``lessons-learned``, ``logs``,
+  ``archived-plans``, ``workspace``).
+
+Exemptions asserted not-flagged:
+  * ``sys.path.insert`` / ``sys.path.append`` bootstrap chains (form B).
+  * ``file_ops.py`` (the canonical source — whitelist entry).
 
 Test layers:
   * End-to-end scan distinguishing a production hit from a whitelisted hit.
   * ``_classify`` returns ``production_script`` for code-literal hits and
     ``test_assertion`` for hits in test directories.
-  * Whitelist excludes the analyzer's self-referential occurrence.
+  * Whitelist excludes the analyzer's self-referential occurrence AND
+    ``file_ops.py``.
   * Empty marketplace tree returns ``[]``.
   * ``_scan_file`` emits one finding per code-literal occurrence (multi-hit).
   * ``.plan/plans/`` inside a triple-quoted docstring produces zero findings.
+  * Form A no-regression: ``.plan/plans/`` (without ``/local/``) still flagged;
+    ``.plan/local/plans/`` is NOT flagged.
+  * Form B literal bypass detected.
+  * Form B parent-walking re-derivation detected.
+  * ``sys.path.insert`` bootstrap exemption NOT flagged.
+  * ``file_ops.py`` canonical-source exemption NOT flagged.
 """
 
 import importlib.util
@@ -51,6 +66,7 @@ is_whitelisted = _appis.is_whitelisted
 _classify = _appis._classify
 _scan_file = _appis._scan_file
 RULE_ID = _appis.RULE_ID
+_PLAN_DOMAIN_DIRS = _appis._PLAN_DOMAIN_DIRS
 
 
 # ---------------------------------------------------------------------------
@@ -351,3 +367,305 @@ class TestDocstringSkip:
         assert findings[0]['category'] == 'production_script'
         # Line 3 holds the code-literal hit (line 1 is the docstring).
         assert findings[0]['line'] == 3
+
+
+# ===========================================================================
+# Fixture g: Form A no-regression — .plan/plans/ (without /local/) still
+# flagged; .plan/local/plans/ (canonical form) is NOT flagged.
+# ===========================================================================
+
+
+class TestFormANoRegression:
+    """No-regression: original .plan/plans/ literal detection still fires."""
+
+    def test_plan_plans_without_local_flagged(self, tmp_path: Path) -> None:
+        """The drifted .plan/plans/ form is still flagged."""
+        py = (
+            tmp_path
+            / 'bundles'
+            / 'b1'
+            / 'skills'
+            / 's1'
+            / 'scripts'
+            / 'work.py'
+        )
+        _write_py(py, 'plan_dir = ".plan/plans/" + plan_id\n')
+        findings = _scan_file(py)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
+        assert '.plan/plans/' in findings[0]['snippet']
+
+    def test_plan_local_plans_not_flagged(self, tmp_path: Path) -> None:
+        """The canonical .plan/local/plans/ form is NOT flagged."""
+        py = (
+            tmp_path
+            / 'bundles'
+            / 'b1'
+            / 'skills'
+            / 's1'
+            / 'scripts'
+            / 'work.py'
+        )
+        _write_py(py, 'plan_dir = ".plan/local/plans/" + plan_id\n')
+        findings = _scan_file(py)
+        assert findings == []
+
+
+# ===========================================================================
+# Fixture h: Form B — parent-walking re-derivation detected
+# ===========================================================================
+
+
+class TestFormBParentWalking:
+    """Form B: Path(__file__).parent chain joined to a .plan-domain dir."""
+
+    def test_path_file_parent_plans_flagged(self, tmp_path: Path) -> None:
+        """Path(__file__).parent / "plans" is form-B drift and must be flagged."""
+        py = (
+            tmp_path
+            / 'bundles'
+            / 'b1'
+            / 'skills'
+            / 's1'
+            / 'scripts'
+            / 'work.py'
+        )
+        _write_py(
+            py,
+            'from pathlib import Path\n'
+            'PLAN_DIR = Path(__file__).parent / "plans"\n',
+        )
+        findings = _scan_file(py)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
+        assert findings[0]['line'] == 2
+
+    def test_os_path_dirname_plans_flagged(self, tmp_path: Path) -> None:
+        """os.path.dirname(__file__) joined to a .plan-domain dir is form-B drift."""
+        py = (
+            tmp_path
+            / 'bundles'
+            / 'b1'
+            / 'skills'
+            / 's1'
+            / 'scripts'
+            / 'work.py'
+        )
+        _write_py(
+            py,
+            'import os\n'
+            'import os.path\n'
+            'PLAN_DIR = os.path.join(os.path.dirname(__file__), "plans")\n',
+        )
+        findings = _scan_file(py)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
+        assert findings[0]['line'] == 3
+
+    def test_nested_parent_lessons_flagged(self, tmp_path: Path) -> None:
+        """Multi-level parent chain joined to lessons-learned is flagged."""
+        py = (
+            tmp_path
+            / 'bundles'
+            / 'b1'
+            / 'skills'
+            / 's1'
+            / 'scripts'
+            / 'work.py'
+        )
+        _write_py(
+            py,
+            'from pathlib import Path\n'
+            'LESSONS = Path(__file__).parent.parent / "lessons-learned"\n',
+        )
+        findings = _scan_file(py)
+        assert len(findings) == 1
+        assert findings[0]['line'] == 2
+
+    def test_parent_chain_logs_domain_flagged(self, tmp_path: Path) -> None:
+        """Parent chain joined to 'logs' (a .plan-domain dir) is flagged."""
+        py = (
+            tmp_path
+            / 'bundles'
+            / 'b1'
+            / 'skills'
+            / 's1'
+            / 'scripts'
+            / 'work.py'
+        )
+        _write_py(
+            py,
+            'from pathlib import Path\n'
+            'LOG_DIR = Path(__file__).parent / "logs"\n',
+        )
+        findings = _scan_file(py)
+        assert len(findings) == 1
+
+    def test_parent_chain_non_plan_domain_not_flagged(self, tmp_path: Path) -> None:
+        """Parent chain joined to a non-.plan-domain dir is NOT flagged."""
+        py = (
+            tmp_path
+            / 'bundles'
+            / 'b1'
+            / 'skills'
+            / 's1'
+            / 'scripts'
+            / 'work.py'
+        )
+        _write_py(
+            py,
+            'from pathlib import Path\n'
+            'DATA_DIR = Path(__file__).parent / "data"\n',
+        )
+        findings = _scan_file(py)
+        assert findings == []
+
+    def test_plan_domain_dirs_constant_imported(self) -> None:
+        """Verify the expected .plan-domain dirs are present in the constant."""
+        assert 'plans' in _PLAN_DOMAIN_DIRS
+        assert 'lessons-learned' in _PLAN_DOMAIN_DIRS
+        assert 'logs' in _PLAN_DOMAIN_DIRS
+        assert 'archived-plans' in _PLAN_DOMAIN_DIRS
+        assert 'workspace' in _PLAN_DOMAIN_DIRS
+
+
+# ===========================================================================
+# Fixture i: sys.path.insert exemption — bootstrap chains NOT flagged
+# ===========================================================================
+
+
+class TestSysPathInsertExemption:
+    """sys.path.insert / sys.path.append bootstrap chains are NOT flagged."""
+
+    def test_sys_path_insert_with_plans_domain_not_flagged(
+        self, tmp_path: Path
+    ) -> None:
+        """sys.path.insert(0, Path(__file__).parent / "plans") is a bootstrap
+        idiom and must NOT produce a form-B finding.
+        """
+        py = (
+            tmp_path
+            / 'bundles'
+            / 'b1'
+            / 'skills'
+            / 's1'
+            / 'scripts'
+            / 'work.py'
+        )
+        _write_py(
+            py,
+            'import sys\n'
+            'from pathlib import Path\n'
+            'sys.path.insert(0, str(Path(__file__).parent / "plans"))\n',
+        )
+        findings = _scan_file(py)
+        assert findings == [], (
+            'sys.path.insert bootstrap must not be flagged as form-B drift'
+        )
+
+    def test_sys_path_append_exemption(self, tmp_path: Path) -> None:
+        """sys.path.append(Path(__file__).parent / "logs") is also exempt."""
+        py = (
+            tmp_path
+            / 'bundles'
+            / 'b1'
+            / 'skills'
+            / 's1'
+            / 'scripts'
+            / 'work.py'
+        )
+        _write_py(
+            py,
+            'import sys\n'
+            'from pathlib import Path\n'
+            'sys.path.append(str(Path(__file__).parent / "logs"))\n',
+        )
+        findings = _scan_file(py)
+        assert findings == [], (
+            'sys.path.append bootstrap must not be flagged as form-B drift'
+        )
+
+    def test_non_sys_path_same_pattern_flagged(self, tmp_path: Path) -> None:
+        """The same parent-chain pattern outside a sys.path call IS flagged."""
+        py = (
+            tmp_path
+            / 'bundles'
+            / 'b1'
+            / 'skills'
+            / 's1'
+            / 'scripts'
+            / 'work.py'
+        )
+        _write_py(
+            py,
+            'from pathlib import Path\n'
+            'MY_DIR = Path(__file__).parent / "plans"\n',
+        )
+        findings = _scan_file(py)
+        assert len(findings) == 1, (
+            'parent chain outside sys.path call must be flagged as form-B drift'
+        )
+
+
+# ===========================================================================
+# Fixture j: file_ops.py canonical-source exemption
+# ===========================================================================
+
+
+class TestFileOpsExemption:
+    """file_ops.py (tools-file-ops bundle) is whitelisted — never flagged."""
+
+    def test_file_ops_path_whitelisted(self, tmp_path: Path) -> None:
+        """The path tools-file-ops/.../file_ops.py is whitelisted."""
+        path = (
+            tmp_path
+            / 'bundles'
+            / 'plan-marshall'
+            / 'skills'
+            / 'tools-file-ops'
+            / 'scripts'
+            / 'file_ops.py'
+        )
+        assert is_whitelisted(path)
+
+    def test_file_ops_with_plan_plans_literal_not_flagged(
+        self, tmp_path: Path
+    ) -> None:
+        """A file_ops.py containing .plan/plans/ is silently skipped."""
+        mp = _make_marketplace(tmp_path)
+        py = (
+            mp
+            / 'bundles'
+            / 'plan-marshall'
+            / 'skills'
+            / 'tools-file-ops'
+            / 'scripts'
+            / 'file_ops.py'
+        )
+        _write_py(py, 'canonical = ".plan/plans/" + plan_id\n')
+        findings = analyze_plan_path_in_scripts(mp)
+        assert findings == [], (
+            'file_ops.py must be whitelisted and produce no findings'
+        )
+
+    def test_file_ops_with_parent_chain_not_flagged(self, tmp_path: Path) -> None:
+        """file_ops.py containing a parent-walking chain is silently skipped."""
+        mp = _make_marketplace(tmp_path)
+        py = (
+            mp
+            / 'bundles'
+            / 'plan-marshall'
+            / 'skills'
+            / 'tools-file-ops'
+            / 'scripts'
+            / 'file_ops.py'
+        )
+        _write_py(
+            py,
+            'from pathlib import Path\n'
+            '_BASE = Path(__file__).parent / "plans"\n',
+        )
+        findings = analyze_plan_path_in_scripts(mp)
+        assert findings == [], (
+            'file_ops.py parent-chain must be whitelisted and produce no findings'
+        )

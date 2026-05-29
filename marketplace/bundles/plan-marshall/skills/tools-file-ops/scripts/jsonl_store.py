@@ -36,7 +36,7 @@ from file_ops import base_path  # type: ignore[import-not-found]
 
 
 def get_artifact_path(plan_id: str, filename: str) -> Path:
-    """Get path to a plan artifact file: .plan/plans/{plan_id}/artifacts/{filename}."""
+    """Get path to a plan artifact file: .plan/local/plans/{plan_id}/artifacts/{filename}."""
     return base_path('plans', plan_id, 'artifacts', filename)
 
 
