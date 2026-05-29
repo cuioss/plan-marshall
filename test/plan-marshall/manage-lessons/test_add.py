@@ -190,6 +190,78 @@ class TestGetNextIdHourAware:
 
 
 # =============================================================================
+# Tier 2: get_next_id collision detection across tombstones + plan dirs
+# =============================================================================
+
+
+class TestGetNextIdUnionScan:
+    """``get_next_id`` must union live lessons, tombstones, and plan-derived dirs.
+
+    The original ``get_next_id`` scanned only ``lessons-learned/{prefix}-*.md``,
+    so a sequence number consumed by ``convert-to-plan`` (relocated into a plan
+    dir) or recorded only as a tombstone could be re-issued — a silent id
+    collision. These tests pin the union-scan fix: the next id must clear the
+    max sequence across all three sources.
+    """
+
+    def test_get_next_id_skips_plan_derived_directory(self, tmp_path, monkeypatch):
+        """A ``plans/lesson-{prefix}-001/`` dir must reserve sequence 001.
+
+        Seeds a plan-derived directory (the shape produced by
+        ``convert-to-plan``) with no live ``.md`` in ``lessons-learned/``, freezes
+        the clock to the same prefix, and asserts ``get_next_id`` returns
+        ``-002`` rather than re-issuing ``-001``.
+        """
+        from datetime import datetime as real_datetime
+
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        plan_dir = tmp_path / 'plans' / 'lesson-2025-01-01-02-001'
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'lesson-2025-01-01-02-001.md').write_text(
+            'id=2025-01-01-02-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# converted\n'
+        )
+
+        frozen = real_datetime(2025, 1, 1, 2, 30, 0)
+        monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            next_id = get_next_id()
+
+        assert next_id == '2025-01-01-02-002'
+
+    def test_get_next_id_skips_tombstone_only_id(self, tmp_path, monkeypatch):
+        """A ``.tombstones/{prefix}-001.json`` must reserve sequence 001.
+
+        Seeds a tombstone with no live ``.md`` and no plan dir, freezes the clock
+        to the same prefix, and asserts ``get_next_id`` returns ``-002``.
+        """
+        from datetime import datetime as real_datetime
+
+        lessons_dir = tmp_path / 'lessons-learned'
+        tombstones_dir = lessons_dir / '.tombstones'
+        tombstones_dir.mkdir(parents=True)
+        (tombstones_dir / '2025-01-01-02-001.json').write_text(
+            json.dumps(
+                {
+                    'lesson_id': '2025-01-01-02-001',
+                    'removed_at': '2025-01-01T02:00:00+00:00',
+                    'reason': 'duplicate',
+                    'status': 'removed',
+                }
+            )
+        )
+
+        frozen = real_datetime(2025, 1, 1, 2, 30, 0)
+        monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            next_id = get_next_id()
+
+        assert next_id == '2025-01-01-02-002'
+
+
+# =============================================================================
 # Tier 2: Collision-safe id allocation in cmd_add and cmd_from_error
 # =============================================================================
 
