@@ -30,15 +30,63 @@ dispositions (replay the same finalize step from the resumable re-entry
 check). The flag is REQUIRED on every ``loop_back`` outcome and FORBIDDEN
 on every other outcome; the validation has no backwards-compat fallback
 (breaking-change contract per the finalize-loopback plan, Deliverable 3).
+
+A dirty-worktree guard refuses ``--outcome done`` for steps in
+``MAY_MUTATE_WORKTREE_STEPS`` (``automated-review``, ``sonar-roundtrip``,
+``finalize-step-simplify``) when ``git status --porcelain`` reports a dirty
+tree: marking such a step done while uncommitted changes sit in the worktree
+would let the dispatcher advance past commit-push and silently drop the
+mutation. The guard returns ``error: dirty_worktree_done_refused`` and
+instructs the caller to re-issue the outcome as ``loop_back`` (inline replay
+via target ``6-finalize`` or fix-task rollback via target ``5-execute``).
 """
 
 import argparse
+import subprocess
 from typing import Any
 
 from _status_core import require_status, write_status
 
 VALID_OUTCOMES = ('done', 'skipped', 'loop_back', 'failed')
 VALID_LOOP_BACK_TARGETS = ('5-execute', '6-finalize')
+
+# Steps whose finalize-phase bodies may legitimately mutate the worktree
+# (re-running formatters, applying review fixes, regenerating artifacts).
+# When such a step reports ``--outcome done`` the worktree MUST be clean —
+# otherwise the dispatcher would advance past commit-push while uncommitted
+# changes sit in the tree, silently dropping the mutation. The dirty-tree
+# guard below refuses the ``done`` transition for these steps and instructs
+# the caller to re-issue the outcome as a loop_back so the change is either
+# replayed inline (target 6-finalize) or rolled into a fix task (target
+# 5-execute).
+MAY_MUTATE_WORKTREE_STEPS = frozenset(
+    {'automated-review', 'sonar-roundtrip', 'finalize-step-simplify'}
+)
+
+
+def _resolve_worktree_path(status: dict[Any, Any]) -> str:
+    """Resolve the worktree path for the dirty-tree guard (tri-state).
+
+    Returns ``'.'`` (the main checkout) when ``metadata.use_worktree`` is
+    false or ``metadata.worktree_path`` is empty/absent; otherwise returns the
+    persisted ``worktree_path``.
+    """
+    metadata = status.get('metadata') or {}
+    if not metadata.get('use_worktree'):
+        return '.'
+    worktree_path = metadata.get('worktree_path') or ''
+    return worktree_path if worktree_path else '.'
+
+
+def _worktree_is_dirty(worktree_path: str) -> bool:
+    """Return True when ``git -C {worktree_path} status --porcelain`` is non-empty."""
+    completed = subprocess.run(
+        ['git', '-C', worktree_path, 'status', '--porcelain'],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return bool(completed.stdout.strip())
 
 
 def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
@@ -114,6 +162,31 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 f'(got --outcome={outcome}, --loop-back-target={loop_back_target})'
             ),
         }
+
+    # Dirty-worktree refusal: a may-mutate-worktree step reporting ``done`` MUST
+    # leave the worktree clean. When the tree is dirty the mutation has not been
+    # committed and advancing past commit-push would silently drop it. Refuse the
+    # transition and instruct the caller to re-issue as a loop_back. Fires only
+    # for ``outcome == 'done'`` AND ``step in MAY_MUTATE_WORKTREE_STEPS``; all other
+    # outcomes and steps fall through unchanged.
+    if outcome == 'done' and step in MAY_MUTATE_WORKTREE_STEPS:
+        worktree_path = _resolve_worktree_path(status)
+        if _worktree_is_dirty(worktree_path):
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'dirty_worktree_done_refused',
+                'phase': phase,
+                'step': step,
+                'dirty': True,
+                'message': (
+                    f'Step {step!r} in phase {phase!r} may mutate the worktree, but '
+                    'the working tree is dirty — refusing to mark it done. Re-issue '
+                    'with --outcome loop_back --loop-back-target 6-finalize to replay '
+                    'the step inline (commit-push the change), or --outcome loop_back '
+                    '--loop-back-target 5-execute to roll the change into a fix task.'
+                ),
+            }
 
     metadata: dict[str, Any] = status.setdefault('metadata', {})
     phase_steps: dict[str, Any] = metadata.setdefault('phase_steps', {})
