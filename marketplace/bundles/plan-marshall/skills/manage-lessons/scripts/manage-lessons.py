@@ -80,30 +80,65 @@ def get_tombstones_dir() -> Path:
 
 
 def get_next_id() -> str:
-    """Generate the next lesson ID."""
+    """Generate the next lesson ID.
+
+    Allocates the next sequence number for the current ``{date}-{hour}`` prefix
+    by scanning the union of three id sources so a freed-up sequence number is
+    never re-issued for an id that still exists elsewhere:
+
+    1. Live lesson files: ``lessons-learned/{prefix}-*.md`` stems.
+    2. Tombstones: ``lessons-learned/.tombstones/{prefix}-*.json`` basenames
+       (``remove``/``supersede``/``convert-to-plan`` all write these).
+    3. Plan-derived lesson files: ``plans/*/lesson-{prefix}-*.md`` files inside
+       any plan directory (the ``lesson-`` prefix is stripped from the filename
+       stem to recover the bare id). Globbing files rather than directories
+       captures lessons placed under arbitrary-named plan directories by
+       ``convert-to-plan`` (e.g. ``plans/my-plan/lesson-{id}.md``), not just the
+       canonical ``lesson-{id}`` directory name.
+
+    Each scan is guarded by an ``.exists()`` check so a missing directory yields
+    an empty contribution. The return shape is unchanged — a single id string.
+    """
     now = datetime.now().astimezone()
     date = now.strftime('%Y-%m-%d')
     hour = now.strftime('%H')
     prefix = f'{date}-{hour}'
+
+    # Union of bare ids (without extension) that already reserve a sequence
+    # number for this prefix, drawn from live lessons, tombstones, and
+    # plan-derived directories.
+    existing_ids: set[str] = set()
+
     lessons_dir = get_lessons_dir()
+    if lessons_dir.exists():
+        existing_ids.update(f.stem for f in lessons_dir.glob(f'{prefix}-*.md'))
 
-    if not lessons_dir.exists():
+    tombstones_dir = get_tombstones_dir()
+    if tombstones_dir.exists():
+        existing_ids.update(f.stem for f in tombstones_dir.glob(f'{prefix}-*.json'))
+
+    plans_dir = base_path('plans')
+    if plans_dir.exists():
+        existing_ids.update(
+            f.stem[len('lesson-'):]
+            for f in plans_dir.glob(f'*/lesson-{prefix}-*.md')
+            if f.is_file()
+        )
+
+    if not existing_ids:
         return f'{prefix}-001'
 
-    # Find existing lessons for this hour
-    existing = sorted([f.stem for f in lessons_dir.glob(f'{prefix}-*.md')])
+    # Highest trailing sequence number across the union.
+    max_seq = 0
+    for candidate in existing_ids:
+        match = re.match(r'\d{4}-\d{2}-\d{2}-\d{2}-(\d+)', candidate)
+        if match:
+            max_seq = max(max_seq, int(match.group(1)))
 
-    if not existing:
+    if max_seq == 0:
         return f'{prefix}-001'
 
-    # Get the highest sequence number
-    last = existing[-1]
-    match = re.match(r'\d{4}-\d{2}-\d{2}-\d{2}-(\d+)', last)
-    if match:
-        seq = int(match.group(1)) + 1
-        return f'{prefix}-{seq:03d}'
-
-    return f'{prefix}-001'
+    return f'{prefix}-{max_seq + 1:03d}'
 
 
 def read_lesson(lesson_id: str) -> tuple[dict, str, str]:
@@ -575,6 +610,13 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
     destination = plan_dir / f'lesson-{args.lesson_id}.md'
 
     shutil.move(source, destination)
+
+    # Reserve the consumed id with a tombstone so it stays reserved even if the
+    # plan directory (and the relocated .md inside it) is later deleted. Unlike
+    # remove/supersede, convert-to-plan keeps the lesson alive — but the id must
+    # not be re-issued by get_next_id, so a one-way archival-survival tombstone
+    # is recorded here.
+    _write_tombstone(args.lesson_id, reason='converted-to-plan', status='converted-to-plan')
 
     return {
         'status': 'success',

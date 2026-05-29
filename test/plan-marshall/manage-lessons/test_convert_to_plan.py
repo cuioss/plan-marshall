@@ -7,10 +7,11 @@ Tests cover the happy path, missing-source error, on-the-fly plan-directory
 creation, and path-traversal rejection on both ``lesson_id`` and ``plan_id``.
 """
 
+import json
 from argparse import Namespace
 from unittest.mock import patch
 
-from _lessons_helpers import cmd_convert_to_plan
+from _lessons_helpers import _FakeDatetime, _mod, cmd_convert_to_plan, get_next_id
 
 
 class TestCmdConvertToPlan:
@@ -96,3 +97,63 @@ Body.
                 result = cmd_convert_to_plan(Namespace(lesson_id='good-id', plan_id=bad_plan))
                 assert result['status'] == 'error'
                 assert result['error'] == 'invalid_id'
+
+
+class TestConvertToPlanTombstoneReservation:
+    """``convert-to-plan`` must reserve the consumed id with a tombstone.
+
+    Unlike ``remove``/``supersede``, ``convert-to-plan`` keeps the lesson alive
+    (relocated into a plan dir), but the consumed id must stay reserved so
+    ``get_next_id`` never re-issues it. A ``converted-to-plan`` tombstone records
+    the reservation and survives deletion of the plan dir.
+    """
+
+    def test_convert_to_plan_writes_converted_tombstone(self, tmp_path):
+        """A ``{id}.json`` tombstone with ``status: converted-to-plan`` must be written."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        (lessons_dir / '2025-01-01-02-001.md').write_text(
+            'id=2025-01-01-02-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# Test\n'
+        )
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_convert_to_plan(Namespace(lesson_id='2025-01-01-02-001', plan_id='my-plan'))
+
+        assert result['status'] == 'success'
+        tombstone = lessons_dir / '.tombstones' / '2025-01-01-02-001.json'
+        assert tombstone.exists()
+        payload = json.loads(tombstone.read_text())
+        assert payload['status'] == 'converted-to-plan'
+        assert payload['reason'] == 'converted-to-plan'
+        assert payload['lesson_id'] == '2025-01-01-02-001'
+
+    def test_converted_tombstone_reserves_id_in_get_next_id(self, tmp_path, monkeypatch):
+        """End-to-end: with the source relocated, the tombstone alone reserves the slot.
+
+        After ``convert-to-plan`` the live ``.md`` is gone from ``lessons-learned/``
+        (it moved into the plan dir), so only the tombstone and the plan dir keep
+        the id reserved. Freezing the clock to the same prefix, ``get_next_id``
+        must return ``-002`` — proving the reservation path is honoured.
+        """
+        from datetime import datetime as real_datetime
+
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        (lessons_dir / '2025-01-01-02-001.md').write_text(
+            'id=2025-01-01-02-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# Test\n'
+        )
+
+        frozen = real_datetime(2025, 1, 1, 2, 30, 0)
+        monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            convert_result = cmd_convert_to_plan(
+                Namespace(lesson_id='2025-01-01-02-001', plan_id='my-plan')
+            )
+            assert convert_result['status'] == 'success'
+            # Source .md has been relocated out of lessons-learned/.
+            assert not (lessons_dir / '2025-01-01-02-001.md').exists()
+
+            next_id = get_next_id()
+
+        assert next_id == '2025-01-01-02-002'
