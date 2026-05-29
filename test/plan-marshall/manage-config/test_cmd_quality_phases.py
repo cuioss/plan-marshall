@@ -12,6 +12,7 @@ import json
 import sys
 from argparse import Namespace
 from pathlib import Path
+from unittest.mock import patch
 
 from test_helpers import SCRIPT_PATH, create_marshal_json
 
@@ -34,9 +35,15 @@ def _load_module(name, filename):
     return mod
 
 
-# Load _cmd_quality_phases first so it's registered in sys.modules BEFORE _cmd_system_plan
-# does `from _cmd_quality_phases import cmd_phase` — both modules must share the same instance
-# for monkeypatching `_discover_steps_for_phase` to take effect during cmd_plan dispatch.
+# Load dependency modules first so sys.modules is populated with test-controlled instances
+# before _cmd_quality_phases executes its module-level imports. This ensures patch.object
+# calls in tests (e.g. patching _cmd_skill_domains.BUNDLES_DIR) affect the same objects
+# that _cmd_quality_phases holds references to.
+# _cmd_quality_phases must still be registered in sys.modules BEFORE _cmd_system_plan
+# does `from _cmd_quality_phases import cmd_phase` — preserving that ordering.
+_cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
+_cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
+_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
 _cmd_quality_phases = _load_module('_cmd_quality_phases', '_cmd_quality_phases.py')
 _cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
 
@@ -490,6 +497,88 @@ def test_execute_add_step_order_collision_returns_error(plan_context, monkeypatc
     assert result['status'] == 'error'
     assert result['error'] == 'order_collision'
     assert result['order'] == 10
+
+
+# =============================================================================
+# Layout-aware set-steps round-trip (cache + source layouts)
+# =============================================================================
+
+
+def _bare(step_name: str) -> str:
+    """Strip the 'default:' prefix from a built-in step name."""
+    return step_name.split(':', 1)[1] if ':' in step_name else step_name
+
+
+def _write_phase_standards(skill_root: Path, step_names: list[str]) -> None:
+    """Create standards/{bare}.md with monotonically increasing `order` frontmatter."""
+    standards_dir = skill_root / 'standards'
+    standards_dir.mkdir(parents=True, exist_ok=True)
+    for offset, step_name in enumerate(step_names):
+        bare = _bare(step_name)
+        order = (offset + 1) * 10
+        (standards_dir / f'{bare}.md').write_text(
+            f'---\nname: {bare}\ndescription: {bare} step\norder: {order}\n---\n\n# {bare}\n'
+        )
+
+
+def _build_verify_bundle(base: Path, cache_layout: bool, version: str = '0.1-BETA') -> Path:
+    """Build a phase-5-execute standards tree in either the source layout or the versioned cache layout (selected by `cache_layout`)."""
+    inner = (base / 'plan-marshall' / version) if cache_layout else (base / 'plan-marshall')
+    _write_phase_standards(inner / 'skills' / 'phase-5-execute', _config_defaults.BUILT_IN_VERIFY_STEPS)
+    return base
+
+
+def test_execute_set_steps_round_trip_cache_layout(plan_context):
+    """set-steps over built-in verify steps reports no missing_order in the versioned cache layout."""
+    create_marshal_json(plan_context.fixture_dir)
+    cache_base = _build_verify_bundle(plan_context.fixture_dir / 'cache_bundles', cache_layout=True)
+
+    with (
+        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', cache_base),
+        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
+    ):
+        # Pass built-ins in reverse to prove sorting comes from resolved order, not call order.
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='set-steps',
+                steps='default:coverage_check,default:build_verify,default:quality_check',
+            )
+        )
+
+    assert result['status'] == 'success', f'Expected success (no missing_order) in cache layout, got {result}'
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert config['plan']['phase-5-execute']['steps'] == [
+        'default:quality_check',
+        'default:build_verify',
+        'default:coverage_check',
+    ]
+
+
+def test_execute_set_steps_round_trip_source_layout(plan_context):
+    """set-steps over built-in verify steps reports no missing_order in the source layout."""
+    create_marshal_json(plan_context.fixture_dir)
+    source_base = _build_verify_bundle(plan_context.fixture_dir / 'source_bundles', cache_layout=False)
+
+    with (
+        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', source_base),
+        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
+    ):
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='set-steps',
+                steps='default:coverage_check,default:build_verify,default:quality_check',
+            )
+        )
+
+    assert result['status'] == 'success', f'Expected success (no missing_order) in source layout, got {result}'
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert config['plan']['phase-5-execute']['steps'] == [
+        'default:quality_check',
+        'default:build_verify',
+        'default:coverage_check',
+    ]
 
 
 # =============================================================================

@@ -1065,6 +1065,105 @@ def test_list_verify_steps_extension_order_from_return_dict(tmp_path):
 
 
 # =============================================================================
+# Layout-aware built-in verify step order resolution (source + cache layouts)
+# =============================================================================
+
+_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
+
+
+def _bare(step_name: str) -> str:
+    """Strip the 'default:' prefix from a built-in step name."""
+    return step_name.split(':', 1)[1] if ':' in step_name else step_name
+
+
+def _write_verify_standards(skill_root: Path) -> None:
+    """Create standards/{bare}.md with `order` frontmatter for every built-in verify step."""
+    standards_dir = skill_root / 'standards'
+    standards_dir.mkdir(parents=True, exist_ok=True)
+    for offset, step_name in enumerate(_config_defaults.BUILT_IN_VERIFY_STEPS):
+        bare = _bare(step_name)
+        order = (offset + 1) * 10
+        (standards_dir / f'{bare}.md').write_text(
+            f'---\nname: {bare}\ndescription: {bare} step\norder: {order}\n---\n\n# {bare}\n'
+        )
+
+
+def _build_source_layout_verify(base: Path) -> Path:
+    """Build a source/marketplace layout: <base>/plan-marshall/skills/phase-5-execute/..."""
+    skill_root = base / 'plan-marshall' / 'skills' / 'phase-5-execute'
+    _write_verify_standards(skill_root)
+    return base
+
+
+def _build_cache_layout_verify(base: Path, version: str = '0.1-BETA') -> Path:
+    """Build a versioned plugin-cache layout: <base>/plan-marshall/<version>/skills/phase-5-execute/..."""
+    skill_root = base / 'plan-marshall' / version / 'skills' / 'phase-5-execute'
+    _write_verify_standards(skill_root)
+    return base
+
+
+def test_discover_verify_steps_source_layout_resolves_order(tmp_path):
+    """Built-in verify steps resolve non-None order in the source/marketplace layout."""
+    base = _build_source_layout_verify(tmp_path / 'bundles')
+
+    with (
+        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', base),
+        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
+    ):
+        steps = _run_verify_discovery_in_cwd(tmp_path)
+
+    built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
+    for step_name in _config_defaults.BUILT_IN_VERIFY_STEPS:
+        assert built_ins[step_name]['order'] is not None, (
+            f'{step_name} must resolve a non-None order in source layout, got None'
+        )
+
+
+def test_discover_verify_steps_cache_layout_resolves_order(tmp_path):
+    """Built-in verify steps resolve non-None order in the versioned plugin-cache layout."""
+    base = _build_cache_layout_verify(tmp_path / 'bundles')
+
+    with (
+        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', base),
+        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
+    ):
+        steps = _run_verify_discovery_in_cwd(tmp_path)
+
+    built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
+    for step_name in _config_defaults.BUILT_IN_VERIFY_STEPS:
+        assert built_ins[step_name]['order'] is not None, (
+            f'{step_name} must resolve a non-None order in cache layout, got None'
+        )
+
+
+def test_discover_verify_steps_order_matches_across_layouts(tmp_path):
+    """The same built-in verify order values are resolved in both layouts (no missing_order)."""
+    source_base = _build_source_layout_verify(tmp_path / 'source')
+    cache_base = _build_cache_layout_verify(tmp_path / 'cache')
+
+    with (
+        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', source_base),
+        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
+    ):
+        source_steps = {
+            s['name']: s['order'] for s in _run_verify_discovery_in_cwd(tmp_path) if s['source'] == 'built-in'
+        }
+
+    with (
+        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', cache_base),
+        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
+    ):
+        cache_steps = {
+            s['name']: s['order'] for s in _run_verify_discovery_in_cwd(tmp_path) if s['source'] == 'built-in'
+        }
+
+    assert source_steps == cache_steps, (
+        f'Built-in verify step orders must match across layouts: {source_steps} != {cache_steps}'
+    )
+    assert all(order is not None for order in cache_steps.values()), 'No built-in verify step may have missing_order'
+
+
+# =============================================================================
 # CLI Plumbing Tests (Tier 3 - subprocess)
 # =============================================================================
 

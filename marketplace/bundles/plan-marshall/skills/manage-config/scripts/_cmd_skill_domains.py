@@ -26,6 +26,7 @@ from _config_core import (
     is_nested_domain,
     load_config,
     require_initialized,
+    resolve_bundle_path,
     save_config,
     success_exit,
 )
@@ -428,7 +429,9 @@ def _discover_all_verify_steps() -> list[dict]:
     # Source 1: Built-in steps — read order from standards/{name}.md frontmatter
     for step_name in BUILT_IN_VERIFY_STEPS:
         bare = step_name.split(':', 1)[1] if ':' in step_name else step_name
-        standards_path = BUNDLES_DIR / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'standards' / f'{bare}.md'
+        standards_path = resolve_bundle_path(
+            BUNDLES_DIR, 'plan-marshall', f'skills/phase-5-execute/standards/{bare}.md'
+        )
         all_steps.append(
             {
                 'name': step_name,
