@@ -80,6 +80,38 @@ Four detection modes:
 - **Fix**: Add `allow_abbrev=False` to the constructor or `add_parser(...)` call. The rule is a lightweight AST walk (no parser execution); it flags the exact line and call name (`ArgumentParser` or `add_parser`).
 - **Exemptions**: Test files may intentionally exercise argparse default behavior and are excluded from the scan.
 
+## Simplification Rules
+
+The `SIMPLICITY_*` rule cluster is the mechanical enforcement layer for the "minimum viable code" posture defined in `plan-marshall:dev-general-code-quality` `standards/code-organization.md` [#minimum-viable-code](../../../plan-marshall/skills/dev-general-code-quality/standards/code-organization.md). The seven anti-patterns in that section are the source-of-truth definitions; these five rules detect the deterministically-recognisable subset in marketplace bundle scripts. The cognitive judgement calls (the remaining anti-patterns and the non-mechanical instances of these five) are handled by the `default:finalize-step-simplify` phase-6 cognitive pass — the two layers compose, the doctor catching the static patterns and the finalize step reasoning about the rest. No new registered entry-point: the rules run behind the existing `doctor-marketplace analyze` interface, alongside `argparse_safety`.
+
+**Scope**: `marketplace/bundles/*/skills/*/scripts/**/*.py` (test files excluded). **Discovery approach**: one `ast.parse` walk plus a per-line regex pass per script — pure static analysis, no subprocess, no module imports. Implemented in `_analyze_simplicity.py`.
+
+**SIMPLICITY_UNUSED_PARAMETER** (severity: warning, fixable: false): Flags a function whose body discards a declared parameter via `del <param>` (the "preserved for future use" pattern that keeps a signature stable while no code path reads the argument), or a parameter/assignment line tagged with a trailing `# unused` marker.
+
+- **Rationale**: A parameter that no code path reads, kept "because a caller might need it later", is surplus structure. Remove it and add it back against a real caller. Maps to the `#minimum-viable-code` "Unused parameters preserved for future use" bullet.
+- **Fix**: Remove the parameter from the signature and the discarding `del`. Confirm-before-apply (risky) because it changes a public signature — surfaced for human review rather than auto-applied.
+
+**SIMPLICITY_BACKWARD_COMPAT_REEXPORT** (severity: warning, fixable: false): Flags an `import`/`from` line carrying a `# backward compat` or `# re-exported for` comment.
+
+- **Rationale**: A module that exists only to re-export a symbol, with at most one importer, is a shim. Inline the import at the single call site and delete the shim. Maps to the "Thin/backward-compat re-exports with <= 1 live caller" bullet.
+- **Fix**: Inline the import at its call site and delete the re-export. Confirm-before-apply (risky) — requires verifying the live-caller count.
+
+**SIMPLICITY_DEFENSIVE_CATCHALL** (severity: warning, fixable: false): Flags an `except Exception` / `except BaseException` / bare `except` handler tagged `# defensive only` or `# pragma: no cover -- defensive` on the handler header or its first body line.
+
+- **Rationale**: A guard that swallows or re-wraps an exception the caller already handles, or that masks a programming error that should crash loudly, hides failures. Let it propagate. Maps to the "Defensive try/except around already-handled or should-fail-loudly failures" bullet.
+- **Fix**: Remove the handler and let the exception propagate. Confirm-before-apply (risky) — the propagation path must be verified.
+
+**SIMPLICITY_THIN_WRAPPER** (severity: warning, fixable: false): Flags a function whose body (after an optional docstring) is a single `return <call>(...)` forwarding its arguments to one other call.
+
+- **Rationale**: A thin pass-through wrapper adds an indirection layer with no value. Inline it at the call site. Maps to the Over-Abstraction "Utility methods called from only one place" / wrapper-class bullets.
+- **Fix**: Inline the wrapper at its call sites and delete it. Confirm-before-apply (risky) — inlining requires rewriting every caller, which is not a single-file mechanical edit.
+
+**SIMPLICITY_SIGNATURE_DOCSTRING** (severity: warning, fixable: true): Flags a function docstring whose first paragraph only restates `Args:`/`Returns:` structural headers with no intent ("WHY") content.
+
+- **Rationale**: A docstring that names the parameters and return type without adding intent beyond the signature is noise. Delete it or replace it with a rationale. Maps to the "Signature-restating docstrings/comments" bullet.
+- **Fix**: **Safe auto-apply** — the fix handler re-parses the file and deletes every signature-restating docstring node. This is the one mechanically-safe simplification fix: deleting a pure-structural docstring changes no behaviour and no signature.
+- **Exemptions**: Docstrings carrying any prose summary line in their first paragraph (intent content) are not flagged.
+
 ## Argument Naming Rules
 
 The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the actual argparse declarations of the scripts that prose references. The cluster also cross-checks the Canonical Forms table in `marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md` against the same argparse declarations. All four rules emit findings with `severity: error` and `fixable: false`, mirroring the `DISPLAY_DETAIL_*` finding shape used elsewhere in plugin-doctor.

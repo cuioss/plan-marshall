@@ -113,6 +113,18 @@ Three rules guarding `mark-step-done` invocations. Source: phase-6 finalize-orch
 |---------|-------|---------|--------|
 | `argparse_safety` | safety | `_doctor_analysis.py::scan_argparse_safety` | Lesson `2026-04-17-012` — argparse prefix-matching silently binds retired flags when `allow_abbrev=True`. |
 
+### Simplification rules (SIMPLICITY_*)
+
+Five static detectors that are the mechanical enforcement layer for the "minimum viable code" posture in `plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code`. The seven anti-patterns enumerated there are the source-of-truth definitions; these five rules detect the deterministically-recognisable subset in marketplace bundle scripts. The cognitive judgement calls are handled by `default:finalize-step-simplify`. Emitter: `_analyze_simplicity.py` (aggregated via `_doctor_analysis.py::scan_simplicity`, invoked from `doctor-marketplace.py::cmd_analyze`).
+
+| Rule ID | Class | Emitter | Source |
+|---------|-------|---------|--------|
+| `SIMPLICITY_UNUSED_PARAMETER` | content | `_analyze_simplicity.py` | `plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code` — "Unused parameters preserved for future use". A parameter discarded via `del <param>` or tagged `# unused` is surplus structure; remove it and add it back against a real caller. |
+| `SIMPLICITY_BACKWARD_COMPAT_REEXPORT` | content | `_analyze_simplicity.py` | `plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code` — "Thin/backward-compat re-exports with <= 1 live caller". Inline the import at its single call site and delete the shim. |
+| `SIMPLICITY_DEFENSIVE_CATCHALL` | content | `_analyze_simplicity.py` | `plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code` — "Defensive try/except around already-handled or should-fail-loudly failures". Let the exception propagate. |
+| `SIMPLICITY_THIN_WRAPPER` | content | `_analyze_simplicity.py` | `plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code` and § Over-Abstraction — a function whose body is a single argument-forwarding `return`; inline it at the call site. |
+| `SIMPLICITY_SIGNATURE_DOCSTRING` | content | `_analyze_simplicity.py` | `plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code` — "Signature-restating docstrings/comments". The one safe auto-apply fix (delete the restating docstring); fix handler `_cmd_apply.py::apply_signature_docstring_fix`. |
+
 ### Lesson-2026-05-05-18-001 rule pack
 
 Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediation plan.

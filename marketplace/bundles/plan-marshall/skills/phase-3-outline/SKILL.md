@@ -179,6 +179,21 @@ Store as `compatibility` and derive `compatibility_description` from the value:
 - `deprecation` → "Add deprecation markers to old code, provide migration path"
 - `smart_and_ask` → "Assess impact and ask user when backward compatibility is uncertain"
 
+### Receive Simplicity from Phase-2-Refine Output
+
+The `simplicity` and `simplicity_description` values are received from the phase-2-refine return output.
+
+**If simplicity not provided in input**, read from marshal.json (default `lean` when unconfigured):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-2-refine get --field simplicity --audit-plan-id {plan_id}
+```
+
+Store as `simplicity` and derive `simplicity_description` from the value:
+- `lean` → "Implement the strict minimum; remove or inline surplus structure"
+- `pragmatic` → "Prefer minimal, but keep low-risk structure that aids readability"
+- `defensive` → "Retain belt-and-suspenders structure (guards, abstraction seams) where uncertain"
+
 ### Log Context (to work.log - status, not decision)
 
 ```bash

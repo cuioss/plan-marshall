@@ -195,6 +195,16 @@ For complete patterns including file operations, content search, Bash safety rul
 
 **Example:** Don't silently add Guava to pom.xml — ask: "I need collection utilities for {feature}. I recommend Google Guava because {reasons}. Should I add this dependency?"
 
+### Principle 7: Implement the Minimum, Not the Maximum
+
+**Rule:** Write the minimum code that satisfies the stated requirement — nothing speculative.
+
+Implement only what the present requirement asks for. Do not add error handling for failures that cannot occur, configurability for callers that do not exist, abstractions for second implementations that are not planned, or comments that restate well-named code. When you feel the pull to add something "for future use" or "to be safe," stop and ask the user instead of building it on speculation. Surplus structure is a maintenance cost, not a free hedge: every speculative parameter, flag, or layer is something a future reader must understand and a maintainer must keep correct. The change is cheap to add later against a real requirement and expensive to retrofit-remove once callers depend on its accidental presence.
+
+For the full anti-pattern catalogue and the Trigger / Detection / Action treatment, see the central standard at `dev-general-code-quality/standards/code-organization.md` [#minimum-viable-code](../../dev-general-code-quality/standards/code-organization.md#minimum-viable-code) — enforcement-critical content lives there and is intentionally not duplicated here.
+
+**Example:** Asked to add a single retry, don't introduce a `RetryStrategy` interface with one implementation and a configurable backoff knob no caller sets — write the one retry the requirement asks for.
+
 ## Workflow Discipline (Hard Rules)
 
 These rules apply to ALL development work in plan-marshall-governed repositories — ad-hoc tasks, plan execution, and subagent work alike. They exist because the LLM regularly violates them despite softer guidance, so skill-level reinforcement is necessary.
@@ -244,5 +254,6 @@ If the architecture verb truly cannot answer (e.g., target is sub-module, target
 | File operations (find/read/search/write/edit) | See Principle 4 for complete tool selection guide |
 | Need to create document | Ask user first |
 | Need to add dependency | Ask user first |
+| Tempted to add code "for future use" | Implement the minimum; ask user before adding speculative structure (Principle 7) |
 | About to spawn an unconstrained generic subagent for phase work | Use `plan-marshall:execution-context-{level}` with a `workflow:` notation, or inline main-context execution |
 

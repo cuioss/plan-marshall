@@ -318,6 +318,13 @@ FIXABLE_ISSUE_TYPES = {
     'backup-file-pattern',
     'ci-rule-self-update',
     'skill-invokable-mismatch',
+    # SIMPLICITY_SIGNATURE_DOCSTRING is the one auto-applicable simplification
+    # fix (delete the signature-restating docstring). The other four
+    # SIMPLICITY_* rules are detection-only (fixable=False) — removing an
+    # unused parameter, a re-export shim, a defensive catch-all, or a thin
+    # wrapper changes a signature or requires rewriting call sites, so they
+    # surface as unfixable warnings for human review rather than auto-fixes.
+    'SIMPLICITY_SIGNATURE_DOCSTRING',
 }
 
 # Safe fix types - can be auto-applied without user confirmation
@@ -337,6 +344,7 @@ SAFE_FIX_TYPES = {
     'missing-user-invocable',
     'checklist-pattern',
     'subdoc-checklist-pattern',
+    'SIMPLICITY_SIGNATURE_DOCSTRING',
 }
 
 # Risky fix types - require user confirmation

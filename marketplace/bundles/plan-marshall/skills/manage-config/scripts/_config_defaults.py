@@ -91,9 +91,29 @@ DEFAULT_PLAN_INIT = {
     'init_without_asking': True,
 }
 
+# Valid values for phase-2-refine.simplicity — enum controlling how aggressively
+# the implementation favours the minimum viable surface over speculative structure.
+# Mirrors the sibling `compatibility` knob.
+#   - 'lean':       implement the strict minimum; remove/inline surplus structure (default)
+#   - 'pragmatic':  prefer minimal, but keep low-risk structure that aids readability
+#   - 'defensive':  retain belt-and-suspenders structure (guards, seams) where uncertain
+VALID_SIMPLICITY_LEVELS = ('lean', 'pragmatic', 'defensive')
+
+
+def validate_simplicity(value: str) -> None:
+    """Validate that `simplicity` is one of the allowed enum values.
+
+    Raises:
+        ValueError: If ``value`` is not in :data:`VALID_SIMPLICITY_LEVELS`.
+    """
+    if value not in VALID_SIMPLICITY_LEVELS:
+        raise ValueError(f"Invalid simplicity '{value}'. Allowed: {list(VALID_SIMPLICITY_LEVELS)}")
+
+
 DEFAULT_PLAN_REFINE = {
     'confidence_threshold': 95,
     'compatibility': 'breaking',
+    'simplicity': 'lean',
 }
 
 DEFAULT_PLAN_OUTLINE = {

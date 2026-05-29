@@ -39,6 +39,7 @@ from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
+from _analyze_simplicity import scan_simplicity
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
     analyze_unique_fixture_basenames,
@@ -343,6 +344,15 @@ def cmd_analyze(args) -> dict:
     argparse_issues = scan_argparse_safety(marketplace_root)
     all_issues.extend(argparse_issues)
     total_issues += len(argparse_issues)
+
+    # Marketplace-wide SIMPLICITY_* rule cluster (five static detectors).
+    # Unconditionally active — the detectors are the mechanical enforcement
+    # layer for the dev-general-code-quality "minimum viable code" posture and
+    # are cheap (one AST walk + regex pass per script). Rules 1-3 are risky
+    # (fixable=False, confirm); rules 4-5 are safe (fixable=True, auto-apply).
+    simplicity_issues = scan_simplicity(marketplace_root)
+    all_issues.extend(simplicity_issues)
+    total_issues += len(simplicity_issues)
 
     # Marketplace-wide shell-substitution-in-skills rule. Unconditionally
     # active (not gated by --rules) because it enforces a hard rule from

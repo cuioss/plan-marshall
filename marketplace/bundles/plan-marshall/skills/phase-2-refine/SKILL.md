@@ -143,6 +143,18 @@ Read `compatibility` from project config. Valid values:
 
 No fallback -- fail with error if not configured.
 
+### Step 5b: Load Simplicity Strategy
+
+Read `simplicity` from project config (`manage-config plan phase-2-refine get --field simplicity`). The knob mirrors `compatibility`: it tunes how aggressively implementation tasks favour the minimum viable surface over speculative structure. Valid values:
+
+| Value | Description |
+|-------|-------------|
+| `lean` | Implement the strict minimum; remove or inline surplus structure. Default. |
+| `pragmatic` | Prefer minimal, but keep low-risk structure that aids readability. |
+| `defensive` | Retain belt-and-suspenders structure (guards, abstraction seams) where the outcome is uncertain. |
+
+The enforcement-critical anti-pattern catalogue lives in the central standard at `dev-general-code-quality/standards/code-organization.md` [#minimum-viable-code](../dev-general-code-quality/standards/code-organization.md#minimum-viable-code) and the agent-facing principle at `dev-agent-behavior-rules/standards/agent-behavior-rules.md` (Principle 7); it is intentionally not duplicated here. Default `lean` when unconfigured — unlike `compatibility`, the simplicity knob defaults rather than failing, so existing plans without the key behave as `lean`.
+
 ### Step 6: Load Architecture Context
 
 Query architecture with `manage-architecture architecture info`. Extract `project_name`, `project_description`, `technologies`, `module_names`, and `module_purposes` into `arch_context` for use in Steps 8-9. Abort if architecture not found.
@@ -245,6 +257,8 @@ track_reasoning: {track_reasoning}
 scope_estimate: {scope_estimate}
 compatibility: {compatibility}
 compatibility_description: {compatibility_description}
+simplicity: {simplicity}
+simplicity_description: {simplicity_description}
 domains: [{detected domains}]
 qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
@@ -256,6 +270,7 @@ qgate_validation_required: {true|false}
 - Track/scope decisions: `decision.log` filtered by `(plan-marshall:phase-2-refine)`
 - Module mapping: `work/module_mapping.toon`
 - Compatibility: marshal.json (phase-2-refine config)
+- Simplicity: marshal.json (phase-2-refine config)
 - Clarifications: `request.md` → `clarifications`, `clarified_request`
 
 ### Step 14: Transition Phase
@@ -275,7 +290,7 @@ display_detail: "<{confidence}% confidence, track {track}, {qgate_pending_count}
 
 `display_detail` shape on success: `"{confidence}% confidence, track {track}, {qgate_pending_count} pending"` (e.g. `"92% confidence, track complex, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
 
-All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `compatibility`, `compatibility_description`, `domains`, `qgate_pending_count`) are documented in Step 13.6 above.
+All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `compatibility`, `compatibility_description`, `simplicity`, `simplicity_description`, `domains`, `qgate_pending_count`) are documented in Step 13.6 above.
 
 ---
 

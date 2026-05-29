@@ -21,11 +21,18 @@ Usage:
 
 import argparse
 
-from _cmd_apply import cmd_apply
+from _cmd_apply import FIX_HANDLERS, apply_signature_docstring_fix, cmd_apply
 from _cmd_categorize import cmd_categorize
 from _cmd_extract import cmd_extract
 from _cmd_verify import cmd_verify
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+
+# Public re-export of the simplification fix surface. The five SIMPLICITY_*
+# rules are detected in _analyze_simplicity.py; only SIMPLICITY_SIGNATURE_DOCSTRING
+# carries a mechanical auto-apply handler (delete the restating docstring) —
+# the other four are confirm-before-apply (fixable=False) human-review findings.
+# FIX_HANDLERS holds the type→handler map consumed by apply_single_fix.
+__all__ = ['FIX_HANDLERS', 'apply_signature_docstring_fix', 'main']
 
 
 @safe_main

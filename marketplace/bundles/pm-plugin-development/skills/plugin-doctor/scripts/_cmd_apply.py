@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Apply subcommand for applying fixes to component files."""
 
+import ast
 import json
 import re
 import shutil
 from pathlib import Path
 
+from _analyze_simplicity import _restates_signature_only
 from _doctor_shared import read_json_input
 
 
@@ -323,6 +325,65 @@ def apply_checklist_pattern_fix(file_path: Path, fix: dict, templates: dict) -> 
     return {'success': True, 'changes': [f'Removed {changes} checkbox patterns'], 'lines_fixed': changes}
 
 
+def apply_signature_docstring_fix(file_path: Path, fix: dict, templates: dict) -> dict:
+    """Delete function docstrings whose first paragraph only restates the signature.
+
+    Mechanical removal for the ``SIMPLICITY_SIGNATURE_DOCSTRING`` rule: re-parse
+    the file, find every function whose docstring matches the
+    signature-restating predicate, and delete the docstring's source lines.
+    Removals are applied bottom-up so earlier line numbers stay valid.
+    """
+    with open(file_path, encoding='utf-8') as f:
+        content = f.read()
+
+    try:
+        tree = ast.parse(content)
+    except SyntaxError as exc:
+        return {'success': False, 'error': f'Could not parse file: {exc}'}
+
+    lines = content.split('\n')
+    # Collect (start_line, end_line, sole_statement) 1-based inclusive ranges.
+    # ``sole_statement`` is True when the docstring is the only statement in the
+    # function body — deleting it outright would leave an empty block (a
+    # SyntaxError), so the range is replaced with a ``pass`` instead.
+    ranges: list[tuple[int, int, bool]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        docstring = ast.get_docstring(node, clean=False)
+        if not docstring or not _restates_signature_only(docstring):
+            continue
+        if not node.body:
+            continue
+        first = node.body[0]
+        if not (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)):
+            continue
+        end = first.end_lineno if first.end_lineno is not None else first.lineno
+        sole_statement = len(node.body) == 1
+        ranges.append((first.lineno, end, sole_statement))
+
+    if not ranges:
+        return {'success': False, 'error': 'No signature-restating docstrings found'}
+
+    for start, end, sole_statement in sorted(ranges, key=lambda r: r[0], reverse=True):
+        if sole_statement:
+            # Preserve the docstring's indentation for the replacement ``pass``.
+            indent = lines[start - 1][: len(lines[start - 1]) - len(lines[start - 1].lstrip())]
+            lines[start - 1:end] = [f'{indent}pass']
+        else:
+            del lines[start - 1:end]
+
+    new_content = '\n'.join(lines)
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+
+    return {
+        'success': True,
+        'changes': [f'Removed {len(ranges)} signature-restating docstring(s)'],
+        'docstrings_removed': len(ranges),
+    }
+
+
 FIX_HANDLERS = {
     'missing-frontmatter': apply_missing_frontmatter,
     'array-syntax-tools': apply_array_syntax_fix,
@@ -339,6 +400,7 @@ FIX_HANDLERS = {
     'skill-invokable-mismatch': apply_invokable_mismatch_fix,
     'checklist-pattern': apply_checklist_pattern_fix,
     'subdoc-checklist-pattern': apply_checklist_pattern_fix,
+    'SIMPLICITY_SIGNATURE_DOCSTRING': apply_signature_docstring_fix,
 }
 
 
