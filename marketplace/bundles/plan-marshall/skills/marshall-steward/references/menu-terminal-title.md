@@ -46,7 +46,7 @@ AskUserQuestion:
   header: "Terminal Title"
   options:
     - label: "Configure hook wiring"
-      description: "Install or repair the SessionStart, UserPromptSubmit, Notification, Stop, PostToolUse:AskUserQuestion render entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE in ./.claude/settings.local.json (Action A)"
+      description: "Install or repair the SessionStart (matcher-less + clear), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PostToolUse:AskUserQuestion, PostToolUse:Bash render entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE in ./.claude/settings.local.json (Action A)"
     - label: "Override active-plan for this session"
       description: "Write the cache mapping ${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan so the next render trigger uses the selected plan (Action B)"
   multiSelect: false
@@ -81,31 +81,38 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   health-check --checks all
 ```
 
-Inspect the `hook` entry in the `results` array. When `healthy: true` and the
-detail names `settings.local.json`, the SessionStart capture hook is already
-installed. Note that this signal alone does NOT prove the five render-trigger
-events, statusLine, and env entries are present — the install operation in
-Step 3 reports the full picture.
+Inspect the `display` entry in the `results` array. Its `detail` field reports
+every required piece on its own line, each ending in `present` or `MISSING`. To
+diagnose a partial install, scan the `detail` field for any line containing the
+token `MISSING` — each such line names exactly one render entry, statusLine, or
+env value that needs to be installed:
 
-When the user wants to know exactly which pieces are present without writing,
-parse `.claude/settings.local.json` directly and look for the renderer command
-string
-
-```
-python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session render-title
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+  health-check --checks display
 ```
 
-across `hooks.SessionStart`, `hooks.UserPromptSubmit`, `hooks.Notification`,
-`hooks.Stop`, `hooks.PostToolUse` (matcher `AskUserQuestion`), plus the
-top-level `statusLine` and `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE` keys.
+The `detail` field enumerates all of these labels, in order:
 
-When everything is already present, print an "already configured" message and
-return to the Configuration menu WITHOUT prompting:
+- `SessionStart:matcher-less`
+- `SessionStart:clear`
+- `UserPromptSubmit`
+- `Notification`
+- `Stop`
+- `PreToolUse:AskUserQuestion`
+- `PostToolUse:AskUserQuestion`
+- `PostToolUse:Bash`
+- `statusLine`
+- `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`
+
+When `display` reports `healthy: true` (no line contains `MISSING`), everything
+is wired up. Print an "already configured" message and return to the
+Configuration menu WITHOUT prompting:
 
 ```
 Terminal title is already configured.
 
-All five render-trigger hook entries, the statusLine command, and the
+All seven render-trigger hook entries, the statusLine command, and the
 CLAUDE_CODE_DISABLE_TERMINAL_TITLE env entry are present in
 ./.claude/settings.local.json. A fresh Claude Code session will drive the live
 tab title and statusline automatically.
@@ -119,11 +126,11 @@ Prompt the user before writing anything:
 
 ```
 AskUserQuestion:
-  question: "Enable the dynamic terminal title and statusLine? This installs five render-trigger hook entries, a statusLine command, and an env entry into ./.claude/settings.local.json."
+  question: "Enable the dynamic terminal title and statusLine? This installs seven render-trigger hook entries, a statusLine command, and an env entry into ./.claude/settings.local.json."
   header: "Terminal Title"
   options:
     - label: "Enable"
-      description: "Install the SessionStart (matcher-less + clear), UserPromptSubmit, Notification, Stop, PostToolUse:AskUserQuestion hook entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE"
+      description: "Install the SessionStart (matcher-less + clear), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PostToolUse:AskUserQuestion, PostToolUse:Bash hook entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE"
     - label: "Skip"
       description: "Make no changes; the terminal title stays disabled"
   multiSelect: false
@@ -161,8 +168,9 @@ present:
   installed (no write was needed).
 
 The union of the two lists is always `["SessionStart", "UserPromptSubmit",
-"Notification", "Stop", "PostToolUse"]`. Report the breakdown so the user can
-see exactly which entries were added:
+"Notification", "Stop", "PreToolUse:AskUserQuestion",
+"PostToolUse:AskUserQuestion", "PostToolUse:Bash"]`. Report the breakdown so the
+user can see exactly which entries were added:
 
 ```
 Installed render entries: <installed_events>

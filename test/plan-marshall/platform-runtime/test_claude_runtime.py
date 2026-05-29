@@ -38,6 +38,7 @@ from claude_runtime import (  # type: ignore[import-not-found]
     _HOOK_COMMAND,
     _RENDER_HOOK_COMMAND,
     _STATUSLINE_COMMAND,
+    _resolve_icon,
 )
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
@@ -223,7 +224,7 @@ def _count_command(entries: list[dict[str, Any]], command: str) -> int:
 class TestInstallTerminalTitleHooks:
     """Tests for ClaudeRuntime.project_install_hook covering the full terminal-title wiring.
 
-    Covers (a) fresh install creates all five render-trigger hook events plus
+    Covers (a) fresh install creates all seven render-trigger hook entries plus
     statusLine plus env entry; (b) re-running is idempotent; (c) existing
     statusLine with a different command yields already_present_other; (d)
     existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE with a different value
@@ -233,12 +234,13 @@ class TestInstallTerminalTitleHooks:
     """
 
     # ------------------------------------------------------------------
-    # (a) Fresh install wires all five render-trigger events + statusLine + env.
+    # (a) Fresh install wires all seven render-trigger entries + statusLine + env.
     # ------------------------------------------------------------------
 
-    def test_fresh_install_creates_all_five_render_events(self, rt, tmp_path):
+    def test_fresh_install_creates_all_render_events(self, rt, tmp_path):
         """Fresh install populates SessionStart (matcher-less + clear), UserPromptSubmit,
-        Notification, Stop, and PostToolUse:AskUserQuestion with the renderer command."""
+        Notification, Stop, PreToolUse:AskUserQuestion, PostToolUse:AskUserQuestion, and
+        PostToolUse:Bash with the renderer command."""
         target = tmp_path / ".claude" / "settings.local.json"
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
@@ -269,15 +271,26 @@ class TestInstallTerminalTitleHooks:
             # The single entry is matcher-less.
             assert event_entries[0].get("matcher", "") == ""
 
-        # PostToolUse: matcher="AskUserQuestion" + render command.
-        post_tool_use = hooks_block["PostToolUse"]
-        assert _count_command(post_tool_use, _RENDER_HOOK_COMMAND) == 1
-        ask_entries = [
+        # PreToolUse: matcher="AskUserQuestion" + render command.
+        pre_tool_use = hooks_block["PreToolUse"]
+        assert _count_command(pre_tool_use, _RENDER_HOOK_COMMAND) == 1
+        pre_ask_entries = [
             entry
-            for entry in post_tool_use
+            for entry in pre_tool_use
             if isinstance(entry, dict) and entry.get("matcher") == "AskUserQuestion"
         ]
-        assert len(ask_entries) == 1
+        assert len(pre_ask_entries) == 1
+
+        # PostToolUse: matcher="AskUserQuestion" AND matcher="Bash" render entries.
+        post_tool_use = hooks_block["PostToolUse"]
+        assert _count_command(post_tool_use, _RENDER_HOOK_COMMAND) == 2
+        post_matchers = {
+            entry.get("matcher")
+            for entry in post_tool_use
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert post_matchers == {"AskUserQuestion", "Bash"}
 
     def test_fresh_install_writes_statusline_command(self, rt, tmp_path):
         """Fresh install writes statusLine = {type: command, command: _STATUSLINE_COMMAND}."""
@@ -304,12 +317,15 @@ class TestInstallTerminalTitleHooks:
         result = _parsed(rt.project_install_hook(str(target)))
         installed = result["installed_events"]
         # SessionStart appears once even though two render entries were added.
+        # The tool-scoped entries use matcher-qualified labels.
         assert set(installed) == {
             "SessionStart",
             "UserPromptSubmit",
             "Notification",
             "Stop",
-            "PostToolUse",
+            "PreToolUse:AskUserQuestion",
+            "PostToolUse:AskUserQuestion",
+            "PostToolUse:Bash",
         }
 
     # ------------------------------------------------------------------
@@ -342,8 +358,54 @@ class TestInstallTerminalTitleHooks:
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
         assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 2
-        for event_name in ("UserPromptSubmit", "Notification", "Stop", "PostToolUse"):
+        for event_name in ("UserPromptSubmit", "Notification", "Stop", "PreToolUse"):
             assert _count_command(hooks_block[event_name], _RENDER_HOOK_COMMAND) == 1
+        # PostToolUse carries two render entries (AskUserQuestion + Bash).
+        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
+
+    # ------------------------------------------------------------------
+    # (b2) New D1 entries: PreToolUse:AskUserQuestion + PostToolUse:Bash.
+    # ------------------------------------------------------------------
+
+    def test_fresh_install_adds_pre_and_post_bash_entries(self, rt, tmp_path):
+        """A fresh install adds the PreToolUse:AskUserQuestion and PostToolUse:Bash render
+        entries and reports them with matcher-qualified labels in installed_events."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["status"] == "success"
+        installed = set(result["installed_events"])
+        assert "PreToolUse:AskUserQuestion" in installed
+        assert "PostToolUse:AskUserQuestion" in installed
+        assert "PostToolUse:Bash" in installed
+
+        settings = json.loads(target.read_text())
+        hooks_block = settings["hooks"]
+        # PreToolUse has exactly one AskUserQuestion render entry.
+        pre = hooks_block["PreToolUse"]
+        assert _count_command(pre, _RENDER_HOOK_COMMAND) == 1
+        assert pre[0].get("matcher") == "AskUserQuestion"
+        # PostToolUse has exactly two render entries (AskUserQuestion + Bash).
+        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
+
+    def test_pre_and_post_bash_entries_dedup_idempotent(self, rt, tmp_path):
+        """Re-invoking after a fresh install reports the PreToolUse:AskUserQuestion,
+        PostToolUse:AskUserQuestion, and PostToolUse:Bash render entries as already-present
+        and does not duplicate them."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+
+        result = _parsed(rt.project_install_hook(str(target)))
+        already = set(result["already_present_events"])
+        assert "PreToolUse:AskUserQuestion" in already
+        assert "PostToolUse:AskUserQuestion" in already
+        assert "PostToolUse:Bash" in already
+        # Nothing fresh installed on the second run.
+        assert result["installed_events"] == []
+
+        settings = json.loads(target.read_text())
+        hooks_block = settings["hooks"]
+        assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
 
     # ------------------------------------------------------------------
     # (c) Existing foreign statusLine yields already_present_other (preserved).
@@ -1085,6 +1147,154 @@ class TestSessionRenderTitle:
 
 
 # =============================================================================
+# 3b. _resolve_icon — canonical terminal-title icon palette (D1)
+# =============================================================================
+
+
+class TestResolveIcon:
+    """Tests for the module-level _resolve_icon helper covering every palette row.
+
+    Palette (see claude_runtime._resolve_icon):
+      - UserPromptSubmit → ➤
+      - Notification → ?
+      - PreToolUse + AskUserQuestion → ?
+      - PostToolUse + AskUserQuestion → ➤
+      - PostToolUse + Bash (or any other tool) → ➤
+      - Stop → ✓
+      - SessionStart → ➤
+      - unknown / missing event, missing tool → ➤ (defensive default)
+    """
+
+    @pytest.mark.parametrize(
+        ("hook_event_name", "tool_name", "expected"),
+        [
+            ("UserPromptSubmit", None, "➤"),
+            ("Notification", None, "?"),
+            ("PreToolUse", "AskUserQuestion", "?"),
+            ("PostToolUse", "AskUserQuestion", "➤"),
+            ("PostToolUse", "Bash", "➤"),
+            ("PostToolUse", "Read", "➤"),  # any other tool → active
+            ("Stop", None, "✓"),
+            ("SessionStart", None, "➤"),
+        ],
+    )
+    def test_palette_rows(self, hook_event_name, tool_name, expected):
+        """Each canonical palette row maps to its expected icon."""
+        assert _resolve_icon(hook_event_name, tool_name) == expected
+
+    @pytest.mark.parametrize(
+        ("hook_event_name", "tool_name"),
+        [
+            (None, None),  # missing event
+            ("UnknownEvent", None),  # unmapped event
+            ("PreToolUse", None),  # PreToolUse without AskUserQuestion tool
+            ("PreToolUse", "Bash"),  # PreToolUse with a non-Ask tool
+            ("", ""),  # empty strings
+        ],
+    )
+    def test_defensive_default_for_unmapped_input(self, hook_event_name, tool_name):
+        """Unknown / missing / partial input falls back to the active icon, never raises."""
+        assert _resolve_icon(hook_event_name, tool_name) == "➤"
+
+
+# =============================================================================
+# 3c. session_render_title hook-mode state-aware icon (D1, stdin-driven)
+# =============================================================================
+
+
+class TestSessionRenderTitleStateAwareIcon:
+    """Tests for hook-mode session_render_title icon selection driven by stdin payload.
+
+    Hook mode reads the JSON payload Claude Code writes to stdin, parses
+    ``hook_event_name`` + ``tool_name``, and resolves the icon via the canonical
+    palette. The parse is best-effort: missing / empty / malformed stdin defaults
+    to ``➤`` and never raises.
+    """
+
+    @staticmethod
+    def _arrange(tmp_path, monkeypatch, *, session_id="sess-icon", plan_id="icon-plan",
+                 title_body="phase-5-execute | icon-task"):
+        import claude_runtime as _cr
+
+        cache_dir = tmp_path / "sessions" / session_id
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+        plan_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.chdir(tmp_path)
+        return title_body
+
+    @pytest.mark.parametrize(
+        ("payload", "expected_icon"),
+        [
+            ({"hook_event_name": "UserPromptSubmit"}, "➤"),
+            ({"hook_event_name": "Notification"}, "?"),
+            ({"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion"}, "?"),
+            ({"hook_event_name": "PostToolUse", "tool_name": "AskUserQuestion"}, "➤"),
+            ({"hook_event_name": "PostToolUse", "tool_name": "Bash"}, "➤"),
+            ({"hook_event_name": "Stop"}, "✓"),
+            ({"hook_event_name": "SessionStart"}, "➤"),
+        ],
+    )
+    def test_hook_mode_icon_from_stdin_payload(
+        self, payload, expected_icon, rt, tmp_path, monkeypatch, capsys
+    ):
+        """The OSC envelope embeds the icon resolved from the stdin hook payload."""
+        from io import StringIO
+
+        title_body = self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == f"\x1b]0;{expected_icon} {title_body}\x07"
+
+    @pytest.mark.parametrize("stdin_text", ["", "   ", "not-json{", "[1, 2, 3]"])
+    def test_hook_mode_defensive_default_on_bad_stdin(
+        self, stdin_text, rt, tmp_path, monkeypatch, capsys
+    ):
+        """Empty / whitespace / malformed / non-dict stdin defaults to ➤ and never raises."""
+        from io import StringIO
+
+        title_body = self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr("sys.stdin", StringIO(stdin_text))
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
+
+    def test_statusline_mode_keeps_active_icon_without_reading_stdin(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """statusLine mode never consults stdin — it always emits the active icon."""
+        from io import StringIO
+
+        title_body = self._arrange(tmp_path, monkeypatch)
+        # Even with a Stop payload on stdin, statusLine mode keeps ➤.
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"hook_event_name": "Stop"})))
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=True)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        assert captured == f"➤ {title_body}"
+
+
+# =============================================================================
 # 5. permission_configure
 # =============================================================================
 
@@ -1743,8 +1953,60 @@ class TestHealthCheck:
         perm_result = next(r for r in result["results"] if r["check"] == "permissions")
         assert perm_result["healthy"] is True
 
-    def test_display_healthy_when_render_hook_present(self, rt, tmp_path, monkeypatch):
-        """display check is healthy when settings.local.json contains a render-title hook entry."""
+    # Per-event labels reported by the display check, in order. Mirrors
+    # _DISPLAY_RENDER_ENTRIES plus statusLine + env in claude_runtime.
+    _DISPLAY_LABELS = (
+        "SessionStart:matcher-less",
+        "SessionStart:clear",
+        "UserPromptSubmit",
+        "Notification",
+        "Stop",
+        "PreToolUse:AskUserQuestion",
+        "PostToolUse:AskUserQuestion",
+        "PostToolUse:Bash",
+        "statusLine",
+        "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
+    )
+
+    def test_display_healthy_when_fully_wired(self, rt, tmp_path, monkeypatch):
+        """display check is healthy when every required entry is present.
+
+        A fresh project install-hook writes the complete wiring; the display
+        check must then report every label as ``present`` and ``healthy: true``.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        monkeypatch.chdir(tmp_path)
+
+        result = _parsed(rt.health_check("display"))
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert display_result["healthy"] is True
+        detail = display_result["detail"]
+        for label in self._DISPLAY_LABELS:
+            assert f"{label}: present" in detail
+        assert "MISSING" not in detail
+
+    def test_display_unhealthy_when_render_hook_absent(self, rt, tmp_path, monkeypatch):
+        """display check is unhealthy when no render-title hook entry is present.
+
+        An empty settings file (no .claude/settings.local.json) reports every
+        required label as MISSING.
+        """
+        monkeypatch.chdir(tmp_path)
+        result = _parsed(rt.health_check("display"))
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert display_result["healthy"] is False
+        detail = display_result["detail"]
+        for label in self._DISPLAY_LABELS:
+            assert f"{label}: MISSING" in detail
+
+    def test_display_partial_install_names_each_missing_entry(self, rt, tmp_path, monkeypatch):
+        """A partial install (only SessionStart wired) reports the missing entries by label.
+
+        Only the SessionStart matcher-less render entry is present; every other
+        required label must be reported MISSING and the literal token MISSING
+        (the load-bearing grep target the menu doc references) must appear.
+        """
         settings_path = tmp_path / ".claude" / "settings.local.json"
         settings_path.parent.mkdir(parents=True)
         settings_data = {
@@ -1764,14 +2026,36 @@ class TestHealthCheck:
 
         result = _parsed(rt.health_check("display"))
         display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert display_result["healthy"] is True
+        assert display_result["healthy"] is False
+        detail = display_result["detail"]
+        # The one wired entry is present.
+        assert "SessionStart:matcher-less: present" in detail
+        # Every other required entry is named MISSING.
+        for label in (
+            "SessionStart:clear",
+            "UserPromptSubmit",
+            "Notification",
+            "Stop",
+            "PreToolUse:AskUserQuestion",
+            "PostToolUse:AskUserQuestion",
+            "PostToolUse:Bash",
+            "statusLine",
+            "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
+        ):
+            assert f"{label}: MISSING" in detail
 
-    def test_display_unhealthy_when_render_hook_absent(self, rt, tmp_path, monkeypatch):
-        """display check is unhealthy when no render-title hook entry is present."""
+    def test_display_detail_contains_missing_token_when_any_entry_absent(
+        self, rt, tmp_path, monkeypatch
+    ):
+        """The literal token MISSING is present whenever any required entry is absent.
+
+        Load-bearing for the menu-terminal-title.md diagnosis guidance, which
+        tells the user to grep the detail field for MISSING.
+        """
         monkeypatch.chdir(tmp_path)
         result = _parsed(rt.health_check("display"))
         display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert display_result["healthy"] is False
+        assert "MISSING" in display_result["detail"]
 
     def test_hook_check_healthy_when_session_start_entry_present(self, rt, tmp_path, monkeypatch):
         """hook check is healthy when .claude/settings.json contains SessionStart hook."""
