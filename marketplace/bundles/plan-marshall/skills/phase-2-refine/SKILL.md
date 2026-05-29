@@ -132,6 +132,10 @@ For the complete procedure (sync invocation, diff surfacing, finding-emission co
 
 Read `confidence_threshold` from project config (`manage-config plan phase-2-refine get --field confidence_threshold`). Default: `95`.
 
+### Step 4b: Load Fast-Path Threshold
+
+Read `fast_path_threshold` from project config (`manage-config plan phase-2-refine get --field fast_path_threshold`). Default: `100`. Read-only during refine — the same `set`/`init`/`sync-defaults`/`sync-plan-defaults` prohibition defined in the Enforcement section above applies. Store as `fast_path_threshold` for use in Step 10.
+
 ### Step 5: Load Compatibility Strategy
 
 Read `compatibility` from project config. Valid values:
@@ -228,7 +232,9 @@ For batch input, the analyzer can stage the per-dimension scores as JSON at `.pl
 
 The script returns `{confidence, breakdown[]{dimension, score, weight, weighted}, missing_dimensions, persisted}`; with `--persist`, the overall confidence also lands in `status.metadata.confidence` so phase-3-outline and downstream consumers can read it without re-running the math.
 
-If confidence >= threshold → Step 13. Otherwise → Step 11.
+**First-pass fast path** (distinct from the loop-exit rule below): on the first analysis pass only (`iteration_count == 1`), if confidence >= `fast_path_threshold`, skip the clarification loop (Steps 11-12) entirely and proceed directly to Step 13. The fast path is a stricter, first-pass-only gate that decides whether the loop is entered at all. On every subsequent iteration only the `confidence_threshold` loop-exit semantics below apply.
+
+If confidence >= `confidence_threshold` → Step 13. Otherwise → Step 11.
 
 ### Step 11: Clarify with User
 
