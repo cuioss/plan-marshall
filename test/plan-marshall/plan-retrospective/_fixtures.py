@@ -247,3 +247,59 @@ def setup_archived_plan(tmp_path: Path, name: str = '2026-04-17-retro-happy') ->
     plan_dir = tmp_path / name
     build_happy_plan_dir(plan_dir)
     return plan_dir
+
+
+# ---------------------------------------------------------------------------
+# Captured real-log regression fixture
+# ---------------------------------------------------------------------------
+#
+# A frozen, verbatim-shape excerpt of a production ``script-execution.log``.
+# This is NOT a hand-minimised synthetic line — it reproduces the exact
+# multi-record shape ``manage-logging`` emits (per
+# ``manage-logging/standards/log-format.md`` § Script Execution Log Format):
+# success entries are bare headers with no continuation block, while error
+# entries carry a two-space-indented ``exit_code: N`` / ``args: ...`` /
+# ``stderr: ...`` continuation block. The header line NEVER carries an inline
+# ``exit_code`` token.
+#
+# The capture deliberately interleaves success entries between failures and
+# includes a wrapped multi-line ``stderr`` blob, mirroring what real plans
+# accumulate. Because the exit code lives only on the continuation line, this
+# fixture parses to ``total_failures: 0`` under the pre-fix inline-``exit_code=``
+# coupling and to ``total_failures > 0`` under the corrected continuation-line
+# parser — which is exactly the regression guard the recurring false-negative
+# defect demands.
+_CAPTURED_REAL_LOG = """\
+[2026-05-27T14:02:01Z] [INFO] [a3f2c1] plan-marshall:manage-status:manage-status get-routing-context (0.21s)
+[2026-05-27T14:02:03Z] [INFO] [b1c2d3] plan-marshall:manage-config:manage-config plan (0.18s)
+[2026-05-27T14:02:09Z] [ERROR] [b7e4d9] plan-marshall:manage-findings:manage-findings qgate (0.07s)
+  exit_code: 2
+  args: qgate query --plan-id demo --phase 5-execute
+  stderr: usage: manage-findings qgate [-h] {add,list,resolve} ...
+manage-findings qgate: error: argument command: invalid choice: 'query' (choose from 'add', 'list', 'resolve')
+[2026-05-27T14:02:11Z] [INFO] [c4d5e6] plan-marshall:manage-tasks:manage-tasks next (0.15s)
+[2026-05-27T14:02:18Z] [ERROR] [d8f9a0] plan-marshall:tools-integration-ci:ci ci (0.06s)
+  exit_code: 2
+  args: ci ci pr create --plan-id demo
+  stderr: usage: ci [-h] {pr,checks,issue,branch} ...
+ci: error: argument command: invalid choice: 'ci' (choose from 'pr', 'checks', 'issue', 'branch')
+[2026-05-27T14:02:24Z] [INFO] [e1a2b3] plan-marshall:manage-files:manage-files read (0.09s)
+[2026-05-27T14:02:30Z] [ERROR] [f5a6b7] plan-marshall:manage-findings:manage-findings qgate (0.05s)
+  exit_code: 2
+  args: qgate list --plan-id demo
+  stderr: manage-findings qgate list: error: the following arguments are required: --phase
+[2026-05-27T14:02:36Z] [INFO] [a7b8c9] plan-marshall:manage-status:manage-status read (0.12s)
+"""
+
+
+def write_captured_real_log(plan_dir: Path) -> Path:
+    """Write the frozen captured-real-log fixture into ``plan_dir/logs/``.
+
+    Materializes ``logs/script-execution.log`` with the verbatim production
+    shape so the aspect can be exercised end-to-end against real-format data.
+    """
+    logs_dir = plan_dir / 'logs'
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    path = logs_dir / 'script-execution.log'
+    path.write_text(_CAPTURED_REAL_LOG, encoding='utf-8')
+    return path

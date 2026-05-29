@@ -42,25 +42,27 @@ from input_validation import (  # type: ignore[import-not-found]
     parse_args_with_toon_errors,
 )
 
-# script-execution.log line shape (per manage-logging):
-#   [ts] [LEVEL] [hash] {notation} {subcommand} (duration_s) [exit_code=N]
-# Failed calls record stderr on subsequent indented lines until the next
-# bracketed timestamp. The parser keys on the bracketed exit-code marker
-# and accumulates the indented stderr block that follows.
+# script-execution.log record shape (per manage-logging/standards/log-format.md):
+#   [ts] [LEVEL] [hash] {notation} {subcommand} ({duration}s)
+#     exit_code: N        <-- error entries only, two-space-indented continuation
+#     args: ...           <-- error entries only
+#     stderr: ...         <-- error entries only
+# The header line carries NO inline ``exit_code`` token. A successful
+# (exit-zero) call is a bare header with no continuation block; a failed
+# call follows its header with a two-space-indented continuation block
+# whose ``exit_code:`` field holds a non-zero value. The parser matches
+# the header by notation (plus optional subcommand/duration) and then scans
+# the continuation block for ``exit_code:``, ``args:``, and ``stderr:``.
 _HEADER_RE = re.compile(
     r'^\[(?P<ts>[^\]]+)\]\s+\[(?P<level>[A-Z]+)\]\s+\[[^\]]+\]\s+'
     r'(?P<notation>[a-z][\w-]*:[\w-]+:[\w-]+)'
-    r'(?:\s+(?P<sub>[\w-]+))?'
-    r'.*?exit_code=(?P<code>\d+)',
+    r'(?:\s+(?P<sub>[\w-]+))?',
 )
 
-# A simpler header that does NOT carry ``exit_code=N``: those are successful
-# (exit-zero) calls and are skipped — but we still need to recognise the
-# header so we know when a stderr block ends.
-_HEADER_SIMPLE_RE = re.compile(
-    r'^\[[^\]]+\]\s+\[[A-Z]+\]\s+\[[^\]]+\]\s+'
-    r'[a-z][\w-]*:[\w-]+:[\w-]+',
-)
+# Two-space-indented continuation field: ``  {key}: {value}``. Used to scan
+# the block that follows an error-entry header for ``exit_code``, ``args``,
+# and ``stderr`` fields.
+_FIELD_RE = re.compile(r'^  (?P<key>\w+):\s?(?P<value>.*)$')
 
 # Stderr-signature classifiers (substring matches on the accumulated stderr
 # block). Order matters: ``invalid choice`` is checked before
@@ -113,16 +115,31 @@ def parse_failures(lines: list[str]) -> list[dict[str, Any]]:
             'stderr': str,  # accumulated stderr block joined by newlines
         }
 
-    The parser is robust to log lines that wrap (production manage-logging
-    sometimes embeds newlines in argparse error blobs). A new failure begins
-    on the next line whose shape matches ``_HEADER_SIMPLE_RE``.
+    Each script call is recorded as a header line (``[ts] [LEVEL] [hash]
+    notation subcommand (duration)``) optionally followed by a two-space-
+    indented continuation block. A successful (exit-zero) call has no
+    continuation block; a failed call carries ``exit_code: N`` (colon, not
+    equals) plus ``args:`` and ``stderr:`` continuation fields. A header is
+    treated as a failure only when its continuation block holds a non-zero
+    ``exit_code:`` value.
+
+    The parser is robust to ``stderr`` blobs that wrap across multiple lines:
+    once an ``stderr:`` field is seen, every subsequent continuation line that
+    is not itself a recognised field is appended to the stderr buffer.
     """
     failures: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     stderr_buf: list[str] = []
+    in_stderr = False
 
     def _flush() -> None:
         if current is None:
+            return
+        # A record is a failure only when its continuation block carried a
+        # non-zero exit_code. Bare headers (success entries) and headers whose
+        # block reports exit_code 0 are dropped.
+        code = current.get('exit_code')
+        if code is None or code == 0:
             return
         current['stderr'] = '\n'.join(stderr_buf).strip()
         failures.append(current)
@@ -132,35 +149,39 @@ def parse_failures(lines: list[str]) -> list[dict[str, Any]]:
         if header_match:
             _flush()
             stderr_buf = []
-            try:
-                code = int(header_match.group('code'))
-            except ValueError:
-                current = None
-                continue
-            if code == 0:
-                # Successful call — drop the in-progress accumulator and
-                # await the next header.
-                current = None
-                continue
+            in_stderr = False
             current = {
                 'timestamp': header_match.group('ts'),
                 'notation': header_match.group('notation'),
                 'subcommand': header_match.group('sub'),
-                'exit_code': code,
+                'exit_code': None,
                 'stderr': '',
             }
             continue
-        simple_match = _HEADER_SIMPLE_RE.match(line)
-        if simple_match:
-            # A header line without exit_code=N: a successful call. Flush
-            # any in-progress failure (its stderr block is now closed).
-            _flush()
-            stderr_buf = []
-            current = None
+        if current is None:
             continue
-        # Continuation line — append to the current failure's stderr buffer
-        # if we're tracking one.
-        if current is not None:
+        field_match = _FIELD_RE.match(line)
+        if field_match:
+            key = field_match.group('key')
+            value = field_match.group('value')
+            if key == 'exit_code':
+                try:
+                    current['exit_code'] = int(value.strip())
+                except ValueError:
+                    current['exit_code'] = None
+                in_stderr = False
+                continue
+            if key == 'stderr':
+                stderr_buf = [value]
+                in_stderr = True
+                continue
+            # Any other recognised field (e.g. args, stdout) closes the
+            # stderr accumulation.
+            in_stderr = False
+            continue
+        # Non-field continuation line: append to stderr only when we are
+        # inside a wrapped stderr blob.
+        if in_stderr:
             stderr_buf.append(line)
 
     _flush()
