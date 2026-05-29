@@ -393,8 +393,17 @@ dirty_files: {file_list}
 
 Do NOT call `manage-status transition` to 3-outline. Do NOT proceed with the metrics fused-call. The orchestrator stops here; recovery requires the user to inspect the offending files and either revert them or move them into `.plan/local/plans/{plan_id}/**`.
 
+**Named recovery case — `.plan/marshal.json`**: When `dirty_files` contains `.plan/marshal.json`, output an additional recovery line alongside the generic instruction:
+
+```
+Recovery: git checkout -- .plan/marshal.json
+```
+
+`marshal.json` holds only project-level configuration read by phases; it is never a refine-phase output artifact. Restoring it from HEAD is always safe — refine MUST NOT have touched it (the manage-config mutation prohibition in `plan-marshall:phase-2-refine` § Enforcement → Prohibited actions forbids `set`, `init`, `sync-defaults`, and `sync-plan-defaults` during refine). A dirty `marshal.json` after refine is therefore always a spurious write that safe to revert without losing any refine-phase work.
+
 **Cross-references**:
-- `plan-marshall:phase-2-refine` § Enforcement → Allowed write paths — the prohibition this assertion enforces (Deliverable 3)
+- `plan-marshall:phase-2-refine` § Enforcement → Allowed write paths — the prohibition this assertion enforces
+- `plan-marshall:phase-2-refine` § Enforcement → Prohibited actions — the manage-config mutation prohibition that makes marshal.json restoration always safe
 - `feedback_phase2_refine_never_implements` — driving failure history
 - `pm-plugin-development:plugin-doctor` analyzer `REFINE_CONTRACT_VIOLATION` (Deliverable 5) — edit-time complement to this runtime assertion
 
