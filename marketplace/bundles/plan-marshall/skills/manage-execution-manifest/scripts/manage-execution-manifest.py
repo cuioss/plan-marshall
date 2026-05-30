@@ -91,6 +91,7 @@ DEFAULT_PHASE_6_STEPS = (
     'sonar-roundtrip',
     'lessons-capture',
     'branch-cleanup',
+    'record-metrics',
     'archive-plan',
 )
 
