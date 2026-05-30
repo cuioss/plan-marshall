@@ -831,8 +831,15 @@ def get_metadata_content_split(content: str) -> tuple[str, str]:
 def safe_main(main_fn: Any) -> Any:
     """Decorator for script entry points that catches unhandled exceptions.
 
-    Wraps the main function so that unhandled exceptions produce a TOON error
-    on stderr and exit with code 1, instead of printing a raw traceback.
+    Wraps the main function so that an uncaught exception is rendered as a
+    structured ``status: error`` TOON on **stdout** (via ``output_toon_error``)
+    and the process exits with code 1, instead of printing a raw traceback or
+    writing the error to stderr. Emitting on stdout matches the canonical
+    ``manage-*`` TOON-on-stdout output contract
+    (``pm-plugin-development:plugin-script-architecture/standards/output-contract.md``):
+    a genuine crash is exit 1 carrying a parseable diagnostic payload, never an
+    info-free empty-stdout exit 1. ``sys.exit(1)`` is retained, so the exit code
+    still distinguishes a crash (1) from an operation failure (0).
 
     Usage:
         @safe_main
@@ -854,7 +861,7 @@ def safe_main(main_fn: Any) -> Any:
         except SystemExit:
             raise
         except Exception as e:
-            output_error('main', str(e))
+            output_toon_error('internal_error', str(e))
             sys.exit(1)
 
     return wrapper

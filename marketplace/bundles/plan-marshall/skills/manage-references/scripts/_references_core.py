@@ -59,7 +59,9 @@ def require_references(plan_id: str) -> dict[Any, Any]:
         ``{'status': 'error', 'plan_id': ..., 'error': 'file_not_found',
         'message': 'references.json not found'}`` on failure. The caller MUST
         check ``result.get('status') == 'error'`` and propagate the dict so
-        the main dispatcher can emit the TOON and surface exit_code=1.
+        the main dispatcher can emit the TOON. Operation failures exit 0 —
+        the script ran successfully, only the operation failed; callers
+        branch on the TOON ``status`` field, not on the process exit code.
 
     Raises:
         ValueError: If references.json exists but its top-level JSON value

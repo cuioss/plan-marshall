@@ -104,8 +104,14 @@ def test_diff_files_returns_structured_error_for_missing_worktree(plan_context, 
         '--worktree-path',
         str(tmp_path / 'does-not-exist'),
     )
-    # The handler returns a TOON error — exit code is non-zero.
-    assert result.returncode != 0
+    # The handler returns a structured TOON error and exits 0 — an operation
+    # failure (bogus worktree / missing references) is not a script crash, so
+    # the dispatcher emits the error on stdout and exits 0 per the
+    # operation-failure contract.
+    assert result.returncode == 0, (
+        f'Expected exit 0 (operation failure) for missing worktree; '
+        f'stdout={result.stdout!r} stderr={result.stderr!r}'
+    )
     # Either worktree_not_found (path missing) or references_not_found
     # (no references.json yet) — both exercise the structured error path.
     assert (

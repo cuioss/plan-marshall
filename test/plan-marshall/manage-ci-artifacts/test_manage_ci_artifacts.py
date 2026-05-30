@@ -540,7 +540,15 @@ def test_cmd_read_latest_dispatches_to_latest_accessor(capsys, plan_context):
 
 def test_cmd_read_latest_error_envelope_when_no_runs(capsys, plan_context):
     """When no runs are persisted, ``read --latest`` MUST emit the
-    structured error envelope and exit non-zero.
+    structured error envelope and exit 0.
+
+    Operation failure (no persisted runs) is NOT a script crash — the
+    script ran successfully, only the operation failed. Per the output
+    contract (pm-plugin-development:plugin-script-architecture →
+    output-contract.md), cmd_read exits 0 and carries the verdict in the
+    TOON ``status: error`` / ``no_persisted_runs`` payload on stdout.
+    Callers branch on ``status``, never on the process exit code. Exit 1
+    is reserved for genuine script crashes; exit 2 for argparse.
     """
     plan_id = 'ci-artifacts-cmd-latest-empty'
     args = argparse.Namespace(
@@ -549,9 +557,70 @@ def test_cmd_read_latest_error_envelope_when_no_runs(capsys, plan_context):
         latest=True,
     )
     exit_code = cmd_read(args)
-    assert exit_code == 1
+    assert exit_code == 0
     out = capsys.readouterr().out
+    assert 'status: error' in out
     assert 'no_persisted_runs' in out
+
+
+# ---------------------------------------------------------------------------
+# Regression: every cmd-level operation failure exits 0 with status: error
+#
+# Operation failures (manifest not found, no persisted runs, empty run_id,
+# unloadable --jobs-file) are NOT script crashes — the script ran
+# successfully, only the operation failed. Per the output contract
+# (pm-plugin-development:plugin-script-architecture → output-contract.md),
+# these exit 0 and carry the verdict in the TOON ``status: error`` payload on
+# stdout. Callers branch on ``status``, never on the process exit code. A
+# future regression of any cmd handler back to a non-zero exit on operation
+# failure fails this gate.
+# ---------------------------------------------------------------------------
+
+
+def test_cmd_read_missing_run_exits_zero_with_toon_error(capsys, plan_context):
+    """cmd_read for a missing run_id exits 0 with a TOON status:error payload."""
+    plan_id = 'ci-artifacts-cmd-read-missing'
+    args = argparse.Namespace(plan_id=plan_id, run_id='no-such-run', latest=False)
+    exit_code = cmd_read(args)
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert 'status: error' in out
+
+
+def test_cmd_persist_empty_run_id_exits_zero_with_toon_error(capsys, plan_context):
+    """cmd_persist with an empty run_id exits 0 with a TOON status:error payload.
+
+    persist() rejects the empty run_id with a status:error dict; cmd_persist
+    must emit that TOON and exit 0 (operation failure, not a script crash).
+    """
+    plan_id = 'ci-artifacts-cmd-persist-empty-run-id'
+    exit_code = cmd_persist(_persist_args(plan_id=plan_id, run_id=''))
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert 'status: error' in out
+    assert 'run_id' in out
+
+
+def test_cmd_persist_unloadable_jobs_file_exits_zero_with_toon_error(
+    tmp_path, capsys, plan_context
+):
+    """cmd_persist handed an unparseable --jobs-file exits 0 with status:error.
+
+    Malformed JSON in the jobs file is an operation failure, not a script
+    crash — the handler reports it via the TOON ``status: error`` payload and
+    exits 0. Callers branch on ``status``, never on the exit code.
+    """
+    plan_id = 'ci-artifacts-cmd-persist-bad-jobs-file'
+    bad_jobs = tmp_path / 'bad-jobs.json'
+    bad_jobs.write_text('{not valid json', encoding='utf-8')
+
+    exit_code = cmd_persist(
+        _persist_args(plan_id=plan_id, run_id='780', jobs_file=str(bad_jobs))
+    )
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert 'status: error' in out
+    assert 'jobs-file' in out
 
 
 def test_script_source_uses_canonical_local_plans_path():

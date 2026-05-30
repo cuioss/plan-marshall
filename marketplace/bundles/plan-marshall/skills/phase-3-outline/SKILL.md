@@ -61,10 +61,12 @@ See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standar
 
 Every `manage-*` script call documented below carries the following exit-code contract unless a step explicitly states otherwise:
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP the phase and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern. The phase MUST NOT proceed on a non-zero exit; "log and continue" is equally forbidden.
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes. **`exit 0` does NOT imply the operation succeeded** — the `manage-*` scripts follow the canonical output contract (`pm-plugin-development:plugin-script-architecture/standards/output-contract.md`), under which an *operation* failure (`file_not_found`, `field_not_found`, `plan_not_found`, validation rejection, already-exists, etc.) exits `0` and carries the verdict in the stdout TOON `status: error` payload. Branch on the TOON `status` / `value` field to detect operation failures; never infer "the field was present" or "the plan exists" from a zero exit code.
+- **`exit_code != 0`**: STOP the phase and return an error TOON to the orchestrator carrying the script's stderr verbatim. A non-zero exit is reserved for a genuine **script crash** (exit 1 — uncaught exception, corrupt/non-dict payload, missing required file) or an `argparse_rejection` (exit 2 — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern). The phase MUST NOT proceed on a non-zero exit; "log and continue" is equally forbidden.
 
 Step-level exceptions to this default — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, or `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them. Treat the absence of an inline exception as the default "hard-stop" behaviour above.
+
+**Operation-failure carve-out (`manage-*` read verbs):** Because operation failures exit `0`, a step that reads a `manage-*` read verb (`get`, `read`, `get-context`, `set-list`, and the like) to discover whether a field/plan/file is present MUST detect the not-found / validation outcome by inspecting the TOON `status` (`status: error` plus the precise `error` code) — NOT by testing `exit_code != 0`. Reserving `exit_code != 0` for crash/argparse detection and reading the TOON for operation-failure detection are two distinct branches; conflating them (treating any non-zero exit as "field absent") regresses the contract and is forbidden.
 
 ---
 

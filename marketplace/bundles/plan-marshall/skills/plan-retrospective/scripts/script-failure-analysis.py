@@ -1,19 +1,54 @@
 #!/usr/bin/env python3
-"""Scan ``script-execution.log`` for argparse / script-internal failures.
+"""Scan ``script-execution.log`` AND ``work.log`` for argparse / script-internal failures.
 
-Pure deterministic fact extractor — classifies non-zero-exit script calls
-recorded in the plan's ``script-execution.log`` by stderr signature and
-emits a TOON fragment shaped for ``compile-report.py`` to consume under
-the ``script-failure-analysis`` aspect.
+Pure deterministic fact extractor — classifies non-zero-exit script calls by
+stderr signature and emits a TOON fragment shaped for ``compile-report.py`` to
+consume under the ``script-failure-analysis`` aspect.
 
-Classification matrix (per the redirect that motivated this pass):
+Two log sinks are scanned and merged:
+
+1. ``logs/script-execution.log`` — the two-tier executor audit log. A failed
+   call is a header line followed by a two-space-indented continuation block
+   whose ``exit_code:`` field is non-zero.
+2. ``logs/work.log`` — the work log into which the executor mirrors a single
+   ``[ERROR] (...:execute-script:N) script_failure notation=... exit_code=N
+   failure_kind=... stderr=...`` line for every non-zero-exit call. This sink
+   catches argparse rejections (exit 2) that an agent emitted directly to the
+   work log when the ``script-execution.log`` entry was never written (the
+   originating-context recurrence gap).
+
+Because every executor failure is mirrored to BOTH sinks, the same physical
+event appears once in each list sharing the same ``(notation, timestamp)``.
+``work.log`` entries that match an ``script-execution.log`` entry on that pair
+are dropped before merging, so a mirrored failure is counted exactly once in
+``total_failures``. The deduplicated lists are then merged and fed through
+``dedupe_findings`` so the within-log key ``(notation, subtype)`` collapses
+distinct entries for the same notation + subtype into a single finding.
+``total_failures`` / ``unique_failures`` reflect both sinks without
+double-counting the mirror.
+
+Failure criterion: ONLY exit code 1 and exit code 2 are script failures.
 
 | exit_code | stderr signature                          | subtype                 | type         |
 |-----------|-------------------------------------------|-------------------------|--------------|
 | 2         | ``invalid choice: ``                      | invented_subcommand     | anti-pattern |
 | 2         | ``the following arguments are required: ``| missing_required_flag   | anti-pattern |
 | 2         | ``unrecognized arguments: ``              | invented_flag           | anti-pattern |
+| 2         | (no recognized argparse signature)        | argparse_other          | anti-pattern |
 | 1         | non-argparse                              | script_internal_error   | bug          |
+| 0         | (status: error TOON on stdout)            | NOT a failure — ignored | (n/a)        |
+
+An exit code of ``0`` is NEVER a script failure, even when the call emitted a
+``status: error`` TOON payload on stdout. Per the canonical output contract,
+exit 0 means the script ran and produced a meaningful result; a
+``status: error`` at exit 0 is a caller-handled *operation* failure (item not
+found, validation failed), not a crash. ``parse_failures._flush`` and
+``parse_work_log_failures`` both drop exit-0 (and ``None``) entries before
+classification, so an operation failure can never be mislabeled
+``script_internal_error``. There is deliberately NO
+stdout-when-stderr-empty classifier: re-deriving a "failure" from an empty
+stderr would mask future producer contract violations rather than surface
+them, so that path is intentionally absent.
 
 Each ``(component, subtype)`` pair surfaces once in ``findings[]`` plus a
 seed-lesson fragment under ``lessons[]`` that ``compile-report`` and the
@@ -77,6 +112,30 @@ _ARGPARSE_SIGNATURES: tuple[tuple[str, str], ...] = (
     ('the following arguments are required: ', 'missing_required_flag'),
     ('unrecognized arguments: ', 'invented_flag'),
 )
+
+# work.log executor failure line. The executor mirrors every non-zero-exit
+# call into the work log as a single physical line of the shape:
+#
+#   [ts] [LEVEL] [hash] [ERROR] (plan-marshall:execute-script:N) script_failure \
+#       notation=<notation> exit_code=<N> failure_kind=<kind> stderr=<...>
+#
+# The leading manage-logging header ([ts] [LEVEL] [hash]) is tolerated by
+# anchoring the match on the ``(...:execute-script:N) script_failure`` marker
+# rather than the start of the line. ``notation`` and ``exit_code`` are
+# captured as named groups; everything after ``stderr=`` (to end-of-line) is
+# the embedded stderr signature used by the shared argparse classifier.
+_WORK_LOG_FAILURE_RE = re.compile(
+    r'\(\S*?execute-script:\d+\)\s+script_failure\s+'
+    r'notation=(?P<notation>[a-z][\w-]*:[\w-]+:[\w-]+)\s+'
+    r'exit_code=(?P<exit_code>\d+)\s+'
+    r'failure_kind=(?P<failure_kind>\S+)'
+    r'(?:\s+stderr=(?P<stderr>.*))?$',
+)
+
+# Leading manage-logging header for a work.log line: ``[ts] [LEVEL] [hash] ``.
+# Used only to recover the timestamp for the failure record's representative
+# sample; the failure marker itself is matched independently of the header.
+_WORK_LOG_TS_RE = re.compile(r'^\[(?P<ts>[^\]]+)\]')
 
 
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -192,6 +251,53 @@ def parse_failures(lines: list[str]) -> list[dict[str, Any]]:
     return failures
 
 
+def parse_work_log_failures(lines: list[str]) -> list[dict[str, Any]]:
+    """Walk ``work.log`` ``lines`` and emit one dict per executor failure line.
+
+    The executor mirrors every non-zero-exit call into the work log as a single
+    physical line carrying ``script_failure notation=... exit_code=...
+    failure_kind=... stderr=...``. Each matching line yields one failure record
+    in the SAME shape as :func:`parse_failures` so both sinks feed the shared
+    :func:`classify_failure` / :func:`dedupe_findings` pipeline unchanged:
+
+        {
+            'timestamp': str,
+            'notation': str,
+            'subcommand': None,   # the work.log line does not carry a subcommand
+            'exit_code': int,
+            'stderr': str,        # the embedded stderr signature (may be empty)
+        }
+
+    A line whose ``exit_code`` is ``0`` is dropped (operation failures exit 0
+    and are caller-handled outcomes, never script failures). Lines that do not
+    match the executor failure marker are ignored.
+    """
+    failures: list[dict[str, Any]] = []
+    for line in lines:
+        match = _WORK_LOG_FAILURE_RE.search(line)
+        if match is None:
+            continue
+        try:
+            exit_code = int(match.group('exit_code'))
+        except ValueError:
+            continue
+        if exit_code == 0:
+            continue
+        ts_match = _WORK_LOG_TS_RE.match(line)
+        timestamp = ts_match.group('ts') if ts_match else ''
+        stderr = (match.group('stderr') or '').strip()
+        failures.append(
+            {
+                'timestamp': timestamp,
+                'notation': match.group('notation'),
+                'subcommand': None,
+                'exit_code': exit_code,
+                'stderr': stderr,
+            }
+        )
+    return failures
+
+
 def classify_failure(failure: dict[str, Any]) -> tuple[str, str]:
     """Return ``(type, subtype)`` for a failure record.
 
@@ -276,12 +382,49 @@ def build_seed_lessons(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return seeds
 
 
+def dedupe_mirrored_failures(
+    exec_failures: list[dict[str, Any]],
+    work_failures: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Drop ``work.log`` failures that mirror a ``script-execution.log`` failure.
+
+    Every non-zero-exit executor call is mirrored into BOTH sinks, so the same
+    physical event surfaces once in ``exec_failures`` and once in
+    ``work_failures`` sharing the same ``(notation, timestamp)`` pair. Counting
+    both inflates ``total_failures`` by one per mirrored event.
+
+    Returns the subset of ``work_failures`` whose ``(notation, timestamp)`` key
+    does NOT already appear in ``exec_failures``. Order is preserved so the
+    merged list stays deterministic. A ``work.log`` failure with no matching
+    ``script-execution.log`` entry (the originating-context gap this analyzer
+    was built to catch) is retained.
+    """
+    exec_keys = {(f.get('notation'), f.get('timestamp')) for f in exec_failures}
+    return [
+        f
+        for f in work_failures
+        if (f.get('notation'), f.get('timestamp')) not in exec_keys
+    ]
+
+
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
-    log_path = plan_dir / 'logs' / 'script-execution.log'
-    lines = read_log(log_path)
+    exec_log_path = plan_dir / 'logs' / 'script-execution.log'
+    work_log_path = plan_dir / 'logs' / 'work.log'
 
-    raw_failures = parse_failures(lines)
+    exec_failures = parse_failures(read_log(exec_log_path))
+    work_failures = parse_work_log_failures(read_log(work_log_path))
+
+    # Drop work.log entries that mirror a script-execution.log entry on
+    # (notation, timestamp) so a single physical failure mirrored to both sinks
+    # is counted exactly once in total_failures.
+    work_failures = dedupe_mirrored_failures(exec_failures, work_failures)
+
+    # Merge both sinks before dedup so the within-log key (notation, subtype)
+    # collapses distinct entries for the same notation + subtype into a single
+    # finding. script-execution.log entries come first so they supply the
+    # representative sample on a tie.
+    raw_failures = exec_failures + work_failures
     findings = dedupe_findings(raw_failures)
     lessons = build_seed_lessons(findings)
 
@@ -290,7 +433,8 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'aspect': 'script-failure-analysis',
         'status': 'success',
         'plan_id': plan_id,
-        'log_path': str(log_path),
+        'log_path': str(exec_log_path),
+        'work_log_path': str(work_log_path),
         'total_failures': len(raw_failures),
         'unique_failures': len(findings),
         'findings': findings,

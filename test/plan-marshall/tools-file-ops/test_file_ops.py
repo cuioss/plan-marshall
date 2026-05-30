@@ -35,6 +35,7 @@ from file_ops import (
     output_success,
     parse_markdown_metadata,
     require_plan_exists,
+    safe_main,
     set_base_dir,
     update_markdown_metadata,
 )
@@ -193,6 +194,60 @@ def test_output_error_format():
     assert result['success'] is False
     assert result['operation'] == 'test-op'
     assert result['error'] == 'Something went wrong'
+
+
+# =============================================================================
+# safe_main exception-rendering tests
+#
+# An uncaught exception inside a @safe_main-wrapped entry point MUST be
+# rendered as a status:error TOON on STDOUT (per the manage-* TOON-on-stdout
+# contract), NOT on stderr, while still exiting with code 1 (a genuine crash
+# is distinguished from an operation failure, which exits 0). These tests pin
+# the stdout sink, the populated message, the status:error code, and the
+# retained exit code 1.
+# =============================================================================
+
+
+def test_safe_main_renders_uncaught_exception_as_stdout_toon(capsys):
+    """A raised exception → status:error TOON on stdout, exit code 1."""
+
+    @safe_main
+    def boom() -> int:
+        raise RuntimeError('kaboom detail')
+
+    with pytest.raises(SystemExit) as excinfo:
+        boom()
+
+    # Genuine crash keeps exit code 1 (distinct from operation failures = 0).
+    assert excinfo.value.code == 1
+
+    captured = capsys.readouterr()
+    # The diagnostic lives on STDOUT, not stderr (TOON-on-stdout contract).
+    assert captured.out.strip(), 'safe_main must emit the error TOON on stdout'
+    assert captured.err == '', 'safe_main must not write the crash to stderr'
+
+    result = parse_toon(captured.out)
+    assert result['status'] == 'error'
+    assert result['error'] == 'internal_error'
+    # The exception message is preserved in the populated TOON message field.
+    assert 'kaboom detail' in result['message']
+
+
+def test_safe_main_success_path_exits_zero(capsys):
+    """A clean return value is propagated as the process exit code (0)."""
+
+    @safe_main
+    def ok() -> int:
+        return 0
+
+    with pytest.raises(SystemExit) as excinfo:
+        ok()
+
+    assert excinfo.value.code == 0
+    captured = capsys.readouterr()
+    # No error TOON is emitted on the success path.
+    assert 'status: error' not in captured.out
+    assert captured.err == ''
 
 
 # =============================================================================
