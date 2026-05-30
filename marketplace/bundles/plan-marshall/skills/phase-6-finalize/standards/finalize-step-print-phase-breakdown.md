@@ -1,7 +1,7 @@
 ---
 name: default:finalize-step-print-phase-breakdown
 description: Optional finalize-summary supplement that captures the Phase Breakdown table from metrics.md, writes it directly to work/phase-breakdown-output.txt, and lets the renderer append it after the per-step [OK] list
-order: 995
+order: 997
 ---
 
 # Finalize Step: print-phase-breakdown
@@ -28,7 +28,7 @@ The step is the **producer** in the cross-deliverable contract documented in `ou
 
 ## Ordering constraint
 
-`order: 995` places this step AFTER `default:record-metrics` (order 990, which produces `metrics.md`) and BEFORE `default:archive-plan` (order 1000, which moves the plan directory). Do NOT relocate this step outside that window — the producer relies on `metrics.md` existing under `.plan/local/plans/{plan_id}/`, and the consumer (renderer snapshot) reads `work/phase-breakdown-output.txt` from the same live directory before archive moves it.
+`order: 997` places this step AFTER `default:record-metrics` (order 990, which produces `metrics.md`) and BEFORE `default:archive-plan` (order 1000, which moves the plan directory). Do NOT relocate this step outside that window — the producer relies on `metrics.md` existing under `.plan/local/plans/{plan_id}/`, and the consumer (renderer snapshot) reads `work/phase-breakdown-output.txt` from the same live directory before archive moves it.
 
 ## Workflow
 

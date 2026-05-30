@@ -143,6 +143,7 @@ Each step declares an `order: <int>` value in its authoritative source — front
 | Step Name | Standards Document | Description |
 |-----------|-------------------|-------------|
 | `default:pre-submission-self-review` | `workflow/pre-submission-self-review.md` | Pre-submission structural self-review (symmetric pairs, regex, wording, duplication, contract drift) |
+| `default:finalize-step-simplify` | `standards/finalize-step-simplify.md` | Holistic post-implementation simplification sweep — collapse accidental complexity introduced across the plan's diff (dispatches under `--phase phase-6-finalize`, no `--role`) |
 | `default:commit-push` | `standards/commit-push.md` | Commit and push changes |
 | `default:create-pr` | `standards/create-pr.md` | Create pull request |
 | `default:ci-verify` | `workflow/ci-verify.md` | Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (`requires: [ci-complete]` in consume-failures mode) |

@@ -83,6 +83,7 @@ DEFAULT_COMMIT_STRATEGY = 'per_plan'
 # decision matrix.
 DEFAULT_PHASE_5_STEPS = ('quality_check', 'build_verify')
 DEFAULT_PHASE_6_STEPS = (
+    'finalize-step-simplify',
     'commit-push',
     'create-pr',
     'ci-verify',
@@ -90,6 +91,7 @@ DEFAULT_PHASE_6_STEPS = (
     'sonar-roundtrip',
     'lessons-capture',
     'branch-cleanup',
+    'record-metrics',
     'archive-plan',
 )
 
@@ -787,6 +789,15 @@ def _log_pre_submission_self_review_omitted(plan_id: str) -> None:
     _emit_decision_log(plan_id, message)
 
 
+def _log_simplify_omitted(plan_id: str, change_type: str, affected_files_count: int) -> None:
+    """Emit the decision-log entry for the ``simplify_inactive`` pre-filter."""
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — '
+        f'change_type={change_type} affected_files_count={affected_files_count}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
 def _log_bot_enforcement_guard_fired(plan_id: str, provider: str) -> None:
     """Emit the decision-log entry for the ``bot_enforcement_guard`` violation.
 
@@ -998,6 +1009,47 @@ def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], pl
         return [s for s in phase_6_candidates if s != 'pre-submission-self-review'], True
 
     return phase_6_candidates, False
+
+
+# Code-touching change types that gate ``finalize-step-simplify`` activation.
+# Branch-prefix reconciliation: ``fix`` → ``bug_fix``, ``chore`` → ``tech_debt``,
+# ``feature`` → ``feature``. ``analysis`` / ``enhancement`` / ``verification`` are
+# excluded. See standards/decision-rules.md § Pre-Filter: simplify_inactive.
+_SIMPLIFY_CHANGE_TYPES = frozenset({'feature', 'bug_fix', 'tech_debt'})
+
+
+def _apply_simplify_inactive(
+    phase_6_candidates: list[str],
+    change_type: str,
+    affected_files_count: int,
+) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``finalize-step-simplify`` when its activation gate fails.
+
+    The gate activates the step (keeps it) whenever BOTH:
+
+    1. ``change_type ∈ {feature, bug_fix, tech_debt}`` — the three code-touching
+       change types; and
+    2. ``affected_files_count > 0``.
+
+    When either condition fails, ``finalize-step-simplify`` is removed from
+    ``phase_6_candidates``. The cognitive simplification pass uses no language
+    detection — it is domain-agnostic by construction (it applies to any code
+    or doc change in scope), so the gate consults only ``change_type`` and
+    ``affected_files_count``.
+
+    The pre-filter is a no-op when ``finalize-step-simplify`` is already absent
+    from the candidate set (e.g., a project marshal.json that never lists it).
+    Returns the filtered list plus a flag indicating whether the pre-filter
+    fired (i.e., the step was active in the input but dropped after the check).
+    """
+    if 'finalize-step-simplify' not in phase_6_candidates:
+        return phase_6_candidates, False
+
+    if change_type in _SIMPLIFY_CHANGE_TYPES and affected_files_count > 0:
+        # Gate passes — keep the step.
+        return phase_6_candidates, False
+
+    return [s for s in phase_6_candidates if s != 'finalize-step-simplify'], True
 
 
 def _read_ci_provider() -> str | None:
@@ -1563,6 +1615,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #      activation_globs is empty or no modified_files match.
     #   3. pre_submission_self_review_inactive — drop pre-submission-self-review
     #      when modified_files is empty.
+    #   4. simplify_inactive — drop finalize-step-simplify when
+    #      change_type ∉ {feature, bug_fix, tech_debt} OR affected_files_count == 0.
     # Each pre-filter returns (filtered_candidates, fired_flag); we log a
     # dedicated decision-log line per fired pre-filter in addition to the row
     # log line emitted by _log_decision below.
@@ -1577,6 +1631,13 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     affected_files_count = max(0, int(args.affected_files_count or 0))
     recipe_key = args.recipe_key or None
     task_queue_active = _read_task_queue_active(plan_id)
+
+    # Pre-filter 4 (simplify_inactive) consults change_type + affected_files_count,
+    # both resolved above; it runs after the three candidate-narrowing pre-filters
+    # and before the seven-row matrix per standards/decision-rules.md.
+    phase_6_candidates, simplify_omitted = _apply_simplify_inactive(
+        phase_6_candidates, args.change_type, affected_files_count
+    )
 
     body, rule = _decide(
         change_type=args.change_type,
@@ -1705,6 +1766,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_pre_push_quality_gate_omitted(plan_id)
     if pre_submission_self_review_omitted:
         _log_pre_submission_self_review_omitted(plan_id)
+    if simplify_omitted:
+        _log_simplify_omitted(plan_id, args.change_type, affected_files_count)
     if docs_only_classifier_fired:
         _log_docs_only_classifier_fired(plan_id, len(bundle_change_paths))
     _log_decision(plan_id, rule, body)
@@ -1727,6 +1790,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'commit_push_omitted': commit_push_omitted,
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
         'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
+        'simplify_omitted': simplify_omitted,
         'docs_only_classifier_fired': docs_only_classifier_fired,
         'plan_wide_bucket': plan_wide_bucket,
     }
