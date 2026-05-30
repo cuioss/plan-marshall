@@ -404,6 +404,49 @@ task is being created in the same phase invocation.
 
 **Breaking-refactor task split**: When the deliverable's `compatibility=breaking` OR its `change_type` is `tech_debt` or `feature_breaking`, AND it touches code paths covered by existing module tests, allocate the implementation and `module_testing` tasks per the task-split contract in [standards/breaking-refactor-task-split.md](standards/breaking-refactor-task-split.md) — the test-contract task carries `depends_on: [TASK-{implementation_number}]` and its description enumerates both the pre-existing tests being rewritten and any new regression tests pinning the new contract. This is the planning-side half of the breaking-refactor pair; phase-5-execute applies the planned-failure exception when the implementation task's verification fails in exactly the way the test-contract task is scoped to fix.
 
+**Value-change test-update rule (NORMATIVE)**: When a deliverable changes a default value, a constant, or an enum member and its `**Affected files:**` enumerate existing test files (per the [phase-3-outline value-change test-sweep rule](../phase-3-outline/SKILL.md#value-change-test-sweep-rule-normative)), phase-4-plan MUST carry those existing-test targets into the `module_testing` task's `steps[]` and anchor the test-update obligation into the `module_testing` task `description`, so the executing agent updates every existing test asserting the old value — not only any new test file the plan introduces. Do NOT inline-copy the phase-3-outline enumeration heuristic; the cross-reference above is the single authoring surface, so the obligation is enforced at both planning surfaces without drift.
+
+**Missing-profile guard (NORMATIVE)**: The carry-forward above presupposes the deliverable declares the `module_testing` profile. When a deliverable enumerates existing test files in its `**Affected files:**` (signalling a value-change test sweep) but `module_testing ∉ D.profiles[]`, there is no `module_testing` task to carry the existing-test targets into — the test-update obligation would be silently dropped. Phase-4-plan MUST NOT fail silently in this case. Instead, fire this guard for every value-change deliverable.
+
+**Predicate**: the guard fires for a deliverable `D` when BOTH of the following hold:
+
+1. `D`'s `**Affected files:**` enumerate one or more existing test files (paths matching the project's test tree, e.g. `test/**/test_*.py`), AND
+2. `module_testing ∉ D.profiles[]`.
+
+**Action on match**:
+
+1. Do NOT silently create only the `implementation` task. Emit a Q-Gate finding of the canonical shape below via `manage-findings qgate add`. The finding is routed back to phase-3-outline through the existing Q-Gate auto-loop so the outline corrects the profile mismatch at its source (re-evaluates the deliverable against the File-type classifier and adds the `module_testing` profile to the `**Profiles:**` block, since enumerated test files mean the resolved bucket is `test_only`, `mixed_code`, or `mixed_with_docs`).
+2. Log a decision-log entry naming the deliverable index, title, and enumerated test paths so the run record shows the mismatch was caught.
+
+**Canonical Q-Gate finding TOON shape**:
+
+```toon
+type: triage
+severity: error
+title: "phase-3-outline contract violation: value-change deliverable enumerates existing tests but omits module_testing profile"
+component: "plan-marshall:phase-3-outline"
+detail: "Deliverable {N} ({title}) enumerates existing test files ({test_files}) in its affected-files list but omits `module_testing` from profiles[]. A value-change deliverable that sweeps existing tests must declare `module_testing` so the test-update obligation flows into a paired task. Re-classify the deliverable against the File-type classifier and add the `module_testing` profile. See marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md § Value-change test-sweep rule."
+```
+
+**Emit via `manage-findings`**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
+  --type triage --severity error \
+  --title "phase-3-outline contract violation: value-change deliverable enumerates existing tests but omits module_testing profile" \
+  --component "plan-marshall:phase-3-outline" \
+  --detail "Deliverable {N} ({title}) enumerates existing test files ({test_files}) in its affected-files list but omits module_testing from profiles[]. A value-change deliverable that sweeps existing tests must declare module_testing so the test-update obligation flows into a paired task. Re-classify the deliverable against the File-type classifier and add the module_testing profile."
+```
+
+**Decision-log entry**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level WARNING \
+  --message "(plan-marshall:phase-4-plan) Value-change missing-profile guard fired for deliverable {N} ({title}): enumerated existing tests but module_testing absent from profiles[], Q-Gate finding emitted. Test files: {test_files}."
+```
+
 **Self-modifying phasing enforcement**: When a deliverable's `Affected files:` list matches the path heuristic in [`ref-workflow-architecture/standards/self-modifying-classification.md`](../ref-workflow-architecture/standards/self-modifying-classification.md) AND the plan declares `compatibility: breaking` AND the deliverable describes a deletion/rename/hard-cutover, refuse to create tasks for the deliverable until ONE of the following holds:
 
 1. **Inline phasing rationale present**: The deliverable contains a `**Phasing Rationale:**` block addressing all three points from the standard's Phasing-Rationale Contract (cache-sync ordering safe; verification gate runs against worktree post-final-edit; central narrative carries no transition hedges). When present, proceed with task creation as usual — the inline rationale satisfies the contract.
