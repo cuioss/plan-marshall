@@ -273,7 +273,12 @@ This rule is track-agnostic — it applies to deliverable authoring on both the 
 
 When a deliverable changes a **default value, a constant, or an enum member**, the author MUST identify and enumerate every existing test that asserts the old value, add those test files to the deliverable's `**Affected files:**`, and describe the required test update in `**Change per file:**`. The existing-test sweep is a first-class part of the deliverable — it is NOT deferred to any new test file the plan introduces.
 
-To enumerate the affected tests, sweep the test tree for the old literal value or identifier: `architecture find --pattern '*{old_value}*'` for the structured inventory, falling back to `Grep` for the literal value or constant name across `test/`. Add every test asserting the old value to the deliverable's `**Affected files:**` and state in `**Change per file:**` that those assertions must be updated to the new value.
+To enumerate the affected tests, sweep the test tree by **identifier first, literal value only as a fallback**:
+
+1. **Identifier-first search (primary)** — search for the constant, enum-member, or default's *name* with a word-boundary anchor, not its value: `Grep` with `\b{identifier}\b` (or `architecture find --pattern '*{identifier}*'` for the structured inventory) across `test/`. Anchoring on the symbol name finds every test that references the changed member regardless of how it asserts the value, and the word boundary prevents substring false hits (e.g. `MAX` matching `MAX_RETRIES`).
+2. **Literal-value search (fallback only)** — search for the *old literal value* solely when the identifier-first sweep yields nothing (e.g. the value is asserted inline with no named reference). When falling back to a literal, anchor on a word boundary and never sweep bare common literals (`False`, `True`, `0`, `1`, `None`, `""`) on their own — they produce overwhelming false positives. Pair the literal with the surrounding assertion or key context (e.g. `{field_name}.*1`) to keep the match precise.
+
+Add every test asserting the old value to the deliverable's `**Affected files:**` and state in `**Change per file:**` that those assertions must be updated to the new value.
 
 The deliverable's resolved file-type bucket reflects the added test files: a `documentation_only` or `production_only` deliverable that now enumerates existing tests becomes `mixed_code` (production + test) or `test_only`, so `module_testing` becomes a valid profile per the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier).
 
