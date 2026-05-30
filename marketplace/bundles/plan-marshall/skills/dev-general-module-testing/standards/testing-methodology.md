@@ -182,6 +182,20 @@ Integration tests must be separated from unit tests:
 * Separate by naming convention or directory structure per framework
 * CI/CD pipelines should be able to run each type independently
 
+## Enumerate Existing Test Consumers Before Changing a Default / Constant / Enum Value
+
+**Trigger**: A production change alters a contract value that tests assert against — a default value, a named constant, an enum member, a threshold, a magic literal baked into the public behavior. The hazard is asymmetric: the production change is one line, but an unknown number of existing tests pin the *old* value, and a green local run on the production module says nothing about the test files that assert the old default elsewhere in the tree. The failure surfaces only when the full suite runs — typically in CI, after the change is already pushed — and is then "fixed" in a follow-up remediation commit, splitting one logical change across two commits and leaving the first commit non-buildable in isolation.
+
+The discipline is to discover and update every consumer in the SAME atomic change, so verify passes on the first cut.
+
+**Procedure** — apply all three steps before declaring the change complete:
+
+1. **Discover — grep the test tree for BOTH the symbol name AND the old literal value.** A consumer can assert the value by referencing the named symbol (`assertEquals(DEFAULT_TIMEOUT, …)`) or by hardcoding the literal (`assertEquals(30, …)`). Searching only the symbol name misses every test that inlined the literal; searching only the literal misses symbol-referencing tests and drowns in unrelated matches. Run both searches across the entire test source root, not just the module under change — consumers in sibling modules assert cross-module contract values too. *Note: If the old literal is a highly common primitive (e.g., `0`, `1`, `true`, `false`, `""`), combine the literal search with the symbol name or class context to avoid excessive false positives. Always use anchored matching or word boundaries (e.g., `\b` or `\<`/`\>`) to prevent incorrect partial matches within larger tokens (such as matching `30` inside `130`).*
+2. **Classify — separate old-default assertions from intentional explicit overrides.** Each match is one of two kinds: (a) an *old-default assertion* that exists to pin the current default and MUST be updated to the new value; or (b) an *intentional explicit override* — a test that deliberately supplies the old value as an input (not as the default) to exercise a specific scenario, which is correct as-is and MUST be left untouched. Misclassifying an override as a default-assertion corrupts a deliberate test; misclassifying a default-assertion as an override leaves a stale failure. Read each match's intent, do not blanket-replace.
+3. **Atomicity — update all matched old-default assertions in one change alongside the production change.** The production value change and every test update it forces form a single atomic deliverable. Ship them together so the full suite passes on the first cut and every commit is independently buildable — never as a production commit followed by a "fix the tests" remediation commit. If the touch set is large, that is information about the blast radius of the value change, not a reason to defer the test updates.
+
+**Action:** Treat "this value is asserted somewhere I haven't looked" as the default assumption for any contract-value change. Run the two-pronged grep before writing the production edit so the full consumer set is known up front and folded into the same change.
+
 ## Assertion Quality
 
 ### Meaningful Messages

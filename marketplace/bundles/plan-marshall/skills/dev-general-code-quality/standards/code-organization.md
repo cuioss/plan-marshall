@@ -283,6 +283,27 @@ The guiding principle: implement the minimum that satisfies the present requirem
 * Sanitize output to prevent injection attacks
 * Fail securely -- error messages must not leak internal details
 
+## TOCTOU / Check-Then-Act Hazards
+
+**Trigger**: Any flow that claims a shared resource by reading its state, deciding based on that read, and then acting on the decision — when a concurrent actor can change the state between the read and the act. The classic shape is a cooperative cross-process lock or shared-state coordinator: merge locks, worktree allocation, plan-id reservation, leader election, "first writer wins" registries, or any "claim a shared resource" flow where two processes (or two threads, or two host invocations) race for the same slot.
+
+The time-of-check-to-time-of-use (TOCTOU) window is the gap between observing the shared state ("the lock is free", "this id is unclaimed") and committing the claim. Two claimants that both check inside the same window both conclude the resource is free, both write, and both believe they own it. The corruption is silent: each actor proceeds as the sole owner.
+
+**Detection:**
+
+* A read of shared state (file, row, key, in-memory map) followed by a conditional write to the same state, with no atomicity guarantee spanning both operations.
+* "If not present, create it" / "if free, take it" logic against storage shared across processes or hosts.
+* Lock or reservation acquired by writing a marker, with no verification that the marker written is the one that survived.
+* Last-writer-wins semantics treated as mutual exclusion.
+
+**Mitigation menu** — choose one (or combine); this is the canonical, reusable set. Apply it at design time:
+
+* **(a) Post-write double-check.** After writing the claim, re-read the shared state and confirm you are the recorded owner. If the read-back shows a different owner, you lost the race — back off, release any partial state, and either retry or fail cleanly. This converts a silent double-claim into an observable, recoverable loss.
+* **(b) Deterministic tiebreaker.** When concurrent claimants are possible, impose a total order so every claimant resolves the contest identically — e.g., compare a globally unique identifier (such as host ID + PID, UUID, or lexicographic plan-id), and let the lowest (or highest) win. Both racers independently compute the same winner, so the loser yields without coordination. A tiebreaker makes the double-check in (a) deterministic rather than first-come.
+* **(c) Prefer an atomic primitive.** Where the storage medium offers one, replace read-then-write with a single atomic operation that fails if the resource is already claimed: atomic create (`O_EXCL`), atomic rename onto a target that must not pre-exist, compare-and-swap, or a unique-key insert that rejects duplicates. The atomic primitive collapses the check and the act into one indivisible step, eliminating the window entirely. This is the strongest mitigation — prefer it when available.
+
+**Action:** Design the mitigation into the claim flow from the start — do NOT defer concurrency correctness to PR review. A check-then-act race is invisible in single-actor testing and on a clean diff read; it surfaces only under concurrent load, by which point it is a production incident rather than a review comment. Treat "two of these can run at once" as a first-class design input for any shared-resource claim, and pick a mitigation from the menu above before writing the happy path.
+
 ## Maintenance Prioritization
 
 | Priority | Examples |
