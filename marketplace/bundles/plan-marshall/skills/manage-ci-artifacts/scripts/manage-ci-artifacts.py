@@ -460,7 +460,10 @@ def cmd_persist(args: argparse.Namespace) -> int:
                     }
                 )
             )
-            return 1
+            # Operation failure → exit 0; the TOON status:error payload
+            # above carries the verdict. Callers branch on status, not on
+            # the process exit code. Exit 1 is reserved for script crashes.
+            return 0
         if not isinstance(jobs, list):
             print(
                 serialize_toon(
@@ -470,7 +473,7 @@ def cmd_persist(args: argparse.Namespace) -> int:
                     }
                 )
             )
-            return 1
+            return 0
     result = persist(
         plan_id=args.plan_id,
         run_id=args.run_id,
@@ -482,7 +485,8 @@ def cmd_persist(args: argparse.Namespace) -> int:
         final_status=args.final_status,
     )
     print(serialize_toon(result))
-    return 0 if result.get('status') == 'success' else 1
+    # Operation failures exit 0 — the TOON status field carries the verdict.
+    return 0
 
 
 def cmd_read(args: argparse.Namespace) -> int:
@@ -491,7 +495,9 @@ def cmd_read(args: argparse.Namespace) -> int:
     else:
         result = read_manifest(plan_id=args.plan_id, run_id=args.run_id)
     print(serialize_toon(result))
-    return 0 if result.get('status') == 'success' else 1
+    # Operation failures (manifest not found, unparseable) exit 0 — the
+    # TOON status field carries the verdict; callers branch on status.
+    return 0
 
 
 def cmd_list(args: argparse.Namespace) -> int:

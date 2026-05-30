@@ -375,21 +375,29 @@ def test_cli_create_roundtrip(plan_context):
 
 
 # =============================================================================
-# Regression Tests: Not-found conditions exit non-zero with TOON error
+# Regression Tests: Not-found conditions exit 0 with TOON status:error
+#
+# Operation failures (file not found, validation failure) are NOT script
+# crashes — the script ran successfully, only the operation failed. Per the
+# output contract (pm-plugin-development:plugin-script-architecture →
+# output-contract.md), these exit 0 and carry the verdict in the TOON
+# ``status: error`` payload on stdout. Callers branch on ``status``, never on
+# the process exit code. Exit 1 is reserved for genuine script crashes
+# (uncaught exceptions surfaced by ``safe_main``); exit 2 for argparse.
 # =============================================================================
 
 
-def test_cli_get_not_found_exits_nonzero(plan_context):
-    """get with missing references.json exits non-zero with TOON error output."""
+def test_cli_get_not_found_exits_zero_with_toon_error(plan_context):
+    """get with missing references.json exits 0 with TOON status:error output."""
     result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'nonexistent', '--field', 'branch')
-    assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
-    assert result.returncode == 1
+    assert result.success, f'Operation failures exit 0, stderr: {result.stderr}'
+    assert result.returncode == 0
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
 
 
-def test_cli_read_not_found_exits_nonzero(tmp_path, monkeypatch):
-    """read with missing references.json exits non-zero with TOON error output.
+def test_cli_read_not_found_exits_zero_with_toon_error(tmp_path, monkeypatch):
+    """read with missing references.json exits 0 with TOON status:error output.
 
     PlanContext pins PLAN_BASE_DIR to its fixture_dir, but the spawned
     subprocess can still write to ``~/.plan-marshall-credentials`` during
@@ -401,14 +409,14 @@ def test_cli_read_not_found_exits_nonzero(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
     monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
     result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'nonexistent')
-    assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
-    assert result.returncode == 1
+    assert result.success, f'Operation failures exit 0, stderr: {result.stderr}'
+    assert result.returncode == 0
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
 
 
-def test_cli_get_context_not_found_exits_nonzero(tmp_path, monkeypatch):
-    """get-context with missing references.json exits non-zero with TOON error output.
+def test_cli_get_context_not_found_exits_zero_with_toon_error(tmp_path, monkeypatch):
+    """get-context with missing references.json exits 0 with TOON status:error output.
 
     PlanContext pins PLAN_BASE_DIR to its fixture_dir, but the spawned
     subprocess can still write to ``~/.plan-marshall-credentials`` during
@@ -420,14 +428,14 @@ def test_cli_get_context_not_found_exits_nonzero(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
     monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
     result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
-    assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
-    assert result.returncode == 1
+    assert result.success, f'Operation failures exit 0, stderr: {result.stderr}'
+    assert result.returncode == 0
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
 
 
-def test_cli_set_list_not_found_exits_nonzero(tmp_path, monkeypatch):
-    """set-list with missing references.json exits non-zero with TOON error output."""
+def test_cli_set_list_not_found_exits_zero_with_toon_error(tmp_path, monkeypatch):
+    """set-list with missing references.json exits 0 with TOON status:error output."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setenv('HOME', str(tmp_path))
     monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
@@ -442,17 +450,18 @@ def test_cli_set_list_not_found_exits_nonzero(tmp_path, monkeypatch):
         '--values',
         'foo,bar',
     )
-    assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
-    assert result.returncode == 1
+    assert result.success, f'Operation failures exit 0, stderr: {result.stderr}'
+    assert result.returncode == 0
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
 
 
 # =============================================================================
-# Exhaustive coverage: every non-success exit path emits (exit_code != 0)
+# Exhaustive coverage: every operation-failure path emits (exit_code == 0)
 # AND (status: error) TOON. Subcommands that touch require_references() must
-# propagate the file-not-found dict; argparse rejections surface as
-# exit_code == 2 via parse_args_with_toon_errors.
+# propagate the file-not-found dict so the dispatcher emits the TOON error
+# payload while exiting 0; argparse rejections surface as exit_code == 2 via
+# parse_args_with_toon_errors (a separate, genuine-usage-error path).
 # =============================================================================
 
 
@@ -464,14 +473,17 @@ _FILE_NOT_FOUND_INVOCATIONS = [
 ]
 
 
-def test_cli_every_file_not_found_path_exits_nonzero_with_toon_error(tmp_path, monkeypatch):
-    """Every require_references() consumer surfaces exit_code != 0 + status: error TOON.
+def test_cli_every_file_not_found_path_exits_zero_with_toon_error(tmp_path, monkeypatch):
+    """Every require_references() consumer surfaces exit_code == 0 + status: error TOON.
 
     This is the exhaustive coverage gate: any subcommand that reads
     references.json via ``require_references()`` MUST propagate the
-    file-not-found error dict so the main dispatcher emits TOON and exits 1.
-    A future caller added without the ``if refs.get('status') == 'error':
-    return refs`` propagation guard fails this test.
+    file-not-found error dict so the main dispatcher emits the TOON
+    ``status: error`` payload and exits 0 (operation failure, not a script
+    crash). A future caller added without the
+    ``if refs.get('status') == 'error': return refs`` propagation guard — or
+    one that regresses the dispatcher back to exit 1 on error — fails this
+    test.
     """
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setenv('HOME', str(tmp_path))
@@ -481,8 +493,11 @@ def test_cli_every_file_not_found_path_exits_nonzero_with_toon_error(tmp_path, m
     failures: list[str] = []
     for label, argv in _FILE_NOT_FOUND_INVOCATIONS:
         result = run_script(SCRIPT_PATH, *argv)
-        if result.returncode == 0:
-            failures.append(f'{label}: exit_code=0 (expected != 0); stdout={result.stdout!r}')
+        if result.returncode != 0:
+            failures.append(
+                f'{label}: exit_code={result.returncode} (expected 0 for operation failure); '
+                f'stdout={result.stdout!r}'
+            )
             continue
         if 'status: error' not in result.stdout:
             failures.append(f'{label}: missing "status: error" in stdout; stdout={result.stdout!r}')
@@ -773,22 +788,10 @@ def test_require_references_returns_error_dict_on_empty_object(plan_context):
     assert result['error'] == 'file_not_found'
 
 
-@pytest.mark.parametrize(
-    'payload',
-    [
-        '[1, 2, 3]',
-        '"a string"',
-        '42',
-        'true',
-        'null',
-    ],
-)
-def test_cli_non_dict_references_surfaces_nonzero_exit(payload, tmp_path, monkeypatch):
-    """CLI subcommands that hit require_references() surface non-zero exit
-    codes when references.json contains a non-dict top-level JSON value.
+def _seed_non_dict_references(tmp_path, monkeypatch, payload):
+    """Seed a references.json with a non-dict top-level JSON value and run read.
 
-    A raised ValueError bypasses the normal TOON error envelope, so this test
-    only asserts the exit-code contract — corrupt-file states must NOT exit 0.
+    Returns the CompletedProcess from the ``read`` subprocess invocation.
     """
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setenv('HOME', str(tmp_path))
@@ -804,10 +807,68 @@ def test_cli_non_dict_references_surfaces_nonzero_exit(payload, tmp_path, monkey
     parsed = json.loads(refs_path.read_text())
     assert not isinstance(parsed, dict)
 
-    result = run_script(SCRIPT_PATH, 'read', '--plan-id', plan_id)
-    assert result.returncode != 0, (
-        f'Expected non-zero exit for non-dict references payload {payload!r}; '
+    return run_script(SCRIPT_PATH, 'read', '--plan-id', plan_id)
+
+
+@pytest.mark.parametrize(
+    'payload',
+    [
+        '[1, 2, 3]',
+        '"a string"',
+        '42',
+        'true',
+    ],
+)
+def test_cli_truthy_non_dict_references_crashes_nonzero_exit(payload, tmp_path, monkeypatch):
+    """A *truthy* non-dict references payload raises ValueError → exit 1.
+
+    ``require_references()`` only reaches its ``isinstance`` guard when the
+    parsed value is truthy (a non-empty list/string, a non-zero number, or
+    ``true``). The raised ValueError bypasses the TOON error envelope and
+    crashes via ``safe_main`` with a non-zero exit code — corrupt-file states
+    that are *truthy* must NOT exit 0.
+    """
+    result = _seed_non_dict_references(tmp_path, monkeypatch, payload)
+    assert result.returncode == 1, (
+        f'Expected exit 1 (ValueError crash) for truthy non-dict references '
+        f'payload {payload!r}; '
         f'stdout={result.stdout!r} stderr={result.stderr!r}'
+    )
+
+
+@pytest.mark.parametrize(
+    'payload',
+    [
+        'null',
+        'false',
+        '0',
+        '[]',
+        '""',
+    ],
+)
+def test_cli_falsy_non_dict_references_is_operation_failure_exit0(payload, tmp_path, monkeypatch):
+    """A *falsy* non-dict references payload is a contract-correct exit-0 failure.
+
+    ``require_references()`` returns ``None`` from ``read_references`` for any
+    falsy parsed value (``null``, ``false``, ``0``, ``[]``, ``""``), so the
+    ``if not refs:`` branch fires *before* the ``isinstance`` guard and returns
+    the structured ``file_not_found`` operation-error dict. Per the
+    operation-failure contract, the dispatcher emits ``status: error`` on
+    stdout and exits 0 — the script ran successfully, only the operation failed.
+    """
+    result = _seed_non_dict_references(tmp_path, monkeypatch, payload)
+    assert result.returncode == 0, (
+        f'Expected exit 0 (operation failure) for falsy non-dict references '
+        f'payload {payload!r}; '
+        f'stdout={result.stdout!r} stderr={result.stderr!r}'
+    )
+    assert 'status: error' in result.stdout, (
+        f'Expected structured error TOON on stdout for payload {payload!r}; '
+        f'stdout={result.stdout!r}'
+    )
+    assert 'file_not_found' in result.stdout, (
+        f'Expected file_not_found error on stdout for payload {payload!r}; '
+        f'stdout={result.stdout!r}'
     )
 
 

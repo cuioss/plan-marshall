@@ -129,12 +129,12 @@ def main() -> int:
         result = handler(args)
         if result is not None:
             output_toon(result)
-            # Surface non-zero exit when the handler returned a structured error
-            # so callers (and tests) can distinguish failures from successes
-            # without parsing TOON. This matches the convention used by the
-            # Bucket B consumers covered in the auto-routing rollout.
-            if isinstance(result, dict) and result.get('status') == 'error':
-                return 1
+            # Operation failures (file not found, validation failure, etc.)
+            # are reported via the TOON ``status: error`` payload already
+            # emitted above and exit 0 — the script ran successfully, only
+            # the operation failed. Callers branch on the TOON ``status``
+            # field, never on the process exit code. Exit 1 is reserved for
+            # genuine script-execution crashes (handled by ``safe_main``).
         return 0
     else:
         parser.print_help()
