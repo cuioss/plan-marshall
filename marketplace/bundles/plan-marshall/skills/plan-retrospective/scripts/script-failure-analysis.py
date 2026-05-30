@@ -17,10 +17,15 @@ Two log sinks are scanned and merged:
    work log when the ``script-execution.log`` entry was never written (the
    originating-context recurrence gap).
 
-The two failure lists are merged and fed through ``dedupe_findings`` so the
-within-log key ``(notation, subtype)`` collapses a ``script-execution.log``
-entry and a ``work.log`` entry for the same notation + subtype into a single
-finding. ``total_failures`` / ``unique_failures`` reflect both sinks.
+Because every executor failure is mirrored to BOTH sinks, the same physical
+event appears once in each list sharing the same ``(notation, timestamp)``.
+``work.log`` entries that match an ``script-execution.log`` entry on that pair
+are dropped before merging, so a mirrored failure is counted exactly once in
+``total_failures``. The deduplicated lists are then merged and fed through
+``dedupe_findings`` so the within-log key ``(notation, subtype)`` collapses
+distinct entries for the same notation + subtype into a single finding.
+``total_failures`` / ``unique_failures`` reflect both sinks without
+double-counting the mirror.
 
 Failure criterion: ONLY exit code 1 and exit code 2 are script failures.
 
@@ -377,6 +382,31 @@ def build_seed_lessons(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return seeds
 
 
+def dedupe_mirrored_failures(
+    exec_failures: list[dict[str, Any]],
+    work_failures: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Drop ``work.log`` failures that mirror a ``script-execution.log`` failure.
+
+    Every non-zero-exit executor call is mirrored into BOTH sinks, so the same
+    physical event surfaces once in ``exec_failures`` and once in
+    ``work_failures`` sharing the same ``(notation, timestamp)`` pair. Counting
+    both inflates ``total_failures`` by one per mirrored event.
+
+    Returns the subset of ``work_failures`` whose ``(notation, timestamp)`` key
+    does NOT already appear in ``exec_failures``. Order is preserved so the
+    merged list stays deterministic. A ``work.log`` failure with no matching
+    ``script-execution.log`` entry (the originating-context gap this analyzer
+    was built to catch) is retained.
+    """
+    exec_keys = {(f.get('notation'), f.get('timestamp')) for f in exec_failures}
+    return [
+        f
+        for f in work_failures
+        if (f.get('notation'), f.get('timestamp')) not in exec_keys
+    ]
+
+
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
     exec_log_path = plan_dir / 'logs' / 'script-execution.log'
@@ -385,10 +415,15 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     exec_failures = parse_failures(read_log(exec_log_path))
     work_failures = parse_work_log_failures(read_log(work_log_path))
 
+    # Drop work.log entries that mirror a script-execution.log entry on
+    # (notation, timestamp) so a single physical failure mirrored to both sinks
+    # is counted exactly once in total_failures.
+    work_failures = dedupe_mirrored_failures(exec_failures, work_failures)
+
     # Merge both sinks before dedup so the within-log key (notation, subtype)
-    # collapses a script-execution.log entry and a work.log entry for the same
-    # notation + subtype into a single finding. script-execution.log entries
-    # come first so they supply the representative sample on a tie.
+    # collapses distinct entries for the same notation + subtype into a single
+    # finding. script-execution.log entries come first so they supply the
+    # representative sample on a tie.
     raw_failures = exec_failures + work_failures
     findings = dedupe_findings(raw_failures)
     lessons = build_seed_lessons(findings)

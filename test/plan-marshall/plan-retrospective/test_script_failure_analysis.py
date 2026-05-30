@@ -291,6 +291,79 @@ class TestDedupeFindings:
         assert subtypes == {'invented_subcommand', 'invented_flag'}
 
 
+class TestDedupeMirroredFailures:
+    """``dedupe_mirrored_failures`` drops work.log entries that mirror an
+    script-execution.log entry on ``(notation, timestamp)`` so a single physical
+    failure mirrored to both sinks is counted exactly once.
+    """
+
+    def test_drops_mirrored_work_failure(self):
+        exec_failures = [
+            {
+                'notation': 'plan-marshall:manage-status:manage-status',
+                'timestamp': '2026-05-26T10:00:01Z',
+                'exit_code': 2,
+                'stderr': 'unrecognized arguments: --field',
+            },
+        ]
+        work_failures = [
+            {
+                'notation': 'plan-marshall:manage-status:manage-status',
+                'timestamp': '2026-05-26T10:00:01Z',
+                'exit_code': 2,
+                'stderr': 'unrecognized arguments: --field',
+            },
+        ]
+        # The mirrored work.log entry is dropped → empty residual.
+        assert _mod.dedupe_mirrored_failures(exec_failures, work_failures) == []
+
+    def test_retains_work_only_failure(self):
+        # A work.log failure with no matching script-execution.log entry (the
+        # originating-context gap) is retained.
+        exec_failures = [
+            {
+                'notation': 'plan-marshall:manage-files:manage-files',
+                'timestamp': '2026-05-26T10:00:01Z',
+                'exit_code': 1,
+                'stderr': 'boom',
+            },
+        ]
+        work_failures = [
+            {
+                'notation': 'plan-marshall:manage-status:manage-status',
+                'timestamp': '2026-05-26T11:00:30Z',
+                'exit_code': 2,
+                'stderr': 'unrecognized arguments: --field',
+            },
+        ]
+        residual = _mod.dedupe_mirrored_failures(exec_failures, work_failures)
+        assert len(residual) == 1
+        assert residual[0]['notation'] == 'plan-marshall:manage-status:manage-status'
+
+    def test_distinguishes_same_notation_different_timestamp(self):
+        # Same notation but a DIFFERENT timestamp is a distinct physical event
+        # and must be retained.
+        exec_failures = [
+            {
+                'notation': 'plan-marshall:manage-tasks:manage-tasks',
+                'timestamp': '2026-05-26T10:00:01Z',
+                'exit_code': 2,
+                'stderr': "invalid choice: 'foo'",
+            },
+        ]
+        work_failures = [
+            {
+                'notation': 'plan-marshall:manage-tasks:manage-tasks',
+                'timestamp': '2026-05-26T10:00:09Z',
+                'exit_code': 2,
+                'stderr': "invalid choice: 'bar'",
+            },
+        ]
+        residual = _mod.dedupe_mirrored_failures(exec_failures, work_failures)
+        assert len(residual) == 1
+        assert residual[0]['timestamp'] == '2026-05-26T10:00:09Z'
+
+
 class TestBuildSeedLessons:
     def test_one_seed_per_finding_with_titles(self):
         findings = [
