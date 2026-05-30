@@ -14,8 +14,7 @@ Claude Code session transcripts live under `~/.claude/projects/{slug}/{session_i
 aspect: chat_history_analysis
 status: success|skipped
 session_id: {session_id}
-summary: |
-  {3-5 sentence narrative of the session arc}
+summary: "{3-5 sentence narrative of the session arc}"
 pivots[*]{turn_index,reason}:
   42,"user clarified compatibility strategy"
 permission_prompts[*]{tool,resource,cause}:
@@ -31,6 +30,7 @@ findings[*]{severity,message}:
 - Pivots AFTER `3-outline` completion indicate a missed clarification in refine — surface as `warning`.
 - Any permission prompt within the plan SHOULD have a corresponding entry in the permission-prompt-analysis aspect.
 - Loop-backs from `6-finalize` to `5-execute` are normal; loop-backs from later phases to `2-refine` are strong signals of an under-refined request.
+- Fragment bodies MUST NOT use `|` block scalars. Multi-line narrative content (e.g. `summary`) MUST be a quoted scalar (`"line1\nline2"`) so the fragment round-trips deterministically through `serialize_toon`/`parse_toon`. Rationale: `serialize_toon` never emits block scalars, so a `|` block scalar is a parse-only, hand-authored construct; any continuation line that sits flush at column 0 and contains a colon is re-parsed by `parse_toon` as a phantom sibling top-level key, leaking a spurious aspect into the bundle.
 
 ## Finding Shape
 

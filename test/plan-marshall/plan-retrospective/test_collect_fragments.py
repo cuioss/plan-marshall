@@ -540,6 +540,147 @@ class TestFinalize:
 
 
 # =============================================================================
+# _meta.aspects authoritative inventory — phantom-key regression + dedup
+# =============================================================================
+
+
+class TestAuthoritativeAspectInventory:
+    """The reported aspect list/count comes from the authoritative
+    ``_meta.aspects`` inventory recorded at ``add`` time, never from a blind
+    ``bundle.keys()`` enumeration.
+
+    A fragment body that hand-authors a ``|`` block scalar whose continuation
+    line sits flush at column 0 and contains a colon leaks a phantom sibling
+    top-level key into the bundle: ``_parse_multiline_value`` captures nothing
+    (the flush-left line is at the same indent as the ``|`` key, so the
+    multi-line value terminates immediately) and ``_parse_object`` then re-reads
+    that continuation line as a brand-new top-level ``key: value`` pair. The old
+    ``sorted(k for k in bundle.keys() if not k.startswith('_'))`` enumeration
+    counted that phantom key as an aspect, inflating ``aspect_count``. Sourcing
+    the list from ``_meta.aspects`` makes it immune to such leakage.
+    """
+
+    def test_embedded_colon_block_scalar_does_not_inflate_aspect_count(self, tmp_path, monkeypatch):
+        # Arrange — register one aspect through the real init/add flow (so the
+        # _meta.aspects block is serialized correctly), then inject the exact
+        # leak trigger onto the bundle on disk: a flush-left continuation line
+        # containing a colon, as a hand-authored ``summary: |`` block scalar
+        # would produce. parse_toon re-reads that line as a phantom sibling
+        # top-level key.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('chat_history_analysis'))
+        _add_aspect(plan_id, 'chat_history_analysis', fragment_path)
+
+        bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
+        leaked = bundle_path.read_text(encoding='utf-8')
+        if not leaked.endswith('\n'):
+            leaked += '\n'
+        leaked += 'fully recoverable from decision.log: the user pivoted mid-plan\n'
+        bundle_path.write_text(leaked, encoding='utf-8')
+
+        # Sanity — the leak is real: parse_toon surfaces a phantom sibling key
+        # alongside the genuine aspect, so a blind bundle.keys() enumeration
+        # would count two aspects.
+        from toon_parser import parse_toon
+
+        parsed = parse_toon(bundle_path.read_text(encoding='utf-8'))
+        phantom_keys = [k for k in parsed if not k.startswith('_') and k != 'chat_history_analysis']
+        assert phantom_keys, 'expected the embedded-colon block scalar to leak a phantom sibling key'
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'finalize',
+            '--plan-id',
+            plan_id,
+        )
+
+        # Assert — exactly the one registered aspect is reported, never the
+        # inflated phantom count.
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['aspects'] == ['chat_history_analysis']
+        assert int(data['aspect_count']) == 1
+
+    def test_add_registers_aspect_in_authoritative_inventory(self, tmp_path, monkeypatch):
+        # Arrange — a clean fragment added via the normal flow records the
+        # aspect in _meta.aspects, and the add return reports from that list.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('chat_history_analysis'))
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'add',
+            '--plan-id',
+            plan_id,
+            '--aspect',
+            'chat_history_analysis',
+            '--fragment-file',
+            str(fragment_path),
+        )
+
+        # Assert — the reported aspects come from _meta.aspects.
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['aspects'] == ['chat_history_analysis']
+        # The bundle's _meta block carries the authoritative inventory.
+        from toon_parser import parse_toon
+
+        bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
+        parsed = parse_toon(bundle_path.read_text(encoding='utf-8'))
+        assert parsed['_meta']['aspects'] == ['chat_history_analysis']
+
+    def test_overwrite_readd_does_not_duplicate_aspect_in_inventory(self, tmp_path, monkeypatch):
+        # Arrange — register an aspect, then re-add it with --overwrite.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        original = _write_fragment(
+            tmp_path,
+            'original.toon',
+            'status: success\naspect: log_analysis\nmarker: original\n',
+        )
+        _add_aspect(plan_id, 'log_analysis', original)
+        replacement = _write_fragment(
+            tmp_path,
+            'replacement.toon',
+            'status: success\naspect: log_analysis\nmarker: replacement\n',
+        )
+
+        # Act — re-add the same aspect with --overwrite.
+        result = run_script(
+            SCRIPT_PATH,
+            'add',
+            '--plan-id',
+            plan_id,
+            '--aspect',
+            'log_analysis',
+            '--fragment-file',
+            str(replacement),
+            '--overwrite',
+        )
+
+        # Assert — dedup invariant: the aspect appears exactly once.
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['aspects'] == ['log_analysis']
+
+        # finalize agrees: one aspect, count 1.
+        finalize_result = run_script(
+            SCRIPT_PATH,
+            'finalize',
+            '--plan-id',
+            plan_id,
+        )
+        assert finalize_result.success, finalize_result.stderr
+        finalize_data = finalize_result.toon()
+        assert finalize_data['aspects'] == ['log_analysis']
+        assert int(finalize_data['aspect_count']) == 1
+
+
+# =============================================================================
 # Direct-import unit tests — exercise internal functions for coverage
 # =============================================================================
 #
