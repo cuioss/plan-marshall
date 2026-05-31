@@ -295,7 +295,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-     --plan-id {plan_id} --set worktree_path={worktree_path}
+     --plan-id {plan_id} --set --field worktree_path --value {worktree_path}
    ```
 
 Both writes are required: `references.json` is the canonical artifact Step 3 reads to resolve `worktree_path`; `status.metadata.worktree_path` is the value the `phase_handshake verify` assertion checks on every subsequent phase boundary, and the value the idempotence guard above reads on phase-5 re-entry.
@@ -413,7 +413,9 @@ Inlined flow:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-     --plan-id {plan_id} --set worktree_sha={worktree_sha} --set main_sha={main_sha}
+     --plan-id {plan_id} --set --field worktree_sha --value {worktree_sha}
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+     --plan-id {plan_id} --set --field main_sha --value {main_sha}
    ```
 
    Emit exactly ONE decision-log entry naming the absorbed commits — the entry is the audit trail that ties the new metadata to the specific upstream commits that were absorbed:
