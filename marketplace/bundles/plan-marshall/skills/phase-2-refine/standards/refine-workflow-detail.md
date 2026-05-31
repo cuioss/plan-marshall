@@ -506,7 +506,7 @@ Identify candidate modules for each requirement using `arch_context.modules[].na
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module \
-  --name {candidate_module} --audit-plan-id {plan_id}
+  --module {candidate_module} --audit-plan-id {plan_id}
 ```
 
 The response exposes `responsibility`, `key_packages`, `key_dependencies`, and `internal_dependencies`. For cross-cutting changes, also run `architecture graph` to understand the dependency flow between candidate modules. Query detailed info only when the request is not already a direct module-name match.

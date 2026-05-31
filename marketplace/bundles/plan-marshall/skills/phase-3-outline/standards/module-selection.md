@@ -123,7 +123,7 @@ modules[2]:
 Query sibling virtual modules:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture siblings \
-  --name {module-name}
+  --module {module-name}
 ```
 
 ### Virtual Module Benefits

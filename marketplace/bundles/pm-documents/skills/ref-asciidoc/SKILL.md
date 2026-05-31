@@ -492,3 +492,42 @@ python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc format -t all
 # Verify links
 python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links --directory /path/to/docs
 ```
+
+## Canonical invocations
+
+The canonical argparse surface for `asciidoc.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". Long flags are shown; several subcommands additionally accept short aliases (`-f`, `-d`, `-i`, `-t`, `-b`).
+
+### stats
+
+```bash
+python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc stats \
+  [--directory DIRECTORY] [--format {console,json}] [--details]
+```
+
+### validate
+
+```bash
+python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc validate \
+  [--path PATH] [--format {console,json}] [--ignore IGNORE_PATTERNS]
+```
+
+### format
+
+```bash
+python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc format \
+  [--path PATH] [--type {all,lists,xref,whitespace}] [--no-backup]
+```
+
+### verify-links
+
+```bash
+python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links \
+  [--file FILE] [--directory DIRECTORY] [--recursive] [--report REPORT]
+```
+
+### classify-links
+
+```bash
+python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc classify-links \
+  [--input INPUT] [--output OUTPUT] [--pretty]
+```

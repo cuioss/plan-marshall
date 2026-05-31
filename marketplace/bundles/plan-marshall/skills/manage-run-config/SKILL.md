@@ -214,6 +214,80 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `run_config.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### init
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config init [--force]
+```
+
+### validate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config validate --file FILE
+```
+
+### timeout
+
+`timeout` carries the nested sub-verbs `get` and `set`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
+  --command COMMAND --default DEFAULT
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout set \
+  --command COMMAND --duration DURATION
+```
+
+### warning
+
+`warning` carries the nested sub-verbs `add`, `list`, and `remove`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning add \
+  --category {transitive_dependency,plugin_compatibility,platform_specific} --pattern PATTERN \
+  [--build-system BUILD_SYSTEM]
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning list \
+  [--category {transitive_dependency,plugin_compatibility,platform_specific}] [--build-system BUILD_SYSTEM]
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning remove \
+  --category {transitive_dependency,plugin_compatibility,platform_specific} --pattern PATTERN \
+  [--build-system BUILD_SYSTEM]
+```
+
+### architecture-refresh
+
+`architecture-refresh` carries the nested sub-verbs `get-tier-0`, `set-tier-0`, `get-tier-1`, and `set-tier-1`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config architecture-refresh get-tier-0
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config architecture-refresh set-tier-0 \
+  --value {enabled,disabled}
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config architecture-refresh get-tier-1
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config architecture-refresh set-tier-1 \
+  --value {prompt,auto,disabled}
+```
+
+### cleanup
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup \
+  [--dry-run] [--target {all,temp,logs,archived-plans}]
+```
+
+### cleanup-status
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup-status
+```
+
 ## Related
 
 - `manage-config` — Project-level marshal.json configuration (provides retention settings)

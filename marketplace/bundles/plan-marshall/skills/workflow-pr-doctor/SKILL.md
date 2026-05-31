@@ -73,6 +73,33 @@ findings_resolved: {M}
 fix_tasks_created: {K}
 ```
 
+## Canonical invocations
+
+The canonical argparse surface for `pr_doctor.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### track-attempt
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor track-attempt \
+  --category {build,reviews,sonar} --current CURRENT [--max-attempts MAX_ATTEMPTS]
+```
+
+### diagnose
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor diagnose \
+  [--build-status {success,failure}] [--build-failures BUILD_FAILURES] \
+  [--review-comments REVIEW_COMMENTS] [--sonar-issues SONAR_ISSUES]
+```
+
+### parse-handoff
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor parse-handoff \
+  --handoff HANDOFF [--pr PR] [--checks {build,reviews,sonar,all}] \
+  [--auto-fix] [--wait] [--no-wait] [--max-fix-attempts MAX_FIX_ATTEMPTS]
+```
+
 ## Related
 
 - [`verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) — orchestrator body.

@@ -2,26 +2,44 @@
 # ruff: noqa: I001, E402
 """Tests for the ``_analyze_manage_invocation.py`` plugin-doctor analyzer.
 
-The analyzer ships two rules over markdown invocations of the seven in-scope
-``manage-*`` / ``workflow-integration-*`` script families:
+The analyzer ships two rules over markdown invocations of every
+script-bearing skill in the marketplace (the in-scope set is auto-derived
+from the bundle tree by ``discover_in_scope_scripts``):
 
   * ``manage-invocation-invalid`` (severity: error) — emitted for each of
-    four mismatch modes against the script's canonical argparse tree:
+    four mismatch modes against the script's canonical argparse surface:
 
       - unknown top-level subcommand
       - unknown sub-verb (under a subcommand declaring its own subparsers)
       - unknown long flag under the resolved leaf parser
       - missing required long flag declared by the leaf parser
 
-  * ``missing-canonical-block`` (severity: warning) — emitted for an
-    in-scope SKILL.md that lacks a ``## Canonical invocations`` section.
+  * ``missing-canonical-block`` (severity: warning, build-failing under
+    quality-gate) — emitted for an in-scope SKILL.md that lacks a
+    ``## Canonical invocations`` section.
 
-Tests are hermetic: they synthesise argparse-bearing Python scripts and
-markdown fixtures under ``tmp_path`` so no real marketplace tree state is
-required. The seven in-scope notations are exercised via parameterised
-positive cases; each negative finding type has at least one dedicated
-case; payload shape (rule_id, severity, line, file, canonical_hint) is
-verified against the documented schema.
+Surface derivation is from the script's live ``--help`` interface, NOT from
+an AST walk. The tests therefore build a *synthetic executor*: a small
+``.plan/execute-script.py`` shim that maps ``{notation}`` to a synthetic
+argparse script under ``tmp_path`` and dispatches the trailing args
+(including ``--help``) to it, exactly as the real executor does. This lets
+the tests exercise the three registration styles that defeated the old
+AST extractor:
+
+  - loop-registered subcommands (``manage-logging`` registers ``work`` /
+    ``decision`` through a ``for`` loop — invisible to literal-``add_parser``
+    AST extraction, visible to ``--help``);
+  - a many-subcommand script (``manage-status`` shape, ~20 subcommands);
+  - subcommands sharing a flag (``--plan-id`` declared on every subcommand
+    via a shared parent / common helper).
+
+Each negative finding type has at least one dedicated case; payload shape
+(rule_id, severity, line, file, canonical_hint) is verified against the
+documented schema. A dedicated layer exercises the in-scope derivation
+(argparse detection, underscore skip, excluded skills, ``manage-findings``
+exclusion). A dedicated layer runs the corrected analyzer against the REAL
+plan-marshall bundle and asserts zero false positives for the
+correctly-authored canonical calls in the shipped docs.
 """
 
 from __future__ import annotations
@@ -50,27 +68,25 @@ analyze_manage_invocation_markdown = _ami.analyze_manage_invocation_markdown
 scan_skill_for_manage_invocation = _ami.scan_skill_for_manage_invocation
 scan_manage_invocation = _ami.scan_manage_invocation
 check_missing_canonical_blocks = _ami.check_missing_canonical_blocks
-build_script_tree = _ami.build_script_tree
+discover_in_scope_scripts = _ami.discover_in_scope_scripts
+derive_script_tree = _ami.derive_script_tree
 build_script_index = _ami.build_script_index
 RULE_MANAGE_INVOCATION_INVALID = _ami.RULE_MANAGE_INVOCATION_INVALID
 RULE_MISSING_CANONICAL_BLOCK = _ami.RULE_MISSING_CANONICAL_BLOCK
-IN_SCOPE_SCRIPTS = _ami.IN_SCOPE_SCRIPTS
+_positional_region_is_templated = _ami._positional_region_is_templated
 
 
 # ---------------------------------------------------------------------------
-# Synthetic script fixtures (hermetic argparse declarations).
+# Synthetic argparse scripts exercising real registration styles.
 # ---------------------------------------------------------------------------
-
 
 # Synthetic notation used across the per-shape unit tests. Mirrors the shape
-# of a manage-* notation triple so the regex extractor accepts it, but does
-# not collide with any real notation in IN_SCOPE_SCRIPTS — the per-test
-# script_index controls which notations are valid.
+# of a manage-* notation triple so the regex extractor accepts it.
 _SYN_NOTATION = 'plan-marshall:manage-syn:manage-syn'
 
 
 def _flat_script_source() -> str:
-    """Synthetic script with two flat subcommands and one root-level flag.
+    """Two flat subcommands and one root-level flag.
 
     - ``foo`` subcommand has ``--alpha`` (required) and ``--beta``.
     - ``bar`` subcommand has ``--gamma``.
@@ -91,12 +107,15 @@ def _flat_script_source() -> str:
             bar = subparsers.add_parser('bar')
             bar.add_argument('--gamma')
 
-            return parser
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
     ''').lstrip()
 
 
 def _nested_script_source() -> str:
-    """Synthetic script with one flat and one nested subcommand.
+    """One flat and one nested subcommand.
 
     - ``qgate`` subcommand declares its own subparsers:
         * ``add`` with ``--plan-id`` (required) and ``--phase`` (required)
@@ -124,48 +143,373 @@ def _nested_script_source() -> str:
             other = subparsers.add_parser('other')
             other.add_argument('--flag')
 
-            return parser
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
     ''').lstrip()
 
 
-@pytest.fixture
-def flat_script(tmp_path: Path) -> Path:
-    script_path = tmp_path / 'syn_flat.py'
-    script_path.write_text(_flat_script_source(), encoding='utf-8')
-    return script_path
+def _minimal_argparse_source() -> str:
+    """Minimal argparse script — single ``run`` subcommand with one flag."""
+    return textwrap.dedent('''
+        import argparse
+
+        def main():
+            parser = argparse.ArgumentParser()
+            subparsers = parser.add_subparsers(dest='cmd')
+            run = subparsers.add_parser('run')
+            run.add_argument('--flag')
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
+def _loop_registered_source() -> str:
+    """``manage-logging`` shape — subcommands registered through a ``for`` loop.
+
+    The old AST extractor only saw literal ``subparsers.add_parser('name')``
+    calls, so subcommands registered by iterating a list were INVISIBLE,
+    producing false ``subcommand_unknown`` findings for genuinely-valid
+    invocations like ``manage-logging work`` / ``manage-logging decision``.
+    ``--help`` derivation sees them because argparse renders the real
+    registered choices regardless of how the parsers were built.
+    """
+    return textwrap.dedent('''
+        import argparse
+
+        _SUBCOMMANDS = ['script', 'work', 'decision', 'separator', 'read']
+
+        def main():
+            parser = argparse.ArgumentParser(description='Unified logging operations')
+            subparsers = parser.add_subparsers(dest='cmd')
+            for name in _SUBCOMMANDS:
+                sub = subparsers.add_parser(name)
+                sub.add_argument('--plan-id')
+                sub.add_argument('--level')
+                sub.add_argument('--message')
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
+def _many_subcommand_source() -> str:
+    """``manage-status`` shape — many subcommands, several loop-registered.
+
+    Demonstrates the many-subcommand surface (~20) that the AST extractor
+    under-counted. A subset is registered via a literal list comprehension /
+    loop, the rest by helper calls, so a literal-only AST walk would miss
+    most of them.
+    """
+    return textwrap.dedent('''
+        import argparse
+
+        _VERBS = [
+            'create', 'read', 'set-phase', 'update-phase', 'progress',
+            'metadata', 'get-context', 'get-worktree-path', 'list',
+            'list-orphans', 'transition', 'archive', 'route',
+            'get-routing-context', 'delete-plan', 'mark-step-done',
+            'change-type-heuristic', 'aggregate-confidence', 'merge-lock',
+            'self-test',
+        ]
+
+        def _register(subparsers, name):
+            p = subparsers.add_parser(name)
+            p.add_argument('--plan-id')
+            return p
+
+        def main():
+            parser = argparse.ArgumentParser(
+                description='Manage status.json files'
+            )
+            subparsers = parser.add_subparsers(dest='cmd')
+            for verb in _VERBS:
+                _register(subparsers, verb)
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
+def _shared_flag_source() -> str:
+    """Subcommands that all share ``--plan-id`` and ``--task-number``.
+
+    The shared flags are added to every subcommand through a common helper —
+    the AST extractor dropped them because they were not declared as literal
+    per-subcommand ``add_argument`` calls on the named parser variable.
+    ``--help`` renders the real per-leaf flag surface including the shared
+    flags, so the analyzer no longer falsely flags ``--plan-id`` as unknown.
+    """
+    return textwrap.dedent('''
+        import argparse
+
+        def _add_common(p):
+            p.add_argument('--plan-id', required=True)
+            p.add_argument('--task-number', required=True)
+
+        def main():
+            parser = argparse.ArgumentParser()
+            subparsers = parser.add_subparsers(dest='cmd')
+
+            for name in ('update', 'finalize-step'):
+                sub = subparsers.add_parser(name)
+                _add_common(sub)
+                sub.add_argument('--status')
+
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
+# ---------------------------------------------------------------------------
+# Synthetic executor — maps {notation} to a synthetic script and dispatches.
+# ---------------------------------------------------------------------------
+
+# The shim mirrors the real ``.plan/execute-script.py`` executor: it reads a
+# notation -> script-path mapping and dispatches the resolved script with the
+# remaining argv, forwarding its stdout/stderr/returncode. ``--help`` therefore
+# flows through to the target's argparse instance, producing the real published
+# surface.
+#
+# Dispatch is via a child ``subprocess`` rather than ``runpy.run_path``: under
+# ``--help`` the target raises ``SystemExit`` from inside ``runpy``, and the
+# combination of ``runpy`` + ``SystemExit`` + the parent's ``capture_output``
+# intermittently drops the help text on stdout (an interpreter-shutdown flush
+# race). The child subprocess captures the target's stdout deterministically
+# before forwarding it, so the derived surface is stable across repeated probes.
+_EXECUTOR_SHIM = textwrap.dedent('''
+    #!/usr/bin/env python3
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    _MAP = json.loads((Path(__file__).parent / 'notation_map.json').read_text())
+
+    def main():
+        if len(sys.argv) < 2:
+            sys.exit(2)
+        notation = sys.argv[1]
+        target = _MAP.get(notation)
+        if target is None:
+            sys.stderr.write(f'Unknown notation: {notation}\\n')
+            sys.exit(2)
+        result = subprocess.run(
+            [sys.executable, target, *sys.argv[2:]],
+            capture_output=True,
+            text=True,
+        )
+        sys.stdout.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        sys.exit(result.returncode)
+
+    if __name__ == '__main__':
+        main()
+''').lstrip()
+
+
+def _make_executor(tmp_path: Path, mapping: dict[str, Path]) -> Path:
+    """Write a synthetic executor + notation map and return the executor path.
+
+    The executor lives at ``{root}/.plan/execute-script.py``, matching the
+    real layout that ``_resolve_executor`` discovers.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    executor = plan_dir / 'execute-script.py'
+    executor.write_text(_EXECUTOR_SHIM, encoding='utf-8')
+    import json
+
+    (plan_dir / 'notation_map.json').write_text(
+        json.dumps({k: str(v) for k, v in mapping.items()}), encoding='utf-8'
+    )
+    return executor
 
 
 @pytest.fixture
-def nested_script(tmp_path: Path) -> Path:
-    script_path = tmp_path / 'syn_nested.py'
-    script_path.write_text(_nested_script_source(), encoding='utf-8')
-    return script_path
-
-
-@pytest.fixture
-def flat_index(flat_script: Path) -> dict:
-    tree = build_script_tree(flat_script)
+def flat_index(tmp_path: Path) -> dict:
+    script = tmp_path / 'syn_flat.py'
+    script.write_text(_flat_script_source(), encoding='utf-8')
+    executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+    tree = derive_script_tree(_SYN_NOTATION, executor)
     assert tree is not None
     return {_SYN_NOTATION: tree}
 
 
 @pytest.fixture
-def nested_index(nested_script: Path) -> dict:
-    tree = build_script_tree(nested_script)
+def nested_index(tmp_path: Path) -> dict:
+    script = tmp_path / 'syn_nested.py'
+    script.write_text(_nested_script_source(), encoding='utf-8')
+    executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+    tree = derive_script_tree(_SYN_NOTATION, executor)
     assert tree is not None
     return {_SYN_NOTATION: tree}
 
 
 # ---------------------------------------------------------------------------
-# Layer A — AST-based tree extraction.
+# Synthetic-marketplace builder — drives the in-scope derivation directly.
 # ---------------------------------------------------------------------------
 
 
-class TestBuildScriptTree:
-    """``build_script_tree`` faithfully reconstructs argparse declarations."""
+def _write_skill_script(
+    bundles_dir: Path,
+    bundle: str,
+    skill: str,
+    script_filename: str,
+    *,
+    source: str,
+    canonical_block: bool = False,
+) -> Path:
+    """Create a ``{bundle}/skills/{skill}/scripts/{script}`` entry-point.
 
-    def test_flat_subcommands_extracted(self, flat_script: Path) -> None:
-        tree = build_script_tree(flat_script)
+    Returns the skill directory. When ``canonical_block`` is True the
+    SKILL.md carries a ``## Canonical invocations`` section.
+    """
+    skill_dir = bundles_dir / bundle / 'skills' / skill
+    (skill_dir / 'scripts').mkdir(parents=True, exist_ok=True)
+    (skill_dir / 'scripts' / script_filename).write_text(source, encoding='utf-8')
+    body = '# Skill\n\nDescription.\n'
+    if canonical_block:
+        body += '\n## Canonical invocations\n\n### run\n\n```bash\nrun --flag x\n```\n'
+    (skill_dir / 'SKILL.md').write_text(body, encoding='utf-8')
+    return skill_dir
+
+
+def _build_synthetic_marketplace(tmp_path: Path) -> Path:
+    """Create a synthetic marketplace with a representative in-scope set.
+
+    Includes:
+      - two script-bearing skills with the canonical block present,
+      - two script-bearing skills missing the block,
+      - one skill whose entry-point filename differs from the skill name,
+      - excluded helper skills and ``manage-findings`` (must NOT be in-scope),
+      - a ``_``-prefixed helper module (must NOT be in-scope),
+      - a non-argparse script (must NOT be in-scope).
+    """
+    marketplace_root = tmp_path / 'mp'
+    bundles_dir = marketplace_root / 'marketplace' / 'bundles'
+    bundles_dir.mkdir(parents=True)
+
+    # In-scope, canonical block present.
+    _write_skill_script(
+        bundles_dir, 'plan-marshall', 'manage-status', 'manage-status.py',
+        source=_minimal_argparse_source(), canonical_block=True,
+    )
+    _write_skill_script(
+        bundles_dir, 'plan-marshall', 'manage-tasks', 'manage-tasks.py',
+        source=_minimal_argparse_source(), canonical_block=True,
+    )
+    # In-scope, canonical block MISSING.
+    _write_skill_script(
+        bundles_dir, 'plan-marshall', 'manage-config', 'manage-config.py',
+        source=_minimal_argparse_source(), canonical_block=False,
+    )
+    # In-scope, entry-point filename differs from skill name, block missing.
+    _write_skill_script(
+        bundles_dir, 'plan-marshall', 'plan-doctor', 'plan_doctor.py',
+        source=_minimal_argparse_source(), canonical_block=False,
+    )
+
+    # Excluded: shared-only helper skill.
+    _write_skill_script(
+        bundles_dir, 'plan-marshall', 'script-shared', 'helpers.py',
+        source=_minimal_argparse_source(), canonical_block=False,
+    )
+    # Excluded: non-entry-point reference skill.
+    _write_skill_script(
+        bundles_dir, 'plan-marshall', 'ref-toon-format', 'toon.py',
+        source=_minimal_argparse_source(), canonical_block=False,
+    )
+    # Excluded: manage-findings has its own dedicated analyzer.
+    _write_skill_script(
+        bundles_dir, 'plan-marshall', 'manage-findings', 'manage-findings.py',
+        source=_minimal_argparse_source(), canonical_block=False,
+    )
+
+    # Not an entry point: underscore-prefixed helper alongside an entry point.
+    logging_skill = bundles_dir / 'plan-marshall' / 'skills' / 'manage-logging'
+    helper_scripts = logging_skill / 'scripts'
+    helper_scripts.mkdir(parents=True, exist_ok=True)
+    (helper_scripts / 'manage-logging.py').write_text(
+        _minimal_argparse_source(), encoding='utf-8'
+    )
+    (helper_scripts / '_internal.py').write_text(
+        _minimal_argparse_source(), encoding='utf-8'
+    )
+    (logging_skill / 'SKILL.md').write_text(
+        '# Skill\n\n## Canonical invocations\n\n### run\n\n```bash\nrun --flag x\n```\n',
+        encoding='utf-8',
+    )
+
+    # Not an entry point: a script that declares no ArgumentParser.
+    no_arg_skill = bundles_dir / 'plan-marshall' / 'skills' / 'no-cli-skill' / 'scripts'
+    no_arg_skill.mkdir(parents=True, exist_ok=True)
+    (no_arg_skill / 'lib.py').write_text(
+        'def helper():\n    return 1\n', encoding='utf-8'
+    )
+    (bundles_dir / 'plan-marshall' / 'skills' / 'no-cli-skill' / 'SKILL.md').write_text(
+        '# Skill\n', encoding='utf-8'
+    )
+
+    return marketplace_root
+
+
+def _attach_executor_to_synthetic_marketplace(marketplace_root: Path) -> Path:
+    """Wire a synthetic executor mapping the synthetic in-scope notations.
+
+    The executor lives at ``{marketplace_root}/.plan/execute-script.py`` so
+    ``_resolve_executor`` discovers it directly under the synthetic root, and
+    each in-scope notation resolves to its on-disk script. Returns the
+    executor path.
+    """
+    descriptors = discover_in_scope_scripts(marketplace_root)
+    mapping: dict[str, Path] = {}
+    for desc in descriptors:
+        script_abs = marketplace_root / 'marketplace' / desc.script_relpath
+        if not script_abs.is_file():
+            script_abs = marketplace_root / desc.script_relpath
+        mapping[desc.notation] = script_abs
+    return _make_executor(marketplace_root, mapping)
+
+
+# Notations expected to be in-scope for the synthetic marketplace above.
+_EXPECTED_IN_SCOPE = {
+    'plan-marshall:manage-status:manage-status',
+    'plan-marshall:manage-tasks:manage-tasks',
+    'plan-marshall:manage-config:manage-config',
+    'plan-marshall:plan-doctor:plan_doctor',
+    'plan-marshall:manage-logging:manage-logging',
+}
+# Notations expected to be EXCLUDED.
+_EXPECTED_EXCLUDED = {
+    'plan-marshall:script-shared:helpers',
+    'plan-marshall:ref-toon-format:toon',
+    'plan-marshall:manage-findings:manage-findings',
+    'plan-marshall:manage-logging:_internal',
+    'plan-marshall:no-cli-skill:lib',
+}
+
+
+# ---------------------------------------------------------------------------
+# Layer A — live ``--help`` surface derivation.
+# ---------------------------------------------------------------------------
+
+
+class TestDeriveScriptTree:
+    """``derive_script_tree`` reconstructs the surface from live ``--help``."""
+
+    def test_flat_subcommands_derived(self, tmp_path: Path) -> None:
+        script = tmp_path / 'syn.py'
+        script.write_text(_flat_script_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
         assert tree is not None
         assert tree.known_subcommands() == {'foo', 'bar'}
 
@@ -179,19 +523,25 @@ class TestBuildScriptTree:
         assert bar_leaf.flags == {'gamma'}
         assert bar_leaf.required_flags == set()
 
-    def test_root_flags_extracted(self, flat_script: Path) -> None:
-        tree = build_script_tree(flat_script)
+    def test_root_flags_derived(self, tmp_path: Path) -> None:
+        script = tmp_path / 'syn.py'
+        script.write_text(_flat_script_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
         assert tree is not None
-        # ``--debug`` is action='store_true' which has no name= arg; it is
-        # still a declared long flag and should appear in the root's flag set.
+        # ``--debug`` is action='store_true' on the root parser; ``--help``
+        # renders it in the root options block.
         assert 'debug' in tree.root.flags
 
-    def test_nested_subcommands_extracted(self, nested_script: Path) -> None:
-        tree = build_script_tree(nested_script)
+    def test_nested_subcommands_derived(self, tmp_path: Path) -> None:
+        script = tmp_path / 'syn.py'
+        script.write_text(_nested_script_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
         assert tree is not None
         assert tree.known_subcommands() == {'qgate', 'other'}
 
-        # ``qgate`` resolves only with a sub_verb.
+        # ``qgate`` resolves only with a sub_verb (it is a nested subparser).
         assert tree.get_leaf('qgate', None) is None
         add_leaf = tree.get_leaf('qgate', 'add')
         assert add_leaf is not None
@@ -208,15 +558,141 @@ class TestBuildScriptTree:
         assert other_leaf is not None
         assert other_leaf.flags == {'flag'}
 
-    def test_missing_script_returns_none(self, tmp_path: Path) -> None:
-        tree = build_script_tree(tmp_path / 'does-not-exist.py')
+    def test_unreachable_notation_returns_none(self, tmp_path: Path) -> None:
+        # Executor maps no notations — ``--help`` produces no usable output.
+        executor = _make_executor(tmp_path, {})
+        tree = derive_script_tree('plan-marshall:absent:absent', executor)
         assert tree is None
 
-    def test_invalid_syntax_returns_none(self, tmp_path: Path) -> None:
-        bad = tmp_path / 'bad.py'
-        bad.write_text('def broken(:\n', encoding='utf-8')
-        tree = build_script_tree(bad)
-        assert tree is None
+
+class TestLoopRegisteredSubcommands:
+    """Subcommands registered through a ``for`` loop are visible via ``--help``.
+
+    This is the catastrophic false-positive that AST extraction produced:
+    ``manage-logging work`` / ``manage-logging decision`` are loop-registered,
+    so the old extractor saw NO subcommands and flagged every valid
+    invocation as ``subcommand_unknown``.
+    """
+
+    def test_all_loop_subcommands_derived(self, tmp_path: Path) -> None:
+        script = tmp_path / 'mlog.py'
+        script.write_text(_loop_registered_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        assert tree.known_subcommands() == {
+            'script', 'work', 'decision', 'separator', 'read'
+        }
+
+    def test_loop_registered_invocation_is_not_flagged(self, tmp_path: Path) -> None:
+        script = tmp_path / 'mlog.py'
+        script.write_text(_loop_registered_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        index = {_SYN_NOTATION: tree}
+        # The canonical ``work`` invocation must produce ZERO findings — it is
+        # the exact false-positive shape the pivot fixes.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} work '
+            f'--plan-id p --level INFO --message "[STATUS] hi"\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        assert findings == []
+
+    def test_unknown_subcommand_still_flagged(self, tmp_path: Path) -> None:
+        script = tmp_path / 'mlog.py'
+        script.write_text(_loop_registered_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        index = {_SYN_NOTATION: tree}
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} not-a-verb --plan-id p\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        assert len(findings) == 1
+        assert findings[0]['details']['reason'] == 'subcommand_unknown'
+
+
+class TestManySubcommandScript:
+    """A many-subcommand script (manage-status shape) is fully enumerated."""
+
+    def test_all_subcommands_derived(self, tmp_path: Path) -> None:
+        script = tmp_path / 'mstat.py'
+        script.write_text(_many_subcommand_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        subs = tree.known_subcommands()
+        assert len(subs) == 20
+        # Spot-check the verbs the AST extractor most commonly dropped.
+        for verb in ('metadata', 'get-worktree-path', 'transition', 'self-test'):
+            assert verb in subs
+
+    def test_helper_registered_subcommand_invocation_clean(
+        self, tmp_path: Path
+    ) -> None:
+        script = tmp_path / 'mstat.py'
+        script.write_text(_many_subcommand_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        index = {_SYN_NOTATION: tree}
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} get-worktree-path '
+            f'--plan-id p\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        assert findings == []
+
+
+class TestSharedFlagAcrossSubcommands:
+    """A flag added to every subcommand via a helper is visible per-leaf."""
+
+    def test_shared_flag_present_on_each_leaf(self, tmp_path: Path) -> None:
+        script = tmp_path / 'shared.py'
+        script.write_text(_shared_flag_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        for sub in ('update', 'finalize-step'):
+            leaf = tree.get_leaf(sub, None)
+            assert leaf is not None
+            assert {'plan-id', 'task-number', 'status'} <= leaf.flags
+            assert {'plan-id', 'task-number'} <= leaf.required_flags
+
+    def test_shared_flag_invocation_not_flagged(self, tmp_path: Path) -> None:
+        script = tmp_path / 'shared.py'
+        script.write_text(_shared_flag_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        index = {_SYN_NOTATION: tree}
+        # ``--plan-id`` / ``--task-number`` are shared — neither is unknown.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} finalize-step '
+            f'--plan-id p --task-number 3 --status done\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        assert findings == []
+
+    def test_missing_shared_required_flag_is_flagged(self, tmp_path: Path) -> None:
+        script = tmp_path / 'shared.py'
+        script.write_text(_shared_flag_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        index = {_SYN_NOTATION: tree}
+        # Omit the required ``--task-number``.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} finalize-step '
+            f'--plan-id p --status done\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        assert len(findings) == 1
+        assert findings[0]['details']['reason'] == 'required_flag_missing'
+        assert findings[0]['details']['missing'] == ['task-number']
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +701,7 @@ class TestBuildScriptTree:
 
 
 class TestPositiveCanonicalInvocations:
-    """Each in-scope script accepts a canonical invocation cleanly."""
+    """Each script accepts a canonical invocation cleanly."""
 
     def test_flat_subcommand_canonical_clean(self, flat_index: dict) -> None:
         content = (
@@ -241,39 +717,6 @@ class TestPositiveCanonicalInvocations:
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', nested_index)
         assert findings == []
 
-    @pytest.mark.parametrize(
-        'notation_third_segment',
-        [desc.notation.split(':')[-1] for desc in IN_SCOPE_SCRIPTS],
-    )
-    def test_in_scope_notations_are_enumerated(self, notation_third_segment: str) -> None:
-        """The 14 in-scope script families are represented in IN_SCOPE_SCRIPTS.
-
-        The parametrize matrix is the structural assertion — pytest will
-        fail if any expected family is missing or extra. The set matches
-        the 15 SKILL.md files touched by D1 minus ``manage-findings``,
-        which is covered by its own dedicated analyzer
-        (``_analyze_manage_findings_invocation.py``).
-        """
-        all_third_segments = {desc.notation.split(':')[-1] for desc in IN_SCOPE_SCRIPTS}
-        expected = {
-            'manage-status',
-            'manage-tasks',
-            'manage-logging',
-            'manage-references',
-            'manage-config',
-            'git-workflow',
-            'github_ops',
-            'architecture',
-            'manage-execution-manifest',
-            'manage-files',
-            'manage-lessons',
-            'manage-metrics',
-            'manage-plan-documents',
-            'manage-solution-outline',
-        }
-        assert all_third_segments == expected
-        assert notation_third_segment in all_third_segments
-
     def test_unknown_notation_is_skipped(self, flat_index: dict) -> None:
         """Notations not in the script_index are silently passed over."""
         content = (
@@ -281,6 +724,72 @@ class TestPositiveCanonicalInvocations:
         )
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# Layer B2 — in-scope derivation (discover_in_scope_scripts).
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoverInScopeScripts:
+    """``discover_in_scope_scripts`` auto-derives coverage from the bundle tree."""
+
+    def test_derives_expected_in_scope_set(self, tmp_path: Path) -> None:
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        descriptors = discover_in_scope_scripts(marketplace_root)
+        notations = {d.notation for d in descriptors}
+        assert notations == _EXPECTED_IN_SCOPE
+
+    def test_excludes_shared_reference_findings_and_helpers(
+        self, tmp_path: Path
+    ) -> None:
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        descriptors = discover_in_scope_scripts(marketplace_root)
+        notations = {d.notation for d in descriptors}
+        for excluded in _EXPECTED_EXCLUDED:
+            assert excluded not in notations, f'{excluded} must be excluded'
+
+    def test_underscore_prefixed_scripts_are_skipped(self, tmp_path: Path) -> None:
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        descriptors = discover_in_scope_scripts(marketplace_root)
+        thirds = {d.notation.split(':')[-1] for d in descriptors}
+        assert '_internal' not in thirds
+
+    def test_non_argparse_scripts_are_skipped(self, tmp_path: Path) -> None:
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        descriptors = discover_in_scope_scripts(marketplace_root)
+        notations = {d.notation for d in descriptors}
+        assert 'plan-marshall:no-cli-skill:lib' not in notations
+
+    def test_third_segment_is_script_stem_not_skill_name(
+        self, tmp_path: Path
+    ) -> None:
+        """A skill whose entry-point filename differs from the skill name is
+        keyed off the script stem, not a filename==skill assumption."""
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        descriptors = discover_in_scope_scripts(marketplace_root)
+        by_notation = {d.notation: d for d in descriptors}
+        assert 'plan-marshall:plan-doctor:plan_doctor' in by_notation
+
+    def test_descriptor_relpaths_resolve(self, tmp_path: Path) -> None:
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        descriptors = discover_in_scope_scripts(marketplace_root)
+        for desc in descriptors:
+            assert desc.script_relpath.startswith('bundles/')
+            assert desc.skill_dir_relpath.startswith('bundles/')
+            script_abs = marketplace_root / 'marketplace' / desc.script_relpath
+            assert script_abs.is_file()
+
+    def test_results_are_sorted_by_notation(self, tmp_path: Path) -> None:
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        descriptors = discover_in_scope_scripts(marketplace_root)
+        notations = [d.notation for d in descriptors]
+        assert notations == sorted(notations)
+
+    def test_missing_bundles_dir_returns_empty(self, tmp_path: Path) -> None:
+        empty = tmp_path / 'empty'
+        empty.mkdir()
+        assert discover_in_scope_scripts(empty) == ()
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +865,14 @@ class TestUnknownFlag:
         f = findings[0]
         assert f['details']['reason'] == 'flag_unknown'
         assert f['details']['flag'] == 'not-a-flag'
-        assert set(f['details']['known_flags']) == {'alpha', 'beta'}
+        # ``known_flags`` reports the full set the analyzer validated against:
+        # the leaf's own flags PLUS the ancestor union (root ``--debug``) PLUS
+        # the universal executor-injected allowlist. The leaf flags are always
+        # a subset; the genuinely-unknown flag must never appear.
+        known = set(f['details']['known_flags'])
+        assert {'alpha', 'beta'} <= known
+        assert 'debug' in known  # root flag surfaced via the ancestor union
+        assert 'not-a-flag' not in known
 
     def test_unknown_flag_on_nested_sub_verb(self, nested_index: dict) -> None:
         content = (
@@ -401,68 +917,21 @@ class TestMissingRequiredFlag:
 # ---------------------------------------------------------------------------
 
 
-def _build_synthetic_marketplace(
-    tmp_path: Path,
-    *,
-    canonical_blocks: dict[str, bool],
-) -> Path:
-    """Create a synthetic marketplace tree with seven in-scope skill dirs.
-
-    Each SKILL.md is created with or without a ``## Canonical invocations``
-    section based on ``canonical_blocks`` (keyed by notation). The scripts
-    are also written so build_script_index can resolve trees.
-    """
-    marketplace_root = tmp_path / 'mp'
-    bundles_dir = marketplace_root / 'marketplace' / 'bundles'
-    bundles_dir.mkdir(parents=True)
-
-    for desc in IN_SCOPE_SCRIPTS:
-        skill_dir = marketplace_root / 'marketplace' / desc.skill_dir_relpath
-        skill_dir.mkdir(parents=True)
-        (skill_dir / 'scripts').mkdir()
-
-        # Minimal argparse script — single ``run`` subcommand.
-        script_rel = desc.script_relpath.split('/')[-1]
-        script_path = skill_dir / 'scripts' / script_rel
-        script_path.write_text(
-            textwrap.dedent('''
-                import argparse
-
-                def main():
-                    parser = argparse.ArgumentParser()
-                    subparsers = parser.add_subparsers(dest='cmd')
-                    run = subparsers.add_parser('run')
-                    run.add_argument('--flag')
-                    return parser
-            ''').lstrip(),
-            encoding='utf-8',
-        )
-
-        skill_md = skill_dir / 'SKILL.md'
-        body = '# Skill\n\nDescription.\n'
-        if canonical_blocks.get(desc.notation, False):
-            body += '\n## Canonical invocations\n\n### run\n\n```\nrun --flag x\n```\n'
-        skill_md.write_text(body, encoding='utf-8')
-
-    return marketplace_root
-
-
 class TestMissingCanonicalBlock:
-    """SKILL.md without ``## Canonical invocations`` produces a warning."""
+    """SKILL.md without ``## Canonical invocations`` produces a finding."""
 
-    def test_missing_block_flagged_for_every_in_scope_skill(
+    def test_missing_block_flagged_only_for_skills_without_section(
         self, tmp_path: Path
     ) -> None:
-        # No skill has the canonical block.
-        marketplace_root = _build_synthetic_marketplace(
-            tmp_path,
-            canonical_blocks={desc.notation: False for desc in IN_SCOPE_SCRIPTS},
-        )
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
         findings = check_missing_canonical_blocks(marketplace_root)
-
-        # Dedup means one finding per unique skill_dir; the 14 notations
-        # map to 14 distinct skill dirs, so 14 findings are expected.
-        assert len(findings) == len(IN_SCOPE_SCRIPTS)
+        flagged = {f['details']['notation'] for f in findings}
+        # manage-config and plan-doctor lack the section; the rest of the
+        # in-scope set carries it.
+        assert flagged == {
+            'plan-marshall:manage-config:manage-config',
+            'plan-marshall:plan-doctor:plan_doctor',
+        }
         for f in findings:
             assert f['rule_id'] == RULE_MISSING_CANONICAL_BLOCK
             assert f['severity'] == 'warning'
@@ -470,41 +939,44 @@ class TestMissingCanonicalBlock:
             assert 'canonical_hint' in f['details']
 
     def test_present_block_is_not_flagged(self, tmp_path: Path) -> None:
-        marketplace_root = _build_synthetic_marketplace(
-            tmp_path,
-            canonical_blocks={desc.notation: True for desc in IN_SCOPE_SCRIPTS},
+        marketplace_root = tmp_path / 'mp'
+        bundles_dir = marketplace_root / 'marketplace' / 'bundles'
+        bundles_dir.mkdir(parents=True)
+        _write_skill_script(
+            bundles_dir, 'plan-marshall', 'manage-status', 'manage-status.py',
+            source=_minimal_argparse_source(), canonical_block=True,
         )
         findings = check_missing_canonical_blocks(marketplace_root)
         assert findings == []
 
-    def test_mixed_state_only_missing_flagged(self, tmp_path: Path) -> None:
-        # Exactly one skill has the block — every other in-scope skill flagged.
-        first = IN_SCOPE_SCRIPTS[0].notation
-        canonical_blocks = {desc.notation: False for desc in IN_SCOPE_SCRIPTS}
-        canonical_blocks[first] = True
-        marketplace_root = _build_synthetic_marketplace(
-            tmp_path, canonical_blocks=canonical_blocks
-        )
-        findings = check_missing_canonical_blocks(marketplace_root)
-        assert len(findings) == len(IN_SCOPE_SCRIPTS) - 1
-        flagged_notations = {f['details']['notation'] for f in findings}
-        assert first not in flagged_notations
-
     def test_block_heading_is_case_insensitive(self, tmp_path: Path) -> None:
-        marketplace_root = _build_synthetic_marketplace(
-            tmp_path,
-            canonical_blocks={desc.notation: False for desc in IN_SCOPE_SCRIPTS},
+        marketplace_root = tmp_path / 'mp'
+        bundles_dir = marketplace_root / 'marketplace' / 'bundles'
+        bundles_dir.mkdir(parents=True)
+        skill_dir = _write_skill_script(
+            bundles_dir, 'plan-marshall', 'manage-status', 'manage-status.py',
+            source=_minimal_argparse_source(), canonical_block=False,
         )
-        # Pick one skill, overwrite its SKILL.md with a lower-case heading.
-        first = IN_SCOPE_SCRIPTS[0]
-        skill_md = marketplace_root / 'marketplace' / first.skill_dir_relpath / 'SKILL.md'
-        skill_md.write_text(
+        (skill_dir / 'SKILL.md').write_text(
             '# Skill\n\n## canonical INVOCATIONS\n\n### run\n',
             encoding='utf-8',
         )
         findings = check_missing_canonical_blocks(marketplace_root)
-        flagged_notations = {f['details']['notation'] for f in findings}
-        assert first.notation not in flagged_notations
+        assert findings == []
+
+    def test_excluded_skill_not_flagged_for_missing_block(
+        self, tmp_path: Path
+    ) -> None:
+        """A shared-only skill without the section is NOT flagged (out of scope)."""
+        marketplace_root = tmp_path / 'mp'
+        bundles_dir = marketplace_root / 'marketplace' / 'bundles'
+        bundles_dir.mkdir(parents=True)
+        _write_skill_script(
+            bundles_dir, 'plan-marshall', 'script-shared', 'helpers.py',
+            source=_minimal_argparse_source(), canonical_block=False,
+        )
+        findings = check_missing_canonical_blocks(marketplace_root)
+        assert findings == []
 
 
 # ---------------------------------------------------------------------------
@@ -606,10 +1078,7 @@ class TestFindingPayloadShape:
     def test_payload_contains_required_keys_canonical_block_rule(
         self, tmp_path: Path
     ) -> None:
-        marketplace_root = _build_synthetic_marketplace(
-            tmp_path,
-            canonical_blocks={desc.notation: False for desc in IN_SCOPE_SCRIPTS},
-        )
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
         findings = check_missing_canonical_blocks(marketplace_root)
         assert findings
         f = findings[0]
@@ -662,51 +1131,198 @@ class TestFindingPayloadShape:
 class TestMarketplaceAggregator:
     """``scan_manage_invocation`` combines markdown + canonical-block findings."""
 
-    def test_index_includes_only_resolvable_scripts(self, tmp_path: Path) -> None:
-        # Only the first in-scope script gets a real on-disk script;
-        # the rest are absent from the synthetic tree.
-        marketplace_root = tmp_path / 'mp'
-        first = IN_SCOPE_SCRIPTS[0]
-        skill_dir = marketplace_root / 'marketplace' / first.skill_dir_relpath
-        skill_dir.mkdir(parents=True)
-        (skill_dir / 'scripts').mkdir()
-        script_path = (
-            marketplace_root / 'marketplace' / first.script_relpath
-        )
-        script_path.write_text(_flat_script_source(), encoding='utf-8')
-
+    def test_index_resolves_in_scope_scripts(self, tmp_path: Path) -> None:
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        _attach_executor_to_synthetic_marketplace(marketplace_root)
         index = build_script_index(marketplace_root)
-        assert first.notation in index
-        assert len(index) == 1
+        assert set(index.keys()) == _EXPECTED_IN_SCOPE
+
+    def test_index_empty_without_executor(self, tmp_path: Path) -> None:
+        """Without an executor the surface cannot be probed — index is empty
+        (no false positives)."""
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        index = build_script_index(marketplace_root)
+        assert index == {}
 
     def test_aggregator_runs_both_rules(self, tmp_path: Path) -> None:
-        marketplace_root = _build_synthetic_marketplace(
-            tmp_path,
-            canonical_blocks={desc.notation: False for desc in IN_SCOPE_SCRIPTS},
-        )
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        _attach_executor_to_synthetic_marketplace(marketplace_root)
         bundles_dir = marketplace_root / 'marketplace' / 'bundles'
-        bundles_dir.mkdir(parents=True, exist_ok=True)
-        # Add one bundle markdown with a bad invocation against the first
-        # in-scope notation (which the synthetic script declares ``run`` for).
-        first = IN_SCOPE_SCRIPTS[0]
+        # Add one consumer bundle markdown with a bad invocation against an
+        # in-scope notation (the synthetic script declares ``run``).
         consumer_md = (
             bundles_dir / 'consumer-bundle' / 'skills' / 'consumer-skill' / 'SKILL.md'
         )
         consumer_md.parent.mkdir(parents=True)
         consumer_md.write_text(
-            f'python3 .plan/execute-script.py {first.notation} zzz --x y\n',
+            'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status zzz --x y\n',
             encoding='utf-8',
         )
 
         findings = scan_manage_invocation(marketplace_root)
-        # At least one of each rule.
         rule_ids = {f['rule_id'] for f in findings}
         assert RULE_MANAGE_INVOCATION_INVALID in rule_ids
         assert RULE_MISSING_CANONICAL_BLOCK in rule_ids
 
+    def test_aggregator_clean_marketplace_has_no_findings(self, tmp_path: Path) -> None:
+        """A marketplace where every in-scope skill has the block and no doc
+        carries a bad invocation produces zero findings."""
+        marketplace_root = tmp_path / 'mp'
+        bundles_dir = marketplace_root / 'marketplace' / 'bundles'
+        bundles_dir.mkdir(parents=True)
+        _write_skill_script(
+            bundles_dir, 'plan-marshall', 'manage-status', 'manage-status.py',
+            source=_minimal_argparse_source(), canonical_block=True,
+        )
+        _attach_executor_to_synthetic_marketplace(marketplace_root)
+        findings = scan_manage_invocation(marketplace_root)
+        assert findings == []
+
 
 # ---------------------------------------------------------------------------
-# Layer F — robustness fixes for gemini review feedback (PR #372).
+# Layer H — quality-gate wiring (direct cmd_quality_gate invocation).
+# ---------------------------------------------------------------------------
+
+
+def _load_doctor_marketplace():
+    """Spec-load ``doctor-marketplace.py`` for direct ``cmd_quality_gate`` calls."""
+    spec = importlib.util.spec_from_file_location(
+        'doctor_marketplace_for_invocation_test',
+        _SCRIPTS_DIR / 'doctor-marketplace.py',
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules['doctor_marketplace_for_invocation_test'] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class _Args:
+    """Minimal argparse-namespace stand-in for direct cmd_* calls."""
+
+    def __init__(self, **kwargs) -> None:
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+class TestTemplatedInvocationSkip:
+    """Templated / usage-string invocations are skipped, not flagged.
+
+    A concrete consumer call is the only thing the rule validates. Placeholder
+    (``{...}`` / ``<...>``) and usage-syntax (``[...]`` / ``|`` / ``...``)
+    tokens in the subcommand/sub-verb region mark a non-concrete invocation —
+    a templated example or a ``## Canonical invocations`` usage string — which
+    cannot be resolved against the canonical tree and must not produce
+    spurious findings.
+    """
+
+    def test_predicate_detects_placeholders_in_positional_region(self) -> None:
+        assert _positional_region_is_templated(' plan {phase} get')
+        assert _positional_region_is_templated(' {command} {args}')
+        assert _positional_region_is_templated(' foo <subcommand>')
+
+    def test_predicate_detects_usage_syntax(self) -> None:
+        assert _positional_region_is_templated(' [--project-dir | --plan-id] list')
+        assert _positional_region_is_templated(' ...')
+        assert _positional_region_is_templated(' qgate ...')
+
+    def test_predicate_ignores_template_syntax_in_flag_values(self) -> None:
+        # A placeholder AFTER the first flag (a flag value) is not a templated
+        # positional region — the subcommand chain is still concrete.
+        assert not _positional_region_is_templated(' metadata --set k={value}')
+        assert not _positional_region_is_templated(' foo --alpha {x}')
+
+    def test_predicate_passes_concrete_invocations(self) -> None:
+        assert not _positional_region_is_templated(' foo --alpha v')
+        assert not _positional_region_is_templated(' qgate add --plan-id p --phase ph')
+
+    def test_placeholder_subverb_not_flagged(self, nested_index: dict) -> None:
+        # ``qgate`` requires a sub-verb; a ``{sub}`` placeholder stands for a
+        # real one — do not flag sub_verb_unknown.
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate {{sub}} --plan-id p\n'
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', nested_index)
+        assert findings == []
+
+    def test_placeholder_subcommand_not_flagged(self, flat_index: dict) -> None:
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} {{cmd}} --alpha v\n'
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        assert findings == []
+
+    def test_usage_string_bracket_group_not_flagged(self, flat_index: dict) -> None:
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
+            f'[--debug] foo --alpha v\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        assert findings == []
+
+    def test_ellipsis_prose_mention_not_flagged(self, flat_index: dict) -> None:
+        content = f'Run `python3 .plan/execute-script.py {_SYN_NOTATION} ...` exactly.\n'
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        assert findings == []
+
+    def test_flag_value_placeholder_still_validates_subcommand(self, nested_index: dict) -> None:
+        # Placeholder only in a flag value — the concrete sub-verb chain is
+        # still validated, so a genuinely-unknown flag is still caught.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate add '
+            f'--plan-id {{pid}} --phase {{ph}} --nope z\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', nested_index)
+        assert len(findings) == 1
+        assert findings[0]['details']['reason'] == 'flag_unknown'
+        assert findings[0]['details']['flag'] == 'nope'
+
+
+class TestQualityGateWiring:
+    """``cmd_quality_gate`` runs the manage-invocation cluster as a build gate."""
+
+    def test_quality_gate_imports_scan_manage_invocation(self) -> None:
+        """The doctor-marketplace module imports the manage-invocation scanner."""
+        dm = _load_doctor_marketplace()
+        assert hasattr(dm, 'scan_manage_invocation')
+
+    def test_quality_gate_runs_manage_invocation_cluster(self, tmp_path: Path) -> None:
+        """cmd_quality_gate lists scan_manage_invocation in rules_run and
+        surfaces its findings against a synthetic tree carrying a bad
+        invocation."""
+        dm = _load_doctor_marketplace()
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        # The executor must live where ``_resolve_executor`` looks relative to
+        # the inner root the gate passes — i.e. under the inner ``marketplace``
+        # dir's parent. Attaching at the synthetic root covers the
+        # ``marketplace_root.parent`` candidate.
+        _attach_executor_to_synthetic_marketplace(marketplace_root)
+        # Add a consumer doc with a bad invocation so the rule fires.
+        bundles_dir = marketplace_root / 'marketplace' / 'bundles'
+        consumer_md = (
+            bundles_dir / 'consumer-bundle' / 'skills' / 'consumer-skill' / 'SKILL.md'
+        )
+        consumer_md.parent.mkdir(parents=True)
+        consumer_md.write_text(
+            'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status zzz --x y\n',
+            encoding='utf-8',
+        )
+        # Point find_marketplace_root at the dir that directly contains bundles/.
+        inner_root = marketplace_root / 'marketplace'
+        args = _Args(marketplace_root=str(inner_root))
+        result = dm.cmd_quality_gate(args)
+        # The gate fails (the bad invocation plus minimal-fixture argparse
+        # findings are present); the manage-invocation rule must be wired in.
+        assert result['status'] == 'fail'
+        rules_run = {r['rule'] for r in result['rules_run']}
+        assert 'scan_manage_invocation' in rules_run
+        rule_ids = {issue.get('rule_id') for issue in result['issues']}
+        assert RULE_MANAGE_INVOCATION_INVALID in rule_ids
+
+    def test_quality_gate_help_documents_rule(self) -> None:
+        """The cmd_quality_gate docstring names the scan_manage_invocation rule."""
+        dm = _load_doctor_marketplace()
+        assert 'scan_manage_invocation' in (dm.cmd_quality_gate.__doc__ or '')
+
+
+# ---------------------------------------------------------------------------
+# Layer I — robustness fixes carried forward (PR #372 review feedback).
 # ---------------------------------------------------------------------------
 
 
@@ -714,14 +1330,6 @@ class TestMultiLineBackslashContinuation:
     """Backslash-continued invocations are joined before flag validation."""
 
     def test_flags_on_continuation_lines_are_recognized(self, flat_index: dict) -> None:
-        """Invocation spread across multiple lines with ``\\`` continuations.
-
-        Before the fix, ``--alpha`` on the first physical line satisfied
-        the required-flag check, but the rest of the invocation was
-        discarded. After the fix, the joined logical line is what we
-        validate against — the canonical multi-line form must produce
-        zero findings.
-        """
         content = (
             f'python3 .plan/execute-script.py {_SYN_NOTATION} foo \\\n'
             f'  --alpha v1 \\\n'
@@ -731,7 +1339,6 @@ class TestMultiLineBackslashContinuation:
         assert findings == []
 
     def test_continuation_does_not_swallow_unknown_flag(self, flat_index: dict) -> None:
-        """An unknown flag on a continuation line is still surfaced."""
         content = (
             f'python3 .plan/execute-script.py {_SYN_NOTATION} foo \\\n'
             f'  --alpha v1 \\\n'
@@ -744,7 +1351,6 @@ class TestMultiLineBackslashContinuation:
         assert f['details']['flag'] == 'nope'
 
     def test_finding_line_anchored_to_logical_start(self, flat_index: dict) -> None:
-        """Findings on a continuation line report the starting line number."""
         content = (
             '# heading\n'  # line 1
             f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha v \\\n'  # line 2
@@ -760,12 +1366,6 @@ class TestShellQuotingFalsePositives:
     """Flag-like text inside quoted argument values is not parsed as a flag."""
 
     def test_double_quoted_value_with_dashes_is_not_a_flag(self, flat_index: dict) -> None:
-        """``--message "release: --not-a-flag"`` parses one flag (--message)."""
-        # Add a known --message flag to the synthetic root parser for the
-        # purposes of this test by re-using the alpha flag of foo. The fix
-        # under test is independent of which flag is whitelisted — what
-        # matters is that ``--not-a-flag`` inside the double-quoted value
-        # does NOT produce a flag_unknown finding.
         content = (
             f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
             f'--alpha "release: --not-a-flag"\n'
@@ -774,7 +1374,6 @@ class TestShellQuotingFalsePositives:
         assert findings == []
 
     def test_single_quoted_value_with_dashes_is_not_a_flag(self, flat_index: dict) -> None:
-        """``--alpha '--not-a-flag'`` (single quotes) is also handled."""
         content = (
             f"python3 .plan/execute-script.py {_SYN_NOTATION} foo "
             f"--alpha '--not-a-flag'\n"
@@ -783,7 +1382,6 @@ class TestShellQuotingFalsePositives:
         assert findings == []
 
     def test_unquoted_flag_still_validated(self, flat_index: dict) -> None:
-        """Quoting suppresses only the quoted region — unquoted flags still parse."""
         content = (
             f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
             f'--alpha "in quotes --safe" --nope unsafe\n'
@@ -800,10 +1398,6 @@ class TestFlatSubcommandWithPositionalArgs:
     def test_positional_after_flat_subcommand_does_not_block_flag_check(
         self, tmp_path: Path
     ) -> None:
-        """Pre-fix bug: a second positional token under a flat subcommand
-        caused ``get_leaf`` to return ``None`` and skip flag validation
-        for commands like ``architecture path SOURCE TARGET --json``.
-        """
         script = tmp_path / 'syn.py'
         script.write_text(
             textwrap.dedent('''
@@ -816,23 +1410,24 @@ class TestFlatSubcommandWithPositionalArgs:
                     path.add_argument('source')
                     path.add_argument('target')
                     path.add_argument('--json', action='store_true')
-                    return parser
+                    parser.parse_args()
+
+                if __name__ == '__main__':
+                    main()
             ''').lstrip(),
             encoding='utf-8',
         )
-        tree = build_script_tree(script)
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
         assert tree is not None
 
         index = {_SYN_NOTATION: tree}
-        # Canonical invocation with positional args + known flag — clean.
         clean = (
             f'python3 .plan/execute-script.py {_SYN_NOTATION} path src dst --json\n'
         )
         findings = analyze_manage_invocation_markdown(clean, '/fake/SKILL.md', index)
         assert findings == []
 
-        # Same shape with an unknown flag — exactly one finding (proves
-        # flag validation actually runs after the positional tokens).
         bad = (
             f'python3 .plan/execute-script.py {_SYN_NOTATION} path src dst --nope\n'
         )
@@ -843,14 +1438,14 @@ class TestFlatSubcommandWithPositionalArgs:
 
 
 class TestMutuallyExclusiveGroupSupport:
-    """Flags declared on ``add_mutually_exclusive_group`` are honored."""
+    """Flags declared on ``add_mutually_exclusive_group`` are honored.
+
+    Group-level flags render in the leaf's ``--help`` options block exactly
+    like any other flag, so ``--help`` derivation captures them with no
+    special-casing.
+    """
 
     def test_group_flags_attach_to_parent_leaf(self, tmp_path: Path) -> None:
-        """``group = parser.add_mutually_exclusive_group()`` followed by
-        ``group.add_argument('--a')`` registers ``--a`` on the parent
-        parser. Pre-fix, the receiver ``group`` was not in
-        ``parser_kind`` and the flag was silently dropped.
-        """
         script = tmp_path / 'syn.py'
         script.write_text(
             textwrap.dedent('''
@@ -858,21 +1453,27 @@ class TestMutuallyExclusiveGroupSupport:
 
                 def main():
                     parser = argparse.ArgumentParser()
-                    group = parser.add_mutually_exclusive_group(required=True)
+                    subparsers = parser.add_subparsers(dest='command')
+                    run = subparsers.add_parser('run')
+                    group = run.add_mutually_exclusive_group(required=True)
                     group.add_argument('--by-id')
                     group.add_argument('--by-name')
-                    parser.add_argument('--debug', action='store_true')
-                    return parser
+                    run.add_argument('--debug', action='store_true')
+                    parser.parse_args()
+
+                if __name__ == '__main__':
+                    main()
             ''').lstrip(),
             encoding='utf-8',
         )
-        tree = build_script_tree(script)
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
         assert tree is not None
-        # Root leaf carries the three flags (group + non-group).
-        assert tree.root.flags == {'by-id', 'by-name', 'debug'}
+        leaf = tree.get_leaf('run', None)
+        assert leaf is not None
+        assert leaf.flags == {'by-id', 'by-name', 'debug'}
 
     def test_argument_group_flags_attach_to_parent_leaf(self, tmp_path: Path) -> None:
-        """``parser.add_argument_group(...)`` is also aliased to the parent."""
         script = tmp_path / 'syn.py'
         script.write_text(
             textwrap.dedent('''
@@ -885,12 +1486,268 @@ class TestMutuallyExclusiveGroupSupport:
                     grp = run.add_argument_group('output')
                     grp.add_argument('--json', action='store_true')
                     grp.add_argument('--quiet', action='store_true')
-                    return parser
+                    parser.parse_args()
+
+                if __name__ == '__main__':
+                    main()
             ''').lstrip(),
             encoding='utf-8',
         )
-        tree = build_script_tree(script)
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
         assert tree is not None
         leaf = tree.get_leaf('run', None)
         assert leaf is not None
         assert leaf.flags == {'json', 'quiet'}
+
+
+# ---------------------------------------------------------------------------
+# Layer I2 — parent-inherited flags, ancestor-union, and universal allowlist.
+# ---------------------------------------------------------------------------
+
+
+def _parents_inherited_source() -> str:
+    """``parents=[...]`` shape — a common parent flag inherited by subcommands.
+
+    A shared ``--plan-id`` is declared ONCE on a ``parents=[common]`` parser and
+    inherited by every subcommand. argparse copies the parent's action into each
+    child, so the flag is valid on ``run`` / ``check`` even though it is never
+    declared directly on either subcommand. The analyzer must accept it — the
+    AST extractor never modelled ``parents=`` at all, and per-leaf ``--help``
+    validation mis-flags any flag argparse renders only on the parent.
+    """
+    return textwrap.dedent('''
+        import argparse
+
+        def main():
+            common = argparse.ArgumentParser(add_help=False)
+            common.add_argument('--plan-id')
+
+            parser = argparse.ArgumentParser()
+            subparsers = parser.add_subparsers(dest='cmd')
+
+            run = subparsers.add_parser('run', parents=[common])
+            run.add_argument('--flag')
+
+            check = subparsers.add_parser('check', parents=[common])
+            check.add_argument('--strict', action='store_true')
+
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
+def _root_flag_source() -> str:
+    """A flag declared on the ROOT parser, honored by every subcommand.
+
+    ``--project-dir`` is added to the top-level parser before subparser
+    dispatch. argparse accepts it on every subcommand, but renders it ONLY in
+    the root ``--help`` options block — never in a subcommand's. The
+    ancestor-union must accept it at the leaf; per-leaf validation alone would
+    mis-flag it.
+    """
+    return textwrap.dedent('''
+        import argparse
+
+        def main():
+            parser = argparse.ArgumentParser()
+            parser.add_argument('--project-dir')
+            subparsers = parser.add_subparsers(dest='cmd')
+            run = subparsers.add_parser('run')
+            run.add_argument('--flag')
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
+class TestParentInheritedFlags:
+    """Flags inherited via ``parents=[...]`` are accepted on each subcommand."""
+
+    def test_parent_flag_accepted_on_each_subcommand(self, tmp_path: Path) -> None:
+        script = tmp_path / 'syn.py'
+        script.write_text(_parents_inherited_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        index = {_SYN_NOTATION: tree}
+        # ``--plan-id`` is inherited from the ``parents=[common]`` parser; it
+        # must NOT be flagged as unknown on either subcommand.
+        for sub in ('run', 'check'):
+            content = (
+                f'python3 .plan/execute-script.py {_SYN_NOTATION} {sub} --plan-id p\n'
+            )
+            findings = analyze_manage_invocation_markdown(
+                content, '/fake/SKILL.md', index
+            )
+            invalid = [
+                f for f in findings
+                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+            ]
+            assert invalid == [], f'parent-inherited --plan-id flagged on {sub}: {invalid}'
+
+    def test_genuinely_unknown_flag_still_flagged_with_parents(
+        self, tmp_path: Path
+    ) -> None:
+        script = tmp_path / 'syn.py'
+        script.write_text(_parents_inherited_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        index = {_SYN_NOTATION: tree}
+        # A flag neither inherited nor declared anywhere is still a real defect.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} run --plan-id p --bogus z\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert len(invalid) == 1
+        assert invalid[0]['details']['reason'] == 'flag_unknown'
+        assert invalid[0]['details']['flag'] == 'bogus'
+
+
+class TestRootFlagAncestorUnion:
+    """A root-declared flag is accepted on subcommands via the ancestor union."""
+
+    def test_root_flag_accepted_on_subcommand(self, tmp_path: Path) -> None:
+        script = tmp_path / 'syn.py'
+        script.write_text(_root_flag_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        index = {_SYN_NOTATION: tree}
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} run '
+            f'--flag v --project-dir /x\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert invalid == [], f'root-declared --project-dir flagged on subcommand: {invalid}'
+
+
+class TestUniversalFlagAllowlist:
+    """Executor-injected universal flags are accepted on any leaf.
+
+    ``--audit-plan-id`` is stripped by the executor wrapper before the target
+    script's argparse runs, so it appears in NO node's ``--help`` surface. The
+    universal allowlist guarantees it is never flagged even when the
+    ancestor-union does not contain it.
+    """
+
+    def test_audit_plan_id_never_flagged(self, flat_index: dict) -> None:
+        # ``foo`` declares --alpha (required) / --beta; --audit-plan-id is in no
+        # node's surface but is executor-injected and must be accepted.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
+            f'--alpha v --audit-plan-id p\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert invalid == [], f'executor-injected --audit-plan-id flagged: {invalid}'
+
+    def test_universal_allowlist_does_not_mask_real_unknown_flag(
+        self, flat_index: dict
+    ) -> None:
+        # --audit-plan-id is allowlisted; --bogus is still a real unknown flag.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
+            f'--alpha v --audit-plan-id p --bogus z\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert len(invalid) == 1
+        assert invalid[0]['details']['flag'] == 'bogus'
+
+
+# ---------------------------------------------------------------------------
+# Layer J — zero false positives against the REAL plan-marshall bundle.
+# ---------------------------------------------------------------------------
+
+
+def _real_executor() -> Path | None:
+    """Resolve the real ``.plan/execute-script.py`` for the live bundle.
+
+    Returns ``None`` when the executor is not present (e.g. an unconfigured
+    checkout) so the dependent tests skip rather than fail spuriously.
+    """
+    candidate = PROJECT_ROOT / '.plan' / 'execute-script.py'
+    return candidate if candidate.is_file() else None
+
+
+class TestRealMarketplaceZeroFalsePositives:
+    """The corrected analyzer must not flag correctly-authored canonical calls.
+
+    The AST extractor produced 1323 false positives in plan-marshall alone
+    (loop/helper-registered subcommands invisible, shared flags dropped).
+    The ``--help`` derivation derives the real surface, so canonical calls in
+    the shipped docs — the exact loop-registered subcommands and shared flags
+    that broke the AST extractor — must produce ZERO ``manage-invocation-invalid``
+    findings.
+
+    The surface is derived per-notation (``derive_script_tree``) against the
+    live executor rather than via a whole-marketplace ``build_script_index``
+    so the test cost stays bounded to the two notations under test.
+    """
+
+    def test_loop_and_shared_flag_calls_not_flagged_in_real_bundle(self) -> None:
+        executor = _real_executor()
+        if executor is None:
+            pytest.skip('real executor not present in this checkout')
+        # manage-logging registers work/decision via a loop; --plan-id/--level/
+        # --message are shared across them — the exact shapes the AST extractor
+        # mis-flagged.
+        notation = 'plan-marshall:manage-logging:manage-logging'
+        tree = derive_script_tree(notation, executor)
+        assert tree is not None, 'manage-logging --help must be reachable'
+        index = {notation: tree}
+        canonical_calls = [
+            f'python3 .plan/execute-script.py {notation} work '
+            f'--plan-id p --level INFO --message "[STATUS] hi"',
+            f'python3 .plan/execute-script.py {notation} decision '
+            f'--plan-id p --level INFO --message "(skill) decided"',
+            f'python3 .plan/execute-script.py {notation} separator --plan-id p',
+        ]
+        for call in canonical_calls:
+            findings = analyze_manage_invocation_markdown(
+                call + '\n', '/fake/SKILL.md', index
+            )
+            invalid = [
+                f for f in findings
+                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+            ]
+            assert invalid == [], f'false positive(s) for canonical call: {call}\n{invalid}'
+
+    def test_many_subcommand_calls_not_flagged_in_real_bundle(self) -> None:
+        executor = _real_executor()
+        if executor is None:
+            pytest.skip('real executor not present in this checkout')
+        notation = 'plan-marshall:manage-status:manage-status'
+        tree = derive_script_tree(notation, executor)
+        assert tree is not None, 'manage-status --help must be reachable'
+        index = {notation: tree}
+        # Subcommands the AST extractor commonly dropped.
+        canonical_calls = [
+            f'python3 .plan/execute-script.py {notation} read --plan-id p',
+            f'python3 .plan/execute-script.py {notation} get-worktree-path --plan-id p',
+            f'python3 .plan/execute-script.py {notation} transition --plan-id p --completed 5-execute',
+        ]
+        for call in canonical_calls:
+            findings = analyze_manage_invocation_markdown(
+                call + '\n', '/fake/SKILL.md', index
+            )
+            invalid = [
+                f for f in findings
+                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+            ]
+            assert invalid == [], f'false positive(s) for canonical call: {call}\n{invalid}'

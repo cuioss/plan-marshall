@@ -60,7 +60,7 @@ For each selected module:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  module --name {module_name} --full
+  module --module {module_name} --full
 ```
 
 **3b. Discover logging-related files** using the canonical `manage-files discover` subcommand. Logging enforcement requires four distinct file categories — each is collected in a separate call so step 3c can consume the lists independently. Run all four calls per module:

@@ -373,3 +373,21 @@ verification:
 
 On **success**: `next_action: task_complete`.
 On **failure**: `status: error`, `next_action: requires_attention`, plus the extension fields. The `findings` array is best-effort: parse compiler errors, test failures, or lint output into structured entries. If parsing fails, include the raw `stderr`.
+
+## Canonical invocations
+
+The canonical argparse surface for the two entry-point scripts this skill registers: `inject_project_dir.py` and `assert_test_identifiers.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### inject_project_dir — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:execute-task:inject_project_dir run \
+  --command COMMAND --plan-id PLAN_ID
+```
+
+### assert_test_identifiers — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:execute-task:assert_test_identifiers run \
+  --identifiers-file IDENTIFIERS_FILE --log LOG
+```

@@ -473,3 +473,21 @@ All documentation must pass:
 - Consistent terminology
 - Documents only existing features
 - All links valid (via ref-asciidoc)
+
+## Canonical invocations
+
+The canonical argparse surface for `docs.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". Long flags are shown; `review` additionally accepts short aliases (`-f`, `-d`, `-r`, `-o`).
+
+### review
+
+```bash
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs review \
+  [--file FILE] [--directory DIRECTORY] [--recursive] [--output OUTPUT]
+```
+
+### analyze-tone
+
+```bash
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs analyze-tone \
+  [--file FILE] [--directory DIRECTORY] [--output OUTPUT] [--pretty]
+```

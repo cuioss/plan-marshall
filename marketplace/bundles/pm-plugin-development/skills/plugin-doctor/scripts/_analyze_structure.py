@@ -60,6 +60,12 @@ def extract_skill_references(content: str, skill_dir: Path) -> set[str]:
         start = match.start()
         if start > 0 and content[start - 1] == ':':
             continue
+        # A subdir keyword preceded by ``/`` is a sub-path of a longer
+        # relative/cross-skill path (e.g. ``../other-skill/standards/foo.md``),
+        # not a skill-root-relative reference — skip it so cross-skill xrefs
+        # are not misread as missing skill-local files.
+        if start > 0 and content[start - 1] == '/':
+            continue
         references.add(ref)
 
     content_no_codeblocks = remove_code_blocks(content)
@@ -152,6 +158,11 @@ def analyze_skill_structure(skill_dir: Path) -> dict:
             ref = match.group(0)
             start = match.start()
             if start > 0 and content_no_codeblocks[start - 1] == ':':
+                continue
+            # Skip sub-paths of longer relative/cross-skill paths (see
+            # extract_skill_references) so cross-skill xrefs are not flagged
+            # as missing skill-local files.
+            if start > 0 and content_no_codeblocks[start - 1] == '/':
                 continue
             refs_outside_codeblocks.add(ref)
 

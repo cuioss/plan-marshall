@@ -1097,3 +1097,21 @@ The orchestrator's `phase-boundary` call reads this accumulator file as a
 fallback when its explicit token flags are omitted — so the orchestrator
 does not need to maintain a parallel running sum in model context.
 
+## Canonical invocations
+
+The canonical argparse surface for the two entry-point scripts this skill registers: `scope_creep_check.py` and `verify_failure_scope.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### scope_creep_check — check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-5-execute:scope_creep_check check \
+  --plan-id PLAN_ID [--threshold THRESHOLD]
+```
+
+### verify_failure_scope — classify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-5-execute:verify_failure_scope classify \
+  --plan-id PLAN_ID [--error-paths ERROR_PATHS]
+```
+

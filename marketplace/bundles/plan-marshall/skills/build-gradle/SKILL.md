@@ -56,6 +56,76 @@ The finding's `module` carries `gradle`, `rule` carries the parser category.
 
 Reads `settings.gradle(.kts)` for `include()` declarations. Supports both Groovy and Kotlin DSL. Shells out to Gradle for properties, dependencies, and quality task detection.
 
+## Canonical invocations
+
+The canonical argparse surface for `gradle.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
+  --command-args COMMAND_ARGS \
+  [--timeout SECONDS] [--mode {actionable,structured,errors}] [--format {toon,json}] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+`--project-dir` and `--plan-id` are mutually exclusive.
+
+### parse
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle parse \
+  --log LOG \
+  [--mode {default,errors,structured,no-openrewrite}] [--format {toon,json}] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### find-project
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle find-project \
+  (--project-name PROJECT_NAME | --project-path PROJECT_PATH) [--root ROOT]
+```
+
+`--project-name` and `--project-path` are mutually exclusive; exactly one must be supplied.
+
+### search-markers
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle search-markers \
+  [--source-dir SOURCE_DIR] [--extensions EXTENSIONS] [--format {toon,json}]
+```
+
+### coverage-report
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle coverage-report \
+  [--project-path PROJECT_PATH] [--report-path REPORT_PATH] [--threshold PERCENT] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### check-warnings
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle check-warnings \
+  [--warnings WARNINGS] [--acceptable-warnings ACCEPTABLE_WARNINGS] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### discover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle discover \
+  [--root ROOT] [--format {toon,json}]
+```
+
+### run-config-key
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run-config-key \
+  --command-args COMMAND_ARGS [--format {toon,json}]
+```
+
 ## References
 
 - `build-api-reference.md` — Shared subcommand API, error categories, issue routing, wrapper detection

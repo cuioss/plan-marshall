@@ -270,6 +270,31 @@ status: success
 
 Domain categorization is data-driven — loaded from `standards/domain-lists.json` (the source of truth for scripts). The companion `standards/trusted-domains.md` provides human-readable documentation and must be kept in sync manually when domains are added or removed. To add or update domain categorization, edit `standards/domain-lists.json` instead of the script.
 
+## Canonical invocations
+
+The canonical argparse surface for `permission_web.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### analyze
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web analyze \
+  [--global-file GLOBAL_FILE] [--local-file LOCAL_FILE]
+```
+
+### categorize
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web categorize \
+  --domains DOMAINS
+```
+
+### apply
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web apply \
+  --file FILE [--add ADD] [--remove REMOVE]
+```
+
 ## Related
 
 See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Related skills: `plan-marshall:marshall-steward` (permission management wizard), `plan-marshall:tools-permission-doctor` (permission analysis), `plan-marshall:tools-permission-fix` (permission fixes).

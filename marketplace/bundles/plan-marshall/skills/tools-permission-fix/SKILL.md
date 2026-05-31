@@ -329,3 +329,100 @@ All operations return TOON with error details:
 error: Settings file not found: /path/to/settings.json
 success: false
 ```
+
+## Canonical invocations
+
+The canonical argparse surface for `permission_fix.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### apply-fixes
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-fixes \
+  (--settings SETTINGS | --scope {global,project}) [--dry-run]
+```
+
+`--settings` and `--scope` are mutually exclusive.
+
+### add
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix add \
+  --permission PERMISSION [--target {global,project}]
+```
+
+### remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix remove \
+  --permission PERMISSION [--target {global,project}]
+```
+
+### ensure
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure \
+  --permissions PERMISSIONS [--target {global,project}]
+```
+
+### consolidate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix consolidate \
+  (--settings SETTINGS | --scope {global,project}) [--dry-run]
+```
+
+`--settings` and `--scope` are mutually exclusive.
+
+### ensure-wildcards
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure-wildcards \
+  --settings SETTINGS --marketplace-json MARKETPLACE_JSON [--dry-run]
+```
+
+### remove-redundant
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix remove-redundant \
+  (--scope both | --global-settings GLOBAL_SETTINGS) [--local-settings LOCAL_SETTINGS] \
+  [--move-marketplace] [--no-move-marketplace] [--dry-run]
+```
+
+`--scope` and `--global-settings` are mutually exclusive; `--global-settings` requires `--local-settings`.
+
+### apply-project-step-permissions
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-project-step-permissions \
+  --marshal MARSHAL --settings SETTINGS [--dry-run]
+```
+
+### generate-wildcards
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix generate-wildcards \
+  [--marketplace-dir MARKETPLACE_DIR | --input INPUT]
+```
+
+`--marketplace-dir` and `--input` are mutually exclusive; `--input` defaults to stdin.
+
+### ensure-executor
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure-executor \
+  [--target {global,project}] [--dry-run]
+```
+
+### cleanup-scripts
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix cleanup-scripts \
+  [--target {global,project}] [--remove-broad-python] [--dry-run]
+```
+
+### migrate-executor
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix migrate-executor \
+  [--target {global,project}] [--remove-broad-python] [--dry-run]
+```

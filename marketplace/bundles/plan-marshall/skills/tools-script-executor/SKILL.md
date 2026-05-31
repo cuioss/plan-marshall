@@ -318,3 +318,48 @@ The verification skill recognizes this execution pattern:
 
 **Violation**:
 - `python3 {direct_script_path} ...` (after migration complete)
+
+## Canonical invocations
+
+The canonical argparse surface for the two entry-point scripts this skill registers: `await_until.py` and `generate_executor.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### await_until
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
+  --check-cmd CHECK_CMD --success-field SUCCESS_FIELD --command-key COMMAND_KEY \
+  [--failure-field FAILURE_FIELD] [--interval INTERVAL]
+```
+
+### generate_executor — generate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate \
+  [--force] [--dry-run] [--marketplace] [--marketplace-root PATH] [--target TARGET]
+```
+
+### generate_executor — verify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor verify
+```
+
+### generate_executor — drift
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor drift \
+  [--marketplace] [--marketplace-root PATH]
+```
+
+### generate_executor — paths
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor paths
+```
+
+### generate_executor — cleanup
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor cleanup \
+  [--max-age-days MAX_AGE_DAYS]
+```

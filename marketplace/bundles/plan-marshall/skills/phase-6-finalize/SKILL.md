@@ -1076,6 +1076,18 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `ci_complete_precondition.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### resolve
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_precondition resolve \
+  --plan-id PLAN_ID --worktree-path WORKTREE_PATH --pr-number PR_NUMBER \
+  [--timeout TIMEOUT] [--mode {strict,consume-failures}]
+```
+
 ## Related
 
 | Resource | Purpose |

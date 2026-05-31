@@ -189,6 +189,46 @@ Exit codes:
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `ci.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". Each top-level subcommand carries nested sub-verbs; the first positional after the notation is the subcommand, the second is the sub-verb.
+
+### pr
+
+Sub-verbs: `view`, `list`, `reply`, `resolve-thread`, `thread-reply`, `reviews`, `comments`, `wait-for-comments`, `merge`, `auto-merge`, `update-branch`, `close`, `ready`, `submit-review`, `edit`, `prepare-body`, `prepare-comment`, `create`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
+  --title TITLE --plan-id PLAN_ID [--slot SLOT] [--base BASE] [--draft] [--head HEAD]
+```
+
+### checks
+
+Sub-verbs: `status`, `wait`, `rerun`, `logs`, `wait-for-status-flip`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status \
+  [--pr-number PR_NUMBER] [--head HEAD]
+```
+
+### issue
+
+Sub-verbs: `create`, `prepare-body`, `view`, `close`, `wait-for-close`, `wait-for-label`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue create \
+  --title TITLE --plan-id PLAN_ID [--labels LABELS] [--slot SLOT]
+```
+
+### branch
+
+Sub-verb: `delete`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci branch delete \
+  --remote-only --branch BRANCH
+```
+
 ## References
 
 - `standards/architecture.md` - Static routing and skill boundaries

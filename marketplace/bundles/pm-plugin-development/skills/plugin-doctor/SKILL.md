@@ -382,3 +382,59 @@ This skill is designed to run without user prompts for safe operations. Required
 - Script paths resolved from `.plan/scripts-library.toon` (system convention)
 - Skill invocations use bundle-qualified names covered by `Skill({bundle}:*)` wildcards
 - AskUserQuestion is ONLY used for risky fix confirmations
+
+## Canonical invocations
+
+The canonical argparse surface for `doctor-marketplace.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### scan
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan \
+  [--bundles BUNDLES | --paths PATHS [PATHS ...]] [--marketplace-root MARKETPLACE_ROOT]
+```
+
+`--bundles` and `--paths` are mutually exclusive.
+
+### analyze
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze \
+  [--bundles BUNDLES] [--type TYPE] [--name NAME] [--marketplace-root MARKETPLACE_ROOT] \
+  [--rules RULES] [--enable-argument-naming] [--enable-verb-chain]
+```
+
+### fix
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace fix \
+  [--bundles BUNDLES] [--type TYPE] [--name NAME] [--dry-run] [--marketplace-root MARKETPLACE_ROOT]
+```
+
+### report
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace report \
+  [--bundles BUNDLES] [--output OUTPUT] [--marketplace-root MARKETPLACE_ROOT]
+```
+
+### quality-gate
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate \
+  [--marketplace-root MARKETPLACE_ROOT]
+```
+
+### test-conventions
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace test-conventions \
+  [--test-root TEST_ROOT] [--registry REGISTRY] [--marketplace-root MARKETPLACE_ROOT]
+```
+
+### validate-contracts
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace validate-contracts \
+  [--extension-type EXTENSION_TYPE] [--skill SKILL] [--marketplace-root MARKETPLACE_ROOT]
+```

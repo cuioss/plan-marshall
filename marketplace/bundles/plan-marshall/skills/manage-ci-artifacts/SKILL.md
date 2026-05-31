@@ -126,3 +126,32 @@ phase-6-finalize completion; opt-in pruning is out of scope for this
 skill and would be a future enhancement gated by user demand. See
 [`standards/persistence-layout.md`](standards/persistence-layout.md) for
 the no-prune decision rationale.
+
+## Canonical invocations
+
+The canonical argparse surface for `manage-ci-artifacts.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### persist
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-ci-artifacts:manage-ci-artifacts persist \
+  --plan-id PLAN_ID --run-id RUN_ID --head-sha HEAD_SHA --pr-number PR_NUMBER \
+  --provider {github,gitlab} \
+  [--jobs-file JOBS_FILE] [--wait-outcome {completed,deadline_exceeded}] [--final-status FINAL_STATUS]
+```
+
+### read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-ci-artifacts:manage-ci-artifacts read \
+  --plan-id PLAN_ID (--run-id RUN_ID | --latest)
+```
+
+`--run-id` and `--latest` are mutually exclusive; exactly one must be supplied.
+
+### list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-ci-artifacts:manage-ci-artifacts list \
+  --plan-id PLAN_ID
+```

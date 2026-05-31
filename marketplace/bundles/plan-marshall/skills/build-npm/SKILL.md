@@ -72,6 +72,61 @@ Uses a single-match parser registry: log content is analyzed to detect the tool 
 
 Reads `package.json` to detect workspaces and available scripts.
 
+## Canonical invocations
+
+The canonical argparse surface for `npm.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
+  --command-args COMMAND_ARGS \
+  [--timeout SECONDS] [--mode {actionable,structured,errors}] [--format {toon,json}] \
+  [--working-dir WORKING_DIR] [--env ENV] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+`--project-dir` and `--plan-id` are mutually exclusive.
+
+### parse
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-npm:npm parse \
+  --log LOG \
+  [--mode {default,errors,structured}] [--format {toon,json}] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### coverage-report
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-npm:npm coverage-report \
+  [--project-path PROJECT_PATH] [--report-path REPORT_PATH] [--threshold PERCENT] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### check-warnings
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-npm:npm check-warnings \
+  [--warnings WARNINGS] [--acceptable-warnings ACCEPTABLE_WARNINGS] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### discover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-npm:npm discover \
+  [--root ROOT] [--format {toon,json}]
+```
+
+### run-config-key
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-npm:npm run-config-key \
+  --command-args COMMAND_ARGS [--format {toon,json}]
+```
+
 ## References
 
 - `build-api-reference.md` — Shared subcommand API, error categories, issue routing, wrapper detection

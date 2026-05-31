@@ -172,6 +172,19 @@ This script is **Bucket B** (per `tools-script-executor/standards/cwd-policy.md`
 - `--project-dir` honoring (script does not discover root from cwd)
 - Keep-identifier marker detection: `keep_protected` when the identifier is still grep-able in the post-image; `keep_violation` when the consolidation removed the token; marker syntax variations (whitespace tolerance, multiple markers per file) all recognized
 
+## Canonical invocations
+
+The canonical argparse surface for `self_review.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### surface
+
+```bash
+python3 .plan/execute-script.py plan-marshall:ext-self-review-plan-marshall:self_review surface \
+  --plan-id PLAN_ID [--project-dir PROJECT_DIR] [--base-branch BASE_BRANCH] [--contract-radius CONTRACT_RADIUS]
+```
+
+`--project-dir` is optional: when omitted, the worktree path is auto-resolved from `--plan-id`. Supplying both is allowed because `--plan-id` also drives modified-files lookup.
+
 ## Related
 
 - [`../extension-api/standards/ext-point-self-review-surfacing.md`](../extension-api/standards/ext-point-self-review-surfacing.md) — extension-point contract this skill implements

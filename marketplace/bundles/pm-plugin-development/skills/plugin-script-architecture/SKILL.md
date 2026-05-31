@@ -37,6 +37,11 @@ Load: `standards/cross-skill-integration.md`
 
 **CRITICAL**: Scripts run via the executor must follow cross-skill integration patterns for imports, logging, and error handling.
 
+### 5. Script Invocation in Documentation
+See: `standards/cross-skill-integration.md` § "Script invocation in documentation"
+
+The explicit-call-or-xref authoring rule for documented script invocations plus the `## Canonical invocations` section contract. Every documented `python3 .plan/execute-script.py {notation} …` call must be the exact-correct inline call or an xref to the owning skill's Canonical-invocations section, and every script-bearing skill publishes that section. Enforced at edit time by the `manage-invocation-invalid` and `missing-canonical-block` plugin-doctor rules.
+
 ## References
 
 - `references/notation-spec.md` - Full notation specification

@@ -101,6 +101,24 @@ This skill is consumed by:
 | triage failure | Log warning, skip comment, continue |
 | CI router failure | Log warning, continue — best-effort |
 
+## Canonical invocations
+
+The canonical argparse surface for `gitlab_pr.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### fetch-comments
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr fetch-comments \
+  [--pr PR] [--unresolved-only]
+```
+
+### comments-stage
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage \
+  --pr-number PR_NUMBER --plan-id PLAN_ID
+```
+
 ## Related
 
 - `plan-marshall:tools-integration-ci` — Central CI dispatcher

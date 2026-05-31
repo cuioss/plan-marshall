@@ -62,7 +62,7 @@ For each selected module, query full module details:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  module --name {module_name} --full
+  module --module {module_name} --full
 ```
 
 Use the `{recipe_package_source}` field from the output:

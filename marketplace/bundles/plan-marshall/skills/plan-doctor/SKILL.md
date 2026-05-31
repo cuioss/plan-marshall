@@ -165,6 +165,24 @@ message: "manage-lessons list exited 2: 'boom'"
 | `lesson_inventory_unavailable` | The `manage-lessons list` subprocess failed — surfaces as a fatal error to enforce live-anchor discipline |
 | `lesson_regex_anchored_to_drifted_inventory` | The canonical `LESSON_ID_RE` matches none of the live IDs — the regex shape has drifted from reality |
 
+## Canonical invocations
+
+The canonical argparse surface for `plan_doctor.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### scan
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-doctor:plan_doctor scan \
+  [--plan-id PLAN_ID] [--all] [--no-emit]
+```
+
+### scan-task-file
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-doctor:plan_doctor scan-task-file \
+  --plan-id PLAN_ID --task-file TASK_FILE [--no-emit]
+```
+
 ## Cross-References
 
 - **`plan-marshall:tools-input-validation`** — Owns `scan_lesson_id_tokens` and `verify_lesson_ids_exist` (the single source of truth for lesson-ID detection; this skill never re-implements either function)

@@ -328,6 +328,49 @@ python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create --titl
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr update --number 1 --status Accepted
 ```
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-adr.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### list
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr list \
+  [--status {Proposed,Accepted,Deprecated,Superseded}]
+```
+
+### create
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create \
+  --title TITLE [--status {Proposed,Accepted,Deprecated,Superseded}]
+```
+
+### read
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr read --number NUMBER
+```
+
+### update
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr update \
+  --number NUMBER [--status {Proposed,Accepted,Deprecated,Superseded}]
+```
+
+### delete
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr delete --number NUMBER [--force]
+```
+
+### next-number
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr next-number
+```
+
 ## Related Skills
 
 - `pm-documents:ref-asciidoc` - Format validation
