@@ -121,6 +121,62 @@ Retention fields: `logs_days`, `archived_plans_days`, `temp_on_maintenance`.
 
 ---
 
+## Noun: project
+
+Manage project-level, cross-phase, cross-plan settings stored under the
+`project.*` block in marshal.json. `marshal.json` is the source of truth;
+`constants.py` holds only the fail-closed fallback consulted when a key is
+absent or unreadable.
+
+| Verb | Parameters | Description |
+|------|-----------|-------------|
+| `get` | `--field` | Get a project field. Falls back to the canonical default (from `DEFAULT_PROJECT`) when the key is absent from the live `project` block. |
+| `set` | `--field`, `--value` | Set a project field. Scalar fields are coerced (bool/int/str); JSON fields (`branch_naming`) take a JSON value that round-trips through `get`. |
+
+### Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `default_base_branch` | string | `main` | Project's canonical base branch; seeds `references.base_branch` at plan init. |
+| `branch_naming` | object | see below | Canonical branch-prefix sets (`working_prefixes`, `ci_allowlist`). |
+
+`branch_naming` default value:
+
+```json
+{
+  "working_prefixes": ["feature/", "fix/", "chore/"],
+  "ci_allowlist": ["main", "feature/*", "fix/*", "chore/*", "dependabot/**"]
+}
+```
+
+- `working_prefixes` — the closed set of allowed working-branch prefixes.
+  `manage-status create` validates `--worktree-branch` against this set.
+- `ci_allowlist` — the full CI push-trigger allowlist (glob form), kept in sync
+  with `.github/workflows/python-verify.yml` by a structural test (operator-editable;
+  the test fails CI on drift between this value and the workflow file).
+
+The `docs/` prefix is explicitly retired and absent from both sets.
+
+### Example: get branch_naming
+
+```bash
+manage-config project get --field branch_naming
+```
+
+Returns the live block, or the default block (implicit-default fallback) when
+the key is absent from marshal.json.
+
+### Example: set branch_naming
+
+```bash
+manage-config project set --field branch_naming \
+  --value '{"working_prefixes": ["feature/", "fix/", "chore/", "spike/"], "ci_allowlist": ["main", "feature/*", "fix/*", "chore/*", "spike/*", "dependabot/**"]}'
+```
+
+The JSON value round-trips through `get`.
+
+---
+
 ## Noun: plan
 
 Manage phase-specific plan configuration. Each phase has its own sub-noun.

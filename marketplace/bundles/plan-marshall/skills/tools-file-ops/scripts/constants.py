@@ -29,6 +29,34 @@ PHASE_COUNT = len(PHASES)
 QGATE_PHASES = PHASES[1:]  # ('2-refine', '3-outline', '4-plan', '5-execute', '6-finalize')
 
 # ---------------------------------------------------------------------------
+# Branch-prefix sets (FAIL-CLOSED FALLBACK DEFAULTS ONLY)
+# ---------------------------------------------------------------------------
+# The authoritative source for the branch-prefix sets is `.plan/marshal.json`
+# under `project.branch_naming` (read AND written through `manage-config`). The
+# two tuples below are consulted SOLELY when that config key is absent or
+# unreadable (e.g. a fresh checkout before `/marshall-steward` has run) — they
+# are the fail-closed fallback, never the live source of truth.
+#
+# `_config_defaults.py` imports these names to build
+# `DEFAULT_PROJECT['branch_naming']`; the literals therefore live here exactly
+# once and are not duplicated elsewhere.
+#
+# `DEFAULT_BRANCH_PREFIX_WORKING` is the closed set of allowed working-branch
+# prefixes. A worktree branch is always a working branch (never `main` or
+# `dependabot/**`), so `manage-status create` validates `--worktree-branch`
+# against this set.
+#
+# `DEFAULT_CI_BRANCH_ALLOWLIST` is the full CI push-trigger allowlist in glob
+# form, matching `.github/workflows/python-verify.yml`'s `on.push.branches`
+# list verbatim. A PR whose branch prefix falls outside this list silently
+# receives no `verify / verify` check and is structurally unmergeable.
+#
+# `docs/` is EXPLICITLY RETIRED from both sets and must NOT be re-admitted —
+# it was never CI-triggered. Use `chore/` for documentation-only changes.
+DEFAULT_BRANCH_PREFIX_WORKING = ('feature/', 'fix/', 'chore/')
+DEFAULT_CI_BRANCH_ALLOWLIST = ('main', 'feature/*', 'fix/*', 'chore/*', 'dependabot/**')
+
+# ---------------------------------------------------------------------------
 # Phase statuses
 # ---------------------------------------------------------------------------
 PHASE_STATUS_PENDING = 'pending'

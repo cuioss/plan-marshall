@@ -148,6 +148,58 @@ class TestAutoMergeAfterCiDefault:
         assert finalize['auto_merge_after_ci'] is True
 
 
+class TestBranchNamingDefault:
+    """``project.branch_naming`` is the transparent, operator-editable source
+    of truth for the canonical branch-prefix sets seeded into marshal.json.
+    The two sub-lists (``working_prefixes`` and ``ci_allowlist``) must flow
+    to fresh projects via ``get_default_config()`` so the create-verb guard
+    and the workflow-allowlist structural test read a populated config rather
+    than every consumer applying its own fallback. ``docs/`` is explicitly
+    retired and must never appear in the default sets."""
+
+    _EXPECTED = {
+        'working_prefixes': ['feature/', 'fix/', 'chore/'],
+        'ci_allowlist': ['main', 'feature/*', 'fix/*', 'chore/*', 'dependabot/**'],
+    }
+
+    def test_default_config_exposes_branch_naming(self) -> None:
+        """``get_default_config()`` MUST expose
+        ``project.branch_naming`` with both canonical sets."""
+        cfg = _config_defaults.get_default_config()
+        assert cfg['project'].get('branch_naming') == self._EXPECTED, (
+            'get_default_config()["project"]["branch_naming"] must equal '
+            'the canonical branch-prefix sets'
+        )
+
+    def test_project_block_default_matches(self) -> None:
+        """The ``DEFAULT_PROJECT`` module constant MUST agree with the value
+        exposed by ``get_default_config()`` — same physical default, no drift."""
+        assert _config_defaults.DEFAULT_PROJECT['branch_naming'] == self._EXPECTED
+
+    def test_docs_prefix_retired_from_defaults(self) -> None:
+        """The retired ``docs/`` prefix MUST be absent from both default sets —
+        an unlisted CI prefix makes a PR structurally unmergeable."""
+        block = _config_defaults.DEFAULT_PROJECT['branch_naming']
+        assert not any('docs' in entry for entry in block['ci_allowlist']), (
+            "'docs/' must be absent from the default ci_allowlist"
+        )
+        assert 'docs/' not in block['working_prefixes']
+
+    def test_fresh_project_seeds_branch_naming(self) -> None:
+        """A fresh project bootstrap MUST seed ``branch_naming`` explicitly —
+        the key being absent would force every downstream consumer to apply
+        its own fallback, defeating the single-source-of-truth design."""
+        cfg = _config_defaults.get_default_config()
+        project = cfg['project']
+        assert 'branch_naming' in project, (
+            'Fresh-project bootstrap must seed project.branch_naming explicitly'
+        )
+        assert (
+            project['branch_naming']
+            == _config_defaults.DEFAULT_PROJECT['branch_naming']
+        )
+
+
 class TestCiVerifyRegistration:
     """``default:ci-verify`` MUST be registered in the canonical built-in
     finalize-step set so that ``marshall-steward`` seeds it into new

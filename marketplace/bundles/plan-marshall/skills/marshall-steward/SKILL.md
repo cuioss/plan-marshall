@@ -78,7 +78,7 @@ At command start, emit the following banner verbatim to the user:
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `seed-blocking-finding-types` for the wizard's blocking-partition seed step |
+| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `seed-blocking-finding-types` for the wizard's blocking-partition seed step and `check-branch-naming` for the project.branch_naming presence/drift surfacing |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
 
@@ -320,6 +320,69 @@ status	success
 seed_status	missing_marshal
 seeded_count	0
 skipped_count	0
+```
+
+## Branch-Naming Surfacing (project.branch_naming)
+
+`project.branch_naming` holds the canonical branch-prefix sets — the closed
+working-branch prefix set and the full CI push-trigger allowlist — as the
+transparent, operator-editable source of truth in `marshal.json`. It is seeded
+from `DEFAULT_PROJECT['branch_naming']` (defined in
+`manage-config/scripts/_config_defaults.py`) on `init` and back-filled into an
+existing `marshal.json` by `sync-defaults`. The default values are:
+
+| Key | Default |
+|-----|---------|
+| `working_prefixes` | `["feature/", "fix/", "chore/"]` |
+| `ci_allowlist` | `["main", "feature/*", "fix/*", "chore/*", "dependabot/**"]` |
+
+The `docs/` prefix is explicitly retired from both sets and must not be
+re-admitted — it is not CI-triggered, so a `docs/`-prefixed branch makes its PR
+structurally unmergeable (see CLAUDE.md "Branch Naming").
+
+**Missing-default / drift detection.** When the wizard runs against an existing
+project, `determine_mode.py check-branch-naming` compares the live
+`marshal.json::project["branch_naming"]` block against
+`DEFAULT_PROJECT['branch_naming']`. It surfaces `missing_branch_naming` when the
+key is entirely absent, or a drift signal naming the affected sub-key
+(`working_prefixes` / `ci_allowlist`) when a default entry is missing, so the
+wizard can prompt the user to add or update it. This protects projects whose
+`marshal.json` predates the key, since `sync-defaults` is not auto-run in the
+interactive menu flow.
+
+**Idempotent and non-clobbering.** The detection performs no writes. An
+operator's customized block — including a *superset* that adds prefixes beyond
+the defaults — is returned as `ok` and never flagged or overwritten; only
+genuine absence or a missing default entry is surfaced.
+
+**Wizard step** (runs against an existing project to surface presence/drift):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode \
+  check-branch-naming
+```
+
+**Output (TOON)** when the block is present and current (or operator-customized):
+
+```toon
+status	ok
+```
+
+When the `branch_naming` key is absent:
+
+```toon
+status	missing
+detail	absent
+missing_keys	branch_naming
+```
+
+When the key is present but a default entry has drifted out (e.g. `chore/*`
+dropped from `ci_allowlist`):
+
+```toon
+status	missing
+detail	drift
+missing_keys	ci_allowlist
 ```
 
 ## Session Restart Required After Executor / Agent Changes

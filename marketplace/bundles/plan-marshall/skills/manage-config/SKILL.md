@@ -276,6 +276,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `resolve-execute-task-skill` | `--profile` (resolve execute-task skill for profile) |
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
+| `project` | `get/set` (`default_base_branch`, `branch_naming`) |
 | `plan` | `{phase} get/set`, set-steps, add-step, remove-step, set-max-iterations |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `init` | Initialize marshal.json (with optional `--force`) |
@@ -561,6 +562,27 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system retention set \
   --field FIELD --value VALUE
 ```
+
+### project get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project get \
+  --field FIELD
+```
+
+`--field branch_naming` returns the canonical branch-prefix block
+(`working_prefixes`, `ci_allowlist`), falling back to the
+`DEFAULT_PROJECT` default when the key is absent from marshal.json.
+
+### project set
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project set \
+  --field FIELD --value VALUE
+```
+
+Scalar fields (e.g. `default_base_branch`) take a plain value; `branch_naming`
+takes a JSON object value that round-trips through `get`.
 
 ### plan {phase} get
 

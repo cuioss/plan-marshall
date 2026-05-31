@@ -4,6 +4,7 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 """
 
 import argparse
+import json
 import shutil
 import subprocess
 from typing import Any
@@ -24,11 +25,12 @@ from _status_core import (
     write_status,
 )
 from constants import (  # type: ignore[import-not-found]
+    DEFAULT_BRANCH_PREFIX_WORKING,
     PHASE_STATUS_DONE,
     PHASE_STATUS_IN_PROGRESS,
     PHASE_STATUS_PENDING,
 )
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
+from file_ops import get_marshal_path, get_plan_dir  # type: ignore[import-not-found]
 
 # Result-status values that indicate the strict-verify gate refuses to advance.
 # Mirrors the ``--strict`` exit-1 conditions in ``phase_handshake.py`` main()
@@ -53,6 +55,39 @@ def verify_blocks_transition(verify_result: dict) -> bool:
     if verify_result.get('status') == 'drift':
         return True
     return verify_result.get('error') in VERIFY_REFUSAL_ERRORS
+
+
+def _read_working_prefixes() -> tuple[str, ...]:
+    """Resolve the canonical working-branch prefix set, fail-closed.
+
+    The authoritative source is ``.plan/marshal.json`` under
+    ``project.branch_naming.working_prefixes`` (operator-editable, written
+    through ``manage-config``). When marshal.json is absent or unreadable, or
+    the key is missing, this falls back to ``DEFAULT_BRANCH_PREFIX_WORKING``
+    from ``constants`` — the documented fail-closed fallback that keeps
+    ``cmd_create`` from hard-failing on a fresh checkout (before
+    ``/marshall-steward`` has run). The literals live in ``constants.py``
+    exactly once; this reader never duplicates them.
+    """
+    marshal_path = get_marshal_path()
+    try:
+        config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return tuple(DEFAULT_BRANCH_PREFIX_WORKING)
+    # marshal.json is operator-editable, so defend against malformed shapes:
+    # a non-dict root, a null `project`/`branch_naming`, or a non-list
+    # `working_prefixes` all fail closed to the constants fallback rather than
+    # raising AttributeError/TypeError mid-create.
+    if not isinstance(config, dict):
+        return tuple(DEFAULT_BRANCH_PREFIX_WORKING)
+    project = config.get('project') or {}
+    branch_naming = project.get('branch_naming') if isinstance(project, dict) else {}
+    branch_naming = branch_naming or {}
+    prefixes = branch_naming.get('working_prefixes') if isinstance(branch_naming, dict) else None
+    if not isinstance(prefixes, list):
+        return tuple(DEFAULT_BRANCH_PREFIX_WORKING)
+    valid_prefixes = tuple(p for p in prefixes if isinstance(p, str))
+    return valid_prefixes if valid_prefixes else tuple(DEFAULT_BRANCH_PREFIX_WORKING)
 
 
 def cmd_create(args: argparse.Namespace) -> dict:
@@ -120,6 +155,29 @@ def cmd_create(args: argparse.Namespace) -> dict:
             'error': 'invalid_worktree_args',
             'message': '--use-worktree requires --worktree-branch',
         }
+
+    # Branch-prefix enforcement — a worktree branch is always a working branch
+    # (never `main` or `dependabot/**`), so its prefix MUST be in the closed
+    # working-prefix set. An out-of-set prefix (e.g. `docs/`) silently receives
+    # no CI `verify / verify` check and makes the PR structurally unmergeable
+    # (lesson 2026-05-21-18-002, PR #441). The set is read from marshal.json
+    # (`project.branch_naming.working_prefixes`), fail-closed to the constants
+    # fallback. This guard runs BEFORE any plan directory / status.json is
+    # created so a rejected create leaves no partial state.
+    if use_worktree and worktree_branch_arg:
+        working_prefixes = _read_working_prefixes()
+        if not any(worktree_branch_arg.startswith(prefix) for prefix in working_prefixes):
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_branch_prefix',
+                'message': (
+                    f'--worktree-branch {worktree_branch_arg!r} must start with one of '
+                    f'{working_prefixes}; out-of-set prefixes (e.g. docs/) make the PR '
+                    'unmergeable — configure project.branch_naming.working_prefixes in '
+                    'marshal.json, see CLAUDE.md Branch Naming'
+                ),
+            }
 
     now = now_utc_iso()
 
