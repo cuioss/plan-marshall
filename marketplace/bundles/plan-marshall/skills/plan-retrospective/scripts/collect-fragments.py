@@ -287,6 +287,11 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
     # never duplicates the entry.
     meta = bundle[_META_KEY]
     registered = meta.get('aspects', [])
+    if not isinstance(registered, list):
+        raise ValueError(
+            f"Corrupt bundle {bundle_path}: {_META_KEY}.aspects must be a list, "
+            f"got {type(registered).__name__}"
+        )
     if aspect not in registered:
         registered.append(aspect)
     meta['aspects'] = registered
@@ -308,7 +313,13 @@ def cmd_finalize(args: argparse.Namespace) -> dict[str, Any]:
     bundle_path = _locate_bundle(args)
     bundle = _read_bundle(bundle_path)
     mode = _read_mode_from_bundle(bundle, bundle_path)
-    aspects = sorted(bundle.get(_META_KEY, {}).get('aspects', []))
+    raw_aspects = bundle.get(_META_KEY, {}).get('aspects', [])
+    if not isinstance(raw_aspects, list):
+        raise ValueError(
+            f"Corrupt bundle {bundle_path}: {_META_KEY}.aspects must be a list, "
+            f"got {type(raw_aspects).__name__}"
+        )
+    aspects = sorted(raw_aspects)
     return {
         'status': 'success',
         'operation': 'finalize',
