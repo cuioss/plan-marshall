@@ -75,6 +75,9 @@ RULE_MANAGE_INVOCATION_INVALID = _ami.RULE_MANAGE_INVOCATION_INVALID
 RULE_MISSING_CANONICAL_BLOCK = _ami.RULE_MISSING_CANONICAL_BLOCK
 _positional_region_is_templated = _ami._positional_region_is_templated
 
+# Repository (worktree) root: test/pm-plugin-development/plugin-doctor/ -> 4 up.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 
 # ---------------------------------------------------------------------------
 # Synthetic argparse scripts exercising real registration styles.
@@ -1185,16 +1188,13 @@ class TestMarketplaceAggregator:
 
 
 def _load_doctor_marketplace():
-    """Spec-load ``doctor-marketplace.py`` for direct ``cmd_quality_gate`` calls."""
-    spec = importlib.util.spec_from_file_location(
-        'doctor_marketplace_for_invocation_test',
-        _SCRIPTS_DIR / 'doctor-marketplace.py',
-    )
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules['doctor_marketplace_for_invocation_test'] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    """Load ``doctor-marketplace.py`` for direct ``cmd_quality_gate`` calls.
+
+    Uses the shared ``load_script_module`` helper (the loader convention this
+    module standardized on) so no direct ``importlib`` / ``sys`` plumbing is
+    needed here.
+    """
+    return _load_module('doctor_marketplace_for_invocation_test', 'doctor-marketplace.py')
 
 
 class _Args:
