@@ -73,14 +73,14 @@ This is a **second classification dimension**, orthogonal to the self-modifying 
 
 ### Predicate
 
-A deliverable is **human-gated** when its `Affected files` (or its narrative's described writes) include any of:
+A deliverable is **human-gated** when its `Affected files` (or its narrative's described writes) match any of the concrete path / pattern rows below. Every surface is anchored to a literal file path (plus, where the trigger is a sub-structure of a settings file, the specific JSON key) so the scan over `Affected files` is deterministic — match on the path first, then, for the settings-file rows, on the named key being added or edited:
 
-| Surface | Why it is human-gated |
-|---------|------------------------|
-| `.claude/settings.json` | Harness configuration the runtime reads at startup; a write does not take effect until the session is restarted / reloaded, and writing it during an unattended run trips the permission UI. |
-| `.claude/settings.local.json` | Per-machine harness override with the same activation and permission characteristics as `settings.json`. |
-| Installation of `SessionStart` / `UserPromptSubmit` / `Stop` hooks | Registering a lifecycle hook arms code the harness executes on its own schedule; the user must trust/activate the hook, and the registration write hits the same permission gate. |
-| Edits to permission allow-lists (the `permissions.allow` / `permissions.deny` arrays) | Widening or narrowing what the harness may run is a security-relevant action that requires an explicit human grant; an unattended task cannot self-approve it. |
+| Surface (concrete path / pattern) | Trigger key (within the path) | Why it is human-gated |
+|-----------------------------------|-------------------------------|------------------------|
+| `.claude/settings.json` | any write | Harness configuration the runtime reads at startup; a write does not take effect until the session is restarted / reloaded, and writing it during an unattended run trips the permission UI. |
+| `.claude/settings.local.json` | any write | Per-machine harness override with the same activation and permission characteristics as `settings.json`. |
+| `.claude/settings.json` or `.claude/settings.local.json` | the `hooks` block (a `SessionStart` / `UserPromptSubmit` / `Stop` entry), OR a new hook script under `.claude/hooks/**` | Registering a lifecycle hook arms code the harness executes on its own schedule; the user must trust/activate the hook, and the registration write hits the same permission gate. |
+| `.claude/settings.json` or `.claude/settings.local.json` | the `permissions.allow` / `permissions.deny` arrays | Widening or narrowing what the harness may run is a security-relevant action that requires an explicit human grant; an unattended task cannot self-approve it. |
 
 ### Required Action
 

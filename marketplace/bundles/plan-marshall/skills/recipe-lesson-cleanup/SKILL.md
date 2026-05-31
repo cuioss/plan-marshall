@@ -207,16 +207,17 @@ Runs after Step 2b (Proposed-Fix Verification) and BEFORE Step 3 composes the ou
 **Composition with Step 2b (reuse, do not re-run)**: Step 2b already classified each directive as `convergent` / `over-broad` / `redundant` / `mis-targeted`. The retrospective signal "fix already shipped" is exactly what Step 2b's `redundant` category detects — a directive whose fix landed elsewhere after the lesson was authored. This step consumes that verdict directly:
 
 - A directive Step 2b marked **`redundant`** AND whose lesson body carries a forward-looking section (`## Generalisation` / `## Generalization` / a "the general rule is…" passage) AND whose target component source is still editable → classify the directive **retrospective**. Instead of dropping it as pure redundancy, route it to the **documentation-port** shape: emit a `documentation_only` deliverable in Step 3 that lifts the forward-looking rule into the target component's canonical docs (its `SKILL.md` or a `standards/*.md`) and cross-references the originating lesson `{lesson_id}`.
-- All other surviving directives (Step 2b `convergent` / `over-broad` / `mis-targeted`, or `redundant` with no forward-looking section) remain **prospective** → standard Step 3 composition (a code-change deliverable from the verified-correct minimal change).
+- Surviving directives Step 2b marked `convergent` / `over-broad` / `mis-targeted` remain **prospective** → standard Step 3 composition (a code-change deliverable from the verified-correct minimal change).
+- A directive Step 2b marked **`redundant`** with NO forward-looking section is **obsolete** — its fix already shipped and there is no generalizable wisdom to port. It is NOT composed into a deliverable (neither documentation-port nor a prospective code-change deliverable, since re-applying an already-shipped fix is a no-op). Record it as a dropped reference in the work-log so downstream phases can audit the scope reduction, and exclude it from Step 3. Do NOT mutate the original lesson body in `request.md` — preserve it verbatim as the source of truth.
 
 Do NOT re-derive the "fix already shipped" state from disk — that probe already ran in Step 2b. This step only reads Step 2b's recorded verdicts and the lesson body's section structure.
 
-**Hand-off to Step 3**: each retrospective directive carries a `shape: documentation-port` marker into Step 3; each prospective directive carries the standard code-change shape. Log the classification outcome:
+**Hand-off to Step 3**: each retrospective directive carries a `shape: documentation-port` marker into Step 3; each prospective directive carries the standard `shape: code-change` marker; obsolete directives are dropped before Step 3 and never reach the composer. Step 3c branches on the marker (see Step 3c below). Log the classification outcome:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[RECIPE:2c] (plan-marshall:recipe-lesson-cleanup) Retrospective classifier: {R} retrospective (documentation-port), {P} prospective (code-change)"
+  --message "[RECIPE:2c] (plan-marshall:recipe-lesson-cleanup) Retrospective classifier: {R} retrospective (documentation-port), {P} prospective (code-change), {O} obsolete (dropped)"
 ```
 
 ---
@@ -238,7 +239,11 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   resolve-path --plan-id {plan_id}
 ```
 
-**3c. Compose the document.** For every directive in the lesson:
+**3c. Compose the document.** For every directive handed off by Step 2c, branch on its `shape` marker:
+
+**Branch `shape: documentation-port` (retrospective directives)** — do NOT use the code-change shape below. Compose the deliverable using the **apply-the-wisdom / documentation-port deliverable template** defined in [`../phase-3-outline/standards/outline-workflow-detail.md` § Retrospective-vs-prospective lesson classification](../phase-3-outline/standards/outline-workflow-detail.md#retrospective-vs-prospective-lesson-classification). That template fixes the deliverable's `change_type` (`enhancement`), profile (`documentation_only` → `implementation` only), `**Affected files:**` (the target component's canonical docs, NOT the already-shipped code paths), and the required cross-reference to the originating lesson `{lesson_id}`. The directive's `change_type` derived in Step 2 does NOT apply to a documentation-port deliverable — the template's `enhancement` value supersedes it, because the code fix already shipped and only the doc-port remains.
+
+**Branch `shape: code-change` (prospective directives)** — compose the standard code-change deliverable:
 
 - **Title**: `Lesson cleanup: {directive_title}`
 - **Description**: The directive body verbatim from the lesson
@@ -249,6 +254,8 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   - `scope_estimate`: `surgical` — REQUIRED. This drives the `surgical+{change_type}` cascade rule in the manifest composer.
 - **Skills**: derived from the lesson's `related` field (skill notations) — passed verbatim to the composed deliverable.
 - **Affected files**: from the lesson's `affected_files` field if present; otherwise empty (the executor task will discover them from the directive body).
+
+Obsolete directives (Step 2c dropped them as redundant-with-no-forward-looking) never reach Step 3c — they are not composed.
 
 The top-level outline metadata MUST also include `scope_estimate: surgical` so phase-3-outline writes the value into status metadata for the manifest composer to read.
 

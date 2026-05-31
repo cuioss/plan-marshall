@@ -916,7 +916,7 @@ This is the single shared definition consumed by **two** callers: the [Retrospec
 | Forward-looking section | The lesson body carries a generalizable rule: a `## Generalisation` / `## Generalization` heading, or a "the general rule is…" / "in future, always…" passage that states a reusable principle beyond the one-off fix. | No forward-looking section — the lesson is a one-off corrective directive with no generalizable rule. |
 | Source still editable | The target component's canonical docs (`SKILL.md` / `standards/*.md`) still exist and are editable, so the wisdom has a home to port into. | n/a — prospective lessons route to a code-change deliverable regardless. |
 
-When the fix already shipped but there is **no** forward-looking section (nothing generalizable to port), the lesson is neither retrospective-portable nor prospective — it is simply obsolete, and `recipe-lesson-cleanup` Step 2b's redundancy handling drops it. The retrospective shape applies ONLY when there is generalizable wisdom worth lifting into the docs.
+When the fix already shipped but there is **no** forward-looking section (nothing generalizable to port), the lesson is neither retrospective-portable nor prospective — it is simply obsolete, and `recipe-lesson-cleanup` Step 2c's classification drops it (it reads Step 2b's `redundant` verdict but is itself the step that filters the obsolete directive out before Step 3). The retrospective shape applies ONLY when there is generalizable wisdom worth lifting into the docs.
 
 **Apply-the-wisdom / documentation-port deliverable template** — a retrospective directive emits a `documentation_only` deliverable in this shape:
 
