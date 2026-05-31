@@ -179,51 +179,18 @@ Three rules guard against defective `mark-step-done` invocations inside marketpl
 
 **MARK_STEP_DONE_STALE_NOTATION** (severity: error): The invocation line contains the stale underscored notation `manage-status:manage_status` instead of the canonical kebab-case form `manage-status:manage-status`. The executor uses notation segments as literal keys — the underscored form no longer resolves after the entrypoint-rename cutover. Detection is a substring check on every line of the invocation (including continuation lines, since the notation often lives on the command line itself).
 
-Incorrect:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --phase phase-6-finalize --outcome done
-```
-
-Correct:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --phase phase-6-finalize --outcome done
-```
-
 **MARK_STEP_DONE_MISSING_PHASE** (severity: error): The full `mark-step-done` invocation (single line or backslash-continued multi-line) does not contain `--phase`. Without it, the status manager cannot route the step termination to the correct phase record, and finalize-phase orchestration reads stale status.
-
-Incorrect:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --outcome done
-```
-
-Correct:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --phase phase-6-finalize --outcome done
-```
 
 **MARK_STEP_DONE_MISSING_OUTCOME** (severity: error): The full invocation does not contain `--outcome`. Without an explicit outcome (e.g. `done`, `skipped`, `deferred`), the step cannot be definitively terminated and the phase status entry remains ambiguous.
 
-Incorrect:
+Canonical form — kebab-case notation with every required flag present:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --phase phase-6-finalize
+  mark-step-done --plan-id {plan_id} --phase phase-6-finalize --step {step} --outcome done
 ```
 
-Correct:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --phase phase-6-finalize --outcome done
-```
+A violation is any deviation from this shape: the underscored `manage_status` notation (STALE_NOTATION), a dropped `--phase` (MISSING_PHASE), or a dropped `--outcome` (MISSING_OUTCOME).
 
 Detection lives in `_analyze_markdown.py::check_mark_step_done_violations`; findings are surfaced through the standard markdown reporting channel in `_doctor_analysis.py::extract_issues_from_markdown_analysis` with the defect code as the issue `type`.
 
