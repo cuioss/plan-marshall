@@ -279,6 +279,22 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
 
     fragment = _read_fragment(_resolve_fragment_path(args, mode))
     bundle[aspect] = fragment
+
+    # Record the aspect in the authoritative inventory. The --aspect argument
+    # is the single source of truth for which keys are genuine aspects, so the
+    # reported list is immune to phantom sibling keys that a malformed fragment
+    # body might leak into the bundle. Dedup-aware so an --overwrite re-add
+    # never duplicates the entry.
+    meta = bundle[_META_KEY]
+    registered = meta.get('aspects', [])
+    if not isinstance(registered, list):
+        raise ValueError(
+            f"Corrupt bundle {bundle_path}: {_META_KEY}.aspects must be a list, "
+            f"got {type(registered).__name__}"
+        )
+    if aspect not in registered:
+        registered.append(aspect)
+    meta['aspects'] = registered
     _write_bundle(bundle_path, bundle)
 
     return {
@@ -287,7 +303,7 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
         'plan_id': args.plan_id,
         'aspect': aspect,
         'bundle_path': str(bundle_path),
-        'aspects': sorted(k for k in bundle.keys() if not k.startswith('_')),
+        'aspects': sorted(bundle[_META_KEY].get('aspects', [])),
         'overwrote': already_present,
     }
 
@@ -297,7 +313,13 @@ def cmd_finalize(args: argparse.Namespace) -> dict[str, Any]:
     bundle_path = _locate_bundle(args)
     bundle = _read_bundle(bundle_path)
     mode = _read_mode_from_bundle(bundle, bundle_path)
-    aspects = sorted(k for k in bundle.keys() if not k.startswith('_'))
+    raw_aspects = bundle.get(_META_KEY, {}).get('aspects', [])
+    if not isinstance(raw_aspects, list):
+        raise ValueError(
+            f"Corrupt bundle {bundle_path}: {_META_KEY}.aspects must be a list, "
+            f"got {type(raw_aspects).__name__}"
+        )
+    aspects = sorted(raw_aspects)
     return {
         'status': 'success',
         'operation': 'finalize',
