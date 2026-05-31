@@ -295,7 +295,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-     --plan-id {plan_id} --set worktree_path={worktree_path}
+     --plan-id {plan_id} --set --field worktree_path --value {worktree_path}
    ```
 
 Both writes are required: `references.json` is the canonical artifact Step 3 reads to resolve `worktree_path`; `status.metadata.worktree_path` is the value the `phase_handshake verify` assertion checks on every subsequent phase boundary, and the value the idempotence guard above reads on phase-5 re-entry.
@@ -413,7 +413,9 @@ Inlined flow:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-     --plan-id {plan_id} --set worktree_sha={worktree_sha} --set main_sha={main_sha}
+     --plan-id {plan_id} --set --field worktree_sha --value {worktree_sha}
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+     --plan-id {plan_id} --set --field main_sha --value {main_sha}
    ```
 
    Emit exactly ONE decision-log entry naming the absorbed commits — the entry is the audit trail that ties the new metadata to the specific upstream commits that were absorbed:
@@ -821,7 +823,7 @@ This step is the single source of "did the phase end clean?" — it appends the 
 
 Before invoking `manage-status transition --completed 5-execute` (see **Phase Transition** section below), refuse to transition when any pending tasks remain AND when the on-disk worktree has not been observed by a fresh `verify` run. Pending-queue emptiness is **necessary but not sufficient**: a task that was marked `done` against a prior code state still leaves the queue empty, yet the codebase the orchestrator is about to ship has never been verified end-to-end. The canonical failure mode for this gap: `loop-exit-guard` returns `pending_count: 0` while the most recent `verify` predated the last source-file mutation, and CI fails on the pushed commit. Step 12a therefore enforces two co-equal gates: (a) `manage-tasks next` only surfaces the head of the queue, so a `null` next does NOT prove the queue is empty when downstream tasks are still in `pending` — fix tasks created by Step 11 triage commonly land here, and a premature transition silently abandons them; (b) the worktree state itself must be **fresh** with respect to the most recent build-runner log entry.
 
-**Script-level enforcement**: the authoritative pending-count check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks loop-exit-guard --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Loop-Exit Guard". `status: continue` (with `pending_count > 0` and `pending_ids`) forces the orchestrator to re-dispatch the execution-context; `status: success` (with `pending_count: 0`) is the precondition for `manage-metrics record-dispatch-boundary --termination-cause clean_exit_queue_empty`. The list-based check below remains documented for backwards compatibility with existing callers — both forms read the same on-disk state, but `loop-exit-guard` is the canonical surface and the verb the orchestrator MUST consult.
+**Script-level enforcement**: the authoritative pending-count check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks loop-exit-guard --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Loop-Exit Guard". `status: continue` (with `pending_count > 0` and `pending_ids`) forces the orchestrator to re-dispatch the execution-context; `status: success` (with `pending_count: 0`) is the precondition for recording the `clean_exit_queue_empty` termination cause via the `manage-metrics record-dispatch-boundary` verb. The list-based check below remains documented for backwards compatibility with existing callers — both forms read the same on-disk state, but `loop-exit-guard` is the canonical surface and the verb the orchestrator MUST consult.
 
 **Worktree-state freshness enforcement**: the authoritative freshness check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks pre-commit-verify-freshness --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness". The script compares the most recent `plan-marshall:build-pyproject:pyproject_build run` line in `logs/script-execution.log` against the most recent file mtime in the worktree (using `references.modified_files` when populated, otherwise a worktree-root walk) and returns one of three statuses. `status: fresh` permits transition; `status: stale` or `status: undecidable` blocks transition with the same `[BLOCKED]` log line shape used for the pending-tasks branch. The gate fails closed by design — there is no LLM judgement and no "probably fine" fallback. Pending-queue emptiness and worktree freshness are **co-equal** gates: both MUST succeed before the phase may transition.
 
@@ -1096,4 +1098,22 @@ totals to `.plan/plans/{plan_id}/work/metrics-accumulator-5-execute.toon`.
 The orchestrator's `phase-boundary` call reads this accumulator file as a
 fallback when its explicit token flags are omitted — so the orchestrator
 does not need to maintain a parallel running sum in model context.
+
+## Canonical invocations
+
+The canonical argparse surface for the two entry-point scripts this skill registers: `scope_creep_check.py` and `verify_failure_scope.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### scope_creep_check — check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-5-execute:scope_creep_check check \
+  --plan-id PLAN_ID [--threshold THRESHOLD]
+```
+
+### verify_failure_scope — classify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-5-execute:verify_failure_scope classify \
+  --plan-id PLAN_ID [--error-paths ERROR_PATHS]
+```
 

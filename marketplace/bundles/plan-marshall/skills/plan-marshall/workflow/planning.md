@@ -228,14 +228,14 @@ Extract `scope_estimate` from the TOON output.
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-     --plan-id {plan_id} --phase 2-refine --outcome skipped
+     --plan-id {plan_id} --phase 2-refine --step refine-analyze --outcome skipped
    ```
 
 4. Set `qgate_validation_required: false` for the skipped phase via the metadata setter (the post-return q-gate-validation dispatch below MUST read this value as `false` and SHALL skip the q-gate-validation sub-dispatch — there is nothing to validate when refine was never run):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-     --plan-id {plan_id} --set qgate_validation_required=false
+     --plan-id {plan_id} --set --field qgate_validation_required --value false
    ```
 
 5. Record the `2-refine → 3-outline` phase boundary with zero `<usage>` totals (no envelope was dispatched, so no agent tokens accrue to refine):

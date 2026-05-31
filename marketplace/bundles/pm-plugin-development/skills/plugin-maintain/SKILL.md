@@ -399,6 +399,38 @@ Each workflow handles errors:
 3. Continue with next item if batch processing
 4. Report all errors in summary
 
+## Canonical invocations
+
+The canonical argparse surface for `maintain.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### update
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain update \
+  --component COMPONENT [--updates UPDATES]
+```
+
+### check-duplication
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain check-duplication \
+  --skill-path SKILL_PATH --content-file CONTENT_FILE
+```
+
+### analyze
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain analyze \
+  --component COMPONENT
+```
+
+### readme
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain readme \
+  --bundle-path BUNDLE_PATH
+```
+
 ## Related Resources
 
 - **plugin-doctor skill** - Diagnose and fix quality issues in components

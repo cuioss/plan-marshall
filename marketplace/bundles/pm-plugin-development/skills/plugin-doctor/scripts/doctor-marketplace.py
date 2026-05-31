@@ -35,6 +35,7 @@ from _analyze_argument_naming import analyze_argument_naming
 from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
+from _analyze_manage_invocation import scan_manage_invocation
 from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
@@ -394,6 +395,17 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(historical_prose_issues)
     total_issues += len(historical_prose_issues)
 
+    # The manage-invocation rule cluster (manage-invocation-invalid +
+    # missing-canonical-block) is intentionally NOT run here. It derives each
+    # script's canonical surface from the script's live ``--help`` output (one
+    # subprocess per parser node) — far heavier than analyze's other AST/regex
+    # rules. Running it on every per-component ``analyze`` pass cold-derives the
+    # whole marketplace surface and overruns the test harness's per-call
+    # subprocess budget. The rule is the marketplace-wide authoritative gate and
+    # runs only under ``cmd_quality_gate`` (which CI invokes as its own step with
+    # the appropriate budget). ``test_analyze_does_not_run_manage_invocation_cluster``
+    # guards against re-introducing it here.
+
     # Phase-5 step standards files MUST declare a ``role:`` frontmatter field
     # so the manage-execution-manifest composer's role-based intersection
     # (Rows 2/3/4/5) can resolve candidates correctly. Unconditionally active;
@@ -527,6 +539,14 @@ def cmd_quality_gate(args) -> dict:
                                     plan-marshall skill markdown — enforces
                                     the dev-agent-behavior-rules "no shell
                                     constructs" hard rule)
+      - scan_manage_invocation     (manage-invocation-invalid +
+                                    missing-canonical-block: documented script
+                                    invocations validated against each
+                                    script-bearing skill's argparse surface,
+                                    and script-bearing SKILL.md files required
+                                    to publish a ``## Canonical invocations``
+                                    section — the build-failing regression net
+                                    against argparse-rejection drift)
 
     Note: ``analyze_bash_chain_shapes_in_skills`` and
     ``analyze_tmp_redirect_in_skills`` are NOT included in quality-gate because
@@ -594,6 +614,26 @@ def cmd_quality_gate(args) -> dict:
     role_field_findings = analyze_role_field(marketplace_root)
     all_issues.extend(role_field_findings)
     rule_summaries.append({'rule': 'analyze_role_field', 'findings': len(role_field_findings)})
+
+    # manage-invocation rule cluster — validates documented script invocations
+    # against each script-bearing skill's live argparse surface derived from
+    # ``--help`` (manage-invocation-invalid) and flags script-bearing SKILL.md
+    # files lacking a ``## Canonical invocations`` section
+    # (missing-canonical-block). The surface is derived dynamically via
+    # subprocesses and cached to disk, making it highly accurate and cheap
+    # enough to run on every analyze pass. The in-scope set is derived from the
+    # bundle tree, so it is a build-failing regression net against future
+    # argparse-rejection drift.
+    # ``find_marketplace_root`` returns the ``bundles/`` directory, but the
+    # manage-invocation helpers expect the marketplace root (parent of
+    # ``bundles/``) so their layout probing and executor discovery resolve —
+    # the same ``.parent`` conversion already used for
+    # ``validate_extension_contracts`` above.
+    manage_invocation_findings = scan_manage_invocation(marketplace_root.parent)
+    all_issues.extend(manage_invocation_findings)
+    rule_summaries.append(
+        {'rule': 'scan_manage_invocation', 'findings': len(manage_invocation_findings)}
+    )
 
     # script-call-drift is intentionally NOT in quality-gate — it probes
     # --help via subprocess for every documented notation/verb pair, which

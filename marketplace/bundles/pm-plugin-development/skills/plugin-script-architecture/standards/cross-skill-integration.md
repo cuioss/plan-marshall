@@ -355,6 +355,45 @@ def test_example():
 - **Direct imports work**: After conftest import, cross-skill imports are available
 - **IDE warnings expected**: Use `# type: ignore[import-not-found]`
 
+## Script invocation in documentation
+
+When a skill, workflow, agent, or command document invokes a marketplace script — i.e. spells out a `python3 .plan/execute-script.py {bundle}:{skill}:{script} …` call in its prose — the written call MUST be correct against the script's live argparse surface at the moment it is read. Paraphrased, invented, or stale invocations are the structural cause of the argparse-rejection (exit code 2) recurrence: a call that reads naturally in workflow prose but does not match the declared subcommands, sub-verbs, or required flags fails silently, bypasses the script body, and corrupts downstream behaviour.
+
+This standard codifies three normative rules. They attack the failure at *authoring time* (when the call is written), not at runtime.
+
+### Rule 1 — exact inline call
+
+When a document writes a script invocation inline, the call MUST match the script's argparse declaration exactly: a registered top-level subcommand, a registered sub-verb when the subcommand declares nested subparsers, only declared long flags, and every flag the resolved leaf parser marks `required=True`. Never synthesize a verb that names the goal rather than quoting a declared subcommand, never place a verb-scoped flag at the top level, and never substitute a plausible-but-wrong flag name. When in doubt, verify against `python3 .plan/execute-script.py {notation} --help` and `python3 .plan/execute-script.py {notation} {subcommand} --help` before writing the call.
+
+### Rule 2 — xref, don't restate
+
+Prefer an explicit cross-reference to the owning skill's `## Canonical invocations` section over restating the call inline. An inline restatement is a copy that drifts the moment the script's argparse surface changes; a named xref ("see `{skill}` Canonical invocations → `{subcommand}`") always resolves to the current source-of-truth. Restate inline only when the surrounding prose genuinely needs the literal command in place (e.g. a step-by-step workflow the reader executes verbatim); even then, the inline call MUST satisfy Rule 1.
+
+### Rule 3 — every script-bearing skill publishes a Canonical-invocations section
+
+Every skill that registers an argparse CLI entry-point invoked via 3-part `bundle:skill:script` executor notation MUST publish a `## Canonical invocations` section in its `SKILL.md`. This section is the single source-of-truth that Rule-2 xrefs resolve against. A skill that registers multiple entry-point scripts publishes one section grouping per registered notation triple.
+
+### Canonical-invocations section contract
+
+The section's structure is fixed so the consuming analyzer can locate and validate it deterministically:
+
+- **Heading**: exactly `## Canonical invocations`. The consuming analyzer matches the heading with the regex `^##\s+Canonical\s+invocations\s*$` (case-insensitive) — any other spelling (e.g. `## Canonical Invocation`, `## Canonical commands`) is not recognized and leaves the skill flagged as missing the section.
+- **Per-subcommand subsections**: one `### {subcommand}` heading per registered top-level argparse subcommand (for a script with no subcommands, document the single root-parser invocation).
+- **Canonical-call block**: each `### {subcommand}` subsection carries a fenced ` ```bash ` block showing the canonical call — the full `python3 .plan/execute-script.py {notation} {subcommand} …` form with every required flag, mirroring the live argparse declaration exactly. Optional flags are shown in `[brackets]`; mutually-exclusive groups are shown as `(--a | --b)`.
+- **Authoring source**: author each block by reading the script's argparse declaration (subcommands, sub-verbs, `required=True` flags) — verify against `{notation} --help`, never paraphrase.
+- **No transitionary prose**: describe the current argparse surface only — no changelog, no "renamed from", no dated update notes.
+
+The reference model is [`manage-files/SKILL.md`](../../../../plan-marshall/skills/manage-files/SKILL.md) § "Canonical invocations" — its layout (one `### {subcommand}` heading per subcommand, each with a `bash` canonical-call block, mutually-exclusive groups rendered as `(--a | --b …)`) is the pattern every script-bearing skill follows.
+
+### Enforcing analyzer and rule IDs
+
+The plugin-doctor analyzer [`_analyze_manage_invocation.py`](../../plugin-doctor/scripts/_analyze_manage_invocation.py) is the consuming surface that enforces this contract at edit time. It implements two rule IDs:
+
+- **`manage-invocation-invalid`** — validates each inline invocation (Rule 1) against the script's canonical argparse surface derived from its live `--help` output (top-level plus each sub-verb), emitting a finding for an unregistered subcommand, an unregistered sub-verb, an undeclared flag, or a missing required flag. The derived surface is cached (in-process and on disk under `.plan/temp/plugin-doctor-help-cache/`) so repeated scans do not re-spawn `--help` probes.
+- **`missing-canonical-block`** — emitted when a script-bearing `SKILL.md` lacks the `## Canonical invocations` section (Rule 3). This rule is pure static analysis (no subprocess).
+
+Both rules run under `quality-gate`, so a documented call that drifts from the live surface — or a script-bearing skill that omits its Canonical-invocations section — is caught before it ships. Deriving the surface from `--help` rather than an AST walk is what lets the rule see loop-registered, helper-registered, and shared-flag subcommands that literal `add_parser` AST extraction cannot.
+
 ## Integration Rules
 
 Before publishing a script:
@@ -369,3 +408,4 @@ Before publishing a script:
 - Internal modules use underscore prefix (`_module.py`)
 - IDE import warnings suppressed with `# type: ignore[import-not-found]`
 - Tests use conftest import pattern (one sys.path insert only)
+- Documented script invocations follow the explicit-call-or-xref rules above; script-bearing skills publish a `## Canonical invocations` section

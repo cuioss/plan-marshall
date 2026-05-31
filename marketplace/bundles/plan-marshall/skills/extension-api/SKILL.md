@@ -366,3 +366,16 @@ class Extension(ExtensionBase):
 - **manage-config** - Uses `discover_all_extensions()` for domain configuration
 - **Domain bundles** - Implement `extension.py` inheriting from `ExtensionBase`
 
+## Canonical invocations
+
+The canonical argparse surface for the skill's CLI entry-point, `extension_discovery.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### apply-config-defaults
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery apply-config-defaults \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+`--project-dir` and `--plan-id` are mutually exclusive.
+

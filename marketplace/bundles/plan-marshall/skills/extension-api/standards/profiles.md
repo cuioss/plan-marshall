@@ -75,19 +75,17 @@ Domains configure profile overrides in marshal.json:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-workflow-skill --domain {domain} --phase {profile}
+  resolve-execute-task-skill --profile {profile}
 ```
 
 **Parameters**:
-- `--domain`: Domain key from task (e.g., `java`, `javascript`)
-- `--phase`: Profile from task (e.g., `implementation`, `module_testing`)
+- `--profile`: Profile from task (e.g., `implementation`, `module_testing`)
 
 **Output**:
 ```toon
 status	success
-domain	{domain}
-phase	{profile}
-workflow_skill	{resolved skill reference}
+profile	{profile}
+skill	{resolved skill reference}
 fallback	{true if using system default}
 ```
 

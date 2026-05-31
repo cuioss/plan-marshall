@@ -72,7 +72,7 @@ Call the producer-side comments-stage subcommand once. It fetches PR review comm
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
-  --project-dir {worktree_path} comments-stage --pr-number {pr_number} --plan-id {plan_id}
+  comments-stage --pr-number {pr_number} --plan-id {plan_id}
 ```
 
 (For GitLab projects the equivalent producer is `plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage`. Provider selection is whichever matches `manage-providers` for the plan's host; only one of the two is invoked per finalize run.)

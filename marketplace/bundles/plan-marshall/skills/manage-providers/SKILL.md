@@ -164,6 +164,80 @@ See `standards/security-considerations.md` for full threat model and implementat
 
 Tests override the credentials directory via the `PLAN_MARSHALL_CREDENTIALS_DIR` environment variable (read at module import time in `_providers_core.CREDENTIALS_DIR`). This is a testing-only knob — not a user-facing setting. Tests should set it via `monkeypatch.setenv` before importing `_providers_core`, or patch `_providers_core.CREDENTIALS_DIR` directly and reload as needed.
 
+## Canonical invocations
+
+The canonical argparse surface for `credentials.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### configure
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials configure \
+  [--skill SKILL] [--scope {global,project}] [--url URL] [--auth-type {none,token,basic}] \
+  [--extra KEY=VALUE ...]
+```
+
+### edit
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials edit \
+  [--skill SKILL] [--scope {global,project}] [--url URL] [--auth-type {none,token,basic}]
+```
+
+### check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials check \
+  --skill SKILL [--scope {global,project}]
+```
+
+### verify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verify \
+  [--skill SKILL] [--scope {global,project}]
+```
+
+### discover-and-persist
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials discover-and-persist \
+  [--providers PROVIDERS]
+```
+
+### list-providers
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
+```
+
+### find-by-category
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials find-by-category \
+  --category CATEGORY
+```
+
+### list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list \
+  [--scope {global,project,all}]
+```
+
+### remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials remove \
+  [--skill SKILL] [--scope {global,project}]
+```
+
+### ensure-denied
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied \
+  [--target {global,project}]
+```
+
 ## Related
 
 | Skill | Purpose |

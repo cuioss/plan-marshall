@@ -69,7 +69,7 @@ For each module in the list:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  derived-module --name {module-name}
+  derived-module --module {module-name}
 ```
 
 Parse the TOON output:
@@ -196,3 +196,35 @@ All subcommands accept either `--plan-id {plan_id}` (preferred — auto-resolves
 |----------|---------|
 | `plan-marshall:build-maven` → `standards/maven-impl.md` | Maven profile pipeline implementation |
 | `plan-marshall:extension-api` → `standards/canonical-commands.md` | Command vocabulary |
+
+## Canonical invocations
+
+The canonical argparse surface for `profiles.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". `--project-dir` and `--plan-id` are top-level flags (placed before the subcommand) and are mutually exclusive.
+
+### list
+
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles \
+  [--project-dir PROJECT_DIR | --plan-id PLAN_ID] list [--module MODULE]
+```
+
+### unmatched
+
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles \
+  [--project-dir PROJECT_DIR | --plan-id PLAN_ID] unmatched
+```
+
+### classify
+
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles \
+  [--project-dir PROJECT_DIR | --plan-id PLAN_ID] classify --profile-id PROFILE_ID
+```
+
+### suggest
+
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles \
+  [--project-dir PROJECT_DIR | --plan-id PLAN_ID] suggest
+```

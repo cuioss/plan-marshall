@@ -264,6 +264,93 @@ display_detail: "<{aspects_dispatched} aspects, {lessons_recorded} lessons recor
 
 `display_detail` shape on success: `"{aspects_dispatched} aspects, {lessons_recorded} lessons recorded"` (e.g. `"8 aspects, 3 lessons recorded"`); ≤80 chars, ASCII, no trailing period.
 
+## Canonical invocations
+
+The canonical argparse surface for the nine entry-point scripts this skill registers. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". The single-aspect scripts share the same `run` flag surface; `collect-fragments` carries the `init` / `add` / `finalize` sub-verbs.
+
+### check-manifest-consistency — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-manifest-consistency run \
+  --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH] \
+  [--diff-file DIFF_FILE] [--base-ref BASE_REF]
+```
+
+`--base-ref` is required when `--diff-file` is absent.
+
+### script-failure-analysis — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:script-failure-analysis run \
+  --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH]
+```
+
+### check-artifact-consistency — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-artifact-consistency run \
+  --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH]
+```
+
+### analyze-logs — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:analyze-logs run \
+  --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH]
+```
+
+### summarize-invariants — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:summarize-invariants run \
+  --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH]
+```
+
+### collect-plan-artifacts — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-plan-artifacts run \
+  --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH]
+```
+
+### compile-report — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:compile-report run \
+  --mode {live,archived} --fragments-file FRAGMENTS_FILE \
+  [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH] [--session-id SESSION_ID]
+```
+
+### direct-gh-glab-usage — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:direct-gh-glab-usage run \
+  --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH] \
+  [--base BASE] [--project-root PROJECT_ROOT] [--audit-plan-id AUDIT_PLAN_ID]
+```
+
+### collect-fragments — init
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments init \
+  --plan-id PLAN_ID --mode {live,archived} [--archived-plan-path ARCHIVED_PLAN_PATH]
+```
+
+### collect-fragments — add
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
+  --plan-id PLAN_ID --aspect ASPECT --fragment-file FRAGMENT_FILE \
+  [--archived-plan-path ARCHIVED_PLAN_PATH] [--overwrite]
+```
+
+### collect-fragments — finalize
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments finalize \
+  --plan-id PLAN_ID [--archived-plan-path ARCHIVED_PLAN_PATH]
+```
+
 ## Related
 
 - `plan-marshall:phase-6-finalize` — optional orchestrator that dispatches this skill when the bundle-opt-in finalize step is enabled.

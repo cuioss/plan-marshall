@@ -99,3 +99,14 @@ This extension is discovered by:
 - `pm-dev-python:plan-marshall-plugin` - Python build execution via pyproject_build.py
 - `pm-plugin-development:ext-triage-plugin` - Plugin triage extension
 - `pm-plugin-development:ext-outline-workflow` - Plugin outline workflow
+
+## Canonical invocations
+
+The canonical argparse surface for `plugin_discover.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### discover
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plan-marshall-plugin:plugin_discover discover \
+  --root ROOT
+```

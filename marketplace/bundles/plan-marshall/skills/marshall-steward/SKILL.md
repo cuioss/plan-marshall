@@ -399,3 +399,61 @@ Read references/error-handling.md
 ```
 Apply the recovery guidance for the specific error type.
 
+## Canonical invocations
+
+The canonical argparse surface for the three entry-point scripts this skill registers: `determine_mode.py`, `bootstrap_plugin.py`, and `gitignore_setup.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### determine_mode — mode
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode mode [--plan-dir PLAN_DIR]
+```
+
+### determine_mode — check-docs
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-docs [--project-root PROJECT_ROOT]
+```
+
+### determine_mode — fix-docs
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode fix-docs [--project-root PROJECT_ROOT]
+```
+
+### determine_mode — check-structure
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-structure [--plan-dir PLAN_DIR]
+```
+
+### determine_mode — seed-blocking-finding-types
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode seed-blocking-finding-types [--plan-dir PLAN_DIR]
+```
+
+### determine_mode — check-missing-finalize-steps
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-missing-finalize-steps [--plan-dir PLAN_DIR]
+```
+
+### bootstrap_plugin — get-root
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:bootstrap_plugin get-root [--refresh]
+```
+
+### bootstrap_plugin — resolve
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:bootstrap_plugin resolve --bundle BUNDLE --path PATH
+```
+
+### gitignore_setup
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [--project-root PROJECT_ROOT] [--dry-run]
+```
+

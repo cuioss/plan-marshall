@@ -138,7 +138,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
 
 # 2. Producer: stage PR comments as findings into the store
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
-  --plan-id feature-jwt-auth comments-stage --pr-number 142
+  comments-stage --pr-number 142 --plan-id feature-jwt-auth
 
 # 3. Gate-check: count pending findings (NOT content)
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
@@ -232,14 +232,13 @@ The only per-iteration parallel dispatch in the contract. Phase-6 `architecture-
 ### Orchestrator: Tier-0 inline (scripts only)
 
 ```bash
-# Discover affected modules from the worktree diff
+# Discover affected modules from the worktree diff against the pre-snapshot
+# captured at Tier-0 entry. The affected set is the bucket union
+# added ∪ removed ∪ changed read from this call's TOON output — it is held in
+# memory for the dispatch fan-out, not persisted via a separate command.
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  diff-modules --plan-id feature-jwt-auth
-
-# Persist the affected-set for the dispatch fan-out
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  mark-stale-modules --plan-id feature-jwt-auth \
-  --modules auth-core,auth-jwt,auth-tests
+  diff-modules --pre .plan/local/plans/feature-jwt-auth/architecture-pre \
+  --project-dir .plan/local/worktrees/feature-jwt-auth
 ```
 
 If `affected_modules` is empty → Tier-1 is skipped; the step marks done with `display_detail: "no modules affected"`.

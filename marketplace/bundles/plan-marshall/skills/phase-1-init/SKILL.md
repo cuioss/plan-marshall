@@ -292,8 +292,8 @@ Where `{decision_summary}` is one of:
 - **Close-as-resolved branch**: Delete the lesson and abort plan creation:
 
   ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons delete \
-    --lesson-id {lesson_id}
+  python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
+    --lesson-id {lesson_id} --reason "Closed as resolved during phase-1-init premise check"
   ```
 
   Then return the close-out TOON without proceeding to Step 5:

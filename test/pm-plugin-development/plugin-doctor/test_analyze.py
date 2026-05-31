@@ -141,6 +141,40 @@ def test_structure_real_plugin_doctor():
     assert score >= 90, f'plugin-doctor should score >= 90, got {score}'
 
 
+def test_structure_cross_skill_xref_not_flagged_missing(tmp_path):
+    """A ``../other-skill/standards/foo.md`` xref must not be read as a missing
+    skill-local ``standards/foo.md`` file.
+
+    The structure regex matches the ``standards/...`` segment inside a longer
+    relative path; without the ``/``-preceded guard the analyzer flags the
+    nonexistent local ``standards/foo.md`` as missing. Cross-skill xrefs are
+    legitimate (e.g. the ``## Canonical invocations`` sections link the
+    ``plugin-script-architecture`` cross-skill-integration standard).
+    """
+    skill_dir = tmp_path / 'consumer-skill'
+    skill_dir.mkdir()
+    (skill_dir / 'SKILL.md').write_text(
+        '---\n'
+        'name: consumer-skill\n'
+        'description: A skill that xrefs a cross-skill standard.\n'
+        '---\n\n'
+        '# Consumer Skill\n\n'
+        'See [the integration standard]'
+        '(../plugin-script-architecture/standards/cross-skill-integration.md) '
+        'for details.\n',
+        encoding='utf-8',
+    )
+
+    args = Namespace(directory=str(skill_dir))
+    data = cmd_structure(args)
+
+    missing = data.get('standards_files', {}).get('missing_files', [])
+    assert missing == [], f'Cross-skill xref should not be flagged missing, found {missing}'
+    assert data.get('structure_score', 0) == 100, (
+        f'Cross-skill-only skill should score 100, got {data.get("structure_score")}'
+    )
+
+
 # =============================================================================
 # Structure Subcommand Tests - skill-naming-noun-suffix Rule
 # =============================================================================

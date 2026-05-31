@@ -287,6 +287,49 @@ python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface c
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface update --number 1 --field overview --value "Updated description"
 ```
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-interface.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### list
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface list \
+  [--type {REST_API,Event,gRPC,Database,File,Other}]
+```
+
+### create
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface create \
+  --title TITLE --type {REST_API,Event,gRPC,Database,File,Other}
+```
+
+### read
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface read --number NUMBER
+```
+
+### update
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface update \
+  --number NUMBER [--field FIELD] [--value VALUE]
+```
+
+### delete
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface delete --number NUMBER [--force]
+```
+
+### next-number
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface next-number
+```
+
 ## Related Skills
 
 - `pm-documents:ref-asciidoc` - Format validation

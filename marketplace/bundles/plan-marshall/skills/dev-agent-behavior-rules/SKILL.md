@@ -86,6 +86,8 @@ When issuing `python3 .plan/execute-script.py {notation} {subcmd} ...` calls, qu
 
 **How to apply:** When in doubt, invoke the script with `--help` first (`python3 .plan/execute-script.py {notation} --help` and `python3 .plan/execute-script.py {notation} {subcmd} --help`), or grep `.plan/execute-script.py`'s embedded `SCRIPTS = { ... }` mapping. The `ARGUMENT_NAMING_*` plugin-doctor rule cluster (unconditionally active under `quality-gate`) catches drift at edit time as the structural guard against this class of failure.
 
+**Authoring contract:** This rule operationalizes the explicit-call-or-xref authoring standard — see `marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md` § "Script invocation in documentation" for the canonical contract (exact inline call vs xref to the owning skill's `## Canonical invocations` section) and the `manage-invocation-invalid` / `missing-canonical-block` rules that enforce it.
+
 ### Git: always use `git -C {path}`, never `cd {path} && git ...`
 
 Every repo-targeted git command MUST use the `git -C {path} <subcommand>` form. The compound form `cd {path} && git <subcommand>` is forbidden — even when the target path is a worktree absolute path that the model already has in context.

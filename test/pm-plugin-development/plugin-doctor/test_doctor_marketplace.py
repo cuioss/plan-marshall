@@ -1312,7 +1312,14 @@ def test_quality_gate_real_marketplace_passes():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'quality-gate')
+    # quality-gate derives every script's canonical surface from its live
+    # ``--help`` output (one subprocess per parser node). Against the real
+    # marketplace with a cold cache (fresh CI clone), that derivation is
+    # inherently slower than the 30s run_script default — the deep subparser
+    # trees (manage-config/status/architecture) alone serialize a dozen-plus
+    # ``--help`` probes each. Give it a generous ceiling so the gate completes
+    # cold rather than tripping a per-call subprocess timeout.
+    result = run_script(SCRIPT_PATH, 'quality-gate', timeout=300)
     assert result.returncode == 0, (
         f'Real marketplace quality-gate must pass, got exit {result.returncode}: {result.stderr}'
     )

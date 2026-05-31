@@ -110,8 +110,8 @@ No additional script call is needed — the appended section travels into `reque
 Delete the lesson and abort:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons delete \
-  --lesson-id {lesson_id}
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
+  --lesson-id {lesson_id} --reason "Closed as resolved during phase-1-init premise check"
 ```
 
 Return the abort TOON documented in SKILL.md Step 4b.5 — do not proceed to Step 5, do not transition phase, do not create references.

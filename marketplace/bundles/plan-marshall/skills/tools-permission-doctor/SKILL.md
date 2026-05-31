@@ -199,6 +199,37 @@ This skill is designed to run without user prompts. Required permissions:
 - No file modifications performed
 - Script invocation uses executor pattern
 
+## Canonical invocations
+
+The canonical argparse surface for `permission_doctor.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### detect-redundant
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor detect-redundant \
+  (--scope both | --global-settings GLOBAL_SETTINGS) [--local-settings LOCAL_SETTINGS]
+```
+
+`--scope` and `--global-settings` are mutually exclusive; `--global-settings` requires `--local-settings`.
+
+### detect-suspicious
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor detect-suspicious \
+  (--settings SETTINGS | --scope {global,project}) [--approved-file APPROVED_FILE]
+```
+
+`--settings` and `--scope` are mutually exclusive.
+
+### detect-missing-project-step-permissions
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor detect-missing-project-step-permissions \
+  --marshal MARSHAL (--settings SETTINGS | --scope {global,project})
+```
+
+`--settings` and `--scope` are mutually exclusive.
+
 ## Critical Rules
 
 **Read-Only:**

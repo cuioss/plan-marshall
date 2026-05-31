@@ -311,3 +311,35 @@ Results are organized into `core` (plan-marshall bundle) and `derived` (domain b
 - Planning inventory: scripts/scan-planning-inventory.py
 - Dependency resolution: scripts/resolve-dependencies.py
 - Marketplace root: marketplace/bundles/
+
+## Canonical invocations
+
+The canonical argparse surface for the three entry-point scripts this skill registers: `scan-marketplace-inventory.py`, `resolve-dependencies.py`, and `scan-planning-inventory.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### scan-marketplace-inventory
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  [--scope {auto,marketplace,global,project,plugin-cache}] [--resource-types RESOURCE_TYPES] \
+  [--include-descriptions] [--full] [--name-pattern NAME_PATTERN] [--bundles BUNDLES] \
+  [--content-pattern CONTENT_PATTERN] [--content-exclude CONTENT_EXCLUDE] [--output OUTPUT] \
+  [--direct-result] [--format {toon,json}] [--include-tests] [--include-project-skills]
+```
+
+### resolve-dependencies
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
+  {deps,rdeps,tree,validate} \
+  [--component COMPONENT] [--scope {auto,marketplace,plugin-cache,project}] [--format {toon,json}] \
+  [--direct-result] [--depth DEPTH] [--dep-types DEP_TYPES]
+```
+
+The first positional is required and one of `deps` / `rdeps` / `tree` / `validate`.
+
+### scan-planning-inventory
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-planning-inventory \
+  [--format {full,summary}] [--include-descriptions]
+```

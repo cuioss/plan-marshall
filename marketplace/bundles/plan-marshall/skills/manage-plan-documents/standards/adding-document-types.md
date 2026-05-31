@@ -95,7 +95,7 @@ The new document type is immediately available:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-  retrospective create \
+  {type} create \
   --plan-id my-feature \
   --summary "Completed JWT implementation" \
   --went_well "Clean API design|Good test coverage" \

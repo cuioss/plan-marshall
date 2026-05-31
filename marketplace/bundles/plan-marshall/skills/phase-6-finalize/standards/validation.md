@@ -144,7 +144,7 @@ When a source lesson identifies a *missing pattern* in one finalize-standards fi
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     files --module {bundle:skill} --filter "standards/*.md"
+     files --module {bundle:skill} --category standard
    ```
 
    Glob fallback for sub-module lookup or when the architecture verb returns elision:

@@ -153,19 +153,19 @@ The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the 
 - **Rationale**: Three invalid `manage-findings` invocation shapes surfaced as LLM hallucinations at runtime, producing silent argparse rejections that the calling workflow swallowed. Grepping `marketplace/bundles/` for these shapes returns zero matches at source time — the failure mode is recurrence-prone LLM drift, not source drift. Catching the shapes at edit time via plugin-doctor moves the structural guard from runtime to review time, in the same spirit as the `ARGUMENT_NAMING_*` cluster.
 - **Exemptions**: None — every `plan-marshall:manage-findings:*` invocation in skill markdown is expected to resolve to a registered notation, subcommand, and sub-verb. The rule is gated on the `manage-findings-invocation-invalid` opt-in token in `active_rules` (mirroring the `verb_chain` opt-in semantics), so it only runs when the caller explicitly requests it.
 
-**manage-invocation-invalid** (severity: error): Generalization of the `manage-findings-invocation-invalid` rule across the seven in-scope script families — `plan-marshall:manage-status:manage-status`, `plan-marshall:manage-tasks:manage-tasks`, `plan-marshall:manage-logging:manage-logging`, `plan-marshall:manage-references:manage-references`, `plan-marshall:manage-config:manage-config`, `plan-marshall:workflow-integration-git:git-workflow`, and `plan-marshall:workflow-integration-github:github_ops`. For each invocation found in skill markdown, the analyzer extracts the `(subcommand, sub_verb, flags)` tuple and validates it against the script's canonical argparse tree built at scan time. Four failure modes are reported independently, each with `details.canonical_hint` carrying the closest correct form: (1) unknown top-level subcommand (`details.reason: subcommand_unknown`); (2) unknown sub-verb under a subcommand that declares its own subparser (`details.reason: sub_verb_unknown`); (3) unknown long flag `--{flag}` under the resolved leaf parser (`details.reason: flag_unknown`); (4) missing required flag declared by the resolved leaf parser (`details.reason: required_flag_missing`).
+**manage-invocation-invalid** (severity: error): Generalization of the `manage-findings-invocation-invalid` rule across every script-bearing skill in the marketplace. The in-scope set is derived at scan time by walking the bundle tree — each skill that registers an argparse CLI entry-point invoked via 3-part `bundle:skill:script` executor notation is covered, keyed off the on-disk path (`{bundle}:{skill}:{script_stem}`) rather than any filename==skill assumption (e.g. `plan-marshall:plan-doctor:plan_doctor`, `plan-marshall:extension-api:extension_discovery`). The derivation excludes `_`-prefixed helper modules, shared-only helper skills (`script-shared`, `tools-file-ops`, `tools-input-validation`), non-entry-point reference skills (`ref-toon-format`, `platform-runtime`), and `manage-findings` (covered by its own dedicated analyzer). For each invocation found in skill markdown, the analyzer extracts the `(subcommand, sub_verb, flags)` tuple and validates it against the script's canonical argparse tree built at scan time. Four failure modes are reported independently, each with `details.canonical_hint` carrying the closest correct form: (1) unknown top-level subcommand (`details.reason: subcommand_unknown`); (2) unknown sub-verb under a subcommand that declares its own subparser (`details.reason: sub_verb_unknown`); (3) unknown long flag `--{flag}` under the resolved leaf parser (`details.reason: flag_unknown`); (4) missing required flag declared by the resolved leaf parser (`details.reason: required_flag_missing`).
 
-- **Discovery approach**: Pure static analysis — `ast.parse` walk of each in-scope script (whitelisted in `IN_SCOPE_SCRIPTS`) builds a canonical tree `{subcommand: {sub_verb_or_none: {flags, required_flags}}}`. The markdown scan is line-anchored regex extraction of `python3 .plan/execute-script.py {bundle}:{skill}:{script}` invocations from `SKILL.md`, `standards/*.md`, `references/*.md`, `workflow/*.md`, and `recipes/*.md`. Each occurrence is tokenized into positional + flag args and cross-checked against the canonical tree. No subprocess execution, no import of the target scripts. Mirrors the `_analyze_argument_naming.py` and `_analyze_manage_findings_invocation.py` precedents. The implementation lives in `_analyze_manage_invocation.py` (analyzer module) — see the canonical-block convention published in each in-scope SKILL.md's `## Canonical invocations` section for the authoritative spelling reference.
+- **Discovery approach**: Pure static analysis — the in-scope set is auto-derived by `discover_in_scope_scripts`, which walks `bundles/{bundle}/skills/{skill}/scripts/*.py`, drops `_`-prefixed and excluded-skill scripts, and AST-confirms each candidate declares an `ArgumentParser`. Each in-scope script is then `ast.parse`-walked into a canonical tree `{subcommand: {sub_verb_or_none: {flags, required_flags}}}`. The markdown scan is line-anchored regex extraction of `python3 .plan/execute-script.py {bundle}:{skill}:{script}` invocations from `SKILL.md`, `standards/*.md`, `references/*.md`, `workflow/*.md`, and `recipes/*.md`. Each occurrence is tokenized into positional + flag args and cross-checked against the canonical tree. No subprocess execution, no import of the target scripts. Mirrors the `_analyze_argument_naming.py` and `_analyze_manage_findings_invocation.py` precedents. The implementation lives in `_analyze_manage_invocation.py` (analyzer module) — see the canonical-block convention published in each in-scope SKILL.md's `## Canonical invocations` section for the authoritative spelling reference. The cluster runs unconditionally under `cmd_quality_gate` (build-failing) and `cmd_analyze`.
 - **Fix**: Update the markdown invocation to match the script's canonical argparse surface. The finding's `details.canonical_hint` names the closest correct subcommand / sub-verb / flag spelling; the corresponding `## Canonical invocations` section in the script's owning SKILL.md is the full reference.
-- **Rationale**: Argparse-surface drift in LLM-authored prose is a recurring failure mode that produces silent `exit_code: 2` rejections at runtime. The `manage-findings-invocation-invalid` rule covers one script; this rule generalizes the same structural guard across the seven heaviest-referenced `manage-*` and `workflow-integration-*` families. Catching token-tree mismatches at edit time moves a class of runtime argparse rejections to review time.
-- **Exemptions**: Notations outside `IN_SCOPE_SCRIPTS` are skipped silently — the rule does not expand its scope automatically when new scripts land. Adding a family requires a deliberate edit to `IN_SCOPE_SCRIPTS` in `_analyze_manage_invocation.py`. Scripts whose AST cannot be parsed (syntax error, missing file) are dropped from the index silently; the notation-validity rule (`ARGUMENT_NAMING_*` cluster) reports the missing-script case independently.
+- **Rationale**: Argparse-surface drift in LLM-authored prose is a recurring failure mode that produces silent `exit_code: 2` rejections at runtime. The `manage-findings-invocation-invalid` rule covers one script; this rule generalizes the same structural guard across every script-bearing skill in the marketplace and runs as a build-failing `quality-gate` regression net. Catching token-tree mismatches at edit time moves a class of runtime argparse rejections to review time.
+- **Exemptions**: The in-scope set auto-derives from the bundle tree — new script-bearing skills are covered automatically as they land, with no whitelist edit required. Excluded from derivation: `_`-prefixed helper modules, shared-only helper skills (`script-shared`, `tools-file-ops`, `tools-input-validation`), non-entry-point reference skills (`ref-toon-format`, `platform-runtime`), and `manage-findings` (covered by its own dedicated analyzer). Scripts whose AST cannot be parsed (syntax error, missing file) are dropped from the index silently; the notation-validity rule (`ARGUMENT_NAMING_*` cluster) reports the missing-script case independently.
 
-**missing-canonical-block** (severity: warning): Emitted when a SKILL.md that owns an in-scope `manage-*` / `workflow-integration-*` script (from the enumerated `IN_SCOPE_SCRIPTS` list) lacks a `## Canonical invocations` section. The section is the documented source-of-truth contract published by D1 of the argparse-surface-drift remediation plan: it carries one `### {subcommand}` heading per registered top-level subcommand with a fenced bash block showing the canonical invocation shape (positional sub-verbs + required flags + optional flags). Authors consult the block when writing prose that invokes the script; missing it leaves them with no in-skill reference. Findings carry `details.notation` (the in-scope notation triple owned by the skill) and `details.canonical_hint` (the relative path to repair).
+**missing-canonical-block** (severity: warning, build-failing under quality-gate): Emitted when a script-bearing SKILL.md lacks a `## Canonical invocations` section. The in-scope set is auto-derived from the bundle tree (every skill that registers an argparse CLI entry-point invoked via 3-part notation). The section is the documented source-of-truth authoring contract: it carries one `### {subcommand}` heading per registered top-level subcommand with a fenced bash block showing the canonical invocation shape (positional sub-verbs + required flags + optional flags). Authors consult the block when writing prose that invokes the script, and Rule-2 xrefs resolve against it; missing it leaves authors with no in-skill reference and leaves xrefs unresolvable. Findings carry `details.notation` (the in-scope notation triple owned by the skill) and `details.canonical_hint` (the relative path to repair).
 
-- **Discovery approach**: Pure regex scan — search each in-scope SKILL.md for `^##\s+Canonical\s+invocations\s*$` (case-insensitive). Absence emits one finding per skill directory (deduplicated when multiple notation triples share the same owning skill). The rule is severity `warning` because absence does not break runtime — it merely degrades the editing experience.
+- **Discovery approach**: Pure regex scan — search each in-scope SKILL.md for `^##\s+Canonical\s+invocations\s*$` (case-insensitive). Absence emits one finding per skill directory (deduplicated when multiple notation triples share the same owning skill). The finding payload carries severity `warning`, but the rule runs inside `cmd_quality_gate`, so any finding fails the build — a script-bearing skill that ships without its Canonical-invocations section breaks the gate.
 - **Fix**: Add a `## Canonical invocations` section to the named SKILL.md, with one `### {subcommand}` subsection per registered top-level subcommand. Each subsection contains a fenced bash block showing the canonical invocation shape. See `marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md` for the reference layout.
-- **Rationale**: The canonical-block convention is the in-skill mirror of the `manage-invocation-invalid` rule above. The rule machine-validates markdown invocations against the argparse AST; the canonical block gives human authors the same view in the spelling they will write. Together they close the drift surface from both ends. Surfacing the missing-block case at warning severity nudges new script-owning skills to adopt the convention without breaking the build.
-- **Exemptions**: Skills outside `IN_SCOPE_SCRIPTS` are not checked — the convention is opt-in for now, with a fixed whitelist. Adding a skill to the rule's scope requires a deliberate edit to `IN_SCOPE_SCRIPTS` in `_analyze_manage_invocation.py`.
+- **Rationale**: The canonical-block convention is the in-skill mirror of the `manage-invocation-invalid` rule above. The rule machine-validates markdown invocations against the argparse AST; the canonical block gives human authors the same view in the spelling they will write, and is the source-of-truth a Rule-2 xref points at. Together they close the drift surface from both ends. Wiring the rule into the build gate enforces that every script-bearing skill publishes the section.
+- **Exemptions**: The in-scope set auto-derives from the bundle tree — new script-bearing skills are checked automatically as they land, with no whitelist edit required. Excluded from derivation: `_`-prefixed helper modules, shared-only helper skills (`script-shared`, `tools-file-ops`, `tools-input-validation`), non-entry-point reference skills (`ref-toon-format`, `platform-runtime`), and `manage-findings` (covered by its own dedicated analyzer).
 
 ## Content Rules
 
@@ -179,51 +179,18 @@ Three rules guard against defective `mark-step-done` invocations inside marketpl
 
 **MARK_STEP_DONE_STALE_NOTATION** (severity: error): The invocation line contains the stale underscored notation `manage-status:manage_status` instead of the canonical kebab-case form `manage-status:manage-status`. The executor uses notation segments as literal keys — the underscored form no longer resolves after the entrypoint-rename cutover. Detection is a substring check on every line of the invocation (including continuation lines, since the notation often lives on the command line itself).
 
-Incorrect:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --phase phase-6-finalize --outcome done
-```
-
-Correct:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --phase phase-6-finalize --outcome done
-```
-
 **MARK_STEP_DONE_MISSING_PHASE** (severity: error): The full `mark-step-done` invocation (single line or backslash-continued multi-line) does not contain `--phase`. Without it, the status manager cannot route the step termination to the correct phase record, and finalize-phase orchestration reads stale status.
-
-Incorrect:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --outcome done
-```
-
-Correct:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --phase phase-6-finalize --outcome done
-```
 
 **MARK_STEP_DONE_MISSING_OUTCOME** (severity: error): The full invocation does not contain `--outcome`. Without an explicit outcome (e.g. `done`, `skipped`, `deferred`), the step cannot be definitively terminated and the phase status entry remains ambiguous.
 
-Incorrect:
+Canonical form — kebab-case notation with every required flag present:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --phase phase-6-finalize
+  mark-step-done --plan-id {plan_id} --phase phase-6-finalize --step {step} --outcome done
 ```
 
-Correct:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --phase phase-6-finalize --outcome done
-```
+A violation is any deviation from this shape: the underscored `manage_status` notation (STALE_NOTATION), a dropped `--phase` (MISSING_PHASE), or a dropped `--outcome` (MISSING_OUTCOME).
 
 Detection lives in `_analyze_markdown.py::check_mark_step_done_violations`; findings are surfaced through the standard markdown reporting channel in `_doctor_analysis.py::extract_issues_from_markdown_analysis` with the defect code as the issue `type`.
 

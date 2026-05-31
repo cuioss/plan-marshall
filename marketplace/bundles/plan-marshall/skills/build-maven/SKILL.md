@@ -60,6 +60,67 @@ Reads `pom.xml` `<modules>` declarations from the parent POM.
 2. Apply skip list from configuration (`build.maven.profiles.skip`)
 3. Map to canonical command names (`build.maven.profiles.map.canonical`)
 
+## Canonical invocations
+
+The canonical argparse surface for `maven.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
+  --command-args COMMAND_ARGS \
+  [--timeout SECONDS] [--mode {actionable,structured,errors}] [--format {toon,json}] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+`--project-dir` and `--plan-id` are mutually exclusive.
+
+### parse
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven parse \
+  --log LOG \
+  [--mode {default,errors,structured,no-openrewrite}] [--format {toon,json}] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### search-markers
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven search-markers \
+  [--source-dir SOURCE_DIR] [--extensions EXTENSIONS] [--format {toon,json}]
+```
+
+### coverage-report
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven coverage-report \
+  [--project-path PROJECT_PATH] [--report-path REPORT_PATH] [--threshold PERCENT] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### check-warnings
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven check-warnings \
+  [--warnings WARNINGS] [--acceptable-warnings ACCEPTABLE_WARNINGS] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### discover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven discover \
+  [--root ROOT] [--format {toon,json}]
+```
+
+### run-config-key
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run-config-key \
+  --command-args COMMAND_ARGS [--format {toon,json}]
+```
+
 ## References
 
 - `build-api-reference.md` — Shared subcommand API, error categories, issue routing, wrapper detection

@@ -190,8 +190,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system
 ### Cleanup with Custom Retention
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup \
-    --logs-days 1 --archived-days 5
+# Retention is configured via `manage-config system retention set` (shown above);
+# run_config cleanup honors the configured retention values.
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup
 ```
 
 ### Dry Run (Preview)

@@ -152,3 +152,21 @@ This skill uses the following templates in assets/templates/:
 ## Rule Definitions
 
 See Enforcement block above for all rules applied during component creation.
+
+## Canonical invocations
+
+The canonical argparse surface for `component.py` (the skill's argparse CLI entry-point; `cmd_generate.py` and `cmd_validate.py` are internal command-handler modules imported by `component.py`, not standalone argparse CLIs). The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### generate
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-create:component generate \
+  --type {agent,command,skill} --config CONFIG
+```
+
+### validate
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-create:component validate \
+  --file FILE --type {agent,command,skill}
+```

@@ -113,6 +113,19 @@ Fix CRITICAL violations first (exported functions/classes), then WARNING, then S
 - `missing` - Only check for missing JSDoc documentation
 - `syntax` - Only check JSDoc syntax and completeness
 
+## Canonical invocations
+
+The canonical argparse surface for `jsdoc.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### analyze
+
+```bash
+python3 .plan/execute-script.py pm-dev-frontend:javascript:jsdoc analyze \
+  (--directory DIRECTORY | --file FILE) [--scope {all,missing,syntax}]
+```
+
+`--directory` and `--file` are mutually exclusive; exactly one must be supplied.
+
 ## Related Skills
 
 - `plan-marshall:dev-general-code-quality` - Language-agnostic code quality principles

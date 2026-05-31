@@ -76,6 +76,60 @@ Unlike Maven/Gradle (single parser) and npm (single-match registry), Python runs
 
 Directories with `test/` or `tests/` subdirectories. Searches one level deep from project root, plus root itself.
 
+## Canonical invocations
+
+The canonical argparse surface for `pyproject_build.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run \
+  --command-args COMMAND_ARGS \
+  [--timeout SECONDS] [--mode {actionable,structured,errors}] [--format {toon,json}] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+`--project-dir` and `--plan-id` are mutually exclusive.
+
+### parse
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build parse \
+  --log LOG \
+  [--mode {default,errors,structured}] [--format {toon,json}] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### coverage-report
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build coverage-report \
+  [--project-path PROJECT_PATH] [--report-path REPORT_PATH] [--threshold PERCENT] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### check-warnings
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build check-warnings \
+  [--warnings WARNINGS] [--acceptable-warnings ACCEPTABLE_WARNINGS] \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+### discover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build discover \
+  [--root ROOT] [--format {toon,json}]
+```
+
+### run-config-key
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run-config-key \
+  --command-args COMMAND_ARGS [--format {toon,json}]
+```
+
 ## References
 
 - `build-api-reference.md` — Shared subcommand API, error categories, issue routing, wrapper detection

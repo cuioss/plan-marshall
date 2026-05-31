@@ -199,6 +199,40 @@ Every other capture point — phases `1-init` through `5-execute` and any other 
 
 The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`. Only `pending` contributes to the count.
 
+## Canonical invocations
+
+The canonical argparse surface for `phase_handshake.py` (the skill's CLI entry-point; `effort_presets.py` is an imported library, not an executor-callable CLI). The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### capture
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id PLAN_ID --phase {1-init,2-refine,3-outline,4-plan,5-execute,6-finalize} \
+  [--override] [--reason REASON]
+```
+
+`--reason` is required when `--override` is set.
+
+### verify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake verify \
+  --plan-id PLAN_ID --phase {1-init,2-refine,3-outline,4-plan,5-execute,6-finalize} [--strict]
+```
+
+### list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake list --plan-id PLAN_ID
+```
+
+### clear
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake clear \
+  --plan-id PLAN_ID --phase {1-init,2-refine,3-outline,4-plan,5-execute,6-finalize}
+```
+
 ## Related
 
 | Skill | Purpose |
