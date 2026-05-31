@@ -88,6 +88,12 @@ When issuing `python3 .plan/execute-script.py {notation} {subcmd} ...` calls, qu
 
 **Authoring contract:** This rule operationalizes the explicit-call-or-xref authoring standard — see `marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md` § "Script invocation in documentation" for the canonical contract (exact inline call vs xref to the owning skill's `## Canonical invocations` section) and the `manage-invocation-invalid` / `missing-canonical-block` rules that enforce it.
 
+### Subagents are leaves — no further dispatch
+
+You may be running inside a dispatched `execution-context` envelope. A dispatched subagent is a **leaf** — it cannot spawn further subagents (no `Task:` dispatches). All cross-envelope dispatch originates only from the main-context orchestrator. When a workflow step calls for a further dispatch, return control to the orchestrator with the signal it needs (the workflow's declared return payload); do not attempt the dispatch yourself. Loading `Skill:` directives in-context is permitted — that is in-context skill loading, not subagent dispatch.
+
+Canonical contract: [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) is the single source of truth for the leaf/dispatch-topology invariant. Do not restate the topology diagram here — see that document for the normative statement.
+
 ### Git: always use `git -C {path}`, never `cd {path} && git ...`
 
 Every repo-targeted git command MUST use the `git -C {path} <subcommand>` form. The compound form `cd {path} && git <subcommand>` is forbidden — even when the target path is a worktree absolute path that the model already has in context.

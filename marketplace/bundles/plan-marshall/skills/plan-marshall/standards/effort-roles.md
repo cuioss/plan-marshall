@@ -129,18 +129,18 @@ manage-config effort resolve-target --phase phase-6-finalize --role verification
 
 The resolver validates the resolved value against `ALLOWED_LEVELS` from `effort-levels.md`. Unknown role groups (typos, stale references) resolve to the `plan.effort` fallback with a non-fatal warning so a single misspelled key cannot wedge the whole dispatch flow.
 
-### Sub-dispatch from inside a subagent envelope
+### Phase-context for phase-agnostic workflows
 
-Some dispatch sites fire from *inside* a running subagent envelope (not from the orchestrator's main context) — for example, a phase-N subagent kicking off `research` mid-flow, or the `verification-feedback` envelope sub-dispatching itself on overflow. The sub-dispatch must resolve the level via the **caller's** phase, not via `--default`.
+Subagents cannot sub-dispatch — a dispatched envelope is a leaf, and all cross-envelope dispatch originates from the main-context orchestrator. See [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
 
-The mechanism: the dispatch prompt body's existing `name` field encodes the caller phase **directly** — the prompt-body `name:` value matches the registry key one-for-one (e.g. `name: phase-2-refine` → caller phase IS `phase-2-refine`). For workflows whose `name:` does not naturally encode the phase (a workflow shared across phases such as `verification-feedback` or `q-gate-validation`), the parent's prompt body passes an explicit `caller_phase` field — a 6th-field optional extension of the canonical 5-field contract. See `extension-api/standards/ext-point-execution-context-workflow.md` § Sub-dispatch contract for the full propagation rule.
+The level resolver still needs the caller's phase to pin the right level when the orchestrator dispatches a workflow shared across phases. The dispatch prompt body's `name` field usually encodes the caller phase **directly** — the prompt-body `name:` value matches the registry key one-for-one (e.g. `name: phase-2-refine` → caller phase IS `phase-2-refine`). For a phase-agnostic workflow whose `name:` does not naturally encode the phase (a workflow shared across phases such as `verification-feedback` or `q-gate-validation`), the main-context orchestrator passes an explicit `caller_phase` field — a 6th-field optional extension of the canonical 5-field contract — at top-level dispatch time. See [`extension-api/standards/ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md) § Phase-context propagation for phase-agnostic workflows.
 
 ## Cross-references
 
 | Document | Content |
 |----------|---------|
 | [`ext-point-dynamic-level-executor.md`](../../extension-api/standards/ext-point-dynamic-level-executor.md) | Agent-side ext-point — declares the dispatcher agent participates in variant emission. |
-| [`ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md) | Workflow-doc ext-point — declares a workflow doc is dispatchable by `execution-context`. Sub-dispatch contract documented here. |
+| [`ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md) | Workflow-doc ext-point — declares a workflow doc is dispatchable by `execution-context`. Phase-context propagation for phase-agnostic workflows documented here. |
 | [`effort-levels.md`](effort-levels.md) | Level → `(model, effort)` primitive binding. |
 | [`effort-variants.md`](effort-variants.md) | User-facing centralised doc for configuring effort. |
 | `marshall-steward/standards/effort-menu.md` | Wizard UX for editing the per-phase effort attributes. |

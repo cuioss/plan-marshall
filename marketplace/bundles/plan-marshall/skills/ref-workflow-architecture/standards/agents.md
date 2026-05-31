@@ -49,6 +49,8 @@ The plan-marshall bundle uses thin agents that delegate to skills for actual wor
 
 ## Invocation Patterns: Skill vs Task
 
+> **This document is the single source of truth (SSOT) for the leaf/dispatch-topology invariant.** The normative rule is: *a dispatched subagent is a leaf — it cannot spawn further subagents; all cross-envelope `Task:` dispatch originates only from the main-context orchestrator.* Every other document in the marketplace cross-references this section rather than restating the rule or duplicating the diagrams below. When a workflow step running inside a dispatched envelope needs a further dispatch, the leaf returns a signal to the orchestrator, which owns the dispatch.
+
 Understanding when to use `Skill:` vs `Task:` is critical for proper context management.
 
 ```
@@ -96,14 +98,17 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Decision Guide
+### Decision Guide (canonical)
+
+This table is the canonical rule for choosing `Skill:` vs `Task:`. A workflow whose logic requires a further `Task:` dispatch MUST run from the main context (via `Skill:`), because a dispatched subagent is a leaf and cannot spawn subagents.
 
 | Scenario | Use | Reason |
 |----------|-----|--------|
 | Workflow needs `AskUserQuestion` against the user | `Skill:` (main context) | Subagents cannot reach the user |
-| Workflow spawns further `Task:` dispatches internally | `Skill:` (main context) | Subagents cannot spawn subagents |
+| Workflow spawns further `Task:` dispatches internally | `Skill:` (main context) | Subagents cannot spawn subagents — the dispatch must originate from the orchestrator |
 | Workflow is a focused, self-contained LLM job with a return-TOON contract | `Task: execution-context-{level}` | Pinned model/effort per role key, isolated context |
-| Per-iteration parallel work (one envelope per input item) | `Task:` fan-out | Only when each subagent runs independently |
+| Per-iteration parallel work (one envelope per input item) | `Task:` fan-out from the orchestrator | Only when each subagent runs independently; the fan-out originates from the main context |
+| A leaf envelope reaches a step that calls for a further dispatch | return a signal to the orchestrator | The leaf does NOT dispatch; the orchestrator reads the return signal and owns the dispatch |
 
 ---
 

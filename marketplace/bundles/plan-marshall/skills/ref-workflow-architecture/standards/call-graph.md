@@ -254,10 +254,13 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │      │   /Built-in verification:                                              │
 │      │     quality_check / build_verify / coverage_check/   (scripts)         │
 │      │                                                                        │
-│      └── verification.passed: false   (Steps 11 / 11b)                        │
-│            │                                                                  │
+│      └── verification.passed: false                                          │
+│            │  leaf returns triage_required (Steps 11 / 11b persist           │
+│            │  findings via manage-findings qgate add, then return);          │
+│            │  ORCHESTRATOR owns the dispatch below                           │
 │            │  finding_type = verification-failure OR quality-gate-failure     │
-│            ╵┄═►  [verification-feedback]                                               │
+│            ╵┄═►  [verification-feedback]   (dispatched by the orchestrator             │
+│                    │                        after the leaf returns)          │
 │                    │ fix_tasks_created                                        │
 │                    └──► back to task queue                                    │
 │                                                                               │
@@ -330,8 +333,9 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │   │            (8 LLM aspects iterate IN-CONTEXT)                      │     │
 │   │    ══►  execution-context  --phase phase-6-finalize --role verification-feedback (producer=pr-state)                  │     │
 │   │            (diagnose + report + internal loop;                     │     │
-│   │             sub-dispatches [verification-feedback] when the iteration       │     │
-│   │             crosses ~10 findings)                                  │     │
+│   │             overflow returns to the orchestrator, which            │     │
+│   │             re-fires on the next entry — no in-envelope            │     │
+│   │             sub-dispatch)                                          │     │
 │   │                                                                    │     │
 │   └────────────────────────────────────────────────────────────────────┘     │
 │                                                                               │
@@ -349,10 +353,14 @@ The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-
 │  PHASE-SCOPED INVOCATION MAP                                                  │
 │  ══════════════════════════════                                               │
 │                                                                               │
-│   phase-5-execute Step 11   (verification-failure)        ═╗                          │
-│   phase-5-execute Step 11b  (quality-gate-failure)        ═╝══►  [verification-       │
+│   phase-5-execute leaf returns triage_required           ═╗                          │
+│   (Step 11 verification-failure / Step 11b              ═╣                          │
+│    quality-gate-failure); orchestrator dispatches      ═╝══►  [verification-       │
 │                                                          feedback]            │
-│                                                          (phase-5-execute; producer=  │
+│                                                          (orchestrator owns the│
+│                                                          dispatch after the    │
+│                                                          leaf returns; phase-  │
+│                                                          5-execute; producer=  │
 │                                                          build-runner)        │
 │                                                                               │
 │   phase-6-finalize automated-review                        ═╗                          │
