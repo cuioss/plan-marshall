@@ -88,20 +88,19 @@ The implementor MUST NOT carry inline prose stating "Dispatched via `Task: plan-
 
 The implementor MUST NOT redeclare `dev-agent-behavior-rules` in its own steps — the dispatcher loads it implicitly.
 
-## Sub-dispatch contract
+## Phase-context propagation for phase-agnostic workflows
 
-Some workflow implementors fire **further** `execution-context` dispatches from inside their running envelope (not from the orchestrator's main context). Examples: a phase-N body kicking off `research` mid-flow, a `verification-feedback` envelope sub-dispatching itself on overflow, or any workflow that internally branches into a sub-workflow while the caller's phase context is still relevant.
+Subagents cannot sub-dispatch. A dispatched envelope is a leaf — all cross-envelope dispatch originates from the main-context orchestrator. See [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
 
-The sub-dispatch must resolve the level via the **caller's phase**, not via `--default`. The mechanism is encoded in two prompt-body fields:
+The level resolver still needs the caller's phase to pin the right model/effort when the orchestrator dispatches a workflow that fires from **multiple phases**. Two mechanisms supply it:
 
-1. **The `name:` field.** A subagent's incoming `name:` frontmatter typically encodes the caller phase implicitly:
-   - `name: phase-2-refine` → caller phase is `phase-2-refine`
-   - `name: verification-feedback` AND `workflow: …/phase-5-execute/…` → caller phase is `phase-5-execute`
-   - For any sub-dispatch this subagent issues, it extracts the phase prefix from its own `name:` (or from its `workflow:` notation) and passes `--phase <caller-phase>` to `manage-config effort resolve-target`.
+1. **The `name:` field.** A dispatch's `name:` frontmatter (or its `workflow:` notation) usually encodes the phase without a separate `caller_phase:` field — **directly** when `name:` is itself a phase key, or **via the `workflow:` notation** when it is not:
+   - `name: phase-2-refine` → caller phase is `phase-2-refine` (direct one-for-one match)
+   - `name: verification-feedback` AND `workflow: …/phase-5-execute/…` → caller phase is `phase-5-execute` (encoded by the workflow path)
 
-2. **The optional `caller_phase:` field (6th-field extension of the canonical 5-field contract).** When the parent's `name:` does not naturally encode the phase (for example, a workflow that fires from multiple phases such as `verification-feedback` or `q-gate-validation`), the parent's prompt body MUST include `caller_phase: phase-N` explicitly. Subagents forward `caller_phase` verbatim to any sub-dispatch they issue.
+2. **The optional `caller_phase:` field (6th-field extension of the canonical 5-field contract).** When the dispatched workflow's `name:` does not naturally encode the phase — for example a phase-agnostic workflow such as `verification-feedback` or `q-gate-validation` that the orchestrator fires from more than one phase — the main-context orchestrator's prompt body MUST include `caller_phase: phase-N` explicitly so the level resolver tracks the caller's phase.
 
-The 5-field contract (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) is unchanged for top-level dispatches that have an unambiguous phase home. `caller_phase` is the 6th field used only by workflows that need to propagate phase context through one or more sub-dispatch hops.
+The 5-field contract (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) is unchanged for top-level dispatches that have an unambiguous phase home. `caller_phase` is the optional 6th field the orchestrator passes when dispatching a phase-agnostic workflow; it is a top-level dispatch field, not a value forwarded across a sub-dispatch hop (there are no sub-dispatches).
 
 The resolver already accepts `--phase <P>` from any caller — this is a documentation extension, not a runtime change.
 

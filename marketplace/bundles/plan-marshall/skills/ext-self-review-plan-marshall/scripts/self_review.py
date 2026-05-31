@@ -161,16 +161,38 @@ def _verify_base_branch(project_dir: Path, base_branch: str) -> bool:
 
 
 def _diff_hunks(project_dir: Path, base_branch: str) -> str:
-    """Return the post-image diff of the working tree against base_branch.
+    """Return the post-image diff of the working tree against the merge-base.
 
-    Uses ``git diff {base_branch}`` (NOT ``base_branch...HEAD``) because
+    The diff TARGET is the **working tree** (not ``HEAD``) precisely BECAUSE
     ``pre-submission-self-review`` runs BEFORE ``commit-push`` — the changes
-    under review are typically uncommitted and would not appear in a
-    HEAD-anchored diff. Working-tree diff captures both staged and unstaged
-    changes against the base branch's HEAD, which is the correct review
-    surface for the pre-submission step.
+    under review are typically uncommitted (staged AND unstaged), so they must
+    still be surfaced. This preserves the documented pre-commit timing contract.
+
+    The diff ANCHOR is the **merge-base** of ``base_branch`` and ``HEAD``
+    (``git merge-base {base_branch} HEAD``), NOT the base-branch tip. Diffing
+    against the merge-base excludes commits that arrived on the branch FROM
+    ``base_branch`` via an absorb merge — those commits sit at or below the
+    merge-base and so fall outside the diff range, removing absorbed-merge
+    pollution from the surfaced review surface.
+
+    This is deliberately NEITHER of the two rejected alternatives:
+
+    * NOT a naive ``{base_branch}...HEAD`` three-dot diff — that diffs HEAD (not
+      the working tree) against the merge-base, dropping the uncommitted
+      pre-submission changes the review exists to surface.
+    * NOT the old naive two-dot ``git diff {base_branch}`` against an advanced
+      base tip — when the base tip has been absorbed into the branch, that diff
+      re-includes the absorbed-upstream content.
+
+    On a merge-base resolution failure (non-zero rc or empty output), falls back
+    to the prior two-dot ``git diff {base_branch}`` so the function never returns
+    an empty surface on a transient git failure. The existing fail-safe
+    ``return ''`` is preserved only for the case where the diff itself fails.
     """
-    rc, out, _ = _run_git(project_dir, 'diff', '--unified=3', base_branch)
+    mb_rc, mb_out, _ = _run_git(project_dir, 'merge-base', base_branch, 'HEAD')
+    merge_base = mb_out.strip() if mb_rc == 0 else ''
+    anchor = merge_base or base_branch
+    rc, out, _ = _run_git(project_dir, 'diff', '--unified=3', anchor)
     if rc != 0:
         return ''
     return out

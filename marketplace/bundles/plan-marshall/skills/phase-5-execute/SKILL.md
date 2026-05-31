@@ -120,7 +120,7 @@ Contains: Canonical `# ruff: noqa: I001, E402` + `sys.path.insert(0, ...)` prolo
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-5-execute`** (resolves through `phase-5-execute.default` — one per-task envelope). Each task in the queue gets its own `phase-5-execute` dispatch via the `execute-task` workflow with the task-declared skill list as runtime input. The built-in verification steps (`default:quality_check`, `default:build_verify`, `default:coverage_check`) stay inline as pure build invocations — no LLM judgement, no envelope. Step 9 independent change verification stays inline (three deterministic re-checks: git-diff empty-test, obfuscation-pattern grep, exit-code compare). Steps 11 and 11b verification-failure / quality-gate-failure triage dispatch **`verification-feedback`** under `--phase phase-5-execute --role verification-feedback` once with `producer=build-runner` — the findings live in the per-plan store and the subagent queries them by reference (no inline findings list in the prompt). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 and § 5.1 (script over dispatch; phase-scoped resolution + producer-mode bundling).
+This phase dispatches under one role key: **`phase-5-execute`** (resolves through `phase-5-execute.default` — one per-task envelope). Each task in the queue gets its own `phase-5-execute` dispatch via the `execute-task` workflow with the task-declared skill list as runtime input. This per-task body runs as a **leaf** inside an `execution-context` envelope — it cannot itself issue a `Task:` dispatch (see [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md), the canonical leaf/dispatch-topology contract). The built-in verification steps (`default:quality_check`, `default:build_verify`, `default:coverage_check`) stay inline as pure build invocations — no LLM judgement, no envelope. Step 9 independent change verification stays inline (three deterministic re-checks: git-diff empty-test, obfuscation-pattern grep, exit-code compare). Steps 11 and 11b detect the verification-failure / quality-gate-failure, persist each finding to the per-plan Q-Gate store (`manage-findings qgate add` — a script call, legal inside a leaf), then **return a `triage_required` signal to the main-context orchestrator**; the orchestrator owns the **`verification-feedback`** dispatch (`--phase phase-5-execute --role verification-feedback`, `producer=build-runner`) and consumes its return to drive the fix-task / suppress / accept branch. The leaf never dispatches `verification-feedback` itself. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 and § 5.1 (script over dispatch; phase-scoped resolution + producer-mode bundling).
 
 ## Execution Loop
 
@@ -667,7 +667,7 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
-The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) and dispatched under `--phase phase-5-execute --role verification-feedback` with `producer=build-runner`.
+The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md). This per-task body is a leaf and does NOT dispatch it — the leaf persists the findings and returns a `triage_required` signal; the main-context orchestrator dispatches `verification-feedback` under `--phase phase-5-execute --role verification-feedback` with `producer=build-runner` (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) and the canonical contract in [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md)).
 
 #### Pre-triage scope cross-reference
 
@@ -741,49 +741,27 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 (One `qgate add` call per finding; the verification task's structured `findings[]` output drives this loop.)
 
-**11d**: Dispatch the per-finding triage core via [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) — single source of truth for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions, smart grouping, action bodies, overflow handling, and the Scope-Deviation Escalation guard. The dispatch is by-reference (the subagent queries the store as its first workflow step).
+**11d**: This per-task body is a **leaf** — it MUST NOT dispatch `verification-feedback` itself. After §11c has persisted each failing finding to the Q-Gate store, return a structured terminal payload to the main-context orchestrator and stop; the orchestrator owns the triage dispatch. See [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
 
-Compute the target via the role resolver, then dispatch:
+The leaf's return payload carries the discriminators the orchestrator needs to compose the dispatch:
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-5-execute --role verification-feedback
+```toon
+status: blocked
+display_detail: "{task_number} triage_required: {N} verification finding(s)"
+triage_required: true
+producer: build-runner
+finding_type: verification-failure
+plan_id: {plan_id}
 ```
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
+(`finding_type: quality-gate-failure` for the Step 11b sweep path.) The findings are already in the per-plan store — the orchestrator's `verification-feedback` dispatch queries them by reference; the leaf does not embed the findings in its return.
 
-Emit the standardized post-resolve dispatch log line — see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+The orchestrator-side handling — resolving the `verification-feedback` target via `manage-config effort resolve-target --phase phase-5-execute --role verification-feedback`, emitting the `[DISPATCH]` log line, dispatching `verification-feedback` (`producer=build-runner`, `caller_phase: phase-5-execute`) as a top-level `Task:` in the main context, and consuming the triage return to drive the §11e branch — lives in [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Verification-feedback triage (leaf returned triage_required)". The per-finding triage core (FIX / SUPPRESS / ACCEPT / AskUserQuestion, smart grouping, overflow, and the Scope-Deviation Escalation guard) is owned by [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md); the dispatch is by-reference (the subagent queries the store as its first workflow step).
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-5-execute) target={target} level={level} role=verification-feedback workflow=plan-marshall:plan-marshall/workflow/verification-feedback.md plan_id={plan_id}"
-```
-
-```
-Task: plan-marshall:{target}
-  prompt: |
-    name: verification-feedback
-    plan_id: {plan_id}
-    skills[4]:
-    - plan-marshall:manage-findings
-    - plan-marshall:manage-tasks
-    - plan-marshall:manage-architecture
-    - plan-marshall:manage-config
-    workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
-
-    producer: build-runner
-    caller_phase: phase-5-execute
-
-    WORKTREE: {worktree_path}
-```
-
-The Scope-Deviation Escalation guard lives in [`triage.md`](../plan-marshall/workflow/triage.md) § Step 6 — the triage subagent raises `AskUserQuestion` with the four canonical options (Hold / Accept-with-rationale / Split / FIX-here-anyway) when a decision would soften a request-level hard requirement (zero-hit grep gates, "no transition window" intents, "remove flag entirely" cutovers, etc.). The canonical contract is documented in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md); the work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
-
-**11e**: Inspect the triage subagent's return:
+**11e** (orchestrator-owned): The orchestrator inspects the `verification-feedback` return per [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md):
 
 - If `fix_tasks_created > 0` → increment `verify_iteration` in task metadata, reset the verification task to `pending`, continue the execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
-- If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`), continue to Step 11b.
+- If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`).
 - If `overflow_deferred > 0` → leave the verification task `pending`; the orchestrator re-fires the triage dispatch on the next phase-5-execute entry (the iteration cap is unchanged).
 
 ### Step 11b: Final Quality Sweep (After All Tasks)
@@ -801,7 +779,7 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
      resolve --command quality-gate --audit-plan-id {plan_id}
    ```
 
-2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) under `--phase phase-5-execute --role verification-feedback` with `producer=build-runner` and `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
+2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and **return the `triage_required` signal to the orchestrator** with `producer=build-runner` and `finding_type=quality-gate-failure` — same leaf-returns-signal shape as Step 11d above, only the finding type changes. The leaf does NOT dispatch `verification-feedback` itself; the orchestrator owns the dispatch (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Verification-feedback triage (leaf returned triage_required)") and drives the same fix-task / suppress / accept branch (Step 11e). After the orchestrator's triage resolves, the sweep is NOT re-run — Step 11b runs at most once per phase entry.
 
 3. Log the outcome:
 
