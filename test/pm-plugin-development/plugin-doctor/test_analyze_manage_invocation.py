@@ -1320,6 +1320,27 @@ class TestQualityGateWiring:
         dm = _load_doctor_marketplace()
         assert 'scan_manage_invocation' in (dm.cmd_quality_gate.__doc__ or '')
 
+    def test_analyze_does_not_run_manage_invocation_cluster(self) -> None:
+        """cmd_analyze must NOT run the live-``--help`` manage-invocation rule.
+
+        The rule derives each script's surface from its ``--help`` output (one
+        subprocess per parser node) and belongs only to the marketplace-wide
+        ``cmd_quality_gate``. Running it on every per-component ``analyze`` pass
+        cold-derives the whole marketplace surface and overruns the test
+        harness's per-call subprocess budget (``test_analyze_returns_valid_toon``
+        timed out at 30s under a cold CI cache). This guard fails if a future
+        change re-wires the expensive rule back into the analyze path.
+        """
+        import inspect
+
+        dm = _load_doctor_marketplace()
+        src = inspect.getsource(dm.cmd_analyze)
+        assert 'scan_manage_invocation' not in src, (
+            'cmd_analyze must not invoke scan_manage_invocation — the live-help '
+            'surface derivation is too slow for per-component analyze; it lives '
+            'in cmd_quality_gate only'
+        )
+
 
 # ---------------------------------------------------------------------------
 # Layer I — robustness fixes carried forward (PR #372 review feedback).

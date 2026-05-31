@@ -395,19 +395,16 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(historical_prose_issues)
     total_issues += len(historical_prose_issues)
 
-    # Marketplace-wide manage-invocation rule cluster. Unconditionally active —
-    # validates documented script invocations against each script-bearing
-    # skill's AST-extracted argparse surface (manage-invocation-invalid) and
-    # flags any script-bearing SKILL.md lacking a ``## Canonical invocations``
-    # section (missing-canonical-block). Pure static analysis (AST + regex, no
-    # subprocess, no target-script import), so cheap enough to run on every
-    # analyze pass. The in-scope set is derived from the bundle tree.
-    # ``find_marketplace_root`` returns the ``bundles/`` directory; the
-    # manage-invocation helpers expect the marketplace root (parent of
-    # ``bundles/``), so convert via ``.parent`` (mirrors the quality-gate path).
-    manage_invocation_issues = scan_manage_invocation(marketplace_root.parent)
-    all_issues.extend(manage_invocation_issues)
-    total_issues += len(manage_invocation_issues)
+    # The manage-invocation rule cluster (manage-invocation-invalid +
+    # missing-canonical-block) is intentionally NOT run here. It derives each
+    # script's canonical surface from the script's live ``--help`` output (one
+    # subprocess per parser node) — far heavier than analyze's other AST/regex
+    # rules. Running it on every per-component ``analyze`` pass cold-derives the
+    # whole marketplace surface and overruns the test harness's per-call
+    # subprocess budget. The rule is the marketplace-wide authoritative gate and
+    # runs only under ``cmd_quality_gate`` (which CI invokes as its own step with
+    # the appropriate budget). ``test_analyze_does_not_run_manage_invocation_cluster``
+    # guards against re-introducing it here.
 
     # Phase-5 step standards files MUST declare a ``role:`` frontmatter field
     # so the manage-execution-manifest composer's role-based intersection
