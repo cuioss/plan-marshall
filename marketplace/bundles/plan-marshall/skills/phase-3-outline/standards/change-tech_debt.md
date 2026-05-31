@@ -48,6 +48,8 @@ Based on compatibility setting:
 | `deprecation` | Mark old code deprecated, add new implementation |
 | `smart_and_ask` | Assess impact, ask user for guidance |
 
+> When a tech-debt deliverable removes an internal code path, apply the [clean-break vs migration-shim decision checklist](outline-workflow-detail.md#clean-break-vs-migration-shim-decision-checklist) to decide between an outright clean break and a deprecation shim — internal-path-removal refactors most commonly arrive as tech-debt deliverables.
+
 ## Deliverable Structure
 
 For systematic changes:

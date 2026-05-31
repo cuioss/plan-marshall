@@ -67,13 +67,37 @@ The split is preferred because:
 
 A **single-plan alternative** is permissible only when the Phasing-Rationale Contract above is fully satisfied AND documented inline in the deliverable. The single-plan path trades reviewability for shipping cadence; choose it only when the cache-sync timing has been verified to be safe and the implementor accepts the responsibility of keeping the central narrative free of transition hedges.
 
+## Human-Gated Harness-Config Surface
+
+This is a **second classification dimension**, orthogonal to the self-modifying + breaking rule above. A deliverable can be self-modifying, human-gated, both, or neither — the two dimensions are evaluated independently. Where the self-modifying rule is about runtime infrastructure the plan invokes for its own verification (with a hard-cutover hazard), this dimension is about the **harness-configuration surface** that requires a human action to take effect, regardless of whether the change is breaking or additive.
+
+### Predicate
+
+A deliverable is **human-gated** when its `Affected files` (or its narrative's described writes) include any of:
+
+| Surface | Why it is human-gated |
+|---------|------------------------|
+| `.claude/settings.json` | Harness configuration the runtime reads at startup; a write does not take effect until the session is restarted / reloaded, and writing it during an unattended run trips the permission UI. |
+| `.claude/settings.local.json` | Per-machine harness override with the same activation and permission characteristics as `settings.json`. |
+| Installation of `SessionStart` / `UserPromptSubmit` / `Stop` hooks | Registering a lifecycle hook arms code the harness executes on its own schedule; the user must trust/activate the hook, and the registration write hits the same permission gate. |
+| Edits to permission allow-lists (the `permissions.allow` / `permissions.deny` arrays) | Widening or narrowing what the harness may run is a security-relevant action that requires an explicit human grant; an unattended task cannot self-approve it. |
+
+### Required Action
+
+When the predicate fires, the outline MUST **split the unattended marketplace work from the human-gated activation step**, OR explicitly annotate the confirmation-gated path on the single deliverable:
+
+- **Split (preferred)**: the unattended deliverable authors the marketplace source that *defines* the hook / config / permission shape (the skill body, the hook script, the documented allow-list entry). A separate, explicitly human-gated activation step writes `.claude/settings.json` (or installs the hook, or grants the permission). Phase-5-execute runs the unattended deliverable to completion; the activation step is surfaced to the user rather than attempted by an automated task.
+- **Annotate (single-deliverable alternative)**: when the work genuinely cannot be split, the deliverable carries a `**Human-gated activation:**` note naming the exact harness write the user must perform and stating that phase-5-execute will pause for confirmation at that point.
+
+The failure mode this dimension prevents: an unattended phase-5-execute task that tries to write `.claude/settings.json` (or install a hook, or edit an allow-list) hits a permission wall it cannot satisfy, returns a verification failure, and loop-backs — burning iterations on a step that was never automatable. Classifying the surface as human-gated at outline time splits the automatable authoring from the non-automatable activation so the loop never stalls.
+
 ## Caller References
 
-Three callers reference this standard. When the standard's path heuristic, classification rule, or phasing-rationale contract changes, all three callers should be reviewed for drift.
+Three callers reference this standard. When the standard's path heuristic, classification rule, phasing-rationale contract, or the human-gated harness-config dimension changes, all three callers should be reviewed for drift. Both classification dimensions — **self-modifying + breaking** and **human-gated harness-config** — apply to the same three callers below.
 
 | Caller | Reference | Purpose |
 |--------|-----------|---------|
-| `plan-marshall:phase-3-outline` (Outline-Workflow Detail § Self-Modifying Classification) | Path heuristic + classification rule | Classify each deliverable at outline time; prompt the author for phasing strategy when the rule fires |
+| `plan-marshall:phase-3-outline` (Outline-Workflow Detail § Self-Modifying Classification) | Path heuristic + classification rule + human-gated harness-config dimension | Classify each deliverable at outline time; prompt the author for phasing strategy when the self-modifying rule fires, and split unattended work from the human-gated activation step when the harness-config dimension fires |
 | `plan-marshall:phase-4-plan` (SKILL § Self-Modifying Phasing Enforcement) | Phasing-rationale contract + split rule | Refuse to create tasks for self-modifying + breaking deliverables that lack phasing rationale OR a peer plan |
 | `plan-marshall:plan-marshall/workflow/q-gate-validation.md` § 2.16 (Self-Modifying Phased-Rollout Validator) | All three sections | Q-Gate validator that emits a finding when a deliverable matches the rule and has no phasing rationale |
 

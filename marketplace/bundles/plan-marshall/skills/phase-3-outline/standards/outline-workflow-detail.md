@@ -725,7 +725,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 10b: Self-Modifying Classification
 
-**Purpose**: Classify each deliverable as self-modifying (touches plan-marshall runtime infrastructure) and surface the phasing decision before Q-Gate locks the outline. The classification rule, path heuristic, and phasing-rationale contract live in [`../../ref-workflow-architecture/standards/self-modifying-classification.md`](../../ref-workflow-architecture/standards/self-modifying-classification.md) — this step wires that standard into outline workflow.
+**Purpose**: Classify each deliverable along two orthogonal dimensions before Q-Gate locks the outline — (a) **self-modifying + breaking** (touches plan-marshall runtime infrastructure with a hard cutover), and (b) **human-gated harness-config** (touches the harness-configuration surface that requires a human action to activate) — and surface the phasing / split decision for each. The classification rules, path heuristic, phasing-rationale contract, and the human-gated harness-config dimension all live in [`../../ref-workflow-architecture/standards/self-modifying-classification.md`](../../ref-workflow-architecture/standards/self-modifying-classification.md) — this step wires that standard into outline workflow.
 
 **Activation**: Runs after Step 10 (Execute Change-Type Workflow and Write Solution) and BEFORE Step 11 (Q-Gate Verification). Applies to every deliverable in `solution_outline.md`, regardless of track (Simple or Complex) or change type.
 
@@ -782,6 +782,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 When the predicate does NOT fire (deliverable is additive or matches the heuristic but is not breaking), no prompt is raised — proceed directly to Step 11.
 
+#### Human-Gated Harness-Config Dimension
+
+In addition to the self-modifying + breaking check above, Step 10b evaluates the **human-gated harness-config dimension** — a second, orthogonal classification defined in [`../../ref-workflow-architecture/standards/self-modifying-classification.md` § Human-Gated Harness-Config Surface](../../ref-workflow-architecture/standards/self-modifying-classification.md#human-gated-harness-config-surface). The two dimensions are evaluated independently: a deliverable can be self-modifying + breaking, human-gated, both, or neither.
+
+**Detection**: scan each deliverable's `**Affected files:**` (and its narrative's described writes) against the harness-config surface predicate (settings files, lifecycle-hook installs, permission allow-list edits). The canonical surface list and the per-surface rationale are owned by the standard's § Predicate — read the predicate from there; do NOT restate the surface list here.
+
+**Required action when the predicate fires**: split the deliverable — the unattended portion authors the marketplace source that *defines* the hook / config / permission shape, and a separate, explicitly human-gated activation step performs the harness write — OR annotate the single deliverable with a `**Human-gated activation:**` note. The exact split-vs-annotate contract and the failure mode it prevents (an unattended phase-5-execute task hitting a permission wall and loop-backing) are documented in the standard's § Required Action — consume them by reference; do NOT duplicate the predicate or the required action here.
+
+When the harness-config predicate does NOT fire (no harness-config surface in the deliverable's affected files), this dimension raises nothing — proceed to Step 11.
+
 ### Special-deliverable-class recognition rules (detail)
 
 These two recognition triggers are track-agnostic siblings to the Step 9c (design-intent) and Step 10b (self-modifying) procedures above: they fire at deliverable-authoring time on **both** the Simple Track (Step 7) and the Complex Track (Step 10). Each rule is a thin trigger predicate plus the required authoring action and a pointer to the dev-general-* home where the substance lives. The mitigation menu and the enumeration procedure are NOT restated here — only the trigger and the cross-reference.
@@ -797,6 +807,151 @@ These two recognition triggers are track-agnostic siblings to the Step 9c (desig
 **Trigger predicate**: the deliverable changes a default value, a named constant, an enum member, or a threshold literal that existing tests may assert against.
 
 **Required authoring action**: scope the old-value test assertions into the deliverable's `**Affected files:**` list so the production change and its test-consumer updates form one atomic deliverable that verifies on the first cut. Cross-reference the enumerate-existing-test-consumers discipline in [`../../dev-general-module-testing/standards/testing-methodology.md`](../../dev-general-module-testing/standards/testing-methodology.md#enumerate-existing-test-consumers-before-changing-a-default--constant--enum-value) for the discovery → classification → atomicity procedure — **do NOT restate the grep-symbol-and-literal / classify / atomic-update sequence here or on the deliverable**.
+
+### Clean-break vs migration-shim decision checklist
+
+This is the canonical detail home for the **Clean-break vs migration-shim deliverable class** recognition trigger declared in [`../SKILL.md` § Special-deliverable-class recognition rules](../SKILL.md#special-deliverable-class-recognition-rules-track-agnostic-thin) (rule 3). The recognition trigger in SKILL.md is thin; the checklist body, per-condition rationale, decision table, and compatibility relationship live here and are NOT duplicated upstream or restated on the deliverable.
+
+**Trigger predicate**: the deliverable's narrative (`Change per file:`, `Refactoring:`, summary, or title) removes an **internal code path** — a function, method, parameter, conditional branch, config knob, or script notation that is consumed only within the codebase. A path is "internal" when it is NOT a published cross-bundle public surface (a documented skill notation other bundles invoke, an exported API, a flag named in a consumer project's config). When the removed surface IS cross-bundle / external, this checklist does not decide the shape on its own — run the [consumer sweep](consumer-sweep.md) first and treat the external consumer as condition (2) failing below.
+
+**Four-condition checklist** (evaluate every condition; record the answer per condition on the deliverable):
+
+| # | Condition | One-line rationale |
+|---|-----------|--------------------|
+| 1 | Are **all callers** of the removed path in-plan (edited by this same plan)? | A caller left un-updated breaks at runtime the moment the path is gone; the clean break is only safe when the plan owns every call site. |
+| 2 | Is there **no external / cross-bundle consumer** of the path? | A shim exists to give consumers a migration window; with zero external consumers there is nobody to migrate, so the window is pure dead weight. |
+| 3 | Can the removal land **atomically in a single PR** (old path and its replacement ship together)? | Atomicity means main is never in a half-migrated state; a multi-PR removal needs the old path to survive between PRs, which is what a shim provides. |
+| 4 | Are the **old-path tests removed or rewritten** in the same plan? | Tests asserting the old path are themselves consumers; leaving them green against a deleted path is impossible, leaving them red is a broken build — both force same-plan test work. |
+
+**Decision table**:
+
+| Checklist outcome | Chosen shape | What the deliverable does |
+|-------------------|--------------|---------------------------|
+| ALL four conditions hold | **Clean break** | Remove the internal path outright in this plan. No deprecation marker, no compatibility alias, no transition window. The deliverable's narrative deletes the path and updates every caller and test atomically. |
+| ANY condition fails | **Deprecation shim with a documented removal window** | Keep the old path alongside the new one with an explicit deprecation marker; document the removal trigger (the named follow-up plan, the condition under which the old path is dropped). The deliverable that introduces the new path is additive; the removal is deferred to a successor plan/lesson. |
+
+**Relationship to the plan-level `compatibility` setting**: this checklist **informs** which `compatibility` value the deliverable should assume — it augments, it does not replace, the plan-level setting read in Step 2. When all four conditions hold, the deliverable is consistent with `compatibility: breaking` (clean-slate removal). When any condition fails, the deliverable is consistent with `compatibility: deprecation` (old surface retained with a migration path). If the checklist outcome contradicts the plan-level `compatibility` already set (e.g. the plan declares `breaking` but condition (2) fails because an external consumer exists), surface the mismatch: either narrow the deliverable to the additive half and defer the removal, or raise the contradiction to the author rather than silently shipping a breaking removal that strands an external consumer. The checklist is the per-deliverable decision rule; the plan-level `compatibility` is the default the rule refines.
+
+### Survey-scope vs mutation-scope declaration
+
+This is the canonical detail home for the **Survey-scope deliverable class** recognition trigger declared in [`../SKILL.md` § Special-deliverable-class recognition rules](../SKILL.md#special-deliverable-class-recognition-rules-track-agnostic-thin) (rule 4). The recognition trigger in SKILL.md is thin; the field semantics, the worked example, and the `survey_vs_mutation_scope_declared` check live here.
+
+**Trigger keyword set**: a deliverable is a **survey-scope (discovery-style) deliverable** when its title or description contains any of `survey`, `discover`, `classify`, or `case-by-case`. These deliverables share a structural property: the exact set of files they will *mutate* is not fully known at authoring time, because the deliverable's first action is to inspect a candidate pool and decide, file by file, which members actually need changing.
+
+**Two-field declaration semantics**: a survey-scope deliverable MUST declare two fields instead of a single `**Affected files:**` list:
+
+- `**Files to survey:**` — the **candidate pool / analysis scope**: every file the deliverable must read or inspect to decide what to change. This is the broad upper bound of *examination*, and it captures files that are analysed but NOT expected to change.
+- `**Files expected to mutate:**` — the **mutation-scope upper bound**: the subset the deliverable expects to actually edit. This is the list that downstream profile classification and the retrospective recall check consume.
+
+**Disjointness requirement**: each file appears under **exactly one** field. List a file under `**Files expected to mutate:**` when you expect to edit it; list it under `**Files to survey:**` only when you need to read/analyse it but do NOT expect to change it. The two lists are therefore disjoint by construction — `Files to survey:` is analysis-only, `Files expected to mutate:` is change-bearing. Conflating them into one `**Affected files:**` blob is the failure mode this convention prevents: a single merged list either over-claims (every surveyed file counted as "affected", which tanks the retrospective recall metric) or under-scopes (the analysis pool hidden, so reviewers cannot see what was examined).
+
+**`affected_files_recall` scope**: the downstream retrospective `affected_files_recall` check (run during plan retrospective) measures actually-mutated files against the declared mutation scope — it runs against the `**Files expected to mutate:**` subset, **NOT** the survey scope. A file surveyed-but-not-mutated never counts against recall; a file mutated-but-not-listed-under-`Files expected to mutate:` does. (This recall check is referenced here for completeness; it is owned by the retrospective workflow and is out of scope for the survey-scope authoring rule itself.)
+
+**Worked example** — a discovery-style deliverable with both fields populated:
+
+```markdown
+### 3. Classify and migrate legacy loggers case-by-case
+
+**Metadata:**
+- change_type: tech_debt
+- execution_mode: automated
+- domain: plan-marshall-plugin-dev
+- module: plan-marshall
+
+**Files to survey:**
+- `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage_status.py`
+- `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/manage_tasks.py`
+- `marketplace/bundles/plan-marshall/skills/manage-config/scripts/manage_config.py`
+
+**Files expected to mutate:**
+- `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage_status.py`
+```
+
+Here three scripts are surveyed for legacy logging calls, but the deliverable expects to mutate only the one that the survey confirms uses the legacy pattern. The other two are analysed and ruled out — they stay under `**Files to survey:**`. (When the survey confirms a file does need changing, the author moves it from `Files to survey:` to `Files expected to mutate:` before the outline is finalised, preserving disjointness.)
+
+#### `survey_vs_mutation_scope_declared` outline check (LLM-driven)
+
+This is an LLM-driven outline check — prose the outline agent applies in-context during Step 7 / Step 10 deliverable authoring, in the same family as the design-intent and self-modifying checks. It is NOT a Python script: the agent reads the rule and the positive/negative examples below and applies the judgement directly.
+
+**Check logic**: for every deliverable whose title or description matches the trigger keyword set (`survey` / `discover` / `classify` / `case-by-case`), assert that the deliverable declares BOTH `**Files to survey:**` AND `**Files expected to mutate:**`. Flag the deliverable when either field is absent (a survey-style deliverable carrying only a flat `**Affected files:**` list, or only one of the two fields).
+
+**Positive example (passes)** — survey-style deliverable declaring both fields:
+
+```markdown
+### 2. Survey deprecated config keys and classify each for removal
+
+**Files to survey:**
+- `marketplace/bundles/plan-marshall/skills/manage-config/standards/config-schema.md`
+- `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/marshall_steward.py`
+
+**Files expected to mutate:**
+- `marketplace/bundles/plan-marshall/skills/manage-config/standards/config-schema.md`
+```
+
+The title contains `Survey` and `classify`; both fields are present and disjoint → the check passes.
+
+**Negative example (flagged)** — survey-style deliverable with a single flat list:
+
+```markdown
+### 2. Survey deprecated config keys and classify each for removal
+
+**Affected files:**
+- `marketplace/bundles/plan-marshall/skills/manage-config/standards/config-schema.md`
+- `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/marshall_steward.py`
+```
+
+The title matches the trigger (`Survey` / `classify`) but the deliverable declares only a flat `**Affected files:**` list with no survey/mutation split → the check flags it. The candidate pool and the expected mutation set are conflated, so the retrospective recall check cannot tell which files were merely examined; the author must split the list into the two disjoint fields before the outline is finalised.
+
+These positive/negative examples ARE the check's test coverage — per the LLM-driven-validator convention, a prose check is exercised by the in-document examples the authoring agent matches against rather than by a pytest suite.
+
+### Retrospective-vs-prospective lesson classification
+
+This is the single shared definition consumed by **two** callers: the [Retrospective-lesson recognition rule in `../SKILL.md`](../SKILL.md#retrospective-lesson-recognition-rule-track-agnostic-thin) and [`recipe-lesson-cleanup` Step 2c](../../recipe-lesson-cleanup/SKILL.md#step-2c-retrospective-vs-prospective-classifier). Both skills read the signals and template defined here rather than restating them, so outline-time and recipe-time classification stay in lockstep.
+
+**Classification signals** — a lesson (or one of its directives) is **retrospective** when ALL of the following hold; otherwise it is **prospective**:
+
+| Signal | Retrospective | Prospective |
+|--------|---------------|-------------|
+| Fix-shipped state | The corrective code change has **already shipped** (landed on the base branch after the lesson was authored). In `recipe-lesson-cleanup` this is read directly from Step 2b's `redundant` verdict — do NOT re-probe the tree. | The corrective change has **not** yet shipped — the directive describes work still to do. |
+| Forward-looking section | The lesson body carries a generalizable rule: a `## Generalisation` / `## Generalization` heading, or a "the general rule is…" / "in future, always…" passage that states a reusable principle beyond the one-off fix. | No forward-looking section — the lesson is a one-off corrective directive with no generalizable rule. |
+| Source still editable | The target component's canonical docs (`SKILL.md` / `standards/*.md`) still exist and are editable, so the wisdom has a home to port into. | n/a — prospective lessons route to a code-change deliverable regardless. |
+
+When the fix already shipped but there is **no** forward-looking section (nothing generalizable to port), the lesson is neither retrospective-portable nor prospective — it is simply obsolete, and `recipe-lesson-cleanup` Step 2b's redundancy handling drops it. The retrospective shape applies ONLY when there is generalizable wisdom worth lifting into the docs.
+
+**Apply-the-wisdom / documentation-port deliverable template** — a retrospective directive emits a `documentation_only` deliverable in this shape:
+
+```markdown
+### {N}. Apply lesson wisdom: {one-line rule summary}
+
+**Metadata:**
+- change_type: enhancement
+- execution_mode: automated
+- domain: {domain}
+- module: {module}
+
+**Design notes:** Extends the existing {LLM-driven | hybrid | script-deterministic} design model of `{bundle}:{skill}` — ports a forward-looking rule into the component's canonical docs; no behavioural code change (the fix already shipped).
+
+**Profiles:** <!-- bucket: documentation_only -->
+- implementation
+
+**Affected files:**
+- `marketplace/bundles/{bundle}/skills/{skill}/SKILL.md`  # or the relevant standards/*.md
+
+**Change per file:**
+- Port the forward-looking rule from lesson `{lesson_id}` into the canonical docs as durable guidance, cross-referencing the originating lesson.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths marketplace/bundles/{bundle}/skills/{skill}`
+- Criteria: the forward-looking rule appears in the component's canonical docs with a cross-reference to lesson `{lesson_id}`; plugin-doctor scan reports no new structural defects.
+
+**Success Criteria:**
+- The generalizable rule from lesson `{lesson_id}` is documented in the component's canonical docs.
+- The ported guidance cross-references the originating lesson `{lesson_id}`.
+```
+
+**Required lesson cross-reference**: the apply-the-wisdom deliverable MUST cross-reference the originating lesson `{lesson_id}` in both the `**Change per file:**` instruction and the `**Success Criteria:**`, so the audit trail from ported guidance back to the source lesson survives. A documentation-port deliverable that lifts a rule without naming its source lesson is incomplete — the cross-reference is what lets a future reader (or the lessons-housekeeping reconciler) confirm the wisdom was ported rather than re-derived.
+
+**Coordination with `recipe-lesson-cleanup`**: the recipe's Step 2c is the lesson-conversion entry point — it classifies each surviving directive and marks retrospective ones `shape: documentation-port` before Step 3 composes the outline. The phase-3-outline recognition rule is the general-plan entry point — it fires when any plan/deliverable (recipe-sourced or not) originates from a retrospective lesson. Both produce the same documentation-port shape from this one template; keeping the definition here ensures a change to the signals or template updates both callers at once.
 
 ### Step 11: Q-Gate Verification
 

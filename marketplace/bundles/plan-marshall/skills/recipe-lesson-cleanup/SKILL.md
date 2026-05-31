@@ -198,6 +198,29 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ---
 
+## Step 2c: Retrospective-vs-Prospective Classifier
+
+Runs after Step 2b (Proposed-Fix Verification) and BEFORE Step 3 composes the outline. This step reuses Step 2b's per-directive divergence verdicts — it does **NOT** re-probe the live tree or re-run Step 2b's redundancy validation. Its job is narrow: decide, per surviving directive, whether the lesson is **prospective** (the corrective change still needs to be made) or **retrospective** (the corrective change already shipped, but the lesson carries generalizable wisdom worth porting into the component's docs).
+
+**Shared classification semantics**: the retrospective-vs-prospective signals, the apply-the-wisdom / documentation-port deliverable template, and the required lesson cross-reference are defined once in [`../phase-3-outline/standards/outline-workflow-detail.md` § Retrospective-vs-prospective lesson classification](../phase-3-outline/standards/outline-workflow-detail.md#retrospective-vs-prospective-lesson-classification). This recipe and `phase-3-outline` are the two callers of that shared definition; do NOT restate the signals or the template here. Read the standard and apply it to each surviving directive.
+
+**Composition with Step 2b (reuse, do not re-run)**: Step 2b already classified each directive as `convergent` / `over-broad` / `redundant` / `mis-targeted`. The retrospective signal "fix already shipped" is exactly what Step 2b's `redundant` category detects — a directive whose fix landed elsewhere after the lesson was authored. This step consumes that verdict directly:
+
+- A directive Step 2b marked **`redundant`** AND whose lesson body carries a forward-looking section (`## Generalisation` / `## Generalization` / a "the general rule is…" passage) AND whose target component source is still editable → classify the directive **retrospective**. Instead of dropping it as pure redundancy, route it to the **documentation-port** shape: emit a `documentation_only` deliverable in Step 3 that lifts the forward-looking rule into the target component's canonical docs (its `SKILL.md` or a `standards/*.md`) and cross-references the originating lesson `{lesson_id}`.
+- All other surviving directives (Step 2b `convergent` / `over-broad` / `mis-targeted`, or `redundant` with no forward-looking section) remain **prospective** → standard Step 3 composition (a code-change deliverable from the verified-correct minimal change).
+
+Do NOT re-derive the "fix already shipped" state from disk — that probe already ran in Step 2b. This step only reads Step 2b's recorded verdicts and the lesson body's section structure.
+
+**Hand-off to Step 3**: each retrospective directive carries a `shape: documentation-port` marker into Step 3; each prospective directive carries the standard code-change shape. Log the classification outcome:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[RECIPE:2c] (plan-marshall:recipe-lesson-cleanup) Retrospective classifier: {R} retrospective (documentation-port), {P} prospective (code-change)"
+```
+
+---
+
 ## Step 3: Compose Deterministic Outline (Phase 3 surrogate)
 
 For each lesson directive, emit one deliverable. The outline is purely structural — no LLM reasoning, no Q-Gate, no decomposition pass.
