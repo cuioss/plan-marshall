@@ -333,7 +333,7 @@ Partial Results:
 
 ```bash
 # Quick format check only
-python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc validate --file $FILE
+python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc validate --path $FILE
 
 # Exit if format errors
 if [ $? -ne 0 ]; then

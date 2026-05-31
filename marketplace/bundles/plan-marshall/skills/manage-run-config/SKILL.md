@@ -114,13 +114,13 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 Manage adaptive command timeouts.
 
 ```bash
-# Get current timeout for a command
+# Get current timeout for a command (--default: fallback seconds when unset)
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
-  --command mvn-verify
+  --command mvn-verify --default 120000
 
 # Set timeout value
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout set \
-  --command mvn-verify --value 300000
+  --command mvn-verify --duration 300000
 ```
 
 ### warning add / list / remove

@@ -67,7 +67,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --
 python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets clean,verify
 
 # References operations
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set --plan-id EXAMPLE-PLAN --key foo --value bar
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set --plan-id EXAMPLE-PLAN --field foo --value bar
 ```
 
 ## Error Handling
