@@ -100,7 +100,6 @@ def is_whitelisted(file_path: Path) -> bool:
     appear as exact matches among the components of ``file_path``.
     """
     parts_set = set(file_path.parts)
-    parts_set.add(file_path.name)
     for required_components in _WHITELIST_COMPONENT_SETS:
         if required_components.issubset(parts_set):
             return True
