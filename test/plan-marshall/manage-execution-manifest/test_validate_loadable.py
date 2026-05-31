@@ -252,3 +252,125 @@ class TestHelperInvariants:
         path = _mem._resolve_standards_path('commit-push')
         assert path.parent.name == 'standards'
         assert path.parent.parent.name == 'phase-6-finalize'
+
+
+# =============================================================================
+# Ascending-order guard (--all) — order resolution + inversion detection
+# =============================================================================
+
+
+class TestAscendingOrderGuard:
+    def test_in_order_phase_6_steps_pass_without_order_error(self, plan_context):
+        """An --all manifest whose steps are in ascending order returns success."""
+        cmd_compose(_compose_ns('vl-order-ok'))
+        manifest = _mem.read_manifest('vl-order-ok')
+        assert manifest is not None
+        # Built-in steps in ascending order (commit-push=10, create-pr=20)
+        # followed by project steps in ascending order (80, 85, 90).
+        manifest['phase_6']['steps'] = [
+            'commit-push',
+            'create-pr',
+            'project:finalize-step-deploy-target',
+            'project:finalize-step-sync-plugin-cache',
+            'project:finalize-step-regenerate-executor',
+        ]
+        _mem.write_manifest('vl-order-ok', manifest)
+
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-order-ok', use_all=True))
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['unloadable_count'] == 0
+        assert 'error' not in result
+
+    def test_inverted_pair_returns_error_naming_both_steps(self, plan_context):
+        """An --all manifest with an inverted pair returns status: error naming the pair."""
+        cmd_compose(_compose_ns('vl-order-inverted'))
+        manifest = _mem.read_manifest('vl-order-inverted')
+        assert manifest is not None
+        # The actual bug: regenerate-executor (90) precedes deploy-target (80).
+        manifest['phase_6']['steps'] = [
+            'commit-push',
+            'project:finalize-step-regenerate-executor',
+            'project:finalize-step-deploy-target',
+            'project:finalize-step-sync-plugin-cache',
+        ]
+        _mem.write_manifest('vl-order-inverted', manifest)
+
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-order-inverted', use_all=True))
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'order_inversion'
+        # The message names both out-of-order step IDs and their order values.
+        assert 'project:finalize-step-deploy-target' in result['message']
+        assert 'project:finalize-step-regenerate-executor' in result['message']
+        assert 'order=80' in result['message']
+        assert 'order=90' in result['message']
+        # The existing loadability payload is preserved alongside the order error.
+        assert result['unloadable_count'] == 0
+        assert isinstance(result['results'], list)
+
+    def test_project_step_order_resolves_from_project_local_skill_md(self):
+        """project: step order is read from .claude/skills/{name}/SKILL.md frontmatter."""
+        assert _mem._resolve_step_order('project:finalize-step-deploy-target') == 80
+        assert _mem._resolve_step_order('project:finalize-step-sync-plugin-cache') == 85
+        assert _mem._resolve_step_order('project:finalize-step-regenerate-executor') == 90
+
+    def test_builtin_step_order_resolves_from_standards_frontmatter(self):
+        """Built-in step order is read from its standards/workflow doc frontmatter."""
+        assert _mem._resolve_step_order('commit-push') == 10
+        assert _mem._resolve_step_order('default:commit-push') == 10
+        assert _mem._resolve_step_order('create-pr') == 20
+
+    def test_unresolvable_order_steps_are_skipped_and_do_not_trip_guard(self, plan_context):
+        """Steps with no resolvable order are skipped for the ordering check."""
+        # _resolve_step_order returns None for a non-existent step and for a
+        # bundle:skill external step (no project-local SKILL.md).
+        assert _mem._resolve_step_order('ghost-step-not-on-disk') is None
+        assert _mem._resolve_step_order('plan-marshall:plan-retrospective') is None
+
+        cmd_compose(_compose_ns('vl-order-skip'))
+        manifest = _mem.read_manifest('vl-order-skip')
+        assert manifest is not None
+        # Interleave unresolvable-order steps between ascending resolvable ones.
+        # The ghost step has no file (order None); the bundle:skill step has no
+        # project-local SKILL.md (order None). Neither participates in the check,
+        # so the resolvable subsequence (10, 80, 90) stays ascending and passes.
+        manifest['phase_6']['steps'] = [
+            'commit-push',
+            'plan-marshall:plan-retrospective',
+            'project:finalize-step-deploy-target',
+            'ghost-step-not-on-disk',
+            'project:finalize-step-regenerate-executor',
+        ]
+        _mem.write_manifest('vl-order-skip', manifest)
+
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-order-skip', use_all=True))
+        assert result is not None
+        # The ghost step is unloadable (no standards file) but that is a
+        # loadability concern, not an order concern — status stays success
+        # because the resolvable order subsequence is ascending.
+        assert result['status'] == 'success'
+        assert 'error' not in result
+        assert result['unloadable_count'] == 1
+
+    def test_single_step_id_path_has_no_order_check(self, plan_context):
+        """The order guard applies to --all only; --step-id is unchanged."""
+        result = cmd_validate_loadable(
+            _validate_loadable_ns('vl-order-single', step_id='project:finalize-step-regenerate-executor')
+        )
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['loadable'] is True
+        # No order_inversion error on the single-step path.
+        assert result.get('error') != 'order_inversion'
+
+    def test_check_ascending_order_helper_returns_none_for_ascending(self):
+        """The _check_ascending_order helper returns None for an ascending list."""
+        assert _mem._check_ascending_order(['commit-push', 'create-pr']) is None
+
+    def test_check_ascending_order_helper_detects_inversion(self):
+        """The _check_ascending_order helper returns a diagnostic for an inversion."""
+        message = _mem._check_ascending_order(['create-pr', 'commit-push'])
+        assert message is not None
+        assert 'commit-push' in message
+        assert 'create-pr' in message

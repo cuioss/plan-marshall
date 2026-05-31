@@ -1879,6 +1879,107 @@ def _render_standards_rel_path(absolute: Path) -> str:
         return str(absolute)
 
 
+def _read_frontmatter_order(path: Path) -> int | None:
+    """Read the integer ``order:`` frontmatter key from a markdown file.
+
+    Mirrors the minimal frontmatter parser used by ``_role_of`` — scans the
+    first ``---``-fenced block for an ``order:`` key and returns its value
+    coerced to ``int``. Returns ``None`` when the file is missing, has no
+    frontmatter block, lacks an ``order:`` key, or the value is not an
+    integer. PyYAML is intentionally avoided to keep the dependency surface
+    narrow; the frontmatter shape is constrained by plugin-doctor and the
+    test suite.
+    """
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError:
+        return None
+    if not text.startswith('---'):
+        return None
+    for line in text.splitlines()[1:]:
+        if line.strip() == '---':
+            break
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        if ':' not in stripped:
+            continue
+        key, _, value = stripped.partition(':')
+        if key.strip() != 'order':
+            continue
+        candidate = value.strip().strip('"').strip("'")
+        try:
+            return int(candidate)
+        except ValueError:
+            return None
+    return None
+
+
+def _resolve_step_order(step_id: str) -> int | None:
+    """Resolve a step's frontmatter ``order`` integer from its source file.
+
+    Resolution is broader than loadability: it covers ``project:`` steps too,
+    because real ordering inversions can occur among project-local steps.
+
+    - Built-in steps (bare or ``default:``-prefixed): resolve the standards /
+      workflow doc via ``_resolve_standards_path`` and read its ``order:``
+      frontmatter.
+    - ``project:``-prefixed steps: resolve ``.claude/skills/{bare-name}/SKILL.md``
+      relative to the repo root and read its ``order:`` frontmatter.
+    - Other external steps (``bundle:skill``): no resolvable project-local
+      source file — return ``None``.
+
+    Returns ``None`` when no source file exists or no ``order:`` key is
+    present. Steps that resolve to ``None`` are skipped by the ascending-order
+    check (they neither break nor satisfy ascending order).
+    """
+    if step_id.startswith('project:'):
+        bare = step_id[len('project:') :]
+        skill_path = _REPO_ROOT / '.claude' / 'skills' / bare / 'SKILL.md'
+        return _read_frontmatter_order(skill_path)
+    if _is_external_step(step_id):
+        # bundle:skill external steps have no project-local source file.
+        return None
+    return _read_frontmatter_order(_resolve_standards_path(step_id))
+
+
+def _check_ascending_order(steps: list[Any]) -> str | None:
+    """Assert ``steps`` resolve to non-decreasing frontmatter ``order`` values.
+
+    Walks the step list in position order, resolving each step's ``order``
+    via ``_resolve_step_order``. Steps whose ``order`` resolves to ``None``
+    are skipped (they do not participate in the ascending assertion). An
+    inversion is a step whose resolved ``order`` is strictly less than the
+    maximum resolved ``order`` seen so far at an earlier list position.
+
+    Returns an actionable diagnostic naming the inverted pair on the first
+    inversion, or ``None`` when the resolvable subsequence is non-decreasing.
+    The message phrasing matches the request: it names the later-positioned
+    step (with the smaller order) and the earlier-positioned step (with the
+    larger order) that it appears before.
+    """
+    max_order: int | None = None
+    max_step: str | None = None
+    for entry in steps:
+        if not isinstance(entry, str):
+            continue
+        order = _resolve_step_order(entry)
+        if order is None:
+            continue
+        if max_order is not None and order < max_order:
+            return (
+                f'step `{entry}` (order={order}) appears after '
+                f'step `{max_step}` (order={max_order}) — phase_6.steps must be '
+                f'in ascending frontmatter `order`'
+            )
+        if max_order is None or order > max_order:
+            max_order = order
+            max_step = entry
+    return None
+
+
 def _check_step_loadable(step_id: str) -> dict[str, Any]:
     """Single-step loadability check.
 
@@ -1997,6 +2098,25 @@ def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
             ),
         })
     unloadable_count = sum(1 for r in results if not r['loadable'])
+
+    # Ascending-order guard: assert phase_6.steps resolve to non-decreasing
+    # frontmatter ``order`` values. The check is additive to (and independent
+    # of) the loadability walk above — order resolution covers ``project:``
+    # steps too, because the real inversions occur among project-local steps.
+    # An out-of-order pair flips ``status`` to ``error`` while preserving the
+    # existing ``unloadable_count`` / ``results[]`` payload, so loadability
+    # failures and order failures are both surfaced.
+    order_message = _check_ascending_order(steps)
+    if order_message is not None:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'order_inversion',
+            'message': order_message,
+            'unloadable_count': unloadable_count,
+            'results': results,
+        }
+
     return {
         'status': 'success',
         'plan_id': plan_id,
