@@ -148,11 +148,15 @@ def resolve_base_ref(explicit: str | None, refs: dict) -> str:
     Returns:
         The resolved base ref string.
     """
-    if explicit:
-        return str(explicit)
+    if explicit is not None:
+        val = str(explicit).strip()
+        if val:
+            return val
     base_branch = refs.get('base_branch')
-    if base_branch:
-        return str(base_branch)
+    if base_branch is not None:
+        val = str(base_branch).strip()
+        if val:
+            return val
     return 'main'
 
 
@@ -172,8 +176,23 @@ def compute_plan_branch_diff(worktree: Path, base_ref: str) -> set[str]:
 
     Returns:
         The set of plan-branch-only paths (diff range ∪ working-tree state).
+
+    Raises:
+        subprocess.CalledProcessError: If either ``git diff`` or ``git status``
+            exits non-zero (e.g., invalid ``base_ref``, missing ref in the
+            worktree, or transient git error).  A silent failure here would
+            cause :func:`reconcile_modified_files` to intersect the ledger
+            against an empty set and silently wipe out ``modified_files``,
+            so we surface the error loudly to make it immediately actionable.
     """
     diff_proc = _run_git(worktree, ['diff', '--name-only', f'{base_ref}...HEAD'])
+    if diff_proc.returncode != 0:
+        raise subprocess.CalledProcessError(
+            diff_proc.returncode,
+            diff_proc.args,
+            output=diff_proc.stdout,
+            stderr=diff_proc.stderr,
+        )
     diff_paths = [line for line in diff_proc.stdout.splitlines() if line]
 
     # ``--untracked-files=all`` is critical: with the default mode
@@ -181,6 +200,13 @@ def compute_plan_branch_diff(worktree: Path, base_ref: str) -> set[str]:
     # a single ``?? src/`` entry, hiding individual file paths. The ledger
     # records files, so we need files-level visibility to intersect correctly.
     status_proc = _run_git(worktree, ['status', '--porcelain', '--untracked-files=all'])
+    if status_proc.returncode != 0:
+        raise subprocess.CalledProcessError(
+            status_proc.returncode,
+            status_proc.args,
+            output=status_proc.stdout,
+            stderr=status_proc.stderr,
+        )
     status_paths = _parse_porcelain(status_proc.stdout)
 
     return set(diff_paths) | set(status_paths)
