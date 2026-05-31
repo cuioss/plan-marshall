@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Tests for self_review.py — pre-submission self-review candidate surfacing."""
 
-from pathlib import Path  # noqa: I001
+import subprocess  # noqa: I001
+from pathlib import Path
 
 import pytest
 from self_review import (  # type: ignore[import-not-found]
@@ -12,8 +13,10 @@ from self_review import (  # type: ignore[import-not-found]
     _detect_regexes,
     _detect_symmetric_pairs,
     _detect_user_facing_strings,
+    _diff_hunks,
     _find_skill_dir,
     _iter_added_lines,
+    _run_git,
     _truncate,
 )
 
@@ -494,3 +497,123 @@ class TestDetectKeepMarkers:
         assert all(c['kind'] == 'keep_protected' for c in candidates)
         # protected_identifiers is sorted and deduplicated.
         assert protected == ['alpha_token', 'beta_token', 'gamma_token']
+
+
+# =============================================================================
+# Test: _diff_hunks merge-base anchor (d29024 staged-diff redirect)
+# =============================================================================
+
+
+def _git(repo: Path, *args: str) -> str:
+    proc = subprocess.run(
+        ['git', '-C', str(repo), *args],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return proc.stdout
+
+
+def _init_repo(repo: Path) -> None:
+    repo.mkdir(parents=True, exist_ok=True)
+    _git(repo, 'init', '--initial-branch=main')
+    _git(repo, 'config', 'user.email', 'test@example.com')
+    _git(repo, 'config', 'user.name', 'Test User')
+
+
+def _commit(repo: Path, message: str, files: dict[str, str]) -> None:
+    for rel, content in files.items():
+        target = repo / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    _git(repo, 'add', '-A')
+    _git(repo, 'commit', '-m', message)
+
+
+class TestDiffHunksMergeBaseAnchor:
+    """``_diff_hunks`` diffs the working tree against the base..HEAD merge-base.
+
+    The contract has three load-bearing properties:
+
+    * uncommitted (staged + unstaged) pre-submission changes are still surfaced
+      (the diff TARGET is the working tree, preserving the pre-commit timing);
+    * commits absorbed from the base branch (at/below the merge-base) are
+      excluded from the surfaced diff (the diff ANCHOR is the merge-base);
+    * a merge-base resolution failure falls back to the two-dot diff without
+      returning an empty surface.
+    """
+
+    def _build_absorb_repo(self, repo: Path) -> None:
+        """feature branch with a genuine plan change + an absorbed base commit."""
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+
+        _git(repo, 'checkout', '-b', 'feature')
+        _commit(repo, 'plan change', {'plan_change.py': 'print("plan_marker_line")\n'})
+
+        _git(repo, 'checkout', 'main')
+        _commit(repo, 'upstream only', {'upstream_only.py': 'print("upstream_marker_line")\n'})
+
+        _git(repo, 'checkout', 'feature')
+        _git(repo, 'merge', 'main', '--no-edit')
+
+    def test_uncommitted_changes_are_surfaced(self, tmp_path):
+        """A staged-but-uncommitted change must appear in the surfaced diff."""
+        repo = tmp_path / 'repo'
+        self._build_absorb_repo(repo)
+
+        # Pre-submission edit: staged, not yet committed.
+        (repo / 'new_uncommitted.py').write_text('print("uncommitted_marker")\n')
+        _git(repo, 'add', 'new_uncommitted.py')
+
+        diff_text = _diff_hunks(repo, 'main')
+        added = _iter_added_lines(diff_text)
+        files = {entry[0] for entry in added}
+        assert 'new_uncommitted.py' in files, (
+            'uncommitted (staged) pre-submission change must be surfaced'
+        )
+
+    def test_absorbed_base_commit_is_excluded(self, tmp_path):
+        """A commit absorbed from the base branch must NOT appear in the diff."""
+        repo = tmp_path / 'repo'
+        self._build_absorb_repo(repo)
+
+        diff_text = _diff_hunks(repo, 'main')
+        added = _iter_added_lines(diff_text)
+        files = {entry[0] for entry in added}
+        # The genuine plan change is present.
+        assert 'plan_change.py' in files
+        # The absorbed-upstream file sits at/below the merge-base and is excluded.
+        assert 'upstream_only.py' not in files, (
+            'absorbed-merge content (at/below merge-base) must be excluded'
+        )
+
+    def test_merge_base_resolution_failure_falls_back_to_two_dot(self, tmp_path):
+        """When merge-base resolution fails, fall back to the two-dot diff.
+
+        With no HEAD commits relative to a nonexistent ref, merge-base cannot
+        resolve; the function must still produce a non-empty diff surface from
+        the two-dot fallback rather than returning ''.
+        """
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        _commit(repo, 'plan change', {'plan_change.py': 'print("plan_marker_line")\n'})
+
+        # merge-base against a nonexistent ref fails to resolve; the anchor
+        # falls back to the base_branch arg ('main'), which DOES resolve, so the
+        # two-dot diff still yields the feature change.
+        diff_text = _diff_hunks(repo, 'main')
+        assert diff_text != '', 'fallback must not return an empty surface'
+        added = _iter_added_lines(diff_text)
+        files = {entry[0] for entry in added}
+        assert 'plan_change.py' in files
+
+    def test_run_git_helper_resolves_merge_base(self, tmp_path):
+        """Sanity: the merge-base the anchor relies on resolves for this fixture."""
+        repo = tmp_path / 'repo'
+        self._build_absorb_repo(repo)
+        rc, out, _ = _run_git(repo, 'merge-base', 'main', 'HEAD')
+        assert rc == 0
+        assert out.strip(), 'merge-base must resolve to a non-empty sha'

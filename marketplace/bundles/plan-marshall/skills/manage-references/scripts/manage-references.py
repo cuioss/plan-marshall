@@ -102,12 +102,30 @@ def main() -> int:
         help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
     )
 
+    # reconcile-files
+    reconcile_files_parser = subparsers.add_parser(
+        'reconcile-files',
+        help='Recompute and persist modified_files from the plan-branch-only diff (write-back counterpart of diff-files)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(reconcile_files_parser)
+    reconcile_files_parser.add_argument(
+        '--worktree-path',
+        required=True,
+        help='Absolute path to the active git worktree',
+    )
+    reconcile_files_parser.add_argument(
+        '--base-ref',
+        help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
+    )
+
     args = parse_args_with_toon_errors(parser)
 
     # Import command handlers
     from _cmd_context import cmd_get_context
     from _cmd_diff_files import cmd_diff_files
     from _cmd_list import cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list
+    from _cmd_reconcile_files import cmd_reconcile_files
     from _references_crud import cmd_create, cmd_get, cmd_read, cmd_set
 
     # Dispatch to handlers
@@ -122,6 +140,7 @@ def main() -> int:
         'set-list': cmd_set_list,
         'get-context': cmd_get_context,
         'diff-files': cmd_diff_files,
+        'reconcile-files': cmd_reconcile_files,
     }
 
     handler = handlers.get(args.command)
