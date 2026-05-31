@@ -214,6 +214,127 @@ def test_project_get_returns_default_when_block_absent(plan_context):
     assert result['value'] == 'main'
 
 
+_EXPECTED_BRANCH_NAMING = {
+    'working_prefixes': ['feature/', 'fix/', 'chore/'],
+    'ci_allowlist': ['main', 'feature/*', 'fix/*', 'chore/*', 'dependabot/**'],
+}
+
+
+def test_default_project_includes_branch_naming_block():
+    """DEFAULT_PROJECT must declare branch_naming with the canonical sets."""
+    # Arrange
+    project_defaults = _config_defaults_mod.DEFAULT_PROJECT
+
+    # Act / Assert
+    assert 'branch_naming' in project_defaults
+    assert project_defaults['branch_naming'] == _EXPECTED_BRANCH_NAMING
+
+
+def test_get_default_config_includes_branch_naming():
+    """get_default_config() must surface project.branch_naming with both sets."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    assert config['project'].get('branch_naming') == _EXPECTED_BRANCH_NAMING
+
+
+def test_default_branch_naming_excludes_docs_prefix():
+    """The default ci_allowlist must NOT contain the retired 'docs/' prefix."""
+    # Arrange
+    allowlist = _config_defaults_mod.DEFAULT_PROJECT['branch_naming']['ci_allowlist']
+    working = _config_defaults_mod.DEFAULT_PROJECT['branch_naming']['working_prefixes']
+
+    # Act / Assert — 'docs/' is explicitly retired from both sets
+    assert not any('docs' in entry for entry in allowlist), (
+        "'docs/' is explicitly retired and must be absent from ci_allowlist"
+    )
+    assert 'docs/' not in working
+
+
+def test_project_get_branch_naming_returns_default_when_key_absent(plan_context):
+    """A fresh marshal.json lacking branch_naming returns the default block."""
+    # Arrange — init then strip branch_naming to emulate a legacy marshal.json
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config.get('project', {}).pop('branch_naming', None)
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    # Act
+    args = Namespace(verb='get', field='branch_naming')
+    result = _cmd_system_plan_mod.cmd_project(args)
+
+    # Assert — implicit-default fallback to DEFAULT_PROJECT['branch_naming']
+    assert result['status'] == 'success'
+    assert result['value'] == _EXPECTED_BRANCH_NAMING
+
+
+def test_project_set_then_get_roundtrip_branch_naming(plan_context):
+    """`project set --field branch_naming --value <json>` round-trips via get."""
+    # Arrange
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    custom = {
+        'working_prefixes': ['feature/', 'fix/', 'chore/', 'spike/'],
+        'ci_allowlist': ['main', 'feature/*', 'fix/*', 'chore/*', 'spike/*', 'dependabot/**'],
+    }
+
+    # Act — set (JSON value)
+    set_args = Namespace(verb='set', field='branch_naming', value=json.dumps(custom))
+    set_result = _cmd_system_plan_mod.cmd_project(set_args)
+    assert set_result['status'] == 'success'
+
+    # Act — get
+    get_args = Namespace(verb='get', field='branch_naming')
+    get_result = _cmd_system_plan_mod.cmd_project(get_args)
+
+    # Assert — the dict round-trips, not a bare JSON string
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == custom
+
+
+def test_project_set_branch_naming_rejects_invalid_json(plan_context):
+    """`project set --field branch_naming` with a non-JSON value errors out."""
+    # Arrange
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # Act
+    set_args = Namespace(verb='set', field='branch_naming', value='not-json')
+    result = _cmd_system_plan_mod.cmd_project(set_args)
+
+    # Assert
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_json'
+
+
+def test_read_branch_naming_returns_live_block():
+    """read_branch_naming returns the live project.branch_naming when present."""
+    # Arrange
+    custom = {
+        'working_prefixes': ['feature/', 'spike/'],
+        'ci_allowlist': ['main', 'feature/*'],
+    }
+    config = {'project': {'branch_naming': custom}}
+
+    # Act
+    result = _cmd_system_plan_mod.read_branch_naming(config)
+
+    # Assert
+    assert result == custom
+
+
+def test_read_branch_naming_falls_back_to_default():
+    """read_branch_naming returns the default block when the key is absent."""
+    # Arrange — config with no project.branch_naming
+    config: dict = {'project': {}}
+
+    # Act
+    result = _cmd_system_plan_mod.read_branch_naming(config)
+
+    # Assert — fail-closed to DEFAULT_PROJECT['branch_naming']
+    assert result == _EXPECTED_BRANCH_NAMING
+
+
 def test_default_plan_refine_includes_simplicity_lean():
     """DEFAULT_PLAN_REFINE must declare simplicity with default 'lean'.
 

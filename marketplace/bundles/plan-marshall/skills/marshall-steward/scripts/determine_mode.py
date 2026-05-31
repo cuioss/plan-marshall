@@ -9,6 +9,8 @@ Subcommands:
     check-structure               Check if the per-module project-architecture layout exists
     seed-blocking-finding-types   Idempotently seed default phase-boundary
                                   blocking-finding partitions into marshal.json
+    check-branch-naming           Detect absence or drift of project.branch_naming
+                                  against the canonical default (non-clobbering)
 
 Note: check-docs and check-structure overlap with menu-healthcheck steps 2 and 5.
 The healthcheck runs these same checks via the menu path; this script provides
@@ -21,6 +23,7 @@ Usage:
     python3 determine_mode.py fix-docs
     python3 determine_mode.py check-structure
     python3 determine_mode.py seed-blocking-finding-types
+    python3 determine_mode.py check-branch-naming
 
 Output (TOON format):
     mode subcommand:
@@ -58,6 +61,17 @@ Output (TOON format):
         seed_status	seeded
         seeded_count	6
         skipped_count	0
+
+    check-branch-naming subcommand:
+        status	ok
+
+        status	missing
+        detail	absent
+        missing_keys	branch_naming
+
+        status	missing
+        detail	drift
+        missing_keys	ci_allowlist
         seeded	phase-1-init,phase-2-refine,phase-3-outline,phase-4-plan,phase-5-execute,phase-6-finalize
 
         status	success
@@ -755,6 +769,91 @@ def cmd_check_missing_finalize_steps(args: argparse.Namespace) -> dict:
     return {'status': 'ok', 'missing_count': 0}
 
 
+def detect_branch_naming_drift(plan_dir: Path) -> dict:
+    """Compare ``marshal.json::project["branch_naming"]`` against the canonical
+    ``DEFAULT_PROJECT["branch_naming"]`` block and classify the project's state.
+
+    Returns a structured result ``{'outcome': ..., 'missing_keys': [...]}`` where
+    ``outcome`` is one of:
+
+    - ``'absent'`` — the ``branch_naming`` key is entirely missing from the
+      ``project`` block (``missing_keys == ['branch_naming']``).
+    - ``'drift'`` — the key is present but ``working_prefixes`` and/or
+      ``ci_allowlist`` is missing OR lacks a default entry (``missing_keys``
+      names the drifted sub-keys).
+    - ``'ok'`` — the key is present and every default entry is included
+      (operator *additions* / supersets are honoured and never flagged).
+
+    Degrades gracefully to ``{'outcome': 'ok', 'missing_keys': []}`` when:
+
+    - ``marshal.json`` is absent or unparseable (nothing to compare against)
+    - the canonical ``DEFAULT_PROJECT`` cannot be imported (the helper never
+      crashes the wizard on an unexpected import topology)
+    """
+    ok_result: dict = {'outcome': 'ok', 'missing_keys': []}
+
+    marshal_path = plan_dir / 'marshal.json'
+    if not marshal_path.exists():
+        return ok_result
+    try:
+        data = json.loads(marshal_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return ok_result
+
+    try:
+        from _config_defaults import DEFAULT_PROJECT  # type: ignore[import-not-found]
+    except ImportError:
+        return ok_result
+
+    default_block = DEFAULT_PROJECT.get('branch_naming', {})
+    if not isinstance(default_block, dict):
+        return ok_result
+
+    project_section = data.get('project', {}) if isinstance(data, dict) else {}
+    if not isinstance(project_section, dict):
+        project_section = {}
+
+    if 'branch_naming' not in project_section:
+        return {'outcome': 'absent', 'missing_keys': ['branch_naming']}
+
+    live_block = project_section.get('branch_naming', {})
+    if not isinstance(live_block, dict):
+        # Present but malformed (not a dict) — treat as drift on both sub-keys.
+        return {'outcome': 'drift', 'missing_keys': list(default_block.keys())}
+
+    drifted: list[str] = []
+    for sub_key, default_entries in default_block.items():
+        live_entries = live_block.get(sub_key)
+        if not isinstance(live_entries, list):
+            drifted.append(sub_key)
+            continue
+        # Non-clobbering: a superset (operator additions) is fine; only a
+        # MISSING default entry is drift.
+        if any(entry not in live_entries for entry in default_entries):
+            drifted.append(sub_key)
+
+    if drifted:
+        return {'outcome': 'drift', 'missing_keys': drifted}
+    return ok_result
+
+
+def cmd_check_branch_naming(args: argparse.Namespace) -> dict:
+    """Handle the 'check-branch-naming' subcommand.
+
+    Surfaces ``project.branch_naming`` absence or drift against the canonical
+    default so the wizard can prompt the operator to add/update it. The
+    detection is non-clobbering — a current or operator-customized (superset)
+    block returns ``status: ok`` and is never flagged.
+    """
+    result = detect_branch_naming_drift(Path(args.plan_dir))
+    outcome = result['outcome']
+    if outcome == 'absent':
+        return {'status': 'missing', 'detail': 'absent', 'missing_keys': 'branch_naming'}
+    if outcome == 'drift':
+        return {'status': 'missing', 'detail': 'drift', 'missing_keys': ','.join(result['missing_keys'])}
+    return {'status': 'ok'}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Plan-marshall helper for mode detection and documentation checks',
@@ -815,6 +914,22 @@ def main() -> int:
         help='Directory containing marshal.json (default: .plan)',
     )
 
+    # check-branch-naming subcommand
+    branch_naming_parser = subparsers.add_parser(
+        'check-branch-naming',
+        help=(
+            'Detect absence or drift of project.branch_naming against the canonical '
+            'default — surfaces missing/drifted branch-prefix config so the wizard can prompt.'
+        ),
+        allow_abbrev=False,
+    )
+    branch_naming_parser.add_argument(
+        '--plan-dir',
+        type=str,
+        default='.plan',
+        help='Directory containing marshal.json (default: .plan)',
+    )
+
     args = parser.parse_args()
 
     if args.command == 'mode':
@@ -829,6 +944,8 @@ def main() -> int:
         result = cmd_seed_blocking_finding_types(args)
     elif args.command == 'check-missing-finalize-steps':
         result = cmd_check_missing_finalize_steps(args)
+    elif args.command == 'check-branch-naming':
+        result = cmd_check_branch_naming(args)
     else:
         parser.print_help()
         return 1

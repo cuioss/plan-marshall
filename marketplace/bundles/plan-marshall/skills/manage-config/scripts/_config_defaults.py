@@ -5,6 +5,14 @@ Contains build system and domain default structures used during
 project initialization and detection.
 """
 
+# Direct import - PYTHONPATH set by executor. The branch-prefix literals live
+# in constants.py exactly once; this module imports them to build
+# DEFAULT_PROJECT['branch_naming'] (the fail-closed fallback seed).
+from constants import (  # type: ignore[import-not-found]
+    DEFAULT_BRANCH_PREFIX_WORKING,
+    DEFAULT_CI_BRANCH_ALLOWLIST,
+)
+
 # Reserved keys in nested domain config (not profile names)
 # bundle: Reference to bundle providing this domain (e.g., 'pm-dev-java')
 # execute_task_skills: System domain only - profile to execute-task skill mapping
@@ -72,8 +80,25 @@ DEFAULT_SYSTEM_RETENTION = {
 # when `origin/HEAD` is unset. `phase-1-init` reads this value as the seed
 # for `references.base_branch`; operators may still override per-plan via
 # `manage-references set --field base_branch` after init.
+#
+# `branch_naming` is the transparent, operator-editable source of truth for the
+# canonical branch-prefix sets. It is seeded on `init` and back-filled into
+# existing projects by `sync-defaults` (the deep-merge path that seeds every
+# DEFAULT_PROJECT key non-destructively). The two sub-lists are stored as JSON
+# arrays so they are visible and editable directly in marshal.json:
+#   - working_prefixes: the closed set of allowed working-branch prefixes;
+#     `manage-status create` validates `--worktree-branch` against this set.
+#   - ci_allowlist: the full CI push-trigger allowlist (glob form) that a
+#     structural test pins against `.github/workflows/python-verify.yml`.
+# The literals live in constants.py (DEFAULT_BRANCH_PREFIX_WORKING /
+# DEFAULT_CI_BRANCH_ALLOWLIST) as the fail-closed fallback; this block is the
+# only place that materialises them into the default marshal.json config.
 DEFAULT_PROJECT = {
     'default_base_branch': 'main',
+    'branch_naming': {
+        'working_prefixes': list(DEFAULT_BRANCH_PREFIX_WORKING),
+        'ci_allowlist': list(DEFAULT_CI_BRANCH_ALLOWLIST),
+    },
 }
 
 # open-in-ide gate default (`plan.open_in_ide` in marshal.json — flat bool).

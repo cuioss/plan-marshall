@@ -296,6 +296,152 @@ def test_create_seeds_deferred_path_when_only_branch_supplied(plan_context):
 
 
 # =============================================================================
+# Test: Branch-prefix enforcement (cmd_create working-prefix guard)
+# =============================================================================
+#
+# A worktree branch is always a working branch, so its prefix MUST be in the
+# closed working-prefix set read from marshal.json
+# (project.branch_naming.working_prefixes), fail-closed to the
+# DEFAULT_BRANCH_PREFIX_WORKING constants fallback. An out-of-set prefix (e.g.
+# docs/) makes the PR structurally unmergeable (lesson 2026-05-21-18-002).
+
+
+def _write_marshal_working_prefixes(fixture_dir, working_prefixes):
+    """Stage a marshal.json under the fixture dir with a custom working set."""
+    marshal_path = fixture_dir / 'marshal.json'
+    marshal_path.write_text(
+        json.dumps({'project': {'branch_naming': {'working_prefixes': working_prefixes}}}),
+        encoding='utf-8',
+    )
+
+
+def test_create_rejects_out_of_set_branch_prefix(plan_context):
+    """use_worktree=true with an out-of-set prefix → invalid_branch_prefix.
+
+    The fixture dir has no marshal.json, so the guard fails closed to the
+    DEFAULT_BRANCH_PREFIX_WORKING constants set; 'docs/' is retired and absent.
+    """
+    result = cmd_create(
+        Namespace(
+            plan_id='wt-bad-prefix',
+            title='Bad Prefix',
+            phases='1-init,2-refine',
+            force=False,
+            use_worktree=True,
+            worktree_path=None,
+            worktree_branch='docs/foo',
+        )
+    )
+    assert result['status'] == 'error', (
+        f'Out-of-set worktree branch prefix must error, got {result!r}. '
+        f'docs/ is retired and makes the PR unmergeable.'
+    )
+    assert result['error'] == 'invalid_branch_prefix'
+    # The message names the offending ref so the operator can self-correct.
+    assert 'docs/foo' in result['message']
+
+
+@pytest.mark.parametrize('branch', ['feature/x', 'fix/x', 'chore/x'])
+def test_create_accepts_canonical_branch_prefixes(plan_context, branch):
+    """Each canonical working prefix (feature/, fix/, chore/) is accepted."""
+    result = cmd_create(
+        Namespace(
+            plan_id=f'wt-ok-{branch.split("/")[0]}',
+            title='Canonical Prefix',
+            phases='1-init,2-refine',
+            force=False,
+            use_worktree=True,
+            worktree_path=None,
+            worktree_branch=branch,
+        )
+    )
+    assert result['status'] == 'success', (
+        f'Canonical prefix {branch!r} must be accepted, got {result!r}.'
+    )
+    assert result['worktree_branch'] == branch
+
+
+def test_create_reads_working_prefixes_from_marshal_json(plan_context):
+    """A custom marshal.json working set is honoured (guard reads config, not a literal).
+
+    Seeding 'spike/' into project.branch_naming.working_prefixes makes a
+    spike/ branch acceptable, while an out-of-set prefix is still rejected —
+    proving the guard reads the configured set rather than a hardcoded tuple.
+    """
+    _write_marshal_working_prefixes(
+        plan_context.fixture_dir, ['feature/', 'fix/', 'chore/', 'spike/']
+    )
+
+    accepted = cmd_create(
+        Namespace(
+            plan_id='wt-spike-ok',
+            title='Spike Accepted',
+            phases='1-init,2-refine',
+            force=False,
+            use_worktree=True,
+            worktree_path=None,
+            worktree_branch='spike/exp',
+        )
+    )
+    assert accepted['status'] == 'success', (
+        f'spike/ must be accepted when configured, got {accepted!r}. '
+        f'Guard is not reading project.branch_naming.working_prefixes.'
+    )
+
+    rejected = cmd_create(
+        Namespace(
+            plan_id='wt-spike-reject',
+            title='Out Of Set',
+            phases='1-init,2-refine',
+            force=False,
+            use_worktree=True,
+            worktree_path=None,
+            worktree_branch='docs/exp',
+        )
+    )
+    assert rejected['status'] == 'error'
+    assert rejected['error'] == 'invalid_branch_prefix'
+
+
+def test_create_falls_back_to_constants_when_marshal_absent(plan_context):
+    """No marshal.json → guard fails closed to the constants set.
+
+    The fixture dir has no marshal.json; the guard must still reject docs/ and
+    accept feature/ from DEFAULT_BRANCH_PREFIX_WORKING.
+    """
+    # Ensure no marshal.json is staged (fixture dir is fresh tmp_path).
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    assert not marshal_path.exists(), 'fixture must start without a marshal.json'
+
+    rejected = cmd_create(
+        Namespace(
+            plan_id='wt-fallback-reject',
+            title='Fallback Reject',
+            phases='1-init,2-refine',
+            force=False,
+            use_worktree=True,
+            worktree_path=None,
+            worktree_branch='docs/foo',
+        )
+    )
+    assert rejected['status'] == 'error'
+    assert rejected['error'] == 'invalid_branch_prefix'
+
+    accepted = cmd_create(
+        Namespace(
+            plan_id='wt-fallback-accept',
+            title='Fallback Accept',
+            phases='1-init,2-refine',
+            force=False,
+            use_worktree=True,
+            worktree_path=None,
+            worktree_branch='feature/foo',
+        )
+    )
+    assert accepted['status'] == 'success'
+
+
+# =============================================================================
 # Test: CLI plumbing for create worktree flags
 # =============================================================================
 
