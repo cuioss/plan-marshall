@@ -146,7 +146,7 @@ Direct .plan file access bypassing manage-* API
 
 ### Root Cause Analysis
 Command is reading status.toon directly instead of using
-`python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read`.
+`python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read --plan-id jwt-auth`.
 This bypasses audit trail and validation.
 
 ### Impact Assessment
@@ -162,7 +162,7 @@ This bypasses audit trail and validation.
 2. **Proceed with warning**: Log deviation but continue
 
 ### Recommendation
-Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read` for all status access
+Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read --plan-id jwt-auth` for all status access
 
 ---
 **Verification Mode Active** - Awaiting user decision before proceeding.

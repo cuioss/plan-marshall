@@ -211,6 +211,22 @@ the lessons corpus and the archived-plan corpus, so a candidate it marks as
 "already filed" or "covered by archived plan {id}" MUST NOT be re-filed — that
 marking is itself a cited verification and satisfies the obligation above.
 
+**Source-keyed argparse-rejection lessons**: the per-plan retrospective's
+`script-failure-analysis` aspect (see `plan-marshall:plan-retrospective` aspect 8)
+classifies each non-zero-exit script call by stderr signature
+(`invalid choice:` → invented subcommand, `the following arguments are required:`
+→ missing required flag, `unrecognized arguments:` → invented flag) and keys its
+proposed lessons to the **source notation** that argparse rejected — the
+`{bundle}:{skill}:{script} {subcommand}` whose surface drifted — not to the
+consuming plan that happened to trip it. For archived-plan audits this changes
+how the recurring-pattern detector's signals are filed: when the same source
+notation surfaces across N≥3 archived plans' argparse-rejection findings, file (or,
+on Gate-1 dedup, extend) a **single source-keyed lesson** naming the exact
+subcommand/flag drift, rather than one lesson per consuming plan. A source-keyed
+lesson already covering that notation satisfies Gate 1 for every later plan that
+trips the same rejection — so the dedup check MUST search the corpus by the source
+notation, not by the consuming plan ID.
+
 ### Step 4b: Review-completeness gate
 
 Before reaching Step 5 (Interactive dormation), the orchestrator MUST satisfy

@@ -56,9 +56,8 @@ Capture `provider` and `confidence` from the output. Map the detected provider t
   - Log the decision via `manage-logging`:
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-      decision --component "plan-marshall:marshall-steward" \
-      --message "Auto-selected CI provider {skill_name}" \
-      --detail "detected={provider}, confidence={confidence}, matched_skill={skill_name}"
+      decision --plan-id {plan_id} --level INFO \
+      --message "(plan-marshall:marshall-steward) Auto-selected CI provider {skill_name} — detected={provider}, confidence={confidence}, matched_skill={skill_name}"
     ```
   - **Skip** the AskUserQuestion block in Step 7-4c.
 - **ELSE** (confidence is `medium` or `none`, or detected provider not in the ci-category list): proceed to Step 7-4c.

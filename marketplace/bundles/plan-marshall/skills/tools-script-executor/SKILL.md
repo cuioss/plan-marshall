@@ -98,7 +98,7 @@ When a plan ID is provided, logs to:
 
 **Example with --plan-id** (script uses it):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add \
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
   --plan-id EXAMPLE-PLAN --file task.md
 ```
 

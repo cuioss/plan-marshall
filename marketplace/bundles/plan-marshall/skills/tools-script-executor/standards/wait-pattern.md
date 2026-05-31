@@ -246,11 +246,11 @@ timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor
     --failure-field "status=failure" \
     --command-key "ci:pr_checks"
 
-# EXPLICIT MODE: manual timeout/interval (useful for one-off operations)
+# EXPLICIT MODE: manual polling interval (hard ceiling via the outer `timeout 600s`)
 timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
     --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status --pr-number 123" \
     --success-field "status=success" \
-    --timeout 300 \
+    --command-key "ci:pr_checks" \
     --interval 30
 
 # Wait for Sonar analysis completion

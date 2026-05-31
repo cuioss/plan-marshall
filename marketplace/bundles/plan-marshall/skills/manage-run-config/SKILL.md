@@ -106,7 +106,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config init
 Validate configuration structure.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config validate
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config validate --file run-configuration.json
 ```
 
 ### timeout get / set

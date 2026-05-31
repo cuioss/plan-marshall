@@ -85,8 +85,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -1099,9 +1099,10 @@ def _node_at_chain(tree: _ScriptTree, chain: list[str]) -> _LeafParser | None:
     """Resolve the parser node reached by following ``chain`` from the root."""
     node = tree.root
     for token in chain:
-        node = node.children.get(token)
-        if node is None:
+        child = node.children.get(token)
+        if child is None:
             return None
+        node = child
     return node
 
 

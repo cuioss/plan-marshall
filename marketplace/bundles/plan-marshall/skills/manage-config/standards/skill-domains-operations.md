@@ -6,32 +6,6 @@ Operational workflows for skill resolution, domain management, and usage pattern
 
 ## Skill Resolution
 
-### resolve-workflow-skill Command
-
-Resolves the system workflow skill for a phase. Always returns from the `system` domain.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-workflow-skill --phase 3-outline
-```
-
-**Parameters**:
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `--phase` | string | Yes | Phase name (1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize) |
-
-**Output**:
-```toon
-status: success
-phase: 3-outline
-workflow_skill: plan-marshall:phase-3-outline
-```
-
-**Error Cases**:
-- System domain missing → `error: System domain not configured. Run /marshall-steward to initialize.`
-- Unknown phase → `error: Unknown phase: {phase}. Available: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize`
-
 ### resolve-workflow-skill-extension Command
 
 Resolves domain-specific workflow skill extension. Returns null (not error) if extension doesn't exist.
@@ -79,26 +53,6 @@ optionals:
   pm-dev-java:java-lombok: Lombok annotations (@Builder, @Value, @Delegate)
   pm-dev-java:java-cdi: CDI patterns (@ApplicationScoped, @Inject)
   pm-dev-java:java-maintenance: Code maintenance and refactoring patterns
-```
-
-### get-workflow-skills Command
-
-Returns all workflow skills from the system domain (6-phase model).
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  get-workflow-skills
-```
-
-**Output**:
-```toon
-status: success
-1-init: plan-marshall:phase-1-init
-2-refine: plan-marshall:phase-2-refine
-3-outline: plan-marshall:phase-3-outline
-4-plan: plan-marshall:phase-4-plan
-5-execute: plan-marshall:phase-5-execute
-6-finalize: plan-marshall:phase-6-finalize
 ```
 
 ### Aggregation Logic

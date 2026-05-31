@@ -97,8 +97,8 @@ When a directory contains multiple technologies (Maven + npm), it creates separa
 
 Query modules at a physical path:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules \
-  --physical-path {directory}
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture which-module \
+  --path {directory}
 ```
 
 Example output for a hybrid directory:

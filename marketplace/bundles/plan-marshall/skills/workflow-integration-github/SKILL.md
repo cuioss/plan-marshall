@@ -283,39 +283,39 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --plan-id PLAN_ID [--for {reply|thread-reply}] [--slot SLOT]
 ```
 
-### github_ops ci status
+### github_ops checks status
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops ci status \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops checks status \
   (--pr-number N | --head BRANCH)
 ```
 
-### github_ops ci wait
+### github_ops checks wait
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops ci wait \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops checks wait \
   --pr-number N [--timeout SECS] [--interval SECS]
 ```
 
-### github_ops ci wait-for-status-flip
+### github_ops checks wait-for-status-flip
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops ci wait-for-status-flip \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops checks wait-for-status-flip \
   --pr-number N [--timeout SECS] [--interval SECS] \
   [--expected {success|failure|any}]
 ```
 
-### github_ops ci rerun
+### github_ops checks rerun
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops ci rerun \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops checks rerun \
   --run-id ID
 ```
 
-### github_ops ci logs
+### github_ops checks logs
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops ci logs \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops checks logs \
   --run-id ID
 ```
 

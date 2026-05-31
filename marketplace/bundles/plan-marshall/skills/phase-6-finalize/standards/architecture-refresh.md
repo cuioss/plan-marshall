@@ -250,6 +250,7 @@ for each module M in affected_modules_csv:
     # Step 8 — refresh skills-by-profile
     python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
       enrich skills-by-profile --module M \
+      --skills-json '{"<profile>": ["<bundle:skill>", ...]}' \
       --reasoning "{why these profiles/skills apply}" \
       --project-dir {worktree_path}
 ```

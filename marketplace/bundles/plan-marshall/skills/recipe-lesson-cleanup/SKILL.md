@@ -91,7 +91,7 @@ error: lesson_fully_obsolete
 plan_id: {plan_id}
 lesson_id: {lesson_id}
 message: "Every directive in lesson '{lesson_id}' was dropped during premise verification — the lesson no longer matches the live tree."
-recovery: "Close the lesson via 'python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons delete --lesson-id {lesson_id}', or refine it manually before re-running the recipe."
+recovery: "Close the lesson via 'python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove --lesson-id {lesson_id} --reason lesson-obsolete', or refine it manually before re-running the recipe."
 ```
 
 Do not call `manage-solution-outline write`, do not transition phase, do not emit a no-op outline. The recipe is the gate — an empty residual scope means the gate fired.

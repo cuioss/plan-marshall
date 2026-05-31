@@ -387,12 +387,12 @@ The reference model is [`manage-files/SKILL.md`](../../../../plan-marshall/skill
 
 ### Enforcing analyzer and rule IDs
 
-The plugin-doctor analyzer [`_analyze_manage_invocation.py`](../../plugin-doctor/scripts/_analyze_manage_invocation.py) is the consuming static-analysis surface that enforces this contract at edit time. It implements two rule IDs:
+The plugin-doctor analyzer [`_analyze_manage_invocation.py`](../../plugin-doctor/scripts/_analyze_manage_invocation.py) is the consuming surface that enforces this contract at edit time. It implements two rule IDs:
 
-- **`manage-invocation-invalid`** — validates each inline invocation (Rule 1) against the script's AST-extracted argparse tree, emitting a finding for an unregistered subcommand, an unregistered sub-verb, an undeclared flag, or a missing required flag.
-- **`missing-canonical-block`** — emitted when a script-bearing `SKILL.md` lacks the `## Canonical invocations` section (Rule 3).
+- **`manage-invocation-invalid`** — validates each inline invocation (Rule 1) against the script's canonical argparse surface derived from its live `--help` output (top-level plus each sub-verb), emitting a finding for an unregistered subcommand, an unregistered sub-verb, an undeclared flag, or a missing required flag. The derived surface is cached (in-process and on disk under `.plan/temp/plugin-doctor-help-cache/`) so repeated scans do not re-spawn `--help` probes.
+- **`missing-canonical-block`** — emitted when a script-bearing `SKILL.md` lacks the `## Canonical invocations` section (Rule 3). This rule is pure static analysis (no subprocess).
 
-Both rules are pure static analysis (AST + regex, no subprocess, no target-script import) and run under `quality-gate`, so a documented call that drifts from the live surface — or a script-bearing skill that omits its Canonical-invocations section — is caught before it ships.
+Both rules run under `quality-gate`, so a documented call that drifts from the live surface — or a script-bearing skill that omits its Canonical-invocations section — is caught before it ships. Deriving the surface from `--help` rather than an AST walk is what lets the rule see loop-registered, helper-registered, and shared-flag subcommands that literal `add_parser` AST extraction cannot.
 
 ## Integration Rules
 

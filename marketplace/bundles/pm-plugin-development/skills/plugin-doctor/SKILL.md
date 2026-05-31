@@ -296,9 +296,9 @@ When `--paths` is provided:
 Use the `--marketplace-root` flag when verifying SKILL.md / agent.md / command.md edits made inside a plan worktree mid-execution, before the worktree merges back to main. The flag pins discovery to the worktree's marketplace tree so analysis sees the in-progress edits instead of the main checkout.
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace verify \
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze \
   --marketplace-root /abs/path/to/.plan/local/worktrees/{plan_id}/marketplace \
-  --skill-name foo
+  --name foo
 ```
 
 **Important**: the value passed to `--marketplace-root` is the marketplace root, i.e., the **parent directory of `bundles/`** (e.g., `/abs/path/to/.plan/local/worktrees/{plan_id}/marketplace`), NOT `bundles/` itself. The script validates this by checking for a `bundles/` subdirectory under the supplied path; if missing, it errors out with a clear message. Resolution precedence is: `--marketplace-root` flag → `PM_MARKETPLACE_ROOT` env var → script-relative discovery → cwd fallback.
