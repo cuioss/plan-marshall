@@ -74,10 +74,20 @@ def _read_working_prefixes() -> tuple[str, ...]:
         config = json.loads(marshal_path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return tuple(DEFAULT_BRANCH_PREFIX_WORKING)
-    prefixes = config.get('project', {}).get('branch_naming', {}).get('working_prefixes')
-    if not prefixes:
+    # marshal.json is operator-editable, so defend against malformed shapes:
+    # a non-dict root, a null `project`/`branch_naming`, or a non-list
+    # `working_prefixes` all fail closed to the constants fallback rather than
+    # raising AttributeError/TypeError mid-create.
+    if not isinstance(config, dict):
         return tuple(DEFAULT_BRANCH_PREFIX_WORKING)
-    return tuple(prefixes)
+    project = config.get('project') or {}
+    branch_naming = project.get('branch_naming') if isinstance(project, dict) else {}
+    branch_naming = branch_naming or {}
+    prefixes = branch_naming.get('working_prefixes') if isinstance(branch_naming, dict) else None
+    if not isinstance(prefixes, list):
+        return tuple(DEFAULT_BRANCH_PREFIX_WORKING)
+    valid_prefixes = tuple(p for p in prefixes if isinstance(p, str))
+    return valid_prefixes if valid_prefixes else tuple(DEFAULT_BRANCH_PREFIX_WORKING)
 
 
 def cmd_create(args: argparse.Namespace) -> dict:

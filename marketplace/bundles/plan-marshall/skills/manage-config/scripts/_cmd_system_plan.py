@@ -8,6 +8,7 @@ Plan sub-nouns delegate to phase handlers in _cmd_quality_phases:
 """
 
 import json
+from typing import cast
 
 from _cmd_quality_phases import PHASE_SECTIONS, cmd_phase
 from _config_core import (
@@ -44,8 +45,17 @@ def read_branch_naming(config: dict) -> dict:
     Returns:
         The branch-naming block: ``{'working_prefixes': [...], 'ci_allowlist': [...]}``.
     """
-    result: dict = config.get('project', {}).get('branch_naming', DEFAULT_PROJECT['branch_naming'])
-    return result
+    # marshal.json is operator-editable: a null `project` or `branch_naming`
+    # (JSON null -> None) would make a chained .get() raise AttributeError, so
+    # guard each level and fail closed to the canonical default.
+    default_block = cast(dict, DEFAULT_PROJECT['branch_naming'])
+    project = config.get('project') if isinstance(config, dict) else None
+    if not isinstance(project, dict):
+        project = {}
+    branch_naming = project.get('branch_naming')
+    if not isinstance(branch_naming, dict):
+        return default_block
+    return branch_naming
 
 
 def cmd_system(args) -> dict:
@@ -116,6 +126,21 @@ def cmd_project(args) -> dict:
                     f"Field '{field}' expects a JSON value: {e}",
                     error_type='invalid_json',
                 )
+            # Validate the parsed shape at this system boundary: branch_naming
+            # must be a JSON object whose working_prefixes / ci_allowlist sub-keys
+            # (when present) are lists. A non-dict value or a non-list sub-key
+            # would persist silently and crash downstream readers.
+            if not isinstance(value, dict):
+                return error_exit(
+                    f"Field '{field}' expects a JSON object (dictionary), got {type(value).__name__}",
+                    error_type='invalid_type',
+                )
+            for sub_key in ('working_prefixes', 'ci_allowlist'):
+                if sub_key in value and not isinstance(value[sub_key], list):
+                    return error_exit(
+                        f"Sub-key '{sub_key}' in '{field}' must be a list",
+                        error_type='invalid_type',
+                    )
         else:
             value = _coerce_value(args.value)
 

@@ -129,8 +129,10 @@ def test_workflow_push_allowlist_excludes_docs_prefix():
     # Arrange / Act
     actual = _parse_push_branches()
 
-    # Assert — 'docs/' is explicitly retired and must never be re-admitted
-    assert not any('docs' in entry for entry in actual), (
+    # Assert — 'docs/' is explicitly retired and must never be re-admitted.
+    # Anchor the match so legitimate prefixes that merely share the 'docs'
+    # substring (e.g. 'documents/*') are not false-positives.
+    assert not any(re.match(r'^docs(/|\*|$)', entry) for entry in actual), (
         "'docs/' is explicitly retired and must be absent from the "
         f'python-verify.yml push allowlist; found: {actual}'
     )
