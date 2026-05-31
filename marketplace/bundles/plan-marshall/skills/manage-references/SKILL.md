@@ -303,6 +303,58 @@ modified_files[3]:
 
 ---
 
+### diff-files
+
+Intersect the append-only `modified_files` ledger with the live git working-tree state, so consumers operate on "actually-modified-now" paths instead of trusting a potentially stale ledger. **Read-only — never mutates `references.json`.** Its write-back counterpart is `reconcile-files`.
+
+The "live" set is the union of the three-dot `{base_ref}...HEAD` diff name set and the porcelain working-tree state (`git status --porcelain --untracked-files=all`). Both verbs share this primitive (`compute_plan_branch_diff` in `_references_core`).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references diff-files \
+  --plan-id {plan_id} --worktree-path {worktree_path} \
+  [--base-ref {ref}]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--worktree-path` (required): Absolute path to the active git worktree
+- `--base-ref`: Base ref for the diff (defaults to `references.base_branch`, falling back to `main`)
+
+### reconcile-files
+
+Recompute `references.modified_files` from the plan-branch-only diff and **PERSIST** the reconciled set. This is the write-back counterpart of the read-only `diff-files` verb: both share the same three-dot + porcelain-union primitive, but `reconcile-files` writes the intersected set back to `references.json`.
+
+The reconciliation drops ledger entries that are absent from the live plan-branch-only set — these are the absorbed-upstream files that pollute the ledger after an absorb merge (phase-5-execute self-absorb or `workflow-integration-git` baseline-reconcile focused auto-merge). After this verb runs, downstream finalize consumers (plugin-doctor, regenerate-executor, PR-body, pre-submission-self-review) read a clean footprint that contains only files the plan actually touched.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references reconcile-files \
+  --plan-id {plan_id} --worktree-path {worktree_path} \
+  [--base-ref {ref}]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--worktree-path` (required): Absolute path to the active git worktree
+- `--base-ref`: Base ref for the diff (defaults to `references.base_branch`, falling back to `main`)
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+base_ref: main
+before_count: 5
+after_count: 3
+removed[2]:
+  - upstream/only/file_a.py
+  - upstream/only/file_b.py
+modified_files[3]:
+  - src/main/java/Foo.java
+  - src/main/java/Bar.java
+  - src/main/java/Baz.java
+```
+
+---
+
 ## Scripts
 
 **Script**: `plan-marshall:manage-references:manage-references`
@@ -318,7 +370,8 @@ modified_files[3]:
 | `add-list` | `--plan-id --field --values` | Add multiple values to a list field |
 | `set-list` | `--plan-id --field --values` | Set a list field (replaces existing) |
 | `get-context` | `--plan-id [--include-files]` | Get all references context |
-| `diff-files` | `--plan-id --worktree-path [--base-ref]` | Intersect modified_files ledger with live git diff |
+| `diff-files` | `--plan-id --worktree-path [--base-ref]` | Intersect modified_files ledger with live git diff (read-only) |
+| `reconcile-files` | `--plan-id --worktree-path [--base-ref]` | Recompute and persist modified_files from the plan-branch-only diff (write-back) |
 
 ---
 
@@ -401,6 +454,13 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id PLAN_ID --worktree-path ABS_PATH [--base-ref REF]
 ```
 
+### reconcile-files
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references reconcile-files \
+  --plan-id PLAN_ID --worktree-path ABS_PATH [--base-ref REF]
+```
+
 ---
 
 ## Error Responses
@@ -415,6 +475,9 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 | `type_mismatch` | Attempting list operation on non-list field (add-list on a string field) |
 | `file_exists` | references.json already exists on create |
 | `field_not_set` | Field exists but has no value (returns `value: null`, exit 0) |
+| `worktree_not_found` | `--worktree-path` does not exist or is not a directory (diff-files, reconcile-files) |
+| `references_not_found` | references.json not found (diff-files, reconcile-files) |
+| `not_a_git_worktree` | `--worktree-path` is not inside a git worktree (diff-files, reconcile-files) |
 
 **Default values**: Unset fields return `field_not_found` on `get`. The `create` command initializes `modified_files` and `affected_files` as empty lists and `base_branch` as `main`. All other fields are optional — only present if explicitly set via `--field` arguments.
 
