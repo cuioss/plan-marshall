@@ -33,6 +33,9 @@ from pathlib import Path
 
 from _analyze_argument_naming import analyze_argument_naming
 from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
+from _analyze_bash_fence_inline_code_exemption import (
+    analyze_bash_fence_inline_code_exemption,
+)
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
 from _analyze_manage_invocation import scan_manage_invocation
@@ -377,6 +380,17 @@ def cmd_analyze(args) -> dict:
     tmp_redirect_issues = analyze_tmp_redirect_in_skills(marketplace_root)
     all_issues.extend(tmp_redirect_issues)
     total_issues += len(tmp_redirect_issues)
+
+    # Marketplace-wide bash-fence-inline-code-exemption rule. Unconditionally
+    # active — reintroduction guard that flags any analyzer module scanning
+    # inside a bash/sh fence (defines _BASH_FENCE_INFO_STRINGS) that also
+    # carries a markdown inline-code exemption (_INLINE_CODE_RE /
+    # _inline_code_spans). Inside a bash fence backticks are command
+    # substitution, not markdown inline-code, so the two are mutually exclusive
+    # in a single analyzer.
+    bash_fence_inline_code_issues = analyze_bash_fence_inline_code_exemption(marketplace_root)
+    all_issues.extend(bash_fence_inline_code_issues)
+    total_issues += len(bash_fence_inline_code_issues)
 
     # Marketplace-wide no-lesson-id-in-skill-prose rule. Unconditionally
     # active — strips narrative lesson-ID citations from skill prose while

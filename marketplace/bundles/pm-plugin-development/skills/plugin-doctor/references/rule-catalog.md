@@ -261,6 +261,7 @@ Seven forward-looking lint rules.
 |---------|--------|-----------------------|-------------|
 | `bash-chain-shapes-in-skills` | Detect compound Bash command sequences (`&&`, `;`, trailing `&`) inside fenced `bash`/`sh` blocks in plan-marshall skill/agent/command markdown — violates the dev-agent-behavior-rules "Bash: one command per call" hard rule | Comment lines (`#`) and inline-code spans are exempt; only `bash`/`sh`-fenced blocks are scanned | None — split the compound command into separate Bash tool calls |
 | `tmp-redirect-in-skills` | Detect `>` / `>>` redirect targets pointing at `/tmp/` or `/var/tmp/` inside fenced `bash`/`sh` blocks in plan-marshall skill/agent/command markdown — violates the project policy that temporary files must live under `.plan/temp/` | Comment lines (`#`) and inline-code spans are exempt; only `bash`/`sh`-fenced blocks are scanned | None — replace with a `Write` tool call targeting `.plan/temp/{plan_id}-<name>` or pass the value through a TOON field |
+| `bash-fence-inline-code-exemption` | Detect analyzer modules that scan inside a bash/sh fence (define `_BASH_FENCE_INFO_STRINGS`) while also carrying a markdown inline-code exemption (`_INLINE_CODE_RE` / `_inline_code_spans`) — the two are mutually exclusive because inside a bash fence backticks are command substitution, not markdown inline-code | This analyzer's own source names both marker families and is whitelisted by self-reference; files with only one marker family are compliant | None — remove the inline-code exemption helper from the bash-fence analyzer |
 
 ### bash-chain-shapes-in-skills
 
@@ -305,6 +306,28 @@ Seven forward-looking lint rules.
 **Recommended fix**: Replace the `/tmp/` write with a `Write` tool call targeting `.plan/temp/{plan_id}-<descriptive-name>` (the `.plan/temp/` prefix is covered by the `Write(.plan/**)` pre-approved permission). Alternatively, if the value is small, pass it through a TOON field in the previous command's stdout instead of writing it to a file.
 
 **Suppression mechanism**: None — fix the redirect target. If the occurrence is genuinely documentary (a standards doc naming the forbidden pattern), wrap it in an inline-code span or a `markdown`/`text` fence.
+
+---
+
+### bash-fence-inline-code-exemption
+
+**Rule ID**: `bash-fence-inline-code-exemption`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_bash_fence_inline_code_exemption.py`
+
+**Scope**: All `*.py` files under `marketplace/bundles/**/scripts/`.
+
+**Intent**: Reintroduction guard. A plugin-doctor analyzer that scopes its scan to `bash`/`sh` fenced blocks (it defines a `_BASH_FENCE_INFO_STRINGS` marker) must NOT also carry the markdown-prose inline-code exemption (an `_INLINE_CODE_RE` or `_inline_code_spans` helper). Inside a bash fence a backtick span denotes command substitution, not a markdown inline-code span, so exempting "inline-code" inside a bash-fence scanner silently skips real command-substitution shapes — the exact mismatch that PR #474 removed from the bash-fence analyzers. This rule prevents the exemption from creeping back in.
+
+**Detection logic**: For every `*.py` under `marketplace/bundles/**/scripts/`, the analyzer checks literal-token co-presence: `_BASH_FENCE_INFO_STRINGS` AND (`_INLINE_CODE_RE` OR `_inline_code_spans`). When both are present the file is flagged with the 1-based line of the first inline-code marker. Files with only one of the two marker families are compliant — prose scanners define only the inline-code helper (exemption is correct there); bash-fence scanners define only the fence-info-strings marker.
+
+**Permitted contexts**:
+1. **Self-reference** — This analyzer's own source names both marker families in its docstring and detection constants; it is whitelisted by a path-component-anchored match on its own filename.
+2. **Single-marker files** — Files defining only one marker family are correct by construction and produce no finding.
+
+**Recommended fix**: Remove the inline-code exemption helper (`_INLINE_CODE_RE` / `_inline_code_spans`) from the bash-fence analyzer. The bash-fence analyzer's only structural filters are "skip non-bash/sh fences" and "skip `#`-comment lines".
+
+**Suppression mechanism**: None — remove the inline-code exemption helper from the bash-fence analyzer.
 
 ---
 
