@@ -26,7 +26,7 @@ Dispatched under the **phase-scoped** `verification-feedback` role key — the r
 | `plan_id` | Yes | Forwarded to every `manage-findings` / `manage-tasks` / `tools-integration-ci` call. |
 | `WORKTREE` | Yes | Used verbatim for `git -C {WORKTREE}` and as the root for every Edit/Write/Read. |
 | `pr_number` | Conditional | Required for `pr-comment` (thread replies) and for `pr-state` (CI wait + multi-source fetch). |
-| `caller_phase` | Optional | Explicit caller-phase override for sub-dispatches whose `name` field doesn't naturally encode the phase. See `ext-point-execution-context-workflow.md` § Sub-dispatch contract. |
+| `caller_phase` | Optional | Explicit caller-phase override the main-context orchestrator passes when dispatching this phase-agnostic workflow, so the level resolver tracks the caller's phase. See `ext-point-execution-context-workflow.md` § Phase-context propagation for phase-agnostic workflows. |
 | `iteration` | No | Loop-back iteration number (1..3). Surfaced in `display_detail` on `loop_back` outcomes. |
 
 Skills the caller MUST forward in `skills[]`:
@@ -169,9 +169,9 @@ Execute [`triage.md`](triage.md) § Step 2 (pre-group), § Step 3 (iterate group
 
 The smart-grouping shape and canonical per-finding action bodies (FIX / SUPPRESS / ACCEPT / AskUserQuestion) are documented as a single source of truth in `triage.md`; do not duplicate them here.
 
-### Sub-dispatch from inside this envelope
+### Overflow returns to the orchestrator
 
-When the per-finding iteration in `triage.md` § Step 5 detects that the wrapper budget is nearly exhausted, it MAY sub-dispatch a fresh `verification-feedback` envelope to handle the deferred findings. The sub-dispatch resolves the level under the **caller's** phase context (forwarded via the `caller_phase` field in the prompt body, or extracted from the parent dispatch's `name`/`workflow:` notation when `caller_phase` is absent). See `ext-point-execution-context-workflow.md` § Sub-dispatch contract.
+This envelope is a leaf — it cannot sub-dispatch. When the per-finding iteration in `triage.md` § Step 5 detects that the wrapper budget is nearly exhausted, it does NOT spawn a fresh `verification-feedback` envelope itself. Instead it returns `overflow_deferred: {O}` to the main-context orchestrator, which re-fires `verification-feedback` on the next entry under the caller's phase context (the orchestrator sets `caller_phase` at that top-level dispatch). See [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
 
 ## Step 7: Loop-back signalling
 

@@ -194,6 +194,59 @@ Step 12a "Pending-tasks transition guard" in `phase-5-execute` SKILL.md
 enforcement) and is the structural complement to the script-level `[OUTCOME]`
 guard in `manage-tasks finalize-step`.
 
+### Verification-feedback triage (leaf returned triage_required)
+
+**Trigger**: the just-returned phase-5-execute dispatch carries `triage_required: true` in its terminal payload (the leaf detected a verification-failure or quality-gate-failure in Step 11 / Step 11b, persisted each finding to the per-plan Q-Gate store via `manage-findings qgate add`, and returned the signal instead of dispatching). The payload carries `producer` (always `build-runner`) and `finding_type` (`verification-failure` or `quality-gate-failure`). The leaf is a **leaf** — it cannot dispatch `verification-feedback` itself; the orchestrator owns that dispatch. See [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
+
+**Handling procedure** (runs in the orchestrator's main context):
+
+1. **Resolve the verification-feedback target** via the role resolver:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     effort resolve-target --phase phase-5-execute --role verification-feedback
+   ```
+
+   Extract the `target` field from the TOON output. Use it as `{target}` in the dispatch and the log line below.
+
+2. **Emit the standardized post-resolve dispatch log line** — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level INFO \
+     --message "[DISPATCH] (plan-marshall:phase-5-execute) target={target} level={level} role=verification-feedback workflow=plan-marshall:plan-marshall/workflow/verification-feedback.md plan_id={plan_id}"
+   ```
+
+3. **Dispatch `verification-feedback`** as a top-level `Task:` in the main context (the dispatch is by-reference — the subagent queries the per-plan findings store as its first workflow step; the findings are NOT embedded in the prompt):
+
+   ```
+   Task: plan-marshall:{target}
+     prompt: |
+       name: verification-feedback
+       plan_id: {plan_id}
+       skills[4]:
+       - plan-marshall:manage-findings
+       - plan-marshall:manage-tasks
+       - plan-marshall:manage-architecture
+       - plan-marshall:manage-config
+       workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
+
+       producer: build-runner
+       caller_phase: phase-5-execute
+
+       WORKTREE: {worktree_path}
+   ```
+
+   `caller_phase: phase-5-execute` is the legitimate top-level phase-context field the orchestrator passes for this phase-agnostic workflow (see [`../../extension-api/standards/ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md) § Phase-context propagation for phase-agnostic workflows). The Scope-Deviation Escalation guard lives in [`triage.md`](triage.md) § Step 6.
+
+4. **Consume the triage return** to drive the §11e branch (the logic that previously lived in phase-5-execute Step 11e):
+
+   - If `fix_tasks_created > 0` → increment `verify_iteration` in the verification task's metadata, reset the verification task to `pending`, and re-dispatch the execution-context (fix tasks execute before the re-queued verification task via `depends_on`).
+   - If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`); resume the normal post-return classification.
+   - If `overflow_deferred > 0` → leave the verification task `pending`; re-fire this triage dispatch on the next phase-5-execute entry (the iteration cap is unchanged).
+
+This is the dispatch that previously sat wrongly inside the phase-5-execute leaf envelope (Step 11d / Step 11b). Relocating it here keeps every cross-envelope `Task:` dispatch in the main-context orchestrator while the leaf retains all deterministic, store-mutating work (failure detection, scope cross-reference, planned-failure exception, iteration-cap check, and `manage-findings qgate add` finding persistence).
+
 ### Baseline drift recovery (non-zero overlap)
 
 **Trigger**: the just-returned execution-context dispatch is classified `termination-cause == baseline_drift`. The agent's structured error payload carries `error_type: baseline_drift` plus `divergent_commits`, `upstream_commit_count`, and `conflict_count > 0`.
