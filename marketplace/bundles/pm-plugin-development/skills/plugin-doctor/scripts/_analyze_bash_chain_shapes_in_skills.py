@@ -25,9 +25,8 @@ Inside every fenced block whose info-string is ``bash`` or ``sh``:
    env-var-assignment form ``MY_VAR=val cmd && …``.
 
 2. **``;`` chain** — a non-comment source line contains a bare ``;`` operator
-   that separates two commands (i.e., ``;`` not preceded by a word
-   character in an obvious string literal — conservatively: any ``;``
-   outside inline-code spans is a candidate finding).
+   that separates two commands (conservatively: any ``;`` on a non-comment line
+   inside a bash/sh fence is a candidate finding).
 
 3. **trailing ``&``** — a non-comment source line ends with a bare ``&``
    (background dispatch).  The sequence ``\\&`` (backslash-escaped) is
@@ -242,8 +241,7 @@ def analyze_bash_chain_shapes_in_skills(marketplace_root: Path) -> list[dict]:
 
     Walks ``marketplace_root/plan-marshall/{skills,agents,commands}/**/*.md``
     and reports every ``&&``, ``;``, or trailing ``&`` inside a fenced
-    ``bash`` or ``sh`` block, outside the two permitted documentary contexts
-    (inline-code span, or comment line).
+    ``bash`` or ``sh`` block on a non-``#``-comment line.
 
     Parameters
     ----------
