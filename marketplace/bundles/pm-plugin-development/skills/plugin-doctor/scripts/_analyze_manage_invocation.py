@@ -604,15 +604,25 @@ def _read_cache(cache_path: Path) -> _ScriptTree | None:
 
 
 def _write_cache(cache_path: Path, tree: _ScriptTree) -> None:
+    import tempfile
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp: Path | None = None
     try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(
-            json.dumps(tree.to_dict(), sort_keys=True), encoding='utf-8'
-        )
+        with tempfile.NamedTemporaryFile(
+            'w', dir=str(cache_path.parent), delete=False, encoding='utf-8'
+        ) as tf:
+            json.dump(tree.to_dict(), tf, sort_keys=True)
+            tmp = Path(tf.name)
+        os.replace(str(tmp), str(cache_path))
+        tmp = None
     except OSError:
         # The cache is a pure optimization — a write failure must never break
         # the analysis. Skip silently.
         pass
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
 
 
 def _run_help(executor: Path, notation: str, *positionals: str) -> str | None:

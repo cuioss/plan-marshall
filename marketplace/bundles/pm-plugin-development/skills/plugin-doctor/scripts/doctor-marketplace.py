@@ -616,12 +616,14 @@ def cmd_quality_gate(args) -> dict:
     rule_summaries.append({'rule': 'analyze_role_field', 'findings': len(role_field_findings)})
 
     # manage-invocation rule cluster — validates documented script invocations
-    # against each script-bearing skill's argparse surface
-    # (manage-invocation-invalid) and flags script-bearing SKILL.md files
-    # lacking a ``## Canonical invocations`` section (missing-canonical-block).
-    # Pure static analysis (AST + regex, no subprocess, no target-script
-    # import) over an in-scope set derived from the bundle tree, so it is a
-    # build-failing regression net against future argparse-rejection drift.
+    # against each script-bearing skill's live argparse surface derived from
+    # ``--help`` (manage-invocation-invalid) and flags script-bearing SKILL.md
+    # files lacking a ``## Canonical invocations`` section
+    # (missing-canonical-block). The surface is derived dynamically via
+    # subprocesses and cached to disk, making it highly accurate and cheap
+    # enough to run on every analyze pass. The in-scope set is derived from the
+    # bundle tree, so it is a build-failing regression net against future
+    # argparse-rejection drift.
     # ``find_marketplace_root`` returns the ``bundles/`` directory, but the
     # manage-invocation helpers expect the marketplace root (parent of
     # ``bundles/``) so their layout probing and executor discovery resolve —
