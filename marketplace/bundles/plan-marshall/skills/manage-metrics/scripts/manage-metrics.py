@@ -75,7 +75,7 @@ DISPATCH_TERMINATION_CAUSES = (
     'agent_returned',
 )
 USAGE_TAG_RE = re.compile(r'<usage>([\s\S]*?)</usage>', re.MULTILINE)
-USAGE_FIELD_RE = re.compile(r'^\s*(total_tokens|tool_uses|duration_ms)\s*:\s*(\d+)', re.MULTILINE)
+USAGE_FIELD_RE = re.compile(r'^\s*(total_tokens|subagent_tokens|tool_uses|duration_ms)\s*:\s*(\d+)', re.MULTILINE)
 
 
 def _resolve_cwd() -> str:
@@ -1134,7 +1134,10 @@ def _attribute_subagent_usage(
         matching_phase,
         {'total_tokens': 0, 'tool_uses': 0, 'duration_ms': 0, 'samples': 0},
     )
-    bucket['total_tokens'] += fields.get('total_tokens', 0)
+    # The harness sometimes emits the sub-agent token figure under the
+    # `subagent_tokens` key instead of the canonical `total_tokens`; accept
+    # either so the token bucket is never silently dropped to zero.
+    bucket['total_tokens'] += fields.get('total_tokens') or fields.get('subagent_tokens') or 0
     bucket['tool_uses'] += fields.get('tool_uses', 0)
     bucket['duration_ms'] += fields.get('duration_ms', 0)
     bucket['samples'] += 1

@@ -746,6 +746,32 @@ class TestEnrichSubagentAttribution:
         metrics_after = (plan_context.plan_dir_for('enrich-out') / 'work' / 'metrics.toon').read_text()
         assert 'subagent_total_tokens' not in metrics_after
 
+    def test_attributes_subagent_tokens_alias_key(self, plan_context, monkeypatch, tmp_path):
+        """A <usage> block emitting the `subagent_tokens` alias still yields subagent_total_tokens > 0."""
+        self._seed_deterministic_metrics(plan_context.plan_dir_for('enrich-alias'), 'enrich-alias')
+
+        session_id = 'session-alias'
+        projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
+        transcript_path = projects_root / f'{session_id}.jsonl'
+        entries = [
+            _agent_return_entry(
+                '2026-03-27T10:15:00+00:00',
+                '<usage>subagent_tokens: 7000\ntool_uses: 6\nduration_ms: 30000</usage>',
+            ),
+        ]
+        _write_synthetic_transcript(transcript_path, entries)
+
+        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
+
+        result = cmd_enrich(_ns_enrich('enrich-alias', session_id))
+
+        assert result['status'] == 'success'
+        assert result['enriched'] is True
+        assert result['subagent_calls_attributed'] == 1
+
+        metrics_after = (plan_context.plan_dir_for('enrich-alias') / 'work' / 'metrics.toon').read_text()
+        assert 'subagent_total_tokens: 7000' in metrics_after
+
 
 _TWO_PHASE_METRICS_TOON = """plan_id: {plan_id}
 
