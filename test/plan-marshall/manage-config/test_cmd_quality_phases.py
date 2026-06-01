@@ -661,6 +661,56 @@ def test_phase_5_execute_set(plan_context):
     assert config['plan']['phase-5-execute']['commit_strategy'] == 'per_plan'
 
 
+def test_phase_5_execute_get_per_deliverable_build_default(plan_context):
+    """Test plan phase-5-execute get returns the per_deliverable_build default."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(sub_noun='phase-5-execute', verb='get', field='per_deliverable_build')
+    )
+
+    assert result['status'] == 'success'
+    assert result['value'] == 'compile+scoped-test'
+
+
+def test_phase_5_execute_set_per_deliverable_build_valid(plan_context):
+    """Test plan phase-5-execute set accepts each valid per_deliverable_build enum value."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    for value in ('off', 'compile-only', 'compile+scoped-test', 'full'):
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='set',
+                field='per_deliverable_build',
+                value=value,
+            )
+        )
+
+        assert result['status'] == 'success', f'Expected {value} to be accepted, got {result}'
+
+        config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+        assert config['plan']['phase-5-execute']['per_deliverable_build'] == value
+
+
+def test_phase_5_execute_set_per_deliverable_build_invalid_rejected(plan_context):
+    """Test plan phase-5-execute set rejects an invalid per_deliverable_build value."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set',
+            field='per_deliverable_build',
+            value='bogus',
+        )
+    )
+
+    assert result['status'] == 'error'
+    assert 'per_deliverable_build' in result['error']
+    assert 'bogus' in result['error']
+
+
 def test_phase_2_refine_get_includes_compatibility(plan_context):
     """Test plan phase-2-refine get returns compatibility."""
     create_marshal_json(plan_context.fixture_dir)

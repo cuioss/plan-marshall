@@ -118,6 +118,56 @@ def test_get_default_config_includes_per_task_budget_reserve():
     assert execute.get('per_task_budget_reserve') == 50000
 
 
+def test_default_plan_execute_includes_per_deliverable_build():
+    """DEFAULT_PLAN_EXECUTE must declare per_deliverable_build with default compile+scoped-test."""
+    # Arrange
+    execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
+
+    # Act / Assert
+    assert 'per_deliverable_build' in execute_defaults, (
+        'per_deliverable_build must be schema-registered in DEFAULT_PLAN_EXECUTE'
+    )
+    assert execute_defaults['per_deliverable_build'] == 'compile+scoped-test', (
+        'per_deliverable_build default must be compile+scoped-test (focused per-deliverable build)'
+    )
+
+
+def test_get_default_config_includes_per_deliverable_build():
+    """get_default_config() must surface plan.phase-5-execute.per_deliverable_build == compile+scoped-test."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    execute = config['plan']['phase-5-execute']
+    assert execute.get('per_deliverable_build') == 'compile+scoped-test'
+
+
+def test_valid_per_deliverable_build_enumerates_expected_values():
+    """VALID_PER_DELIVERABLE_BUILD must enumerate exactly the four allowed enum values."""
+    # Arrange / Act
+    values = _config_defaults_mod.VALID_PER_DELIVERABLE_BUILD
+
+    # Assert — default must be a member of the enum
+    assert values == ('off', 'compile-only', 'compile+scoped-test', 'full')
+    assert _config_defaults_mod.DEFAULT_PLAN_EXECUTE['per_deliverable_build'] in values
+
+
+def test_validate_per_deliverable_build_accepts_allowed_values():
+    """validate_per_deliverable_build must accept every value in VALID_PER_DELIVERABLE_BUILD."""
+    # Arrange / Act / Assert — no exception for any allowed value
+    for value in _config_defaults_mod.VALID_PER_DELIVERABLE_BUILD:
+        _config_defaults_mod.validate_per_deliverable_build(value)
+
+
+def test_validate_per_deliverable_build_rejects_unknown_value():
+    """validate_per_deliverable_build must raise ValueError for a value outside the enum."""
+    # Arrange / Act / Assert
+    import pytest
+
+    with pytest.raises(ValueError, match='Invalid per_deliverable_build'):
+        _config_defaults_mod.validate_per_deliverable_build('reckless')
+
+
 def test_default_plan_finalize_includes_pre_push_quality_gate():
     """DEFAULT_PLAN_FINALIZE must declare pre_push_quality_gate with empty activation_globs."""
     # Arrange

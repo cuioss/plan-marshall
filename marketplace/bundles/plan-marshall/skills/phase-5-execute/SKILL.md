@@ -642,15 +642,19 @@ If the agent reported `verification.passed: true` but the independent run return
 
 If independent verification also passes, continue to Step 10.
 
-### Step 10: Conditional Per-Deliverable Commit
+### Step 10: Per-Deliverable Chain-Tail (Commit + Focused Build)
+
+Step 10 fires at the **per-deliverable chain-tail point** — the moment all tasks for the just-completed deliverable are done. Two independent concerns hang off this point: the conditional per-deliverable commit (gated on `commit_strategy`) and the focused per-deliverable build (gated on `per_deliverable_build`). Both evaluate the same chain-tail predicate; the commit decision runs first, then the build.
+
+**Chain-tail predicate**: Does any other pending/in-progress task have `depends_on` pointing to the just-completed task?
+- **YES** → a downstream task still needs to run → this is NOT the chain tail → skip both the commit and the focused build, proceed to Step 11.
+- **NO** → all tasks for this deliverable are done → this IS the chain tail → run the commit decision (Step 10a) then the focused build (Step 10b).
+
+#### Step 10a: Conditional Per-Deliverable Commit
 
 If `commit_strategy == per_deliverable` (cached from Step 2):
 
-1. **Check dependency chain**: Does any other pending/in-progress task have `depends_on` pointing to the just-completed task?
-   - **YES** → Skip commit (a downstream task still needs to run)
-   - **NO** → This is the chain tail (all tasks for this deliverable are done) → Commit
-
-2. **Commit** (only when chain tail):
+1. **Commit**:
    ```
    Skill: plan-marshall:workflow-integration-git
    Parameters:
@@ -659,13 +663,80 @@ If `commit_strategy == per_deliverable` (cached from Step 2):
      - create-pr: false
    ```
 
-3. **Log commit outcome**:
+2. **Log commit outcome**:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-5-execute) Per-deliverable commit: {task_id} ({commit_hash})"
    ```
 
-If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
+If `commit_strategy` is `per_plan` or `none` → Skip the commit; still proceed to Step 10b.
+
+#### Step 10b: Focused Per-Deliverable Build (buildable-stuff guarded)
+
+The mid-execute per-deliverable build is **focused** by design: it resolves the single changed module from the just-completed deliverable and runs a depth-gated build scoped to that module — never a whole-tree sweep. The whole-tree quality sweep (`build_verify` / `quality_check`) stays **once** at end-of-phase (Step 11b) and is never repeated mid-execute. This step fires at the chain tail, after the Step 10a commit decision.
+
+1. **Read the depth knob** — resolve `per_deliverable_build` from the plan-scoped config:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     plan phase-5-execute get --field per_deliverable_build --audit-plan-id {plan_id}
+   ```
+
+   The knob is an enum with four execution depths (`off` / `compile-only` / `compile+scoped-test` / `full`); the default is `compile+scoped-test`. The enum vocabulary and its validator are owned by `plan-marshall:manage-config` (`per_deliverable_build` field) — do NOT restate the enum semantics here; this step consumes the resolved value.
+
+2. **`off`** → skip the per-deliverable build entirely. The end-of-phase Step 11b sweep is the only build. Log the decision and proceed to Step 11:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:phase-5-execute) per_deliverable_build=off — skipping focused build for deliverable {deliverable}; end-of-phase sweep is the only build"
+   ```
+
+3. **Buildable-stuff guard** — classify the deliverable's changed paths against the canonical six-bucket file-type classifier before running any Python build. The classifier vocabulary, predicates, and overlap-resolution policy are the normative source of truth at [`../phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier) — do NOT restate the bucket vocabulary here. When the deliverable's changed paths resolve to `documentation_only` (no `.py` touched — typical workflow-doc edit), the deliverable has no buildable Python stuff: skip `compile` / `module-tests` and run only the documentation gate (`pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}` and/or markdown validation). Never run the Python build for a `documentation_only` deliverable. This extends the plan-wide docs-only guard (manage-execution-manifest composer) down to the per-deliverable execute loop. Log the skip and proceed to Step 11:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:phase-5-execute) Buildable-stuff guard: deliverable {deliverable} resolved documentation_only — skipping Python build, running doc gate only"
+   ```
+
+4. **Focused build** (buildable deliverable — at least one `.py` changed). Resolve the changed module, then run the depth-gated commands scoped to that module only:
+
+   a. **Resolve the changed module** from the deliverable's modified files:
+
+      ```bash
+      python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+        which-module --path {changed_path}
+      ```
+
+      Capture the returned module as `{module}`.
+
+   b. **Resolve and run the depth-gated build** via `architecture resolve` (never hard-code `./pw` / `mvn` / `gradle` / `npm`):
+
+      - **`compile-only`** → resolve and run `compile` scoped to the changed module:
+
+        ```bash
+        python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+          resolve --command compile --module {module} --audit-plan-id {plan_id}
+        ```
+
+      - **`compile+scoped-test`** (default) → run BOTH commands scoped to the changed module: first the `compile` command from the `compile-only` branch above, then resolve and run `module-tests`. The two are distinct checks (e.g. `compile` type-checks, `module-tests` runs the test suite); `module-tests` does not subsume `compile`, so both are required at this depth:
+
+        ```bash
+        python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+          resolve --command module-tests --module {module} --audit-plan-id {plan_id}
+        ```
+
+      - **`full`** → resolve and run whole-tree `quality-gate` (the legacy whole-tree-per-deliverable behavior; opt-in only):
+
+        ```bash
+        python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+          resolve --command quality-gate --audit-plan-id {plan_id}
+        ```
+
+      Execute the returned `executable` for each resolved command. Honor the architecture-resolved `bash_timeout_seconds` / `execution_tier` envelope: for `execution_tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `execution_tier=orchestrator` return control to the orchestrator to run the long build (do NOT background it). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure).
+
+5. **On non-zero exit** — route the failure through the **existing Step 11 per-task triage path**: persist each failing finding to the Q-Gate store (`manage-findings qgate add`) and return the `triage_required` signal to the orchestrator. Do NOT invent a new triage surface — reuse the Step 11 contract verbatim (`producer=build-runner`, `finding_type=verification-failure`).
 
 ### Step 11: Triage Verification Failure
 

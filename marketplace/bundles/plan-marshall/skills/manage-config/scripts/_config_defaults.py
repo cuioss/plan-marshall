@@ -177,6 +177,27 @@ def validate_rebase_strategy(value: str) -> None:
         raise ValueError(f"Invalid rebase_strategy '{value}'. Allowed: {list(VALID_REBASE_STRATEGIES)}")
 
 
+# Valid values for phase-5-execute.per_deliverable_build — enum controlling the
+# build depth phase-5-execute runs at each per-deliverable chain-tail point.
+#   - 'off':                 skip the per-deliverable build entirely (end-of-phase sweep is the only build)
+#   - 'compile-only':        resolve the changed module and run compile only
+#   - 'compile+scoped-test': compile + scoped module-tests for the changed module (default)
+#   - 'full':                whole-tree quality-gate per deliverable (legacy behavior; opt-in only)
+VALID_PER_DELIVERABLE_BUILD = ('off', 'compile-only', 'compile+scoped-test', 'full')
+
+
+def validate_per_deliverable_build(value: str) -> None:
+    """Validate that `per_deliverable_build` is one of the allowed enum values.
+
+    Raises:
+        ValueError: If ``value`` is not in :data:`VALID_PER_DELIVERABLE_BUILD`.
+    """
+    if value not in VALID_PER_DELIVERABLE_BUILD:
+        raise ValueError(
+            f"Invalid per_deliverable_build '{value}'. Allowed: {list(VALID_PER_DELIVERABLE_BUILD)}"
+        )
+
+
 DEFAULT_PLAN_EXECUTE = {
     'commit_strategy': 'per_plan',
     'finalize_without_asking': True,
@@ -187,6 +208,12 @@ DEFAULT_PLAN_EXECUTE = {
     'rebase_on_execute_start': True,
     # Enum: see VALID_REBASE_STRATEGIES / validate_rebase_strategy.
     'rebase_strategy': 'merge',
+    # Per-deliverable build depth gating phase-5-execute's chain-tail focused
+    # build (Step 10). Enum: see VALID_PER_DELIVERABLE_BUILD /
+    # validate_per_deliverable_build. Default 'compile+scoped-test' resolves the
+    # changed module and runs compile + scoped module-tests, keeping mid-execute
+    # builds focused; the whole-tree quality sweep stays once at end-of-phase.
+    'per_deliverable_build': 'compile+scoped-test',
     # Per-task budget reserve (tokens) gating the phase-5-execute continue-vs-yield
     # sentinel. phase-5-execute reads this via
     # `manage-config plan phase-5-execute get --field per_task_budget_reserve`;

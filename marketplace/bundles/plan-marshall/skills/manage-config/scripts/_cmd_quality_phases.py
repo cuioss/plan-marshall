@@ -18,7 +18,11 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from _config_defaults import get_default_config, validate_rebase_strategy
+from _config_defaults import (
+    get_default_config,
+    validate_per_deliverable_build,
+    validate_rebase_strategy,
+)
 from constants import PHASES  # type: ignore[import-not-found]
 
 # Valid phase sections - derived from centralized PHASES with 'phase-' prefix for marshal.json keys
@@ -129,6 +133,11 @@ def cmd_phase(args, phase_section: str) -> dict:
         if phase_section == 'phase-5-execute' and field == 'rebase_strategy':
             try:
                 validate_rebase_strategy(str(value))
+            except ValueError as e:
+                return error_exit(str(e))
+        if phase_section == 'phase-5-execute' and field == 'per_deliverable_build':
+            try:
+                validate_per_deliverable_build(str(value))
             except ValueError as e:
                 return error_exit(str(e))
         section[field] = value
