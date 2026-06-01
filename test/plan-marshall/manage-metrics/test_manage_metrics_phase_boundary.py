@@ -95,8 +95,17 @@ def _field(block: str, key: str) -> str | None:
 # =============================================================================
 
 
-def test_phase_boundary_records_end_and_start_atomically(plan_context):
+def test_phase_boundary_records_end_and_start_atomically(plan_context, monkeypatch):
     """phase-boundary writes end_time on prev and start_time on next in one call."""
+    # Freeze the clock so cmd_start_phase and cmd_phase_boundary observe the
+    # SAME instant. now_utc_iso() truncates to whole seconds, so without this the
+    # two real reads can straddle a 1-second boundary (start=…:11, end=…:12),
+    # making the wall span 1000 ms instead of ~0 and the clamp below assert 1000.
+    # Capturing the real value once preserves its exact ISO format while making
+    # the wall span deterministically zero.
+    frozen_now = manage_metrics.now_utc_iso()
+    monkeypatch.setattr(manage_metrics, 'now_utc_iso', lambda: frozen_now)
+
     cmd_start_phase(_ns_start_phase('boundary-basic', '1-init'))
 
     result = cmd_phase_boundary(
