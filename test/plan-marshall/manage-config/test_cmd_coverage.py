@@ -379,3 +379,40 @@ def test_resolve_propagates_coupling_violation(plan_context):
     assert result['status'] == 'error'
     assert result['error_type'] == 'coverage_coupling_violation'
     assert 'coupling' not in result
+
+
+# =============================================================================
+# (7) non-string config values propagate to a clear validation error
+# =============================================================================
+
+
+def test_non_string_thoroughness_is_rejected_not_silently_inherited(plan_context):
+    """A non-string thoroughness in marshal.json must fail loudly, not collapse.
+
+    Regression guard for the ``isinstance(value, str)`` drop in ``_resolve_field``:
+    a number written to the thoroughness slot previously fell through to
+    ``inherit`` silently. It must now propagate to ``_validate_thoroughness``
+    and surface a clear ``invalid thoroughness`` error.
+    """
+    _write_coverage_config(
+        plan_context.fixture_dir,
+        per_phase={'phase-5-execute': {'thoroughness': 4, 'scope': 'module'}},
+    )
+
+    result = cmd_coverage_read(_read_args(phase='phase-5-execute'))
+
+    assert result['status'] == 'error'
+    assert 'invalid thoroughness' in result['error']
+
+
+def test_non_string_scope_is_rejected_not_silently_inherited(plan_context):
+    """A non-string scope in marshal.json must fail loudly, not collapse to inherit."""
+    _write_coverage_config(
+        plan_context.fixture_dir,
+        per_phase={'phase-5-execute': {'thoroughness': 'T2', 'scope': ['module']}},
+    )
+
+    result = cmd_coverage_read(_read_args(phase='phase-5-execute'))
+
+    assert result['status'] == 'error'
+    assert 'invalid scope' in result['error']

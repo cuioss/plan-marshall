@@ -79,11 +79,13 @@ KNOWN_COVERAGE_GROUPS = (
 )
 
 
-def _validate_thoroughness(value: str, source: str) -> tuple[bool, str | None]:
+def _validate_thoroughness(value: object, source: str) -> tuple[bool, str | None]:
     """Validate a thoroughness keyword.
 
     Args:
-        value: The thoroughness keyword to validate.
+        value: The candidate thoroughness value. Typed ``object`` because it
+            may be a non-string read straight from marshal.json — such a value
+            is rejected here rather than silently dropped upstream.
         source: Human-readable description of where the value came from,
             included verbatim in error messages for diagnosability.
 
@@ -98,11 +100,13 @@ def _validate_thoroughness(value: str, source: str) -> tuple[bool, str | None]:
     )
 
 
-def _validate_scope(value: str, source: str) -> tuple[bool, str | None]:
+def _validate_scope(value: object, source: str) -> tuple[bool, str | None]:
     """Validate a scope keyword.
 
     Args:
-        value: The scope keyword to validate.
+        value: The candidate scope value. Typed ``object`` because it may be a
+            non-string read straight from marshal.json — such a value is
+            rejected here rather than silently dropped upstream.
         source: Human-readable description of where the value came from.
 
     Returns:
@@ -116,7 +120,7 @@ def _validate_scope(value: str, source: str) -> tuple[bool, str | None]:
     )
 
 
-def _validate_coupling(thoroughness: str, scope: str) -> tuple[bool, str | None]:
+def _validate_coupling(thoroughness: object, scope: object) -> tuple[bool, str | None]:
     """Enforce the scope <-> thoroughness coupling constraint.
 
     Rejects ``thoroughness >= T4 AND scope < component`` per
@@ -133,8 +137,8 @@ def _validate_coupling(thoroughness: str, scope: str) -> tuple[bool, str | None]
     if thoroughness == 'inherit' or scope == 'inherit':
         return True, None
 
-    t_rank = _THOROUGHNESS_RANK.get(thoroughness)
-    s_rank = _SCOPE_RANK.get(scope)
+    t_rank = _THOROUGHNESS_RANK.get(thoroughness) if isinstance(thoroughness, str) else None
+    s_rank = _SCOPE_RANK.get(scope) if isinstance(scope, str) else None
     if t_rank is None or s_rank is None:
         # Validity is checked separately by _validate_thoroughness/_validate_scope;
         # an unranked-but-allowed value cannot occur here.
@@ -186,7 +190,7 @@ def _resolve_field(
     plan_wide: dict | None,
     group: str,
     field: str,
-) -> tuple[str, str]:
+) -> tuple[object, str]:
     """Walk the per-phase ``coverage`` config to a single field keyword.
 
     Resolution order (mirrors ``_resolve_level``, applied per-field):
@@ -194,21 +198,28 @@ def _resolve_field(
         2. plan.coverage.<field>          (plan-wide object slot)
         3. inherit                         (implicit final fallback)
 
+    A *present* field value is returned verbatim — including a non-string
+    (e.g. a number or object accidentally written to marshal.json). Such a
+    value propagates to ``_validate_thoroughness`` / ``_validate_scope``, which
+    reject it with a clear ``invalid {field}`` error rather than silently
+    collapsing to ``inherit`` and masking the misconfiguration. Only an
+    *absent* slot (``.get`` returns ``None``) falls through to the next tier.
+
     Returns:
-        (value, source). ``value`` is always a member of the field's allowed
-        enum (validity is asserted by the caller).
+        (value, source). The caller validates ``value`` against the field's
+        allowed enum.
     """
     phase_entry = plan_block.get(group)
     if isinstance(phase_entry, dict):
         phase_coverage = phase_entry.get('coverage')
         if isinstance(phase_coverage, dict):
             value = phase_coverage.get(field)
-            if isinstance(value, str):
+            if value is not None:
                 return value, f'plan.{group}.coverage.{field}'
 
     if isinstance(plan_wide, dict):
         value = plan_wide.get(field)
-        if isinstance(value, str):
+        if value is not None:
             return value, f'plan.coverage.{field}'
 
     return 'inherit', 'implicit_default'

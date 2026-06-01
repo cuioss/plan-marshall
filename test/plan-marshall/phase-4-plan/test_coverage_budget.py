@@ -157,7 +157,7 @@ def test_run_coverage_resolve_argv_omits_audit_plan_id(monkeypatch) -> None:
 
     # Ensure the executor existence guard passes so the cmd is actually built.
     monkeypatch.setattr(budget, 'get_executor_path', lambda: budget.Path('/tmp/exec.py'))
-    monkeypatch.setattr(budget.Path, 'exists', lambda _self: True)
+    monkeypatch.setattr(budget.Path, 'is_file', lambda _self: True)
     monkeypatch.setattr(subprocess, 'run', _fake_run)
 
     parsed = budget._run_coverage_resolve('5-execute')
@@ -187,7 +187,7 @@ def test_resolve_and_reserve_honors_declared_cell_end_to_end(monkeypatch) -> Non
         stdout = 'status: success\nthoroughness: T4\nscope: component\n'
 
     monkeypatch.setattr(budget, 'get_executor_path', lambda: budget.Path('/tmp/exec.py'))
-    monkeypatch.setattr(budget.Path, 'exists', lambda _self: True)
+    monkeypatch.setattr(budget.Path, 'is_file', lambda _self: True)
     monkeypatch.setattr(subprocess, 'run', lambda _cmd, **_kw: _FakeCompleted())
 
     result = budget.resolve_and_reserve('any-plan', '5-execute')

@@ -105,7 +105,7 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
 
 def _read_modified_files(references_path: Path) -> set[str]:
     """Return the ``modified_files`` set from ``references.json`` (empty on error)."""
-    if not references_path.exists():
+    if not references_path.is_file():
         return set()
     try:
         refs = json.loads(references_path.read_text(encoding='utf-8'))
@@ -165,7 +165,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     phase = args.phase
 
     solution_path = plan_dir / 'solution_outline.md'
-    solution_content = solution_path.read_text(encoding='utf-8') if solution_path.exists() else ''
+    solution_content = solution_path.read_text(encoding='utf-8') if solution_path.is_file() else ''
     references_path = plan_dir / 'references.json'
 
     recall, item_coverage_rung = compute_item_coverage(solution_content, references_path)

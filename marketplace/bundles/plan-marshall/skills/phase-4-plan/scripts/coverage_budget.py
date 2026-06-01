@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -95,13 +96,20 @@ def _run_coverage_resolve(phase: str) -> dict[str, Any] | None:
     baseline reserve.
 
     Returns ``None`` when the executor is unreachable, the call errors, or the
-    output is unparseable — callers map ``None`` to the baseline reserve.
+    output is unparseable — callers map ``None`` to the baseline reserve. This
+    degrade-to-baseline contract is intentional and covered by
+    ``test_coverage_budget.py`` (unreachable / error / inherit all assert
+    baseline). The legitimately-unreachable paths (no executor, not a file,
+    subprocess launch failure) degrade silently; the *unexpected* internal
+    failures (the executor ran but returned non-zero, or emitted unparseable
+    output) emit a ``stderr`` warning before degrading, so a genuine bug does
+    not vanish without a trace while still preserving the baseline fallback.
     """
     try:
         executor = get_executor_path()
     except RuntimeError:
         return None
-    if not executor.exists():
+    if not executor.is_file():
         return None
     cmd = [
         'python3',
@@ -124,10 +132,21 @@ def _run_coverage_resolve(phase: str) -> dict[str, Any] | None:
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
     if result.returncode != 0:
+        print(
+            f'coverage_budget: coverage resolve exited {result.returncode} '
+            f'(phase={phase!r}); degrading to baseline reserve. stderr: '
+            f'{result.stderr.strip()}',
+            file=sys.stderr,
+        )
         return None
     try:
         parsed = parse_toon(result.stdout)
-    except Exception:
+    except Exception as exc:
+        print(
+            f'coverage_budget: could not parse coverage resolve output '
+            f'(phase={phase!r}): {exc}; degrading to baseline reserve.',
+            file=sys.stderr,
+        )
         return None
     return parsed if isinstance(parsed, dict) else None
 
