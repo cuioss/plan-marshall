@@ -1,13 +1,13 @@
 ---
 name: audit-archived-plan-retrospectives
-description: Audit archived plans across nine retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, PR-merge velocity, and task-count efficiency — file lessons through the three-gate policy, and dormate reviewed plans
+description: Audit archived plans across fourteen retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, PR-merge velocity, task-count efficiency, global-log analysis, token-economics, quality-chain, sequence-and-build-minimality, input-integrity corpus completeness, and cross-check-synthesis facet-completeness — file lessons through the three-gate policy, and dormate reviewed plans
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Write, AskUserQuestion
 ---
 
 # Audit Archived Plan Retrospectives (project-local)
 
-Multi-check retrospective auditor over the archived-plan corpus. The skill is
+Fourteen-check retrospective auditor over the archived-plan corpus. The skill is
 the LLM-driven orchestration narrative; `scripts/audit.py` is the deterministic
 computation core. The orchestrator selects which checks to run, surfaces each
 check's script-computed TOON verbatim, drives lesson filing through the
@@ -85,7 +85,8 @@ names, anomaly classes, or verdicts that the script did not emit.
 | `--plan-dir PATH` | optional | Override the default `.plan/local/archived-plans` root. Useful when auditing a vendored snapshot. |
 | `--plan-id ID` | optional | Restrict the scan to one archived plan (its directory basename). |
 | `--include-active` | optional | Additionally scan `.plan/local/plans/` so in-flight plans are reported alongside archived ones. Active plans without a manifest are reported as `incomplete`, not `drift`. |
-| `--check NAME` | optional | Run a single check instead of all. Valid names: `execution-context-manifest`, `quality-verification-report`, `metrics`, `recurring-pattern-detector`, `token-efficiency-trend`, `scope-estimate-accuracy`, `pr-merge-velocity`, `task-count-efficiency`. Default: run every check. |
+| `--check NAME` | optional | Run a single check instead of all. Valid names: `execution-context-manifest`, `quality-verification-report`, `metrics`, `recurring-pattern-detector`, `token-efficiency-trend`, `scope-estimate-accuracy`, `pr-merge-velocity`, `task-count-efficiency`, `global-log-analysis`, `token-economics`, `quality-chain`, `sequence-and-build-minimality`, `input-integrity`, `cross-check-synthesis`. Default: run every check. When `--check cross-check-synthesis` is selected, the script still computes the upstream checks it consumes (without emitting their blocks) so the synthesis can fire. |
+| `--dormate-global-logs --confirmed` | optional | Relocate COMPLETE past-date global logs (`{prefix}-YYYY-MM-DD.log`) from `.plan/local/logs/` to `.plan/temp/dormated-plans/global-logs/`. Today's still-active log is never moved. Inert (refused, exit 0) without `--confirmed`; on a destination-name clash the whole move refuses (`status: error`) rather than overwriting. The interactive confirmation is owned by the LLM body (Step 5), never delegated to the script. |
 
 ## Available checks
 
@@ -104,6 +105,12 @@ the rows.
 | Scope-estimate accuracy | [`checks/scope-estimate-accuracy.md`](checks/scope-estimate-accuracy.md) | Declared `scope_estimate` vs actual affected/modified file count. |
 | PR-merge velocity | [`checks/pr-merge-velocity.md`](checks/pr-merge-velocity.md) | PR open-to-merge duration; long-review-cycle flagging. |
 | Task-count efficiency | [`checks/task-count-efficiency.md`](checks/task-count-efficiency.md) | Under-decomposed / over-decomposed task-count outliers. |
+| Global-log analysis | [`checks/global-log-analysis.md`](checks/global-log-analysis.md) | Cross-plan `.plan/local/logs/` parse: error/warning lines, slow calls, high-frequency callers, impossible/hang durations, and test-fixture leaks — correlated to plan execution windows. |
+| Token economics | [`checks/token-economics.md`](checks/token-economics.md) | Cross-plan per-phase token shares + efficiency ratios joined to scope/change_type, with corpus-derived (never hard-coded) anti-pattern flags: fixed-overhead floor, planning≫execute, outline/refine/finalize-heavy, big-spend-tiny-footprint, long sessions, execute-metrics blindness. |
+| Quality chain | [`checks/quality-chain.md`](checks/quality-chain.md) | Cross-plan findings classified by mechanism (build / self-review / auto-review / human-review) × resolution (direct_fix / loop_back / rerun_flake / accepted / suppressed / pending / lesson); per-plan matrix + corpus totals, chain anti-pattern flags (build_pending_pile, auto_review_only, review_body_duplicate, no_qgate6), and shift-left tiering (Tier 1-4) of auto-review findings against the ext-self-review surfacer remit. Per-finding rows, walked step-by-step. |
+| Sequence and build minimality | [`checks/sequence-and-build-minimality.md`](checks/sequence-and-build-minimality.md) | Cross-plan call-sequence reconstruction from `logs/script-execution.log`, bucketed into phases by the `logs/work.log` `[DISPATCH] role=phase-N` timeline; per-build duration classification (minimal `<120s` / scoped / heavy `>400s`) and work.log build-verb mining (verify / scoped-vs-all module-tests / quality-gate / coverage / compile), with redundancy / non-minimality flags (build_churn, non_minimal_build, docs_only_build, ci_rerun, phase_reentry, arch_over_resolution, consecutive_dup). Carries three structural caveats (finalize-fold conflation, verify-count-upper-bound vs heavy-duration-floor, consecutive_dup over-count) documented in the sub-doc. |
+| Input integrity | [`checks/input-integrity.md`](checks/input-integrity.md) | Per-plan input presence/health (execution.toon / metrics.toon / references.json / tasks/ / artifacts/findings/ / logs/script-execution.log) plus three input-health flags (metrics_blind, incomplete_lifecycle, missing_dispatch_markers) and a corpus data_confidence summary (fully-recorded / partial / blind). The **no-false-healthy foundation**: every other check MUST annotate rows derived from a metrics_blind plan as "floor, not truth", and no check may claim "all healthy" over blind-input plans. |
+| Cross-check synthesis | [`checks/cross-check-synthesis.md`](checks/cross-check-synthesis.md) | The **facet-completeness critic** (runs LAST). Joins the OTHER checks' retained structured results into five cross-check couplings single rows miss: `trend_empty_untrustworthy` (empty token-trend regression over blind-execute plans), `churn_explains_cost` (non_minimal_build/build_churn explaining token-economics finalize/big-spend cost or a metrics disproportionate_token), `qgate_gap_chain` (no_qgate6/auto_review_only correlating with ci_rerun / finalize_heavy), `argparse_signature_cluster` (recurring-pattern argparse signatures correlating with global-log errors and unfiled quality-verification signatures — collapsed to ONE candidate), and `scope_underestimate_cost` (scope under-estimation correlating with high tokens/file or a task-count outlier). Each coupling carries its qualifying caveat and the D1 severity column; the block operationalizes the Step-4b completeness gate. |
 
 ## Usage Examples
 
@@ -165,8 +172,24 @@ restate them.
 
 For EVERY row that is a potential signal — `drift`, a populated `name_drift`,
 `impossible_value`, a scope mismatch, unfiled proposed lessons, a systemic
-recurring pattern, a PR-velocity flag, or a task-count outlier — explicitly state
-BOTH:
+recurring pattern, a PR-velocity flag, a task-count outlier, a global-log
+signal (error/non-INFO line, slow call, impossible-duration call, high-frequency
+caller, or fixture leak), a token-economics anti-pattern flag
+(`fixed_overhead_floor`, `planning_gt_exec`, `outline_heavy` / `refine_heavy` /
+`finalize_heavy`, `big_spend_tiny_footprint`, `long_session`,
+`exec_metrics_blind`), a quality-chain signal (a chain anti-pattern flag —
+`build_pending_pile`, `auto_review_only`, `review_body_duplicate`, `no_qgate6` —
+or a `genuine` per-finding row, especially a Tier-1 `auto-review` finding), or a
+sequence-and-build-minimality flag (`build_churn`, `non_minimal_build`,
+`docs_only_build`, `ci_rerun`, `phase_reentry`, `arch_over_resolution`,
+`consecutive_dup` — read each against the three structural caveats in
+`checks/sequence-and-build-minimality.md`), an input-integrity flag
+(`metrics_blind`, `incomplete_lifecycle`, `missing_dispatch_markers`, or a
+`data_confidence: blind` plan), or a cross-check-synthesis coupling that FIRED
+(`trend_empty_untrustworthy`, `churn_explains_cost`, `qgate_gap_chain`,
+`argparse_signature_cluster`, `scope_underestimate_cost` — read each against its
+qualifying caveat in `checks/cross-check-synthesis.md`) —
+explicitly state BOTH:
 
 1. **the verdict** — action (file a lesson / fold into an active plan / surface
    for human review) or no-action; and
@@ -182,6 +205,31 @@ violation. The `execution-context-manifest` check's `severity` column and
 `genuine_signal_count` summary are the precision aids for this adjudication:
 `informational` rows still require a one-line cited dismissal; `genuine` rows
 require a full verdict-plus-evidence treatment.
+
+#### Standing rule: the input-integrity verdict is the no-false-healthy floor
+
+The `input-integrity` check is the **deterministic foundation** every other
+check's adjudication is built on. Process it FIRST among the per-plan reads, and
+honour its verdict for the rest of the audit:
+
+- **A check may not claim "all healthy" over blind-input plans.** Whenever the
+  `input-integrity` block reports `data_confidence_blind > 0`, NO check — and no
+  corpus-level summary — may conclude "all healthy" / "no findings" for the
+  corpus. The blind plans' downstream rows are floors: absence of a signal there
+  is absence of *recorded data*, not absence of a problem. The honest conclusion
+  reads "no findings among fully-recorded plans; the N blind plans
+  (`blind_plan_ids`) are floored and cannot be cleared".
+- **Annotate floored rows "floor, not truth".** Any row another check derives
+  from a plan `input-integrity` marks `metrics_blind` (especially a `blind`-bucket
+  plan) MUST be annotated **"floor, not truth"** in the adjudication — a
+  token-economics, token-trend, or metrics number computed over a blind execute
+  is an under-count, not a measurement.
+- **Name the blind plans when dismissing.** When dismissing a blind plan's peer
+  row as "no signal", cite `input-integrity`'s `blind_plan_ids` as the reason the
+  row cannot be cleared; never generalize it into a healthy verdict.
+
+See [`checks/input-integrity.md`](checks/input-integrity.md) §
+"The cross-check obligation" for the full statement of this rule.
 
 ### Step 4: File lessons through the three-gate policy
 
@@ -227,18 +275,62 @@ lesson already covering that notation satisfies Gate 1 for every later plan that
 trips the same rejection — so the dedup check MUST search the corpus by the source
 notation, not by the consuming plan ID.
 
+**Token-economics flags are already covered by lesson `2026-06-01-12-001`**: the
+`token-economics` check's anti-pattern taxonomy is derived directly from that
+filed, `active` lesson (its remediation direction #5 proposed this very check). A
+flagged token-economics row is therefore COVERED on a Gate-1 dedup basis — name
+`2026-06-01-12-001` as the covering reference and do NOT re-file. The file-worthy
+signal from this check is a corpus *drift* (e.g. the execute-share falling
+further, a fresh fixed-overhead recurrence on a plan created after a remediation
+shipped, or a previously-unflagged anti-pattern becoming systemic), which extends
+`2026-06-01-12-001` via Gate-1 `merge_into` rather than opening a parallel lesson.
+See `checks/token-economics.md` § "Adjudication against lesson 2026-06-01-12-001".
+
 ### Step 4b: Review-completeness gate
 
 Before reaching Step 5 (Interactive dormation), the orchestrator MUST satisfy
 this completeness gate. Dormation is BLOCKED until every item below is true and
-demonstrable from the adjudication produced in Steps 3–4:
+demonstrable from the adjudication produced in Steps 3–4.
+
+The `cross-check-synthesis` check is the deterministic surface that
+**operationalizes this gate**: it joins the other checks' results into the five
+cross-check couplings (see [`checks/cross-check-synthesis.md`](checks/cross-check-synthesis.md))
+and stamps each fired coupling `severity: genuine`. A fired coupling is therefore
+a genuine-signal row this gate's first checkbox accounts for, and its
+`trend_empty_untrustworthy` coupling is the structural enforcement of the
+blind-plan checkbox across the trend facet — a premature "no findings" conclusion
+cannot pass the gate while any coupling fired unresolved.
 
 - [ ] Every emitted check block was examined against its `checks/{name}.md`
       sub-document — none skipped or sampled.
 - [ ] Every genuine-signal row (`severity: genuine`, `impossible_value`, real
       `drift`, unresolved-role `name_drift`, scope mismatch, unfiled lesson,
-      systemic pattern, PR-velocity flag, task-count outlier) was adjudicated
+      systemic pattern, PR-velocity flag, task-count outlier, global-log
+      error/slow/impossible/high-frequency/fixture-leak signal, token-economics
+      anti-pattern flag, quality-chain anti-pattern flag, `genuine`
+      quality-chain per-finding row, or sequence-and-build-minimality flag —
+      `build_churn`, `non_minimal_build`, `docs_only_build`, `ci_rerun`,
+      `phase_reentry`, `arch_over_resolution`, `consecutive_dup`, or an
+      input-integrity flag — `metrics_blind`, `incomplete_lifecycle`,
+      `missing_dispatch_markers`, or a FIRED cross-check-synthesis coupling —
+      `trend_empty_untrustworthy`, `churn_explains_cost`, `qgate_gap_chain`,
+      `argparse_signature_cluster`, `scope_underestimate_cost`) was adjudicated
       with a stated verdict AND cited evidence.
+- [ ] Every cross-check-synthesis coupling that `fired` (`severity: genuine`) was
+      resolved by adjudicating its COUPLED rows together — not in isolation —
+      against the coupling's qualifying caveat in
+      `checks/cross-check-synthesis.md`; in particular,
+      `trend_empty_untrustworthy` was honoured as a floor (no "no regression"
+      healthy claim over blind-execute plans) and `argparse_signature_cluster`
+      was collapsed to ONE source-keyed candidate.
+- [ ] If `input-integrity` reported `data_confidence_blind > 0`, no check and no
+      corpus summary claimed "all healthy" / "no findings" over the corpus; every
+      blind plan's peer rows were annotated "floor, not truth" and the blind
+      plans were named (`blind_plan_ids`) rather than cleared.
+- [ ] For the quality-chain check specifically, EVERY per-finding row was walked
+      step-by-step — never sampled — per `checks/quality-chain.md` §
+      "Methodology constraint: walk every finding, never sample" (adjudicated
+      against lesson `2026-06-01-13-001`).
 - [ ] Every dismissal of a potential-signal row carries a cited justification —
       no bare "looks fine" and no silent skip.
 - [ ] Every "already covered" / dedup / active-plan drop was corpus-verified with
@@ -267,6 +359,29 @@ is mandatory:
 
    Without `--confirmed`, the script's move function is inert and refuses to
    relocate anything.
+
+After offering per-plan dormation, also offer to dormate the COMPLETE past-date
+global logs — relocating each `{prefix}-YYYY-MM-DD.log` from `.plan/local/logs/`
+to `.plan/temp/dormated-plans/global-logs/`. This move is destructive in the same
+way, so confirmation is mandatory and owned here:
+
+3. Determine the complete date-files that would move. Today's still-active log
+   (the `{prefix}-YYYY-MM-DD.log` whose date equals today) is NEVER moved, so it
+   MUST be excluded from the set surfaced to the user. Raise an `AskUserQuestion`
+   that lists exactly the past-date `{prefix}-YYYY-MM-DD.log` files (today's
+   active log excluded) and confirms the move (the confirmation is owned here, in
+   the LLM body — never delegated to the script).
+4. Only on explicit confirmation, invoke the script's confirmed global-log
+   dormation move:
+
+   ```bash
+   python3 .claude/skills/audit-archived-plan-retrospectives/scripts/audit.py --dormate-global-logs --confirmed
+   ```
+
+   The script re-applies the same past-date-only / never-move-today's-active-log
+   rule, refuses on any destination-name clash (`status: error`), and emits a
+   `moved[N]{date_file}` TOON listing the relocated date files. Without
+   `--confirmed`, the move function is inert and refuses to relocate anything.
 
 ## Critical Rules
 
