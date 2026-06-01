@@ -16,7 +16,10 @@ from self_review import (  # type: ignore[import-not-found]
     _diff_hunks,
     _find_skill_dir,
     _iter_added_lines,
+    _load_test_tree_blob,
+    _name_in_test_blob,
     _run_git,
+    _symmetric_pair_has_test,
     _truncate,
 )
 
@@ -208,22 +211,213 @@ class TestDetectSymmetricPairs:
             ('start_timer', 'stop_timer'),
         ],
     )
-    def test_detects_each_pairing(self, source_name: str, expected_partner: str):
+    def test_detects_each_pairing(
+        self, source_name: str, expected_partner: str, tmp_path: Path
+    ):
         added = [('foo.py', 1, f'def {source_name}(self):')]
-        out = _detect_symmetric_pairs(added)
+        out = _detect_symmetric_pairs(added, tmp_path)
         assert len(out) == 1
         assert out[0]['name'] == source_name
         assert out[0]['partner'] == expected_partner
+        # No test/ tree under tmp_path -> Tier-2 missing-test signal.
+        assert out[0]['test_present'] is False
 
-    def test_skips_function_without_pair_token(self):
+    def test_skips_function_without_pair_token(self, tmp_path: Path):
         added = [('foo.py', 1, 'def compute_value(x):')]
-        out = _detect_symmetric_pairs(added)
+        out = _detect_symmetric_pairs(added, tmp_path)
         assert out == []
 
-    def test_skips_non_python_files(self):
+    def test_skips_non_python_files(self, tmp_path: Path):
         added = [('doc.md', 1, 'def save_state(self):')]
-        out = _detect_symmetric_pairs(added)
+        out = _detect_symmetric_pairs(added, tmp_path)
         assert out == []
+
+    def test_entry_carries_test_present_field(self, tmp_path: Path):
+        # Every emitted entry MUST carry the new test_present key alongside the
+        # pre-existing file/line/name/partner fields.
+        added = [('foo.py', 1, 'def save_state(self):')]
+        out = _detect_symmetric_pairs(added, tmp_path)
+        assert len(out) == 1
+        assert set(out[0].keys()) == {
+            'file',
+            'line',
+            'name',
+            'partner',
+            'test_present',
+        }
+
+    def test_test_present_true_when_test_tree_references_name(
+        self, tmp_path: Path
+    ):
+        # A matching test reference in the test tree -> test_present=true.
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_thing.py').write_text(
+            'def test_save_state():\n    assert save_state() is None\n',
+            encoding='utf-8',
+        )
+        added = [('foo.py', 1, 'def save_state(self):')]
+        out = _detect_symmetric_pairs(added, tmp_path)
+        assert len(out) == 1
+        assert out[0]['name'] == 'save_state'
+        assert out[0]['test_present'] is True
+
+    def test_test_present_false_when_no_reference(self, tmp_path: Path):
+        # A test tree that never mentions the function -> Tier-2 false signal.
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_other.py').write_text(
+            'def test_unrelated():\n    assert compute_value() == 1\n',
+            encoding='utf-8',
+        )
+        added = [('foo.py', 1, 'def save_state(self):')]
+        out = _detect_symmetric_pairs(added, tmp_path)
+        assert len(out) == 1
+        assert out[0]['test_present'] is False
+
+
+# =============================================================================
+# Test: _symmetric_pair_has_test
+# =============================================================================
+
+
+class TestSymmetricPairHasTest:
+    def test_returns_true_on_word_boundary_match(self, tmp_path: Path):
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_a.py').write_text(
+            'def test_save():\n    save()\n', encoding='utf-8'
+        )
+        assert _symmetric_pair_has_test('save', tmp_path) is True
+
+    def test_substring_does_not_satisfy_search(self, tmp_path: Path):
+        # `save_state` in the test tree must NOT satisfy a search for `save`:
+        # the word-boundary guard rejects the substring-only overlap.
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_a.py').write_text(
+            'def test_save_state():\n    save_state()\n', encoding='utf-8'
+        )
+        assert _symmetric_pair_has_test('save', tmp_path) is False
+
+    def test_longer_identifier_substring_does_not_match(self, tmp_path: Path):
+        # Symmetric guard on the other side: searching for `save_state` must
+        # not match `save_state_v2` references.
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_a.py').write_text(
+            'def test_save_state_v2():\n    save_state_v2()\n', encoding='utf-8'
+        )
+        assert _symmetric_pair_has_test('save_state', tmp_path) is False
+
+    def test_missing_test_dir_returns_false(self, tmp_path: Path):
+        assert _symmetric_pair_has_test('save_state', tmp_path) is False
+
+    def test_no_reference_in_test_tree_returns_false(self, tmp_path: Path):
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_a.py').write_text(
+            'def test_unrelated():\n    pass\n', encoding='utf-8'
+        )
+        assert _symmetric_pair_has_test('save_state', tmp_path) is False
+
+    def test_searches_nested_test_files(self, tmp_path: Path):
+        nested = tmp_path / 'test' / 'sub' / 'deep'
+        nested.mkdir(parents=True)
+        (nested / 'test_deep.py').write_text(
+            'def test_load_state():\n    load_state()\n', encoding='utf-8'
+        )
+        assert _symmetric_pair_has_test('load_state', tmp_path) is True
+
+    def test_ignores_non_python_test_files(self, tmp_path: Path):
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'fixture.txt').write_text('save_state()\n', encoding='utf-8')
+        assert _symmetric_pair_has_test('save_state', tmp_path) is False
+
+
+# =============================================================================
+# Test: _load_test_tree_blob
+# =============================================================================
+
+
+class TestLoadTestTreeBlob:
+    def test_missing_test_dir_returns_empty(self, tmp_path: Path):
+        assert _load_test_tree_blob(tmp_path) == ''
+
+    def test_concatenates_all_python_test_files(self, tmp_path: Path):
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_a.py').write_text('alpha_token()\n', encoding='utf-8')
+        (test_dir / 'test_b.py').write_text('beta_token()\n', encoding='utf-8')
+        blob = _load_test_tree_blob(tmp_path)
+        assert 'alpha_token' in blob
+        assert 'beta_token' in blob
+
+    def test_collects_nested_python_files(self, tmp_path: Path):
+        nested = tmp_path / 'test' / 'sub' / 'deep'
+        nested.mkdir(parents=True)
+        (nested / 'test_deep.py').write_text('deep_token()\n', encoding='utf-8')
+        assert 'deep_token' in _load_test_tree_blob(tmp_path)
+
+    def test_excludes_non_python_files(self, tmp_path: Path):
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'fixture.txt').write_text('txt_token()\n', encoding='utf-8')
+        assert 'txt_token' not in _load_test_tree_blob(tmp_path)
+
+    def test_reads_each_file_once(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        # Regression guard for the O(N*M) disk-I/O fix: building the blob must
+        # read each test file exactly once, regardless of how many membership
+        # queries later run against it.
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_a.py').write_text('save_state()\n', encoding='utf-8')
+        (test_dir / 'test_b.py').write_text('load_state()\n', encoding='utf-8')
+
+        read_counts: dict[str, int] = {}
+        original_read_text = Path.read_text
+
+        def _counting_read_text(self: Path, *args: object, **kwargs: object) -> str:
+            read_counts[self.name] = read_counts.get(self.name, 0) + 1
+            return original_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(Path, 'read_text', _counting_read_text)
+        _load_test_tree_blob(tmp_path)
+        assert read_counts == {'test_a.py': 1, 'test_b.py': 1}
+
+
+# =============================================================================
+# Test: _name_in_test_blob
+# =============================================================================
+
+
+class TestNameInTestBlob:
+    def test_empty_blob_returns_false(self):
+        assert _name_in_test_blob('save', '') is False
+
+    def test_word_boundary_match_returns_true(self):
+        assert _name_in_test_blob('save', 'def test_save():\n    save()\n') is True
+
+    def test_substring_only_returns_false(self):
+        assert _name_in_test_blob('save', 'def test_save_state():\n    save_state()\n') is False
+
+    def test_longer_identifier_substring_returns_false(self):
+        assert _name_in_test_blob('save_state', 'save_state_v2()\n') is False
+
+    def test_blob_match_equivalent_to_symmetric_pair_has_test(self, tmp_path: Path):
+        # The cached-blob path must agree with the single-query entry point so
+        # the perf refactor is behaviour-preserving.
+        test_dir = tmp_path / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_a.py').write_text(
+            'def test_load_state():\n    load_state()\n', encoding='utf-8'
+        )
+        blob = _load_test_tree_blob(tmp_path)
+        assert _name_in_test_blob('load_state', blob) == _symmetric_pair_has_test(
+            'load_state', tmp_path
+        )
+        assert _name_in_test_blob('load_state', blob) is True
 
 
 # =============================================================================
@@ -309,7 +503,7 @@ class TestEmptyDiff:
         assert _detect_regexes([]) == []
         assert _detect_user_facing_strings([]) == []
         assert _detect_markdown_sections([], tmp_path) == []
-        assert _detect_symmetric_pairs([]) == []
+        assert _detect_symmetric_pairs([], tmp_path) == []
         assert _detect_flag_guard_pairs([]) == []
 
 

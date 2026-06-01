@@ -89,8 +89,8 @@ user_facing_strings[N2]{file,line,context,text}:
 markdown_sections[N3]{file,line,heading,siblings}:
   {repo-relative-path},{line},{heading},{semicolon-joined-sibling-headings}
 
-symmetric_pairs[N4]{file,line,name,partner}:
-  {repo-relative-path},{line},{function-name},{inferred-partner-name}
+symmetric_pairs[N4]{file,line,name,partner,test_present}:
+  {repo-relative-path},{line},{function-name},{inferred-partner-name},{true|false}
 
 flag_guard_pairs[N5]{file,line,flag,forms_covered}:
   {repo-relative-path},{line},{--flag},{space|equals|both}
@@ -134,7 +134,7 @@ protected_identifiers[N9]:
    - Emit one entry per heading whose line falls within an added/edited diff hunk
    - The `siblings` field is a semicolon-joined list of sibling heading texts (peer headings under the same parent), excluding the entry's own heading
 
-4. **Symmetric-pair candidates** — added lines in `.py` files matching `^def\s+(\w+)`. The captured function name is split on `_` and inspected for any of the 6 pair tokens: `save/load`, `init/restore`, `push/pop`, `acquire/release`, `open/close`, `start/stop`. When a match is found, the `partner` field is the same function name with the matched token swapped to its pair (e.g., `save_state` → `load_state`).
+4. **Symmetric-pair candidates** — added lines in `.py` files matching `^def\s+(\w+)`. The captured function name is split on `_` and inspected for any of the 6 pair tokens: `save/load`, `init/restore`, `push/pop`, `acquire/release`, `open/close`, `start/stop`. When a match is found, the `partner` field is the same function name with the matched token swapped to its pair (e.g., `save_state` → `load_state`). Each entry also carries a deterministic `test_present` flag (Tier-2 missing-test heuristic): the `test/` tree under `--project-dir` is searched for a word-boundary occurrence of the function name (same `(?<![a-zA-Z0-9_-])` / `(?![a-zA-Z0-9_-])` lookaround discipline used for keep-identifier markers). `test_present=false` is the Tier-2 missing-test signal — a newly added symmetric function with no test surface. The LLM half of the check (deciding whether the missing coverage is a real defect) lives in the consumer's Step 3 check 1; see [`../phase-6-finalize/workflow/pre-submission-self-review.md`](../phase-6-finalize/workflow/pre-submission-self-review.md).
 
 5. **Flag-guard pairs** — added lines in `.py` files containing an argument-presence guard over a `--flag` token. Two guard shapes are recognized: membership/substring tests where a quoted `--flag` literal is the left operand of an `in` test (e.g., `'--project-dir' in args`, `'--plan-id=' in argv`) and `startswith` checks over a quoted `--flag` literal (e.g., `arg.startswith('--project-dir')`). For each guarded flag the detector classifies which flag *forms* the guard covers: the bare `--flag` token guards the **space-separated** form (`--flag value`), and the `--flag=` prefix guards the **equals** form (`--flag=value`). Coverage is aggregated per `(file, flag)` across all guards in the file — `space` when only the bare token appears, `equals` when only the `--flag=` prefix appears, and `both` when both appear. The `line` field records the first guard occurrence for the flag in the file. The list anchors the cognitive review's flag-form-coverage comparison: when one guard in a symmetric pair covers `both` forms while its sibling covers only one, the uncovered form is a defect (e.g., a `--project-dir` guard covering only the space form risks double-injection that violates the mutually-exclusive-arguments contract).
 
@@ -167,6 +167,7 @@ This script is **Bucket B** (per `tools-script-executor/standards/cwd-policy.md`
 - User-facing string detection in docstrings, `print()`, and argparse `help=`
 - Markdown section enumeration with sibling-list correctness
 - Symmetric-pair detection across all 6 pairings
+- Symmetric-pair test-presence (`test_present`): `true` when the `test/` tree references the function name, `false` (Tier-2 missing-test signal) when it does not, and word-boundary discipline (no substring false positives, missing `test/` directory → `false`)
 - Flag-guard-pair detection: a guard covering both forms (`both`), a guard covering only the space form (`space`), a guard covering only the equals form (`equals`), the asymmetric-pair case (one `both` guard + one single-form sibling), and the negative case (no flag guard → empty list)
 - Empty-diff edge case (no `modified_files` → empty candidate lists)
 - `--project-dir` honoring (script does not discover root from cwd)
