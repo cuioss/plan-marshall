@@ -1295,6 +1295,208 @@ class TestSessionRenderTitleStateAwareIcon:
 
 
 # =============================================================================
+# 3c2. session_render_title hook-mode conditional sessionTitle emit
+# =============================================================================
+
+
+class TestSessionRenderTitleSessionTitleEmit:
+    """Tests for the conditional ``hookSpecificOutput.sessionTitle`` emit.
+
+    Hook mode augments the JSON envelope with a web/desktop session-title
+    channel (equivalent to ``/rename``, UI-only) ONLY for the two events Claude
+    Code supports it on:
+
+      - ``UserPromptSubmit``; and
+      - ``SessionStart`` with ``source ∈ {startup, resume}`` (the ``clear`` and
+        ``compact`` sources do NOT support it).
+
+    For every other event the envelope stays exactly ``{"terminalSequence":
+    ...}``. The ``sessionTitle`` value is the bare ``title_body`` WITHOUT the
+    icon glyph. ``terminalSequence`` is byte-for-byte identical regardless. A
+    missing / malformed ``hook_event_name`` / ``source`` omits ``sessionTitle``
+    and still emits ``terminalSequence`` (best-effort/no-raise contract).
+    """
+
+    @staticmethod
+    def _arrange(tmp_path, monkeypatch, *, session_id="sess-title", plan_id="title-plan",
+                 title_body="pm:5-execute:title-task"):
+        import claude_runtime as _cr
+
+        cache_dir = tmp_path / "sessions" / session_id
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+        plan_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.chdir(tmp_path)
+        return title_body
+
+    def test_user_prompt_submit_emits_session_title(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """(a) UserPromptSubmit emits both terminalSequence and the icon-free sessionTitle."""
+        from io import StringIO
+
+        title_body = self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            "sys.stdin", StringIO(json.dumps({"hook_event_name": "UserPromptSubmit"}))
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        # terminalSequence carries the live icon, unchanged.
+        assert envelope["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
+        # sessionTitle is the bare body — NO icon glyph.
+        assert envelope["hookSpecificOutput"]["sessionTitle"] == title_body
+        assert "➤" not in envelope["hookSpecificOutput"]["sessionTitle"]
+        assert envelope["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+
+    @pytest.mark.parametrize("source", ["startup", "resume"])
+    def test_session_start_startup_or_resume_emits_session_title(
+        self, source, rt, tmp_path, monkeypatch, capsys
+    ):
+        """(b) SessionStart with source startup/resume emits sessionTitle."""
+        from io import StringIO
+
+        title_body = self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": source})),
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
+        assert envelope["hookSpecificOutput"]["sessionTitle"] == title_body
+        assert envelope["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+
+    @pytest.mark.parametrize("source", ["clear", "compact"])
+    def test_session_start_clear_or_compact_omits_session_title(
+        self, source, rt, tmp_path, monkeypatch, capsys
+    ):
+        """(c) SessionStart with source clear/compact emits ONLY terminalSequence."""
+        from io import StringIO
+
+        title_body = self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": source})),
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
+        assert "hookSpecificOutput" not in envelope
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"hook_event_name": "Notification"},
+            {"hook_event_name": "Stop"},
+            {"hook_event_name": "PostToolUse", "tool_name": "Bash"},
+            {"hook_event_name": "SessionStart"},  # SessionStart with NO source
+        ],
+    )
+    def test_non_supporting_events_omit_session_title(
+        self, payload, rt, tmp_path, monkeypatch, capsys
+    ):
+        """(d) Non-supporting events (and SessionStart without a source) emit ONLY terminalSequence."""
+        from io import StringIO
+
+        self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        # terminalSequence still present (with the event's icon).
+        assert "terminalSequence" in envelope
+        # No stray sessionTitle.
+        assert "hookSpecificOutput" not in envelope
+
+    @pytest.mark.parametrize("stdin_text", ["", "   ", "not-json{", "[1, 2, 3]"])
+    def test_malformed_stdin_omits_session_title_but_still_emits_terminal_sequence(
+        self, stdin_text, rt, tmp_path, monkeypatch, capsys
+    ):
+        """Best-effort/no-raise: bad stdin omits sessionTitle and still emits terminalSequence."""
+        from io import StringIO
+
+        title_body = self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr("sys.stdin", StringIO(stdin_text))
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
+        assert "hookSpecificOutput" not in envelope
+
+    def test_statusline_mode_never_emits_session_title(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """(e) statusLine mode is unchanged — plain text, no JSON, no sessionTitle channel."""
+        from io import StringIO
+
+        title_body = self._arrange(tmp_path, monkeypatch)
+        # Even a UserPromptSubmit payload on stdin yields plain text in statusLine mode.
+        monkeypatch.setattr(
+            "sys.stdin", StringIO(json.dumps({"hook_event_name": "UserPromptSubmit"}))
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=True)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        assert captured == f"➤ {title_body}"
+        assert "sessionTitle" not in captured
+        assert "{" not in captured  # no JSON envelope
+
+    def test_empty_title_body_emits_nothing(self, rt, tmp_path, monkeypatch, capsys):
+        """(f) Empty title body is a no-op even for a supporting event — nothing on stdout."""
+        from io import StringIO
+
+        self._arrange(
+            tmp_path,
+            monkeypatch,
+            session_id="sess-empty-title",
+            plan_id="empty-title-plan",
+            title_body="",
+        )
+        monkeypatch.setattr(
+            "sys.stdin", StringIO(json.dumps({"hook_event_name": "UserPromptSubmit"}))
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        assert captured == ""
+
+
+# =============================================================================
 # 3d. session_render_title archived-path fallback + ✓ Completed-body pairing (D3)
 # =============================================================================
 
