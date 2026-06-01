@@ -677,7 +677,7 @@ def test_phase_5_execute_set_per_deliverable_build_valid(plan_context):
     """Test plan phase-5-execute set accepts each valid per_deliverable_build enum value."""
     create_marshal_json(plan_context.fixture_dir)
 
-    for value in ('off', 'compile-only', 'compile+scoped-test', 'full'):
+    for value in _config_defaults.VALID_PER_DELIVERABLE_BUILD:
         result = cmd_plan(
             Namespace(
                 sub_noun='phase-5-execute',
