@@ -5,12 +5,14 @@
     "phase-1-init": {
       "branch_strategy": "feature",
       "use_worktree": true,
-      "effort": "high"
+      "effort": "high",
+      "init_without_asking": true
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
       "compatibility": "breaking",
-      "effort": "high"
+      "effort": "high",
+      "simplicity": "lean"
     },
     "phase-3-outline": {
       "plan_without_asking": false,
@@ -31,7 +33,11 @@
       "steps": [
         "default:quality_check",
         "default:build_verify"
-      ]
+      ],
+      "rebase_on_execute_start": true,
+      "rebase_strategy": "merge",
+      "per_deliverable_build": "compile+scoped-test",
+      "per_task_budget_reserve": 50000
     },
     "phase-6-finalize": {
       "max_iterations": 3,
@@ -66,7 +72,9 @@
           "marketplace/bundles/*/skills/*/scripts/**/*.py",
           "test/**/*.py"
         ]
-      }
+      },
+      "auto_merge_after_ci": true,
+      "auto_rebase_threshold": "no_overlap_only"
     }
   },
   "providers": [
@@ -74,14 +82,14 @@
       "skill_name": "plan-marshall:workflow-integration-github",
       "category": "ci",
       "verify_command": "gh auth status",
-      "description": "GitHub CI provider via gh CLI \u2014 PRs, issues, CI status, reviews",
+      "description": "GitHub CI provider via gh CLI — PRs, issues, CI status, reviews",
       "url": "https://api.github.com"
     },
     {
       "skill_name": "plan-marshall:workflow-integration-git",
       "category": "version-control",
       "verify_command": "git config user.name",
-      "description": "Git version control via git CLI \u2014 commit, push, branch operations",
+      "description": "Git version control via git CLI — commit, push, branch operations",
       "url": "https://github.com/cuioss/plan-marshall.git"
     }
   ],
@@ -93,6 +101,12 @@
         "documentation": "plan-marshall:task-documentation",
         "implementation": "plan-marshall:task-implementation",
         "module_testing": "plan-marshall:task-module_testing"
+      },
+      "execute_task_skills": {
+        "implementation": "plan-marshall:execute-task",
+        "module_testing": "plan-marshall:execute-task",
+        "integration_testing": "plan-marshall:execute-task",
+        "verification": "plan-marshall:execute-task"
       }
     },
     "build": {
@@ -128,11 +142,30 @@
     "retention": {
       "logs_days": 1,
       "archived_plans_days": 5,
-      "temp_on_maintenance": true
+      "temp_on_maintenance": true,
+      "lessons_superseded_days": 0
     }
   },
   "ci": {
     "provider": "github",
-    "repo_url": "https://github.com/cuioss/plan-marshall.git"
+    "repo_url": "https://github.com/cuioss/plan-marshall.git",
+    "checks_wait_timeout_seconds": 600
+  },
+  "project": {
+    "default_base_branch": "main",
+    "branch_naming": {
+      "working_prefixes": [
+        "feature/",
+        "fix/",
+        "chore/"
+      ],
+      "ci_allowlist": [
+        "main",
+        "feature/*",
+        "fix/*",
+        "chore/*",
+        "dependabot/**"
+      ]
+    }
   }
 }
