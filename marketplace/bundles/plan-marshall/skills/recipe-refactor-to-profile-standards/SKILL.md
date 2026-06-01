@@ -95,6 +95,8 @@ Collect one deliverable per package (in-memory, for use in Step 4):
 - **Skills**: All skills resolved in Step 1 (comma-separated)
 - **Affected files**: All files in the package (from architecture data `files` field, or via `manage-files discover` when the architecture record reports `file_count: 0`)
 
+> **Coverage contract**: a profile-standards refactor campaign is a *thoroughness ≈ T4 / scope ≈ component-or-module* sweep — every file in each package is read in full and its relations traced before changing it, and the unit's thoroughness grades to the FLOOR across its packages (a campaign where some packages were only sampled is graded at the sampled rung). The coupling constraint `reject thoroughness ≥ T4 ∧ scope < component` is why the sweep operates at package/module scope, never change-set. See the two-dial ladders and the grade-to-the-floor rule in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).
+
 ---
 
 ## Step 4: Outline Writing

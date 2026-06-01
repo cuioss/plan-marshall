@@ -153,6 +153,8 @@ Before scanning the line-level candidate lists, load the contract sources surfac
 
 For each non-empty candidate list, apply the corresponding cognitive check to the surfaced items only — never expand the review to candidates the helper did not surface.
 
+> **Coverage contract**: this cognitive review pass makes an implicit *diff-coverage* decision — the surfaced candidates are the change-set-scoped items, and how deeply each is cross-checked against its siblings and contracts is the review's *thoroughness*. The surface-only rule above caps the scope to the staged diff; the contract cross-references in Step 2a are what raise thoroughness past T2 (full-read) toward T3+ (relations traced). See the two-dial scope × thoroughness contract in [`../../dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md).
+
 1. **Symmetric pair test-coverage check** — for each `symmetric_pairs` entry, search the test directory for a test that exercises BOTH `name` and `partner` and asserts the post-state of the partner without first invoking `name` in the same test. A symmetric pair where one half is silently skipped is the canonical defect class. Defect → record finding `{file, line, defect_class: symmetric_pair_uncovered, rationale: <which half is unexercised and why it matters>}`.
 
    **Flag-form-coverage comparison** — also compare the flag *forms* covered across paired argument guards using the `flag_guard_pairs` candidate list. Group the `flag_guard_pairs` entries that participate in the same mutually-exclusive (or otherwise paired) argument contract — typically two sibling guards in the same change that gate a `--flag` and its alternative. For each such pair, compare the `forms_covered` value of each guard:

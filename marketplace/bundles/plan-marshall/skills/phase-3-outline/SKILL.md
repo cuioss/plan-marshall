@@ -284,6 +284,8 @@ The downstream [phase-4-plan value-change rule](../phase-4-plan/SKILL.md) carrie
 
 **Step 6 may also refine `scope_estimate`**: After deliverables crystalize and the concrete Affected files lists are known, phase-3-outline MAY downgrade `scope_estimate` (e.g., `single_module` → `surgical`) when the final deliverable composition narrows the actual scope. Persist any change via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 8 so the bypass rule sees the refined value.
 
+> **Coverage contract**: deliverable composition is where a per-deliverable *scope × thoroughness* cell would be declared — `scope_estimate` is the scope dial; *thoroughness* (coverage breadth + relation-tracing depth) is its orthogonal partner. The coupling constraint `reject thoroughness ≥ T4 ∧ scope < component` means a relation-tracing deliverable forces scope ≥ `component`. See the two-dial ladders, the grade-to-the-floor rule, and the coupling constraint in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).
+
 **Step 8 — Q-Gate surgical bypass rule** (evaluated BEFORE dispatching the lightweight Q-Gate checks):
 
 Bypass Q-Gate when ALL of the following are true:

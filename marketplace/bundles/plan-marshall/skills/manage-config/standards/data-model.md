@@ -254,6 +254,39 @@ Finalize pipeline with numbered boolean steps.
 
 Default steps: `commit_push`, `create_pr`, `automated_review`, `sonar_roundtrip`, `lessons_capture`, `branch_cleanup`, `archive`. Step types: built-in (plain name), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 
+### Coverage cell (per-phase + plan-wide)
+
+Coverage is a two-dial contract — `thoroughness` (T1–T5) × `scope` (change-set…overall) — orthogonal to the `effort` dial (model tier). A per-phase override lives under the phase entry's `coverage` key; the plan-wide fallback is a single `plan.coverage` object. The resolver walks `plan.<phase>.coverage.<field>` → `plan.coverage.<field>` → `inherit` for each field independently, mirroring the `effort` resolver's polymorphic walk applied per-field.
+
+```json
+{
+  "plan": {
+    "coverage": {
+      "thoroughness": "T2",
+      "scope": "module"
+    },
+    "phase-5-execute": {
+      "coverage": {
+        "thoroughness": "T4",
+        "scope": "component"
+      }
+    }
+  }
+}
+```
+
+| Field | Type | Default | Values |
+|-------|------|---------|--------|
+| `thoroughness` | string | "inherit" | T1, T2, T3, T4, T5, inherit |
+| `scope` | string | "inherit" | change-set, artifact, component, module, overall, inherit |
+
+**Coupling constraint** — `reject thoroughness ≥ T4 ∧ scope < component`. A relation-tracing thoroughness (T4/T5) cannot be honoured below `component` scope because the siblings the relations point at are out of radius. The constraint is enforced at lookup time (from both `coverage read` and `coverage resolve`) with `error_type: coverage_coupling_violation`. An `inherit` on either field is unconstrained. The constraint is defined verbatim in [`dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) § Coupling Constraint.
+
+Resolved via:
+- `coverage read --phase phase-5-execute` (resolve a phase's cell)
+- `coverage resolve --phase phase-5-execute` (resolve cell + coupling result for downstream consumers)
+- `coverage read --default` (raw `plan.coverage` lookup)
+
 ## Section: ci
 
 CI provider configuration (project-level, shared via git).

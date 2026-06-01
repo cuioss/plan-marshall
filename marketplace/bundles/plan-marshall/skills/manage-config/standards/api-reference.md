@@ -389,6 +389,46 @@ Common errors:
 
 ---
 
+## Noun: coverage
+
+Resolve the per-phase two-dial coverage cell — `thoroughness` (T1–T5) × `scope` (change-set…overall) — stored under each `plan.<phase>.coverage` object (with `plan.coverage` as the plan-wide fallback) in `.plan/marshal.json`. Both verbs are pure resolvers; each field walks `plan.<phase>.coverage.<field>` → `plan.coverage.<field>` → `inherit` independently, mirroring the `effort` resolver. The scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) is enforced at lookup time.
+
+| Verb | Parameters | Description |
+|------|-----------|-------------|
+| `read` | `--phase` and/or `--role` (or `--default`) | Resolve the `{thoroughness, scope, thoroughness_source, scope_source}` cell |
+| `resolve` | same as `read` | Resolve the cell plus a `coupling: ok` field for downstream consumers (phase-handshake gate, budget reserve) |
+
+### Verb: read
+
+```bash
+# Resolve a phase's cell
+manage-config coverage read --phase phase-5-execute
+
+# --role is a synonym for --phase
+manage-config coverage read --role phase-5-execute
+
+# Raw plan-wide fallback
+manage-config coverage read --default
+```
+
+### Verb: resolve
+
+```bash
+manage-config coverage resolve --phase phase-5-execute
+```
+
+### Coupling-violation error
+
+An incoherent stored cell raises `error_type: coverage_coupling_violation`:
+
+| `error_type` | Meaning |
+|--------------|---------|
+| `coverage_coupling_violation` | The resolved cell has `thoroughness ≥ T4` while `scope < component`. Relation-tracing thoroughness cannot be honoured below `component` scope. Widen `scope` to at least `component` or lower `thoroughness` below `T4`. Constraint defined in [`dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) § Coupling Constraint. |
+
+`ALLOWED_THOROUGHNESS` and `ALLOWED_SCOPE` (in `_cmd_coverage.py`) are kept in lock-step with the T1–T5 and scope ladders in that standard.
+
+---
+
 ## Noun: ci
 
 ### persist

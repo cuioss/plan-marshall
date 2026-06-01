@@ -727,6 +727,21 @@ The composer's `decision.log` entry (one per applied rule) provides the audit tr
 
 **Per-task verification routing (data-driven)**: After the seven-row matrix runs, the composer performs an `execution_tier` routing pass over every `TASK-*.json` in the plan. For each `verification.commands` entry, the composer subprocesses `architecture resolve` to obtain the four-field augmented TOON (`bash_timeout_seconds`, `exceeds_bash_ceiling`, `execution_tier`, `hint`) and branches: `orchestrator` commands are mapped to their canonical phase-5 step ID (`quality-gate → default:quality_check`, `verify`/`module-tests → default:build_verify`, `coverage → default:coverage_check`), appended to `phase_5.verification_steps` (de-duped), and removed from the task's verification list; `per_task` commands stay per-task and the task's `verification.bash_timeout_seconds` field is set to the maximum measured timeout across surviving commands. Non-build / unresolvable executables pass through unchanged. The routing is data-driven — no hardcoded "long-running" command list — and the authoritative source is `architecture resolve` per the "Structured queries first" hard rule. See `manage-execution-manifest/standards/decision-rules.md § execution_tier Routing` for the full contract and `manage-architecture/standards/resolve-command.md` for the failure mode that motivated the routing.
 
+### Step 8c: Per-task coverage budget reserve
+
+**This is where the per-deliverable scope × thoroughness cell is assigned.** After the manifest is composed, resolve the declared coverage cell for the execute phase and record the resulting per-task token-budget reserve on each task so the phase-5-execute deterministic exit clause sizes its yield boundary from the declared coverage cell rather than a flat default.
+
+The reserve is computed by the `coverage_budget` module (a pure function — no LLM judgement):
+
+```python
+from coverage_budget import resolve_and_reserve
+reserve = resolve_and_reserve(plan_id, phase='5-execute')
+```
+
+`resolve_and_reserve` calls D3's `manage-config coverage resolve --phase phase-5-execute` and maps the resolved `(scope, thoroughness)` cell to a reserve via `reserve_for_cell`, which scales **monotonically on both axes** from the baseline. A wider scope and a higher thoroughness each justify a larger reserve; an `inherit`/unconfigured cell maps to the baseline reserve (the same conservative value the phase-5-execute loop used before this coupling existed), so plans that do not declare a coverage cell are unaffected. The coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) is enforced upstream by D3 at resolve time — an incoherent cell never reaches the budget computation. Record the resolved reserve on each task's budget field (`per_task_budget_reserve`).
+
+For the ladder definitions and the coupling constraint, see [`../dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md); for the config resolver, see the `coverage` noun in [`../manage-config/SKILL.md`](../manage-config/SKILL.md). Do not restate either here.
+
 ### Step 9: Q-Gate Verification Checks
 
 **Purpose**: Verify created tasks meet quality standards.
@@ -1047,3 +1062,7 @@ This skill does not invoke `manage-metrics` itself. The orchestrator
 boundary via the fused `manage-metrics phase-boundary` call — see
 `marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
 `phase-boundary` for the API.
+
+## Canonical invocations
+
+`coverage_budget.py` is an imported library, not an executor-callable CLI. It is imported by phase-4-plan Step 8c via `from coverage_budget import resolve_and_reserve` and exposes no argparse surface. There are no executor-callable scripts in this skill to register here; this section exists solely to satisfy the `missing-canonical-block` analyzer rule for skills whose scripts directory contains only pure-library modules. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".

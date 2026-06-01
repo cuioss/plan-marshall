@@ -116,6 +116,12 @@ Read standards/test-scaffolding.md
 ```
 Contains: Canonical `# ruff: noqa: I001, E402` + `sys.path.insert(0, ...)` prologue for tests that import underscore-prefixed sibling modules from `marketplace/bundles/.../scripts/`. Citation: `test/plan-marshall/plan-marshall/test_phase_handshake.py` lines 2 and 20-29.
 
+### Coverage Contract (per-task scope × thoroughness)
+```
+Read ../dev-agent-behavior-rules/standards/thoroughness.md
+```
+Contains: the *scope × thoroughness* coverage contract each task body honors at its execution coverage point — the thoroughness ladder (T1–T5), the scope ladder, the grade-to-the-floor rule, and the coupling constraint `reject thoroughness ≥ T4 ∧ scope < component`. Per-task work covers its declared cell; the floor-graded self-report states asked-for vs achieved.
+
 ---
 
 ## Dispatched workflows vs inline steps

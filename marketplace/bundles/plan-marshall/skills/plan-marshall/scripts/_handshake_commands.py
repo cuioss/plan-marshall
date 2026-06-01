@@ -52,6 +52,7 @@ from _handshake_store import (  # type: ignore[import-not-found]
 from _invariants import (  # type: ignore[import-not-found]
     INVARIANTS,
     BlockingFindingsPresent,
+    CoverageContractUnmet,
     MainCheckoutDirtiedDuringPlan,
     PhaseStepsIncomplete,
     WorktreeMetadataDrift,
@@ -413,6 +414,19 @@ def cmd_capture(args: Any) -> dict[str, Any]:
             'use_worktree': exc.use_worktree,
             'message': str(exc),
         }
+    except CoverageContractUnmet as exc:
+        return {
+            'status': 'error',
+            'error': 'coverage_contract_unmet',
+            'plan_id': plan_id,
+            'phase': phase,
+            'declared_thoroughness': exc.declared_thoroughness,
+            'declared_scope': exc.declared_scope,
+            'achieved_thoroughness': exc.achieved_thoroughness,
+            'achieved_scope': exc.achieved_scope,
+            'shortfall': exc.shortfall,
+            'message': str(exc),
+        }
     row = _row_for_capture(
         plan_id,
         phase,
@@ -560,6 +574,23 @@ def cmd_verify(args: Any) -> dict[str, Any]:
             'phase': phase,
             'worktree_dir': exc.worktree_dir,
             'use_worktree': exc.use_worktree,
+            'message': str(exc),
+        }
+    except CoverageContractUnmet as exc:
+        # Declared-vs-achieved coverage shortfall at the guarded boundary.
+        # Surfaced as a hard error (not drift) so the structured shortfall
+        # payload takes precedence; under ``--strict`` the verify path turns
+        # this into a non-zero exit and the boundary refuses to advance.
+        return {
+            'status': 'error',
+            'error': 'coverage_contract_unmet',
+            'plan_id': plan_id,
+            'phase': phase,
+            'declared_thoroughness': exc.declared_thoroughness,
+            'declared_scope': exc.declared_scope,
+            'achieved_thoroughness': exc.achieved_thoroughness,
+            'achieved_scope': exc.achieved_scope,
+            'shortfall': exc.shortfall,
             'message': str(exc),
         }
 

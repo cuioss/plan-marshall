@@ -228,7 +228,7 @@ Apply throughout all subsequent steps:
 
 ### Workflow
 
-1. **Understand Context**: Read affected files (`step.target`) if they exist. Use `architecture files --module {module}` to enumerate the module's components and `architecture which-module --path P` / `architecture find --pattern P` for module-spanning lookups; fall back to `Grep` for content-level searches inside known files and `Glob` for sub-module path patterns or when the architecture verb returns elision. Apply domain knowledge from loaded skills.
+1. **Understand Context**: Read affected files (`step.target`) if they exist. Use `architecture files --module {module}` to enumerate the module's components and `architecture which-module --path P` / `architecture find --pattern P` for module-spanning lookups; fall back to `Grep` for content-level searches inside known files and `Glob` for sub-module path patterns or when the architecture verb returns elision. Apply domain knowledge from loaded skills. *How completely the in-radius items are read and how deeply their relations are traced is the task's declared* thoroughness *over its declared* scope *— see the two-dial coverage contract (thoroughness ladder T1–T5, scope ladder, grade-to-the-floor, coupling constraint `reject thoroughness ≥ T4 ∧ scope < component`) in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).*
 2. **Plan Implementation**: For each step, determine changes needed, domain skill patterns to apply, modification order, and integration considerations.
 3. **Implement Changes**: For each step — create new files with `Write`, modify existing files with `Edit`. Apply domain patterns and maintain existing code style.
 4. **Mark Step Complete** (common step)
