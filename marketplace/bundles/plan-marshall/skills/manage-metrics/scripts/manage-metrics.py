@@ -1137,7 +1137,7 @@ def _attribute_subagent_usage(
     # The harness sometimes emits the sub-agent token figure under the
     # `subagent_tokens` key instead of the canonical `total_tokens`; accept
     # either so the token bucket is never silently dropped to zero.
-    bucket['total_tokens'] += fields.get('total_tokens') or fields.get('subagent_tokens') or 0
+    bucket['total_tokens'] += fields.get('total_tokens', fields.get('subagent_tokens', 0))
     bucket['tool_uses'] += fields.get('tool_uses', 0)
     bucket['duration_ms'] += fields.get('duration_ms', 0)
     bucket['samples'] += 1
