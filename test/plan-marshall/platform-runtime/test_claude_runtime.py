@@ -1477,21 +1477,13 @@ class TestSessionRenderTitleSessionTitleEmit:
         """(f) Empty title body is a no-op even for a supporting event — nothing on stdout."""
         from io import StringIO
 
-        session_id = "sess-empty-title"
-        plan_id = "empty-title-plan"
-        cache_dir = tmp_path / "sessions" / session_id
-        cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
-        plan_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
-        plan_dir.mkdir(parents=True)
-        (plan_dir / "title-body.txt").write_text("", encoding="utf-8")
-
-        import claude_runtime as _cr
-
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
-        monkeypatch.chdir(tmp_path)
+        self._arrange(
+            tmp_path,
+            monkeypatch,
+            session_id="sess-empty-title",
+            plan_id="empty-title-plan",
+            title_body="",
+        )
         monkeypatch.setattr(
             "sys.stdin", StringIO(json.dumps({"hook_event_name": "UserPromptSubmit"}))
         )
