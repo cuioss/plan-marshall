@@ -87,7 +87,7 @@ Task:
 
 **Applies to**: every Task / `execute-task` Skill dispatch above that returns a `<usage>` tag (i.e., every concrete task agent dispatched from the phase-5-execute task loop). Inline-only tasks skip this call.
 
-After parsing the agent's returned `<usage>...</usage>` block, persist the totals to the on-disk per-phase accumulator so the orchestrator's end-of-phase `manage-metrics phase-boundary` call can read them even when the model context has been compacted between dispatches:
+After parsing the agent's returned `<usage>...</usage>` block, persist the totals to the on-disk per-phase accumulator so the orchestrator's end-of-phase `manage-metrics phase-boundary` call can read them even when the model context has been compacted between dispatches. The parsed `<usage>` token key is canonically `total_tokens`, matching the `--total-tokens` flag below:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accumulate-agent-usage \

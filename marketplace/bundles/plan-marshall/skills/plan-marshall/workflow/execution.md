@@ -307,9 +307,13 @@ The counter resets to zero on any phase-5-execute return that is NOT `baseline_d
 After all tasks complete, transition and check auto-continue:
 
 **Metrics**: During the task loop, maintain a running sum of `total_tokens`,
-`tool_uses`, and `duration_ms` from each task agent's `<usage>` tag. After
-all tasks complete, record the `5-execute → 6-finalize` boundary in a single
-fused call (forwarding the aggregated totals to the closing phase):
+`tool_uses`, and `duration_ms` from each task agent's `<usage>` tag. The
+canonical sub-agent `<usage>` token key is `total_tokens` — emitters MUST use
+that key (the `manage-metrics enrich` parser also tolerates the
+`subagent_tokens` alias as a recovery fallback, but `total_tokens` is
+canonical). After all tasks complete, record the `5-execute → 6-finalize`
+boundary in a single fused call (forwarding the aggregated totals to the
+closing phase):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 5-execute --next-phase 6-finalize \
