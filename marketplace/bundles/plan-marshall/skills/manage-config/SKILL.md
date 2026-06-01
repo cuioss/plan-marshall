@@ -168,6 +168,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 # Select the sync strategy — enum: rebase | merge (default: merge)
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field rebase_strategy --value rebase
+
+# Select the per-deliverable build depth — enum: off | compile-only | compile+scoped-test | full
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field per_deliverable_build --value full
 ```
 
 **phase-5-execute sync-with-main fields:**
@@ -176,6 +180,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 |-------|------|---------|-----------|
 | `rebase_on_execute_start` | bool | `true` | Whether phase-5-execute runs a sync step against `origin/{base_branch}` at phase start. Fast-path no-op when the branch already contains the remote tip. When `false`, phase-6-finalize's `pr update-branch` remains the only sync point. |
 | `rebase_strategy` | enum(`rebase`\|`merge`) | `merge` | How the sync step updates the branch. `rebase` rewrites history (requires force-push when a PR is open); `merge` does `git merge --no-edit origin/{base}` (no history rewrite, PR-safe). Invalid values are rejected by the config setter. |
+
+**phase-5-execute per-deliverable build field:**
+
+| Field | Type | Default | Semantics |
+|-------|------|---------|-----------|
+| `per_deliverable_build` | enum(`off`\|`compile-only`\|`compile+scoped-test`\|`full`) | `compile+scoped-test` | Build depth phase-5-execute runs at each per-deliverable chain-tail point (Step 10). `off` skips the per-deliverable build entirely (the end-of-phase quality sweep is the only build); `compile-only` resolves the changed module and runs compile only; `compile+scoped-test` additionally runs scoped `module-tests` for the changed module; `full` runs whole-tree `quality-gate` per deliverable (legacy behavior, opt-in only). Read by phase-5-execute per-deliverable. Invalid values are rejected by the config setter. |
 
 **Symmetric auto-continuation knobs:**
 
@@ -356,6 +366,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "verification_max_iterations": 5,
       "rebase_on_execute_start": true,
       "rebase_strategy": "merge",
+      "per_deliverable_build": "compile+scoped-test",
       "steps": ["quality_check", "build_verify"]
     },
     "phase-6-finalize": {

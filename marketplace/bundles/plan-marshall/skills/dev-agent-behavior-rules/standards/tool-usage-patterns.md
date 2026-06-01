@@ -114,6 +114,8 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 Never hard-code build commands (`./pw`, `./mvnw`, `mvn`, `npm`, `gradle`). The architecture API is the single source of truth.
 
+**Focused mid-execute build cadence**: per-deliverable builds during phase-5-execute MUST be **focused**, not whole-tree. After each deliverable's chain tail, resolve the changed module via `architecture which-module --path P`, then run a module-scoped `compile` + `module-tests {module}` — never a whole-tree `verify` / all-`module-tests` / `quality-gate` repeated after every deliverable. The depth is gated by the `phase-5-execute.per_deliverable_build` config knob, and a buildable-stuff guard skips the Python build for `documentation_only` deliverables (no `.py` touched). The whole-tree quality sweep runs **once** at end-of-phase / finalize, never repeated mid-execute. The canonical per-deliverable build step body, the knob enum, and the classifier rules live in [phase-5-execute Step 10 (per-deliverable build step)](../../phase-5-execute/SKILL.md) — this guidance cross-references it rather than restating the step body.
+
 ## Bash Safety Rules
 
 The foundational "Bash: One command per call" rule lives in [`dev-agent-behavior-rules` SKILL.md → Hard Rules](../SKILL.md#bash-one-command-per-call). The subsections below extend that anchor with the structural patterns most often violated in practice — chain shape vs chain content, `cd && X` for any tool, and Bash file-authoring impersonation. This document references the foundational rule rather than duplicating it.
