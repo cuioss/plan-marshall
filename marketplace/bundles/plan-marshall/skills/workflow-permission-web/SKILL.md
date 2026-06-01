@@ -210,45 +210,13 @@ Final State:
 
 ## Scripts
 
-Script: `plan-marshall:workflow-permission-web` → `permission_web.py`
+Script: `plan-marshall:workflow-permission-web` → `permission_web.py`. Invocation surfaces are declared under Canonical invocations.
 
-| Command | Parameters | Description |
-|---------|------------|-------------|
-| `analyze` | `--global-file <path> --local-file <path>` | Analyze WebFetch permissions from settings files |
-| `categorize` | `--domains <json-array>` | Categorize domains against trusted/known lists |
-| `apply` | `--file <path> [--add <json-array>] [--remove <json-array>]` | Apply domain changes to a settings file |
-
-### permission_web.py analyze
-
-Reads global and local settings, extracts WebFetch domains, categorizes them, detects duplicates and redundancy, and generates consolidation recommendations. Missing files are reported but do not cause failure.
-
-### permission_web.py categorize
-
-Categorizes a list of domains into: universal, major, high_reach, suspicious, unknown. Also checks for red flag patterns in domain names.
-
-### permission_web.py apply
-
-Applies domain changes to a settings file deterministically. Adds and/or removes WebFetch domain permissions without touching other permission entries.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web apply \
-    --file ~/.claude/settings.json \
-    [--add '["docs.oracle.com", "github.com"]'] \
-    [--remove '["old-domain.com"]']
-```
-
-At least one of `--add` or `--remove` is required. The script reads the file, modifies only `permissions.allow` WebFetch entries, and writes back with `indent=2` formatting.
-
-**Output** (TOON):
-```toon
-file: /path/to/settings.json
-added: 2
-removed: 1
-final_domains[N]:
-  - docs.oracle.com
-  - github.com
-status: success
-```
+| Command | Behaviour |
+|---------|-----------|
+| `analyze` | Reads global and local settings, extracts WebFetch domains, categorizes them, detects duplicates and redundancy, and generates consolidation recommendations. Missing files are reported but do not cause failure. |
+| `categorize` | Categorizes a list of domains into universal, major, high_reach, suspicious, unknown. Also checks for red flag patterns in domain names. |
+| `apply` | Applies domain changes to a settings file deterministically. At least one of `--add`/`--remove` is required; the script modifies only `permissions.allow` WebFetch entries and writes back with `indent=2` formatting. |
 
 ## Error Handling
 

@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 """Tests for run_config.py script.
 
-Consolidated from:
-- test_init_run_config.py → init subcommand tests
-- test_validate_run_config.py → validate subcommand tests
-- cleanup subcommands (cleanup, cleanup-status)
-
 Tests run-configuration.json initialization, validation, and cleanup.
 """
 
@@ -208,26 +203,6 @@ def test_validate_with_maven(plan_context):
     assert data.get('valid') is True, 'Config with maven section should be valid'
 
 
-def test_validate_with_agent_decisions(plan_context):
-    """Test validate with agent_decisions section."""
-    (plan_context.fixture_dir / 'with-agent-decisions.json').write_text("""{
-  "version": 1,
-  "commands": {},
-  "agent_decisions": {
-    "test-agent": {
-      "status": "keep-monolithic",
-      "decision_date": "2025-11-25"
-    }
-  }
-}""")
-
-    result = run_script(SCRIPT_PATH, 'validate', '--file', str(plan_context.fixture_dir / 'with-agent-decisions.json'))
-    data = result.toon()
-
-    assert data.get('status') == 'success', 'Should succeed'
-    assert data.get('valid') is True, 'Config with agent_decisions should be valid'
-
-
 def test_validate_invalid_json_syntax(plan_context):
     """Test validate detects invalid JSON syntax."""
     (plan_context.fixture_dir / 'invalid-json.json').write_text("""{
@@ -282,13 +257,6 @@ def test_validate_format_is_run_config(plan_context):
 # =============================================================================
 # Timeout Subcommand Tests
 # =============================================================================
-
-
-def parse_toon_output(output: str) -> dict:
-    """Parse TOON output into dict using toon_parser."""
-    from toon_parser import parse_toon
-
-    return parse_toon(output)
 
 
 def test_timeout_get_default_when_no_persisted(plan_context):

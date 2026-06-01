@@ -103,7 +103,7 @@ Two requirements coexist:
 - **Prompt embedding** — the header propagates the constraint through free-form delegation so child agents inherit the worktree binding even when they call further subagents.
 - **Parameter passing** — the structured input contract of the dispatched workflow (e.g., `execute-task`, the per-phase workflow doc loaded by `execution-context-{level}`) takes `plan_id` as an explicit prompt-body field; the embedded header does not replace the field, it reinforces it.
 
-The path-free `--plan-id` form is the **preferred contract** for Bucket B scripts (build wrappers, CI integration, Sonar). It replaces earlier path-leaking forms (`--worktree-path <abs>`) so the worktree absolute path no longer leaks into model context. The dispatched script resolves the path internally via `manage-status get-worktree-path`. The `--project-dir <abs>` flag remains as an **explicit override / escape hatch** for the rare case where a caller already holds an absolute path (e.g., post-worktree-removal cleanup, fixture-driven test invocations). `--plan-id` and `--project-dir` are mutually exclusive at every call site; passing both is a hard error.
+The path-free `--plan-id` form is the **preferred contract** for Bucket B scripts (build wrappers, CI integration, Sonar) — the worktree absolute path never leaks into model context. The dispatched script resolves the path internally via `manage-status get-worktree-path`. The `--project-dir <abs>` flag is the **explicit override / escape hatch** for the rare case where a caller already holds an absolute path (e.g., post-worktree-removal cleanup, fixture-driven test invocations). `--plan-id` and `--project-dir` are mutually exclusive at every call site; passing both is a hard error.
 
 Child agents MUST echo the same header verbatim into any further dispatches they issue.
 
@@ -251,7 +251,7 @@ The contract has three states:
 | `--project-dir <abs>` (override) | Script binds subprocesses verbatim to `<abs>`. Used when a caller already holds an absolute path — e.g., post-worktree-removal cleanup, fixture-driven test invocations. | The supplied absolute path. |
 | Neither flag | Script binds subprocesses to the main checkout (the project root resolved via `git rev-parse --show-toplevel`). | The main checkout. |
 
-`--plan-id` and `--project-dir` are **mutually exclusive at every call site**; passing both is a hard error. The path-leaking `--worktree-path` flag is removed; callers that previously used it MUST migrate to `--plan-id` (or `--project-dir` for the explicit-override case).
+`--plan-id` and `--project-dir` are **mutually exclusive at every call site**; passing both is a hard error.
 
 When a script invoked with `--plan-id X` resolves an empty path (i.e., the plan exists but `metadata.use_worktree == false`), the script falls back to the main checkout — the plan opted out of worktree mode at init time, and the caller's `--plan-id` becomes a no-op for path resolution.
 
@@ -259,7 +259,7 @@ Bucket A `manage-*` scripts MUST NOT accept `--plan-id` for cwd binding — they
 
 ## The Consolidated Branch-Cleanup Verbs
 
-Three verbs — `force-push-with-lease`, `switch-and-pull`, and `prune-local-and-remote-ref` — consolidate the inline git calls that `branch-cleanup.md` previously emitted directly. They share a common resolution pattern and are documented here together because they cross the worktree/main-checkout boundary in a structured way.
+Three verbs — `force-push-with-lease`, `switch-and-pull`, and `prune-local-and-remote-ref` — wrap the branch-cleanup git calls that `branch-cleanup.md` sequences. They share a common resolution pattern and are documented here together because they cross the worktree/main-checkout boundary in a structured way.
 
 ### Resolution Pattern
 
@@ -289,7 +289,7 @@ remote_sha: {sha after push}
 
 ### `switch-and-pull`
 
-Checks out `--base` on the main checkout and pulls from `origin` using `git pull origin {base_branch}` (the explicit form; never plain `git pull` — Drift 1 resolution). Captures `pre_sha` and `post_sha` and computes `commits_pulled` via `git rev-list --count`.
+Checks out `--base` on the main checkout and pulls from `origin` using `git pull origin {base_branch}` (the explicit form; never plain `git pull`). Captures `pre_sha` and `post_sha` and computes `commits_pulled` via `git rev-list --count`.
 
 Resolution: `--plan-id` → main checkout root from `marketplace_paths.git_main_checkout_root()`.
 
@@ -308,7 +308,7 @@ commits_pulled: N
 
 ### `prune-local-and-remote-ref`
 
-Deletes the local feature branch (`git branch -D {head_branch}`) and, in `local_and_remote` mode, prunes the remote-tracking ref `refs/remotes/origin/{head_branch}` via `git update-ref -d`. An internal `show-ref` guard is issued before `update-ref -d` — if the ref is already absent, the verb returns `status: partial` with `remote_ref_deleted: false` and a `remote_ref_warning`, avoiding a non-zero exit for a ref that `git fetch --prune` (or the PR host) may have already cleaned up (Drift 3 resolution).
+Deletes the local feature branch (`git branch -D {head_branch}`) and, in `local_and_remote` mode, prunes the remote-tracking ref `refs/remotes/origin/{head_branch}` via `git update-ref -d`. An internal `show-ref` guard is issued before `update-ref -d` — if the ref is already absent, the verb returns `status: partial` with `remote_ref_deleted: false` and a `remote_ref_warning`, avoiding a non-zero exit for a ref that `git fetch --prune` (or the PR host) may have already cleaned up.
 
 Safety invariants:
 1. Never deletes the currently checked-out branch.

@@ -271,7 +271,7 @@ qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
 ```
 
-`qgate_validation_required` is `true` when the phase decided q-gate-validation must run (lesson-derived plan path activated at Step 13.5 — `plan_source` is set and not `recipe`), and `false` otherwise. The orchestrator (`plan-marshall:plan-marshall/workflow/planning.md`) reads this flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level Task when it is `true`.
+`qgate_validation_required` is `true` when the lesson-derived plan path activated at Step 13.5 (`plan_source` set and not `recipe`), `false` otherwise. See Step 13 item 5 for the orchestrator dispatch contract.
 
 **Data Location Reference**:
 - Track/scope decisions: `decision.log` filtered by `(plan-marshall:phase-2-refine)`
@@ -288,7 +288,7 @@ Transition from refine to outline with `manage-status transition --completed 2-r
 
 ## Output
 
-Step 13.6 (above) is the single source of truth for the return TOON. The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+Step 13 (above) is the single source of truth for the return TOON. The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
 
 ```toon
 status: success | error
@@ -297,7 +297,7 @@ display_detail: "<{confidence}% confidence, track {track}, {qgate_pending_count}
 
 `display_detail` shape on success: `"{confidence}% confidence, track {track}, {qgate_pending_count} pending"` (e.g. `"92% confidence, track complex, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
 
-All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `compatibility`, `compatibility_description`, `simplicity`, `simplicity_description`, `domains`, `qgate_pending_count`) are documented in Step 13.6 above.
+All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `compatibility`, `compatibility_description`, `simplicity`, `simplicity_description`, `domains`, `qgate_pending_count`) are documented in Step 13 above.
 
 ---
 

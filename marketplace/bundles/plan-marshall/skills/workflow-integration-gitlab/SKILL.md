@@ -65,7 +65,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 
 **Purpose:** Stage MR review comments into the per-type finding store, then let the LLM consumer drive classification and responses from the stored findings.
 
-**Producer-side flow:** `comments-stage` is the only callable surface. It fetches review comments, applies the `comment-patterns.json` keyword pre-filter to drop obvious noise (bot signatures, "lgtm", etc.), and writes one `pr-comment` finding per surviving comment via `manage-findings add`. No script-side classification or batch-triage call is exposed to the LLM — the LLM reads the stored findings and decides per-finding action itself.
+**Producer-side flow:** `comments-stage` is the only callable surface. It fetches review comments, applies the `comment-patterns.json` keyword pre-filter to drop obvious noise (bot signatures, "lgtm", etc.), and writes one `pr-comment` finding per surviving comment via `manage-findings add`. The LLM reads the stored findings and decides per-finding action itself.
 
 **Steps:**
 
@@ -91,7 +91,7 @@ This skill is consumed by:
 
 ## Comment Classification
 
-`standards/comment-patterns.json` is now a **pre-filter only** — it drops obvious noise (bot signatures, "lgtm", "thanks!") before findings are written, but is **no longer the decision authority** for the action category. Classification of surviving comments belongs to the LLM consumer, which reads the full body from each finding's `detail` field.
+`standards/comment-patterns.json` is a **pre-filter only** — it drops obvious noise (bot signatures, "lgtm", "thanks!") before findings are written. Classification of surviving comments belongs to the LLM consumer, which reads the full body from each finding's `detail` field.
 
 ## Error Handling
 

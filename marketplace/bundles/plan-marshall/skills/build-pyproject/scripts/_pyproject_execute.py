@@ -117,13 +117,7 @@ def execute_direct(
     env_vars: dict[str, str] | None = None,
     working_dir: str | None = None,
 ):
-    """pyprojectx execute_direct with a one-shot self-heal retry.
-
-    On a matching cache-corruption failure, the worktree's ``.pyprojectx``
-    cache is renamed aside to ``.pyprojectx.broken`` and the command is
-    re-run once. The retry result replaces the original. Non-matching
-    failures and successes pass through unchanged.
-    """
+    """pyprojectx execute_direct with the one-shot self-heal retry (see module docstring)."""
     result = _inner_execute_direct(
         args=args,
         command_key=command_key,

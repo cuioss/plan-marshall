@@ -48,7 +48,7 @@ Activate when:
 
 ## Phase-Entry Worktree Assertion
 
-Phase 1-init has no preceding phase, so the Phase Entry Protocol's `phase_handshake verify` step is skipped (per [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#q-gate-check-phases-2-6) Q-Gate / handshake checks are scoped to phases 2-6). The worktree-materialization contract is deferred: phase-1-init persists only the *intent* — `metadata.use_worktree` and `metadata.worktree_branch` — into `status.json`. It does NOT create the worktree directory and does NOT supply a `--worktree-path` value (the `manage-status create` script persists the empty-string sentinel `''` for that field until phase-5-execute back-fills the resolved absolute path on first task execution; see phase-5-execute Step 2.5). The writer-chain contract for this phase is therefore narrower: Step 6 holds `use_worktree` and `worktree_branch` in orchestrator context, Step 8's `manage_status create` writes that pair atomically (with `worktree_path: ''` as the deferred-materialization sentinel), and the resolved `worktree_path` is back-filled later by phase-5-execute. Downstream phase-handshake assertions tolerate the empty `worktree_path` sentinel until phase-5 materialization.
+Phase 1-init has no preceding phase, so the Phase Entry Protocol's `phase_handshake verify` step is skipped (per [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#q-gate-check-phases-2-6) Q-Gate / handshake checks are scoped to phases 2-6). The worktree-materialization contract is deferred: phase-1-init persists only the *intent* — `metadata.use_worktree` and `metadata.worktree_branch` — into `status.json`. It does NOT create the worktree directory; the resolved `worktree_path` is back-filled by phase-5-execute Step 2.5 on first task execution. The writer-chain detail lives in Step 8's **Writer-chain contract**.
 
 ---
 
@@ -160,7 +160,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics \
   start-phase --plan-id {plan_id} --phase 1-init
 ```
 
-**Rationale**: Bootstrap phase has no preceding `phase-boundary` call to stamp `start_time` (the call requires a `plan_id`, which doesn't exist until Step 3 returns). Recording the start as early as the plan directory permits makes the subsequent fused `phase-boundary --prev-phase 1-init` call (in `plan-marshall/workflow/planning.md`) compute a wall duration that bounds the agent's `<usage>` duration — restoring the `Worked <= Wall` invariant. A `_read_status_created` backfill in `manage-metrics.py` (`cmd_phase_boundary`) is retained as a safety net for plans materialised under older orchestrator versions; the start-time recorded here is the authoritative source for plans created by the current orchestrator. See the **Phase-boundary metric bookkeeping** footnote below and `plan-marshall/workflow/planning.md` for the cross-references.
+**Rationale**: Bootstrap phase has no preceding `phase-boundary` call to stamp `start_time` (the call requires a `plan_id`, which doesn't exist until Step 3 returns). Recording the start as early as the plan directory permits makes the subsequent fused `phase-boundary --prev-phase 1-init` call (in `plan-marshall/workflow/planning.md`) compute a wall duration that bounds the agent's `<usage>` duration — restoring the `Worked <= Wall` invariant. The `_read_status_created` backfill in `manage-metrics.py` is a safety net for plans materialised under older orchestrator versions; the start-time recorded here is authoritative for current plans.
 
 If `action: exists`, use AskUserQuestion:
 - **Resume**: Continue with existing plan (skip to Step 9 with existing data)
@@ -768,24 +768,15 @@ This skill is dispatched as the workflow body of `plan-marshall:execution-contex
 
 ### Phase-boundary metric bookkeeping
 
-With one bootstrap exception, this skill does not invoke `manage-metrics` —
-phase boundary metric recording happens in the orchestrator
+Apart from the Step 3a bootstrap `start-phase` call, this skill does not invoke
+`manage-metrics` — phase boundary metric recording happens in the orchestrator
 (`plan-marshall:plan-marshall` workflows). When the orchestrator transitions
 out of `1-init`, it MUST use the fused `manage-metrics phase-boundary
 --prev-phase 1-init --next-phase 2-refine` call. See
 `marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
-`phase-boundary` for the API.
-
-**Bootstrap exception**: `1-init` is the only phase that self-records its own
-`start_time`. Step 3a above calls `manage-metrics start-phase --phase 1-init`
-immediately after the plan directory is created — this is the moment
-`plan_id` first exists, so it is also the earliest point at which
-`manage-metrics` can write `work/metrics.toon`. All other phases inherit
-`start_time` from the prior fused `phase-boundary` call (which writes both
-the closing `end_time` for the previous phase and the opening `start_time`
-for the next phase atomically). The `_read_status_created` backfill in
-`manage-metrics.py` is retained as a safety net for plans created by older
-orchestrator versions only.
+`phase-boundary` for the API. `1-init` is the only phase that self-records its
+own `start_time` (Step 3a); all other phases inherit it from the prior fused
+`phase-boundary` call.
 
 ---
 

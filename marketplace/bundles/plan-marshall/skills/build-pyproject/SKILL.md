@@ -36,7 +36,7 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 
 ### Producer-Side Finding Storage (`run --plan-id`)
 
-When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored via the producer path (always-on — there is no separate `--store-findings` flag). When `--plan-id` is omitted, the historical silent behaviour is preserved (parse + format only). The pyproject-specific issue→finding-type routing is:
+When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored via the producer path (always-on — there is no separate `--store-findings` flag). Without `--plan-id`, the build parses and formats only (no finding storage). The pyproject-specific issue→finding-type routing is:
 
 | Parsed `category` (Issue) | Finding type |
 |---------------------------|--------------|

@@ -351,7 +351,7 @@ commits_pulled: 3
 
 ### prune-local-and-remote-ref
 
-Delete the local feature branch and (in `local_and_remote` mode) the remote-tracking ref `refs/remotes/origin/{head_branch}` after a PR merge. Consolidates the three inline git calls (BC-04, BC-05, BC-06) from `branch-cleanup.md`. An internal `show-ref` guard skips remote-tracking ref deletion when the ref is already absent (Drift 3 resolution).
+Delete the local feature branch and (in `local_and_remote` mode) the remote-tracking ref `refs/remotes/origin/{head_branch}` after a PR merge. An internal `show-ref` guard skips remote-tracking ref deletion when the ref is already absent.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \

@@ -93,9 +93,6 @@ ParserFn = Callable[..., tuple[list[Issue], UnitTestSummary | None, str]]
 def create_subcommand_handler(base_fn: Callable[..., int], **kwargs) -> Callable[..., int]:
     """Generic factory: bind keyword arguments to a base subcommand function.
 
-    Replaces per-subcommand factory functions (create_coverage_report_handler,
-    create_check_warnings_handler, etc.) with a single generic pattern.
-
     The returned handler accepts (args) and delegates to base_fn(args, **kwargs).
 
     Args:

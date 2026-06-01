@@ -81,54 +81,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 
 3. **Process** — the LLM reads each finding's `detail` (which carries `key`, `rule`, `sonar_severity`, `sonar_type`, `project`, `pull_request`, `component`, `file`, `line`, and the full message) and decides fix-vs-suppress per finding. After acting on each finding, call `manage-findings resolve --hash-id {hash} --resolution fixed|suppressed|accepted`.
 
-### (Legacy) Workflow 1: Raw REST search
+### Raw REST search (ad-hoc)
 
-For ad-hoc inspection or non-finding-store integrations, `sonar_rest.py search` remains available as the raw REST surface. Producer-side flows MUST use `sonar.py fetch-and-store`.
-
-**Input:**
-- **project**: SonarQube project key
-- **pr** (optional): Pull request ID
-- **severities** (optional): Filter by severity
-- **types** (optional): Filter by type
-
-**Steps:**
-
-1. **Determine Context** (optional — get PR number if not provided)
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
-   ```
-
-2. **Fetch Issues via REST**
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest search \
-     --project {project_key} \
-     [--pr {pr_number}] \
-     [--severities BLOCKER,CRITICAL] \
-     [--types BUG,VULNERABILITY]
-   ```
-
-3. **Parse the Response**
-
-   The script outputs structured TOON directly.
-
-**Output:**
-```toon
-project_key: ...
-pull_request_id: ...
-issues[N]{key,type,severity,file,line,rule,message}:
-  - key: ...
-    type: BUG|CODE_SMELL|VULNERABILITY
-    severity: BLOCKER|CRITICAL|MAJOR|MINOR|INFO
-    file: ...
-    line: N
-    rule: java:S1234
-    message: ...
-statistics:
-  total_issues_fetched: N
-  by_severity: {}
-  by_type: {}
-```
+For ad-hoc inspection or non-finding-store integrations, `sonar_rest.py search` is the raw REST surface (see Canonical invocations → `sonar_rest — search`). It outputs structured TOON directly. Producer-side flows MUST use `sonar.py fetch-and-store`.
 
 ---
 
@@ -192,7 +147,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar f
 
 ## Issue Classification
 
-`standards/sonar-rules.json` is now a **pre-filter only** for the producer-side `fetch-and-store` flow. Suppressable rules (rules already documented as suppressable, test-acceptable rules) are dropped before findings are written; severity/type boost mappings derive the finding `severity` field. Final fix-vs-suppress classification of stored findings belongs to the LLM consumer reading the finding `detail`.
+`standards/sonar-rules.json` is a **pre-filter only** for the producer-side `fetch-and-store` flow. Suppressable rules (rules already documented as suppressable, test-acceptable rules) are dropped before findings are written; severity/type boost mappings derive the finding `severity` field. Final fix-vs-suppress classification of stored findings belongs to the LLM consumer reading the finding `detail`.
 
 Key principles:
 

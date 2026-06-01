@@ -36,7 +36,7 @@ The step flow is:
 
 1. Read inputs (run-config knobs + change_type).
 2. Ephemeral-derived no-op — under the on-demand crawl model no `architecture-pre/` snapshot exists, so this step short-circuits with the documented skip detail.
-3. Tier 0 — `discover --force` is preserved as a useful idempotent refresh of `_project.json` and `enriched.json` stubs, but the diff/commit branches (3c–3e) are unreachable from Step 2's no-op outcome and remain documented only as historical reference.
+3. Tier 0 — `discover --force` is an idempotent refresh of `_project.json` and `enriched.json` stubs; the diff/commit branches (3c–3e) apply only to the out-of-band pre-snapshot case (Step 2 short-circuits before them on the default path).
 4. Tier 1 — LLM re-enrichment remains available, but the auto-consumption of a diff is gone; invocation is manual via `/marshall-steward` Step 13.
 5. Mark step complete with `--display-detail` summarising the outcome (Branch A: "skipped — derived.json is ephemeral, no pre-snapshot exists" applies to every plan).
 
@@ -105,9 +105,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   discover --force --project-dir {worktree_path}
 ```
 
-The `--force` flag instructs `manage-architecture` to bypass any freshness checks and rewrite `_project.json` plus the per-module `enriched.json` stubs. Under the on-demand crawl model `derived.json` is no longer persisted, so `--force` no longer rewrites per-module derived files; the call is still useful as an idempotent refresh of the module index and as a re-seed of empty enrichment stubs for newly-discovered modules.
+The `--force` flag instructs `manage-architecture` to bypass any freshness checks and rewrite `_project.json` plus the per-module `enriched.json` stubs. `derived.json` is not persisted, so `--force` does not rewrite per-module derived files; the call is an idempotent refresh of the module index and a re-seed of empty enrichment stubs for newly-discovered modules.
 
-Note that Steps 3c–3e below describe the diff/commit machinery from the legacy snapshot model; under the on-demand crawl model Step 2's ephemeral-derived branch short-circuits before this step runs, so 3c–3e are unreachable on every plan. They remain documented only as historical reference for callers that supply a pre-snapshot out-of-band.
+Steps 3c–3e document the diff/commit machinery for the out-of-band pre-snapshot case (Step 2 short-circuits before them on the default path — see Step 2).
 
 ### 3c. Diff against the pre-snapshot
 
@@ -469,7 +469,7 @@ switch tier_1:
 
 ## Cross-References
 
-- `phase-1-init/SKILL.md` — phase-1-init no longer captures an `architecture-pre/` snapshot under the on-demand crawl model; Step 2 of this document short-circuits accordingly.
+- `phase-1-init/SKILL.md` — phase-1-init does not capture an `architecture-pre/` snapshot; Step 2 of this document short-circuits accordingly.
 - `manage-run-config/SKILL.md` `architecture-refresh` subcommand group — the source of truth for tier-0 / tier-1 knob semantics.
 - `manage-architecture/standards/client-api.md` `discover` and `diff-modules` — the deterministic backbone of Tier 0.
 - `manage-architecture` `enrich` verb — the LLM re-enrichment surface used by Tier 1 `auto` and `prompt`-accepted paths.
