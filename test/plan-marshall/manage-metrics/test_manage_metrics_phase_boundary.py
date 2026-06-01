@@ -217,13 +217,20 @@ def test_phase_boundary_invalid_next_phase_rejected(plan_context):
     assert 'next_phase' in result['message']
 
 
-def test_phase_boundary_equivalent_to_three_call_sequence(plan_context):
+def test_phase_boundary_equivalent_to_three_call_sequence(plan_context, monkeypatch):
     """The fused call persists the same key fields the three-call sequence would.
 
     We don't assert byte-equivalence (timestamps differ between calls), but the
     set of recorded keys per phase MUST match: prev gets end_time + token data;
     next gets start_time. Both must be present after the fused call.
     """
+    # Freeze the clock so cmd_start_phase and cmd_phase_boundary observe the same
+    # instant — otherwise the two whole-second reads can straddle a 1-second
+    # boundary, making the wall span 1000 ms and the clamp assert 1000 instead of
+    # 0 (same flake as test_phase_boundary_records_end_and_start_atomically).
+    frozen_now = manage_metrics.now_utc_iso()
+    monkeypatch.setattr(manage_metrics, 'now_utc_iso', lambda: frozen_now)
+
     cmd_start_phase(_ns_start_phase('boundary-equiv', '4-plan'))
     result = cmd_phase_boundary(
         _ns_boundary(
