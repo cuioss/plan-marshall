@@ -1112,6 +1112,29 @@ class ClaudeRuntime(Runtime):
           - Success: write plain ``{icon} {title_body}`` to stdout, return "".
           - Noop: write nothing to stdout, return "".
 
+        Hook-mode envelope (Step 5) carries two reader channels in one JSON
+        object. ``terminalSequence`` (the OSC-0 escape) is emitted for every
+        event and is byte-for-byte identical regardless of the new field.
+        ``hookSpecificOutput.sessionTitle`` — the web/desktop session-title
+        channel, equivalent to ``/rename`` and UI-only — is emitted ONLY for
+        the two events Claude Code supports it on:
+
+          - ``UserPromptSubmit``; and
+          - ``SessionStart`` when ``source ∈ {"startup", "resume"}`` (the
+            ``"clear"`` and ``"compact"`` sources do NOT support it).
+
+        For every other event (Notification, Stop, PreToolUse, PostToolUse,
+        PostToolUse:Bash) the envelope stays exactly ``{"terminalSequence":
+        osc_seq}`` and never carries a stray ``sessionTitle``. The
+        ``sessionTitle`` body is the bare ``title_body`` (the
+        ``pm:{phase}[:{short}]`` string) WITHOUT the icon glyph, because the
+        web title channel is static per-prompt text and cannot carry the live
+        ➤/?/✓ status icon. The field is purely additive: older hosts that do
+        not recognise it ignore it, so the terminal title keeps working with no
+        host-version probe. A missing or malformed ``hook_event_name`` /
+        ``source`` omits ``sessionTitle`` and still emits ``terminalSequence``
+        (best-effort/no-raise contract).
+
         Every return is the empty string so the wrapper ``main()`` (which
         skips ``print()`` on empty results) cannot append a TOON tail.
         """
@@ -1160,14 +1183,23 @@ class ClaudeRuntime(Runtime):
         # the canonical palette. The parse is best-effort: missing, empty, or
         # malformed stdin defaults to the active icon and never raises (the
         # renderer's no-op contract is "write nothing on failure").
+        #
+        # The parsed ``hook_event_name`` and ``source`` are also retained for
+        # Step 5's conditional ``sessionTitle`` emit (see the gating predicate
+        # there). Both default to None so a missing/malformed payload omits
+        # ``sessionTitle`` and still emits ``terminalSequence``.
         icon = _ICON_ACTIVE
+        hook_event_name: str | None = None
+        source: str | None = None
         if not statusline:
             try:
                 raw_payload = sys.stdin.read() if not sys.stdin.isatty() else ""
                 payload = json.loads(raw_payload) if raw_payload.strip() else {}
                 if isinstance(payload, dict):
+                    hook_event_name = payload.get("hook_event_name")
+                    source = payload.get("source")
                     icon = _resolve_icon(
-                        payload.get("hook_event_name"),
+                        hook_event_name,
                         payload.get("tool_name"),
                     )
             except (OSError, ValueError):
@@ -1184,7 +1216,21 @@ class ClaudeRuntime(Runtime):
 
         try:
             osc_seq = f"\x1b]0;{icon} {title_body}\x07"
-            sys.stdout.write(json.dumps({"terminalSequence": osc_seq}))
+            envelope: dict[str, Any] = {"terminalSequence": osc_seq}
+            # Conditional web/desktop session-title channel: emit
+            # ``hookSpecificOutput.sessionTitle`` (icon-free body) ONLY for the
+            # two events Claude Code supports it on — UserPromptSubmit, and
+            # SessionStart with source in {startup, resume}. All other events
+            # keep the envelope as ``{"terminalSequence": osc_seq}``.
+            emit_session_title = hook_event_name == "UserPromptSubmit" or (
+                hook_event_name == "SessionStart" and source in ("startup", "resume")
+            )
+            if emit_session_title:
+                envelope["hookSpecificOutput"] = {
+                    "hookEventName": hook_event_name,
+                    "sessionTitle": title_body,
+                }
+            sys.stdout.write(json.dumps(envelope))
             sys.stdout.flush()
         except OSError:
             pass

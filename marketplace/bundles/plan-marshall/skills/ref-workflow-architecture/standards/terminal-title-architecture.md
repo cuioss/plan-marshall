@@ -21,7 +21,8 @@ WRITER (manage-status)                          READER (platform-runtime claude_
                ▼                                 │     b. fallback                              │
    {plan_dir}/title-body.txt ───────────────────┤        archived-plans/{date}-{plan_id}/...    │
                │                                 │  4. _resolve_icon(hook_event) → {icon}        │
-   cmd_archive (Completed body):                 │  5. emit {icon} {body}                        │
+   cmd_archive (Completed body):                 │  5. emit terminalSequence (all events)       │
+                                                 │     + sessionTitle (web/desktop, gated)      │
      write pm:Completed:{short} ────────────────►│                                              │
      then shutil.move →                          └────────────────────────────────────────────┘
      archived-plans/{date}-{plan_id}/title-body.txt
@@ -101,7 +102,10 @@ The reader lives in `platform-runtime/scripts/claude_runtime.py` as
    stdin payload and keeps the static active icon; hook mode parses the JSON payload
    Claude Code writes to stdin (best-effort — missing/malformed input defaults to
    the active icon and never raises).
-5. **Emit `{icon} {body}`** on the appropriate output channel (see Output Channels).
+5. **Emit the title** on the appropriate output channel (see Output Channels). Hook
+   mode emits a JSON envelope carrying the OSC `terminalSequence` for every event,
+   plus a conditional web/desktop `sessionTitle` channel; statusLine mode emits plain
+   `{icon} {body}` text.
 
 ### Session-Plan Binding
 
@@ -139,12 +143,45 @@ distinguished by the `--statusline` flag:
 
 | Mode | Flag | Output on success |
 |------|------|-------------------|
-| OSC hook | _(none)_ | JSON envelope `{"terminalSequence": "\x1b]0;{icon} {body}\x07"}` written to stdout |
+| OSC hook | _(none)_ | JSON envelope `{"terminalSequence": "\x1b]0;{icon} {body}\x07"}` written to stdout, optionally augmented with the conditional `sessionTitle` channel below |
 | statusLine | `--statusline` | plain `{icon} {body}` written to stdout |
 
 Both modes share one stdout contract: stdout carries exactly the bytes the host
 parser consumes and **nothing else**. The no-op path writes nothing to stdout (never
 a TOON noop row); observability TOON rows go to stderr only.
+
+#### Hook-mode dual channel — `terminalSequence` and `sessionTitle`
+
+The hook-mode JSON envelope carries up to two reader channels, distinct surfaces fed
+from the one `title-body.txt` body:
+
+- **`terminalSequence`** — the OSC-0 escape that drives the OS terminal tab title.
+  Emitted for **every** render event, byte-for-byte identical regardless of the
+  second channel. Carries the live `{icon}` glyph.
+- **`hookSpecificOutput.sessionTitle`** — the Claude Code web (claude.ai/code) and
+  desktop session-picker title, equivalent to `/rename` and **UI-only**. The host
+  supports this field on only two events, so the reader gates the emit accordingly:
+  - `UserPromptSubmit`; and
+  - `SessionStart` when `source ∈ {startup, resume}` (the `clear` and `compact`
+    sources do **not** support it).
+
+  For every other event (`Notification`, `Stop`, `PreToolUse`, `PostToolUse`,
+  `PostToolUse:Bash`) the envelope stays exactly `{"terminalSequence": ...}` and never
+  carries a stray `sessionTitle`. The `sessionTitle` value is the bare `title_body`
+  (`pm:{phase}[:{short}]`) **without** the icon glyph — the web title channel is
+  static per-prompt text and cannot carry the live ➤/?/✓ status icon. The full
+  envelope on a supporting event is:
+
+  ```json
+  {"terminalSequence": "]0;{icon} {body}",
+   "hookSpecificOutput": {"hookEventName": "{event}", "sessionTitle": "{body}"}}
+  ```
+
+The `sessionTitle` field is purely additive: older Claude Code hosts that do not
+recognise it ignore the unknown field, so the terminal title keeps working with no
+host-version probe. A missing or malformed `hook_event_name` / `source` omits
+`sessionTitle` and still emits `terminalSequence` (best-effort/no-raise contract).
+statusLine mode has no session-title channel and is unaffected.
 
 ## Platform Abstraction
 
