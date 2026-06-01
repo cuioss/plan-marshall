@@ -38,8 +38,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -322,7 +324,28 @@ def persist(
             log_paths=log_paths,
             filtered_log_paths=filtered_log_paths,
         )
-    manifest_path.write_text(serialize_toon(manifest), encoding='utf-8')
+    # Atomic write: parallel CI jobs sharing the same run_id could race on
+    # manifest.toon. Write to a temp file in the same directory, then
+    # os.replace() it into place (atomic on POSIX and Windows). The
+    # try/finally unlinks the temp file if anything fails before the rename.
+    tmp_file = tempfile.NamedTemporaryFile(
+        mode='w',
+        encoding='utf-8',
+        dir=str(run_dir),
+        prefix='.manifest-',
+        suffix='.toon',
+        delete=False,
+    )
+    try:
+        with tmp_file:
+            tmp_file.write(serialize_toon(manifest))
+        os.replace(tmp_file.name, manifest_path)
+    except BaseException:
+        try:
+            os.unlink(tmp_file.name)
+        except OSError:
+            pass
+        raise
 
     manifest_jobs = manifest.get('jobs') or []
     return {

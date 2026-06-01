@@ -203,16 +203,17 @@ def _filter_structured(raw_log: str, error_style: str) -> str | None:
     if parse_log is None:
         return None
 
-    with tempfile.NamedTemporaryFile('w', suffix='.log', delete=False, encoding='utf-8') as handle:
-        handle.write(raw_log)
-        temp_path = handle.name
-
+    temp_path: str | None = None
     try:
+        with tempfile.NamedTemporaryFile('w', suffix='.log', delete=False, encoding='utf-8') as handle:
+            temp_path = handle.name
+            handle.write(raw_log)
         issues, _test_summary, _build_status = parse_log(temp_path)
-    except (OSError, ValueError, KeyError, IndexError, AttributeError):
+    except (OSError, ValueError, KeyError, IndexError, AttributeError, TypeError):
         return None
     finally:
-        Path(temp_path).unlink(missing_ok=True)
+        if temp_path is not None:
+            Path(temp_path).unlink(missing_ok=True)
 
     error_issues = [issue for issue in issues if getattr(issue, 'severity', None) == 'error']
     if not error_issues:
