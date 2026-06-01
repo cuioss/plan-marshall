@@ -1,0 +1,14 @@
+Running with gitlab-runner 16.11.0
+Preparing the "docker" executor
+Using Docker executor with image python:3.14 ...
+Preparing environment
+Getting source from Git repository
+Executing "step_script" stage of the job script
+$ ./pw quality-gate pm-documents
+Success: no issues found in 11 source files
+All checks passed!
+>>> compile: mypy marketplace/bundles/pm-documents
+    uv run mypy marketplace/bundles/pm-documents
+>>> quality-gate: ruff check marketplace/bundles/pm-documents test/pm-documents
+    uv run ruff check marketplace/bundles/pm-documents test/pm-documents
+Job succeeded

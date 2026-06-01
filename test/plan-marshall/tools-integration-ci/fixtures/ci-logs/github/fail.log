@@ -1,0 +1,48 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.0, pytest-9.0.2, pluggy-1.6.0
+cachedir: .pytest_cache
+rootdir: /home/runner/work/plan-marshall/plan-marshall
+configfile: pyproject.toml
+plugins: xdist-3.8.0, cov-7.0.0
+collecting ... collected 78 items
+
+test/pm-documents/sample/test_sample.py::test_deliberate_assertion_failure FAILED [  1%]
+test/pm-documents/sample/test_sample.py::test_deliberate_exception FAILED [  2%]
+test/pm-documents/manage-adr/test_manage_adr.py::TestManageAdr::test_cli_create_and_list PASSED [  3%]
+test/pm-documents/manage-adr/test_manage_adr.py::TestManageAdr::test_create_adr PASSED [  6%]
+test/pm-documents/manage-adr/test_manage_adr.py::TestManageAdr::test_list_adrs PASSED [ 14%]
+test/pm-documents/manage-interface/test_manage_interface.py::TestManageInterface::test_create_interface PASSED [ 25%]
+test/pm-documents/ref-asciidoc/test_asciidoc.py::test_script_exists PASSED [ 53%]
+test/pm-documents/ref-documentation/test_docs.py::test_analyze_tone_missing_args PASSED [100%]
+
+=================================== FAILURES ===================================
+______________________ test_deliberate_assertion_failure _______________________
+test/pm-documents/sample/test_sample.py:10: in test_deliberate_assertion_failure
+    assert actual == expected
+E   AssertionError: assert {'count': 0, ...tus': 'error'} == {'count': 3, ...s': 'success'}
+E
+E     Differing items:
+E     {'status': 'error'} != {'status': 'success'}
+E     {'count': 0} != {'count': 3}
+E
+E     Full diff:
+E       {...
+E
+E     ...Full output truncated (9 lines hidden), use '-vv' to show
+__________________________ test_deliberate_exception ___________________________
+test/pm-documents/sample/test_sample.py:17: in test_deliberate_exception
+    assert values[index] == 1
+           ^^^^^^^^^^^^^
+E   IndexError: list index out of range
+=============================== warnings summary ===============================
+test/pm-documents/ref-asciidoc/test_asciidoc.py::test_stats_console_format
+  marketplace/bundles/pm-documents/skills/ref-asciidoc/scripts/_cmd_stats.py:55: FutureWarning: Possible nested set at position 2
+    stats['lists'] = len(re.findall(r'^[[:space:]]*(\*|[0-9]+\.|.*::)', content, re.MULTILINE))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/pm-documents/sample/test_sample.py::test_deliberate_assertion_failure
+FAILED test/pm-documents/sample/test_sample.py::test_deliberate_exception
+=================== 2 failed, 76 passed, 1 warning in 37.84s ===================
+>>> module-tests: pytest test/pm-documents
+    uv run pytest test/pm-documents

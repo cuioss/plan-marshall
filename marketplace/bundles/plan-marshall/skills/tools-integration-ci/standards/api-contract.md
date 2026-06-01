@@ -245,6 +245,92 @@ lint	completed	success	30	https://github.com/org/repo/actions/runs/113	Lint
 
 ---
 
+## CI Failure Log Download & Filtering
+
+When one or more CI checks complete with `result: failure`, the `checks status` and `checks wait` operations augment each failing entry with the on-disk paths of its downloaded raw log and its filtered error-extraction variant. The raw download and the parse/filter pass are two distinct provider operations; both persist under the plan-scoped artifact tree so retrospectives and triage can read the logs offline.
+
+### Download operation
+
+Downloads the raw failing-job log for a single workflow run, keyed by `run_id`.
+
+| Aspect | GitHub | GitLab |
+|--------|--------|--------|
+| CLI invocation | `gh run view {run_id} --log-failed` | `glab ci trace {run_id}` |
+| Source | Failed-job log lines for the run | Job trace for the run |
+
+The downloaded raw log is written to `artifacts/ci-runs/{run_id}/{slug}.log`, where `{slug}` is the failing check's name slugified (lowercased, non-alphanumeric runs collapsed to `-`, e.g. check `verify / verify` → slug `verify-verify`). The absolute (plan-relative) path is surfaced as the per-entry `log_file` field.
+
+### Parse/filter operation
+
+Reads the raw `{slug}.log` and produces a filtered error-extraction variant containing only the error-relevant lines plus surrounding context. The output is written to `artifacts/ci-runs/{run_id}/{slug}.filtered.log` and surfaced as the per-entry `filtered_log_file` field.
+
+The line-selection strategy is governed by the `--error-style` selector:
+
+| `--error-style` | Selection heuristic |
+|-----------------|---------------------|
+| `maven` | Lines matching Maven failure markers (`[ERROR]`, `BUILD FAILURE`, `Tests run:` with `Failures`/`Errors` > 0, `<<< FAILURE!`, `<<< ERROR!`) plus N context lines. |
+| `gradle` | Lines matching Gradle failure markers (`FAILED`, `> Task ... FAILED`, `BUILD FAILED`, `What went wrong:`, stacktrace `Caused by:`) plus N context lines. |
+| `npm` | Lines matching npm/node failure markers (`npm ERR!`, `FAIL `, `✕`, `AssertionError`, `Error:`) plus N context lines. |
+| `generic` | **Default.** Lines matching the generic heuristic regex `ERROR|FAIL|Exception|Traceback` (case-insensitive) plus N context lines. Used when no style is given or the failing job's build system is unknown. |
+
+`N` is the symmetric before/after context-line count (implementation default applies when unspecified). When the heuristic matches no lines, the filtered file contains the raw log's trailing N lines as a fallback so triage always has content to read.
+
+### Transport shape: per-entry, NOT scalar top-level
+
+`log_file` and `filtered_log_file` are fields of each individual `failing_checks[]` entry — they are **never** scalar top-level keys. A single run can fail multiple checks, each with its own distinctly-slugged raw and filtered file. The failing-checks table is emitted in addition to (not instead of) the existing `checks[]` table; `failing_checks[]` is the subset of `checks[]` whose `result` is `failure`, enriched with the two file paths.
+
+Naming scheme, per failing check, under the run's artifact directory:
+
+```
+artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded log         → log_file
+artifacts/ci-runs/{run_id}/{slug}.filtered.log  # filtered error extraction  → filtered_log_file
+```
+
+### Worked example: `checks status` with two failing checks
+
+```toon
+status: success
+operation: ci_status
+pr_number: 123
+overall_status: failure
+check_count: 3
+elapsed_sec: 210
+
+checks[3]{name,status,result,elapsed_sec,url,workflow}:
+build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
+verify / verify	completed	failure	180	https://github.com/org/repo/actions/runs/112	CI
+lint	completed	failure	40	https://github.com/org/repo/actions/runs/113	Lint
+
+failing_checks[2]{name,run_id,error_style,log_file,filtered_log_file}:
+verify / verify	112	generic	artifacts/ci-runs/112/verify-verify.log	artifacts/ci-runs/112/verify-verify.filtered.log
+lint	113	generic	artifacts/ci-runs/113/lint.log	artifacts/ci-runs/113/lint.filtered.log
+```
+
+### Worked example: `checks wait` with two failing checks
+
+```toon
+status: success
+operation: ci_wait
+pr_number: 123
+final_status: failure
+duration_sec: 210
+polls: 7
+elapsed_sec: 210
+
+checks[3]{name,status,result,elapsed_sec,url,workflow}:
+build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
+verify / verify	completed	failure	180	https://github.com/org/repo/actions/runs/112	CI
+lint	completed	failure	40	https://github.com/org/repo/actions/runs/113	Lint
+
+failing_checks[2]{name,run_id,error_style,log_file,filtered_log_file}:
+verify / verify	112	generic	artifacts/ci-runs/112/verify-verify.log	artifacts/ci-runs/112/verify-verify.filtered.log
+lint	113	generic	artifacts/ci-runs/113/lint.log	artifacts/ci-runs/113/lint.filtered.log
+```
+
+In both examples the two failing checks (`verify / verify` and `lint`) carry distinctly-slugged raw and filtered files under their respective `{run_id}` directories, demonstrating the multi-failure transport: one `failing_checks[]` row per failure, each with its own `log_file` and `filtered_log_file`.
+
+---
+
 ## Issue Operations (github.py / gitlab.py)
 
 ### issue create

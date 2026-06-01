@@ -1,0 +1,45 @@
+Running with gitlab-runner 16.11.0
+Preparing the "docker" executor
+Using Docker executor with image python:3.14 ...
+Preparing environment
+Getting source from Git repository
+Executing "step_script" stage of the job script
+$ ./pw quality-gate pm-documents
+Success: no issues found in 12 source files
+F401 [*] `os` imported but unused
+ --> marketplace/bundles/pm-documents/skills/ref-asciidoc/scripts/_sample.py:4:8
+  |
+2 | output for CI-log filter fixtures."""
+3 |
+4 | import os
+  |        ^^
+5 | import sys
+  |
+help: Remove unused import: `os`
+
+F401 [*] `sys` imported but unused
+ --> marketplace/bundles/pm-documents/skills/ref-asciidoc/scripts/_sample.py:5:8
+  |
+4 | import os
+5 | import sys
+  |        ^^^
+  |
+help: Remove unused import: `sys`
+
+F841 Local variable `unused_var` is assigned to but never used
+  --> marketplace/bundles/pm-documents/skills/ref-asciidoc/scripts/_sample.py:9:5
+   |
+ 8 | def broken(x):
+ 9 |     unused_var = 42
+   |     ^^^^^^^^^^
+10 |     return x+1
+   |
+help: Remove assignment to unused variable `unused_var`
+
+Found 3 errors.
+[*] 2 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+>>> compile: mypy marketplace/bundles/pm-documents
+    uv run mypy marketplace/bundles/pm-documents
+>>> quality-gate: ruff check marketplace/bundles/pm-documents test/pm-documents
+    uv run ruff check marketplace/bundles/pm-documents test/pm-documents
+ERROR: Job failed: exit code 1

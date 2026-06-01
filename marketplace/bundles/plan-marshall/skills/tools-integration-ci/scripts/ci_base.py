@@ -789,10 +789,12 @@ def build_parser(
     ci_status = checks_sub.add_parser('status', help='Check CI status', allow_abbrev=False)
     ci_status.add_argument('--pr-number', type=int, help='PR number')
     add_head_arg(ci_status)
+    add_error_style_arg(ci_status)
 
     # checks wait
     ci_wait = checks_sub.add_parser('wait', help='Wait for CI to complete', allow_abbrev=False)
     ci_wait.add_argument('--pr-number', required=True, type=int, help='PR number')
+    add_error_style_arg(ci_wait)
     ci_wait.add_argument(
         '--timeout',
         type=int,
@@ -1009,6 +1011,24 @@ def add_head_arg(subparser: argparse.ArgumentParser) -> None:
         '--head',
         help='Source branch — alternative to --pr-number for branch-identified lookups. '
         'Required when invoking from a different checkout than the worktree containing the branch.',
+    )
+
+
+def add_error_style_arg(subparser: argparse.ArgumentParser) -> None:
+    """Register the ``--error-style`` selector on a checks subparser.
+
+    Governs the failure-log filter heuristic applied by
+    :func:`enrich_failing_checks_with_logs` when ``checks wait`` / ``checks
+    status`` detect a failure: ``maven`` / ``gradle`` / ``npm`` route through
+    the per-system build parsers, ``generic`` (the default) applies the
+    context-window heuristic.
+    """
+    subparser.add_argument(
+        '--error-style',
+        dest='error_style',
+        default='generic',
+        choices=('maven', 'gradle', 'npm', 'generic'),
+        help='Failure-log filter heuristic (default: generic)',
     )
 
 
@@ -1270,6 +1290,154 @@ def truncate_log_content(stdout: str, max_lines: int = CI_LOG_TRUNCATE_LINES) ->
     truncated = lines[:max_lines]
     content = '\n'.join(truncated)
     return content.replace(chr(10), '\\n'), len(truncated)
+
+
+# ---------------------------------------------------------------------------
+# Failure-path log download + filter + store (shared between GitHub/GitLab)
+# ---------------------------------------------------------------------------
+
+
+def _load_persist():  # type: ignore[no-untyped-def]
+    """Lazily load ``manage-ci-artifacts.persist`` from the sibling skill.
+
+    The persistence layer lives in the ``manage-ci-artifacts`` skill with a
+    hyphenated filename, so it is loaded via ``importlib`` rather than a plain
+    import. Returns the ``persist`` callable, or ``None`` when the module
+    cannot be located/loaded (callers degrade gracefully rather than raise).
+    """
+    import importlib.util
+
+    scripts_dir = Path(__file__).resolve().parent  # .../tools-integration-ci/scripts
+    skills_dir = scripts_dir.parent.parent  # .../skills
+    module_path = skills_dir / 'manage-ci-artifacts' / 'scripts' / 'manage-ci-artifacts.py'
+    if not module_path.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location('manage_ci_artifacts', module_path)
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    return getattr(module, 'persist', None)
+
+
+def enrich_failing_checks_with_logs(
+    *,
+    failing_checks: list[dict],
+    provider: str,
+    raw_log_fetcher: Any,
+    plan_id: str | None,
+    error_style: str = 'generic',
+) -> list[dict]:
+    """Enrich each failing-check entry with its downloaded raw + filtered logs.
+
+    Iterates ``failing_checks`` and, for every entry, derives a collision-free
+    file slug from ``job_name`` (falling back to ``name``), downloads that
+    check's raw log via ``raw_log_fetcher``, persists the raw log plus a
+    filtered error-extraction variant under
+    ``artifacts/ci-runs/{run_id}/{slug}.log`` and ``{slug}.filtered.log``
+    through the ``manage-ci-artifacts`` storage layout, and appends the
+    plan-dir-relative ``log_file`` / ``filtered_log_file`` paths back onto the
+    entry. Two failing checks sharing one ``run_id`` get distinctly-slugged
+    files and never collide.
+
+    Args:
+        failing_checks: The provider's ``failing_checks[]`` entries (each
+            carrying at least ``name``/``job_name``/``run_id``). Mutated in
+            place AND returned for convenience.
+        provider: ``github`` or ``gitlab`` — recorded in the manifest.
+        raw_log_fetcher: Callable ``(run_id: str) -> str | None`` returning the
+            raw failing-job log for a run, or ``None``/raising on failure.
+        plan_id: Plan identifier locating the artifact tree. When ``None`` the
+            hook is a no-op enrichment (every entry keeps empty path fields).
+        error_style: One of ``maven|gradle|npm|generic`` (default ``generic``)
+            governing the filter heuristic.
+
+    Returns:
+        The same list, with ``log_file`` / ``filtered_log_file`` set on each
+        entry (empty strings on any entry whose ``run_id`` is missing or whose
+        download/persist failed — per-entry graceful degradation, never raises).
+    """
+    persist = _load_persist() if plan_id else None
+    filter_log, _slugify = _load_log_filter()
+
+    for entry in failing_checks:
+        entry.setdefault('log_file', '')
+        entry.setdefault('filtered_log_file', '')
+        entry.setdefault('error_style', error_style)
+
+        run_id = entry.get('run_id') or ''
+        if not plan_id or not run_id or persist is None or filter_log is None or _slugify is None:
+            continue
+
+        try:
+            slug = _slugify(entry.get('job_name') or entry.get('name') or '')
+            raw_log = raw_log_fetcher(run_id)
+            if raw_log is None:
+                continue
+            filtered = filter_log(raw_log, error_style)
+            job = {
+                'name': entry.get('name', ''),
+                'workflow_name': entry.get('workflow_name') or '',
+                'job_name': entry.get('job_name') or '',
+                'conclusion': entry.get('conclusion') or '',
+                'started_at': entry.get('started_at') or '',
+                'completed_at': entry.get('completed_at') or '',
+                'run_url': entry.get('run_url') or '',
+                'slug': slug,
+                'raw_content': raw_log,
+                'filtered_content': filtered,
+            }
+            result = persist(
+                plan_id=plan_id,
+                run_id=run_id,
+                head_sha=entry.get('head_sha', '') or '',
+                pr_number=entry.get('pr_number', '') or '',
+                provider=provider,
+                jobs=[job],
+            )
+            if result.get('status') != 'success':
+                continue
+            entry['log_file'] = _select_slug_path(result.get('log_paths'), slug, '.log')
+            entry['filtered_log_file'] = _select_slug_path(
+                result.get('filtered_log_paths'), slug, '.filtered.log'
+            )
+        except Exception:
+            # Per-entry graceful degradation: a single failure must never
+            # abort enrichment of the remaining entries or raise.
+            continue
+
+    return failing_checks
+
+
+def _select_slug_path(paths: Any, slug: str, suffix: str) -> str:
+    """Pick the path matching ``{slug}{suffix}`` from a persist result list."""
+    if not paths:
+        return ''
+    target = f'{slug}{suffix}'
+    for path in paths:
+        if str(path).endswith(target):
+            return str(path)
+    return ''
+
+
+def _load_log_filter():  # type: ignore[no-untyped-def]
+    """Lazily import ``filter_log`` and ``slugify_check_name`` from this skill.
+
+    Both live in the sibling ``_ci_log_filter`` module in this skill's scripts
+    directory. Returns ``(filter_log, slugify_check_name)`` or ``(None, None)``
+    when the module is unavailable (callers degrade gracefully).
+    """
+    try:
+        from _ci_log_filter import (  # type: ignore[import-not-found]
+            filter_log,
+            slugify_check_name,
+        )
+    except ImportError:
+        return None, None
+    return filter_log, slugify_check_name
 
 
 # ---------------------------------------------------------------------------

@@ -112,6 +112,20 @@ def _runs_root(plan_id: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
+def _job_stem(job: dict) -> str:
+    """Return the on-disk filename stem for a job.
+
+    A caller-supplied ``slug`` (the failing-check log-download path uses the
+    slugified check name to disambiguate multiple failing checks that share a
+    ``run_id``) takes precedence; otherwise the stem is derived from the job's
+    ``job_name`` / ``name`` via :func:`_safe_job_filename`.
+    """
+    slug = job.get('slug')
+    if slug:
+        return str(slug)
+    return _safe_job_filename(job.get('job_name') or job.get('name', ''))
+
+
 def _build_manifest(
     *,
     run_id: str,
@@ -123,27 +137,33 @@ def _build_manifest(
     final_status: str,
     jobs: list[dict],
     log_paths: dict[str, str],
+    filtered_log_paths: dict[str, str] | None = None,
 ) -> dict:
     """Build the manifest TOON payload.
 
     ``jobs`` are the per-job dicts taken from the ``checks wait`` envelope
     (or an equivalent ``checks status`` envelope). ``log_paths`` maps each
-    job's canonical filename to its plan-dir-relative path.
+    job's filename stem to its plan-dir-relative raw-log path;
+    ``filtered_log_paths`` (optional) maps the same stem to the plan-dir-relative
+    filtered-log path written for failing checks.
     """
+    filtered_log_paths = filtered_log_paths or {}
     fetched_at = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
     job_rows: list[dict] = []
     for job in jobs:
-        canonical = _safe_job_filename(job.get('job_name') or job.get('name', ''))
+        stem = _job_stem(job)
         job_rows.append(
             {
                 'name': job.get('name', ''),
                 'workflow_name': job.get('workflow_name') or '',
                 'job_name': job.get('job_name') or '',
+                'slug': job.get('slug') or '',
                 'conclusion': job.get('conclusion') or '',
                 'started_at': job.get('started_at') or '',
                 'completed_at': job.get('completed_at') or '',
                 'run_url': job.get('run_url') or '',
-                'log_path': log_paths.get(canonical, ''),
+                'log_path': log_paths.get(stem, ''),
+                'filtered_log_path': filtered_log_paths.get(stem, ''),
             }
         )
     return {
@@ -172,6 +192,11 @@ def _build_manifest(
 # ---------------------------------------------------------------------------
 
 
+def _relative_str(path: Path) -> str:
+    """Express ``path`` relative to the artifact anchor when absolute."""
+    return str(path.relative_to(_relative_anchor())) if path.is_absolute() else str(path)
+
+
 def persist(
     *,
     plan_id: str,
@@ -198,11 +223,18 @@ def persist(
             dict carries ``name``, ``job_name``, ``conclusion``,
             ``run_id`` etc. (See ``_build_failing_check_entry`` in the
             provider scripts for the canonical shape — non-failing
-            jobs follow the same schema.)
+            jobs follow the same schema.) Failing-check downloads add
+            three optional keys consumed here: ``slug`` (slugified check
+            name → filename stem, disambiguating multiple failing checks
+            sharing one ``run_id``), ``raw_content`` (pre-fetched raw log
+            content; bypasses ``log_fetcher`` when present), and
+            ``filtered_content`` (the filtered error-extraction variant —
+            written alongside the raw log as ``{stem}.filtered.log``).
         log_fetcher: Optional callable used as a test seam in place of
             the default log fetching path. Signature:
             ``(provider, run_id, job) -> str`` returning the log
-            content for a single job.
+            content for a single job. Skipped for any job that already
+            carries ``raw_content``.
         wait_outcome: ``completed`` or ``deadline_exceeded`` (from the
             wait envelope).
         final_status: ``success`` / ``failure`` / ``none`` / ``timeout``
@@ -212,8 +244,13 @@ def persist(
         Result dict matching the script's TOON output contract.
 
     Idempotence: when ``manifest.toon`` already exists for the
-    ``(plan_id, run_id)`` pair, this function is a no-op that re-emits
-    the existing manifest's job_count and log paths.
+    ``(plan_id, run_id)`` pair, this function re-emits the existing
+    manifest without re-fetching logs — UNLESS the call supplies jobs
+    whose ``slug`` (filename stem) is not yet recorded in the manifest.
+    In that case the new slug-named raw + filtered variants are written
+    additively and merged into the manifest, so multiple failing checks
+    of one ``run_id`` each gain their own files without overwriting the
+    prior run's artifacts.
     """
     if not run_id:
         return {
@@ -224,87 +261,150 @@ def persist(
     run_dir = _run_dir(plan_id, run_id)
     manifest_path = _manifest_path(plan_id, run_id)
 
-    # Idempotence: existing manifest → re-emit.
+    existing_manifest: dict | None = None
     if manifest_path.is_file():
         try:
-            existing = parse_toon(manifest_path.read_text(encoding='utf-8'))
+            existing_manifest = parse_toon(manifest_path.read_text(encoding='utf-8'))
         except Exception as exc:
             return {
                 'status': 'error',
                 'error': f'existing manifest at {manifest_path} unparseable: {exc}',
             }
-        existing_jobs = existing.get('jobs') or []
-        existing_log_paths: list[str] = [
-            j.get('log_path', '') for j in existing_jobs if j.get('log_path')
-        ]
-        return {
-            'status': 'success',
-            'plan_id': plan_id,
-            'run_id': run_id,
-            'run_dir': str(run_dir.relative_to(_relative_anchor()))
-            if run_dir.is_absolute()
-            else str(run_dir),
-            'already_persisted': True,
-            'job_count': len(existing_jobs),
-            'jobs_source': existing.get('jobs_source')
-            or ('enumerated' if existing_jobs else 'empty'),
-            'manifest_path': str(manifest_path.relative_to(_relative_anchor()))
-            if manifest_path.is_absolute()
-            else str(manifest_path),
-            'log_paths': existing_log_paths,
-        }
+        existing_jobs = existing_manifest.get('jobs') or []
+        existing_stems = {j.get('slug') or _job_stem(j) for j in existing_jobs}
+        new_stems = {_job_stem(j) for j in jobs}
+        # Pure re-emit when the call adds no new filename stem.
+        if new_stems <= existing_stems:
+            return _reemit(plan_id, run_id, run_dir, manifest_path, existing_manifest)
 
-    # Fresh persist: fetch every job's log slice and write to disk.
     run_dir.mkdir(parents=True, exist_ok=True)
     fetcher = log_fetcher or _default_log_fetcher
     log_paths: dict[str, str] = {}
+    filtered_log_paths: dict[str, str] = {}
     for job in jobs:
-        canonical = _safe_job_filename(job.get('job_name') or job.get('name', ''))
-        log_filename = f'{canonical}.log'
-        log_target = run_dir / log_filename
-        try:
-            content = fetcher(provider, run_id, job)
-        except Exception as exc:
-            # A single-job fetch failure must not abort the whole
-            # persist call — write an explanatory stub so the
-            # retrospective still sees a per-job artifact.
-            content = f'[fetch-failed] {exc}\n'
-        log_target.write_text(content or '', encoding='utf-8')
-        relative_log = (
-            log_target.relative_to(_relative_anchor())
-            if log_target.is_absolute()
-            else log_target
-        )
-        log_paths[canonical] = str(relative_log)
+        stem = _job_stem(job)
+        log_target = run_dir / f'{stem}.log'
+        raw_content = job.get('raw_content')
+        if raw_content is None:
+            try:
+                raw_content = fetcher(provider, run_id, job)
+            except Exception as exc:
+                # A single-job fetch failure must not abort the whole
+                # persist call — write an explanatory stub so the
+                # retrospective still sees a per-job artifact.
+                raw_content = f'[fetch-failed] {exc}\n'
+        log_target.write_text(raw_content or '', encoding='utf-8')
+        log_paths[stem] = _relative_str(log_target)
 
-    manifest = _build_manifest(
-        run_id=run_id,
-        provider=provider,
-        head_sha=head_sha,
-        pr_number=pr_number,
-        plan_id=plan_id,
-        wait_outcome=wait_outcome,
-        final_status=final_status,
-        jobs=jobs,
-        log_paths=log_paths,
-    )
+        filtered_content = job.get('filtered_content')
+        if filtered_content is not None:
+            filtered_target = run_dir / f'{stem}.filtered.log'
+            filtered_target.write_text(filtered_content or '', encoding='utf-8')
+            filtered_log_paths[stem] = _relative_str(filtered_target)
+
+    if existing_manifest is not None:
+        manifest = _merge_into_manifest(
+            existing_manifest,
+            new_jobs=jobs,
+            log_paths=log_paths,
+            filtered_log_paths=filtered_log_paths,
+        )
+    else:
+        manifest = _build_manifest(
+            run_id=run_id,
+            provider=provider,
+            head_sha=head_sha,
+            pr_number=pr_number,
+            plan_id=plan_id,
+            wait_outcome=wait_outcome,
+            final_status=final_status,
+            jobs=jobs,
+            log_paths=log_paths,
+            filtered_log_paths=filtered_log_paths,
+        )
     manifest_path.write_text(serialize_toon(manifest), encoding='utf-8')
 
+    manifest_jobs = manifest.get('jobs') or []
     return {
         'status': 'success',
         'plan_id': plan_id,
         'run_id': run_id,
-        'run_dir': str(run_dir.relative_to(_relative_anchor()))
-        if run_dir.is_absolute()
-        else str(run_dir),
+        'run_dir': _relative_str(run_dir),
         'already_persisted': False,
-        'job_count': len(jobs),
+        'job_count': len(manifest_jobs),
         'jobs_source': manifest['jobs_source'],
-        'manifest_path': str(manifest_path.relative_to(_relative_anchor()))
-        if manifest_path.is_absolute()
-        else str(manifest_path),
-        'log_paths': sorted(log_paths.values()),
+        'manifest_path': _relative_str(manifest_path),
+        'log_paths': sorted(j.get('log_path', '') for j in manifest_jobs if j.get('log_path')),
+        'filtered_log_paths': sorted(
+            j.get('filtered_log_path', '') for j in manifest_jobs if j.get('filtered_log_path')
+        ),
     }
+
+
+def _reemit(
+    plan_id: str,
+    run_id: str,
+    run_dir: Path,
+    manifest_path: Path,
+    existing: dict,
+) -> dict:
+    """Re-emit an existing manifest's contents without re-fetching logs."""
+    existing_jobs = existing.get('jobs') or []
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'run_id': run_id,
+        'run_dir': _relative_str(run_dir),
+        'already_persisted': True,
+        'job_count': len(existing_jobs),
+        'jobs_source': existing.get('jobs_source') or ('enumerated' if existing_jobs else 'empty'),
+        'manifest_path': _relative_str(manifest_path),
+        'log_paths': [j.get('log_path', '') for j in existing_jobs if j.get('log_path')],
+        'filtered_log_paths': [
+            j.get('filtered_log_path', '') for j in existing_jobs if j.get('filtered_log_path')
+        ],
+    }
+
+
+def _merge_into_manifest(
+    existing: dict,
+    *,
+    new_jobs: list[dict],
+    log_paths: dict[str, str],
+    filtered_log_paths: dict[str, str],
+) -> dict:
+    """Merge newly-written slug-named jobs into an existing manifest.
+
+    Existing job rows are preserved verbatim; each new job whose filename
+    stem is not already recorded is appended with its raw + filtered paths.
+    The ``fetched_at`` timestamp is left untouched so recency-by-timestamp
+    selection stays anchored to the run's first persist.
+    """
+    rows: list[dict] = list(existing.get('jobs') or [])
+    known_stems = {j.get('slug') or _job_stem(j) for j in rows}
+    for job in new_jobs:
+        stem = _job_stem(job)
+        if stem in known_stems:
+            continue
+        known_stems.add(stem)
+        rows.append(
+            {
+                'name': job.get('name', ''),
+                'workflow_name': job.get('workflow_name') or '',
+                'job_name': job.get('job_name') or '',
+                'slug': job.get('slug') or '',
+                'conclusion': job.get('conclusion') or '',
+                'started_at': job.get('started_at') or '',
+                'completed_at': job.get('completed_at') or '',
+                'run_url': job.get('run_url') or '',
+                'log_path': log_paths.get(stem, ''),
+                'filtered_log_path': filtered_log_paths.get(stem, ''),
+            }
+        )
+    merged = dict(existing)
+    merged['jobs'] = rows
+    merged['jobs_source'] = 'enumerated' if rows else 'empty'
+    return merged
 
 
 def _default_log_fetcher(provider: str, run_id: str, job: dict) -> str:

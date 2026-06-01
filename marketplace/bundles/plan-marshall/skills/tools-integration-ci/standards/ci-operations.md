@@ -14,14 +14,18 @@ Check CI status for a pull request.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status \
-    (--pr-number 123 | --head feature/x)
+    (--pr-number 123 | --head feature/x) \
+    [--error-style maven|gradle|npm|generic]
 ```
 
 Supply exactly one of `--pr-number` or `--head`. The `--head` form is required when invoking
 from the main checkout against a worktree-isolated plan branch — see
 [pr-operations.md § Worktree-Isolated Plans](pr-operations.md#worktree-isolated-plans).
 
-### Step 2: Process Result
+`--error-style` (default `generic`) selects how an auto-downloaded failure log is filtered
+when one or more checks fail — see Step 3 below.
+
+### Step 2: Process Result (all passing / pending)
 
 ```toon
 status: success
@@ -33,8 +37,48 @@ elapsed_sec: 45
 checks[3]{name,status,result,elapsed_sec,url,workflow}:
 build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
 test	in_progress	-	45	https://github.com/org/repo/actions/runs/112	CI
-lint	completed	failure	30	https://github.com/org/repo/actions/runs/113	Lint
+lint	completed	success	30	https://github.com/org/repo/actions/runs/113	Lint
 ```
+
+### Step 3: Process Result (one or more checks failed)
+
+When any check completes with `result: failure`, `checks status` automatically downloads
+and filters that check's failing-job log — for **every** failing check — before returning.
+No separate subcommand is involved; the behavior is built into `checks status`.
+
+For each failing check, two files are written under `artifacts/ci-runs/{run_id}/`:
+
+```
+artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded failing-job log
+artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered variant
+```
+
+`{slug}` is the check name slugified (lowercased, non-alphanumeric runs collapsed to `-`;
+e.g. `verify / verify` → `verify-verify`). Each path is surfaced **per entry** inside the
+`failing_checks[]` array — as the entry's `log_file` and `filtered_log_file` fields — never
+as scalar top-level keys.
+
+```toon
+status: success
+operation: ci_status
+pr_number: 123
+overall_status: failure
+check_count: 3
+elapsed_sec: 210
+
+checks[3]{name,status,result,elapsed_sec,url,workflow}:
+build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
+verify / verify	completed	failure	180	https://github.com/org/repo/actions/runs/112	CI
+lint	completed	failure	40	https://github.com/org/repo/actions/runs/113	Lint
+
+failing_checks[2]{name,run_id,error_style,log_file,filtered_log_file}:
+verify / verify	112	generic	artifacts/ci-runs/112/verify-verify.log	artifacts/ci-runs/112/verify-verify.filtered.log
+lint	113	generic	artifacts/ci-runs/113/lint.log	artifacts/ci-runs/113/lint.filtered.log
+```
+
+The normative spec for this transport shape, the `--error-style` heuristics, and the slug
+naming scheme is the central standard — see
+[api-contract.md § CI Failure Log Download & Filtering](api-contract.md#ci-failure-log-download--filtering).
 
 ---
 
@@ -50,12 +94,16 @@ Use outer shell timeout as safety net:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait \
-    --pr-number 123
+    --pr-number 123 \
+    [--error-style maven|gradle|npm|generic]
 ```
 
 **Bash tool timeout**: 1800000ms (30-minute safety net). Internal timeout managed by script.
 
-### Step 2: Process Result
+`--error-style` (default `generic`) selects how an auto-downloaded failure log is filtered
+when the run finishes with one or more failing checks — see Step 3 below.
+
+### Step 2: Process Result (all passing)
 
 ```toon
 status: success
@@ -70,6 +118,46 @@ build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
 test	completed	success	90	https://github.com/org/repo/actions/runs/112	CI
 lint	completed	success	30	https://github.com/org/repo/actions/runs/113	Lint
 ```
+
+### Step 3: Process Result (one or more checks failed)
+
+When the run finishes with `final_status: failure`, `checks wait` automatically downloads
+and filters the failing-job log for **every** failing check before returning — built into
+`checks wait`, not a separate subcommand. Per failing check, two files are written under
+`artifacts/ci-runs/{run_id}/`:
+
+```
+artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded failing-job log
+artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered variant
+```
+
+`{slug}` is the check name slugified (lowercased, non-alphanumeric runs collapsed to `-`;
+e.g. `verify / verify` → `verify-verify`). Each path appears **per entry** in the
+`failing_checks[]` array as the entry's `log_file` / `filtered_log_file` fields — never as
+scalar top-level keys.
+
+```toon
+status: success
+operation: ci_wait
+pr_number: 123
+final_status: failure
+duration_sec: 210
+polls: 7
+elapsed_sec: 210
+
+checks[3]{name,status,result,elapsed_sec,url,workflow}:
+build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
+verify / verify	completed	failure	180	https://github.com/org/repo/actions/runs/112	CI
+lint	completed	failure	40	https://github.com/org/repo/actions/runs/113	Lint
+
+failing_checks[2]{name,run_id,error_style,log_file,filtered_log_file}:
+verify / verify	112	generic	artifacts/ci-runs/112/verify-verify.log	artifacts/ci-runs/112/verify-verify.filtered.log
+lint	113	generic	artifacts/ci-runs/113/lint.log	artifacts/ci-runs/113/lint.filtered.log
+```
+
+The normative spec for this transport shape, the `--error-style` heuristics, and the slug
+naming scheme is the central standard — see
+[api-contract.md § CI Failure Log Download & Filtering](api-contract.md#ci-failure-log-download--filtering).
 
 ---
 
