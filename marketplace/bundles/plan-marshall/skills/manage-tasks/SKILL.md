@@ -70,7 +70,8 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `next` | `--plan-id [--include-context] [--ignore-deps]` | Get next pending task/step |
 | `next-tasks` | `--plan-id` | Get all tasks ready for parallel execution |
 | `finalize-step` | `--plan-id --task-number --step --outcome [--reason] [--outcome-task-title] [--outcome-step-count] [--outcome-caller]` | Complete step with outcome (done/skipped/failed). When the call closes a task as `done`, the script emits one canonical `[OUTCOME] ({caller}) Completed TASK-NNN: {title} ({M} steps)` work-log line — see "Script-Level [OUTCOME] Emission" below for the contract and overrides. |
-| `add-step` | `--plan-id --task-number --target [--after]` | Add step to task |
+| `add-step` | `--plan-id --task-number --target --intent [--after]` | Add step to task |
+| `update-step` | `--plan-id --task-number --step-number --intent --reason [--finding-id]` | Update step intent and reason (e.g., to record a triage finding reference) |
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire. |
