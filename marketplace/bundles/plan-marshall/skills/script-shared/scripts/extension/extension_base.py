@@ -11,28 +11,11 @@ Provides:
 Module discovery utilities (discover_descriptors, build_module_base, find_readme,
 count_source_files, discover_packages, discover_js_sources, discover_sources,
 ModuleBase, ModulePaths) are available via direct import from _build_discover.
-
-Usage:
-    from extension_base import ExtensionBase
-    from _build_discover import discover_descriptors, build_module_base
-
-    class Extension(ExtensionBase):
-        def get_skill_domains(self) -> list[dict]:
-            return [{"domain": {...}, "profiles": {...}}]
-
-        def discover_modules(self, project_root: str) -> list:
-            descriptors = discover_descriptors(project_root, "pom.xml")
-            modules = []
-            for desc in descriptors:
-                base = build_module_base(project_root, str(desc))
-                modules.append(base.to_dict())
-            return modules
 """
 
 from abc import ABC, abstractmethod
 
 # Re-export build vocabulary constants from private implementation.
-# These remain available from extension_base for backward compatibility.
 from _extension_constants import (  # noqa: F401 — re-exported for backward compat
     ALL_CANONICAL_COMMANDS,
     CANONICAL_COMMANDS,

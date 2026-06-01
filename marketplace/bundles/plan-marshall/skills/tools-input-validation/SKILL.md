@@ -201,29 +201,33 @@ message: Plan ID contains invalid characters: bad!!id
 
 ## Canonical Identifier Registry
 
-| Identifier | Regex | Builder | Adoption status |
-|------------|-------|---------|-----------------|
-| `plan_id` | `^[a-z][a-z0-9-]*$` | `add_plan_id_arg` | Adopted across all 32 swept scripts (Wave A/B/C) |
-| `lesson_id` | `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]+$` | `add_lesson_id_arg` | Adopted: `manage-lessons` (with `action='append'`), `phase-1-init` |
-| `session_id` | `^[A-Za-z0-9_-]{1,128}$` | `add_session_id_arg` | Adopted: `manage-metrics`, `compile-report` |
-| `task_number` | `^[0-9]+$` | `add_task_number_arg` | Adopted: `manage-tasks` (post-validate int coercion) |
-| `task_id` | `^TASK-[0-9]+$` | `add_task_id_arg` | Adopted: `manage-tasks` (legacy id form) |
-| `component` | `^[a-z0-9-]+(:[a-z0-9-]+)*$` | `add_component_arg` | Adopted: `manage-lessons`, `manage-findings`, `sonar_rest` |
-| `hash_id` | `^[a-f0-9]{4,}$` | `add_hash_id_arg` | Adopted: `manage-findings` (assessment / qgate) |
-| `phase_id` | `^[1-6]-(init\|refine\|outline\|plan\|execute\|finalize)$` | `add_phase_arg` | Adopted: `phase_handshake`, `manage-logging`, `manage-metrics`, `manage_status` |
-| `field_name` | `^[a-z][a-z0-9_]*$` | `add_field_arg` | Adopted: `manage-config`, `manage-references`, `manage-run-config`, `manage_status`, `manage-interface` |
-| `module_name` | `^[a-z][a-z0-9_-]*$` | `add_module_arg` | Adopted: `architecture`, `manage-findings`, `profiles` |
-| `package_name` | `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$` | `add_package_arg` | Adopted: `architecture` |
-| `domain_name` | `^[a-z][a-z0-9-]*$` | `add_domain_arg` | Adopted: `architecture`, `manage-config`, `manage-tasks` |
-| `resource_name` | `^[a-zA-Z0-9_-]+$` | `add_name_arg` | Adopted: `architecture`, `profiles` |
+| Identifier | Regex | Builder |
+|------------|-------|---------|
+| `plan_id` | `^[a-z][a-z0-9-]*$` | `add_plan_id_arg` |
+| `lesson_id` | `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]+$` | `add_lesson_id_arg` |
+| `session_id` | `^[A-Za-z0-9_-]{1,128}$` | `add_session_id_arg` |
+| `task_number` | `^[0-9]+$` | `add_task_number_arg` |
+| `task_id` | `^TASK-[0-9]+$` | `add_task_id_arg` |
+| `component` | `^[a-z0-9-]+(:[a-z0-9-]+)*$` | `add_component_arg` |
+| `hash_id` | `^[a-f0-9]{4,}$` | `add_hash_id_arg` |
+| `phase_id` | `^[1-6]-(init\|refine\|outline\|plan\|execute\|finalize)$` | `add_phase_arg` |
+| `field_name` | `^[a-z][a-z0-9_]*$` | `add_field_arg` |
+| `module_name` | `^[a-z][a-z0-9_-]*$` | `add_module_arg` |
+| `package_name` | `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$` | `add_package_arg` |
+| `domain_name` | `^[a-z][a-z0-9-]*$` | `add_domain_arg` |
+| `resource_name` | `^[a-zA-Z0-9_-]+$` | `add_name_arg` |
 
 The constants are exported from `input_validation.py` as `PLAN_ID_RE`, `LESSON_ID_RE`, etc., so consumers can reuse the canonical regex without re-deriving it. The `add_<id>_arg(parser)` builders wire `type=validate_<id>` into argparse so malformed input is rejected at the CLI boundary; pair them with `parse_args_with_toon_errors()` to centralise the `status: error / error: invalid_<field>` output path.
 
-## Adoption
+## Edge-case contract
 
-The cross-bundle sweep migrated all 32 in-scope scripts spanning `plan-marshall`, `pm-dev-java`, and `pm-documents` to the canonical builders. The current sweep state is enumerated by wave in [standards/identifier-validation-audit.md](standards/identifier-validation-audit.md), which is the single source of truth: it lists every migrated script, the in-scope flags adopted, the identifier-handling families covered, and the test directory exercising the 6-axis rejection-path coverage. The audit also enumerates the 47 `CERTAIN_EXCLUDE` scripts (helpers, providers, build runners with no in-scope flags) and the breaking-compat decisions that fell out of the sweep (e.g., `SESSION_ID_RE` relaxed from strict UUID, `COMPONENT_RE` rejects uppercase / path-shaped Sonar keys).
+A handful of canonical regexes intentionally reject inputs that pre-canonical scripts accepted — these are current, deliberate behaviours documented in [standards/identifier-validation-audit.md](standards/identifier-validation-audit.md):
 
-When adding a new script that accepts identifier-shaped flags or migrating new flags on an existing script, update both the audit document and the table above so the registry remains consistent.
+- `COMPONENT_RE` rejects uppercase / path-shaped Sonar component keys (e.g. `org:src/Main.java`) at the CLI boundary.
+- `--task-number` validates against `TASK_NUMBER_RE` then coerces to `int`, so downstream consumers still receive an int.
+- `--lesson-id` is repeatable (`action='append'`); each element is validated independently and any malformed value fails the whole invocation.
+
+When adding a new identifier-shaped flag, use the matching `add_<id>_arg(parser)` builder and add a row to the registry table above. Pair the builders with `parse_args_with_toon_errors()` for the canonical `status: error / error: invalid_<field>` output path.
 
 ## Python Usage
 

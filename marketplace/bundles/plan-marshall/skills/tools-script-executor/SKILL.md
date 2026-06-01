@@ -317,7 +317,7 @@ The verification skill recognizes this execution pattern:
 - `python3 .plan/execute-script.py {notation} ...`
 
 **Violation**:
-- `python3 {direct_script_path} ...` (after migration complete)
+- `python3 {direct_script_path} ...`
 
 ## Canonical invocations
 

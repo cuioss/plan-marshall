@@ -2,11 +2,6 @@
 """
 Manage run-configuration.json - unified entry point.
 
-Consolidated from:
-- init-run-config.py -> init subcommand
-- validate-run-config.py -> validate subcommand
-- cleanup.py -> cleanup / cleanup-status subcommands
-
 Provides operations for managing .plan/run-configuration.json files
 including creation, validation, structure verification, and directory cleanup.
 
@@ -195,28 +190,11 @@ def read_run_config(config_path: Path) -> dict[str, Any]:
 def cmd_timeout_get(args: argparse.Namespace) -> dict:
     """Get timeout for a command with default fallback and minimum bound."""
     try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        # Look up persisted timeout
-        commands = config.get('commands', {})
-        cmd_entry = commands.get(args.command, {})
-        persisted = cmd_entry.get('timeout_seconds')
-
-        if persisted is None:
-            # No persisted value - use default
-            timeout = args.default
-        else:
-            # Apply safety margin to persisted value
-            timeout = int(persisted * SAFETY_MARGIN)
-
-        # Enforce minimum bound
         return {
             'status': 'success',
             'command': args.command,
-            'timeout_seconds': max(timeout, MINIMUM_TIMEOUT_SECONDS),
+            'timeout_seconds': timeout_get(args.command, args.default),
         }
-
     except Exception as e:
         return _output_error(str(e))
 
@@ -366,47 +344,30 @@ def cmd_timeout_set(args: argparse.Namespace) -> dict:
     try:
         config_path = get_run_config_path()
         config = read_run_config(config_path)
-
-        command = args.command
-        duration = args.duration
-
-        # Ensure commands section exists
-        if 'commands' not in config:
-            config['commands'] = {}
-
-        # Ensure command entry exists
-        if command not in config['commands']:
-            config['commands'][command] = {}
-
-        cmd_entry = config['commands'][command]
+        cmd_entry = config.setdefault('commands', {}).setdefault(args.command, {})
         existing = cmd_entry.get('timeout_seconds')
 
         if existing is None:
-            # No existing value - write directly
-            cmd_entry['timeout_seconds'] = duration
+            cmd_entry['timeout_seconds'] = args.duration
             _write_json_file(config_path, config)
-
             return {
                 'status': 'success',
-                'command': command,
-                'timeout_seconds': duration,
+                'command': args.command,
+                'timeout_seconds': args.duration,
                 'source': 'initial',
             }
-        else:
-            # Compute weighted value favoring higher
-            new_timeout = compute_weighted_timeout(existing, duration)
-            cmd_entry['timeout_seconds'] = new_timeout
-            _write_json_file(config_path, config)
 
-            return {
-                'status': 'success',
-                'command': command,
-                'timeout_seconds': new_timeout,
-                'previous_seconds': existing,
-                'observed_seconds': duration,
-                'source': 'computed',
-            }
-
+        new_timeout = compute_weighted_timeout(existing, args.duration)
+        cmd_entry['timeout_seconds'] = new_timeout
+        _write_json_file(config_path, config)
+        return {
+            'status': 'success',
+            'command': args.command,
+            'timeout_seconds': new_timeout,
+            'previous_seconds': existing,
+            'observed_seconds': args.duration,
+            'source': 'computed',
+        }
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 

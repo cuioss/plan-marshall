@@ -604,9 +604,9 @@ FOR each step_id in manifest.phase_6.steps:
 
   4b. Lessons-capture Signal Gate (B4 — run BEFORE dispatching the step if step_id == "lessons-capture"):
 
-      The deterministic three-signal Signal Gate that previously lived inside `workflow/lessons-capture.md` is now evaluated at dispatcher level so the envelope spawn cost is avoided when all three signals are zero. The semantics are preserved bit-for-bit — same three signal sources, same all-zero short-circuit, same `outcome=skipped` recording. The change is structural only: deterministic precondition evaluation moves into the dispatcher; the LLM workflow body becomes the recording loop only.
+      The deterministic three-signal Signal Gate is evaluated at dispatcher level so the envelope spawn cost is avoided when all three signals are zero. The dispatcher computes the precondition; the LLM workflow body is the recording loop only. When all three signals are zero, short-circuit and record `outcome=skipped`.
 
-      a. Compute three signal counts (the body documented these inline; the dispatcher computes them now):
+      a. Compute three signal counts:
 
          **Signal 1 — Q-Gate findings, pending OR resolved-in-run (sum across five phases)**:
          For each phase in `{2-refine, 3-outline, 4-plan, 5-execute, 6-finalize}`, invoke the pending query:
@@ -648,11 +648,11 @@ FOR each step_id in manifest.phase_6.steps:
 
          Scan the returned log lines for THREE marker classes and bucket each by the distinct failing script notation (the `bundle:skill:script` token in the line):
 
-         - **`[FAILED]`** lines — the historical marker class (explicit failure markers).
-         - **`[ERROR] ... script_failure`** lines — the canonical per-call non-zero-exit marker emitted by the phase Error Handling sections (argparse rejections, internal errors, "Unknown notation" failures). These never carry a `[FAILED]` token, so the historical scan missed them entirely.
+         - **`[FAILED]`** lines — explicit failure markers.
+         - **`[ERROR] ... script_failure`** lines — the canonical per-call non-zero-exit marker emitted by the phase Error Handling sections (argparse rejections, internal errors, "Unknown notation" failures). These never carry a `[FAILED]` token.
          - **`voluntary_checkpoint → error`** reclassifications — the dispatch-boundary no-progress reclassification (B7); the failing notation is the dispatched workflow/agent whose dispatch was reclassified.
 
-         `signal_3_count` is the number of distinct notations across the UNION of all three marker classes. The union dedups by distinct notation: a notation that fails under more than one marker class counts once. The motivating case is `2026-05-29-21-001` — long builds lost across the dispatch boundary, logged as `[ERROR] script_failure` plus a `voluntary_checkpoint → error` reclassification but never a `[FAILED]` line, so the historical `[FAILED]`-only scan reported zero and the gate short-circuited against a fix-bearing run. This broadened marker set is kept consistent with the retrospective analyzer's failure-marker set (lesson `2026-05-29-12-001`): both bucket `[FAILED]`, `[ERROR] ... script_failure`, and `voluntary_checkpoint → error` by distinct failing notation, so the Signal-Gate count and the retrospective's script-failure cluster count stay aligned.
+         `signal_3_count` is the number of distinct notations across the UNION of all three marker classes (a notation that fails under more than one class counts once). The motivating case is `2026-05-29-21-001` — long builds lost across the dispatch boundary, logged as `[ERROR] script_failure` plus a `voluntary_checkpoint → error` reclassification but never a `[FAILED]` line. This marker set is kept consistent with the retrospective analyzer's failure-marker set (lesson `2026-05-29-12-001`) so the Signal-Gate count and the retrospective's script-failure cluster count stay aligned.
 
       b. Three-zero short-circuit:
 

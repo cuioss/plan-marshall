@@ -239,13 +239,13 @@ guard in `manage-tasks finalize-step`.
 
    `caller_phase: phase-5-execute` is the legitimate top-level phase-context field the orchestrator passes for this phase-agnostic workflow (see [`../../extension-api/standards/ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md) § Phase-context propagation for phase-agnostic workflows). The Scope-Deviation Escalation guard lives in [`triage.md`](triage.md) § Step 6.
 
-4. **Consume the triage return** to drive the §11e branch (the logic that previously lived in phase-5-execute Step 11e):
+4. **Consume the triage return** to drive the branch:
 
    - If `fix_tasks_created > 0` → increment `verify_iteration` in the verification task's metadata, reset the verification task to `pending`, and re-dispatch the execution-context (fix tasks execute before the re-queued verification task via `depends_on`).
    - If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`); resume the normal post-return classification.
    - If `overflow_deferred > 0` → leave the verification task `pending`; re-fire this triage dispatch on the next phase-5-execute entry (the iteration cap is unchanged).
 
-This is the dispatch that previously sat wrongly inside the phase-5-execute leaf envelope (Step 11d / Step 11b). Relocating it here keeps every cross-envelope `Task:` dispatch in the main-context orchestrator while the leaf retains all deterministic, store-mutating work (failure detection, scope cross-reference, planned-failure exception, iteration-cap check, and `manage-findings qgate add` finding persistence).
+This dispatch lives in the main-context orchestrator so every cross-envelope `Task:` dispatch originates there, while the leaf retains all deterministic, store-mutating work (failure detection, scope cross-reference, planned-failure exception, iteration-cap check, and `manage-findings qgate add` finding persistence).
 
 ### Baseline drift recovery (non-zero overlap)
 

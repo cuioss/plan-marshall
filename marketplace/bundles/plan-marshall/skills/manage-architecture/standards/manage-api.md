@@ -418,134 +418,26 @@ as the source of truth for the module index. Per-module files live under
 
 ## Orchestration Flow
 
-The `architecture.py` script acts as the thin orchestrator for project
-structure discovery. It delegates to the extension-api for module discovery
-and persists results into the per-module layout under
-`.plan/project-architecture/` (top-level `_project.json` plus per-module
-`{derived,enriched}.json`).
+`architecture.py` is a thin orchestrator for project structure discovery: it
+invokes extension-api discovery, splits multi-technology paths into virtual
+modules, and persists the result into `.plan/project-architecture/` via the
+tmp+swap protocol. It delegates the work it does NOT own:
 
-### Orchestrator Responsibilities
+| Concern | Owner |
+|---------|-------|
+| Extension loading | `extension_discovery.py` |
+| Module merging / virtual-module splitting | `_module_aggregation.py` |
+| Command generation | Domain extensions |
+| Build execution | Separate build workflow |
 
-```
-1. Invoke extension-api discovery
-2. Receive aggregated module data
-3. Stage the new layout under .plan/project-architecture.tmp/ and
-   atomically swap it onto .plan/project-architecture/
-4. Provide client query interface
-
-What the orchestrator does NOT do:
-- Extension loading (delegated to extension_discovery.py)
-- Module merging (delegated to _module_aggregation.py)
-- Command generation (delegated to domain extensions)
-- Build execution (separate workflow)
-```
-
-### Discovery Flow
-
-```
-architecture.py discover --plan-id EXAMPLE-PLAN         # preferred — auto-resolves the worktree
-architecture.py discover --project-dir /path/...   # escape hatch (mutually exclusive with --plan-id)
-                            │
-                            ▼
-  1. EXTENSION DISCOVERY (extension_discovery.py)
-     discover_applicable_extensions(project_root)
-     → Scans plugin cache for extension.py files
-     → Filters to extensions with discover_modules() method
-     → Returns: [{bundle, path, module}]
-                            │
-                            ▼
-  2. MODULE DISCOVERY (per extension)
-     For each extension:
-       modules = extension.discover_modules(project_root)
-     pm-dev-java: Finds pom.xml/build.gradle, extracts metadata
-     pm-dev-frontend: Finds package.json, npm workspace detection
-     Returns: Module dicts with paths, metadata, commands
-                            │
-                            ▼
-  3. VIRTUAL MODULE SPLITTING (_module_aggregation.py)
-     When same path discovered by multiple extensions:
-       pom.xml + package.json at ./my-module/
-     Split into virtual modules:
-       my-module-maven (build_systems: ["maven"])
-       my-module-npm   (build_systems: ["npm"])
-                            │
-                            ▼
-  4. PERSISTENCE (tmp+swap)
-     Stage: .plan/project-architecture.tmp/
-              ├── _project.json
-              └── {module}/{derived,enriched}.json   (one dir per module)
-     Swap:  os.replace(.tmp, .plan/project-architecture/)
-```
-
-### Module Aggregation Algorithm
-
-The `_module_aggregation.py` module handles splitting when multiple extensions discover the same physical path.
-
-```
-For each unique path in discovered modules:
-
-  IF only 1 module at path:
-    → Keep as-is (single technology)
-
-  IF multiple modules at path:
-    → Split into virtual modules with technology suffixes
-    → Use Maven module name as base (most canonical)
-    → Track sibling relationships
-```
-
-### Command Resolution
-
-```
-architecture.py resolve --command verify --module my-module
-                            │
-                            ▼
-  1. Load _project.json + {module}/derived.json
-  2. Find module by name (validated against the _project.json index)
-  3. Look up command in derived.commands
-  4. Return complete command string
-
-Key principle: Commands are STORED complete, not composed at resolution.
-The caller executes the returned string directly.
-```
-
-### Workflow Integration Points
-
-```
-INIT (phase-1-init)
-  marshall-steward calls: architecture.py discover
-  Result: _project.json + per-module {derived,enriched}.json populated
-
-REFINE (phase-2-refine)
-  (no architecture calls)
-
-SOLUTION OUTLINE (phase-3-outline)
-  outline agent calls: architecture.py module --module X
-  Uses: module structure, dependencies for placement decisions
-
-TASK PLAN (phase-4-plan)
-  task planner calls: architecture.py graph
-  Uses: topological layers for task ordering
-
-TASK EXECUTE (phase-5-execute)
-  task executor calls: architecture.py resolve --command X --module Y
-  Executes: returned command string
-```
-
-### Enrichment Workflow Phases
-
-```
-DISCOVER → LOAD → ANALYZE → PERSIST → CLIENT
-
-1. DISCOVER: Extension API gathers raw module data
-2. LOAD: Iterate _project.json + per-module derived.json, determine domain
-   skills from technologies
-3. ANALYZE: LLM reads docs/code to derive responsibility, purpose, key packages
-4. PERSIST: Write enrichments to per-module enriched.json (project-level
-   description writes to _project.json)
-5. CLIENT: Provide merged read access via architecture.py {verb}
-```
-
-See the manage-architecture SKILL.md for step-by-step execution instructions.
+The discovery → enrichment → client sequence (DISCOVER → LOAD → ANALYZE →
+PERSIST → CLIENT) is the step-by-step workflow in the manage-architecture
+SKILL.md (Steps 1-9). The on-disk layout and the tmp+swap atomicity guarantee
+are specified once in
+[architecture-persistence.md](architecture-persistence.md) § Storage and
+§ "Atomicity: tmp+swap protocol". Command resolution returns the complete
+stored command string for the caller to execute directly — commands are stored
+complete, never composed at resolution time.
 
 ---
 

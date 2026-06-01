@@ -149,37 +149,7 @@ AskUserQuestion:
 
 ## Error Handling
 
-### Invalid Lesson ID
-```toon
-status: error
-error: invalid_lesson
-message: Lesson not found: {lesson_id}
-recovery: Check lesson ID with manage-lessons list
-```
-
-### Invalid Issue URL
-```toon
-status: error
-error: invalid_issue
-message: Issue not found or inaccessible: {issue}
-recovery: Verify URL, check permissions
-```
-
-### Multiple Sources
-```toon
-status: error
-error: multiple_sources
-message: Provide exactly one of: description, lesson_id, issue
-recovery: Remove extra parameters
-```
-
-### Plan Already Exists (not resumed)
-```toon
-status: error
-error: plan_exists
-message: Plan already exists and resume not selected
-recovery: Use resume option or provide different plan_id
-```
+See SKILL.md § Error Handling for the canonical error TOON envelopes (invalid lesson, invalid issue, multiple sources, plan-already-exists).
 
 ## Integration Points
 
@@ -195,12 +165,4 @@ recovery: Use resume option or provide different plan_id
 
 ### Complete Initialization
 
-The plan-init agent handles complete initialization:
-1. Create plan directory and request.md
-2. Initialize references.json with branch
-3. Detect domain from task analysis
-4. Create status.json with phases
-5. Store domains in references.json
-6. Transition to refine phase
-
-**Note**: Goals and tasks are NOT created during init. That's the refine phase.
+The plan-init agent runs the full Step 1–11 sequence in SKILL.md in a single call. Goals and tasks are NOT created during init — that is the refine phase.

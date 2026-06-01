@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """Shared coverage-report subcommand logic for all build skills.
 
-Extracts the common cmd_coverage_report() flow that was duplicated across
-build-maven, build-gradle, build-npm, and build-pyproject. Each skill provides
-its own search paths and error message; the logic is identical.
-
-Use create_subcommand_handler(cmd_coverage_report_base, ...) to build a
-tool-specific handler from config.
+Each build skill provides its own search paths and error message; the flow
+is identical. Use create_subcommand_handler(cmd_coverage_report_base, ...)
+to build a tool-specific handler from config.
 """
 
 from __future__ import annotations
@@ -20,12 +17,7 @@ def create_coverage_report_handler(
     search_paths: list[tuple[str, str]],
     not_found_message: str = 'No coverage report found. Run coverage build first.',
 ):
-    """Factory: create a tool-specific coverage-report subcommand handler.
-
-    Thin wrapper around create_subcommand_handler for backward compatibility.
-    New code should use create_subcommand_handler(cmd_coverage_report_base, ...)
-    directly.
-    """
+    """Factory: create a tool-specific coverage-report subcommand handler."""
     return create_subcommand_handler(
         cmd_coverage_report_base,
         search_paths=search_paths,

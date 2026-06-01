@@ -16,7 +16,7 @@ CI completion is guaranteed by the dispatcher's precondition resolver before thi
 
 ### Step 1: Wait for Review Bot Comments
 
-Poll for new review-bot comments using the dedicated CI subcommand. This replaces a previous bash `sleep` (blocked by the host platform's harness for long leading durations) and exits as soon as a new comment arrives instead of always sleeping the full window.
+Poll for new review-bot comments using the dedicated CI subcommand. It exits as soon as a new comment arrives instead of sleeping the full window.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-comments \
@@ -56,7 +56,7 @@ If the result's `findings` list is empty, return success with `comments_total: 0
 
 ### Step 4: Per-finding dispatch through ext-triage-{domain}
 
-For each pending finding, perform the following sequence sequentially. The classifier-as-decision-authority pattern (a single keyword classifier deciding `code_change` / `explain` / `ignore` for a whole batch) is RETIRED — every per-finding decision now goes through the loaded `ext-triage-{domain}` skill's standards.
+For each pending finding, perform the following sequence sequentially. Every per-finding decision goes through the loaded `ext-triage-{domain}` skill's standards — there is no batch keyword classifier.
 
 1. **Detect domain** via `architecture which-module --path {finding.file_path}`.
 2. **Resolve the triage extension** via `manage-config resolve-workflow-skill-extension --domain {domain} --type triage`.
