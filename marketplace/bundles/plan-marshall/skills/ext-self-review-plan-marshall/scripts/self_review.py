@@ -605,40 +605,76 @@ def _detect_keep_markers(
     return candidates, sorted(protected)
 
 
-def _symmetric_pair_has_test(name: str, project_dir: Path) -> bool:
-    """Return True when the worktree's ``test/`` tree references ``name``.
+def _load_test_tree_blob(project_dir: Path) -> str:
+    """Read every ``*.py`` file under ``{project_dir}/test`` once and return a
+    single newline-joined blob of their contents.
 
-    Searches every ``*.py`` file under ``{project_dir}/test`` for a
-    word-boundary occurrence of the function name. The word-boundary guard
-    mirrors the identifier-first discipline used by ``_detect_keep_markers``:
-    the same ``(?<![a-zA-Z0-9_-])`` / ``(?![a-zA-Z0-9_-])`` lookarounds avoid
-    false-positive substring hits (e.g. ``save_state`` matching inside
-    ``save_state_v2``). The scan is read-only and stdlib-only; a missing
-    ``test/`` directory, an unreadable file, or no match yields ``False`` —
-    ``test_present=false`` is the Tier-2 missing-test signal.
+    This is the read-once index that lets ``_symmetric_pair_has_test`` answer
+    repeated membership queries without re-walking the test tree or re-reading
+    files per call. A missing ``test/`` directory, a walk failure, or an
+    unreadable file contributes nothing — the corresponding content is simply
+    absent from the blob, preserving the original per-file fail-soft behaviour.
+    The scan is read-only and stdlib-only.
     """
     test_root = project_dir / 'test'
     if not test_root.is_dir():
+        return ''
+    try:
+        test_files = sorted(test_root.rglob('*.py'))
+    except OSError:
+        return ''
+    chunks: list[str] = []
+    for test_file in test_files:
+        try:
+            chunks.append(test_file.read_text(encoding='utf-8', errors='replace'))
+        except OSError:
+            continue
+    return '\n'.join(chunks)
+
+
+def _name_in_test_blob(name: str, test_blob: str) -> bool:
+    """Return True when ``name`` occurs in ``test_blob`` on a word boundary.
+
+    The word-boundary guard mirrors the identifier-first discipline used by
+    ``_detect_keep_markers``: the same ``(?<![a-zA-Z0-9_-])`` /
+    ``(?![a-zA-Z0-9_-])`` lookarounds avoid false-positive substring hits
+    (e.g. ``save_state`` matching inside ``save_state_v2``). An empty blob
+    (missing test tree, unreadable files, or no test sources) yields ``False``.
+    """
+    if not test_blob:
         return False
     pattern = re.compile(
         r'(?<![a-zA-Z0-9_-])' + re.escape(name) + r'(?![a-zA-Z0-9_-])'
     )
-    try:
-        test_files = sorted(test_root.rglob('*.py'))
-    except OSError:
-        return False
-    for test_file in test_files:
-        try:
-            text = test_file.read_text(encoding='utf-8', errors='replace')
-        except OSError:
-            continue
-        if pattern.search(text):
-            return True
-    return False
+    return bool(pattern.search(test_blob))
+
+
+def _symmetric_pair_has_test(name: str, project_dir: Path) -> bool:
+    """Return True when the worktree's ``test/`` tree references ``name``.
+
+    Searches every ``*.py`` file under ``{project_dir}/test`` for a
+    word-boundary occurrence of the function name. ``test_present=false`` is
+    the Tier-2 missing-test signal; a missing ``test/`` directory, an
+    unreadable file, or no match yields ``False``. The scan is read-only and
+    stdlib-only.
+
+    This is the single-query entry point. It builds the test-tree blob via
+    ``_load_test_tree_blob`` and delegates the word-boundary match to
+    ``_name_in_test_blob``. Hot paths that issue many membership queries
+    (e.g. ``_detect_symmetric_pairs``) MUST build the blob once via
+    ``_load_test_tree_blob`` and call ``_name_in_test_blob`` directly to
+    avoid re-reading the test tree per call.
+    """
+    return _name_in_test_blob(name, _load_test_tree_blob(project_dir))
 
 
 def _detect_symmetric_pairs(added: list[tuple[str, int, str]], project_dir: Path) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    # Build the test-tree blob once for the whole detection pass so each
+    # candidate's test_present query is an in-memory regex search rather than
+    # a fresh O(M) walk + read of the test tree (eliminates the O(N*M) disk
+    # I/O that re-reading per candidate would cause).
+    test_blob = _load_test_tree_blob(project_dir)
     for path, lineno, content in added:
         if not path.endswith('.py'):
             continue
@@ -669,7 +705,7 @@ def _detect_symmetric_pairs(added: list[tuple[str, int, str]], project_dir: Path
                 'line': lineno,
                 'name': name,
                 'partner': partner_name,
-                'test_present': _symmetric_pair_has_test(name, project_dir),
+                'test_present': _name_in_test_blob(name, test_blob),
             }
         )
     return out
