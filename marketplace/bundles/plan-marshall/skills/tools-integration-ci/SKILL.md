@@ -28,7 +28,7 @@ Unified CI provider abstraction using **static routing** - one script per provid
 - Provider detection and health verification
 - PR operations (create, view, merge, auto-merge, close, ready, edit)
 - PR review operations (comments, wait-for-comments, reply, resolve-thread, thread-reply, reviews)
-- CI status, wait, rerun, and logs
+- CI status, wait, rerun, and logs (with automatic failure-log download + error-extraction filtering)
 - Issue operations (create, view, close)
 - Unified TOON output format across providers
 
@@ -156,6 +156,53 @@ protocol, two-state contract reference).
 
 ---
 
+## Automatic Failure-Log Download on `checks wait` / `checks status`
+
+When a `checks wait` or `checks status` call observes one or more checks with
+`result: failure`, it automatically downloads and filters the failing-job log
+for every failing check — no separate user-callable subcommand is involved. The
+behavior is built into the existing `checks wait` and `checks status` verbs.
+
+For each failing check, two files are written under the plan-scoped artifact tree
+`artifacts/ci-runs/{run_id}/`:
+
+```
+artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded failing-job log
+artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered variant
+```
+
+`{slug}` is the failing check's name slugified — lowercased, with each run of
+non-alphanumeric characters collapsed to a single `-` (e.g. check `verify / verify`
+→ slug `verify-verify`). A single run can fail multiple checks, each with its own
+distinctly-slugged pair of files.
+
+These paths are surfaced **per entry** inside the failure TOON's `failing_checks[]`
+array — as the `log_file` and `filtered_log_file` fields of each entry — and are
+**never** scalar top-level keys. `failing_checks[]` is the subset of the standard
+`checks[]` table whose `result` is `failure`, enriched with the two file paths plus
+`run_id` and `error_style`.
+
+### `--error-style` selector
+
+Both `checks wait` and `checks status` accept an optional `--error-style` flag that
+governs how the raw log is filtered into its `.filtered.log` variant:
+
+| `--error-style` | Filtering heuristic |
+|-----------------|---------------------|
+| `maven` | Routes through the Maven build parser; falls back to generic. |
+| `gradle` | Routes through the Gradle build parser; falls back to generic. |
+| `npm` | Routes through the npm/node build parser; falls back to generic. |
+| `generic` | **Default.** Error-context heuristic (`ERROR\|FAIL\|Exception\|Traceback`, case-insensitive) plus surrounding context lines. Used when no style is given or the job's build system is unknown. |
+
+The normative specification for the download/filter behavior, the `failing_checks[]`
+transport shape, the slug naming scheme, and multi-failure worked examples lives in
+[`standards/api-contract.md`](standards/api-contract.md) (CI Failure Log Download &
+Filtering). That document is authoritative; see also
+[`standards/ci-operations.md`](standards/ci-operations.md) for the workflow-level
+walkthrough.
+
+---
+
 ## PR Comment Vocabulary
 
 GitHub and GitLab expose several overlapping concepts for "commenting on a PR".
@@ -208,8 +255,12 @@ Sub-verbs: `status`, `wait`, `rerun`, `logs`, `wait-for-status-flip`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status \
-  [--pr-number PR_NUMBER] [--head HEAD]
+  [--pr-number PR_NUMBER] [--head HEAD] [--error-style maven|gradle|npm|generic]
 ```
+
+`status` and `wait` accept `--error-style` (default `generic`) to select how the
+auto-downloaded failure log is filtered when any check fails. See § "Automatic
+Failure-Log Download on `checks wait` / `checks status`" above.
 
 ### issue
 

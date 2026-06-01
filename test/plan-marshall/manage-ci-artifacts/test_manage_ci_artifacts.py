@@ -623,6 +623,178 @@ def test_cmd_persist_unloadable_jobs_file_exits_zero_with_toon_error(
     assert 'jobs-file' in out
 
 
+# ---------------------------------------------------------------------------
+# Slug-disambiguated failing-check variants — the failing-check log-download
+# path persists two checks that SHARE one run_id by giving each a slug-named
+# raw + filtered file. Neither overwrites the other, the manifest records every
+# slugged raw/filtered path, and an idempotent re-emit returns all filtered
+# paths.
+# ---------------------------------------------------------------------------
+
+
+def _failing_job(name: str, slug: str) -> dict:
+    """A failing-check job carrying a slug + pre-fetched raw + filtered content.
+
+    Mirrors the dict shape ``enrich_failing_checks_with_logs`` hands to
+    ``persist`` — a slug (filename stem), inline ``raw_content`` (bypasses the
+    log_fetcher) and a ``filtered_content`` error-extraction variant.
+    """
+    return {
+        'name': name,
+        'job_name': name,
+        'workflow_name': 'ci',
+        'conclusion': 'failure',
+        'started_at': '2026-05-19T00:00:00Z',
+        'completed_at': '2026-05-19T00:01:00Z',
+        'run_url': 'https://example/runs/x',
+        'slug': slug,
+        'raw_content': f'RAW log for {name}\n',
+        'filtered_content': f'FILTERED error for {name}\n',
+    }
+
+
+def test_persist_writes_slug_named_variants_for_shared_run_id(plan_context):
+    """Two failing checks sharing one run_id get distinct slug-named raw +
+    filtered files; neither overwrites the other.
+    """
+    plan_id = 'ci-artifacts-slug-shared-run'
+    jobs = [
+        _failing_job('verify / verify', 'verify-verify'),
+        _failing_job('build (3.12)', 'build-3-12'),
+    ]
+    result = persist(
+        plan_id=plan_id,
+        run_id='500',
+        head_sha='cafef00d',
+        pr_number=7,
+        provider='github',
+        jobs=jobs,
+    )
+    assert result['status'] == 'success'
+    assert result['job_count'] == 2
+
+    run_dir = _run_dir(plan_id, '500')
+    # Distinct slug-named raw + filtered files on disk for each check.
+    assert (run_dir / 'verify-verify.log').is_file()
+    assert (run_dir / 'verify-verify.filtered.log').is_file()
+    assert (run_dir / 'build-3-12.log').is_file()
+    assert (run_dir / 'build-3-12.filtered.log').is_file()
+    # No overwrite: each raw file carries its own check's content.
+    assert 'verify / verify' in (run_dir / 'verify-verify.log').read_text(encoding='utf-8')
+    assert 'build (3.12)' in (run_dir / 'build-3-12.log').read_text(encoding='utf-8')
+    # Filtered content is the error-extraction variant, distinct per check.
+    assert 'FILTERED error for verify / verify' in (
+        run_dir / 'verify-verify.filtered.log'
+    ).read_text(encoding='utf-8')
+
+
+def test_persist_manifest_records_every_slugged_path(plan_context):
+    """The manifest enumerates every slugged raw + filtered path for a shared run_id."""
+    plan_id = 'ci-artifacts-slug-manifest'
+    jobs = [
+        _failing_job('verify / verify', 'verify-verify'),
+        _failing_job('build (3.12)', 'build-3-12'),
+    ]
+    result = persist(
+        plan_id=plan_id,
+        run_id='501',
+        head_sha='abc',
+        pr_number=7,
+        provider='github',
+        jobs=jobs,
+    )
+    # The return payload lists both raw and both filtered paths.
+    assert len(result['log_paths']) == 2
+    assert len(result['filtered_log_paths']) == 2
+
+    manifest = read_manifest(plan_id=plan_id, run_id='501')['manifest']
+    rows = manifest['jobs']
+    assert len(rows) == 2
+    by_slug = {r['slug']: r for r in rows}
+    assert set(by_slug) == {'verify-verify', 'build-3-12'}
+    for slug, row in by_slug.items():
+        assert row['log_path'].endswith(f'{slug}.log'), row
+        assert row['filtered_log_path'].endswith(f'{slug}.filtered.log'), row
+
+
+def test_persist_additive_merge_second_check_same_run_id(plan_context):
+    """A second persist adding a NEW slug to an existing run_id merges additively.
+
+    The prior check's files are preserved and the manifest gains the new
+    slugged raw + filtered rows — multiple failing checks of one run_id each
+    gain their own files without overwriting the prior persist's artifacts.
+    """
+    plan_id = 'ci-artifacts-slug-additive'
+    first = persist(
+        plan_id=plan_id,
+        run_id='600',
+        head_sha='abc',
+        pr_number=7,
+        provider='github',
+        jobs=[_failing_job('verify / verify', 'verify-verify')],
+    )
+    assert first['already_persisted'] is False
+    assert first['job_count'] == 1
+
+    run_dir = _run_dir(plan_id, '600')
+    first_raw_before = (run_dir / 'verify-verify.log').read_text(encoding='utf-8')
+
+    second = persist(
+        plan_id=plan_id,
+        run_id='600',
+        head_sha='abc',
+        pr_number=7,
+        provider='github',
+        jobs=[_failing_job('build (3.12)', 'build-3-12')],
+    )
+    # New slug → not a pure re-emit; the manifest now records both checks.
+    assert second['already_persisted'] is False
+    assert second['job_count'] == 2
+    assert len(second['filtered_log_paths']) == 2
+
+    # The first check's raw file is untouched.
+    assert (run_dir / 'verify-verify.log').read_text(encoding='utf-8') == first_raw_before
+    # The newly-added check's files now exist alongside it.
+    assert (run_dir / 'build-3-12.log').is_file()
+    assert (run_dir / 'build-3-12.filtered.log').is_file()
+
+    manifest = read_manifest(plan_id=plan_id, run_id='600')['manifest']
+    slugs = {r['slug'] for r in manifest['jobs']}
+    assert slugs == {'verify-verify', 'build-3-12'}
+
+
+def test_persist_idempotent_reemit_includes_all_filtered_paths(plan_context):
+    """Re-persisting the SAME slugs is a pure re-emit returning all filtered paths."""
+    plan_id = 'ci-artifacts-slug-reemit'
+    jobs = [
+        _failing_job('verify / verify', 'verify-verify'),
+        _failing_job('build (3.12)', 'build-3-12'),
+    ]
+    first = persist(
+        plan_id=plan_id,
+        run_id='700',
+        head_sha='abc',
+        pr_number=7,
+        provider='github',
+        jobs=jobs,
+    )
+    assert first['already_persisted'] is False
+
+    # Re-invoke with the identical slug set → pure re-emit (no new stems).
+    second = persist(
+        plan_id=plan_id,
+        run_id='700',
+        head_sha='abc',
+        pr_number=7,
+        provider='github',
+        jobs=jobs,
+    )
+    assert second['already_persisted'] is True
+    # The re-emit still surfaces both filtered paths (not dropped on re-emit).
+    assert len(second['filtered_log_paths']) == 2
+    assert sorted(second['filtered_log_paths']) == sorted(first['filtered_log_paths'])
+
+
 def test_script_source_uses_canonical_local_plans_path():
     """The script source references .plan/local/plans, not the legacy form.
 

@@ -75,6 +75,7 @@ from ci_base import (  # type: ignore[import-not-found]
     compute_total_elapsed,
     delete_consumed_body,
     dispatch,
+    enrich_failing_checks_with_logs,
     extract_routing_args,
     make_error,
     make_pr_number_handler,
@@ -1239,6 +1240,64 @@ def format_checks_toon(
     return check_dicts, total_elapsed
 
 
+def _capture_router_plan_id(argv: list[str]) -> str | None:
+    """Re-extract the router-level ``--plan-id`` from the original argv.
+
+    ``extract_routing_args`` consumes ``--plan-id`` for cwd resolution but does
+    not surface the value, which the failure-path log-download hook needs to
+    locate the plan-scoped artifact tree. The checks subcommands declare no
+    subcommand-level ``--plan-id``, so the first occurrence is unambiguously the
+    router-level flag. Returns ``None`` when no ``--plan-id`` was supplied (the
+    hook degrades to a no-op enrichment in that case).
+    """
+    try:
+        from resolve_project_dir import extract_plan_id  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    plan_id, _ = extract_plan_id(list(argv))
+    return plan_id
+
+
+def _fetch_failed_run_log(run_id: str) -> str | None:
+    """Download the raw failed-job log for a run via ``gh run view --log-failed``.
+
+    Reuses the same CLI invocation as :func:`cmd_ci_logs` but returns the full,
+    untruncated stdout (the filter/persist layer applies its own extraction).
+    Returns ``None`` on any non-zero exit so the enrich hook degrades that entry
+    gracefully without aborting siblings.
+    """
+    returncode, stdout, _stderr = run_gh(['run', 'view', str(run_id), '--log-failed'], timeout=120)
+    if returncode != 0:
+        return None
+    return stdout
+
+
+def _enrich_failing_checks(
+    entries: list[dict],
+    *,
+    plan_id: str | None,
+    error_style: str,
+    head_sha: str,
+    pr_number: int | str,
+) -> list[dict]:
+    """Inject per-run keys and run the shared download+filter+store hook.
+
+    Seeds each entry with ``head_sha`` / ``pr_number`` so the persisted manifest
+    is keyed correctly, then delegates to
+    :func:`ci_base.enrich_failing_checks_with_logs` (per-entry graceful degrade).
+    """
+    for entry in entries:
+        entry.setdefault('head_sha', head_sha)
+        entry.setdefault('pr_number', pr_number)
+    return enrich_failing_checks_with_logs(
+        failing_checks=entries,
+        provider='github',
+        raw_log_fetcher=_fetch_failed_run_log,
+        plan_id=plan_id,
+        error_style=error_style,
+    )
+
+
 def cmd_ci_status(args: argparse.Namespace) -> dict:
     """Handle 'ci status' subcommand."""
     # Check auth
@@ -1267,13 +1326,13 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     # Determine overall status via the canonical conclusion partition.
     # ``mixed`` is no longer a possible outcome — every input resolves to
     # ``pending | success | failure | none``.
-    overall, _failing_rows, _wait_rows = _derive_overall_status(checks)
+    overall, failing_rows, _wait_rows = _derive_overall_status(checks)
 
     # Format checks table — ci_status has no caller-supplied duration ceiling,
     # so out-of-range aggregates are substituted with 0.
     check_dicts, total_elapsed = format_checks_toon(checks, duration_ceiling=0)
 
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'operation': 'ci_status',
         'pr_number': args.pr_number if args.pr_number else identifier,
@@ -1282,6 +1341,22 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
         'elapsed_sec': total_elapsed,
         'checks': check_dicts,
     }
+
+    # On failure, surface the per-check failing-checks table enriched with each
+    # entry's downloaded raw + filtered log paths. Success/pending paths are
+    # unchanged.
+    if overall == 'failure':
+        failing_entries = [_build_failing_check_entry(c) for c in failing_rows]
+        head_sha = _fetch_pr_head_sha(identifier)
+        result['failing_checks'] = _enrich_failing_checks(
+            failing_entries,
+            plan_id=getattr(args, 'router_plan_id', None),
+            error_style=getattr(args, 'error_style', 'generic'),
+            head_sha=head_sha,
+            pr_number=args.pr_number if args.pr_number else identifier,
+        )
+
+    return result
 
 
 def cmd_ci_wait(args: argparse.Namespace) -> dict:
@@ -1329,6 +1404,13 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         _f, wait_rows, _nf = _classify_check_buckets(checks)
         wait_entries = [_build_failing_check_entry(c) for c in wait_rows]
         run_ids = sorted({e['run_id'] for e in wait_entries if e['run_id']})
+        wait_entries = _enrich_failing_checks(
+            wait_entries,
+            plan_id=getattr(args, 'router_plan_id', None),
+            error_style=getattr(args, 'error_style', 'generic'),
+            head_sha=head_sha,
+            pr_number=args.pr_number,
+        )
         error_data: dict[str, Any] = {
             'status': 'error',
             'operation': 'ci_wait',
@@ -1351,6 +1433,14 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     # outcome no longer exists.
     final_status, failing_rows, _wait_rows = _derive_overall_status(checks)
     failing_checks_entries = [_build_failing_check_entry(c) for c in failing_rows]
+    if final_status == 'failure':
+        failing_checks_entries = _enrich_failing_checks(
+            failing_checks_entries,
+            plan_id=getattr(args, 'router_plan_id', None),
+            error_style=getattr(args, 'error_style', 'generic'),
+            head_sha=head_sha,
+            pr_number=args.pr_number,
+        )
     run_ids = sorted(
         {
             _extract_run_id_from_link(c.get('link') or '')
@@ -1767,6 +1857,13 @@ def main() -> int:
     # contract: --plan-id auto-resolves via manage-status; --project-dir is
     # the explicit override; both together is a hard error. Any resolved cwd
     # is installed as the process-global default for run_cli's gh invocations.
+    # Capture the router-level --plan-id (consumed by extract_routing_args for
+    # cwd resolution but not returned) so the failure-path log-download hook can
+    # locate the plan-scoped artifact tree. The checks subcommands declare no
+    # subcommand-level --plan-id, so the first occurrence in the original argv
+    # is unambiguously the router-level flag.
+    router_plan_id = _capture_router_plan_id(sys.argv[1:])
+
     project_dir, remaining = extract_routing_args(sys.argv[1:])
     sys.argv = [sys.argv[0], *remaining]
     if project_dir is not None:
@@ -1783,6 +1880,9 @@ def main() -> int:
         resolve_parser.add_argument('--pr-number', type=int, help='PR number (accepted for API uniformity)')
 
     args = parse_args_with_toon_errors(parser)
+    # Surface the router plan_id on args so the checks handlers can pass it to
+    # enrich_failing_checks_with_logs without re-parsing argv.
+    args.router_plan_id = router_plan_id
 
     handlers = {
         ('pr', 'prepare-body'): _cmd_pr_prepare_body,

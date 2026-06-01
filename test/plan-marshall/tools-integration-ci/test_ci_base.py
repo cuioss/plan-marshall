@@ -1362,5 +1362,285 @@ def test_split_at_subcommand_uses_registry(_reset_subcommand_cache):
     assert post2 == ['fetch-comments', '--pr', '5']
 
 
+# =============================================================================
+# --error-style registration on checks wait / checks status
+# =============================================================================
+#
+# The shared failure-path log-download hook (``enrich_failing_checks_with_logs``)
+# is governed by an ``--error-style`` selector. That flag MUST be registered on
+# both the ``checks wait`` and ``checks status`` subparsers so a caller can pick
+# the per-build-system filter heuristic at invocation time. The default is
+# ``generic`` and the choice set is restricted to maven|gradle|npm|generic.
+
+
+@pytest.mark.parametrize('checks_command', ['wait', 'status'])
+def test_error_style_registered_on_checks_subparsers(checks_command):
+    """``--error-style`` must be accepted on both checks wait and checks status."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        ['checks', checks_command, '--pr-number', '42', '--error-style', 'maven']
+    )
+    assert args.error_style == 'maven'
+
+
+@pytest.mark.parametrize('checks_command', ['wait', 'status'])
+def test_error_style_defaults_to_generic(checks_command):
+    """When ``--error-style`` is omitted it defaults to ``generic`` on both subparsers."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['checks', checks_command, '--pr-number', '42'])
+    assert args.error_style == 'generic'
+
+
+@pytest.mark.parametrize('checks_command', ['wait', 'status'])
+@pytest.mark.parametrize('style', ['maven', 'gradle', 'npm', 'generic'])
+def test_error_style_accepts_every_valid_choice(checks_command, style):
+    """Every member of the maven|gradle|npm|generic choice set is accepted."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        ['checks', checks_command, '--pr-number', '42', '--error-style', style]
+    )
+    assert args.error_style == style
+
+
+@pytest.mark.parametrize('checks_command', ['wait', 'status'])
+def test_error_style_rejects_unknown_value(checks_command):
+    """An out-of-choice ``--error-style`` value must exit (argparse error)."""
+    parser, _, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ['checks', checks_command, '--pr-number', '42', '--error-style', 'sbt']
+        )
+
+
+def test_add_error_style_arg_registers_default_generic():
+    """add_error_style_arg directly registers ``--error-style`` defaulting to generic."""
+    parser = argparse.ArgumentParser()
+    ci_base.add_error_style_arg(parser)
+    args = parser.parse_args([])
+    assert args.error_style == 'generic'
+    args = parser.parse_args(['--error-style', 'gradle'])
+    assert args.error_style == 'gradle'
+
+
+# =============================================================================
+# enrich_failing_checks_with_logs — shared failure-path download+filter+store
+# =============================================================================
+#
+# The hook iterates a list of failing-check entries and, for each, downloads the
+# raw log via an injected fetcher, filters it, persists raw + filtered variants
+# under the manage-ci-artifacts storage layout, and appends the plan-dir-relative
+# ``log_file`` / ``filtered_log_file`` back onto the entry. The contract pinned
+# below:
+#
+# - For >=2 entries it appends a DISTINCT log_file / filtered_log_file per entry,
+#   slug-disambiguated, with NO collision even when two entries share a run_id.
+# - It degrades gracefully PER ENTRY (empty path fields on the affected entry
+#   only, never raising) when plan_id / run_id is absent or a fetch fails.
+#
+# Tests inject a stub raw-log fetcher and use the ``plan_context`` fixture's
+# isolated plan dir so no live CI access is required.
+
+
+from ci_base import enrich_failing_checks_with_logs  # noqa: E402
+
+
+def _failing_check(name: str, run_id: str, *, job_name: str | None = None) -> dict:
+    """Build a minimal failing-check entry for the enrich hook."""
+    return {
+        'name': name,
+        'job_name': job_name if job_name is not None else name,
+        'workflow_name': 'ci',
+        'conclusion': 'failure',
+        'run_id': run_id,
+        'started_at': '2026-05-19T00:00:00Z',
+        'completed_at': '2026-05-19T00:01:00Z',
+        'run_url': 'https://example/runs/x',
+        'head_sha': 'cafef00d',
+        'pr_number': 7,
+    }
+
+
+def test_enrich_appends_distinct_paths_per_entry(plan_context):
+    """Two failing checks (distinct run_ids) each gain their own raw + filtered paths."""
+    plan_id = 'enrich-distinct-runs'
+    entries = [
+        _failing_check('verify / verify', '101'),
+        _failing_check('build (3.12)', '102'),
+    ]
+
+    def fetcher(run_id: str) -> str:
+        return f'ERROR boom for run {run_id}\ntrailing line\n'
+
+    result = enrich_failing_checks_with_logs(
+        failing_checks=entries,
+        provider='github',
+        raw_log_fetcher=fetcher,
+        plan_id=plan_id,
+    )
+
+    # The hook mutates in place and returns the same list.
+    assert result is entries
+    log_files = [e['log_file'] for e in entries]
+    filtered_files = [e['filtered_log_file'] for e in entries]
+    # Every entry got a non-empty, distinct pair.
+    assert all(log_files), log_files
+    assert all(filtered_files), filtered_files
+    assert len(set(log_files)) == 2, f'log_file paths collided: {log_files}'
+    assert len(set(filtered_files)) == 2, f'filtered_log_file paths collided: {filtered_files}'
+    # Paths reflect each check's slug.
+    assert any('verify-verify' in p for p in log_files)
+    assert any('build-3-12' in p for p in log_files)
+
+
+def test_enrich_no_collision_when_two_checks_share_run_id(plan_context):
+    """Two failing checks sharing ONE run_id must get distinctly-slugged, non-colliding files."""
+    plan_id = 'enrich-shared-run-id'
+    entries = [
+        _failing_check('verify / verify', '500'),
+        _failing_check('build (3.12)', '500'),
+    ]
+
+    def fetcher(run_id: str) -> str:
+        return f'ERROR failure log for {run_id}\n'
+
+    enrich_failing_checks_with_logs(
+        failing_checks=entries,
+        provider='github',
+        raw_log_fetcher=fetcher,
+        plan_id=plan_id,
+    )
+
+    log_files = [e['log_file'] for e in entries]
+    filtered_files = [e['filtered_log_file'] for e in entries]
+    assert all(log_files), log_files
+    assert all(filtered_files), filtered_files
+    # The defining assertion: same run_id, but the slug disambiguates so the two
+    # entries never write to the same on-disk path.
+    assert log_files[0] != log_files[1], f'shared run_id collided: {log_files}'
+    assert filtered_files[0] != filtered_files[1], (
+        f'shared run_id filtered paths collided: {filtered_files}'
+    )
+    # Both raw files actually exist on disk (no overwrite of one by the other).
+    # persist() expresses paths relative to the anchor (get_base_dir().parent);
+    # in fixture mode get_base_dir() == fixture_dir, so the anchor is its parent.
+    plan_context.plan_dir_for(plan_id)  # ensure the plan dir exists
+    base = plan_context.fixture_dir.parent
+    for rel in log_files:
+        assert (base / rel).is_file(), f'expected raw log on disk: {rel}'
+    for rel in filtered_files:
+        assert (base / rel).is_file(), f'expected filtered log on disk: {rel}'
+
+
+def test_enrich_degrades_when_plan_id_absent():
+    """plan_id=None makes the hook a no-op enrichment — empty path fields, no raise."""
+    entries = [_failing_check('verify / verify', '101')]
+
+    def fetcher(run_id: str) -> str:  # pragma: no cover - must not be called
+        raise AssertionError('fetcher must not run when plan_id is None')
+
+    result = enrich_failing_checks_with_logs(
+        failing_checks=entries,
+        provider='github',
+        raw_log_fetcher=fetcher,
+        plan_id=None,
+    )
+    assert result is entries
+    assert entries[0]['log_file'] == ''
+    assert entries[0]['filtered_log_file'] == ''
+
+
+def test_enrich_degrades_per_entry_when_run_id_missing(plan_context):
+    """An entry with no run_id keeps empty path fields; siblings still enriched."""
+    plan_id = 'enrich-missing-run-id'
+    good = _failing_check('verify / verify', '900')
+    bad = _failing_check('build (3.12)', '')  # empty run_id
+    entries = [good, bad]
+
+    def fetcher(run_id: str) -> str:
+        return f'ERROR boom {run_id}\n'
+
+    enrich_failing_checks_with_logs(
+        failing_checks=entries,
+        provider='github',
+        raw_log_fetcher=fetcher,
+        plan_id=plan_id,
+    )
+    # The healthy entry was enriched.
+    assert good['log_file']
+    assert good['filtered_log_file']
+    # The run_id-less entry degraded to empty path fields — never raised.
+    assert bad['log_file'] == ''
+    assert bad['filtered_log_file'] == ''
+
+
+def test_enrich_degrades_per_entry_when_fetch_fails(plan_context):
+    """A fetch failure on one entry must not abort enrichment of the others, nor raise."""
+    plan_id = 'enrich-fetch-fails'
+    first = _failing_check('verify / verify', '601')
+    second = _failing_check('build (3.12)', '602')
+    entries = [first, second]
+
+    def fetcher(run_id: str) -> str:
+        if run_id == '601':
+            raise RuntimeError('network down')
+        return f'ERROR ok {run_id}\n'
+
+    # Must not raise despite the per-entry fetch failure.
+    enrich_failing_checks_with_logs(
+        failing_checks=entries,
+        provider='github',
+        raw_log_fetcher=fetcher,
+        plan_id=plan_id,
+    )
+    # The failing-fetch entry degraded to empty path fields.
+    assert first['log_file'] == ''
+    assert first['filtered_log_file'] == ''
+    # The healthy entry was still enriched.
+    assert second['log_file']
+    assert second['filtered_log_file']
+
+
+def test_enrich_degrades_per_entry_when_fetch_returns_none(plan_context):
+    """A fetcher returning None for an entry leaves that entry's path fields empty."""
+    plan_id = 'enrich-fetch-none'
+    first = _failing_check('verify / verify', '701')
+    second = _failing_check('build (3.12)', '702')
+    entries = [first, second]
+
+    def fetcher(run_id: str) -> str | None:
+        if run_id == '701':
+            return None
+        return f'ERROR ok {run_id}\n'
+
+    enrich_failing_checks_with_logs(
+        failing_checks=entries,
+        provider='github',
+        raw_log_fetcher=fetcher,
+        plan_id=plan_id,
+    )
+    assert first['log_file'] == ''
+    assert first['filtered_log_file'] == ''
+    assert second['log_file']
+    assert second['filtered_log_file']
+
+
+def test_enrich_records_error_style_on_each_entry(plan_context):
+    """The chosen error_style is stamped onto every entry (default generic)."""
+    plan_id = 'enrich-error-style'
+    entries = [_failing_check('verify / verify', '111')]
+
+    def fetcher(run_id: str) -> str:
+        return f'ERROR boom {run_id}\n'
+
+    enrich_failing_checks_with_logs(
+        failing_checks=entries,
+        provider='github',
+        raw_log_fetcher=fetcher,
+        plan_id=plan_id,
+        error_style='maven',
+    )
+    assert entries[0]['error_style'] == 'maven'
+
+
 # Silence unused-import warnings caused by the fixtures above.
 _ = (os, tempfile, subprocess)
