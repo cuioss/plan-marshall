@@ -5,10 +5,28 @@ Sibling of the split test_manage_tasks_*.py files. Imported explicitly per
 the dev-general-module-testing _fixtures.py / _helpers.py convention.
 """
 
+import re
 from argparse import Namespace
 from pathlib import Path
 
 from conftest import get_script_path, load_script_module
+
+# Matches a trailing parenthesized step-intent marker, e.g. ``path (write-new)``.
+_STEP_INTENT_SUFFIX_RE = re.compile(r'\([a-z-]+\)\s*$')
+
+
+def _with_intent(step, default_intent='write-replace'):
+    """Return a step string carrying a trailing ``(intent)`` marker.
+
+    Test fixtures pass bare step strings (file paths or verification commands);
+    the required per-step intent marker is appended here so call sites stay
+    terse. A step that already carries an explicit ``(intent)`` suffix is
+    returned unchanged, letting individual tests pin a specific intent.
+    """
+    text = str(step).strip()
+    if _STEP_INTENT_SUFFIX_RE.search(text):
+        return text
+    return f'{text} ({default_intent})'
 
 # Script path for subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
@@ -36,6 +54,7 @@ cmd_next_tasks = _query.cmd_next_tasks
 cmd_add_step = _step.cmd_add_step
 cmd_finalize_step = _step.cmd_finalize_step
 cmd_remove_step = _step.cmd_remove_step
+cmd_update_step = _step.cmd_update_step
 
 
 # =============================================================================
@@ -77,7 +96,7 @@ def build_task_toon(
         lines.insert(3, f'origin: {origin}')
 
     for step in steps:
-        lines.append(f'  - {step}')
+        lines.append(f'  - {_with_intent(step)}')
 
     lines.append(f'depends_on: {depends_on}')
 
@@ -184,12 +203,23 @@ def _finalize_step_ns(plan_id='test-plan', task=1, step=1, outcome='done', reaso
     return Namespace(plan_id=plan_id, task_number=task, step=step, outcome=outcome, reason=reason)
 
 
-def _add_step_ns(plan_id='test-plan', task=1, target='New Step', after=None):
-    return Namespace(plan_id=plan_id, task_number=task, target=target, after=after)
+def _add_step_ns(plan_id='test-plan', task=1, target='New Step', after=None, intent='write-replace'):
+    return Namespace(plan_id=plan_id, task_number=task, target=target, after=after, intent=intent)
 
 
 def _remove_step_ns(plan_id='test-plan', task=1, step=1):
     return Namespace(plan_id=plan_id, task_number=task, step=step)
+
+
+def _update_step_ns(plan_id='test-plan', task=1, step_number=1, intent='write-replace', reason='because', finding_id=None):
+    return Namespace(
+        plan_id=plan_id,
+        task_number=task,
+        step_number=step_number,
+        intent=intent,
+        reason=reason,
+        finding_id=finding_id,
+    )
 
 
 def _next_tasks_ns(plan_id='test-plan'):

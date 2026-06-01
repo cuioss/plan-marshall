@@ -12,11 +12,12 @@ Contains:
 import json
 import re
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from constants import (  # type: ignore[import-not-found]
     DIR_TASKS,
     VALID_SOURCE_EXTENSIONS,
+    VALID_STEP_INTENTS,
     VALID_TASK_ORIGINS,
 )
 from file_ops import (  # type: ignore[import-not-found]  # noqa: F401 - re-exported
@@ -41,6 +42,8 @@ class StepDict(TypedDict):
     number: int
     target: str
     status: str
+    intent: str
+    intent_override: NotRequired[list[dict[str, str]]]
 
 
 class TaskDict(TypedDict, total=False):
@@ -133,6 +136,27 @@ def validate_origin(origin: str) -> str:
     if origin not in VALID_ORIGINS:
         raise ValueError(f'Invalid origin: {origin}. Must be one of: {", ".join(VALID_ORIGINS)}')
     return origin
+
+
+def validate_step_intent(intent: str | None) -> str:
+    """Validate a required per-step intent value.
+
+    intent is REQUIRED (no None default): an absent/empty value is a schema
+    violation, as is a value outside the closed VALID_STEP_INTENTS vocabulary.
+    Accepts ``None`` only to surface the canonical "intent is required" error
+    (callers commonly pass ``dict.get('intent')`` / ``getattr(args, 'intent')``).
+    Returns the normalized (stripped) value on success.
+    """
+    if intent is None or not str(intent).strip():
+        raise ValueError(
+            'Step intent is required. Must be one of: ' + ', '.join(VALID_STEP_INTENTS)
+        )
+    normalized = str(intent).strip()
+    if normalized not in VALID_STEP_INTENTS:
+        raise ValueError(
+            f'Invalid step intent: {normalized}. Must be one of: ' + ', '.join(VALID_STEP_INTENTS)
+        )
+    return normalized
 
 
 def validate_skills(skills: list[str]) -> list[str]:
@@ -326,6 +350,11 @@ def calculate_progress(task: dict) -> tuple[int, int]:
 
 _STEPS_BARE_BLOCK_PREFIX = 'steps:'
 _STEPS_BRACKETED_RE = re.compile(r'^steps\[(\d+)\]:\s*$')
+# A TOON step item carries its required intent as a trailing parenthesized
+# suffix: ``path/to/file.ext (write-new)``. The path group is non-greedy up to
+# the final ``(intent)`` marker; the intent group is validated separately
+# against VALID_STEP_INTENTS by validate_step_intent.
+_STEP_INTENT_SUFFIX_RE = re.compile(r'^(?P<target>.+?)\s*\((?P<intent>[a-z-]+)\)\s*$')
 _SKILLS_BRACKETED_RE = re.compile(r'^skills\[(\d+)\]:\s*$')
 _COMMANDS_BRACKETED_RE = re.compile(r'^commands\[(\d+)\]:\s*$')
 
@@ -354,7 +383,7 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     """
     # Create typed local variables for mutable fields
     skills: list[str] = []
-    steps: list[str] = []
+    steps: list[dict[str, str]] = []
     depends_on: list[str] = []
     verification_commands: list[str] = []
 
@@ -447,9 +476,20 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
                         f'wrapped in outer double-quotes: {raw_step!r}. Write list items without '
                         f'outer quotes (inner double-quotes are allowed). See plan-marshall:phase-4-plan SKILL.md.'
                     )
-                step_target = normalize_step_path(raw_step)
-                if step_target:
-                    steps.append(step_target)
+                if raw_step:
+                    match = _STEP_INTENT_SUFFIX_RE.match(raw_step)
+                    if not match:
+                        raise ValueError(
+                            f"Task contract violation - step item '{raw_step}' is missing its "
+                            f'required intent marker. Each step MUST be written as '
+                            f"'path (intent)' where intent is one of: "
+                            + ', '.join(VALID_STEP_INTENTS)
+                            + '. See plan-marshall:manage-tasks/standards/task-contract.md.'
+                        )
+                    step_target = normalize_step_path(match.group('target').strip())
+                    step_intent = validate_step_intent(match.group('intent'))
+                    if step_target:
+                        steps.append({'target': step_target, 'intent': step_intent})
                 i += 1
             # Empty steps body is allowed at parse time — the required-fields
             # check below catches it with a more specific error message.
@@ -507,7 +547,8 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
         validate_origin(result['origin'])
 
     if result['profile'] != 'verification':
-        step_errors, step_warnings = validate_steps_are_file_paths(result['steps'])
+        step_targets = [s['target'] for s in result['steps']]
+        step_errors, step_warnings = validate_steps_are_file_paths(step_targets)
         if step_errors:
             raise ValueError(
                 'Task contract violation - steps must be file paths:\n'

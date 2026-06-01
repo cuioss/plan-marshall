@@ -40,7 +40,8 @@ def _build_task_toon(title='Test task', deliverable=1, steps=None):
         'steps:',
     ]
     for step in steps:
-        lines.append(f'  - {step}')
+        marked = step if str(step).rstrip().endswith(')') else f'{step} (write-replace)'
+        lines.append(f'  - {marked}')
     lines.append('depends_on: none')
     return '\n'.join(lines)
 

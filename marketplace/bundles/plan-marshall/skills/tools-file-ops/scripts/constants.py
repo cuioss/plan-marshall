@@ -234,6 +234,27 @@ VALID_STEP_STATUSES = (
 )
 
 # ---------------------------------------------------------------------------
+# Step intents (required per-step existence-expectation declaration)
+# Drives the intent-aware files_exist Q-Gate check:
+#   read          -> existence required pre-execution
+#   write-new     -> existence forbidden pre-execution (finding fires if present)
+#   write-replace -> no existence check
+#   delete        -> existence required pre-execution (cannot remove an absent file)
+# Single source of truth, imported by manage-tasks and manage-solution-outline.
+# ---------------------------------------------------------------------------
+STEP_INTENT_READ = 'read'
+STEP_INTENT_WRITE_NEW = 'write-new'
+STEP_INTENT_WRITE_REPLACE = 'write-replace'
+STEP_INTENT_DELETE = 'delete'
+
+VALID_STEP_INTENTS = (
+    STEP_INTENT_READ,
+    STEP_INTENT_WRITE_NEW,
+    STEP_INTENT_WRITE_REPLACE,
+    STEP_INTENT_DELETE,
+)
+
+# ---------------------------------------------------------------------------
 # Task origins
 # ---------------------------------------------------------------------------
 VALID_TASK_ORIGINS = (

@@ -80,7 +80,7 @@ Implement the main validation logic.
 - module_testing
 
 **Affected files:**
-- `src/main/java/de/cuioss/jwt/JwtValidationService.java`
+- `src/main/java/de/cuioss/jwt/JwtValidationService.java` (write-new)
 
 **Verification:**
 - Command: `mvn test -Dtest=JwtValidationServiceTest`
@@ -104,7 +104,7 @@ Add JWT configuration to application.properties.
 - implementation
 
 **Affected files:**
-- `src/main/resources/application.properties`
+- `src/main/resources/application.properties` (write-replace)
 
 **Verification:**
 - Command: `mvn verify`
@@ -128,7 +128,7 @@ Create comprehensive test coverage.
 - module_testing
 
 **Affected files:**
-- `src/test/java/de/cuioss/jwt/JwtValidationServiceTest.java`
+- `src/test/java/de/cuioss/jwt/JwtValidationServiceTest.java` (write-new)
 
 **Verification:**
 - Command: `mvn test`
@@ -306,6 +306,36 @@ def test_list_deliverables(plan_context):
     assert first['number'] == 1
     assert first['title'] == 'Create JwtValidationService class'
     assert first['reference'] == '1. Create JwtValidationService class'
+    # affected_files surfaces the {path, intent} shape for phase-4-plan
+    assert first['affected_files'] == [
+        {'path': 'src/main/java/de/cuioss/jwt/JwtValidationService.java', 'intent': 'write-new'}
+    ]
+
+
+def test_validate_rejects_missing_intent_marker(plan_context):
+    """validate reports a hard error for an Affected files entry with no intent marker."""
+    bad = VALID_SOLUTION.replace(
+        '- `src/main/java/de/cuioss/jwt/JwtValidationService.java` (write-new)',
+        '- `src/main/java/de/cuioss/jwt/JwtValidationService.java`',
+    )
+    (plan_context.plan_dir_for('solution-no-intent') / 'solution_outline.md').write_text(bad)
+
+    result = cmd_validate(_validate_ns(plan_id='solution-no-intent'))
+    assert result['status'] == 'error'
+    assert any('missing intent marker' in e for e in result['issues'])
+
+
+def test_validate_rejects_invalid_intent_marker(plan_context):
+    """validate reports a hard error for an Affected files entry with an invalid intent."""
+    bad = VALID_SOLUTION.replace(
+        '- `src/main/java/de/cuioss/jwt/JwtValidationService.java` (write-new)',
+        '- `src/main/java/de/cuioss/jwt/JwtValidationService.java` (rewrite)',
+    )
+    (plan_context.plan_dir_for('solution-bad-intent') / 'solution_outline.md').write_text(bad)
+
+    result = cmd_validate(_validate_ns(plan_id='solution-bad-intent'))
+    assert result['status'] == 'error'
+    assert any('invalid intent marker' in e for e in result['issues'])
 
 
 def test_list_deliverables_empty(plan_context):
@@ -553,7 +583,7 @@ Add JWT configuration to application.properties.
 - implementation
 
 **Affected files:**
-- `src/main/resources/application.properties`""",
+- `src/main/resources/application.properties` (write-replace)""",
         """### 2. Add configuration properties
 
 Add JWT configuration to application.properties.
@@ -570,7 +600,7 @@ Add JWT configuration to application.properties.
 - module_testing
 
 **Affected files:**
-- `src/main/resources/application.properties`""",
+- `src/main/resources/application.properties` (write-replace)""",
     )
     (plan_context.plan_dir_for('solution-warn-profile') / 'solution_outline.md').write_text(solution_with_bad_profile)
 
@@ -642,7 +672,7 @@ Diagram here
 - implementation
 
 **Affected files:**
-- `src/main/java/Foo.java`
+- `src/main/java/Foo.java` (write-new)
 
 **Verification:**
 - Command: `mvn test`

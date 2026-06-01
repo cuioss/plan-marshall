@@ -33,6 +33,7 @@ invariants.
 
 from __future__ import annotations
 
+import json
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -96,7 +97,12 @@ def _build_task_toon(
         'steps:',
     ]
     for step in steps:
-        lines.append(f'  - {step}')
+        # The required per-step intent marker is appended unless the caller
+        # already supplied one (so a test may pin a specific intent).
+        if step.rstrip().endswith(')'):
+            lines.append(f'  - {step}')
+        else:
+            lines.append(f'  - {step} (write-replace)')
     lines.append(f'depends_on: {depends_on}')
     return '\n'.join(lines)
 
@@ -493,6 +499,34 @@ def test_state_hash_changes_when_step_status_changes(plan_context, stub_run_scri
     after = inv._capture_task_state_hash('inv-state-step', {}, '5-execute')
 
     assert before != after, 'hash must change when a step transitions pending -> done'
+
+
+# =============================================================================
+# task_state_hash — step intent sensitivity (status held constant)
+# =============================================================================
+
+
+def _flip_step_intent(plan_context, plan_id: str, task_number: int, step_index: int, new_intent: str) -> None:
+    """Mutate a single step's intent on disk, leaving its status unchanged."""
+    tasks_dir = plan_context.plan_dir_for(plan_id) / 'tasks'
+    path = tasks_dir / f'TASK-{task_number:03d}.json'
+    task = json.loads(path.read_text(encoding='utf-8'))
+    task['steps'][step_index]['intent'] = new_intent
+    path.write_text(json.dumps(task, indent=2), encoding='utf-8')
+
+
+def test_state_hash_changes_when_step_intent_changes(plan_context, stub_run_script) -> None:
+    """Mutating a step's intent (status held constant) must change the hash.
+
+    intent authoritatively drives the files_exist Q-Gate, so a silent intent
+    flip between phase boundaries must surface as task_state_hash drift.
+    """
+    _add_task('inv-state-intent', 'T1', 1)
+    before = inv._capture_task_state_hash('inv-state-intent', {}, '5-execute')
+    _flip_step_intent(plan_context, 'inv-state-intent', task_number=1, step_index=0, new_intent='write-new')
+    after = inv._capture_task_state_hash('inv-state-intent', {}, '5-execute')
+
+    assert before != after, 'hash must change when a step intent flips write-replace -> write-new'
 
 
 # =============================================================================

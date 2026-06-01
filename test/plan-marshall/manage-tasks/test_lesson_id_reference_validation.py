@@ -95,19 +95,26 @@ def _entry(
     description='',
     origin='plan',
 ):
-    """Build a valid batch entry dict (per task-contract.md schema)."""
+    """Build a valid batch entry dict (per task-contract.md schema).
+
+    Bare-string ``steps`` are normalized to the required ``{target, intent}``
+    object shape (default intent ``write-replace``).
+    """
     if steps is None:
         steps = ['src/main/java/Foo.java']
     if depends_on is None:
         depends_on = []
     if skills is None:
         skills = []
+    normalized_steps = [
+        s if isinstance(s, dict) else {'target': s, 'intent': 'write-replace'} for s in steps
+    ]
     return {
         'title': title,
         'deliverable': deliverable,
         'domain': domain,
         'profile': profile,
-        'steps': steps,
+        'steps': normalized_steps,
         'depends_on': depends_on,
         'skills': skills,
         'description': description,
@@ -142,7 +149,8 @@ def _toon_task_body(
         'steps:',
     ]
     for step in steps:
-        lines.append(f'  - {step}')
+        marked = step if str(step).rstrip().endswith(')') else f'{step} (write-replace)'
+        lines.append(f'  - {marked}')
     lines.append('depends_on: none')
     lines.append('skills:')
     return '\n'.join(lines) + '\n'

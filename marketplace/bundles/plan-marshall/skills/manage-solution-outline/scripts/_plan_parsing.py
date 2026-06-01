@@ -211,20 +211,31 @@ def _extract_profiles(content: str) -> list[str]:
     return profiles
 
 
-def _extract_affected_files(content: str) -> list[str]:
-    """Extract **Affected files:** list from deliverable content."""
-    files: list[str] = []
+def _extract_affected_files(content: str) -> list[dict[str, Any]]:
+    """Extract **Affected files:** list from deliverable content.
+
+    Each entry is returned as a ``{'path': str, 'intent': str | None}`` object.
+    The canonical annotated form is a backticked path followed by a
+    parenthesized intent marker: ``- `path/to/file.ext` (write-new)``. An entry
+    with no ``(intent)`` suffix yields ``intent=None`` so the validator — not
+    this parser — produces the precise per-deliverable "missing marker" error.
+    """
+    files: list[dict[str, Any]] = []
 
     files_match = re.search(r'\*\*Affected files:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
     if not files_match:
         return files
 
     files_text = files_match.group(1)
-    file_pattern = re.compile(r'-\s*`?([^`\n]+)`?')
+    # Capture the backticked (or bare) path, then an optional trailing
+    # ``(intent)`` marker. The intent group is left unvalidated here — the
+    # validator enum-checks it against VALID_STEP_INTENTS.
+    file_pattern = re.compile(r'-\s*`?([^`\n(]+?)`?\s*(?:\(([a-z-]+)\))?\s*$', re.MULTILINE)
     for match in file_pattern.finditer(files_text):
         file_path = match.group(1).strip()
+        intent = match.group(2)
         if file_path:
-            files.append(file_path)
+            files.append({'path': file_path, 'intent': intent})
 
     return files
 

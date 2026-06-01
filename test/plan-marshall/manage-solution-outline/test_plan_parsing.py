@@ -30,7 +30,11 @@ SCRIPTS_DIR = SCRIPT_PATH.parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from _plan_parsing import _slugify_section_name, parse_document_sections  # noqa: E402
+from _plan_parsing import (  # noqa: E402
+    _extract_affected_files,
+    _slugify_section_name,
+    parse_document_sections,
+)
 
 
 # =============================================================================
@@ -227,3 +231,46 @@ class TestParseDocumentSectionsRoundTrip:
             'Regression: un-slugified key "suggested_fix_(two_options)" present. '
             'parse_document_sections must route heading text through _slugify_section_name.'
         )
+
+
+# =============================================================================
+# _extract_affected_files() — per-file intent marker parsing
+# =============================================================================
+
+
+class TestExtractAffectedFilesIntent:
+    """Verify `_extract_affected_files` returns {path, intent} objects."""
+
+    @pytest.mark.parametrize('intent', ['read', 'write-new', 'write-replace', 'delete'])
+    def test_parses_each_valid_intent_marker(self, intent):
+        content = f'**Affected files:**\n- `src/main/java/A.java` ({intent})\n'
+        result = _extract_affected_files(content)
+        assert result == [{'path': 'src/main/java/A.java', 'intent': intent}]
+
+    def test_parses_multiple_entries_with_distinct_intents(self):
+        content = (
+            '**Affected files:**\n'
+            '- `src/main/java/New.java` (write-new)\n'
+            '- `src/main/java/Old.java` (write-replace)\n'
+            '- `src/main/java/Gone.java` (delete)\n'
+        )
+        result = _extract_affected_files(content)
+        assert result == [
+            {'path': 'src/main/java/New.java', 'intent': 'write-new'},
+            {'path': 'src/main/java/Old.java', 'intent': 'write-replace'},
+            {'path': 'src/main/java/Gone.java', 'intent': 'delete'},
+        ]
+
+    def test_entry_without_marker_yields_none_intent(self):
+        content = '**Affected files:**\n- `src/main/java/A.java`\n'
+        result = _extract_affected_files(content)
+        assert result == [{'path': 'src/main/java/A.java', 'intent': None}]
+
+    def test_surrounding_whitespace_is_stripped(self):
+        content = '**Affected files:**\n-   `src/main/java/A.java`   (read)  \n'
+        result = _extract_affected_files(content)
+        assert result == [{'path': 'src/main/java/A.java', 'intent': 'read'}]
+
+    def test_no_affected_files_section_returns_empty(self):
+        result = _extract_affected_files('No affected files here.')
+        assert result == []

@@ -623,7 +623,14 @@ def _capture_references_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
 
 
 def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
-    """Drift-detection hash over every task's status, depends_on, and step outcomes.
+    """Drift-detection hash over every task's status, depends_on, and per-step
+    {status, intent} outcomes.
+
+    The per-step payload folds in each step's required ``intent`` alongside its
+    ``status`` so an out-of-band intent mutation between phase boundaries changes
+    the hash — intent authoritatively drives the files_exist Q-Gate, so a silent
+    flip must surface as phase-handshake drift. No new INVARIANTS row is added;
+    the existing ``task_state_hash`` simply becomes intent-sensitive.
 
     ``manage-tasks list`` emits a *tabular* ``tasks_table`` whose reachable
     fields are only ``number, title, domain, profile, deliverable, status,
@@ -684,11 +691,18 @@ def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: st
         if not isinstance(task, dict):
             return None
         steps = task.get('steps') or []
-        step_outcomes: list[str] = []
+        # Each per-step payload carries BOTH the step status ('s') and the
+        # required intent ('i'), so the hash is sensitive to a silent intent
+        # mutation between phase boundaries (intent authoritatively drives the
+        # files_exist Q-Gate). The status contribution is preserved unchanged so
+        # status-drift detection continues to fire.
+        step_outcomes: list[dict[str, str]] = []
         if isinstance(steps, list):
             for step in steps:
                 if isinstance(step, dict):
-                    step_outcomes.append(str(step.get('status', '')))
+                    step_outcomes.append(
+                        {'s': str(step.get('status', '')), 'i': str(step.get('intent', ''))}
+                    )
         depends = task.get('depends_on') or []
         if not isinstance(depends, list):
             depends = []

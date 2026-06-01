@@ -73,6 +73,12 @@ def _write_task(
     every mechanical check has at least one positive and one negative case.
     """
     task_dir.mkdir(parents=True, exist_ok=True)
+    raw_steps = steps or [{'number': 1, 'target': 'src/A.java', 'status': 'pending'}]
+    # intent is a required step member; default omitting fixtures to 'read'
+    # (existence-required) so legacy files_exist cases keep their semantics.
+    normalized_steps = [
+        ({'intent': 'read', **s} if isinstance(s, dict) else s) for s in raw_steps
+    ]
     record = {
         'number': number,
         'title': title,
@@ -84,7 +90,7 @@ def _write_task(
         'depends_on': depends_on or [],
         'skills': skills or [],
         'description': description,
-        'steps': steps or [{'number': 1, 'target': 'src/A.java', 'status': 'pending'}],
+        'steps': normalized_steps,
         'verification': {'commands': [], 'criteria': '', 'manual': False},
     }
     path = task_dir / f'TASK-{number:03d}.json'
@@ -393,6 +399,65 @@ def test_qgate_mechanical_files_exist_missing_step_target(plan_context):
 
     result = cmd_qgate_mechanical(_ns('qgate-files-missing'))
     assert result['checks']['files_exist']['failed'] == 1
+
+
+_EXISTING_FILE = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+_MISSING_FILE = 'src/does-not-exist.java'
+
+
+def _files_exist_failed(plan_context, slug, target, intent):
+    """Seed one task with a single (target, intent) step and return failed count."""
+    plan_dir = plan_context.plan_dir_for(slug)
+    _write_outline(plan_dir, [{'number': 1, 'title': 'X', 'affected_files': [target]}])
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': target, 'status': 'pending', 'intent': intent}],
+    )
+    result = cmd_qgate_mechanical(_ns(slug))
+    return result['checks']['files_exist']['failed']
+
+
+def test_qgate_files_exist_read_missing_flags(plan_context):
+    """read + missing target → 1 finding (current behaviour preserved)."""
+    assert _files_exist_failed(plan_context, 'qgate-read-missing', _MISSING_FILE, 'read') == 1
+
+
+def test_qgate_files_exist_read_present_passes(plan_context):
+    """read + existing target → 0 findings."""
+    assert _files_exist_failed(plan_context, 'qgate-read-present', _EXISTING_FILE, 'read') == 0
+
+
+def test_qgate_files_exist_write_new_missing_passes(plan_context):
+    """write-new + missing target → 0 findings (the noise class this plan removes)."""
+    assert _files_exist_failed(plan_context, 'qgate-writenew-missing', _MISSING_FILE, 'write-new') == 0
+
+
+def test_qgate_files_exist_write_new_present_flags(plan_context):
+    """write-new + existing target → 1 finding (inverted signal fires)."""
+    assert _files_exist_failed(plan_context, 'qgate-writenew-present', _EXISTING_FILE, 'write-new') == 1
+
+
+def test_qgate_files_exist_write_replace_missing_passes(plan_context):
+    """write-replace + missing target → 0 findings."""
+    assert _files_exist_failed(plan_context, 'qgate-writerepl-missing', _MISSING_FILE, 'write-replace') == 0
+
+
+def test_qgate_files_exist_write_replace_present_passes(plan_context):
+    """write-replace + existing target → 0 findings."""
+    assert _files_exist_failed(plan_context, 'qgate-writerepl-present', _EXISTING_FILE, 'write-replace') == 0
+
+
+def test_qgate_files_exist_delete_missing_flags(plan_context):
+    """delete + missing target → 1 finding (delete-specific message)."""
+    assert _files_exist_failed(plan_context, 'qgate-delete-missing', _MISSING_FILE, 'delete') == 1
+
+
+def test_qgate_files_exist_delete_present_passes(plan_context):
+    """delete + existing target → 0 findings."""
+    assert _files_exist_failed(plan_context, 'qgate-delete-present', _EXISTING_FILE, 'delete') == 0
 
 
 def test_qgate_mechanical_files_exist_skips_verification_profile(plan_context):

@@ -53,7 +53,7 @@ def test_cli_prepare_add_then_commit_add_roundtrip(plan_context):
         'domain: java\n'
         'description: Roundtrip test\n'
         'steps:\n'
-        '  - src/main/java/X.java\n'
+        '  - src/main/java/X.java (write-new)\n'
         'depends_on: none\n',
         encoding='utf-8',
     )

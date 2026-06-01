@@ -404,7 +404,7 @@ task is being created in the same phase invocation.
 
 **Breaking-refactor task split**: When the deliverable's `compatibility=breaking` OR its `change_type` is `tech_debt` or `feature_breaking`, AND it touches code paths covered by existing module tests, allocate the implementation and `module_testing` tasks per the task-split contract in [standards/breaking-refactor-task-split.md](standards/breaking-refactor-task-split.md) — the test-contract task carries `depends_on: [TASK-{implementation_number}]` and its description enumerates both the pre-existing tests being rewritten and any new regression tests pinning the new contract. This is the planning-side half of the breaking-refactor pair; phase-5-execute applies the planned-failure exception when the implementation task's verification fails in exactly the way the test-contract task is scoped to fix.
 
-**Value-change test-update rule (NORMATIVE)**: When a deliverable changes a default value, a constant, or an enum member and its `**Affected files:**` enumerate existing test files (per the [phase-3-outline value-change test-sweep rule](../phase-3-outline/SKILL.md#value-change-test-sweep-rule-normative)), phase-4-plan MUST carry those existing-test targets into the `module_testing` task's `steps[]` and anchor the test-update obligation into the `module_testing` task `description`, so the executing agent updates every existing test asserting the old value — not only any new test file the plan introduces. Do NOT inline-copy the phase-3-outline enumeration heuristic; the cross-reference above is the single authoring surface, so the obligation is enforced at both planning surfaces without drift.
+**Value-change test-update rule (NORMATIVE)**: When a deliverable changes a default value, a constant, or an enum member and its `**Affected files:**` enumerate existing test files (per the [phase-3-outline value-change test-sweep rule](../phase-3-outline/SKILL.md#value-change-test-sweep-rule-normative)), phase-4-plan MUST carry those existing-test targets into the `module_testing` task's `steps[]` and anchor the test-update obligation into the `module_testing` task `description`, so the executing agent updates every existing test asserting the old value — not only any new test file the plan introduces. Each carried-over existing-test target is emitted with `intent: write-replace` (the test file already exists and is modified in place), so the `files_exist` Q-Gate does not flag it as a missing or unexpectedly-present target. Do NOT inline-copy the phase-3-outline enumeration heuristic; the cross-reference above is the single authoring surface, so the obligation is enforced at both planning surfaces without drift.
 
 **Missing-profile guard (NORMATIVE)**: The carry-forward above presupposes the deliverable declares the `module_testing` profile. When a deliverable enumerates existing test files in its `**Affected files:**` (signalling a value-change test sweep) but `module_testing ∉ D.profiles[]`, there is no `module_testing` task to carry the existing-test targets into — the test-update obligation would be silently dropped. Phase-4-plan MUST NOT fail silently in this case. Instead, fire this guard for every value-change deliverable.
 
@@ -526,7 +526,10 @@ Compose every task record for this phase invocation into one JSON array, then pe
   "domain": "{domain}",
   "profile": "{profile}",
   "description": "{description}",
-  "steps": ["{file1}", "{file2}"],
+  "steps": [
+    {"target": "{file1}", "intent": "{intent1}"},
+    {"target": "{file2}", "intent": "{intent2}"}
+  ],
   "depends_on": [],            // or ["TASK-1", ...]
   "skills": ["{bundle:skill}", ...],
   "verification": {
@@ -535,6 +538,8 @@ Compose every task record for this phase invocation into one JSON array, then pe
   }
 }
 ```
+
+Each step is a `{target, intent}` object — bare-string steps are rejected by `batch-add`. Source each step's `intent` from the parent deliverable's `affected_files[N].intent`, surfaced by `manage-solution-outline list-deliverables` (the deliverable's `Affected files` markers authored in phase-3-outline). The intent vocabulary is the closed enum `read` / `write-new` / `write-replace` / `delete`; it threads unchanged from the deliverable annotation into the task step so the `files_exist` Q-Gate applies the per-intent existence predicate.
 
 Sequential numbering is assigned in array order at call time. On any validation failure no `TASK-NNN.json` is written.
 
