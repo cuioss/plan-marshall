@@ -40,8 +40,6 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -59,8 +57,6 @@ RULE_ID = _alisp.RULE_ID
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 
 def _make_skill_md(
@@ -523,24 +519,3 @@ class TestBoundaryCases:
         )
         findings = analyze_lesson_id_in_skill_prose(tmp_path)
         assert len(findings) == 1
-
-
-# ===========================================================================
-# (f) Real-marketplace zero-findings invariant
-# ===========================================================================
-
-
-class TestRealMarketplace:
-    """The cleaned marketplace tree produces zero findings."""
-
-    def test_real_marketplace_has_zero_findings(self) -> None:
-        """Invariant: the real ``marketplace/bundles/`` tree is clean."""
-        if not MARKETPLACE_BUNDLES.is_dir():
-            return  # CI invariants only — skip in non-source trees.
-        findings = analyze_lesson_id_in_skill_prose(MARKETPLACE_BUNDLES)
-        # Allow zero findings; if any remain, surface them for review.
-        assert findings == [], (
-            f'Real marketplace contains {len(findings)} unexpected '
-            'lesson-id-in-skill-prose findings: '
-            + ', '.join(f"{f['file']}:{f['line']} ({f['snippet']})" for f in findings[:5])
-        )

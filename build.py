@@ -93,12 +93,21 @@ def cmd_test_compile(module: str | None) -> int:
     return run(['uv', 'run', 'mypy', path], f'test-compile: mypy {path}', env=mypy_env)
 
 
-def cmd_module_tests(module: str | None, parallel: bool = False) -> int:
-    """Run pytest on test sources."""
+def cmd_module_tests(module: str | None, parallel: bool = True) -> int:
+    """Run pytest on test sources.
+
+    Parallel by default: the canonical full-suite run uses pytest-xdist with
+    ``-n auto`` so worker count tracks available CPUs. ``--dist=loadgroup`` is
+    mandatory whenever ``-n`` is active so that ``xdist_group`` markers (e.g.
+    the ``real_marshal_json`` group) keep their tests pinned to a single worker
+    — without it, xdist scatters grouped tests across workers and the grouping
+    is silently ignored. Pass ``parallel=False`` for serial single-file debug
+    runs (CLI: ``--no-parallel``).
+    """
     path = get_test_path(module)
     cmd = ['uv', 'run', 'pytest', path]
     if parallel:
-        cmd.extend(['-n', 'auto'])
+        cmd.extend(['-n', 'auto', '--dist=loadgroup'])
     return run(cmd, f'module-tests: pytest {path}')
 
 
@@ -173,7 +182,7 @@ def cmd_verify(module: str | None) -> int:
         print('verify: quality-gate failed', file=sys.stderr)
         return exit_code
 
-    exit_code = cmd_module_tests(module)
+    exit_code = cmd_module_tests(module, parallel=True)
     if exit_code != 0:
         print('verify: module-tests failed', file=sys.stderr)
         return exit_code
@@ -219,9 +228,15 @@ Examples:
     p.add_argument('module', nargs='?', help='Test directory (e.g., plan-marshall)')
 
     # module-tests
+    # Parallel-by-default (pytest-xdist -n auto --dist=loadgroup). --parallel/-p
+    # is retained for backward compatibility (no-op: parallel is already the
+    # default); --no-parallel opts into serial single-file debug runs.
     p = subparsers.add_parser('module-tests', help='pytest on test sources')
     p.add_argument('module', nargs='?', help='Test directory (e.g., plan-marshall)')
-    p.add_argument('--parallel', '-p', action='store_true', help='Run tests in parallel')
+    p.add_argument('--parallel', '-p', dest='parallel', action='store_true', default=True,
+                   help='Run tests in parallel (default; -n auto --dist=loadgroup)')
+    p.add_argument('--no-parallel', dest='parallel', action='store_false',
+                   help='Run tests serially (single-file debug)')
 
     # quality-gate
     p = subparsers.add_parser('quality-gate', help='mypy + ruff check on sources')

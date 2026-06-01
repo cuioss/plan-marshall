@@ -45,6 +45,28 @@ collect_ignore = [
     'plan-marshall/integration/discover_modules/test_gradle_discover_modules_integration.py',
     'plan-marshall/integration/discover_modules/test_maven_discover_modules.py',
     'plan-marshall/integration/module_aggregation/test_hybrid_merge.py',
+    # Real-tree smoke that walks the actual marketplace/bundles/ tree — kept out
+    # of the default module-tests run so it uses only the in-process synthetic
+    # units in tools-marketplace-inventory/test_scan_marketplace_inventory.py.
+    'pm-plugin-development/tools-marketplace-inventory/integration/test_scan_marketplace_inventory_smoke.py',
+    # Real-tree planning-scan smoke — the planning scanner spawns
+    # scan-marketplace-inventory.py against the real tree. The per-filter /
+    # statistics coverage lives in the in-process synthetic units in
+    # tools-marketplace-inventory/test_scan_planning_inventory.py.
+    'pm-plugin-development/tools-marketplace-inventory/integration/test_scan_planning_inventory_smoke.py',
+    # Real-tree dependency-graph smokes — build a dependency index over the
+    # actual marketplace/bundles/ tree (full validate + a real shipped chain).
+    # The per-subcommand / per-filter / output-format coverage lives in the
+    # in-process synthetic-graph units in
+    # tools-marketplace-inventory/test_resolve_dependencies.py.
+    'pm-plugin-development/tools-marketplace-inventory/integration/test_resolve_dependencies_smoke.py',
+    # Real-tree manage-invocation smokes — derive the real script --help surface
+    # against the live .plan/execute-script.py executor (zero-false-positive
+    # checks for the loop-registered / shared-flag / many-subcommand shapes).
+    # The per-shape / per-finding-type coverage lives in the in-process
+    # synthetic-argparse units in
+    # plugin-doctor/test_analyze_manage_invocation.py.
+    'pm-plugin-development/plugin-doctor/integration/test_analyze_manage_invocation_smoke.py',
 ]
 
 
@@ -467,21 +489,102 @@ def _snapshot_real_paths() -> list[str]:
         return []
 
 
+# Backstop for the ``_plan_base_dir_sandbox`` autouse default: snapshot the real
+# repo-local ``.plan/local/`` tree and fail any non-opted-out test that adds a
+# new entry there. The sandbox redirects ``PLAN_BASE_DIR`` so writes *should* be
+# structurally impossible; this guard verifies the redirect actually held rather
+# than trusting it silently.
+_REAL_PLAN_LOCAL = PROJECT_ROOT / PLAN_DIR_NAME / 'local'
+
+# ``run-configuration.json`` lives at ``.plan/run-configuration.json`` (outside
+# ``local/``) and is intentionally excluded from the credentials/local guards —
+# see the NOTE above ``_REAL_CREDENTIALS_DIR``. The ``local/`` snapshot below is
+# already scoped under ``local/`` so it never observes that file, but the
+# basename is excluded defensively in case the build harness ever relocates its
+# telemetry under ``local/``.
+_PLAN_LOCAL_IGNORED_BASENAMES = frozenset({'run-configuration.json'})
+
+# Leak-prone container dirs under ``.plan/local/`` whose IMMEDIATE children we
+# snapshot one level deep. A leaking test creates a new orphan worktree dir
+# (``worktrees/{name}``), plan dir (``plans/{id}``), or lesson
+# (``lessons-learned/{id}``) — all visible as a new depth-2 entry. ``logs/`` is
+# deliberately excluded: the log-pollution leak is an APPEND to an existing file
+# (not a new path, so a path snapshot cannot catch it anyway), and it is already
+# prevented structurally by the ``_plan_base_dir_sandbox`` PLAN_BASE_DIR redirect.
+_PLAN_LOCAL_LEAK_DIRS = ('worktrees', 'plans', 'lessons-learned')
+
+
+def _snapshot_real_plan_local() -> set[str]:
+    """Snapshot a SHALLOW path listing of the real repo-local ``.plan/local/`` tree.
+
+    Returns a set of relative path strings (empty if the directory does not
+    exist). ``run-configuration.json`` is excluded so legitimate build-harness
+    telemetry writes never register as pollution. The set return type lets the
+    guard compute a pure ``after - before`` difference, so only NEW entries
+    count as leaks (pre-existing developer state is ignored).
+
+    Intentionally SHALLOW (depth-1 of ``.plan/local/`` plus depth-2 into the
+    small leak-prone container dirs) — NOT ``rglob('*')``. A recursive walk
+    descends into every worktree under ``.plan/local/worktrees/`` (each a full
+    repo checkout) and the deep ``logs/`` tree, which made this O(100k+) per
+    call and, running before+after every test, dominated the whole suite's
+    wall-clock. The documented leaks (orphan worktree dirs, stray plan/lesson
+    dirs) all surface at depth ≤2, so the shallow scan preserves detection at a
+    fraction of the cost.
+    """
+    if not _REAL_PLAN_LOCAL.exists():
+        return set()
+    snapshot: set[str] = set()
+    try:
+        for child in _REAL_PLAN_LOCAL.iterdir():
+            if child.name in _PLAN_LOCAL_IGNORED_BASENAMES:
+                continue
+            snapshot.add(child.name)
+    except OSError:
+        return snapshot
+    for container in _PLAN_LOCAL_LEAK_DIRS:
+        sub = _REAL_PLAN_LOCAL / container
+        if not sub.is_dir():
+            continue
+        try:
+            for entry in sub.iterdir():
+                snapshot.add(f'{container}/{entry.name}')
+        except OSError:
+            pass
+    return snapshot
+
+
 @pytest.fixture(autouse=True)
 def _pollution_guard(request):
     """Fail loudly if a test mutates the real ``~/.plan-marshall-credentials/``
-    directory.
+    directory or adds entries to the real repo-local ``.plan/local/`` tree.
 
-    Any test that legitimately needs to exercise the real credentials path
-    (none expected today) can opt out with ``@pytest.mark.allow_pollution``.
+    The ``.plan/local/`` arm backstops the ``_plan_base_dir_sandbox`` autouse
+    default (deliverable 1): that fixture redirects ``PLAN_BASE_DIR`` into a
+    per-test tmp sandbox so writes into the real tree become structurally
+    impossible. This guard verifies the redirect actually held — if any
+    non-opted-out test leaks a new path into ``.plan/local/``, it fails loudly
+    with the offending nodeid and the path delta rather than silently passing.
+
+    Only NEW ``.plan/local/`` entries count (``after - before`` set difference),
+    so pre-existing developer state never trips the guard. Each xdist worker
+    computes its own before/after snapshot inside its own process, so the guard
+    is worker-safe with no cross-worker shared state.
+
+    Any test that legitimately needs to exercise the real credentials path or
+    the real tracked ``.plan/`` tree can opt out with the shared
+    ``@pytest.mark.allow_pollution`` marker (the same marker the autouse
+    ``_plan_base_dir_sandbox`` honours — no second marker is introduced).
     """
     if request.node.get_closest_marker('allow_pollution'):
         yield
         return
 
     before_creds = _snapshot_real_paths()
+    before_plan_local = _snapshot_real_plan_local()
     yield
     after_creds = _snapshot_real_paths()
+    after_plan_local = _snapshot_real_plan_local()
 
     if before_creds != after_creds:
         pytest.fail(
@@ -492,14 +595,90 @@ def _pollution_guard(request):
             'or mark with @pytest.mark.allow_pollution if intentional.'
         )
 
+    new_plan_local = after_plan_local - before_plan_local
+    if new_plan_local:
+        pytest.fail(
+            f'Pollution guard: test {request.node.nodeid} leaked into the real '
+            f'{_REAL_PLAN_LOCAL} tree:\n  '
+            f'New entries: {sorted(new_plan_local)}'
+            '\n\nThe autouse _plan_base_dir_sandbox fixture should have redirected '
+            'PLAN_BASE_DIR into a tmp sandbox — a leak here means the test (or a '
+            'subprocess it spawned) resolved the real base dir instead. Ensure the '
+            'test relies on the autouse sandbox (do not unset PLAN_BASE_DIR), or '
+            'mark with @pytest.mark.allow_pollution if the real-tree write is '
+            'intentional.'
+        )
+
 
 def pytest_configure(config):
-    """Register the allow_pollution marker used by _pollution_guard."""
+    """Register markers used by the isolation fixtures and pollution guard."""
     config.addinivalue_line(
         'markers',
         'allow_pollution: test may legitimately mutate the real '
-        '~/.plan-marshall-credentials/ directory (bypasses the pollution guard).',
+        '~/.plan-marshall-credentials/ directory or the tracked .plan/ tree '
+        '(opts out of the autouse PLAN_BASE_DIR sandbox and the pollution guard).',
     )
+    config.addinivalue_line(
+        'markers',
+        'xdist_group(name): pin all tests sharing the same group name to a '
+        'single xdist worker (requires --dist=loadgroup).',
+    )
+
+
+@pytest.fixture(autouse=True)
+def _plan_base_dir_sandbox(request, tmp_path_factory, monkeypatch):
+    """Default ``PLAN_BASE_DIR`` to a per-test, xdist-worker-safe tmp sandbox.
+
+    This is the root-cause isolation fix: rather than monkeypatching
+    ``PLAN_BASE_DIR`` in each test that touches plan-marshall runtime state,
+    EVERY test is redirected into an isolated sandbox directory by default.
+    ``file_ops.get_base_dir()`` (the sole base-dir resolver) and every derived
+    path (worktrees / logs / plans / lessons / findings / metrics) — plus
+    ``plan_logging`` which delegates to it — resolve into the sandbox, so writes
+    into the real repo ``.plan/local/`` tree become structurally impossible.
+
+    Tests that intentionally exercise the real tracked ``.plan/`` tree opt out
+    with ``@pytest.mark.allow_pollution``; for those the fixture is a no-op and
+    the real resolvers fall back to the repo tree as before.
+
+    xdist-safety: the sandbox is derived from ``tmp_path_factory``, whose
+    ``getbasetemp()`` is already per-worker under ``-n`` runs (each worker owns a
+    distinct ``…/popen-gw{N}/`` base), so two workers never collide on the same
+    sandbox path.
+
+    Composition with ``plan_context``: this autouse fixture runs first and sets
+    a default; the explicit ``plan_context`` fixture (when requested) sets its
+    own ``PLAN_BASE_DIR=tmp_path`` afterwards and therefore wins. ``BuildContext``
+    / ``PlanContext`` likewise set their own ``PLAN_BASE_DIR`` and override the
+    default.
+
+    Subprocess propagation: the set is applied via ``monkeypatch.setenv`` so it
+    lands in ``os.environ``; the ``run_script`` helper copies the live
+    environment (``os.environ.copy()``), so child ``execute-script.py`` processes
+    inherit the sandbox path and cannot write to the real tree either.
+    """
+    if request.node.get_closest_marker('allow_pollution'):
+        # Real-tree tests must see the genuine resolvers — do not redirect.
+        yield
+        return
+
+    sandbox = tmp_path_factory.mktemp('plan-base-sandbox')
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(sandbox))
+    monkeypatch.setenv('PLAN_DIR_NAME', PLAN_DIR_NAME)
+
+    # Redirect in-process callers too. ``_config_core`` caches the resolved
+    # paths at module-import time, so an env-var set alone does not reach
+    # already-imported callers; patch the module attributes the same way
+    # ``plan_context`` / ``PlanContext`` do. Imported lazily to avoid a
+    # top-level import cycle during test bootstrap.
+    import _config_core  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', sandbox)
+    monkeypatch.setattr(_config_core, 'MARSHAL_PATH', sandbox / 'marshal.json')
+    monkeypatch.setattr(_config_core, 'RUN_CONFIG_PATH', sandbox / 'run-configuration.json')
+
+    yield
 
 
 @pytest.fixture

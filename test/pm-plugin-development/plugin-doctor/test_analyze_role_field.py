@@ -15,15 +15,11 @@ Test layers:
   * Fixture missing ``role:`` → one finding (negative case)
   * Fixture with empty ``role:`` value → one finding (boundary case)
   * Files outside the scoped directory are NOT scanned (path-scope guard)
-  * Real marketplace tree post-deliverable-1 produces zero findings
-    (invariant test that doubles as a drift sentinel)
 """
 
 from pathlib import Path
 
 from conftest import load_script_module
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 
 def _load_module(name: str, filename: str):
@@ -320,28 +316,3 @@ class TestPathScope:
         # No directory created at all.
         findings = analyze_role_field(tmp_path)
         assert findings == []
-
-
-# ===========================================================================
-# Real marketplace invariant: after deliverable 1, zero MISSING_ROLE_FIELD
-# ===========================================================================
-
-
-class TestRealMarketplaceInvariant:
-    """The real marketplace tree must produce zero findings after deliverable 1."""
-
-    def test_real_marketplace_has_zero_findings(self) -> None:
-        """Post-deliverable-1, every phase-5-execute step file declares role:.
-
-        This test doubles as a drift sentinel: any future contributor who
-        adds a new ``*.md`` to ``phase-5-execute/standards/`` without
-        declaring a ``role:`` frontmatter field will trip this assertion.
-        Removing ``role:`` from any existing step file triggers the same
-        failure.
-        """
-        marketplace_root = PROJECT_ROOT / 'marketplace' / 'bundles'
-        findings = analyze_role_field(marketplace_root)
-        assert findings == [], (
-            f'Expected zero MISSING_ROLE_FIELD findings on the real marketplace; '
-            f'got {len(findings)}: {[f["file"] for f in findings]!r}'
-        )

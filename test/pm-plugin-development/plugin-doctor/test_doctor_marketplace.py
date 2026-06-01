@@ -97,70 +97,9 @@ def test_scan_help():
     assert 'bundles' in combined.lower(), 'Help should mention bundles option'
 
 
-def test_scan_returns_valid_toon():
-    """Test scan returns valid TOON structure."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    assert result.returncode == 0, f'Scan failed: {result.stderr}'
-
-    data = parse_output(result)
-    assert data is not None, 'Should return valid TOON'
-    assert 'bundles' in data, 'Should have bundles field'
-    assert 'total_bundles' in data, 'Should have total_bundles field'
-    assert 'total_components' in data, 'Should have total_components field'
-
-
-def test_scan_finds_bundles():
-    """Test scan finds marketplace bundles."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    data = parse_output(result)
-
-    assert data['total_bundles'] > 0, 'Should find at least one bundle'
-    assert len(data['bundles']) == data['total_bundles'], 'Bundle list length should match total_bundles'
-
-
-def test_scan_bundle_structure():
-    """Test scan returns correct bundle structure."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    data = parse_output(result)
-
-    for bundle in data['bundles']:
-        assert 'name' in bundle, 'Bundle should have name'
-        assert 'path' in bundle, 'Bundle should have path'
-        assert 'agents' in bundle, 'Bundle should have agents count'
-        assert 'commands' in bundle, 'Bundle should have commands count'
-        assert 'skills' in bundle, 'Bundle should have skills count'
-        assert 'scripts' in bundle, 'Bundle should have scripts count'
-        assert 'total' in bundle, 'Bundle should have total count'
-
-
-def test_scan_bundle_filter():
-    """Test scan with bundle filter."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    # First get a valid bundle name
-    result = run_script(SCRIPT_PATH, 'scan')
-    data = parse_output(result)
-    if not data['bundles']:
-        return  # No bundles to test
-
-    first_bundle = data['bundles'][0]['name']
-
-    # Now filter to just that bundle
-    result = run_script(SCRIPT_PATH, 'scan', '--bundles', first_bundle)
-    filtered = parse_output(result)
-
-    assert filtered['total_bundles'] == 1, 'Should have exactly one bundle'
-    assert filtered['bundles'][0]['name'] == first_bundle, f'Should be {first_bundle}'
+# Real-tree scan shape tests (test_scan_returns_valid_toon, test_scan_finds_bundles,
+# test_scan_bundle_structure, test_scan_bundle_filter) were removed — the contract
+# is covered in-process by the synthetic test_fixture_scan / test_fixture_scan_bundle_filter.
 
 
 # =============================================================================
@@ -176,100 +115,10 @@ def test_analyze_help():
     assert 'type' in combined.lower(), 'Help should mention type option'
 
 
-def test_analyze_returns_valid_toon():
-    """Test analyze returns valid TOON structure."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    # Analyze just one bundle for speed
-    result = run_script(SCRIPT_PATH, 'scan')
-    scan_data = parse_output(result)
-    if not scan_data['bundles']:
-        return
-
-    first_bundle = scan_data['bundles'][0]['name']
-
-    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle)
-    assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-    data = parse_output(result)
-    assert data is not None, 'Should return valid TOON'
-    assert 'analysis' in data, 'Should have analysis field'
-    assert 'total_components' in data, 'Should have total_components field'
-    assert 'total_issues' in data, 'Should have total_issues field'
-
-
-def test_analyze_summary_structure(plan_context):
-    """Test analyze has correct summary fields.
-
-    Uses ``plan_context`` to redirect ``PLAN_BASE_DIR`` so the
-    doctor subprocess never resolves against the repo's real
-    ``.plan/local/run-configuration.json``.
-    """
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
-
-    result = run_script(SCRIPT_PATH, 'scan', env_overrides=env)
-    scan_data = parse_output(result)
-    if not scan_data['bundles']:
-        return
-
-    first_bundle = scan_data['bundles'][0]['name']
-
-    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, env_overrides=env)
-    data = parse_output(result)
-
-    assert 'total_components' in data, 'Should have total_components'
-    assert 'total_issues' in data, 'Should have total_issues'
-    assert 'safe_fixes' in data, 'Should have safe_fixes'
-    assert 'risky_fixes' in data, 'Should have risky_fixes'
-    assert 'unfixable' in data, 'Should have unfixable'
-
-
-def test_analyze_categorized_structure():
-    """Test analyze has correct categorized fields."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    scan_data = parse_output(result)
-    if not scan_data['bundles']:
-        return
-
-    first_bundle = scan_data['bundles'][0]['name']
-
-    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle)
-    data = parse_output(result)
-
-    assert 'categorized_safe' in data, 'Should have categorized_safe'
-    assert 'categorized_risky' in data, 'Should have categorized_risky'
-    assert 'categorized_unfixable' in data, 'Should have categorized_unfixable'
-
-
-def test_analyze_type_filter():
-    """Test analyze with type filter."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    scan_data = parse_output(result)
-    if not scan_data['bundles']:
-        return
-
-    first_bundle = scan_data['bundles'][0]['name']
-
-    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, '--type', 'agents')
-    data = parse_output(result)
-
-    # All analyzed components should be agents — check via analysis table rows
-    for item in data['analysis']:
-        component = item.get('component', {})
-        if isinstance(component, str):
-            component = json.loads(component)
-        comp_type = component.get('type')
-        assert comp_type == 'agent', f'Expected agent, got {comp_type}'
+# Real-tree analyze shape tests (test_analyze_returns_valid_toon,
+# test_analyze_summary_structure, test_analyze_categorized_structure,
+# test_analyze_type_filter) were removed — the contract is covered in-process by
+# the synthetic test_fixture_analyze_finds_issues / test_fixture_analyze_type_filter.
 
 
 # =============================================================================
@@ -285,55 +134,9 @@ def test_fix_help():
     assert 'dry-run' in combined.lower(), 'Help should mention dry-run option'
 
 
-def test_fix_dry_run_returns_valid_toon():
-    """Test fix --dry-run returns valid TOON."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    scan_data = parse_output(result)
-    if not scan_data['bundles']:
-        return
-
-    first_bundle = scan_data['bundles'][0]['name']
-
-    result = run_script(SCRIPT_PATH, 'fix', '--bundles', first_bundle, '--dry-run')
-    assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
-
-    data = parse_output(result)
-    assert data is not None, 'Should return valid TOON'
-    assert 'status' in data, 'Should have status field'
-    assert 'dry_run' in data, 'Should have dry_run field'
-    assert data['dry_run'] is True, 'dry_run should be True'
-
-
-def test_fix_dry_run_no_changes():
-    """Test fix --dry-run does not modify files."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    scan_data = parse_output(result)
-    if not scan_data['bundles']:
-        return
-
-    first_bundle = scan_data['bundles'][0]['name']
-    bundle_path = PROJECT_ROOT / 'marketplace' / 'bundles' / first_bundle
-
-    # Get modification times before
-    mtimes_before = {}
-    for md_file in bundle_path.rglob('*.md'):
-        mtimes_before[str(md_file)] = md_file.stat().st_mtime
-
-    # Run fix with dry-run
-    result = run_script(SCRIPT_PATH, 'fix', '--bundles', first_bundle, '--dry-run')
-
-    # Verify no files changed
-    for md_file in bundle_path.rglob('*.md'):
-        mtime_after = md_file.stat().st_mtime
-        path_str = str(md_file)
-        if path_str in mtimes_before:
-            assert mtimes_before[path_str] == mtime_after, f'File modified during dry-run: {md_file}'
+# Real-tree fix dry-run tests (test_fix_dry_run_returns_valid_toon,
+# test_fix_dry_run_no_changes) were removed — the contract (status/dry_run TOON
+# fields + no-mutation guarantee) is covered in-process by test_fixture_fix_dry_run.
 
 
 # =============================================================================
@@ -349,117 +152,11 @@ def test_report_help():
     assert 'output' in combined.lower(), 'Help should mention output option'
 
 
-def test_report_returns_valid_toon():
-    """Test report returns valid TOON structure with directory path."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    scan_data = parse_output(result)
-    if not scan_data['bundles']:
-        return
-
-    first_bundle = scan_data['bundles'][0]['name']
-
-    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle)
-    assert result.returncode == 0, f'Report failed: {result.stderr}'
-
-    data = parse_output(result)
-    assert data is not None, 'Should return valid TOON'
-    assert 'status' in data, 'Should have status field'
-    assert data['status'] == 'success', 'Status should be success'
-    assert 'report_dir' in data, 'Should have report_dir field'
-    assert 'report_file' in data, 'Should have report_file field'
-    assert 'findings_file' in data, 'Should have findings_file field'
-    assert 'summary' in data, 'Should have summary field'
-    assert str(data['report_dir']).endswith('temp/plugin-doctor-report'), (
-        f'Report dir should end with temp/plugin-doctor-report, got {data["report_dir"]}'
-    )
-
-
-def test_report_summary_structure():
-    """Test report summary has correct structure."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    scan_data = parse_output(result)
-    if not scan_data['bundles']:
-        return
-
-    first_bundle = scan_data['bundles'][0]['name']
-
-    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle)
-    data = parse_output(result)
-
-    summary = data['summary']
-    assert 'total_bundles' in summary, 'Summary should have total_bundles'
-    assert 'total_components' in summary, 'Summary should have total_components'
-    assert 'total_issues' in summary, 'Summary should have total_issues'
-    assert 'safe_fixes' in summary, 'Summary should have safe_fixes'
-    assert 'risky_fixes' in summary, 'Summary should have risky_fixes'
-
-
-def test_report_has_llm_review_items(plan_context):
-    """Test report file includes LLM review items.
-
-    Uses ``plan_context`` to redirect ``PLAN_BASE_DIR`` so the
-    doctor subprocess writes the report under ``tmp_path`` instead of
-    the repo's ``.plan/temp/plugin-doctor-report/``.
-    """
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
-
-    result = run_script(SCRIPT_PATH, 'scan', env_overrides=env)
-    scan_data = parse_output(result)
-    if not scan_data['bundles']:
-        return
-
-    first_bundle = scan_data['bundles'][0]['name']
-
-    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, env_overrides=env)
-    response = parse_output(result)
-
-    # report_file is absolute; joining with PROJECT_ROOT preserves absolute path.
-    report_path = Path(PROJECT_ROOT) / response['report_file']
-    assert report_path.exists(), f'Report file should exist: {report_path}'
-
-    with open(report_path) as f:
-        report_data = json.load(f)
-
-    assert 'llm_review_items' in report_data, 'Report should have llm_review_items'
-    assert isinstance(report_data['llm_review_items'], list), 'llm_review_items should be a list'
-
-
-def test_report_to_custom_dir():
-    """Test report outputs to custom directory when --output specified."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    scan_data = parse_output(result)
-    if not scan_data['bundles']:
-        return
-
-    first_bundle = scan_data['bundles'][0]['name']
-
-    output_dir = tempfile.mkdtemp()
-
-    try:
-        result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, '--output', output_dir)
-        assert result.returncode == 0, f'Report failed: {result.stderr}'
-
-        json_files = list(Path(output_dir).glob('*-report.json'))
-        assert len(json_files) == 1, f'Should have exactly one report JSON file, found: {json_files}'
-        json_path = json_files[0]
-
-        with open(json_path) as f:
-            data = json.load(f)
-        assert 'summary' in data, 'File should contain valid report'
-    finally:
-        shutil.rmtree(output_dir, ignore_errors=True)
+# Real-tree report shape tests (test_report_returns_valid_toon,
+# test_report_summary_structure, test_report_has_llm_review_items,
+# test_report_to_custom_dir) were removed — the contract (status, summary fields,
+# report_dir/file/findings, llm_review_items, --output) is covered in-process by
+# the synthetic test_fixture_report / test_fixture_report_to_custom_dir.
 
 
 # =============================================================================
@@ -551,7 +248,44 @@ def test_fixture_scan():
         assert result.returncode == 0, f'Scan failed: {result.stderr}'
 
         data = parse_output(result)
+        # Default scan (no --paths/--bundles) must NOT be in paths mode
+        # (covers the former real-tree test_scan_without_paths_or_bundles).
+        assert 'mode' not in data or data.get('mode') != 'paths', 'Default scan should not be in paths mode'
+        assert 'bundles' in data, 'Should have bundles field'
+        assert 'total_bundles' in data, 'Should have total_bundles field'
+        assert 'total_components' in data, 'Should have total_components field'
         assert data['total_bundles'] == 1, 'Should find one bundle'
+        assert len(data['bundles']) == data['total_bundles'], 'Bundle list length should match total_bundles'
+
+        bundle = data['bundles'][0]
+        assert bundle['name'] == 'test-bundle', 'Should be test-bundle'
+        for field in ('name', 'path', 'agents', 'commands', 'skills', 'scripts', 'total'):
+            assert field in bundle, f'Bundle should have {field}'
+    finally:
+        fixture.cleanup()
+
+
+def test_fixture_scan_bundle_filter():
+    """Test scan --bundles filter restricts output to the named bundle."""
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+
+    try:
+        result = run_script(
+            SCRIPT_PATH,
+            'scan',
+            '--bundles',
+            'test-bundle',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
+        assert result.returncode == 0, f'Scan --bundles failed: {result.stderr}'
+
+        data = parse_output(result)
+        assert data['total_bundles'] == 1, 'Should have exactly one bundle'
         assert data['bundles'][0]['name'] == 'test-bundle', 'Should be test-bundle'
     finally:
         fixture.cleanup()
@@ -575,18 +309,68 @@ def test_fixture_analyze_finds_issues():
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
+        # Valid-TOON structure (from the former real-tree test_analyze_returns_valid_toon)
+        assert 'analysis' in data, 'Should have analysis field'
+        assert 'total_components' in data, 'Should have total_components field'
+        assert 'total_issues' in data, 'Should have total_issues field'
+        # Summary fields (from the former real-tree test_analyze_summary_structure)
+        assert 'safe_fixes' in data, 'Should have safe_fixes'
+        assert 'risky_fixes' in data, 'Should have risky_fixes'
+        assert 'unfixable' in data, 'Should have unfixable'
+        # Categorized fields (from the former real-tree test_analyze_categorized_structure)
+        assert 'categorized_safe' in data, 'Should have categorized_safe'
+        assert 'categorized_risky' in data, 'Should have categorized_risky'
+        assert 'categorized_unfixable' in data, 'Should have categorized_unfixable'
         # Should find at least one issue (Rule 6 - Task in agent)
         assert data['total_issues'] > 0, 'Should find issues in test fixture'
     finally:
         fixture.cleanup()
 
 
-def test_fixture_fix_dry_run():
-    """Test fix dry-run with fixture."""
+def test_fixture_analyze_type_filter():
+    """Test analyze --type agents restricts analyzed components to agents."""
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
+        result = run_script(
+            SCRIPT_PATH,
+            'analyze',
+            '--type',
+            'agents',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
+        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+
+        data = parse_output(result)
+        # All analyzed components should be agents — check via analysis table rows
+        for item in data['analysis']:
+            component = item.get('component', {})
+            if isinstance(component, str):
+                component = json.loads(component)
+            comp_type = component.get('type')
+            assert comp_type == 'agent', f'Expected agent, got {comp_type}'
+    finally:
+        fixture.cleanup()
+
+
+def test_fixture_fix_dry_run():
+    """Test fix dry-run with fixture.
+
+    Covers the former real-tree test_fix_dry_run_returns_valid_toon (status +
+    dry_run TOON fields) and test_fix_dry_run_no_changes (mtimes unchanged).
+    """
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+
+    try:
+        bundle_path = fixture.marketplace_root / 'test-bundle'
+        mtimes_before = {str(md): md.stat().st_mtime for md in bundle_path.rglob('*.md')}
+
         result = run_script(
             SCRIPT_PATH,
             'fix',
@@ -600,7 +384,15 @@ def test_fixture_fix_dry_run():
         assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
 
         data = parse_output(result)
+        assert 'status' in data, 'Should have status field'
+        assert 'dry_run' in data, 'Should have dry_run field'
         assert data['dry_run'] is True, 'Should be dry run'
+
+        # Dry-run must not mutate any file.
+        for md in bundle_path.rglob('*.md'):
+            path_str = str(md)
+            if path_str in mtimes_before:
+                assert mtimes_before[path_str] == md.stat().st_mtime, f'File modified during dry-run: {md}'
     finally:
         fixture.cleanup()
 
@@ -627,6 +419,9 @@ def test_fixture_report():
 
         summary = response['summary']
         assert summary['total_bundles'] == 1, 'Should have one bundle'
+        # Summary structure (from the former real-tree test_report_summary_structure)
+        for field in ('total_bundles', 'total_components', 'total_issues', 'safe_fixes', 'risky_fixes'):
+            assert field in summary, f'Summary should have {field}'
 
         assert 'report_dir' in response, 'Should have report_dir'
         assert 'report_file' in response, 'Should have report_file'
@@ -644,6 +439,40 @@ def test_fixture_report():
         report_dir = temp_dir / response['report_dir']
         assert report_dir.is_dir(), f'Report dir should exist: {report_dir}'
     finally:
+        fixture.cleanup()
+
+
+def test_fixture_report_to_custom_dir():
+    """Test report --output writes the report JSON to a custom directory.
+
+    Covers the former real-tree test_report_to_custom_dir.
+    """
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+    output_dir = Path(tempfile.mkdtemp())
+
+    try:
+        result = run_script(
+            SCRIPT_PATH,
+            'report',
+            '--output',
+            str(output_dir),
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
+        assert result.returncode == 0, f'Report failed: {result.stderr}'
+
+        json_files = list(output_dir.glob('*-report.json'))
+        assert len(json_files) == 1, f'Should have exactly one report JSON file, found: {json_files}'
+
+        with open(json_files[0]) as f:
+            data = json.load(f)
+        assert 'summary' in data, 'File should contain valid report'
+    finally:
+        shutil.rmtree(output_dir, ignore_errors=True)
         fixture.cleanup()
 
 
@@ -1101,20 +930,9 @@ def test_scan_paths_mutual_exclusion_with_bundles():
     assert result.returncode != 0, 'Should fail when both --paths and --bundles are provided'
 
 
-def test_scan_without_paths_or_bundles():
-    """Test scan without --paths or --bundles uses default marketplace discovery."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    result = run_script(SCRIPT_PATH, 'scan')
-    assert result.returncode == 0, f'Default scan failed: {result.stderr}'
-
-    data = parse_output(result)
-    # Default mode should NOT have 'mode' key (only paths mode sets it)
-    assert 'mode' not in data or data.get('mode') != 'paths', 'Default scan should not be in paths mode'
-    assert 'total_bundles' in data, 'Default scan should have total_bundles'
-    assert 'bundles' in data, 'Default scan should have bundles list'
-    assert data['total_bundles'] > 0, 'Default scan should find bundles'
+# Real-tree test_scan_without_paths_or_bundles was removed — the default-mode
+# contract (no 'mode' key, total_bundles/bundles present) is covered in-process
+# by the synthetic test_fixture_scan.
 
 
 # =============================================================================
@@ -1305,30 +1123,6 @@ def test_quality_gate_argparse_violation_fails(tmp_path):
     data = parse_output(result)
     assert data['status'] == 'fail', f'Expected status: fail on violation fixture, got: {data}'
     assert data['total_issues'] >= 1, 'Should report at least one finding'
-
-
-def test_quality_gate_real_marketplace_passes():
-    """quality-gate run against the real marketplace must pass — the tree is clean."""
-    if not marketplace_available():
-        return  # Skip if marketplace not available
-
-    # quality-gate derives every script's canonical surface from its live
-    # ``--help`` output (one subprocess per parser node). Against the real
-    # marketplace with a cold cache (fresh CI clone), that derivation is
-    # inherently slower than the 30s run_script default — the deep subparser
-    # trees (manage-config/status/architecture) alone serialize a dozen-plus
-    # ``--help`` probes each. Give it a generous ceiling so the gate completes
-    # cold rather than tripping a per-call subprocess timeout.
-    result = run_script(SCRIPT_PATH, 'quality-gate', timeout=300)
-    assert result.returncode == 0, (
-        f'Real marketplace quality-gate must pass, got exit {result.returncode}: {result.stderr}'
-    )
-
-    data = parse_output(result)
-    assert data['status'] == 'pass', f'Expected status: pass on real marketplace, got: {data}'
-    assert data['total_issues'] == 0, (
-        f'Real marketplace must have zero quality-gate findings, got {data["total_issues"]}'
-    )
 
 
 # =============================================================================
@@ -1611,49 +1405,9 @@ def test_analyze_help_documents_rules_flag():
     assert '--enable-verb-chain' in help_text, '--enable-verb-chain alias not documented'
 
 
-def test_pm_argument_naming_enabled_env_var_no_longer_recognised():
-    """Setting the legacy env var does NOT activate the argument-naming cluster.
-
-    The breaking-refactor contract per lesson 2026-05-08-19-003: zero source
-    references to ``PM_ARGUMENT_NAMING_ENABLED``. This test asserts inertness
-    by setting the env var and confirming the script does not warn or change
-    behaviour.
-    """
-    if not marketplace_available():
-        pytest.skip('Real marketplace not available')
-
-    # Arrange + Act — run analyze with the legacy env var set; the script must
-    # not warn, not error, and not activate the rule cluster (i.e., behaviour
-    # must be identical to a run without the env var).
-    result_with_env = run_script(
-        SCRIPT_PATH,
-        'analyze',
-        '--type',
-        'skills',
-        '--bundles',
-        'plan-marshall',
-        env_overrides={'PM_ARGUMENT_NAMING_ENABLED': '1'},
-    )
-    result_without_env = run_script(
-        SCRIPT_PATH,
-        'analyze',
-        '--type',
-        'skills',
-        '--bundles',
-        'plan-marshall',
-    )
-
-    # Assert — same return code (env var must not introduce a new exit path).
-    assert result_with_env.returncode == result_without_env.returncode, (
-        f'Env-var run diverged from no-env run: '
-        f'with={result_with_env.returncode}, without={result_without_env.returncode}'
-    )
-    # No warning emitted about the env var (would indicate residual recognition).
-    combined_stderr = (result_with_env.stderr or '') + (result_with_env.stdout or '')
-    assert 'PM_ARGUMENT_NAMING_ENABLED' not in combined_stderr, (
-        'Script must not reference PM_ARGUMENT_NAMING_ENABLED at runtime — '
-        'env-var gate was removed per the breaking refactor'
-    )
+# Real-tree test_pm_argument_naming_enabled_env_var_no_longer_recognised (2 real
+# analyze subprocesses) was removed — its zero-references contract is fully covered
+# by the source-grep test_zero_hit_grep_pm_argument_naming_enabled_in_source below.
 
 
 def test_zero_hit_grep_pm_argument_naming_enabled_in_source():

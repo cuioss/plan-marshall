@@ -1,11 +1,36 @@
 #!/usr/bin/env python3
 """Tests for provider loading from marshal.json declarations."""
 
-import json
-
 from _providers_core import load_declared_providers  # type: ignore[import-not-found]
 
 import conftest  # noqa: F401
+from _providers_fixtures import stage_marshal
+
+
+_SONAR_PROVIDER_CONFIG = {
+    'providers': [
+        {
+            'skill_name': 'workflow-integration-sonar',
+            'display_name': 'SonarCloud / SonarQube',
+            'auth_type': 'token',
+            'default_url': 'https://sonarcloud.io',
+            'header_name': 'Authorization',
+            'header_value_template': 'Bearer {token}',
+            'verify_endpoint': '/api/system/status',
+            'verify_method': 'GET',
+            'description': 'SonarCloud integration',
+        },
+    ],
+}
+
+_GITHUB_PROVIDER = {
+    'skill_name': 'workflow-integration-github',
+    'display_name': 'GitHub CLI (gh)',
+    'auth_type': 'system',
+    'default_url': 'https://github.com',
+    'verify_command': 'gh auth status',
+    'description': 'GitHub integration',
+}
 
 
 class TestProviderLoadingFromMarshalJson:
@@ -13,24 +38,7 @@ class TestProviderLoadingFromMarshalJson:
 
     def test_loads_sonar_provider(self, tmp_path, monkeypatch):
         """Should load Sonar provider from marshal.json."""
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-        config = {
-            'providers': [
-                {
-                    'skill_name': 'workflow-integration-sonar',
-                    'display_name': 'SonarCloud / SonarQube',
-                    'auth_type': 'token',
-                    'default_url': 'https://sonarcloud.io',
-                    'header_name': 'Authorization',
-                    'header_value_template': 'Bearer {token}',
-                    'verify_endpoint': '/api/system/status',
-                    'verify_method': 'GET',
-                    'description': 'SonarCloud integration',
-                },
-            ],
-        }
-        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+        stage_marshal(tmp_path, monkeypatch, _SONAR_PROVIDER_CONFIG)
 
         providers = load_declared_providers()
         names = [p['skill_name'] for p in providers]
@@ -38,24 +46,7 @@ class TestProviderLoadingFromMarshalJson:
 
     def test_sonar_provider_fields(self, tmp_path, monkeypatch):
         """Sonar provider must have correct configuration."""
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-        config = {
-            'providers': [
-                {
-                    'skill_name': 'workflow-integration-sonar',
-                    'display_name': 'SonarCloud / SonarQube',
-                    'auth_type': 'token',
-                    'default_url': 'https://sonarcloud.io',
-                    'header_name': 'Authorization',
-                    'header_value_template': 'Bearer {token}',
-                    'verify_endpoint': '/api/system/status',
-                    'verify_method': 'GET',
-                    'description': 'SonarCloud integration',
-                },
-            ],
-        }
-        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+        stage_marshal(tmp_path, monkeypatch, _SONAR_PROVIDER_CONFIG)
 
         providers = load_declared_providers()
         sonar = next(p for p in providers if p['skill_name'] == 'workflow-integration-sonar')
@@ -69,30 +60,29 @@ class TestProviderLoadingFromMarshalJson:
 
     def test_returns_list(self, tmp_path, monkeypatch):
         """load_declared_providers always returns a list."""
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-        (tmp_path / '.plan' / 'marshal.json').write_text('{"providers": []}')
+        stage_marshal(tmp_path, monkeypatch, {'providers': []})
 
         providers = load_declared_providers()
         assert isinstance(providers, list)
 
     def test_returns_empty_when_no_marshal_json(self, tmp_path, monkeypatch):
         """Should return empty list when marshal.json does not exist."""
-        monkeypatch.chdir(tmp_path)
+        stage_marshal(tmp_path, monkeypatch, config=None)
         providers = load_declared_providers()
         assert providers == []
 
     def test_multiple_providers(self, tmp_path, monkeypatch):
         """Should load multiple providers from marshal.json."""
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-        config = {
-            'providers': [
-                {'skill_name': 'provider-a', 'auth_type': 'token'},
-                {'skill_name': 'provider-b', 'auth_type': 'system'},
-            ],
-        }
-        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {
+                'providers': [
+                    {'skill_name': 'provider-a', 'auth_type': 'token'},
+                    {'skill_name': 'provider-b', 'auth_type': 'system'},
+                ],
+            },
+        )
 
         providers = load_declared_providers()
         assert len(providers) == 2
@@ -106,21 +96,7 @@ class TestCIProviderFromMarshalJson:
 
     def test_loads_github_provider(self, tmp_path, monkeypatch):
         """Should load GitHub CI provider from marshal.json."""
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-        config = {
-            'providers': [
-                {
-                    'skill_name': 'workflow-integration-github',
-                    'display_name': 'GitHub CLI (gh)',
-                    'auth_type': 'system',
-                    'default_url': 'https://github.com',
-                    'verify_command': 'gh auth status',
-                    'description': 'GitHub integration',
-                },
-            ],
-        }
-        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+        stage_marshal(tmp_path, monkeypatch, {'providers': [_GITHUB_PROVIDER]})
 
         providers = load_declared_providers()
         names = [p['skill_name'] for p in providers]
@@ -128,8 +104,6 @@ class TestCIProviderFromMarshalJson:
 
     def test_loads_gitlab_provider(self, tmp_path, monkeypatch):
         """Should load GitLab CI provider from marshal.json."""
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
         config = {
             'providers': [
                 {
@@ -142,7 +116,7 @@ class TestCIProviderFromMarshalJson:
                 },
             ],
         }
-        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+        stage_marshal(tmp_path, monkeypatch, config)
 
         providers = load_declared_providers()
         names = [p['skill_name'] for p in providers]
@@ -150,21 +124,7 @@ class TestCIProviderFromMarshalJson:
 
     def test_system_provider_has_no_http_auth_fields(self, tmp_path, monkeypatch):
         """System-auth providers loaded from marshal.json should not have HTTP auth fields."""
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-        config = {
-            'providers': [
-                {
-                    'skill_name': 'workflow-integration-github',
-                    'display_name': 'GitHub CLI (gh)',
-                    'auth_type': 'system',
-                    'default_url': 'https://github.com',
-                    'verify_command': 'gh auth status',
-                    'description': 'GitHub integration',
-                },
-            ],
-        }
-        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+        stage_marshal(tmp_path, monkeypatch, {'providers': [_GITHUB_PROVIDER]})
 
         providers = load_declared_providers()
         github = next(p for p in providers if p['skill_name'] == 'workflow-integration-github')

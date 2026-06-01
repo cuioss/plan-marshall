@@ -1,9 +1,9 @@
 """Build-time guard enforcing conftest.py discipline across the test tree.
 
-This test walks ``test/**/conftest.py`` and asserts that only the two sanctioned
-conftest modules exist: ``test/conftest.py`` (root) and ``test/adapters/conftest.py``
-(adapter-specific). Every other conftest.py is a sibling-fixture anti-pattern that
-must be renamed to ``_fixtures.py`` per the shared testing standards.
+This test walks ``test/**/conftest.py`` and asserts that only the sanctioned
+conftest module exists: ``test/conftest.py`` (root). Every other conftest.py is a
+sibling-fixture anti-pattern that must be renamed to ``_fixtures.py`` per the shared
+testing standards.
 
 Rationale: Sibling ``conftest.py`` files shadow each other during pytest discovery
 and silently leak fixtures across unrelated test modules. Renaming them to
@@ -18,7 +18,6 @@ from pathlib import Path
 ALLOWED_CONFTESTS: frozenset[str] = frozenset(
     {
         'test/conftest.py',
-        'test/adapters/conftest.py',
     }
 )
 

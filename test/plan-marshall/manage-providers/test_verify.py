@@ -6,6 +6,8 @@ Tests connectivity verification with mocked HTTP and system auth routing.
 
 from conftest import get_script_path, run_script
 
+from _providers_fixtures import stage_marshal
+
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
 
 
@@ -19,8 +21,16 @@ class TestVerifyCLI:
         output = result.stdout + result.stderr
         assert 'skill' in output.lower() or 'required' in output.lower()
 
-    def test_verify_unconfigured_skill_fails(self):
-        """Verify for unconfigured skill returns error."""
+    def test_verify_unconfigured_skill_fails(self, tmp_path, monkeypatch):
+        """Verify for unconfigured skill returns error.
+
+        Stage an empty marshal.json under an isolated PLAN_BASE_DIR so the
+        subprocess resolves a real (provider-free) marshal instead of the
+        autouse sandbox's missing-marshal path. ``stage_marshal`` sets the
+        ``PLAN_BASE_DIR`` env var, which ``run_script`` propagates to the
+        subprocess via ``os.environ.copy()``.
+        """
+        stage_marshal(tmp_path, monkeypatch, {'providers': []})
         result = run_script(SCRIPT_PATH, 'verify', '--skill', 'nonexistent-skill')
         assert result.returncode == 0
 
