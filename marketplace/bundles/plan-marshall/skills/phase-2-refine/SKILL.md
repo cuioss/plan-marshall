@@ -190,6 +190,8 @@ Four sub-analyses using `arch_context`:
 
 **Scope Size Estimation**: Derive `scope_estimate` from the `module_mapping` using the standard derivation helper (see `standards/refine-workflow-detail.md` Step 9 — Derivation Rules). Allowed values: `none | surgical | single_module | multi_module | broad`. The same enum and rule of thumb is documented in `manage-solution-outline:standards/solution-outline-standard.md` so the value flows unchanged into the solution outline. Persist the derived value to `references.json` via `manage-references set --field scope_estimate` and include it in the Step 13 return TOON.
 
+> **Coverage contract**: `scope_estimate` is the *scope* dial of the two-dial coverage contract; its orthogonal partner is *thoroughness* (how completely in-radius items are covered and how deeply their relations are traced). Refine defaults to roughly T2 / change-set unless the request signals otherwise. See the scope × thoroughness ladders, the grade-to-the-floor rule, and the coupling constraint in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).
+
 **Track Selection**: Determine `simple` vs `complex` track using hard-gate triggers:
 
 ```

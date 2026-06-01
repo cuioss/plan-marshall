@@ -40,6 +40,15 @@ Read: standards/argument-naming.md
 
 Covers typed-ID flags (`--lesson-id`, `--plan-id`, `--task-number`, `--module`, `--component`), read-verb canonicalization (`read` vs `get` vs `exists`), `--module` vs `--name`, and Python-stdlib log-level naming. Includes the canonical-forms table for in-scope `manage-*` scripts.
 
+### Step 4: Load the Coverage Contract (As Needed)
+
+**Scope × thoroughness** (load for any coverage-class work — sweeps, audits, refactors, refines, and any task whose value comes from how completely it covered a surface):
+```
+Read: standards/thoroughness.md
+```
+
+Covers the orthogonality of effort and thoroughness, the thoroughness ladder (T1–T5), the scope ladder, the grade-to-the-floor rule, the coupling constraint `reject thoroughness ≥ T4 ∧ scope < component`, and the floor-graded self-report.
+
 ## Hard Rules (never override)
 
 ### Bash: One command per call
@@ -117,6 +126,7 @@ When a plan runs in an isolated worktree, the canonical `{path}` is the worktree
 | agent-behavior-rules.md | Boy Scout Rule, ask users, research, tool usage, dependencies |
 | tool-usage-patterns.md | Tool selection, file operations, content search, Bash safety, build resolution |
 | argument-naming.md | Typed-ID flags, read-verb canonicalization, `--module` over `--name`, stdlib log-level names for `manage-*` scripts |
+| thoroughness.md | Scope × thoroughness coverage contract: thoroughness ladder (T1–T5), scope ladder, grade-to-the-floor rule, coupling constraint `reject thoroughness ≥ T4 ∧ scope < component`, floor-graded self-report |
 
 ## See Also
 

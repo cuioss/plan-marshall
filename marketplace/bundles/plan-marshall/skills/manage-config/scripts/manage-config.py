@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 
+from _cmd_coverage import cmd_coverage_read, cmd_coverage_resolve
 from _cmd_domain_detect import cmd_domain_detect
 from _cmd_effort import cmd_effort, cmd_effort_apply_preset, cmd_effort_resolve_target
 from _cmd_ext_defaults import cmd_ext_defaults
@@ -373,6 +374,57 @@ def main() -> int:
         ),
     )
 
+    # --- coverage ---
+    # Two-dial coverage contract: thoroughness (T1-T5) x scope
+    # (change-set..overall). The read/resolve verbs mirror the `effort`
+    # resolver's lookup shape (--phase / --role / --default), resolving each
+    # field independently and validating the scope<->thoroughness coupling
+    # constraint at lookup time.
+    p_coverage = subparsers.add_parser(
+        'coverage',
+        help='Resolve the per-phase coverage cell (thoroughness x scope)',
+        allow_abbrev=False,
+    )
+    coverage_sub = p_coverage.add_subparsers(dest='verb', required=True, help='Operation')
+
+    coverage_read = coverage_sub.add_parser(
+        'read',
+        help='Resolve the (thoroughness, scope) cell for a phase/role',
+        allow_abbrev=False,
+    )
+    coverage_read.add_argument(
+        '--role',
+        help='Phase group (e.g. "phase-5-execute"); synonym for --phase.',
+    )
+    coverage_read.add_argument(
+        '--phase',
+        help='Phase group (e.g. "phase-5-execute").',
+    )
+    coverage_read.add_argument(
+        '--default',
+        action='store_true',
+        help='Return `plan.coverage` directly (no phase/role lookup).',
+    )
+
+    coverage_resolve = coverage_sub.add_parser(
+        'resolve',
+        help='Resolve the coverage cell plus the coupling result for downstream consumers',
+        allow_abbrev=False,
+    )
+    coverage_resolve.add_argument(
+        '--role',
+        help='Phase group (same accepted forms as `coverage read --role`).',
+    )
+    coverage_resolve.add_argument(
+        '--phase',
+        help='Phase group; synonym for --role.',
+    )
+    coverage_resolve.add_argument(
+        '--default',
+        action='store_true',
+        help='Resolve via `plan.coverage` (no phase/role lookup).',
+    )
+
     # --- finalize-steps ---
     p_finalize_steps = subparsers.add_parser(
         'finalize-steps',
@@ -532,6 +584,14 @@ def main() -> int:
             result = cmd_effort_resolve_target(args)
         else:
             result = cmd_effort(args)
+    elif args.noun == 'coverage':
+        if not args.verb:
+            p_coverage.print_help()
+            return 2
+        if args.verb == 'resolve':
+            result = cmd_coverage_resolve(args)
+        else:
+            result = cmd_coverage_read(args)
     elif args.noun == 'finalize-steps':
         if not args.verb:
             p_finalize_steps.print_help()

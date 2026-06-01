@@ -212,6 +212,26 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute remove-step --step sonar_check
 ```
 
+### Coverage two-knob configuration
+
+Coverage is a two-dial contract — `thoroughness` (T1–T5) × `scope` (change-set…overall) — orthogonal to the `effort` model-tier dial. A per-phase override lives under the phase entry's `coverage` key; the plan-wide fallback is `plan.coverage`. The `read`/`resolve` verbs mirror the `effort` resolver's lookup shape, resolving each field independently and enforcing the scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) at lookup time. See [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md) § Coupling Constraint.
+
+```bash
+# Resolve the coverage cell for a phase
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  coverage read --phase phase-5-execute
+
+# Resolve cell + coupling result for downstream consumers (gate, budget)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  coverage resolve --phase phase-5-execute
+
+# Raw plan-wide fallback
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  coverage read --default
+```
+
+An incoherent stored cell (e.g. `thoroughness: T4`, `scope: change-set`) is rejected at lookup time with `error_type: coverage_coupling_violation`; unconfigured fields resolve to `inherit`.
+
 ### Resolve Skills for a Domain and Profile
 
 ```bash
@@ -684,6 +704,20 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort apply-preset \
   --preset PRESET
+```
+
+### coverage read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage read \
+  [--role ROLE] [--phase PHASE] [--default]
+```
+
+### coverage resolve
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage resolve \
+  [--role ROLE] [--phase PHASE] [--default]
 ```
 
 ### resolve-domain-skills
