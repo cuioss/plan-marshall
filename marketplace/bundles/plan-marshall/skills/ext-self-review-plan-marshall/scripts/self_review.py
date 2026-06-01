@@ -605,7 +605,39 @@ def _detect_keep_markers(
     return candidates, sorted(protected)
 
 
-def _detect_symmetric_pairs(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
+def _symmetric_pair_has_test(name: str, project_dir: Path) -> bool:
+    """Return True when the worktree's ``test/`` tree references ``name``.
+
+    Searches every ``*.py`` file under ``{project_dir}/test`` for a
+    word-boundary occurrence of the function name. The word-boundary guard
+    mirrors the identifier-first discipline used by ``_detect_keep_markers``:
+    the same ``(?<![a-zA-Z0-9_-])`` / ``(?![a-zA-Z0-9_-])`` lookarounds avoid
+    false-positive substring hits (e.g. ``save_state`` matching inside
+    ``save_state_v2``). The scan is read-only and stdlib-only; a missing
+    ``test/`` directory, an unreadable file, or no match yields ``False`` —
+    ``test_present=false`` is the Tier-2 missing-test signal.
+    """
+    test_root = project_dir / 'test'
+    if not test_root.is_dir():
+        return False
+    pattern = re.compile(
+        r'(?<![a-zA-Z0-9_-])' + re.escape(name) + r'(?![a-zA-Z0-9_-])'
+    )
+    try:
+        test_files = sorted(test_root.rglob('*.py'))
+    except OSError:
+        return False
+    for test_file in test_files:
+        try:
+            text = test_file.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        if pattern.search(text):
+            return True
+    return False
+
+
+def _detect_symmetric_pairs(added: list[tuple[str, int, str]], project_dir: Path) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for path, lineno, content in added:
         if not path.endswith('.py'):
@@ -637,6 +669,7 @@ def _detect_symmetric_pairs(added: list[tuple[str, int, str]]) -> list[dict[str,
                 'line': lineno,
                 'name': name,
                 'partner': partner_name,
+                'test_present': _symmetric_pair_has_test(name, project_dir),
             }
         )
     return out
@@ -763,7 +796,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     regexes = _detect_regexes(added)
     user_facing = _detect_user_facing_strings(added)
     md_sections = _detect_markdown_sections(added, project_dir)
-    sym_pairs = _detect_symmetric_pairs(added)
+    sym_pairs = _detect_symmetric_pairs(added, project_dir)
     flag_guard_pairs = _detect_flag_guard_pairs(added)
     contract_sources, schema_bearing = _detect_contract_sources(modified_files, project_dir, args.contract_radius)
     keep_markers, protected_identifiers = _detect_keep_markers(added, project_dir)

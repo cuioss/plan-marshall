@@ -9,6 +9,8 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 Pure executor for the `pre-submission-self-review` finalize step. Catches the class of structural defects that PR-review bots reliably surface but local quality gates systematically miss: missing initialization in symmetric save/restore pairs, regex/glob over-fit, ambiguous user-facing wording, duplicate prose sections covering the same contract, and schema/contract drift.
 
+Outcome bookkeeping (Step 4) now includes finding persistence: every returned finding is written to the plan's `qgate-6-finalize.jsonl` finding store before the step's `--outcome failed` is recorded.
+
 ## Exit-code convention for `manage-*` script calls
 
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
@@ -201,13 +203,26 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "{display_detail_from_workflow}"
 ```
 
-**Branch B — findings list is non-empty**: surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding:
+**Branch B — findings list is non-empty**: first persist every finding to the plan's `qgate-6-finalize.jsonl` finding store, then surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding.
+
+For every entry in the returned `findings[N]{file,line,defect_class,rationale}` list, emit one `manage-findings qgate add` call. This loop runs in the inline dispatcher context (the same context as the `mark-step-done` call below). `--phase 6-finalize` and `--source qgate` are mandatory; `--type bug` is the canonical finding type for a structural self-review defect:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
+  --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
+  --title "{defect_class}" --detail "{rationale}" --file-path "{file}" \
+  --component plan-marshall:ext-self-review-plan-marshall --severity warning
+```
+
+Then record the failed outcome:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-pre-submission-self-review --outcome failed \
   --display-detail "{display_detail_from_workflow}"
 ```
+
+Branch A (empty findings) persists nothing — there are no findings to write.
 
 The dispatcher's existing failure handling halts the phase on `outcome=failed`, matching the gating-step contract used by `pre-push-quality-gate`. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `commit-push`.
 
