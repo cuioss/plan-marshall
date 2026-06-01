@@ -38,6 +38,7 @@ from _plan_parsing import (  # type: ignore[import-not-found]
     extract_deliverables,
     parse_document_sections,
 )
+from constants import VALID_STEP_INTENTS  # type: ignore[import-not-found]
 from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import (  # type: ignore[import-not-found]
     add_plan_id_arg,
@@ -204,11 +205,14 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
             if profile not in valid_profiles:
                 errors.append(f"D{num}: Invalid profile '{profile}' (must be one of: {', '.join(valid_profiles)})")
 
-    # Check 2b: Warn when module_testing profile but no test files in affected files
+    # Check 2b: Warn when module_testing profile but no test files in affected files.
+    # Each affected-file entry is a {path, intent} object.
     affected_files = deliverable.get('affected_files', [])
     if 'module_testing' in profiles and affected_files:
         test_indicators = ('test/', 'Test.', '_test.', 'test_', '.test.', 'spec/', '/tests/')
-        has_test_files = any(any(indicator in f for indicator in test_indicators) for f in affected_files)
+        has_test_files = any(
+            any(indicator in entry.get('path', '') for indicator in test_indicators) for entry in affected_files
+        )
         if not has_test_files:
             warnings.append(
                 f'D{num}: module_testing profile but no test files detected in affected files '
@@ -221,17 +225,30 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
     if not affected_files and not is_verification_only:
         errors.append(f'D{num}: Missing **Affected files:** section')
     else:
-        # Check 3a: No wildcards or vague references
-        for f in affected_files:
-            if '*' in f:
-                errors.append(f'D{num}: Wildcard in affected files: {f}')
-            if '...' in f:
-                errors.append(f'D{num}: Ellipsis in affected files: {f}')
-            if 'all ' in f.lower():
-                errors.append(f'D{num}: Vague reference in affected files: {f}')
+        # Check 3a: No wildcards or vague references; Check 3b: required intent marker.
+        for entry in affected_files:
+            path = entry.get('path', '')
+            intent = entry.get('intent')
+            if '*' in path:
+                errors.append(f'D{num}: Wildcard in affected files: {path}')
+            if '...' in path:
+                errors.append(f'D{num}: Ellipsis in affected files: {path}')
+            if 'all ' in path.lower():
+                errors.append(f'D{num}: Vague reference in affected files: {path}')
             # Check for reasonable path structure
-            if not ('/' in f or f.endswith('.md') or f.endswith('.py')):
-                warnings.append(f'D{num}: Unusual file path format: {f}')
+            if not ('/' in path or path.endswith('.md') or path.endswith('.py')):
+                warnings.append(f'D{num}: Unusual file path format: {path}')
+            # Check 3b: every entry MUST carry a valid intent marker.
+            if intent is None:
+                errors.append(
+                    f"D{num}: Affected file '{path}' missing intent marker "
+                    f'(read|write-new|write-replace|delete)'
+                )
+            elif intent not in VALID_STEP_INTENTS:
+                errors.append(
+                    f"D{num}: Affected file '{path}' has invalid intent marker '{intent}' "
+                    f'(must be one of: {", ".join(VALID_STEP_INTENTS)})'
+                )
 
     # Check 4: Verification section
     verification = deliverable.get('verification', {})

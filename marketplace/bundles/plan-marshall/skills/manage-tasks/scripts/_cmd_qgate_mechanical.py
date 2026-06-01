@@ -12,7 +12,8 @@ Six checks:
   1. coverage              — every deliverable has >= 1 task; tasks reference real deliverables
   2. skill_resolution      — every non-verification task has domain + valid ``bundle:skill`` shape
   3. acyclic               — depends_on graph is a DAG (Kahn-style topological pass)
-  4. files_exist           — every step.target on non-verification tasks resolves on disk
+  4. files_exist           — intent-aware existence per step.target on non-verification tasks
+                             (read/delete require existence; write-new forbids it; write-replace skips)
   5. keyword_drift         — planning-domain keywords in description absent from deliverable haystack
   6. structural_token_drift — TASK-NNN numbering monotonic starting at 001 with no gaps
 """
@@ -280,7 +281,23 @@ def _check_files_exist(
     repo_root: Path,
     emit: bool,
 ) -> tuple[int, int]:
-    """Files exist: every step.target on non-verification tasks resolves on disk."""
+    """Files exist: intent-aware existence expectations per step.
+
+    Each step carries a required ``intent`` (read | write-new | write-replace |
+    delete) that selects the existence predicate applied to its ``target``:
+
+    - ``read``          — existence REQUIRED; finding fires when the target is
+      missing (the historical files_exist signal).
+    - ``write-new``     — existence FORBIDDEN; the check is INVERTED — a finding
+      fires only when the declared-new target ALREADY exists on disk.
+    - ``write-replace`` — NO existence check; never a finding either way.
+    - ``delete``        — existence REQUIRED; a finding fires when the target is
+      MISSING (a step cannot remove a file that is absent pre-execution).
+
+    Verification-profile tasks are skipped wholesale (their steps are commands,
+    not paths). Intent is required by the step schema, so it is read directly
+    with no default fallback.
+    """
     failed = 0
     emitted = 0
     for t in tasks:
@@ -293,21 +310,59 @@ def _check_files_exist(
             target = (step.get('target') or '').strip()
             if not target:
                 continue
+            intent = (step.get('intent') or '').strip()
             # ``Path / target`` already returns Path(target) verbatim when target
             # is absolute, so the relative / absolute split is handled by pathlib.
-            candidate = repo_root / target
-            if not candidate.exists():
+            exists = (repo_root / target).exists()
+
+            if intent == 'write-replace':
+                # No existence expectation — skip regardless of disk state.
+                continue
+
+            if intent == 'write-new':
+                # Inverted predicate: a declared-new target must NOT exist yet.
+                if exists:
+                    failed += 1
+                    emitted += _emit_finding(
+                        plan_id,
+                        title=f'files_exist: TASK-{number:03d} write-new target {target!r} already exists',
+                        detail=(
+                            f'TASK-{number:03d} {t.get("title", "?")!r} declares step '
+                            f'target {target!r} with intent write-new, but the file '
+                            f'ALREADY exists on disk. A write-new step must create a '
+                            f'fresh file; either correct the intent to write-replace '
+                            f'or remove the pre-existing file before phase-5-execute.'
+                        ),
+                        file_path=target,
+                        emit=emit,
+                    )
+                continue
+
+            # read / delete: existence REQUIRED.
+            if not exists:
                 failed += 1
-                emitted += _emit_finding(
-                    plan_id,
-                    title=f'files_exist: TASK-{number:03d} step.target {target!r} does not exist',
-                    detail=(
+                if intent == 'delete':
+                    title = f'files_exist: TASK-{number:03d} delete target {target!r} does not exist'
+                    detail = (
+                        f'TASK-{number:03d} {t.get("title", "?")!r} declares step '
+                        f'target {target!r} with intent delete, but the file is not '
+                        f'present on disk — a step cannot remove a file that is '
+                        f'already absent. Correct the intent or the path before '
+                        f'phase-5-execute reads it.'
+                    )
+                else:
+                    title = f'files_exist: TASK-{number:03d} step.target {target!r} does not exist'
+                    detail = (
                         f'TASK-{number:03d} {t.get("title", "?")!r} declares step '
                         f'target {target!r}, which is not present on disk. '
-                        f'Phase-4-plan steps must list paths from the deliverable\'s '
+                        f"Phase-4-plan steps must list paths from the deliverable's "
                         f'Affected files section; create the file or correct the '
                         f'path before phase-5-execute reads it.'
-                    ),
+                    )
+                emitted += _emit_finding(
+                    plan_id,
+                    title=title,
+                    detail=detail,
                     file_path=target,
                     emit=emit,
                 )

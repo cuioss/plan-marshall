@@ -744,7 +744,15 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add-step \
-  --plan-id PLAN_ID --task-number N --target TEXT [--after N]
+  --plan-id PLAN_ID --task-number N --target TEXT --intent INTENT [--after N]
+```
+
+### update-step
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update-step \
+  --plan-id PLAN_ID --task-number N --step-number M \
+  --intent INTENT --reason TEXT [--finding-id FINDING_ID]
 ```
 
 ### remove-step

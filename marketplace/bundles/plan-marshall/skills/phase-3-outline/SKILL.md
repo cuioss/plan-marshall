@@ -391,7 +391,8 @@ Each deliverable in solution_outline.md MUST follow this field order. The author
 - {module_testing - only if the resolved bucket is production_only, test_only, mixed_code, or mixed_with_docs; never for documentation_only; unknown BLOCKS the deliverable}
 
 **Affected files:**
-- `{explicit/path/to/file1}`
+- `{explicit/path/to/new-file}` (write-new)
+- `{explicit/path/to/existing-file}` (write-replace)
 
 **Change per file:** {what changes}
 
@@ -413,6 +414,21 @@ The `<!-- bucket: ... -->` comment on the `**Profiles:**` line is REQUIRED and r
 - `mixed_code` → `implementation` + `module_testing` (production + test paths, no documentation). Verification cites the resolved `quality-gate` and `module-tests` commands.
 - `mixed_with_docs` → `implementation` + `module_testing`, with `module_testing` scope narrowed to the production/test paths only (declare the narrowed scope in a `**Module_testing scope:**` block above `**Affected files:**`).
 - `unknown` → BLOCKS the deliverable. Phase-4-plan emits a Q-Gate finding requiring the user to add a domain-extension claim for the unclaimed path(s) or correct the affected-files list. Never silently route to `documentation_only`.
+
+#### Per-file intent marker (REQUIRED)
+
+Every `**Affected files:**` entry MUST carry a trailing `(intent)` marker — a backticked path, one space, then the intent in parentheses: `` - `path/to/file.ext` (write-new) ``. The marker is required and enum-validated by `manage-solution-outline validate`; an entry without a valid marker fails outline validation.
+
+Classify each affected file's intent from its `**Change per file:**` description:
+
+| `Change per file` description | Intent |
+|-------------------------------|--------|
+| File is consulted/read but NOT modified by this deliverable | `read` |
+| File is created fresh (does not exist yet) | `write-new` |
+| File is modified in place (already exists) | `write-replace` |
+| File is removed by this deliverable | `delete` |
+
+The intent authoritatively drives the downstream `files_exist` Q-Gate: `read`/`delete` require the file to exist pre-execution, `write-new` requires it to be ABSENT (the gate flags a declared-new file that already exists), and `write-replace` skips the existence check. Classify honestly — a `write-new` marker on a file that already exists, or a `read` marker on a file that does not, surfaces as a Q-Gate finding at plan time.
 
 ---
 

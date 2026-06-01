@@ -112,7 +112,7 @@ def test_add_fails_without_deliverable(plan_context):
 domain: java
 description: Desc
 steps:
-  - Step 1"""
+  - src/main/java/Step.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='add-no-del', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'error'
@@ -139,7 +139,7 @@ def test_add_fails_without_domain(plan_context):
 deliverable: 1
 description: Desc
 steps:
-  - Step 1"""
+  - src/main/java/Step.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='add-no-dom', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'error'
@@ -252,7 +252,7 @@ def test_parse_stdin_task_accepts_inner_double_quotes_in_verification_command():
         'domain: plan-marshall-plugin-dev\n'
         'description: Parses verification command with inner double-quotes\n'
         'steps:\n'
-        '  - test/plan-marshall/manage-tasks/test_manage_tasks.py\n'
+        '  - test/plan-marshall/manage-tasks/test_manage_tasks.py (write-replace)\n'
         'depends_on: none\n'
         'verification:\n'
         '  commands:\n'
@@ -278,7 +278,7 @@ def test_parse_stdin_task_rejects_outer_double_quoted_verification_command():
         'domain: plan-marshall-plugin-dev\n'
         'description: Outer-quoted verification command should fail fast\n'
         'steps:\n'
-        '  - test/plan-marshall/manage-tasks/test_manage_tasks.py\n'
+        '  - test/plan-marshall/manage-tasks/test_manage_tasks.py (write-replace)\n'
         'depends_on: none\n'
         'verification:\n'
         '  commands:\n'
@@ -322,3 +322,61 @@ def test_parse_stdin_task_rejects_outer_double_quoted_verification_profile_step(
     assert 'steps' in message
     assert 'outer double-quotes' in message
     assert 'plan-marshall:phase-4-plan' in message
+
+
+# =============================================================================
+# Tests: required per-step intent marker (TOON commit-add path)
+# =============================================================================
+
+
+def _intent_toon(step_line, deliverable=1):
+    return (
+        'title: Intent task\n'
+        f'deliverable: {deliverable}\n'
+        'domain: plan-marshall-plugin-dev\n'
+        'description: Intent round-trip\n'
+        'steps:\n'
+        f'  - {step_line}\n'
+        'depends_on: none\n'
+    )
+
+
+@pytest.mark.parametrize('intent', ['read', 'write-new', 'write-replace', 'delete'])
+def test_commit_add_stores_each_valid_intent(plan_context, intent):
+    """Each valid intent round-trips into the stored TASK-NNN.json step dict."""
+    toon = _intent_toon(f'src/main/java/Component.java ({intent})')
+    result = _add_task(f'intent-store-{intent}', toon)
+
+    assert result['status'] == 'success'
+    task_dir = plan_context.plan_dir_for(f'intent-store-{intent}') / 'tasks'
+    import json
+
+    task = json.loads((task_dir / 'TASK-001.json').read_text(encoding='utf-8'))
+    assert task['steps'][0]['intent'] == intent
+    assert task['steps'][0]['target'] == 'src/main/java/Component.java'
+
+
+def test_commit_add_rejects_bare_step_without_intent(plan_context):
+    """A TOON step with no (intent) marker is rejected at parse time."""
+    toon = _intent_toon('src/main/java/Component.java')
+    result = _add_task('intent-missing', toon)
+
+    assert result['status'] == 'error'
+    assert 'intent' in result.get('message', '').lower()
+
+
+def test_commit_add_rejects_invalid_intent(plan_context):
+    """A present-but-invalid intent value is rejected at parse time."""
+    toon = _intent_toon('src/main/java/Component.java (sideways)')
+    result = _add_task('intent-invalid', toon)
+
+    assert result['status'] == 'error'
+    assert 'intent' in result.get('message', '').lower()
+
+
+def test_parse_stdin_task_returns_target_intent_dicts():
+    """parse_stdin_task returns each step as a {target, intent} dict."""
+    toon = _intent_toon('src/main/java/A.java (write-new)')
+    parsed = parse_stdin_task(toon)
+
+    assert parsed['steps'] == [{'target': 'src/main/java/A.java', 'intent': 'write-new'}]

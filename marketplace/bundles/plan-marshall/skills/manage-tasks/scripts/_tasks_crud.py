@@ -44,6 +44,7 @@ from _tasks_core import (
     validate_origin,
     validate_profile,
     validate_skills,
+    validate_step_intent,
     validate_steps_are_file_paths,
 )
 from file_ops import atomic_write_file  # type: ignore[import-not-found]
@@ -209,8 +210,15 @@ def cmd_commit_add(args) -> dict:
     filepath = task_dir / filename
 
     steps = []
-    for i, step_target in enumerate(parsed['steps'], 1):
-        steps.append({'number': i, 'target': step_target, 'status': 'pending'})
+    for i, parsed_step in enumerate(parsed['steps'], 1):
+        steps.append(
+            {
+                'number': i,
+                'target': parsed_step['target'],
+                'status': 'pending',
+                'intent': parsed_step['intent'],
+            }
+        )
 
     task = {
         'number': number,
@@ -306,14 +314,24 @@ def _validate_batch_entry(entry: dict, index: int) -> dict:
 
     raw_steps = entry.get('steps', [])
     if not isinstance(raw_steps, list):
-        raise ValueError(f'batch entry [{index}]: steps must be a JSON array of strings')
-    steps: list[str] = []
+        raise ValueError(f'batch entry [{index}]: steps must be a JSON array of {{target, intent}} objects')
+    steps: list[dict[str, str]] = []
     for s in raw_steps:
-        if not isinstance(s, str):
-            raise ValueError(f'batch entry [{index}]: every step must be a string, got {type(s).__name__}')
-        normalized = normalize_step_path(s)
+        if not isinstance(s, dict):
+            raise ValueError(
+                f'batch entry [{index}]: every step must be a {{"target": "...", "intent": "..."}} '
+                f'object, got {type(s).__name__} (bare-string steps are rejected)'
+            )
+        raw_target = s.get('target')
+        if not isinstance(raw_target, str) or not raw_target.strip():
+            raise ValueError(f'batch entry [{index}]: step is missing a non-empty "target"')
+        try:
+            step_intent = validate_step_intent(s.get('intent'))
+        except ValueError as e:
+            raise ValueError(f'batch entry [{index}]: {e}') from e
+        normalized = normalize_step_path(raw_target)
         if normalized:
-            steps.append(normalized)
+            steps.append({'target': normalized, 'intent': step_intent})
     if not steps:
         raise ValueError(f'batch entry [{index}]: missing required field: steps (at least one step required)')
 
@@ -371,7 +389,7 @@ def _validate_batch_entry(entry: dict, index: int) -> dict:
         raise ValueError(f'batch entry [{index}]: {e}') from e
 
     if profile != 'verification':
-        step_errors, _ = validate_steps_are_file_paths(steps)
+        step_errors, _ = validate_steps_are_file_paths([s['target'] for s in steps])
         if step_errors:
             raise ValueError(
                 f'batch entry [{index}]: task contract violation - steps must be file paths:\n' + '\n'.join(step_errors)
@@ -511,8 +529,15 @@ def cmd_batch_add(args) -> dict:
             filepath = task_dir / filename
 
             steps = []
-            for i, step_target in enumerate(parsed['steps'], 1):
-                steps.append({'number': i, 'target': step_target, 'status': 'pending'})
+            for i, parsed_step in enumerate(parsed['steps'], 1):
+                steps.append(
+                    {
+                        'number': i,
+                        'target': parsed_step['target'],
+                        'status': 'pending',
+                        'intent': parsed_step['intent'],
+                    }
+                )
 
             task = {
                 'number': number,

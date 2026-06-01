@@ -179,7 +179,8 @@ The `manage-solution-outline validate` command checks:
 4. Deliverables section has numbered `### N. Title` items
 5. At least one deliverable defined
 6. Deliverable contract compliance (Metadata, Profiles, Affected files, Verification)
-7. Compatibility extraction from header metadata (if present)
+7. Every `Affected files` entry carries a required `(intent)` marker whose value is one of `read|write-new|write-replace|delete` — a missing or invalid marker is a hard error
+8. Compatibility extraction from header metadata (if present)
 
 **Validation Command**:
 ```bash
@@ -265,7 +266,7 @@ For the exact fill-in-the-blank structure, see:
 | `module` | Yes | Module name from architecture | Skill resolution |
 | `depends` | Yes | Dependencies on other deliverables | Ordering, parallelization |
 | `**Profiles:**` | Yes | List of profiles (implementation, module_testing) | Task creation (1:N) |
-| `Affected files` | Yes | Explicit file list | Step generation |
+| `Affected files` | Yes | Explicit file list, each with a required `(intent)` marker | Step generation, intent-aware files_exist gate |
 | `Change per file` | Yes | What changes | Task description |
 | `Pattern` | Conditional | Code/format pattern | Implementation guide |
 | `Verification` | Yes | How to verify | Task verification |
@@ -286,6 +287,28 @@ For the exact fill-in-the-blank structure, see:
 ```
 **Intent gloss:** Check module test coverage produced by this plan against the configured threshold.
 ```
+
+### Affected Files Intent Marker
+
+Every `Affected files` entry MUST carry a trailing parenthesized **intent** marker declaring the step's existence expectation. The canonical form is a backticked path, a single space, then the intent in parentheses:
+
+```
+**Affected files:**
+- `src/main/java/NewService.java` (write-new)
+- `src/main/java/ExistingService.java` (write-replace)
+- `src/main/java/LegacyHelper.java` (read)
+```
+
+The intent vocabulary is a closed four-member enum:
+
+| Intent | Meaning | files_exist Q-Gate expectation |
+|--------|---------|--------------------------------|
+| `read` | File is consulted but not modified | Existence REQUIRED (finding fires if missing) |
+| `write-new` | File is created fresh by this deliverable | Existence FORBIDDEN (finding fires if it already exists) |
+| `write-replace` | File is modified in place | No existence check |
+| `delete` | File is removed by this deliverable | Existence REQUIRED (cannot remove an absent file) |
+
+The marker is **required and enum-validated**: an `Affected files` entry that omits the marker, or uses a value outside the four-member set, is a hard validation error. There is no default — `validate` rejects the outline until every entry carries a valid marker. Downstream, phase-4-plan threads each file's intent into the task step objects it emits, and the `manage-tasks` files_exist Q-Gate applies the per-intent existence predicate above.
 
 ### Domain Values
 

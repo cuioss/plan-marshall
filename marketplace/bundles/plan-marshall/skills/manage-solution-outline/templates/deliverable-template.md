@@ -21,8 +21,9 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 - {module_testing - only if this deliverable creates/modifies test files}
 
 **Affected files:**
-- `{explicit/path/to/file1.ext}`
-- `{explicit/path/to/file2.ext}`
+- `{explicit/path/to/new-file.ext}` (write-new)
+- `{explicit/path/to/existing-file.ext}` (write-replace)
+- `{explicit/path/to/consulted-file.ext}` (read)
 
 **Change per file:** {Specific description of what changes in these files}
 
@@ -62,7 +63,7 @@ Use the returned `executable` value as the Verification Command. Both Command an
 | `depends` | Yes | Use `none` if no dependencies |
 | `**Intent gloss:**` | Conditional | Required when title head morpheme is a planning-domain verb; ≤15 words |
 | `**Profiles:**` | Yes | At least `implementation`; add `module_testing` only if deliverable creates/modifies test files |
-| `**Affected files:**` | Yes | Explicit paths only - NO wildcards, NO "all files in..." |
+| `**Affected files:**` | Yes | Explicit paths only - NO wildcards, NO "all files in...". Each entry MUST carry a required `(intent)` marker: `read`, `write-new`, `write-replace`, or `delete` |
 | `**Change per file:**` | Yes | What specifically changes |
 | `**Verification:**` | Yes | Command and Criteria - both required |
 | `**Success Criteria:**` | Yes | At least one criterion |
@@ -75,6 +76,8 @@ These will cause validation failure:
 |---------|---------|
 | `- All files in path/to/dir/` | Vague - enumerate explicitly |
 | `- path/to/*.md` | Wildcard - enumerate explicitly |
+| `- `path/to/file.ext`` (no `(intent)` marker) | Missing required intent marker |
+| `- `path/to/file.ext` (rewrite)` | Invalid intent — must be read/write-new/write-replace/delete |
 | `- Command: manual review` | Not automatable |
 | Missing `**Verification:**` section | Required section |
 | Missing `**Profiles:**` section | Required section |

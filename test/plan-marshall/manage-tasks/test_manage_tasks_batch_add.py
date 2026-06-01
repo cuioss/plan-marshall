@@ -43,19 +43,27 @@ def _entry(
     origin='plan',
     verification=None,
 ):
-    """Build a valid batch entry dict (per task-contract.md schema)."""
+    """Build a valid batch entry dict (per task-contract.md schema).
+
+    Bare-string ``steps`` are normalized to the required ``{target, intent}``
+    object shape (default intent ``write-replace``) so existing call sites stay
+    terse; a test may pass explicit ``{target, intent}`` dicts to pin an intent.
+    """
     if steps is None:
         steps = ['src/main/java/Foo.java']
     if depends_on is None:
         depends_on = []
     if skills is None:
         skills = []
+    normalized_steps = [
+        s if isinstance(s, dict) else {'target': s, 'intent': 'write-replace'} for s in steps
+    ]
     entry = {
         'title': title,
         'deliverable': deliverable,
         'domain': domain,
         'profile': profile,
-        'steps': steps,
+        'steps': normalized_steps,
         'depends_on': depends_on,
         'skills': skills,
         'description': description,
@@ -103,7 +111,9 @@ def test_batch_add_three_tasks_sequential_numbering(plan_context):
     first = json.loads(files[0].read_text())
     assert first['number'] == 1
     assert first['title'] == 'First'
-    assert first['steps'] == [{'number': 1, 'target': 'src/A.java', 'status': 'pending'}]
+    assert first['steps'] == [
+        {'number': 1, 'target': 'src/A.java', 'status': 'pending', 'intent': 'write-replace'}
+    ]
 
 
 def test_batch_add_empty_array_is_noop(plan_context):
@@ -260,6 +270,51 @@ def test_batch_add_verification_profile_skips_filepath_check(plan_context):
 
 
 # =============================================================================
+# Required per-step intent (JSON batch object-step contract)
+# =============================================================================
+
+
+@pytest.mark.parametrize('intent', ['read', 'write-new', 'write-replace', 'delete'])
+def test_batch_add_stores_each_valid_intent(plan_context, intent):
+    """Each valid intent on a JSON object-step round-trips into the stored task."""
+    entries = [_entry(title='X', steps=[{'target': 'src/A.java', 'intent': intent}])]
+    result = cmd_batch_add(_ns(f'batch-intent-{intent}', tasks_json=json.dumps(entries)))
+
+    assert result['status'] == 'success'
+    task_path = plan_context.plan_dir_for(f'batch-intent-{intent}') / 'tasks' / 'TASK-001.json'
+    task = json.loads(task_path.read_text())
+    assert task['steps'][0]['intent'] == intent
+
+
+def test_batch_add_rejects_bare_string_step(plan_context):
+    """A bare-string JSON step (no intent object) is rejected atomically."""
+    entries = [{'title': 'X', 'deliverable': 1, 'domain': 'java', 'steps': ['src/A.java']}]
+    result = cmd_batch_add(_ns('batch-bare-step', tasks_json=json.dumps(entries)))
+
+    assert result['status'] == 'error'
+    assert 'batch entry [0]' in result['message']
+    assert 'object' in result['message'].lower()
+
+
+def test_batch_add_rejects_step_missing_intent(plan_context):
+    """A JSON object-step lacking the required intent key is rejected."""
+    entries = [{'title': 'X', 'deliverable': 1, 'domain': 'java', 'steps': [{'target': 'src/A.java'}]}]
+    result = cmd_batch_add(_ns('batch-no-intent', tasks_json=json.dumps(entries)))
+
+    assert result['status'] == 'error'
+    assert 'intent' in result['message'].lower()
+
+
+def test_batch_add_rejects_invalid_intent(plan_context):
+    """A present-but-invalid intent value is rejected per-entry."""
+    entries = [_entry(title='X', steps=[{'target': 'src/A.java', 'intent': 'sideways'}])]
+    result = cmd_batch_add(_ns('batch-bad-intent', tasks_json=json.dumps(entries)))
+
+    assert result['status'] == 'error'
+    assert 'intent' in result['message'].lower()
+
+
+# =============================================================================
 # --tasks-file PATH input (parity with --tasks-json)
 # =============================================================================
 
@@ -286,7 +341,9 @@ def test_batch_add_reads_tasks_from_file(plan_context, tmp_path):
     assert [f.name for f in files] == ['TASK-001.json', 'TASK-002.json']
     first = json.loads(files[0].read_text())
     assert first['title'] == 'From File 1'
-    assert first['steps'] == [{'number': 1, 'target': 'src/A.java', 'status': 'pending'}]
+    assert first['steps'] == [
+        {'number': 1, 'target': 'src/A.java', 'status': 'pending', 'intent': 'write-replace'}
+    ]
 
 
 def test_batch_add_tasks_file_and_tasks_json_are_mutually_exclusive(plan_context, tmp_path):
@@ -352,8 +409,8 @@ _BARE_BLOCK_TASK_TOON = (
     'skills:\n'
     '  - pm-plugin-development:plugin-architecture\n'
     'steps:\n'
-    '  - test/plan-marshall/manage-tasks/test_a.py\n'
-    '  - test/plan-marshall/manage-tasks/test_b.py\n'
+    '  - test/plan-marshall/manage-tasks/test_a.py (write-replace)\n'
+    '  - test/plan-marshall/manage-tasks/test_b.py (write-replace)\n'
     'depends_on: none\n'
     'verification:\n'
     '  commands:\n'
@@ -369,8 +426,8 @@ _BRACKETED_TASK_TOON = (
     'skills[1]:\n'
     '  - pm-plugin-development:plugin-architecture\n'
     'steps[2]:\n'
-    '  - test/plan-marshall/manage-tasks/test_a.py\n'
-    '  - test/plan-marshall/manage-tasks/test_b.py\n'
+    '  - test/plan-marshall/manage-tasks/test_a.py (write-replace)\n'
+    '  - test/plan-marshall/manage-tasks/test_b.py (write-replace)\n'
     'depends_on: none\n'
     'verification:\n'
     '  commands[1]:\n'
@@ -393,8 +450,8 @@ def test_parse_stdin_task_accepts_both_steps_forms(toon, label):
 
     # Assert
     assert parsed['steps'] == [
-        'test/plan-marshall/manage-tasks/test_a.py',
-        'test/plan-marshall/manage-tasks/test_b.py',
+        {'target': 'test/plan-marshall/manage-tasks/test_a.py', 'intent': 'write-replace'},
+        {'target': 'test/plan-marshall/manage-tasks/test_b.py', 'intent': 'write-replace'},
     ], f'{label} form did not normalise to canonical step list'
 
 
@@ -517,8 +574,8 @@ def test_parse_stdin_task_bracketed_form_length_declaration_is_advisory():
         'domain: plan-marshall-plugin-dev\n'
         'description: Bracketed count is advisory and should not fail\n'
         'steps[5]:\n'
-        '  - test/plan-marshall/manage-tasks/test_a.py\n'
-        '  - test/plan-marshall/manage-tasks/test_b.py\n'
+        '  - test/plan-marshall/manage-tasks/test_a.py (write-replace)\n'
+        '  - test/plan-marshall/manage-tasks/test_b.py (write-replace)\n'
         'depends_on: none\n'
     )
 
@@ -527,6 +584,6 @@ def test_parse_stdin_task_bracketed_form_length_declaration_is_advisory():
 
     # Assert
     assert parsed['steps'] == [
-        'test/plan-marshall/manage-tasks/test_a.py',
-        'test/plan-marshall/manage-tasks/test_b.py',
+        {'target': 'test/plan-marshall/manage-tasks/test_a.py', 'intent': 'write-replace'},
+        {'target': 'test/plan-marshall/manage-tasks/test_b.py', 'intent': 'write-replace'},
     ]

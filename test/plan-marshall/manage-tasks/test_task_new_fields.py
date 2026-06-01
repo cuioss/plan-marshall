@@ -85,7 +85,8 @@ def build_task_toon_with_new_fields(
 
     lines.append('steps:')
     for step in steps:
-        lines.append(f'  - {step}')
+        marked = step if str(step).rstrip().endswith(')') else f'{step} (write-replace)'
+        lines.append(f'  - {marked}')
 
     lines.append(f'depends_on: {depends_on}')
 
@@ -248,7 +249,7 @@ description: Desc
 skills:
   - pm-dev-java:java-core
 steps:
-  - src/main/java/File.java"""
+  - src/main/java/File.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='nf-arb-prof', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
@@ -265,7 +266,7 @@ description: Desc
 skills:
   - pm-dev-java:java-core
 steps:
-  - src/main/java/File.java"""
+  - src/main/java/File.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='nf-plan-prof', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
@@ -282,7 +283,7 @@ description: Desc
 skills:
   - pm-dev-java:java-core
 steps:
-  - src/main/java/File.java"""
+  - src/main/java/File.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='nf-cust-prof', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
@@ -299,7 +300,7 @@ description: Desc
 skills:
   - invalid-skill-no-colon
 steps:
-  - Step 1"""
+  - src/main/java/File.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='nf-bad-skill', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'error'
@@ -683,7 +684,7 @@ description: Desc
 skills:
   - pm-requirements:req-core
 steps:
-  - docs/requirements.adoc"""
+  - docs/requirements.adoc (write-new)"""
     result = cmd_add(_add_ns(plan_id='nf-arb-dom', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
@@ -700,7 +701,7 @@ description: Desc
 skills:
   - pm-dev-java:java-core
 steps:
-  - src/main/java/File.java"""
+  - src/main/java/File.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='nf-cust-dom', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
@@ -732,7 +733,7 @@ description: Desc
 skills:
   - pm-dev-java:java-core
 steps:
-  - src/main/java/File.java"""
+  - src/main/java/File.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='nf-plan-origin', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
@@ -750,7 +751,7 @@ description: Desc
 skills:
   - pm-dev-java:java-core
 steps:
-  - src/main/java/File.java"""
+  - src/main/java/File.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='nf-fix-origin', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
@@ -768,7 +769,7 @@ description: Desc
 skills:
   - pm-dev-java:java-core
 steps:
-  - src/main/java/File.java"""
+  - src/main/java/File.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='nf-sonar-origin', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
@@ -790,7 +791,7 @@ description: Desc
 skills:
   - pm-dev-java:java-core
 steps:
-  - src/main/java/File.java"""
+  - src/main/java/File.java (write-replace)"""
     result = cmd_add(_add_ns(plan_id='nf-num-fmt', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
@@ -809,7 +810,7 @@ description: Desc
 skills:
   - pm-dev-java:junit-core
 steps:
-  - src/test/java/FileTest.java"""
+  - src/test/java/FileTest.java (write-new)"""
     result = cmd_add(_add_ns(plan_id='nf-fix-fmt', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'

@@ -74,7 +74,7 @@ import argparse
 from _cmd_pre_commit_verify_freshness import cmd_pre_commit_verify_freshness
 from _cmd_qgate_mechanical import cmd_qgate_mechanical
 from _cmd_rename import cmd_rename_path
-from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
+from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step, cmd_update_step
 from _tasks_crud import cmd_batch_add, cmd_commit_add, cmd_prepare_add, cmd_remove, cmd_update
 from _tasks_query import (
     cmd_exists,
@@ -84,6 +84,7 @@ from _tasks_query import (
     cmd_next_tasks,
     cmd_read,
 )
+from constants import VALID_STEP_INTENTS  # type: ignore[import-not-found]
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import (  # type: ignore[import-not-found]
     add_domain_arg,
@@ -283,7 +284,35 @@ def build_parser() -> argparse.ArgumentParser:
     add_plan_id_arg(p_add_step)
     add_task_number_arg(p_add_step)
     p_add_step.add_argument('--target', required=True, help='Step target (file path or verification command)')
+    p_add_step.add_argument(
+        '--intent',
+        required=True,
+        choices=list(VALID_STEP_INTENTS),
+        help='Required per-step existence intent (read|write-new|write-replace|delete)',
+    )
     p_add_step.add_argument('--after', type=int, help='Insert after this step number')
+
+    # update-step (sanctioned intent-override escape hatch — usable from
+    # execution AND finding-triage; hand-editing a stored intent is a contract
+    # violation)
+    p_update_step = subparsers.add_parser(
+        'update-step',
+        help='Override a step intent with a mandatory recorded reason (sanctioned escape hatch)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(p_update_step)
+    add_task_number_arg(p_update_step)
+    p_update_step.add_argument('--step-number', required=True, type=int, help='Step number to update')
+    p_update_step.add_argument(
+        '--intent',
+        required=True,
+        choices=list(VALID_STEP_INTENTS),
+        help='New per-step intent (read|write-new|write-replace|delete)',
+    )
+    p_update_step.add_argument('--reason', required=True, help='Mandatory rationale for the intent override (persisted)')
+    p_update_step.add_argument(
+        '--finding-id', help='Optional manage-findings finding id linking a triage-driven override'
+    )
 
     # remove-step
     p_remove_step = subparsers.add_parser('remove-step', help='Remove a step from a task', allow_abbrev=False)
@@ -378,6 +407,7 @@ COMMANDS = {
     'next-tasks': cmd_next_tasks,
     'finalize-step': cmd_finalize_step,
     'add-step': cmd_add_step,
+    'update-step': cmd_update_step,
     'remove-step': cmd_remove_step,
     'rename-path': cmd_rename_path,
     'qgate-mechanical-checks': cmd_qgate_mechanical,

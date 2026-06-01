@@ -33,8 +33,8 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
   "depends_on": [],
   "description": "Create CacheConfig class with Redis configuration...",
   "steps": [
-    {"number": 1, "target": "src/main/java/com/example/CacheConfig.java", "status": "pending"},
-    {"number": 2, "target": "src/main/java/com/example/CacheManager.java", "status": "pending"}
+    {"number": 1, "target": "src/main/java/com/example/CacheConfig.java", "status": "pending", "intent": "write-new"},
+    {"number": 2, "target": "src/main/java/com/example/CacheManager.java", "status": "pending", "intent": "write-replace"}
   ],
   "verification": {
     "commands": ["mvn test -Dtest=CacheConfigTest"],
@@ -66,7 +66,7 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
     "message": "AssertionError: expected 5 but was 3"
   },
   "steps": [
-    {"number": 1, "target": "src/test/java/com/example/CacheTest.java", "status": "pending"}
+    {"number": 1, "target": "src/test/java/com/example/CacheTest.java", "status": "pending", "intent": "write-replace"}
   ],
   "verification": {
     "commands": ["mvn test -Dtest=CacheTest"],
@@ -94,7 +94,7 @@ For `verification` profile tasks, steps contain verification commands instead of
   "depends_on": ["TASK-5"],
   "description": "Run full verification suite for the plan-marshall bundle.",
   "steps": [
-    {"number": 1, "target": "./pw verify plan-marshall", "status": "pending"}
+    {"number": 1, "target": "./pw verify plan-marshall", "status": "pending", "intent": "read"}
   ],
   "verification": {
     "commands": ["./pw verify plan-marshall"],
@@ -432,8 +432,8 @@ TOON task definition consumed by `commit-add`. Field types:
     "description": "Create CacheConfig with Redis…",   // string, optional
     "skills": ["pm-dev-java:java-core"],               // string[], optional
     "depends_on": [],                                  // string[] OR comma-separated string OR "none"
-    "steps": [                                         // string[], required (≥ 1)
-      "src/main/java/CacheConfig.java"
+    "steps": [                                         // {target, intent} object[], required (≥ 1)
+      {"target": "src/main/java/CacheConfig.java", "intent": "write-new"}
     ],
     "verification": {                                  // object, optional
       "commands": ["mvn test -Dtest=CacheConfigTest"], // string[]
@@ -455,7 +455,7 @@ TOON task definition consumed by `commit-add`. Field types:
 | `origin` | No (default `plan`) | Must match the standard origin set (`plan`, `fix`, `sonar`, `pr`, `lint`, `security`, `documentation`, `holistic`) |
 | `skills` | No | Each entry must follow `bundle:skill` format |
 | `depends_on` | No | Accepts a JSON array of `TASK-N`/integer strings, a comma-separated string, or `"none"` |
-| `steps` | Yes | Array of strings; for non-verification profiles every entry must look like a file path |
+| `steps` | Yes | Array of `{target, intent}` objects (bare strings rejected); `intent` ∈ `read`/`write-new`/`write-replace`/`delete`; for non-verification profiles every `target` must look like a file path |
 | `verification.commands` | No | Strings only (no list-of-list); copied verbatim |
 
 ### Failure Modes
@@ -509,9 +509,9 @@ description: |
   {description from deliverable}
 
 steps:
-  - {file_1}
-  - {file_2}
-  - {file_3}
+  - {file_1} (write-new)
+  - {file_2} (write-replace)
+  - {file_3} (read)
 
 depends_on: TASK-001
 
@@ -560,25 +560,60 @@ lessons_recorded: {count}
 
 ### Input Format (API calls)
 
-When calling `manage-tasks add`, use YAML list format:
+Every step carries a **required** `intent` marker (see the Intent section below). Two input forms are accepted; bare-string steps are rejected on both.
+
+**TOON (`commit-add`)** — each step is `target (intent)`, the intent in a trailing parenthesis:
 
 ```yaml
 steps:
-  - marketplace/bundles/plan-marshall/agents/execution-context.md
-  - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
-  - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md
+  - marketplace/bundles/plan-marshall/agents/execution-context.md (write-replace)
+  - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md (write-replace)
+  - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md (write-replace)
 ```
+
+**JSON batch (`batch-add --tasks-file`)** — each step is a `{target, intent}` object:
+
+```json
+"steps": [
+  {"target": "marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md", "intent": "write-replace"}
+]
+```
+
+A bare TOON path with no `(intent)` suffix, or a bare-string JSON step, is rejected at parse time.
+
+### Step Intent (required)
+
+Each step declares a required `intent` from the closed enum `read` / `write-new` / `write-replace` / `delete`. There is no default — a step without a valid intent is a schema violation rejected at task-creation time. The intent drives the `files_exist` Q-Gate's per-target existence expectation:
+
+| Intent | Meaning | files_exist expectation |
+|--------|---------|-------------------------|
+| `read` | Consulted, not modified | Existence required (finding if missing) |
+| `write-new` | Created fresh | Existence forbidden (finding if it already exists) |
+| `write-replace` | Modified in place | No existence check |
+| `delete` | Removed | Existence required (finding if missing) |
+
+#### Intent override (escape hatch)
+
+Intent is **authoritative**, but may legitimately need to change after authoring — either from execution-time divergence (e.g. a `write-new` target turns out to already exist) OR from a finding (a PR review comment, Sonar issue, or build/lint finding resolved during verification/finalize that reveals the original classification was wrong). A step's stored intent may be altered ONLY via the sanctioned verb:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update-step \
+  --plan-id PLAN_ID --task-number N --step-number M \
+  --intent INTENT --reason "why the intent changed" [--finding-id FINDING_ID]
+```
+
+`--reason` is **mandatory and persisted** as a `{from, to, reason}` audit record appended to the step's `intent_override` list; `--finding-id` is optional and links a triage-driven override back to its `manage-findings` finding. Hand-editing a stored `intent` value is a contract violation — and because `task_state_hash` folds in each step's `intent`, an undocumented out-of-band change additionally surfaces as phase-handshake drift. A step that was never overridden carries no `intent_override` key.
 
 ### Stored Format (.json files)
 
-The script converts input to JSON array format in task files:
+The script converts input to JSON array format in task files; each step carries `number`, `target`, `status`, and `intent`:
 
 ```json
 {
   "steps": [
-    {"number": 1, "target": "marketplace/bundles/plan-marshall/agents/execution-context.md", "status": "pending"},
-    {"number": 2, "target": "marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md", "status": "pending"},
-    {"number": 3, "target": "marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md", "status": "pending"}
+    {"number": 1, "target": "marketplace/bundles/plan-marshall/agents/execution-context.md", "status": "pending", "intent": "write-replace"},
+    {"number": 2, "target": "marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md", "status": "pending", "intent": "write-replace"},
+    {"number": 3, "target": "marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md", "status": "pending", "intent": "write-replace"}
   ]
 }
 ```
@@ -638,5 +673,6 @@ The verification block defines how to verify task completion:
 4. `skills` entries must follow `{bundle}:{skill}` format
 5. `domain` must be a valid domain value
 6. `profile` must be a valid profile value (implementation, module_testing, verification)
-7. Task `done` status requires all steps to be `done` or `skipped`
-8. Task `done` status requires verification to have passed
+7. Every step's `intent` is required and must be one of `read` / `write-new` / `write-replace` / `delete`; bare-string steps (no intent) are rejected
+8. Task `done` status requires all steps to be `done` or `skipped`
+9. Task `done` status requires verification to have passed
