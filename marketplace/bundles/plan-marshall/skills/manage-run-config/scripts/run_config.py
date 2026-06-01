@@ -369,7 +369,7 @@ def cmd_timeout_set(args: argparse.Namespace) -> dict:
             'source': 'computed',
         }
     except Exception as e:
-        return {'status': 'error', 'error': str(e)}
+        return _output_error(str(e))
 
 
 # =============================================================================
