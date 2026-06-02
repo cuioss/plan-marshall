@@ -212,6 +212,16 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config \
   timeout set --command "maven:verify" --duration 165
 ```
 
+**Keying caveat — the cache key is the full `--command-args`, so flag changes mint fresh no-history keys.**
+
+The learned-duration history is keyed on the **complete `--command-args` string** (the value that flows into `command_key`), not on a stable command identity. Any change to that string — adding or removing a flag, scoping to a module, switching a profile — produces a **different key with no learned history**. Concretely, `quality-gate plan-marshall` and `quality-gate` are distinct keys: the module-scoped variant does not inherit the unscoped variant's learned duration. The first run after introducing a new variant therefore has no history and falls back to the **static default** (`timeout_get`'s `default`, e.g. 300s — a no-history fallback, not an upper bound) rather than a learned value.
+
+This matters for **flag-parameterised commands**. When a caller introduces a new flag combination for an otherwise-familiar command — a new module scope, a new profile, a `--no-parallel` toggle — the adaptive timeout starts cold for that exact combination. If the real run is a long whole-suite or whole-module build, the cold static default can be far too short, causing a spurious timeout on the *first* invocation of the new variant (which then also pollutes the learned history if recorded). The practical implication:
+
+* Treat each distinct `--command-args` string as its own learning curve — adding a flag does **not** carry over the unflagged variant's learned duration.
+* When introducing a new flag combination for a command known to run long, pass an explicit generous `--timeout` sized for the cold/un-learned case so the first run does not time out before any history exists.
+* Remember that `--timeout` is a **fallback used only when no learned value exists for the key**; it does not override an established learned value, and it does not help once the new key has accumulated its own history.
+
 ## CLI Interface
 
 Extensions expose a single `run` subcommand with format and mode selection:
