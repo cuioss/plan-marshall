@@ -791,7 +791,7 @@ def _capture_router_plan_id(argv: list[str]) -> str | None:
     return plan_id
 
 
-def _fetch_failed_job_trace(run_id: str) -> str | None:
+def _fetch_failed_job_trace(run_id: str, job_id: str = '') -> str | None:
     """Download the raw failing-job trace for a pipeline via ``glab ci trace``.
 
     Reuses the same CLI invocation as :func:`cmd_ci_logs` (honouring the
@@ -799,6 +799,11 @@ def _fetch_failed_job_trace(run_id: str) -> str | None:
     filter/persist layer applies its own extraction). Returns ``None`` on any
     non-zero exit or subprocess error so the enrich hook degrades that entry
     gracefully without aborting siblings.
+
+    ``job_id`` is accepted to match the shared ``raw_log_fetcher`` callback
+    signature (the GitHub path uses it to target a nested reusable-workflow job)
+    and is intentionally ignored here — ``glab ci trace`` resolves the failing
+    job from the pipeline id directly.
     """
     try:
         result = subprocess.run(

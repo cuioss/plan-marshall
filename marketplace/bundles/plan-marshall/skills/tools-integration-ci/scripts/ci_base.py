@@ -1348,8 +1348,11 @@ def enrich_failing_checks_with_logs(
             carrying at least ``name``/``job_name``/``run_id``). Mutated in
             place AND returned for convenience.
         provider: ``github`` or ``gitlab`` — recorded in the manifest.
-        raw_log_fetcher: Callable ``(run_id: str) -> str | None`` returning the
-            raw failing-job log for a run, or ``None``/raising on failure.
+        raw_log_fetcher: Callable ``(run_id: str, job_id: str) -> str | None``
+            returning the raw failing-job log for a run, or ``None``/raising on
+            failure. ``job_id`` is the entry's nested job id (non-empty for
+            reusable-workflow callers) so the fetcher can target the called job;
+            GitLab-style fetchers accept and ignore it.
         plan_id: Plan identifier locating the artifact tree. When ``None`` the
             hook is a no-op enrichment (every entry keeps empty path fields).
         error_style: One of ``maven|gradle|npm|generic`` (default ``generic``)
@@ -1374,7 +1377,7 @@ def enrich_failing_checks_with_logs(
 
         try:
             slug = _slugify(entry.get('job_name') or entry.get('name') or '')
-            raw_log = raw_log_fetcher(run_id)
+            raw_log = raw_log_fetcher(run_id, entry.get('job_id') or '')
             if raw_log is None:
                 continue
             filtered = filter_log(raw_log, error_style)

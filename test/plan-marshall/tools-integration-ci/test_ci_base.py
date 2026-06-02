@@ -1468,7 +1468,7 @@ def test_enrich_appends_distinct_paths_per_entry(plan_context):
         _failing_check('build (3.12)', '102'),
     ]
 
-    def fetcher(run_id: str) -> str:
+    def fetcher(run_id: str, job_id: str = '') -> str:
         return f'ERROR boom for run {run_id}\ntrailing line\n'
 
     result = enrich_failing_checks_with_logs(
@@ -1500,7 +1500,7 @@ def test_enrich_no_collision_when_two_checks_share_run_id(plan_context):
         _failing_check('build (3.12)', '500'),
     ]
 
-    def fetcher(run_id: str) -> str:
+    def fetcher(run_id: str, job_id: str = '') -> str:
         return f'ERROR failure log for {run_id}\n'
 
     enrich_failing_checks_with_logs(
@@ -1535,7 +1535,7 @@ def test_enrich_degrades_when_plan_id_absent():
     """plan_id=None makes the hook a no-op enrichment — empty path fields, no raise."""
     entries = [_failing_check('verify / verify', '101')]
 
-    def fetcher(run_id: str) -> str:  # pragma: no cover - must not be called
+    def fetcher(run_id: str, job_id: str = '') -> str:  # pragma: no cover - must not be called
         raise AssertionError('fetcher must not run when plan_id is None')
 
     result = enrich_failing_checks_with_logs(
@@ -1556,7 +1556,7 @@ def test_enrich_degrades_per_entry_when_run_id_missing(plan_context):
     bad = _failing_check('build (3.12)', '')  # empty run_id
     entries = [good, bad]
 
-    def fetcher(run_id: str) -> str:
+    def fetcher(run_id: str, job_id: str = '') -> str:
         return f'ERROR boom {run_id}\n'
 
     enrich_failing_checks_with_logs(
@@ -1580,7 +1580,7 @@ def test_enrich_degrades_per_entry_when_fetch_fails(plan_context):
     second = _failing_check('build (3.12)', '602')
     entries = [first, second]
 
-    def fetcher(run_id: str) -> str:
+    def fetcher(run_id: str, job_id: str = '') -> str:
         if run_id == '601':
             raise RuntimeError('network down')
         return f'ERROR ok {run_id}\n'
@@ -1607,7 +1607,7 @@ def test_enrich_degrades_per_entry_when_fetch_returns_none(plan_context):
     second = _failing_check('build (3.12)', '702')
     entries = [first, second]
 
-    def fetcher(run_id: str) -> str | None:
+    def fetcher(run_id: str, job_id: str = '') -> str | None:
         if run_id == '701':
             return None
         return f'ERROR ok {run_id}\n'
@@ -1629,7 +1629,7 @@ def test_enrich_records_error_style_on_each_entry(plan_context):
     plan_id = 'enrich-error-style'
     entries = [_failing_check('verify / verify', '111')]
 
-    def fetcher(run_id: str) -> str:
+    def fetcher(run_id: str, job_id: str = '') -> str:
         return f'ERROR boom {run_id}\n'
 
     enrich_failing_checks_with_logs(
@@ -1640,6 +1640,55 @@ def test_enrich_records_error_style_on_each_entry(plan_context):
         error_style='maven',
     )
     assert entries[0]['error_style'] == 'maven'
+
+
+def test_enrich_passes_job_id_to_fetcher(plan_context):
+    """The entry's job_id is forwarded as the fetcher's second positional arg.
+
+    Reusable-workflow callers populate ``job_id`` on the failing-check entry;
+    the shared hook must thread it through to ``raw_log_fetcher`` so the
+    GitHub fetcher can target the nested called job.
+    """
+    plan_id = 'enrich-job-id-forward'
+    entry = _failing_check('verify / verify', '321')
+    entry['job_id'] = '654'
+    entries = [entry]
+
+    captured: list[tuple[str, str]] = []
+
+    def fetcher(run_id: str, job_id: str = '') -> str:
+        captured.append((run_id, job_id))
+        return f'ERROR boom {run_id}\n'
+
+    enrich_failing_checks_with_logs(
+        failing_checks=entries,
+        provider='github',
+        raw_log_fetcher=fetcher,
+        plan_id=plan_id,
+    )
+
+    assert captured == [('321', '654')]
+
+
+def test_enrich_passes_empty_job_id_when_absent(plan_context):
+    """When the entry carries no job_id, the fetcher receives an empty string."""
+    plan_id = 'enrich-job-id-absent'
+    entries = [_failing_check('build (3.12)', '322')]  # no job_id key
+
+    captured: list[tuple[str, str]] = []
+
+    def fetcher(run_id: str, job_id: str = '') -> str:
+        captured.append((run_id, job_id))
+        return f'ERROR boom {run_id}\n'
+
+    enrich_failing_checks_with_logs(
+        failing_checks=entries,
+        provider='github',
+        raw_log_fetcher=fetcher,
+        plan_id=plan_id,
+    )
+
+    assert captured == [('322', '')]
 
 
 # Silence unused-import warnings caused by the fixtures above.

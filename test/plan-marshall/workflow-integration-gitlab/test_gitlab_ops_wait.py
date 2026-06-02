@@ -466,7 +466,7 @@ def _wire_gitlab_failure(monkeypatch, *, jobs):
 
     fetch_calls = {'run_ids': []}
 
-    def fake_fetch_trace(run_id):
+    def fake_fetch_trace(run_id, job_id=''):
         fetch_calls['run_ids'].append(str(run_id))
         return fixture
 
