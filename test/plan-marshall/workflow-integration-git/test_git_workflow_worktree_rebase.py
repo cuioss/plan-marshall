@@ -176,14 +176,14 @@ class _RebaseTestBase(unittest.TestCase):
         main_root = getattr(self, '_main_root', self.worktree)
 
         original_resolver = git_workflow._resolve_worktree_path_for_plan
-        original_root = git_workflow.git_main_checkout_root
+        original_root = git_workflow._find_plan_root_from_cwd
         git_workflow._resolve_worktree_path_for_plan = lambda _pid: (target, error)
-        git_workflow.git_main_checkout_root = lambda: main_root
+        git_workflow._find_plan_root_from_cwd = lambda: main_root
         try:
             return cmd_worktree_rebase_to(Namespace(plan_id=plan_id, base=base))
         finally:
             git_workflow._resolve_worktree_path_for_plan = original_resolver
-            git_workflow.git_main_checkout_root = original_root
+            git_workflow._find_plan_root_from_cwd = original_root
 
 
 # ---------------------------------------------------------------------------

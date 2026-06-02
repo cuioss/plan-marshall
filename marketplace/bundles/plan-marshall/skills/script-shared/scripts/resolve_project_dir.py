@@ -38,7 +38,7 @@ import sys
 from pathlib import Path
 
 from file_ops import get_executor_path  # type: ignore[import-not-found]
-from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
+from marketplace_paths import _find_plan_root_from_cwd  # type: ignore[import-not-found]
 
 
 class MutuallyExclusiveArgsError(ValueError):
@@ -64,11 +64,9 @@ class WorktreeResolutionError(RuntimeError):
 def _executor_path() -> Path:
     """Locate ``.plan/execute-script.py`` relative to the main checkout.
 
-    The helper itself runs inside any worktree, but the executor lives
-    at the main checkout (and is canonical there). Delegates to
-    ``file_ops.get_executor_path()``, which resolves via
-    ``git rev-parse --git-common-dir`` (cached in ``marketplace_paths``)
-    and keeps the lookup worktree-safe.
+    Delegates to ``file_ops.get_executor_path()``, which resolves the executor
+    cwd-relatively via the uniform cwd rule (ADR-002) — worktree-resident during
+    phase-5+, main during the finalize regenerate-on-main path.
     """
     try:
         return get_executor_path()
@@ -169,16 +167,18 @@ def _parse_get_worktree_path_output(stdout: str) -> tuple[bool, str]:
 
 
 def _main_checkout_root() -> str:
-    """Return the main-checkout root as an absolute path string.
+    """Return the checkout root as an absolute path string.
 
     Used as the fallback when neither ``--plan-id`` nor ``--project-dir``
     is supplied (or when ``--plan-id`` resolves to ``use_worktree=false``).
+    Resolved cwd-relatively via the uniform cwd rule (ADR-002): the nearest
+    ancestor of cwd containing ``.plan/local``.
     """
-    root = git_main_checkout_root()
+    root = _find_plan_root_from_cwd()
     if root is None:
-        # Last-ditch fallback: caller is operating outside any git
-        # checkout (rare; usually a test fixture). Use cwd so the
-        # historical behaviour of ``--project-dir=.`` is preserved.
+        # Last-ditch fallback: caller is operating outside any resolvable
+        # plan root (rare; usually a test fixture). Use cwd so the historical
+        # behaviour of ``--project-dir=.`` is preserved.
         return os.path.abspath(os.getcwd())
     return str(root)
 

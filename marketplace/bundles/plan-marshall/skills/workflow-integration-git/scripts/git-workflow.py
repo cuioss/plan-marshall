@@ -67,9 +67,9 @@ from _cmd_baseline_reconcile import cmd_baseline_reconcile
 from _cmd_force_push import cmd_force_push
 from _cmd_prune_ref import cmd_prune_ref
 from _cmd_switch_and_pull import cmd_switch_and_pull
-from file_ops import get_worktree_root  # type: ignore[import-not-found]
+from file_ops import get_executor_path, get_worktree_root  # type: ignore[import-not-found]
 from git_provider import run_git  # type: ignore[import-not-found]
-from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
+from marketplace_paths import _find_plan_root_from_cwd  # type: ignore[import-not-found]
 from toon_parser import parse_toon, parse_toon_table  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
@@ -486,11 +486,12 @@ def _resolve_analyze_diff_path(args) -> tuple[Path | None, dict | None]:
 
         worktree_path_val = parsed.get('worktree_path') or ''
         if not worktree_path_val:
-            # Non-worktree plan: fall back to the main checkout root.
-            main = git_main_checkout_root()
+            # Non-worktree plan: fall back to the checkout root resolved via the
+            # uniform cwd rule (ADR-002).
+            main = _find_plan_root_from_cwd()
             if main is None:
                 return None, make_error(
-                    'cannot resolve main git checkout root for non-worktree plan',
+                    'cannot resolve checkout root from cwd for non-worktree plan',
                     code=ErrorCode.NOT_FOUND,
                 )
             return main, None
@@ -740,16 +741,18 @@ _SHARED_PLAN_SUBPATHS: tuple[tuple[str, bool], ...] = (
 
 
 def _executor_path() -> Path | None:
-    """Locate the ``.plan/execute-script.py`` executor relative to the main checkout.
+    """Locate the ``.plan/execute-script.py`` executor via the uniform cwd rule.
 
-    Returns ``None`` when the main checkout cannot be resolved (no git
-    repo) or the executor file is absent (fresh repo, before
-    ``/marshall-steward`` regeneration).
+    Resolves the executor cwd-relatively (ADR-002, via
+    ``file_ops.get_executor_path()``) — worktree-resident during phase-5+, main
+    during the finalize regenerate-on-main path. Returns ``None`` when the plan
+    root cannot be resolved (no ``.plan/local`` ancestor of cwd) or the executor
+    file is absent (fresh repo, before ``/marshall-steward`` regeneration).
     """
-    root = git_main_checkout_root()
-    if root is None:
+    try:
+        candidate = get_executor_path()
+    except RuntimeError:
         return None
-    candidate = root / _PLAN_DIR_NAME / 'execute-script.py'
     return candidate if candidate.exists() else None
 
 
@@ -919,7 +922,7 @@ def _ensure_worktree_plan_symlinks(worktree: Path) -> tuple[bool, str]:
 
     Returns ``(success, error_message)``.
     """
-    main_root = git_main_checkout_root()
+    main_root = _find_plan_root_from_cwd()
     if main_root is None:
         return False, 'cannot resolve main git checkout root for .plan symlinks'
 
@@ -1005,7 +1008,7 @@ def cmd_worktree_create(args):
         }
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    main_root = git_main_checkout_root()
+    main_root = _find_plan_root_from_cwd()
     if main_root is None:
         return {
             'status': 'error',
@@ -1095,7 +1098,7 @@ def cmd_worktree_remove(args):
     if error is not None:
         return error
 
-    main_root = git_main_checkout_root()
+    main_root = _find_plan_root_from_cwd()
     if main_root is None:
         return {
             'status': 'error',
@@ -1246,7 +1249,7 @@ def cmd_worktree_rebase_to(args):
     if error is not None:
         return error
 
-    main_root = git_main_checkout_root()
+    main_root = _find_plan_root_from_cwd()
     if main_root is None:
         return {
             'status': 'error',

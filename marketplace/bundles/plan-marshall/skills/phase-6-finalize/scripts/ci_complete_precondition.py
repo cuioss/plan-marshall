@@ -83,7 +83,6 @@ import sys
 from pathlib import Path
 
 from file_ops import get_executor_path, get_plan_dir  # type: ignore[import-not-found]
-from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 # ---------------------------------------------------------------------------
@@ -165,14 +164,14 @@ def _run_ci_wait(
     worktree path itself; passing both ``--plan-id`` and
     ``--project-dir`` would trigger ``mutually_exclusive_args``.
     """
-    repo_root = git_main_checkout_root()
-    if repo_root is None:
+    try:
+        executor = get_executor_path()
+    except RuntimeError as exc:
         raise RuntimeError(
-            'ci_complete_precondition: unable to resolve the git main '
-            'checkout root via marketplace_paths.git_main_checkout_root() — '
-            'is this script running outside a git repository?'
-        )
-    executor = get_executor_path()
+            'ci_complete_precondition: unable to resolve the executor via the '
+            'uniform cwd rule (file_ops.get_executor_path()) — is the working '
+            'directory inside a checkout with a .plan/local tree?'
+        ) from exc
     cmd = [
         sys.executable,
         str(executor),
@@ -229,10 +228,10 @@ def _run_run_config_timeout_get(default_seconds: int) -> int:
     gracefully to ``default_seconds`` — sourcing the timeout from
     run-configuration.json is an optimisation, never a hard dependency.
     """
-    repo_root = git_main_checkout_root()
-    if repo_root is None:
+    try:
+        executor = get_executor_path()
+    except RuntimeError:
         return default_seconds
-    executor = get_executor_path()
     cmd = [
         sys.executable,
         str(executor),
@@ -277,10 +276,10 @@ def _run_run_config_timeout_set(duration_seconds: int) -> None:
     observed duration is best-effort telemetry, not a hard dependency of the
     precondition resolution.
     """
-    repo_root = git_main_checkout_root()
-    if repo_root is None:
+    try:
+        executor = get_executor_path()
+    except RuntimeError:
         return
-    executor = get_executor_path()
     cmd = [
         sys.executable,
         str(executor),

@@ -494,20 +494,23 @@ def test_base_path_respects_custom_base():
 def test_get_worktree_root_returns_plan_local_worktrees(tmp_path, monkeypatch):
     """get_worktree_root anchors at <root>/.plan/local/worktrees.
 
-    get_worktree_root resolves through get_base_dir, so the production path
-    is only produced when no PLAN_BASE_DIR override is active and the git
-    root resolves. delenv PLAN_BASE_DIR pins the git-root branch.
+    get_worktree_root resolves through get_base_dir (the uniform cwd rule,
+    ADR-002), so the production path is produced when no PLAN_BASE_DIR override
+    is active and the cwd walk-up resolves a .plan/local ancestor. delenv
+    PLAN_BASE_DIR + chdir into a tree with .plan/local pins the cwd-walk branch.
     """
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
+    (tmp_path / '.plan' / 'local').mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
     result = get_worktree_root()
-    assert result == tmp_path / '.plan' / 'local' / 'worktrees'
+    assert result == tmp_path.resolve() / '.plan' / 'local' / 'worktrees'
 
 
 def test_get_worktree_root_path_segments_match_new_constant(tmp_path, monkeypatch):
     """The trailing segments are exactly ('.plan', 'local', 'worktrees')."""
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
+    (tmp_path / '.plan' / 'local').mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
     result = get_worktree_root()
     assert result.parts[-3:] == ('.plan', 'local', 'worktrees')
 
@@ -515,7 +518,8 @@ def test_get_worktree_root_path_segments_match_new_constant(tmp_path, monkeypatc
 def test_get_worktree_root_does_not_use_claude_worktrees(tmp_path, monkeypatch):
     """The legacy .claude/worktrees/ path is no longer produced."""
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
+    (tmp_path / '.plan' / 'local').mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
     result = get_worktree_root()
     # No segment of the resolved path may be ``.claude`` — that prefix is
     # gone now that worktrees live under ``.plan/local/``.
@@ -534,11 +538,13 @@ def test_get_worktree_root_honors_plan_base_dir(tmp_path, monkeypatch):
     assert result == tmp_path / 'worktrees'
 
 
-def test_get_worktree_root_without_git_repo_raises(monkeypatch):
-    """When no git repo can be resolved, get_worktree_root raises RuntimeError."""
+def test_get_worktree_root_without_plan_root_raises(tmp_path, monkeypatch):
+    """When no .plan/local ancestor of cwd resolves, get_worktree_root raises."""
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: None)
-    with pytest.raises(RuntimeError, match='git'):
+    bare = tmp_path / 'bare'
+    bare.mkdir()
+    monkeypatch.chdir(bare)
+    with pytest.raises(RuntimeError, match='plan root'):
         get_worktree_root()
 
 
@@ -546,45 +552,52 @@ def test_get_worktree_root_without_git_repo_raises(monkeypatch):
 # get_executor_path tests
 # =============================================================================
 #
-# get_executor_path resolves ``.plan/execute-script.py`` against the main
-# checkout root (via git_main_checkout_root). It is worktree-aware: when
-# called from inside an isolated worktree, git_main_checkout_root still
-# resolves the main checkout (git-common-dir), so the executor path points at
-# the canonical main-checkout copy rather than a per-worktree one.
+# get_executor_path resolves ``.plan/execute-script.py`` cwd-relatively
+# (ADR-002): PLAN_BASE_DIR / set_base_dir override anchors the executor at
+# ``<override>/execute-script.py``; in production it walks up from cwd to the
+# nearest ``.plan/local`` ancestor and joins ``.plan/execute-script.py`` there
+# — worktree-resident when cwd is pinned to the worktree (phase-5+), main when
+# cwd is main (the finalize regenerate-on-main path).
 
 
-def test_get_executor_path_main_checkout(tmp_path, monkeypatch):
-    """get_executor_path anchors at <main_checkout_root>/.plan/execute-script.py."""
-    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
+def test_get_executor_path_plan_base_dir_override(tmp_path, monkeypatch):
+    """With PLAN_BASE_DIR set, the executor anchors at <override>/execute-script.py."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     result = get_executor_path()
-    assert result == tmp_path / '.plan' / 'execute-script.py'
+    assert result == tmp_path / 'execute-script.py'
 
 
-def test_get_executor_path_path_segments(tmp_path, monkeypatch):
-    """The trailing segments are exactly ('.plan', 'execute-script.py')."""
-    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
+def test_get_executor_path_cwd_walk_up(tmp_path, monkeypatch):
+    """In production, the executor anchors at <plan-root>/.plan/execute-script.py."""
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    (tmp_path / '.plan' / 'local').mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
     result = get_executor_path()
+    assert result == tmp_path.resolve() / '.plan' / 'execute-script.py'
     assert result.parts[-2:] == ('.plan', 'execute-script.py')
 
 
-def test_get_executor_path_worktree_layout_resolves_to_main_checkout(tmp_path, monkeypatch):
-    """From a worktree, git_main_checkout_root resolves the main checkout, so
-    the executor path is the canonical main-checkout copy — never a path under
-    the worktree's own ``.plan/local/worktrees/`` subtree."""
-    main_root = tmp_path / 'main'
-    main_root.mkdir()
-    # Simulate being inside a worktree: git_main_checkout_root still returns
-    # the main checkout (git-common-dir semantics), not the worktree dir.
-    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: main_root)
+def test_get_executor_path_pinned_in_worktree_resolves_worktree_resident(tmp_path, monkeypatch):
+    """With cwd pinned inside a moved-in worktree (its own .plan/local), the
+    executor resolves to the worktree-resident copy — never the main checkout
+    above it."""
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    main = tmp_path / 'main'
+    (main / '.plan' / 'local').mkdir(parents=True)
+    worktree = main / '.plan' / 'local' / 'worktrees' / 'plan-x'
+    (worktree / '.plan' / 'local').mkdir(parents=True)
+    monkeypatch.chdir(worktree)
     result = get_executor_path()
-    assert result == main_root / '.plan' / 'execute-script.py'
-    assert 'worktrees' not in result.parts
+    assert result == worktree.resolve() / '.plan' / 'execute-script.py'
 
 
-def test_get_executor_path_without_git_repo_raises(monkeypatch):
-    """When no git repo can be resolved, get_executor_path raises RuntimeError."""
-    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: None)
-    with pytest.raises(RuntimeError, match='git repository'):
+def test_get_executor_path_without_plan_root_raises(tmp_path, monkeypatch):
+    """When no .plan/local ancestor of cwd resolves, get_executor_path raises."""
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    bare = tmp_path / 'bare'
+    bare.mkdir()
+    monkeypatch.chdir(bare)
+    with pytest.raises(RuntimeError, match='plan root'):
         get_executor_path()
 
 

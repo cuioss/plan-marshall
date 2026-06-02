@@ -116,25 +116,21 @@ def _resolve_project_dir(args) -> tuple[Path | None, dict | None]:
                 'message': parsed.get('message') or 'plan resolution failed',
             }
 
-        # For switch-and-pull, we operate on the main checkout (not the
-        # worktree). The main checkout path is the parent of the worktree
-        # root or the ``project_dir`` field returned by manage-status.
-        # ``manage-status get-worktree-path`` returns the worktree path when
-        # use_worktree is true; for main-checkout flow it returns the project
-        # root. We use whatever path is returned as the working directory since
-        # the caller of this verb (branch-cleanup.md §7.1) always supplies
+        # For switch-and-pull, we operate on the checkout the working directory
+        # is in. The caller of this verb (branch-cleanup.md §7.1) supplies
         # ``--project-dir {main_checkout}`` explicitly when they know the path.
-        # When invoked via ``--plan-id``, the caller does not know the path —
-        # we derive the main checkout root from ``marketplace_paths``.
+        # When invoked via ``--plan-id``, the caller does not know the path — we
+        # derive the checkout root via the uniform cwd rule (ADR-002): the plan
+        # root is the nearest ancestor of cwd containing ``.plan/local``.
         try:
-            from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
-            main_root = git_main_checkout_root()
+            from marketplace_paths import _find_plan_root_from_cwd  # type: ignore[import-not-found]
+            main_root = _find_plan_root_from_cwd()
             if main_root is None:
                 return None, {
                     **envelope,
                     'status': 'error',
                     'error_type': 'plan_not_found',
-                    'message': 'cannot resolve main git checkout root',
+                    'message': 'cannot resolve checkout root from cwd',
                 }
             return main_root, None
         except ImportError:
