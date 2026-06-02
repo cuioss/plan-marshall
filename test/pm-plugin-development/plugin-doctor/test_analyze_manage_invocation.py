@@ -75,9 +75,6 @@ RULE_MANAGE_INVOCATION_INVALID = _ami.RULE_MANAGE_INVOCATION_INVALID
 RULE_MISSING_CANONICAL_BLOCK = _ami.RULE_MISSING_CANONICAL_BLOCK
 _positional_region_is_templated = _ami._positional_region_is_templated
 
-# Repository (worktree) root: test/pm-plugin-development/plugin-doctor/ -> 4 up.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
 
 # ---------------------------------------------------------------------------
 # Synthetic argparse scripts exercising real registration styles.
@@ -281,16 +278,23 @@ def _shared_flag_source() -> str:
 # flows through to the target's argparse instance, producing the real published
 # surface.
 #
-# Dispatch is via a child ``subprocess`` rather than ``runpy.run_path``: under
-# ``--help`` the target raises ``SystemExit`` from inside ``runpy``, and the
-# combination of ``runpy`` + ``SystemExit`` + the parent's ``capture_output``
-# intermittently drops the help text on stdout (an interpreter-shutdown flush
-# race). The child subprocess captures the target's stdout deterministically
-# before forwarding it, so the derived surface is stable across repeated probes.
+# Dispatch is IN-PROCESS via ``runpy.run_path`` under redirected stdout/stderr
+# rather than a child ``subprocess``: the analyzer's own ``_run_help`` already
+# spawns the shim as a subprocess, so an additional inner spawn (shim -> target)
+# doubled the interpreter cold-start cost for every fixture-backed probe. The
+# shim drives ``runpy.run_path`` itself, catching the ``SystemExit`` that
+# argparse raises on ``--help`` and explicitly flushing the captured stdout/
+# stderr before exiting. Because the shim owns the flush deterministically (it
+# is the only writer to the real fds at exit), the help text is stable across
+# repeated probes — the interpreter-shutdown flush race that motivated the old
+# subprocess design only manifested when ``runpy`` + ``SystemExit`` raced the
+# PARENT's ``capture_output`` teardown, which no longer applies here.
 _EXECUTOR_SHIM = textwrap.dedent('''
     #!/usr/bin/env python3
+    import contextlib
+    import io
     import json
-    import subprocess
+    import runpy
     import sys
     from pathlib import Path
 
@@ -304,14 +308,32 @@ _EXECUTOR_SHIM = textwrap.dedent('''
         if target is None:
             sys.stderr.write(f'Unknown notation: {notation}\\n')
             sys.exit(2)
-        result = subprocess.run(
-            [sys.executable, target, *sys.argv[2:]],
-            capture_output=True,
-            text=True,
-        )
-        sys.stdout.write(result.stdout)
-        sys.stderr.write(result.stderr)
-        sys.exit(result.returncode)
+
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        rc = 0
+        saved_argv = sys.argv
+        sys.argv = [target, *sys.argv[2:]]
+        try:
+            with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                runpy.run_path(target, run_name='__main__')
+        except SystemExit as exc:
+            code = exc.code
+            if code is None:
+                rc = 0
+            elif isinstance(code, int):
+                rc = code
+            else:
+                err_buf.write(f'{code}\\n')
+                rc = 1
+        finally:
+            sys.argv = saved_argv
+
+        sys.stdout.write(out_buf.getvalue())
+        sys.stderr.write(err_buf.getvalue())
+        sys.stdout.flush()
+        sys.stderr.flush()
+        sys.exit(rc)
 
     if __name__ == '__main__':
         main()
@@ -1691,84 +1713,10 @@ class TestUniversalFlagAllowlist:
         assert invalid[0]['details']['flag'] == 'bogus'
 
 
-# ---------------------------------------------------------------------------
-# Layer J — zero false positives against the REAL plan-marshall bundle.
-# ---------------------------------------------------------------------------
-
-
-def _real_executor() -> Path | None:
-    """Resolve the real ``.plan/execute-script.py`` for the live bundle.
-
-    Returns ``None`` when the executor is not present (e.g. an unconfigured
-    checkout) so the dependent tests skip rather than fail spuriously.
-    """
-    candidate = PROJECT_ROOT / '.plan' / 'execute-script.py'
-    return candidate if candidate.is_file() else None
-
-
-class TestRealMarketplaceZeroFalsePositives:
-    """The corrected analyzer must not flag correctly-authored canonical calls.
-
-    The AST extractor produced 1323 false positives in plan-marshall alone
-    (loop/helper-registered subcommands invisible, shared flags dropped).
-    The ``--help`` derivation derives the real surface, so canonical calls in
-    the shipped docs — the exact loop-registered subcommands and shared flags
-    that broke the AST extractor — must produce ZERO ``manage-invocation-invalid``
-    findings.
-
-    The surface is derived per-notation (``derive_script_tree``) against the
-    live executor rather than via a whole-marketplace ``build_script_index``
-    so the test cost stays bounded to the two notations under test.
-    """
-
-    def test_loop_and_shared_flag_calls_not_flagged_in_real_bundle(self) -> None:
-        executor = _real_executor()
-        if executor is None:
-            pytest.skip('real executor not present in this checkout')
-        # manage-logging registers work/decision via a loop; --plan-id/--level/
-        # --message are shared across them — the exact shapes the AST extractor
-        # mis-flagged.
-        notation = 'plan-marshall:manage-logging:manage-logging'
-        tree = derive_script_tree(notation, executor)
-        assert tree is not None, 'manage-logging --help must be reachable'
-        index = {notation: tree}
-        canonical_calls = [
-            f'python3 .plan/execute-script.py {notation} work '
-            f'--plan-id p --level INFO --message "[STATUS] hi"',
-            f'python3 .plan/execute-script.py {notation} decision '
-            f'--plan-id p --level INFO --message "(skill) decided"',
-            f'python3 .plan/execute-script.py {notation} separator --plan-id p',
-        ]
-        for call in canonical_calls:
-            findings = analyze_manage_invocation_markdown(
-                call + '\n', '/fake/SKILL.md', index
-            )
-            invalid = [
-                f for f in findings
-                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-            ]
-            assert invalid == [], f'false positive(s) for canonical call: {call}\n{invalid}'
-
-    def test_many_subcommand_calls_not_flagged_in_real_bundle(self) -> None:
-        executor = _real_executor()
-        if executor is None:
-            pytest.skip('real executor not present in this checkout')
-        notation = 'plan-marshall:manage-status:manage-status'
-        tree = derive_script_tree(notation, executor)
-        assert tree is not None, 'manage-status --help must be reachable'
-        index = {notation: tree}
-        # Subcommands the AST extractor commonly dropped.
-        canonical_calls = [
-            f'python3 .plan/execute-script.py {notation} read --plan-id p',
-            f'python3 .plan/execute-script.py {notation} get-worktree-path --plan-id p',
-            f'python3 .plan/execute-script.py {notation} transition --plan-id p --completed 5-execute',
-        ]
-        for call in canonical_calls:
-            findings = analyze_manage_invocation_markdown(
-                call + '\n', '/fake/SKILL.md', index
-            )
-            invalid = [
-                f for f in findings
-                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-            ]
-            assert invalid == [], f'false positive(s) for canonical call: {call}\n{invalid}'
+# NOTE: The zero-false-positive smokes against the REAL plan-marshall bundle
+# (``TestRealMarketplaceZeroFalsePositives``) probe the live
+# ``.plan/execute-script.py`` executor and live in the integration suite
+# (``integration/test_analyze_manage_invocation_smoke.py``, excluded from the
+# default ``module-tests`` run via the root ``test/conftest.py`` collect_ignore
+# list). This unit suite derives surfaces only from synthetic argparse scripts
+# behind the in-process shim above.

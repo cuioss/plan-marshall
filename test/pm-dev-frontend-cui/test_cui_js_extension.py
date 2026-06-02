@@ -173,18 +173,6 @@ def test_get_skill_domains_profile_structure():
         assert isinstance(config['optionals'], list), f'profiles.{category}.optionals must be list'
 
 
-def test_get_skill_domains_cui_javascript_project_skill_exists():
-    """The cui-javascript-project skill referenced in core.defaults actually exists."""
-    skill_path = MARKETPLACE_ROOT / 'pm-dev-frontend-cui' / 'skills' / 'cui-javascript-project'
-    assert skill_path.is_dir(), f'Skill directory not found: {skill_path}'
-    has_content = (
-        (skill_path / 'SKILL.md').exists()
-        or len(list(skill_path.glob('*.md'))) > 0
-        or len(list(skill_path.glob('scripts/*.py'))) > 0
-    )
-    assert has_content, f'Skill directory exists but has no content: {skill_path}'
-
-
 # =============================================================================
 # applies_to_module() tests
 # =============================================================================
@@ -356,64 +344,3 @@ def test_config_defaults_write_once_semantics():
         assert ext_defaults.get('build.maven.profiles.map.canonical') == pre_existing, (
             'config_defaults() must not overwrite pre-existing extension_defaults values'
         )
-
-
-# =============================================================================
-# additive_to contract
-# =============================================================================
-
-
-def test_additive_to_javascript_when_applicable():
-    """Extension is additive to 'javascript' domain, not standalone."""
-    ext = load_frontend_cui_extension()
-    result = ext.applies_to_module(_npm_maven_module_data())
-    assert result['additive_to'] == 'javascript', "pm-dev-frontend-cui must be additive to 'javascript'"
-
-
-if __name__ == '__main__':
-    import traceback
-
-    tests = [
-        test_get_skill_domains_returns_list,
-        test_get_skill_domains_domain_key,
-        test_get_skill_domains_domain_name,
-        test_get_skill_domains_domain_description,
-        test_get_skill_domains_has_profiles,
-        test_get_skill_domains_core_profile_has_cui_javascript_project,
-        test_get_skill_domains_profile_structure,
-        test_get_skill_domains_cui_javascript_project_skill_exists,
-        test_applies_to_module_npm_and_maven_is_applicable,
-        test_applies_to_module_npm_and_maven_confidence_high,
-        test_applies_to_module_npm_only_not_applicable,
-        test_applies_to_module_maven_only_not_applicable,
-        test_applies_to_module_empty_not_applicable,
-        test_applies_to_module_additive_to_javascript,
-        test_applies_to_module_not_applicable_additive_to_none,
-        test_applies_to_module_result_has_required_keys,
-        test_applies_to_module_with_cui_deps_signals,
-        test_applies_to_module_with_frontend_maven_plugin_signal,
-        test_applies_to_module_accepts_active_profiles,
-        test_applies_to_module_skills_by_profile_populated,
-        test_config_defaults_sets_profiles_map,
-        test_config_defaults_sets_profiles_skip,
-        test_config_defaults_write_once_semantics,
-        test_additive_to_javascript_when_applicable,
-    ]
-
-    passed = 0
-    failed = 0
-
-    for test in tests:
-        try:
-            test()
-            passed += 1
-        except Exception:
-            failed += 1
-            print(f'FAILED: {test.__name__}')
-            traceback.print_exc()
-            print()
-
-    print(f'\nResults: {passed} passed, {failed} failed')
-    import sys
-
-    sys.exit(0 if failed == 0 else 1)

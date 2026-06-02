@@ -22,9 +22,7 @@ classification.
 """
 
 import importlib.util
-import os
 import shutil
-import subprocess
 import sys
 import tempfile
 from argparse import Namespace
@@ -44,6 +42,7 @@ def _load_module(name: str, filename: str):
 
 _architecture_core = _load_module('_architecture_core', '_architecture_core.py')
 _cmd_client = _load_module('_cmd_client', '_cmd_client.py')
+_architecture = _load_module('architecture', 'architecture.py')
 
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived
@@ -257,26 +256,26 @@ def test_enriched_only_diff_does_not_produce_changed():
 def test_argparse_registers_diff_modules_subcommand():
     """``architecture diff-modules --pre <path>`` is a registered subcommand.
 
-    Invokes ``architecture.py --help`` and ``architecture.py diff-modules
-    --help`` as a subprocess so the assertion exercises the real argparse
-    wiring rather than internal dispatch tables.
+    Drives ``architecture.main()`` in-process with a patched ``sys.argv`` of
+    ``['architecture.py', 'diff-modules', '--help']`` under captured stdout so
+    the assertion exercises the real argparse wiring (no interpreter
+    cold-start). The top-level ``--help`` presence of ``diff-modules`` is
+    asserted authoritatively in
+    ``test_cmd_client.py::test_architecture_help_registers_all_subcommands`` —
+    this test owns only the subcommand-level ``--pre`` flag check.
     """
-    env = os.environ.copy()
-    env['PYTHONPATH'] = os.pathsep.join(sys.path)
-    cmd_help = subprocess.run(
-        [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), '--help'],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert cmd_help.returncode == 0, f'--help failed: {cmd_help.stderr}'
-    assert 'diff-modules' in cmd_help.stdout
+    import contextlib
+    import io
 
-    sub_help = subprocess.run(
-        [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), 'diff-modules', '--help'],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert sub_help.returncode == 0, f'diff-modules --help failed: {sub_help.stderr}'
-    assert '--pre' in sub_help.stdout
+    buf = io.StringIO()
+    saved_argv = sys.argv
+    sys.argv = ['architecture.py', 'diff-modules', '--help']
+    try:
+        with contextlib.redirect_stdout(buf):
+            _architecture.main()
+    except SystemExit as exc:
+        assert exc.code in (0, None), f'diff-modules --help exited non-zero: {exc.code}'
+    finally:
+        sys.argv = saved_argv
+
+    assert '--pre' in buf.getvalue()

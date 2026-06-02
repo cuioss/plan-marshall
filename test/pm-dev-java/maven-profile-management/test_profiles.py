@@ -7,7 +7,6 @@ The legacy monolithic ``derived-data.json`` shape is intentionally
 absent from this surface — TASK-2 removed it from ``_architecture_core``.
 """
 
-import sys
 import tempfile
 
 # Direct imports - conftest sets up PYTHONPATH
@@ -250,9 +249,3 @@ def test_suggest_classifications():
         # Find custom-profile suggestion
         custom_suggestion = next(s for s in suggestions if s['profile_id'] == 'custom-profile')
         assert custom_suggestion['suggested'] == 'unknown'
-
-
-if __name__ == '__main__':
-    import pytest
-
-    sys.exit(pytest.main([__file__, '-v']))

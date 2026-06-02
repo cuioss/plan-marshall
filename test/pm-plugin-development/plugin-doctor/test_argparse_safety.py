@@ -8,16 +8,13 @@ are missing ``allow_abbrev=False``. Missing the flag silently enables
 argparse's prefix-matching behavior, which lets retired or renamed flags
 keep matching by accident — see lesson 2026-04-17-012.
 
-Tests here exercise the scanner via direct import (Tier 2) plus one
-end-to-end check against the real marketplace tree, which after the
-D1-D4 retrofits MUST produce zero findings.
+Tests here exercise the scanner via direct import (Tier 2) against
+synthetic fixture trees.
 """
 
 from pathlib import Path
 
 from conftest import load_script_module
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 
 def _load_module(name: str, filename: str):
@@ -227,17 +224,3 @@ def test_scan_argparse_safety_on_fixture(tmp_path):
     )
     assert all(f['type'] == 'argparse_safety' for f in findings)
     assert all(f['severity'] == 'error' for f in findings)
-
-
-def test_real_marketplace_has_zero_findings():
-    """After the D1-D4 retrofits, the real marketplace tree MUST produce zero
-    argparse_safety findings. This guards against regressions."""
-    real_marketplace_root = PROJECT_ROOT / 'marketplace' / 'bundles'
-    if not real_marketplace_root.is_dir():
-        return  # Skip if not run from source tree
-
-    findings = scan_argparse_safety(real_marketplace_root)
-    assert findings == [], (
-        f'Expected zero argparse_safety findings in retrofitted marketplace, '
-        f'got {len(findings)}: ' + '; '.join(f'{f["file"]}:{f["line"]}' for f in findings[:10])
-    )

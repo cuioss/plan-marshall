@@ -9,34 +9,26 @@ from marketplace_paths import (
     PLUGIN_CACHE_SUBPATH,
     find_marketplace_path,
     get_base_path,
-    get_plan_dir,
     get_plugin_cache_path,
     get_temp_dir,
     safe_relative_path,
 )
 
 
-class TestGetPlanDir:
-    def test_plan_base_dir_override(self, monkeypatch):
-        monkeypatch.setenv('PLAN_BASE_DIR', '/tmp/custom-plan')
-        result = get_plan_dir()
-        assert result == Path('/tmp/custom-plan')
+class TestNoOrphanGetPlanDir:
+    """Regression guard for the orphan-removal of ``get_plan_dir``.
 
-    def test_default_resolves_local_subdir_inside_git_repo(self, tmp_path, monkeypatch):
-        """Without an env override, the default resolves to
-        ``<git_main_checkout_root>/.plan/local`` when called from inside
-        a git repo.
-        """
-        import subprocess
+    ``get_plan_dir`` was a duplicate base resolver removed from
+    ``marketplace_paths`` (deliverable 2). Runtime plan-dir resolution lives
+    solely in ``tools-file-ops/file_ops.py``. This guard fails if the orphan
+    is ever reintroduced into the shared module, re-creating the duplication.
+    """
 
-        repo = tmp_path / 'repo'
-        repo.mkdir()
-        subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
-        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-        monkeypatch.chdir(repo)
-
-        result = get_plan_dir()
-        assert result.resolve() == (repo / '.plan' / 'local').resolve()
+    def test_get_plan_dir_is_not_a_module_attribute(self):
+        # Arrange / Act: introspect the imported shared module.
+        has_attr = hasattr(marketplace_paths, 'get_plan_dir')
+        # Assert: the orphan must not exist on marketplace_paths.
+        assert not has_attr
 
 
 class TestGetTempDir:

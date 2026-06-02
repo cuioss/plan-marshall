@@ -23,6 +23,7 @@ from _providers_core import (  # type: ignore[import-not-found]
 )
 
 import conftest  # noqa: F401
+from _providers_fixtures import stage_marshal
 
 # =============================================================================
 # Path Resolution Tests
@@ -244,8 +245,7 @@ class TestProviderConfig:
         """Write provider config to marshal.json and read it back."""
         from _providers_core import read_provider_config, write_provider_config  # type: ignore[import-not-found]
 
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
+        stage_marshal(tmp_path, monkeypatch, config=None)
 
         write_provider_config('test-skill', {'url': 'https://example.com', 'org': 'my-org'})
         config = read_provider_config('test-skill')
@@ -256,7 +256,7 @@ class TestProviderConfig:
         """Returns empty dict when marshal.json does not exist."""
         from _providers_core import read_provider_config  # type: ignore[import-not-found]
 
-        monkeypatch.chdir(tmp_path)
+        stage_marshal(tmp_path, monkeypatch, config=None)
         config = read_provider_config('nonexistent')
         assert config == {}
 
@@ -264,22 +264,18 @@ class TestProviderConfig:
         """Writing provider config preserves other marshal.json content."""
         from _providers_core import write_provider_config  # type: ignore[import-not-found]
 
-        monkeypatch.chdir(tmp_path)
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        marshal = plan_dir / 'marshal.json'
-        marshal.write_text(
-            json.dumps(
-                {
-                    'providers': [
-                        {
-                            'skill_name': 'workflow-integration-github',
-                            'auth_type': 'system',
-                            'repo_url': 'https://github.com/org/repo',
-                        }
-                    ],
-                }
-            )
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {
+                'providers': [
+                    {
+                        'skill_name': 'workflow-integration-github',
+                        'auth_type': 'system',
+                        'repo_url': 'https://github.com/org/repo',
+                    }
+                ],
+            },
         )
 
         write_provider_config('test-skill', {'url': 'https://api.example.com'})
@@ -292,8 +288,7 @@ class TestProviderConfig:
         """Writing to same provider overwrites previous config."""
         from _providers_core import read_provider_config, write_provider_config  # type: ignore[import-not-found]
 
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
+        stage_marshal(tmp_path, monkeypatch, config=None)
 
         write_provider_config('test-skill', {'url': 'https://old.com'})
         write_provider_config('test-skill', {'url': 'https://new.com'})
@@ -307,37 +302,32 @@ class TestLoadDeclaredProviders:
 
     def test_returns_empty_list_when_no_marshal_json(self, tmp_path, monkeypatch):
         """Should return empty list when marshal.json does not exist."""
-        monkeypatch.chdir(tmp_path)
+        stage_marshal(tmp_path, monkeypatch, config=None)
         providers = load_declared_providers()
         assert providers == []
 
     def test_returns_empty_list_when_no_providers_key(self, tmp_path, monkeypatch):
         """Should return empty list when marshal.json has no providers key."""
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-        (tmp_path / '.plan' / 'marshal.json').write_text('{"other": "data"}')
+        stage_marshal(tmp_path, monkeypatch, {'other': 'data'})
         providers = load_declared_providers()
         assert providers == []
 
     def test_returns_providers_from_marshal_json(self, tmp_path, monkeypatch):
         """Should return providers list from marshal.json."""
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
         config = {
             'providers': [
                 {'skill_name': 'test-provider', 'display_name': 'Test', 'auth_type': 'token'},
             ],
         }
-        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+        stage_marshal(tmp_path, monkeypatch, config)
         providers = load_declared_providers()
         assert len(providers) == 1
         assert providers[0]['skill_name'] == 'test-provider'
 
     def test_handles_invalid_json(self, tmp_path, monkeypatch):
         """Should return empty list on invalid JSON."""
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-        (tmp_path / '.plan' / 'marshal.json').write_text('not json')
+        marshal = stage_marshal(tmp_path, monkeypatch, config=None)
+        marshal.write_text('not json')
         providers = load_declared_providers()
         assert providers == []
 

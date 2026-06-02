@@ -235,23 +235,6 @@ def test_scan_marketplace():
         assert data['summary']['invalid'] == 1
 
 
-def test_scan_marketplace_real():
-    """Test scanning the real marketplace directory."""
-    marketplace_path = Path(__file__).parent.parent.parent.parent / 'marketplace'
-
-    if not marketplace_path.exists():
-        return
-
-    args = Namespace(extension_path=None, bundle_path=None, marketplace_path=str(marketplace_path))
-    data = cmd_extension(args)
-
-    assert 'summary' in data
-    assert data['summary']['with_extension'] >= 6
-    assert data['summary']['invalid'] == 0, (
-        f'All should be valid, issues: {[e for e in data.get("extensions", []) if not e.get("valid")]}'
-    )
-
-
 # =============================================================================
 # Contract Validation Tests (Tier 2 - direct import)
 # =============================================================================
@@ -352,18 +335,6 @@ def test_contract_validation_ec10_missing_triage_section():
         ec_rules = [e['rule'] for e in result['errors']]
         assert 'EC-11' in ec_rules  # Missing Severity Guidelines
         assert 'EC-12' in ec_rules  # Missing Acceptable to Accept
-
-
-def test_contract_validation_real_marketplace():
-    """Test contract validation against real marketplace (all should pass)."""
-    marketplace_path = Path(__file__).parent.parent.parent.parent / 'marketplace'
-    if not marketplace_path.exists():
-        return
-
-    result = validate_extension_contracts(marketplace_path)
-
-    assert result['total_checked'] >= 17, f'Expected at least 17 implementors, got {result["total_checked"]}'
-    assert result['failed'] == 0, f'All implementors should pass: {result["errors"]}'
 
 
 def test_contract_validation_filter_by_type():

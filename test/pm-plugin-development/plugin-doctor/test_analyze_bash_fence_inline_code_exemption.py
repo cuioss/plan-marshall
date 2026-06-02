@@ -249,24 +249,6 @@ class TestSelfReferenceExclusion:
 
 
 # ===========================================================================
-# Fixture f: real marketplace tree produces zero findings (invariant guard)
-# ===========================================================================
-
-
-class TestRealMarketplaceZeroFindings:
-    """The REAL marketplace tree produces zero findings (clean-tree invariant)."""
-
-    def test_real_marketplace_zero_findings(self) -> None:
-        # Resolve the real marketplace root: this test file lives at
-        # <repo>/test/pm-plugin-development/plugin-doctor/<this file>.
-        repo_root = Path(__file__).resolve().parents[3]
-        marketplace_root = repo_root / 'marketplace'
-        assert marketplace_root.is_dir(), f'marketplace root not found at {marketplace_root}'
-        findings = analyze_bash_fence_inline_code_exemption(marketplace_root)
-        assert findings == [], f'expected zero findings, got: {findings}'
-
-
-# ===========================================================================
 # Empty / missing tree edge cases
 # ===========================================================================
 

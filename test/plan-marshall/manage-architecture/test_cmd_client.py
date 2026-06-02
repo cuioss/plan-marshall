@@ -12,16 +12,12 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_scripts_dir, load_script_module
+from conftest import load_script_module
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _arch_fixtures import create_test_project  # noqa: E402
 from _arch_fixtures import seed_project as _seed_project  # noqa: E402
-
-# Retained for the CLI-plumbing subprocess tests that exec architecture.py
-# directly (e.g. `architecture.py find --help`).
-_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-architecture')
 
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
@@ -747,84 +743,77 @@ def test_cmd_find_searches_elided_sample_paths():
 # Argparse wiring assertion (catches subcommand-registration regressions)
 # =============================================================================
 
+# ``architecture.py`` builds its parser inline in ``main()`` and calls
+# ``parse_args()`` immediately, so there is no standalone ``build_parser()`` to
+# import. The helper below loads the module and drives ``main()`` with a patched
+# ``sys.argv`` of ``[..., *positionals, '--help']`` under captured stdout — the
+# parser still runs in-process (no interpreter cold-start per probe) and emits
+# the real ``--help`` surface before argparse raises ``SystemExit(0)``.
+#
+# This file owns the AUTHORITATIVE top-level ``--help`` assertion
+# (``test_architecture_help_registers_all_subcommands``), including the
+# ``diff-modules`` verb; ``test_diff_modules.py`` relies on it rather than
+# re-running the same top-level probe.
 
-def test_architecture_argparse_registers_files_inventory_subcommands():
-    """Loading ``architecture.py``'s ``--help`` exposes the three new verbs.
+_architecture = load_script_module('plan-marshall', 'manage-architecture', 'architecture.py', 'architecture')
 
-    A unit-level guard against accidentally dropping subparser registration
-    in ``architecture.py``. Invokes the script with ``--help`` and parses
-    the output for the verb names — this is identical to how a user would
-    discover the commands.
+
+def _capture_help(*positionals: str) -> str:
+    """Return ``architecture.py``'s ``--help`` text for the given subcommand path.
+
+    Drives ``architecture.main()`` in-process with a patched ``sys.argv`` of
+    ``['architecture.py', *positionals, '--help']`` under captured stdout,
+    catching the ``SystemExit`` argparse raises after printing help.
     """
-    import os
-    import subprocess
+    import contextlib
+    import io
 
-    env = os.environ.copy()
-    env['PYTHONPATH'] = os.pathsep.join(sys.path)
-    proc = subprocess.run(
-        [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), '--help'],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert proc.returncode == 0, f'--help failed: {proc.stderr}'
-    help_text = proc.stdout
+    buf = io.StringIO()
+    saved_argv = sys.argv
+    sys.argv = ['architecture.py', *positionals, '--help']
+    try:
+        with contextlib.redirect_stdout(buf):
+            _architecture.main()
+    except SystemExit as exc:
+        assert exc.code in (0, None), f'--help exited non-zero: {exc.code}'
+    finally:
+        sys.argv = saved_argv
+    return buf.getvalue()
+
+
+def test_architecture_help_registers_all_subcommands():
+    """The top-level ``--help`` exposes every registered verb.
+
+    Authoritative top-level ``--help`` guard against accidentally dropping
+    subparser registration in ``architecture.py``. Asserts the files-inventory
+    verbs and ``diff-modules`` (the latter on behalf of test_diff_modules.py,
+    which no longer re-probes the top-level help).
+    """
+    help_text = _capture_help()
     assert 'files' in help_text
     assert 'which-module' in help_text
     assert 'find' in help_text
+    assert 'diff-modules' in help_text
 
 
 def test_architecture_argparse_files_subcommand_accepts_module_and_category():
     """``files --module X --category Y`` is a valid argument combination."""
-    import os
-    import subprocess
-
-    env = os.environ.copy()
-    env['PYTHONPATH'] = os.pathsep.join(sys.path)
-    proc = subprocess.run(
-        [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), 'files', '--help'],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert proc.returncode == 0
-    assert '--module' in proc.stdout
-    assert '--category' in proc.stdout
+    help_text = _capture_help('files')
+    assert '--module' in help_text
+    assert '--category' in help_text
 
 
 def test_architecture_argparse_which_module_subcommand_accepts_path():
     """``which-module --path P`` is a valid argument combination."""
-    import os
-    import subprocess
-
-    env = os.environ.copy()
-    env['PYTHONPATH'] = os.pathsep.join(sys.path)
-    proc = subprocess.run(
-        [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), 'which-module', '--help'],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert proc.returncode == 0
-    assert '--path' in proc.stdout
+    help_text = _capture_help('which-module')
+    assert '--path' in help_text
 
 
 def test_architecture_argparse_find_subcommand_accepts_pattern_and_category():
     """``find --pattern P --category Y`` is a valid argument combination."""
-    import os
-    import subprocess
-
-    env = os.environ.copy()
-    env['PYTHONPATH'] = os.pathsep.join(sys.path)
-    proc = subprocess.run(
-        [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), 'find', '--help'],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert proc.returncode == 0
-    assert '--pattern' in proc.stdout
-    assert '--category' in proc.stdout
+    help_text = _capture_help('find')
+    assert '--pattern' in help_text
+    assert '--category' in help_text
 
 
 # =============================================================================

@@ -16,15 +16,15 @@ Every script in the marketplace falls into exactly one of three buckets. The buc
 
 Scripts that read or write plan state under `.plan/` must resolve the plan directory via the shared helper, which uses `git rev-parse --git-common-dir`. This produces the same absolute path from every worktree attached to the repository, so plan metadata is shared across worktrees without duplication.
 
-**Mechanism**: `script_shared.marketplace_paths.get_plan_dir()` in `plan-marshall:script-shared`. Internally:
+**Mechanism**: `file_ops.get_base_dir()` in `plan-marshall:tools-file-ops` is the single canonical base resolver. Absent the `PLAN_BASE_DIR` override, it anchors on `script_shared.marketplace_paths.git_main_checkout_root()`, which internally runs:
 
 ```
 git rev-parse --path-format=absolute --git-common-dir
 ```
 
-returns the main `.git` directory regardless of which worktree is active; the helper anchors `.plan/` next to it. This is an existing invariant — new scripts inherit the behaviour by calling `get_plan_dir()` rather than constructing paths from `Path.cwd()` or `__file__`.
+returns the main `.git` directory regardless of which worktree is active; `get_base_dir()` anchors `.plan/local` next to it (and `file_ops.get_plan_dir(plan_id)` derives a specific plan directory from that base). This is an existing invariant — new scripts inherit the behaviour by calling `get_base_dir()` rather than constructing paths from `Path.cwd()` or `__file__`.
 
-**Rule**: never read `Path.cwd()` to locate `.plan/`. Always call `get_plan_dir()`.
+**Rule**: never read `Path.cwd()` to locate `.plan/`. Always derive from `get_base_dir()`.
 
 **Examples**: `manage-files`, `manage-tasks`, `manage-config`, `manage-findings`, `manage-logging`, `manage-lessons`, `manage-architecture`, `manage-providers`, `manage-run-config`, `manage-plan-documents`, `manage-references`.
 
@@ -66,7 +66,7 @@ A small set of tools operate on the marketplace itself rather than on plan state
 
 | Bucket | Category | Examples | Mechanism |
 |--------|----------|----------|-----------|
-| A | Plan metadata | `manage-*` scripts, logging, findings | `get_plan_dir()` → `git rev-parse --git-common-dir` |
+| A | Plan metadata | `manage-*` scripts, logging, findings | `get_base_dir()` → `git_main_checkout_root()` → `git rev-parse --git-common-dir` |
 | B | Worktree-scoped git | Commit, status, diff, checkout | `git -C {worktree_path} <cmd>` |
 | B | Build / test / lint | `build-maven`, `build-pyproject`, `build-npm`, `build-gradle` | `--plan-id {plan_id}` (preferred) or `--project-dir {worktree_path}` (escape hatch) |
 | B | CI / Sonar / PR tooling | `tools-integration-ci`, `workflow-integration-sonar`, `workflow-pr-doctor` | `--plan-id {plan_id}` (preferred) or `--project-dir {worktree_path}` (escape hatch) |
@@ -81,4 +81,4 @@ A small set of tools operate on the marketplace itself rather than on plan state
 
 ## Assertion
 
-`script_shared.marketplace_paths.get_plan_dir()` MUST use `git rev-parse --git-common-dir` (not `--git-dir`, not `Path.cwd()`, not `__file__`). Any change that regresses this invariant breaks worktree isolation for every Bucket-A script and must be rejected in review.
+`script_shared.marketplace_paths.git_main_checkout_root()` (the fallback anchor for `file_ops.get_base_dir()` when `PLAN_BASE_DIR` is unset) MUST use `git rev-parse --git-common-dir` (not `--git-dir`, not `Path.cwd()`, not `__file__`). Any change that regresses this invariant breaks worktree isolation for every Bucket-A script and must be rejected in review.

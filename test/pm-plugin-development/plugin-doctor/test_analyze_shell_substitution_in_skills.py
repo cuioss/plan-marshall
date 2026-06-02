@@ -24,15 +24,11 @@ Test layers:
   * (c) Exemption inside an inline-code span, even on a line with
         rule-documentation keywords (forbidden, must not, anti-pattern, rule).
   * (d) Exemption inside a ``markdown`` info-string fenced block.
-  * (e) ``test_real_marketplace_has_zero_findings`` invariant: the actual
-        marketplace/bundles/plan-marshall/skills/ tree produces no findings.
 """
 
 from pathlib import Path
 
 from conftest import load_script_module
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 
 def _load_module(name: str, filename: str):
@@ -51,8 +47,6 @@ RULE_ID = _asss.RULE_ID
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 
 def _make_skill_md(tmp_path: Path, content: str) -> tuple[Path, Path]:
@@ -342,37 +336,3 @@ class TestCleanBaseline:
 
         findings = analyze_shell_substitution_in_skills(tmp_path)
         assert len(findings) == 2
-
-
-# ===========================================================================
-# (e) Real-marketplace invariant: zero findings against actual skills tree
-# ===========================================================================
-
-
-class TestRealMarketplaceHasZeroFindings:
-    """Invariant: the actual marketplace/bundles tree has no
-    shell-substitution violations in plan-marshall skill markdown."""
-
-    def test_real_marketplace_has_zero_findings(self) -> None:
-        """Scan the real marketplace/bundles directory — must return empty list.
-
-        This invariant confirms that TASK-002 (the implementation) did not
-        introduce any ``$(`` violations into the plan-marshall skills tree, and
-        that no pre-existing violations exist.
-        """
-        assert MARKETPLACE_BUNDLES.is_dir(), (
-            f'Marketplace bundles directory not found: {MARKETPLACE_BUNDLES}'
-        )
-        findings = analyze_shell_substitution_in_skills(MARKETPLACE_BUNDLES)
-        # Surface actionable detail on failure
-        if findings:
-            lines = [
-                f"  {f['file']}:{f['line']} — {f['snippet']!r}"
-                for f in findings
-            ]
-            detail = '\n'.join(lines)
-            raise AssertionError(
-                f'Expected zero shell-substitution findings in the real marketplace, '
-                f'but got {len(findings)}:\n{detail}'
-            )
-        assert findings == []

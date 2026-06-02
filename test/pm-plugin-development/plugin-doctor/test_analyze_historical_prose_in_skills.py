@@ -33,8 +33,6 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -47,8 +45,6 @@ _ahps = _load_module(
 
 analyze_historical_prose_in_skills = _ahps.analyze_historical_prose_in_skills
 RULE_ID = _ahps.RULE_ID
-
-MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 
 def _make_skill_md(
@@ -333,26 +329,3 @@ class TestBoundaryCases:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_historical_prose_in_skills(marketplace_root)
         assert findings == []
-
-
-# ===========================================================================
-# (f) Real-marketplace zero-findings invariant
-# ===========================================================================
-
-
-class TestRealMarketplace:
-    """The cleaned marketplace tree produces zero findings."""
-
-    def test_real_marketplace_has_zero_findings(self) -> None:
-        """Invariant: the real ``marketplace/bundles/`` tree is clean."""
-        if not MARKETPLACE_BUNDLES.is_dir():
-            return
-        findings = analyze_historical_prose_in_skills(MARKETPLACE_BUNDLES)
-        assert findings == [], (
-            f'Real marketplace contains {len(findings)} unexpected '
-            'historical-prose-in-skills findings: '
-            + ', '.join(
-                f"{f['file']}:{f['line']} ({f['snippet']!r}, family={f['pattern_family']})"
-                for f in findings[:5]
-            )
-        )

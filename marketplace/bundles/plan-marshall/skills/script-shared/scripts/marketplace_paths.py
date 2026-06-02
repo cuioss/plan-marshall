@@ -72,36 +72,12 @@ def git_main_checkout_root() -> Path | None:
     return _resolve_git_main_checkout_root(os.getcwd())
 
 
-def get_plan_dir() -> Path:
-    """Get the plan-marshall runtime-state base directory.
-
-    Resolution order mirrors tools-file-ops.get_base_dir():
-        1. PLAN_BASE_DIR environment variable (tests, user override).
-        2. ``<git_main_checkout_root>/.plan/local`` when inside a git repo.
-
-    Raises:
-        RuntimeError: when neither resolves (no env var, not inside a
-            git repository).
-    """
-    env_dir = os.environ.get('PLAN_BASE_DIR')
-    if env_dir:
-        return Path(env_dir)
-    root = git_main_checkout_root()
-    if root is None:
-        raise RuntimeError(
-            'plan-marshall runtime state requires a git checkout; '
-            'no main checkout root could be resolved from cwd. '
-            'Set PLAN_BASE_DIR to override (tests).'
-        )
-    return root / PLAN_DIR_NAME / 'local'
-
-
 def get_temp_dir(subdir: str) -> Path:
     """Get temp directory under the repo-local .plan/temp/{subdir}.
 
     temp/ intentionally stays project-local (unlike runtime state under
-    get_plan_dir()) so each worktree keeps its own isolated temp and the
-    existing ``Write(.plan/**)`` permission keeps covering it.
+    file_ops.get_base_dir()) so each worktree keeps its own isolated temp and
+    the existing ``Write(.plan/**)`` permission keeps covering it.
 
     When PLAN_BASE_DIR is set (tests), it takes precedence and temp lands
     under that override directory for consistency with file_ops.get_temp_dir.
