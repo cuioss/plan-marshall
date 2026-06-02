@@ -57,6 +57,7 @@ Output: TOON format
 
 import argparse
 import json
+import re
 import sys
 from typing import Any
 from urllib.parse import quote
@@ -88,7 +89,6 @@ from ci_base import (  # type: ignore[import-not-found]
     safe_main,
     serialize_toon,
     set_default_cwd,
-    truncate_log_content,
 )
 
 # ---------------------------------------------------------------------------
@@ -1101,6 +1101,28 @@ def _extract_run_id_from_link(link: str | None) -> str:
     return run_id
 
 
+def _extract_job_id_from_link(link: str | None) -> str:
+    """Extract the nested job id from a check ``link`` URL.
+
+    GitHub check links for reusable-workflow callers follow the pattern
+    ``https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>``.
+    Returns the ``job_id`` segment when present, otherwise an empty string
+    (the link points at the run only, with no nested job).
+    """
+
+    if not link:
+        return ''
+    marker = '/job/'
+    idx = link.find(marker)
+    if idx == -1:
+        return ''
+    tail = link[idx + len(marker):]
+    job_id = tail.split('/', 1)[0]
+    if not re.match(r'^\d+$', job_id):
+        return ''
+    return job_id
+
+
 def _build_failing_check_entry(check: dict) -> dict:
     """Build the transport-rich ``failing_checks[]`` entry for a single check.
 
@@ -1117,6 +1139,7 @@ def _build_failing_check_entry(check: dict) -> dict:
         'started_at': check.get('startedAt') or '',
         'completed_at': check.get('completedAt') or '',
         'run_id': _extract_run_id_from_link(link),
+        'job_id': _extract_job_id_from_link(link),
         'run_url': link,
     }
     return entry
@@ -1258,15 +1281,24 @@ def _capture_router_plan_id(argv: list[str]) -> str | None:
     return plan_id
 
 
-def _fetch_failed_run_log(run_id: str) -> str | None:
+def _fetch_failed_run_log(run_id: str, job_id: str = '') -> str | None:
     """Download the raw failed-job log for a run via ``gh run view --log-failed``.
+
+    When ``job_id`` is non-empty (reusable-workflow caller — the failing check
+    is a nested called job, not the caller run), the download targets that job
+    via ``gh run view {run_id} --log-failed --job {job_id}`` so the nested job's
+    failure log is retrievable; the caller-run form returns empty for such
+    checks. When ``job_id`` is empty the run-only form is used.
 
     Reuses the same CLI invocation as :func:`cmd_ci_logs` but returns the full,
     untruncated stdout (the filter/persist layer applies its own extraction).
     Returns ``None`` on any non-zero exit so the enrich hook degrades that entry
     gracefully without aborting siblings.
     """
-    returncode, stdout, _stderr = run_gh(['run', 'view', str(run_id), '--log-failed'], timeout=120)
+    gh_args = ['run', 'view', str(run_id), '--log-failed']
+    if job_id:
+        gh_args.extend(['--job', str(job_id)])
+    returncode, stdout, _stderr = run_gh(gh_args, timeout=120)
     if returncode != 0:
         return None
     return stdout
@@ -1559,8 +1591,30 @@ def cmd_ci_wait_for_status_flip(args: argparse.Namespace) -> dict:
     }
 
 
+def _load_filter_log():  # type: ignore[no-untyped-def]
+    """Lazily import ``filter_log`` from the sibling ``_ci_log_filter`` module.
+
+    Mirrors :func:`ci_base._load_log_filter` so the generic error-context
+    heuristic stays stdlib-only and the import is deferred until a failed-run
+    log is actually fetched. Returns the ``filter_log`` callable, or ``None``
+    when the module is unavailable (caller degrades to the raw stdout).
+    """
+    try:
+        from _ci_log_filter import filter_log  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    return filter_log
+
+
 def cmd_ci_logs(args: argparse.Namespace) -> dict:
-    """Handle 'ci logs' subcommand - get failed run logs."""
+    """Handle 'ci logs' subcommand - get failed run logs.
+
+    ``gh run view --log-failed`` already returns failure-only output, but a
+    head window drops the failure tail for long logs (runner-setup lines fill
+    the first N lines). Route the raw stdout through the generic error-context
+    filter (the same ERROR/FAIL/Exception/Traceback context-window heuristic the
+    download path uses) so the failure tail is always surfaced.
+    """
     is_auth, err = check_auth()
     if not is_auth:
         return make_error('ci_logs', err)
@@ -1569,13 +1623,19 @@ def cmd_ci_logs(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('ci_logs', f'Failed to get logs for run {args.run_id}', stderr.strip())
 
-    content, line_count = truncate_log_content(stdout)
+    filter_log = _load_filter_log()
+    if filter_log is not None:
+        filtered = filter_log(stdout, 'generic')
+    else:
+        filtered = stdout
+    filtered_lines = filtered.splitlines()
+    content = '\n'.join(filtered_lines).replace(chr(10), '\\n')
 
     return {
         'status': 'success',
         'operation': 'ci_logs',
         'run_id': args.run_id,
-        'log_lines': line_count,
+        'log_lines': len(filtered_lines),
         'content': content,
     }
 

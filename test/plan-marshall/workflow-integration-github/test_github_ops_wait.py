@@ -485,7 +485,7 @@ def _wire_github_failure(monkeypatch, *, check_rows):
 
     fetch_calls = {'run_ids': []}
 
-    def fake_fetch_log(run_id):
+    def fake_fetch_log(run_id, job_id=''):
         fetch_calls['run_ids'].append(str(run_id))
         return fixture
 

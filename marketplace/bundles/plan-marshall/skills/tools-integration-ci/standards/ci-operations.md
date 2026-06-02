@@ -58,6 +58,11 @@ e.g. `verify / verify` → `verify-verify`). Each path is surfaced **per entry**
 `failing_checks[]` array — as the entry's `log_file` and `filtered_log_file` fields — never
 as scalar top-level keys.
 
+For a **reusable-workflow** check (name contains `" / "`, e.g. `verify / verify`), the
+auto-download targets the nested **job id** — parsed from the check `link`'s `/job/{job_id}`
+segment — rather than the caller `run_id`. Targeting the caller run returns an empty log for
+such checks; targeting the nested job retrieves the called job's failure log.
+
 ```toon
 status: success
 operation: ci_status
@@ -136,6 +141,11 @@ e.g. `verify / verify` → `verify-verify`). Each path appears **per entry** in 
 `failing_checks[]` array as the entry's `log_file` / `filtered_log_file` fields — never as
 scalar top-level keys.
 
+For a **reusable-workflow** check (name contains `" / "`, e.g. `verify / verify`), the
+auto-download targets the nested **job id** — parsed from the check `link`'s `/job/{job_id}`
+segment — rather than the caller `run_id`. Targeting the caller run returns an empty log for
+such checks; targeting the nested job retrieves the called job's failure log.
+
 ```toon
 status: success
 operation: ci_wait
@@ -206,3 +216,9 @@ run_id: 12345
 log_lines: 142
 content: [build log output]
 ```
+
+For a **failed** run, `checks logs` returns an **error-context window** rather than the first
+N head lines: the raw `--log-failed` output is filtered to the lines matching
+`ERROR`/`FAIL`/`Exception`/`Traceback` plus surrounding context, with non-adjacent windows
+joined by an elision marker. This guarantees the failure tail is surfaced even when runner-setup
+lines fill the head of the log. `log_lines` reports the filtered line count.

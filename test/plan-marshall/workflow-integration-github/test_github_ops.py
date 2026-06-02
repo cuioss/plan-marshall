@@ -926,3 +926,129 @@ def test_ci_status_and_ci_wait_agree_on_skipped_bearing_set(monkeypatch):
         'disagree on a SKIPPED-bearing check set — the bucket-vs-state '
         'classification bug is back'
     )
+
+
+# =============================================================================
+# reusable-workflow job-id log download
+# =============================================================================
+
+_REUSABLE_LINK = 'https://github.com/octo/repo/actions/runs/123/job/456'
+_RUN_ONLY_LINK = 'https://github.com/octo/repo/actions/runs/123'
+
+
+def test_extract_job_id_from_link_with_job_segment():
+    assert github_ops._extract_job_id_from_link(_REUSABLE_LINK) == '456'
+
+
+def test_extract_job_id_from_link_without_job_segment():
+    # A run-only link (no nested /job/ segment) yields the empty string.
+    assert github_ops._extract_job_id_from_link(_RUN_ONLY_LINK) == ''
+
+
+def test_extract_job_id_from_link_none_and_empty():
+    assert github_ops._extract_job_id_from_link(None) == ''
+    assert github_ops._extract_job_id_from_link('') == ''
+
+
+def test_build_failing_check_entry_populates_job_id():
+    check = {
+        'name': 'verify / verify',
+        'state': 'FAILURE',
+        'workflow': 'CI',
+        'link': _REUSABLE_LINK,
+        'startedAt': '',
+        'completedAt': '',
+    }
+    entry = github_ops._build_failing_check_entry(check)
+    assert entry['run_id'] == '123'
+    assert entry['job_id'] == '456'
+
+
+def test_build_failing_check_entry_empty_job_id_for_run_only_link():
+    check = {
+        'name': 'build',
+        'state': 'FAILURE',
+        'workflow': 'CI',
+        'link': _RUN_ONLY_LINK,
+        'startedAt': '',
+        'completedAt': '',
+    }
+    entry = github_ops._build_failing_check_entry(check)
+    assert entry['run_id'] == '123'
+    assert entry['job_id'] == ''
+
+
+def test_fetch_failed_run_log_forwards_job_flag_when_job_id_present(monkeypatch):
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, 'log-body', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    out = github_ops._fetch_failed_run_log('123', '456')
+
+    assert out == 'log-body'
+    assert len(captured) == 1
+    argv = captured[0]
+    assert argv[:4] == ['run', 'view', '123', '--log-failed']
+    assert '--job' in argv
+    assert argv[argv.index('--job') + 1] == '456'
+
+
+def test_fetch_failed_run_log_omits_job_flag_when_job_id_absent(monkeypatch):
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, 'log-body', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    out = github_ops._fetch_failed_run_log('123')
+
+    assert out == 'log-body'
+    assert len(captured) == 1
+    assert captured[0] == ['run', 'view', '123', '--log-failed']
+    assert '--job' not in captured[0]
+
+
+def test_fetch_failed_run_log_returns_none_on_nonzero_exit(monkeypatch):
+    monkeypatch.setattr(github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (1, '', 'boom'))
+    assert github_ops._fetch_failed_run_log('123', '456') is None
+
+
+# =============================================================================
+# cmd_ci_logs error-context window
+# =============================================================================
+
+
+def test_cmd_ci_logs_returns_error_context_window_not_head(monkeypatch):
+    """cmd_ci_logs must surface the failure tail via the error-context filter.
+
+    A raw log whose ERROR/Traceback lines fall well past line 200 would have
+    been dropped by the old head-200 truncation; the error-context window keeps
+    them.
+    """
+    setup_lines = [f'runner setup line {i}' for i in range(260)]
+    setup_lines[250] = 'Traceback (most recent call last):'
+    setup_lines[251] = '  File "foo.py", line 9, in bar'
+    setup_lines[252] = 'IndexError: list index out of range'
+    raw_log = '\n'.join(setup_lines)
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        assert args[:4] == ['run', 'view', '999', '--log-failed']
+        return 0, raw_log, ''
+
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(run_id='999')
+    result = github_ops.cmd_ci_logs(ns)
+
+    assert result['status'] == 'success', result
+    content = result['content']
+    # The failure tail (past line 200) is present — the head-200 path dropped it.
+    assert 'Traceback (most recent call last):' in content
+    assert 'IndexError: list index out of range' in content
+    # Pure runner-setup noise that is far from any error marker is dropped.
+    assert 'runner setup line 10' not in content
