@@ -186,6 +186,7 @@ invariant filters out the very surface that drifts, and the runtime check that
 would catch it runs at only one of the boundaries where the leak occurs.
 ====
 
+[#proposed-invariant]
 == Proposed invariant
 
 [IMPORTANT]
@@ -260,6 +261,7 @@ resolve to the main checkout, not a worktree.
   break the check itself — needs a self-contained probe that doesn't depend on
   the thing it validates. Detection, not prevention.
 
+[#scope-boundary-for-follow-up-plans]
 == Scope boundary for follow-up plans
 
 The corpus shows this class is broader than the executor. The following are
