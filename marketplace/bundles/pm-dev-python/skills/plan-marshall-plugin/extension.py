@@ -134,6 +134,8 @@ class Extension(ExtensionBase):
         # Config files.
         ('pyproject.toml', 'config', 1),
         ('uv.lock', 'config', 1),
+        ('.plan/marshal.json', 'config', 2),
+        ('marshal.json', 'config', 1),
     )
 
     def _match_classify(self, path: str) -> tuple[str, int] | None:
