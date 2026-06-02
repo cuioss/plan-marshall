@@ -197,7 +197,7 @@ The trap: a *recursive* walk rooted at a directory that can contain full checkou
 
 * **Never recurse from the shared root.** Do not walk every descendant of a directory that can hold worktree checkouts or vendored trees.
 * **Depth-limit and scope the walk.** Restrict the guard to the specific directories a test is allowed to write (its own fixture sandbox / redirected base directory), or walk only the top one or two levels with explicit exclusions.
-* **Prune heavy subtrees** from any traversal that must touch the shared tree at all — worktree-checkout directories, version-control object stores, build-output directories, dependency caches, and bytecode caches.
+* **Prune heavy subtrees** from any traversal that must touch the shared tree at all — worktree-checkout directories, version-control object stores, build-output directories, dependency caches, and bytecode caches. A recursive glob (`pathlib.Path.rglob`) cannot prune as it walks — filtering its results still pays the full traversal cost; use a walker that supports in-place pruning (e.g. `os.walk` with `dirnames[:]` edited to drop the heavy directories) so the skipped subtrees are never descended.
 
 **Corollary — measure on a quiescent machine before attributing a regression.** Before blaming a hypothesized cause for a performance regression, measure with no concurrent runs and no orphaned background builds: a recursive guard over a shared worktrees tree can be the real slowdown rather than the subprocess/parallelism thrash first suspected, and a conclusion built on a contended machine sends the fix in the wrong direction.
 
