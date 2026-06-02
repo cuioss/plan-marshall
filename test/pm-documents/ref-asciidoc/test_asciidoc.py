@@ -6,6 +6,7 @@ Tier 2 (direct import) tests with 3 subprocess CLI plumbing tests retained.
 
 import json
 import tempfile
+import warnings
 from argparse import Namespace
 from pathlib import Path
 
@@ -30,6 +31,7 @@ _verify_links_mod = _load_module('_cmd_verify_links', '_cmd_verify_links.py')
 _classify_links_mod = _load_module('_cmd_classify_links', '_cmd_classify_links.py')
 
 cmd_stats = _stats_mod.cmd_stats
+analyze_file_stats = _stats_mod.analyze_file_stats
 cmd_validate = _validate_mod.cmd_validate
 cmd_format = _format_mod.cmd_format
 cmd_verify_links = _verify_links_mod.cmd_verify_links
@@ -90,6 +92,51 @@ def test_stats_details_flag():
     """Test stats details flag includes file info."""
     result = cmd_stats(Namespace(command='stats', directory=str(FIXTURES_DIR), format='json', details=True))
     assert 'files' in result, 'Result with details flag should include files key'
+
+
+def test_stats_lists_count_on_indented_markers():
+    """Test lists statistic counts whitespace-indented list markers correctly.
+
+    Covers the regex fix: the leading horizontal-whitespace class must match
+    space-indented and tab-indented list markers (`*`, numbered, `::`). Six
+    list lines are present; non-list lines must not be counted.
+    """
+    content = (
+        '= Title\n'
+        '\n'
+        'Intro paragraph, not a list.\n'
+        '* top-level bullet\n'
+        '  * space-indented bullet\n'
+        '\t* tab-indented bullet\n'
+        '1. numbered marker\n'
+        '  2. space-indented numbered marker\n'
+        'term:: definition\n'
+        'A plain sentence without markers.\n'
+    )
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.adoc', delete=False) as f:
+        f.write(content)
+        temp_file = Path(f.name)
+    try:
+        stats = analyze_file_stats(temp_file)
+        assert stats['lists'] == 6, f'Expected 6 list markers, got {stats["lists"]}'
+    finally:
+        temp_file.unlink(missing_ok=True)
+
+
+def test_stats_no_future_warning_on_lists_regex():
+    """Test the stats path raises no FutureWarning (POSIX-class regex regression guard)."""
+    content = '= Title\n\n* bullet\n  * indented bullet\n\tterm:: def\n'
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.adoc', delete=False) as f:
+        f.write(content)
+        temp_file = Path(f.name)
+    try:
+        with warnings.catch_warnings(record=True) as recorded:
+            warnings.simplefilter('always')
+            analyze_file_stats(temp_file)
+        future_warnings = [w for w in recorded if issubclass(w.category, FutureWarning)]
+        assert not future_warnings, f'Unexpected FutureWarning(s): {[str(w.message) for w in future_warnings]}'
+    finally:
+        temp_file.unlink(missing_ok=True)
 
 
 def test_stats_empty_directory():

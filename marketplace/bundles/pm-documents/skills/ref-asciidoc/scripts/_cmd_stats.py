@@ -52,7 +52,7 @@ def analyze_file_stats(file_path: Path) -> dict:
     stats['images'] = len(re.findall(r'image::', content))
     stats['code_blocks'] = len(re.findall(r'^\[source', content, re.MULTILINE))
     stats['tables'] = len(re.findall(r'^\|===', content, re.MULTILINE))
-    stats['lists'] = len(re.findall(r'^[[:space:]]*(\*|[0-9]+\.|.*::)', content, re.MULTILINE))
+    stats['lists'] = len(re.findall(r'^[ \t]*(\*|[0-9]+\.|.*::)', content, re.MULTILINE))
 
     return stats
 
