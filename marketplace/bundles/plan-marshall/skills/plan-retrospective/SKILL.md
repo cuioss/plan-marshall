@@ -136,20 +136,7 @@ The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-
 
 **Aspect 13** is skipped when `--session-id` is absent.
 
-#### Achieved-thoroughness measurement (hybrid)
-
-The *achieved* side of the coverage contract gated by the `coverage_contract` phase-handshake invariant is measured here in two passes, hybrid by construction:
-
-1. **Deterministic item-coverage footprint** — run `measure-thoroughness run` (canonical block below). It reuses the artifact-consistency footprint primitive (`extract_affected_files_per_deliverable` + the shared recall threshold): declared in-scope files (`Affected files:`) vs the actual `modified_files` footprint. The recall ratio maps to an item-coverage rung (full footprint → full-read rung, partial → sampled rung). The script writes the item-coverage half of `work/coverage-measurement-{phase}.toon` and records the `relation_depth_verdict` placeholder for the auditor pass.
-2. **LLM relation-depth auditor** — inspect whether the declared T3+/T4+ relations were actually traced: callers / tests / direct cross-refs for T3, the scope-wide call-graph / cross-ref-graph for T4. Pass the auditor's rung back via `--relation-depth-rung` so the artifact's `relation_depth_verdict` and the floored `achieved_thoroughness` reflect both halves.
-
-The achieved thoroughness rung is the **floor** of the deterministic item-coverage rung and the LLM relation-depth rung (grade-to-the-floor rule). The emitted `work/coverage-measurement-{phase}.toon` is the exact input the D4 `coverage_contract` capture reads to compute the achieved-vs-declared shortfall. For the ladder definitions, the grade-to-the-floor rule, and the coupling constraint, see [`../dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md) — do not restate them here.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-retrospective:measure-thoroughness \
-  run --plan-id {plan_id} --mode {live|archived} --phase {phase} \
-  [--relation-depth-rung {T1..T5}] [--declared-scope {scope}]
-```
+> **Achieved thoroughness**: there is no mechanical achieved-thoroughness measurement. The *achieved* side of coverage is the floor-graded self-report defined in [`../dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md) § Floor-Graded Self-Report; the Artifact-consistency aspect (aspect 1, above) supplies the deterministic declared-vs-actual `modified_files` footprint that the self-report grades against.
 
 **Per-aspect capture pattern**:
 
@@ -307,14 +294,6 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:script-failure-
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-artifact-consistency run \
   --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH]
-```
-
-### measure-thoroughness — run
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-retrospective:measure-thoroughness run \
-  --mode {live,archived} --phase PHASE [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH] \
-  [--relation-depth-rung {T1,T2,T3,T4,T5}] [--declared-scope DECLARED_SCOPE]
 ```
 
 ### analyze-logs — run

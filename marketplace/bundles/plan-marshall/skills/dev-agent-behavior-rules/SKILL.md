@@ -49,6 +49,15 @@ Read: standards/thoroughness.md
 
 Covers the orthogonality of effort and thoroughness, the thoroughness ladder (T1–T5), the scope ladder, the grade-to-the-floor rule, the coupling constraint `reject thoroughness ≥ T4 ∧ scope < component`, and the floor-graded self-report.
 
+### Step 5: Load the Coverage-Gathering Contract (As Needed)
+
+**Coverage-gathering contract** (load when building or modifying a broad-pass component — a wide audit, compliance sweep, simplification/refactor campaign, or pre-submission review — that gathers a coverage cell from the user and consumes it to govern its breadth/depth):
+```
+Read: standards/coverage-gathering-contract.md
+```
+
+Covers the reusable two-dial contract that broad-pass components implement: the canonical `AskUserQuestion` gather shape, the static cell→instruction expansion table (the operational instruction per cell), the gather→expand→consume obligation, the status.json persistence + transport mechanism (identifier + expanded instruction, mirroring `compatibility` + `compatibility_description`), and the Current-Implementations table. `thoroughness.md` defines the LEVELS; this contract's expansion table defines the OPERATIONAL INSTRUCTION per cell (no duplication).
+
 ## Hard Rules (never override)
 
 ### Bash: One command per call
@@ -127,6 +136,7 @@ When a plan runs in an isolated worktree, the canonical `{path}` is the worktree
 | tool-usage-patterns.md | Tool selection, file operations, content search, Bash safety, build resolution |
 | argument-naming.md | Typed-ID flags, read-verb canonicalization, `--module` over `--name`, stdlib log-level names for `manage-*` scripts |
 | thoroughness.md | Scope × thoroughness coverage contract: thoroughness ladder (T1–T5), scope ladder, grade-to-the-floor rule, coupling constraint `reject thoroughness ≥ T4 ∧ scope < component`, floor-graded self-report |
+| coverage-gathering-contract.md | The reusable coverage-gathering contract: canonical `AskUserQuestion` gather shape, the static cell→instruction expansion table, the gather→expand→consume implementor obligation, status.json persistence (identifier + expanded instruction), Current-Implementations table |
 
 ## See Also
 

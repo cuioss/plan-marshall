@@ -54,6 +54,22 @@ Skills the caller MUST forward in `skills[]`: none (the workflow reads files wit
 
 ## Execution
 
+This step implements the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md) as a runtime CONSUMER (not a gatherer — the cell is gathered upstream by the recipe / plan that produced the plan, or defaults to `inherit/inherit`). The expanded instruction governs the surfacer `--contract-radius`, the candidate-count gate threshold, and the per-candidate lens depth. `inherit/inherit` reproduces today's behavior bit-for-bit.
+
+### Step 0: Resolve the coverage instruction (inline)
+
+Read the per-invocation coverage cell from status metadata, falling back through the contract's runtime path: `coverage_instruction` (the expanded block) → re-expand the identifier via `coverage expand` → `coverage resolve --phase phase-6-finalize` (project default) → `inherit/inherit` (behavior-preserving).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field coverage_scope
+
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field coverage_instruction
+```
+
+Capture `{cov_scope}` and `{cov_instruction}` (when absent, treat as `inherit`). When `coverage_instruction` is absent but `coverage_scope`/`coverage_thoroughness` are present, re-expand via `coverage expand --thoroughness {cov_thoroughness} --scope {cov_scope}`; when neither is present, resolve the project default via `coverage resolve --phase phase-6-finalize`. The resolved `{cov_scope}` drives the radius/gate dials below; `inherit` keeps today's hardcoded values.
+
 ### Step 1: Deterministic surface (inline)
 
 Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor reads `references.modified_files` for the active plan, computes the staged diff against the worktree's base branch, and emits the eight candidate sub-lists in a single TOON document on stdout.
@@ -63,14 +79,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains get-extensions --domain {plan_domain}
 ```
 
-Read the `extensions.self-review` field from the TOON output to get the implementor skill notation (e.g., `plan-marshall:ext-self-review-plan-marshall`). The plan-marshall-domain default — recorded under `skill_domains.plan-marshall-plugin-dev.workflow_skill_extensions.self-review` — is `plan-marshall:ext-self-review-plan-marshall`. Then invoke the surface helper:
+Read the `extensions.self-review` field from the TOON output to get the implementor skill notation (e.g., `plan-marshall:ext-self-review-plan-marshall`). The plan-marshall-domain default — recorded under `skill_domains.plan-marshall-plugin-dev.workflow_skill_extensions.self-review` — is `plan-marshall:ext-self-review-plan-marshall`. Then invoke the surface helper, forwarding `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:ext-self-review-plan-marshall:self_review \
-  surface --plan-id {plan_id}
+  surface --plan-id {plan_id} --contract-radius {N}
 ```
 
-(Auto-resolves the worktree from `--plan-id`. Add `--project-dir {worktree_path}` only when the explicit override is required.)
+(Auto-resolves the worktree from `--plan-id`. Add `--project-dir {worktree_path}` only when the explicit override is required. The `inherit`/default radius of `3` reproduces today's surfacer breadth.)
 
 If the helper exits non-zero, halt and proceed to **Step 4 — Mark Step Complete (Failure)**, surfacing the helper error in the `display_detail` payload. Do NOT dispatch the LLM cognitive phase below.
 
@@ -80,26 +96,26 @@ Capture the helper's TOON output as `{candidates_toon}` for forwarding to the co
 
 Parse the candidate sub-lists from `{candidates_toon}` and read `total_candidates` from the surfacer's `counts.total` field, which sums the six line-level heuristic lists (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`). The review-anchor lists (`contract_sources`, `schema_bearing_files`) and the derived `protected_identifiers` index are excluded from `total_candidates` for the same reason they are excluded from `counts.total` (see the surfacing skill's § Output note).
 
-Evaluate the gate:
+Evaluate the gate, with the threshold `{gate}` indexed by `{cov_scope}` (`inherit`/`change-set` → `5`; `artifact` → `8`; `component`/`module`/`overall` → `12`). The `inherit` path preserves the `<= 5` threshold verbatim:
 
-> `total_candidates <= 5`
+> `total_candidates <= {gate}`
 
-When the gate holds (the typical small-diff case): execute the LLM cognitive checks (Step 2a + Step 3) INLINE in the dispatcher context. Do NOT compute the variant target, do NOT emit a `[DISPATCH]` log line, do NOT issue the `Task: plan-marshall:{target}` invocation in Step 2. Skip directly to Step 2a (cross-reference setup) and continue through Step 3 in the dispatcher's own context. The boundary is INCLUSIVE: `total_candidates == 5` is inline; `total_candidates == 6` falls through to dispatch.
+When the gate holds (the typical small-diff case): execute the LLM cognitive checks (Step 2a + Step 3) INLINE in the dispatcher context. Do NOT compute the variant target, do NOT emit a `[DISPATCH]` log line, do NOT issue the `Task: plan-marshall:{target}` invocation in Step 2. Skip directly to Step 2a (cross-reference setup) and continue through Step 3 in the dispatcher's own context. The boundary is INCLUSIVE: `total_candidates == {gate}` is inline; `total_candidates == {gate} + 1` falls through to dispatch.
 
 Log the gate decision once:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-6-finalize:pre-submission-self-review) Candidate-count gate INLINE — total_candidates={N} (<=5 threshold)"
+  --message "(plan-marshall:phase-6-finalize:pre-submission-self-review) Candidate-count gate INLINE — total_candidates={N} (<={gate} threshold, cov_scope={cov_scope})"
 ```
 
-When `total_candidates > 5`: fall through to Step 2 (dispatch) as documented. Log:
+When `total_candidates > {gate}`: fall through to Step 2 (dispatch) as documented. Log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-6-finalize:pre-submission-self-review) Candidate-count gate DISPATCH — total_candidates={N} (>5 threshold)"
+  --message "(plan-marshall:phase-6-finalize:pre-submission-self-review) Candidate-count gate DISPATCH — total_candidates={N} (>{gate} threshold, cov_scope={cov_scope})"
 ```
 
 **Return-TOON shape invariant**: BOTH branches MUST produce the IDENTICAL return-TOON shape documented in `## Dispatched-envelope output` below (`status`, `display_detail`, `findings[N]{file,line,defect_class,rationale}`). The inline branch produces the same TOON-shaped result in dispatcher context — `display_detail` follows the same `"self-review clean: {N} candidates examined"` / `"self-review found {K} issues"` rule, and `findings[]` carries the same entry shape. Downstream consumers (Step 4 bookkeeping, output-template rendering) MUST NOT need to differentiate which branch produced the result. The gate is a pure dispatch-cost optimization — semantics are preserved bit-for-bit.
@@ -153,7 +169,7 @@ Before scanning the line-level candidate lists, load the contract sources surfac
 
 For each non-empty candidate list, apply the corresponding cognitive check to the surfaced items only — never expand the review to candidates the helper did not surface.
 
-> **Coverage contract**: this cognitive review pass makes an implicit *diff-coverage* decision — the surfaced candidates are the change-set-scoped items, and how deeply each is cross-checked against its siblings and contracts is the review's *thoroughness*. The surface-only rule above caps the scope to the staged diff; the contract cross-references in Step 2a are what raise thoroughness past T2 (full-read) toward T3+ (relations traced). See the two-dial scope × thoroughness contract in [`../../dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md).
+> **Coverage contract**: the per-candidate lens depth is governed by the coverage instruction resolved in Step 0 (`{cov_instruction}`). The surface-only rule above caps the scope to what the surfacer surfaced at every rung — never widen the candidate set past it. The thoroughness rung sets the depth: `inherit`/`T1`/`T2` → run the five checks below as today (face-value per candidate); `T3`+ → additionally trace each surfaced candidate's siblings and cross-references before adjudicating it (the contract cross-references in Step 2a already supply the anchors). `inherit/inherit` reproduces today's behavior bit-for-bit. See the two-dial scope × thoroughness contract in [`../../dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) and the gather/expand/consume obligation in [`../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md`](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md).
 
 1. **Symmetric pair test-coverage check** — for each `symmetric_pairs` entry, search the test directory for a test that exercises BOTH `name` and `partner` and asserts the post-state of the partner without first invoking `name` in the same test. A symmetric pair where one half is silently skipped is the canonical defect class. Defect → record finding `{file, line, defect_class: symmetric_pair_uncovered, rationale: <which half is unexercised and why it matters>}`.
 

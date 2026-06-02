@@ -143,12 +143,25 @@ depend on `execution.toon`.
 
 ## Workflow
 
-### Step 1: Select the checks to run
+### Step 0: Gather + expand the coverage cell
 
-Default to all checks. When the user supplies `--check {name}`, run only that
-check. The check names are listed in the **Available checks** table above; each
-maps to a `checks/{name}.md` sub-document and a `--check {name}` value the script
-accepts.
+This skill implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md). At invocation, gather the `(thoroughness, scope)` cell from the user via the contract's canonical `AskUserQuestion` shape — a `scope` question (`change-set`/`artifact`/`component`/`module`/`overall` + an explicit `inherit (default — behave exactly as today)`) and a `thoroughness` question (`T1`…`T5` + `inherit`). The coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) constrains the offered scope options when the user picks `T4`/`T5`.
+
+Validate + expand the gathered pair in one call — `coverage expand` validates the literal pair (re-prompt on `coverage_coupling_violation`; do NOT re-implement the coupling math) AND returns the operational instruction block:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage expand --thoroughness {T} --scope {S}
+```
+
+This is a **single-invocation** audit skill that runs outside a plan, so hold the gathered identifier + expanded instruction **in-context** for the invocation (the in-context path of the contract's persistence mechanism — no `status.json` write). Consume the **expanded instruction** (NOT the raw cell) in Steps 1 and 4b below. When the user selects `inherit/inherit` (the default), the expanded instruction is behavior-preserving and Steps 1–4b run exactly as before (all 14 checks, full corpus, today's Step-4b gate).
+
+See `dev-agent-behavior-rules/standards/thoroughness.md` for the ladders and `coverage-gathering-contract.md` for the gather shape and the cell→instruction table — restate neither here.
+
+### Step 1: Select the checks to run, governed by the coverage cell
+
+The expanded instruction's **scope rung** sets the corpus radius: `change-set`/`artifact` → a single plan (`--plan-id`); `component`/`module` → a domain/scope-filtered subset of the corpus; `overall` → the full archived-plan corpus (today's default). Its **thoroughness rung** gates check breadth: `T1` → cheap deterministic checks across a representative sample; `T2` → all 14 checks once; `T3` → all 14 plus the `cross-check-synthesis` coupling join; `T4`/`T5` → all 14 plus the Step-4b loop-until-dry / what-did-I-miss adversarial completeness pass.
+
+When the user supplies an explicit `--check {name}`, that narrows to one check regardless of the thoroughness rung. The check names are listed in the **Available checks** table above; each maps to a `checks/{name}.md` sub-document and a `--check {name}` value the script accepts. The `inherit/inherit` expanded instruction reproduces today's behavior: all checks, the full corpus.
 
 ### Step 2: Run the audit script for the selected checks
 
@@ -291,6 +304,15 @@ See `checks/token-economics.md` § "Adjudication against lesson 2026-06-01-12-00
 Before reaching Step 5 (Interactive dormation), the orchestrator MUST satisfy
 this completeness gate. Dormation is BLOCKED until every item below is true and
 demonstrable from the adjudication produced in Steps 3–4.
+
+**Coverage-cell depth (from Step 0's expanded instruction)**: the gate's rigor is
+indexed by the gathered thoroughness rung. `inherit`/`T1`/`T2`/`T3` run the gate
+exactly as the checkboxes below describe (today's behavior). `T4`/`T5` add an
+adversarial completeness pass on top: after the checkboxes pass once, run a
+what-did-I-miss critic and a loop-until-dry sweep — re-examine the surfaced rows
+asking which facet, plan, or coupling was assumed-not-examined, and repeat until a
+pass surfaces no further gap. This is the contract's depth dimension applied to
+the audit's completeness gate; it widens nothing the surfacer did not surface.
 
 The `cross-check-synthesis` check is the deterministic surface that
 **operationalizes this gate**: it joins the other checks' results into the five

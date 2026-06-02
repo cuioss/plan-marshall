@@ -192,6 +192,43 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
   --value {derived_package_source}
 ```
 
+### Step 3a: Gather + expand + persist the coverage cell (keyed on `coverage_gathering`)
+
+Read the resolved recipe's `coverage_gathering` field (from the recipe dict resolved in Step 1 / Step 1a; defaults to `none` when the recipe omits it). Branch on its value:
+
+- **`none`** (or absent) — skip coverage gathering entirely. No question is asked; the runtime stays at today's behavior (`inherit/inherit`). `recipe-lesson-cleanup` declares `none` because its forced-surgical scope would be contradicted by a coverage gather.
+- **`required`** — run the standard two-question gather (scope + thoroughness) unconditionally. The operator always answers both dial questions; there is no skip path.
+- **`optional`** — present a single PRE-STEP skip question first ("Configure coverage for this run?"). If the operator declines, the runtime stays at `inherit/inherit` WITHOUT asking the scope/thoroughness questions at all. If the operator proceeds, the standard two-question gather runs exactly as in the `required` case.
+
+The three values are mutually distinct: `none` asks nothing, `required` always runs the two-question gather, `optional` gates the two-question gather behind one upfront yes/no.
+
+For `required` (always) and for `optional` when the operator chose to proceed, run the contract's canonical `AskUserQuestion` (scope + thoroughness, coupling-constrained, `inherit` default per the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md)), expand the identifier, and persist BOTH the identifier and the expanded instruction to status metadata alongside the existing `recipe_*` fields:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage expand \
+  --thoroughness {thoroughness} --scope {scope}
+
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field coverage_thoroughness \
+  --value {thoroughness}
+
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field coverage_scope \
+  --value {scope}
+
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field coverage_instruction \
+  --value {expanded_instruction}
+```
+
+`coverage expand` enforces the coupling constraint and emits `error_type: coverage_coupling_violation` for an incoherent cell — re-prompt the gather on that error (do NOT re-implement the coupling math). The recipe skill consumes the persisted `coverage_instruction` at runtime per the contract.
+
 ### Step 4: Continue Through Phases
 
 Continue through the standard phases — each phase is dispatched under its

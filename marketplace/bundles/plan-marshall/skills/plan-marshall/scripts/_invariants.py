@@ -24,7 +24,7 @@ from typing import Any
 
 from _git_helpers import git_dirty_count, git_dirty_files, git_head  # type: ignore[import-not-found]
 from constants import QGATE_PHASES  # type: ignore[import-not-found]
-from file_ops import get_base_dir, get_plan_dir, get_worktree_root  # type: ignore[import-not-found]
+from file_ops import get_base_dir, get_worktree_root  # type: ignore[import-not-found]
 from marketplace_paths import find_marketplace_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
@@ -240,55 +240,6 @@ class TaskGraphInvalid(Exception):
         if dangling:
             parts.append(f'dangling={dangling}')
         super().__init__('task_graph_valid failed: ' + ', '.join(parts))
-
-
-class CoverageContractUnmet(Exception):
-    """Raised by the ``coverage_contract`` invariant capture when, at a guarded
-    boundary, the achieved coverage cell falls short of the declared cell.
-
-    The coverage contract is the two-dial ``(thoroughness, scope)`` cell
-    declared per phase via ``manage-config coverage resolve`` (D3) and measured
-    after the fact by ``measure-thoroughness`` (D5), which writes the achieved
-    cell to ``work/coverage-measurement-{phase}.toon``. The capture compares
-    achieved-vs-declared on the FLOOR rule (grade-to-the-floor, per
-    ``dev-agent-behavior-rules/standards/thoroughness.md``): the achieved rung
-    of EITHER field below its declared rung is a shortfall.
-
-    Shaped like :class:`BlockingFindingsPresent` / :class:`TaskGraphInvalid`:
-    the constructor formats a descriptive message and keeps the structured
-    fields (``phase``, ``declared_thoroughness``, ``declared_scope``,
-    ``achieved_thoroughness``, ``achieved_scope``, ``shortfall``) as attributes
-    so ``cmd_capture`` / ``cmd_verify`` can surface a structured
-    ``error: coverage_contract_unmet`` payload and refuse to persist the
-    handshake row — gating the phase transition.
-
-    The capture is **passive** (returns ``None``, never raises) when no cell is
-    declared for the phase OR no measurement artifact exists yet — so plans
-    that do not opt into the contract never block (additive default, no
-    migration shim).
-    """
-
-    def __init__(
-        self,
-        phase: str,
-        declared_thoroughness: str,
-        declared_scope: str,
-        achieved_thoroughness: str,
-        achieved_scope: str,
-        shortfall: list[str],
-    ):
-        self.phase = phase
-        self.declared_thoroughness = declared_thoroughness
-        self.declared_scope = declared_scope
-        self.achieved_thoroughness = achieved_thoroughness
-        self.achieved_scope = achieved_scope
-        self.shortfall = shortfall
-        super().__init__(
-            f'coverage_contract failed for phase {phase!r}: '
-            f'declared=(thoroughness={declared_thoroughness!r}, scope={declared_scope!r}), '
-            f'achieved=(thoroughness={achieved_thoroughness!r}, scope={achieved_scope!r}), '
-            f'shortfall={shortfall}'
-        )
 
 
 AppliesFn = Callable[[str, dict[str, Any]], bool]
@@ -1436,192 +1387,6 @@ def _capture_phase_steps_complete(
     return _hash_dict(sorted(required))
 
 
-# --- coverage-contract invariant -----------------------------------------
-#
-# The two-dial coverage contract gate. The declared cell is resolved per phase
-# via ``manage-config coverage resolve`` (D3); the achieved cell is measured
-# after the fact by ``measure-thoroughness`` (D5) and written to
-# ``work/coverage-measurement-{phase}.toon``. This invariant compares the two
-# on the grade-to-the-floor rule and, at a guarded boundary, raises
-# :class:`CoverageContractUnmet` when achieved < declared. It is passive
-# (returns ``None``) when no cell is declared OR no measurement exists yet, so
-# plans that do not opt into the contract never block.
-
-# Ordinal rank over the thoroughness ladder, kept in lock-step with
-# ``dev-agent-behavior-rules/standards/thoroughness.md`` § Thoroughness Ladder
-# and ``manage-config/scripts/_cmd_coverage.py``'s ``_THOROUGHNESS_RANK``.
-# ``inherit`` is unranked — an unresolved dial declares no contract.
-_THOROUGHNESS_RANK: dict[str, int] = {'T1': 1, 'T2': 2, 'T3': 3, 'T4': 4, 'T5': 5}
-
-# Ordinal rank over the scope ladder (narrowest to widest), kept in lock-step
-# with the same standard's § Scope Ladder and ``_cmd_coverage.py``'s
-# ``_SCOPE_RANK``.
-_SCOPE_RANK: dict[str, int] = {
-    'change-set': 1,
-    'artifact': 2,
-    'component': 3,
-    'module': 4,
-    'overall': 5,
-}
-
-
-def _coverage_applicable(_plan_id: str, _metadata: dict[str, Any]) -> bool:
-    """Always-applicable gate — the capture self-determines opt-in.
-
-    The coverage contract is opt-in per phase: a declared cell AND a
-    measurement artifact must both exist for the capture to compare. Rather
-    than probe those preconditions here (which would duplicate the capture's
-    own reads), the applies_fn returns ``True`` unconditionally and the
-    capture returns ``None`` when either precondition is absent — matching the
-    passive-when-unconfigured contract documented on
-    :class:`CoverageContractUnmet`.
-    """
-    return True
-
-
-def _resolve_declared_cell(phase: str) -> tuple[str, str] | None:
-    """Resolve the declared ``(thoroughness, scope)`` cell for ``phase`` via D3.
-
-    Calls ``manage-config coverage resolve --phase phase-{phase}``. ``coverage
-    resolve`` reads the project-global ``marshal.json`` coverage config and is
-    NOT plan-scoped — its argparse subparser declares only ``--role`` /
-    ``--phase`` / ``--default`` (no ``--audit-plan-id``), so the command is built
-    with ``--phase`` alone (mirroring ``effort resolve-target``). Passing an
-    undeclared ``--audit-plan-id`` would make argparse exit 2, the call would
-    return non-zero, and the declared cell would silently collapse to "no
-    contract".
-
-    Returns the ``(thoroughness, scope)`` pair on success, or ``None`` when the
-    executor is unreachable, the call errors, the output is unparseable, or
-    either field resolves to ``inherit`` (an unresolved dial declares no
-    contract).
-    """
-    stdout = _run_script(
-        [
-            'plan-marshall:manage-config:manage-config',
-            'coverage',
-            'resolve',
-            '--phase',
-            f'phase-{phase}',
-        ]
-    )
-    if stdout is None:
-        return None
-    try:
-        parsed = parse_toon(stdout)
-    except Exception:
-        return None
-    if parsed.get('status') != 'success':
-        return None
-    thoroughness = parsed.get('thoroughness')
-    scope = parsed.get('scope')
-    if not isinstance(thoroughness, str) or not isinstance(scope, str):
-        return None
-    if thoroughness == 'inherit' or scope == 'inherit':
-        # No concrete cell declared — the contract is not opted into.
-        return None
-    return thoroughness, scope
-
-
-def _read_achieved_cell(plan_id: str, phase: str) -> tuple[str, str] | None:
-    """Read the achieved ``(thoroughness, scope)`` cell from the D5 artifact.
-
-    The measurement artifact lives at ``work/coverage-measurement-{phase}.toon``
-    inside the plan directory and carries ``achieved_thoroughness`` /
-    ``achieved_scope`` (folded by ``measure-thoroughness`` from the
-    deterministic item-coverage rung and the LLM relation-depth verdict via the
-    grade-to-the-floor rule). Returns the ``(thoroughness, scope)`` pair, or
-    ``None`` when the artifact is absent / unparseable / missing either field
-    (no measurement exists yet → passive, no block).
-    """
-    try:
-        artifact = get_plan_dir(plan_id) / 'work' / f'coverage-measurement-{phase}.toon'
-    except RuntimeError:
-        return None
-    if not artifact.is_file():
-        return None
-    try:
-        parsed = parse_toon(artifact.read_text(encoding='utf-8'))
-    except Exception:
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    thoroughness = parsed.get('achieved_thoroughness')
-    scope = parsed.get('achieved_scope')
-    if not isinstance(thoroughness, str) or not isinstance(scope, str):
-        return None
-    return thoroughness, scope
-
-
-def _coverage_shortfall(
-    declared: tuple[str, str],
-    achieved: tuple[str, str],
-) -> list[str]:
-    """Return the list of fields where ``achieved`` falls short of ``declared``.
-
-    Compares each field's ordinal rank under its ladder; a field is a shortfall
-    when its achieved rung is strictly below its declared rung. An achieved
-    value that is not a known rung (e.g. ``inherit`` or a malformed token)
-    cannot be proven to meet the declared rung, so it is treated as a shortfall
-    — the gate fails closed. Returns ``[]`` when both fields meet or exceed
-    their declared rungs.
-    """
-    declared_t, declared_s = declared
-    achieved_t, achieved_s = achieved
-    shortfall: list[str] = []
-
-    dt = _THOROUGHNESS_RANK.get(declared_t)
-    at = _THOROUGHNESS_RANK.get(achieved_t)
-    if dt is not None and (at is None or at < dt):
-        shortfall.append('thoroughness')
-
-    ds = _SCOPE_RANK.get(declared_s)
-    as_ = _SCOPE_RANK.get(achieved_s)
-    if ds is not None and (as_ is None or as_ < ds):
-        shortfall.append('scope')
-
-    return shortfall
-
-
-def _capture_coverage_contract(plan_id: str, _metadata: dict[str, Any], phase: str) -> Any:
-    """Declared-vs-achieved coverage-contract gate (BLOCKING at guarded boundary).
-
-    Resolves the declared cell via D3 (``manage-config coverage resolve``) and
-    the achieved cell from the D5 measurement artifact. When BOTH exist and the
-    achieved cell falls short of the declared cell on the grade-to-the-floor
-    rule, raises :class:`CoverageContractUnmet` at a guarded boundary (see
-    :data:`INVARIANT_BLOCKING_SCOPE`) so ``cmd_capture`` / ``cmd_verify`` refuse
-    to advance.
-
-    Returns ``None`` (not-applicable, no block) when no concrete cell is
-    declared for the phase OR no measurement artifact exists yet — additive
-    default with no migration shim. Returns the compact
-    ``"declared=Tx/scope achieved=Ty/scope"`` string when the contract is met,
-    so retrospective analysis sees the satisfied cell at the boundary.
-    """
-    declared = _resolve_declared_cell(phase)
-    if declared is None:
-        return None
-    achieved = _read_achieved_cell(plan_id, phase)
-    if achieved is None:
-        return None
-
-    shortfall = _coverage_shortfall(declared, achieved)
-    if shortfall:
-        raise CoverageContractUnmet(
-            phase=phase,
-            declared_thoroughness=declared[0],
-            declared_scope=declared[1],
-            achieved_thoroughness=achieved[0],
-            achieved_scope=achieved[1],
-            shortfall=shortfall,
-        )
-    return (
-        f'declared={declared[0]}/{declared[1]} '
-        f'achieved={achieved[0]}/{achieved[1]}'
-    )
-
-
 # --- registry ------------------------------------------------------------
 
 INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
@@ -1640,7 +1405,6 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('task_graph_valid', _always, _capture_task_graph_valid),
     ('pending_findings_by_type', _always, _capture_pending_findings_by_type),
     ('pending_findings_blocking_count', _always, _capture_pending_findings_blocking_count),
-    ('coverage_contract', _coverage_applicable, _capture_coverage_contract),
 ]
 
 
@@ -1708,14 +1472,6 @@ INVARIANT_BLOCKING_SCOPE: dict[str, BlockingScope] = {
     'task_graph_valid': 'blocking_at_every_boundary',
     'pending_findings_by_type': 'blocking_at_every_boundary',
     'pending_findings_blocking_count': 'blocking_at_every_boundary',
-    # Blocking only at the ``5-execute → 6-finalize`` boundary, where achieved
-    # coverage is finally measurable (the worktree footprint is complete and
-    # the D5 measurement artifact has been written). Informational at every
-    # planning boundary — the declared cell exists there but no achieved
-    # measurement has been taken yet, so the capture returns ``None`` (passive)
-    # regardless of this classification. Mirrors the ``main_sha`` scoping
-    # rationale documented above.
-    'coverage_contract': frozenset({'5-execute'}),
 }
 
 

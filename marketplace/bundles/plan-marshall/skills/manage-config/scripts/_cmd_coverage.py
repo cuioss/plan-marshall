@@ -301,12 +301,60 @@ def cmd_coverage_resolve(args) -> dict:
 
     Returns the resolved ``{thoroughness, scope, thoroughness_source,
     scope_source}`` cell plus a ``coupling`` field for downstream consumers
-    (D4 phase-handshake gate, D6 budget reserve). The coupling constraint is
-    already enforced inside :func:`_resolve_cell` — reaching this point means
-    the cell is coherent, so ``coupling`` is always ``ok`` on success.
+    (the components that implement the coverage-gathering contract, which fall
+    back to this project-default resolver when no per-invocation cell was
+    gathered). The coupling constraint is already enforced inside
+    :func:`_resolve_cell` — reaching this point means the cell is coherent, so
+    ``coupling`` is always ``ok`` on success.
     """
     result = _resolve_cell(args)
     if result.get('status') != 'success':
         return result
     result['coupling'] = 'ok'
     return result
+
+
+def cmd_coverage_expand(args) -> dict:
+    """Handle ``coverage expand`` subcommand.
+
+    Expands the requested ``(thoroughness, scope)`` identifier into the
+    canonical operational instruction block defined by the coverage-gathering
+    contract (``dev-agent-behavior-rules/standards/coverage-gathering-contract.md``
+    § "The Expansion Table"), emitted by :class:`CoveragePresets`. This is the
+    static identifier->instruction expander that implementing components consume
+    instead of re-interpreting the raw cell — mirroring how ``compatibility``
+    expands to ``compatibility_description``.
+
+    Validation reuses the shared ``_validate_thoroughness`` /
+    ``_validate_scope`` / ``_validate_coupling`` checks (via
+    :meth:`CoveragePresets.expand`); an incoherent cell
+    (``thoroughness >= T4 AND scope < component``) returns
+    ``error_type: coverage_coupling_violation``.
+    """
+    from coverage_presets import CoveragePresets
+
+    thoroughness = getattr(args, 'thoroughness', None)
+    scope = getattr(args, 'scope', None)
+
+    ok, err = _validate_thoroughness(thoroughness, 'coverage expand --thoroughness')
+    if not ok:
+        return error_exit(err or 'invalid thoroughness')
+    ok, err = _validate_scope(scope, 'coverage expand --scope')
+    if not ok:
+        return error_exit(err or 'invalid scope')
+    ok, err = _validate_coupling(thoroughness, scope)
+    if not ok:
+        return error_exit(
+            err or 'coverage coupling violation',
+            error_type='coverage_coupling_violation',
+        )
+
+    assert isinstance(thoroughness, str) and isinstance(scope, str)
+    return success_exit(
+        {
+            'thoroughness': thoroughness,
+            'scope': scope,
+            'instruction': CoveragePresets.expand(thoroughness, scope),
+            'summary': CoveragePresets.describe(thoroughness, scope),
+        }
+    )

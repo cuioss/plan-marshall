@@ -3,10 +3,9 @@
 """Tests for Git provider loading from marshal.json declarations."""
 
 from _providers_core import load_declared_providers  # type: ignore[import-not-found]
-
-import conftest  # noqa: F401
 from _providers_fixtures import stage_marshal
 
+import conftest  # noqa: F401
 
 _GIT_PROVIDER_CONFIG = {
     'providers': [

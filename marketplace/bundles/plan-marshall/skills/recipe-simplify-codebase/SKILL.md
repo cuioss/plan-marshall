@@ -19,20 +19,35 @@ The per-batch worker is `finalize-step-simplify`'s cognitive engine — **reused
 | `recipe_scope` | string | Yes | Campaign scope — one of `component`, `module`, `overall` |
 | `recipe_thoroughness` | string | Yes | Campaign thoroughness rung — one of `T1`, `T2`, `T3`, `T4`, `T5` |
 
-The two dials are the scope × thoroughness contract. Their ladders, the grade-to-the-floor rule, and the coupling constraint are defined once in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md) — this recipe consults that standard and the D3 config resolver; it does NOT restate the ladders or re-derive the coupling check.
+The two dials are the scope × thoroughness contract. Their ladders, the grade-to-the-floor rule, and the coupling constraint are defined once in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md); this recipe implements the [coverage-gathering contract](../dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — it gathers, expands, and consumes the cell per that contract and does NOT restate the ladders or re-derive the coupling check. `recipe_scope` / `recipe_thoroughness` are accepted as the pre-gathered values when the recipe workflow already supplied them; otherwise Step 0 gathers them.
+
+---
+
+## Step 0: Gather + expand + persist the coverage cell
+
+When `recipe_scope` / `recipe_thoroughness` were not supplied as inputs, gather the `(thoroughness, scope)` cell from the user via the contract's canonical `AskUserQuestion` shape — a `scope` question (`component`/`module`/`overall` + an explicit `inherit (default — behave exactly as today)`) and a `thoroughness` question (`T1`…`T5` + `inherit`), coupling-constrained when `T4`/`T5` is picked. Then expand the identifier into the operational instruction block and persist BOTH the identifier and the expanded instruction to `status.json` metadata (this recipe is plan-bound):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage expand --thoroughness {recipe_thoroughness} --scope {recipe_scope}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id {plan_id} --set --field coverage_thoroughness --value {recipe_thoroughness}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id {plan_id} --set --field coverage_scope --value {recipe_scope}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id {plan_id} --set --field coverage_instruction --value {expanded_instruction}
+```
+
+Consume the **expanded instruction** (NOT the raw cell) in Steps 2–4. `inherit/inherit` reproduces today's module/package iteration.
 
 ---
 
 ## Step 1: Validate the scope × thoroughness cell (coupling constraint)
 
-Before any discovery, validate the requested cell against the coupling constraint by delegating to D3's resolver — do NOT re-implement the `thoroughness ≥ T4 ∧ scope < component` rejection here:
+Before any discovery, validate the gathered cell against the coupling constraint by delegating to the resolver — do NOT re-implement the `thoroughness ≥ T4 ∧ scope < component` rejection here. `coverage resolve` reads `marshal.json` only (it has NO `--audit-plan-id` flag and no per-plan tier), so validate the gathered literal pair directly via `coverage expand`, which applies the same coupling check at expand time:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  coverage resolve --phase phase-5-execute --audit-plan-id {plan_id}
+  coverage expand --thoroughness {recipe_thoroughness} --scope {recipe_scope}
 ```
 
-The resolver enforces the coupling constraint and emits `error: coverage_coupling_violation` for an incoherent cell. When the requested `recipe_scope` / `recipe_thoroughness` are not already configured on the plan, validate the literal pair instead by reading the coupling definition from [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) and the central standard — a campaign with `recipe_thoroughness ∈ {T4, T5}` REQUIRES `recipe_scope ≥ component`. Abort the recipe with a clear message when the requested cell violates the constraint: relation-tracing thoroughness cannot be honoured below `component` scope because the relations' other ends lie outside the radius.
+The expander (and `coverage resolve` for project-default cells) enforces the coupling constraint and emits `error_type: coverage_coupling_violation` for an incoherent cell — re-prompt the gather on that error. The constraint, stated for reference only: a campaign with `recipe_thoroughness ∈ {T4, T5}` REQUIRES `recipe_scope ≥ component` — relation-tracing thoroughness cannot be honoured below `component` scope because the relations' other ends lie outside the radius. Abort (re-gather) when the requested cell violates it.
 
 ---
 
@@ -76,7 +91,7 @@ Collect one deliverable per sweep batch (one batch per radius unit at T1–T3; o
   - `change_type`: `tech_debt`
   - `execution_mode`: `automated`
   - `module`: `{module_name}`
-- **Per-deliverable scope × thoroughness declaration**: record the deliverable's `recipe_scope` × `recipe_thoroughness` cell so the Stream-B gate (D4 `coverage_contract` phase-handshake invariant) can grade the campaign declared-vs-achieved, and the Stream-B budget (D6 `coverage_budget`) can size each task's token-budget reserve.
+- **Per-deliverable scope × thoroughness declaration**: record the deliverable's `recipe_scope` × `recipe_thoroughness` cell for the floor-graded self-report (the quality signal — there is no blocking gate). The contract's runtime consumer, `finalize-step-simplify`, reads the expanded instruction (from `status.json` metadata `coverage_instruction`) to govern its review depth and breadth per the coverage-gathering contract.
 - **Affected files**: every file in the batch (from architecture data, or via `manage-files discover` when the architecture record reports `file_count: 0`).
 - **Per-batch worker**: the `finalize-step-simplify` cognitive engine, widened past the `modified_files` cap and fed the batch file set (and, at T4+, the relation-graph cluster). Cross-reference [`phase-6-finalize/standards/finalize-step-simplify.md`](../phase-6-finalize/standards/finalize-step-simplify.md) — do NOT re-author the anti-pattern review logic; this recipe only widens its scope and supplies the batch plan.
 
@@ -117,7 +132,8 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 ## Related
 
 - `plan-marshall:dev-agent-behavior-rules` `standards/thoroughness.md` — the scope × thoroughness ladders, grade-to-the-floor rule, and coupling constraint (single source of truth).
-- `plan-marshall:manage-config` `coverage resolve` — the D3 config resolver that validates the coupling constraint.
+- `plan-marshall:dev-agent-behavior-rules` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (gather → expand → consume; persistence; cell→instruction table).
+- `plan-marshall:manage-config` `coverage expand` / `coverage resolve` — the static identifier→instruction expander and the project-default resolver that enforce the coupling constraint.
 - `plan-marshall:phase-6-finalize` `standards/finalize-step-simplify.md` — the cognitive simplification engine this recipe reuses (widened past the change-set cap).
 - `plan-marshall:recipe-refactor-to-profile-standards` — the sibling recipe whose module/package iteration scaffold this recipe mirrors.
 - `plan-marshall:phase-3-outline` Step 2.5 — loads this skill with input parameters.

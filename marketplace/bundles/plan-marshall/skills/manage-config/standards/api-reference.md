@@ -391,12 +391,13 @@ Common errors:
 
 ## Noun: coverage
 
-Resolve the per-phase two-dial coverage cell — `thoroughness` (T1–T5) × `scope` (change-set…overall) — stored under each `plan.<phase>.coverage` object (with `plan.coverage` as the plan-wide fallback) in `.plan/marshal.json`. Both verbs are pure resolvers; each field walks `plan.<phase>.coverage.<field>` → `plan.coverage.<field>` → `inherit` independently, mirroring the `effort` resolver. The scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) is enforced at lookup time.
+Resolve and expand the two-dial coverage cell — `thoroughness` (T1–T5) × `scope` (change-set…overall). `read`/`resolve` are the project-DEFAULT resolvers: each field walks `plan.<phase>.coverage.<field>` → `plan.coverage.<field>` → `inherit` independently from `.plan/marshal.json` only (no per-plan tier), mirroring the `effort` resolver. The scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) is enforced at lookup/expand time. Coverage's consumers are the components that implement the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md); they gather a per-invocation cell, `expand` it into the contract's operational instruction block, persist it in `status.json` metadata, and fall back to `resolve` (the project default) when no cell was gathered.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
-| `read` | `--phase` and/or `--role` (or `--default`) | Resolve the `{thoroughness, scope, thoroughness_source, scope_source}` cell |
-| `resolve` | same as `read` | Resolve the cell plus a `coupling: ok` field for downstream consumers (phase-handshake gate, budget reserve) |
+| `read` | `--phase` and/or `--role` (or `--default`) | Resolve the `{thoroughness, scope, thoroughness_source, scope_source}` cell (project default) |
+| `resolve` | same as `read` | Resolve the cell plus a `coupling: ok` field (project default, consulted by the contract's implementors as fallback) |
+| `expand` | `--thoroughness` and `--scope` (both required) | Expand a `(thoroughness, scope)` identifier into the contract's operational instruction block; `inherit/inherit` → the behavior-preserving instruction |
 
 ### Verb: read
 
@@ -415,6 +416,18 @@ manage-config coverage read --default
 
 ```bash
 manage-config coverage resolve --phase phase-5-execute
+```
+
+### Verb: expand
+
+The static identifier → instruction expander (backed by `coverage_presets.py`). Maps the `(thoroughness, scope)` identifier to the canonical operational instruction text owned by the coverage-gathering contract's expansion table. Both `--thoroughness` and `--scope` are required. `inherit/inherit` expands to the behavior-preserving instruction; an incoherent cell is rejected with `coverage_coupling_violation`.
+
+```bash
+# Expand a concrete cell
+manage-config coverage expand --thoroughness T3 --scope component
+
+# Behavior-preserving instruction
+manage-config coverage expand --thoroughness inherit --scope inherit
 ```
 
 ### Coupling-violation error

@@ -5,9 +5,9 @@
 Tests connectivity verification with mocked HTTP and system auth routing.
 """
 
-from conftest import get_script_path, run_script
-
 from _providers_fixtures import stage_marshal
+
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
 

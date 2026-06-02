@@ -106,6 +106,14 @@ DEFAULT_PROJECT = {
 # A missing key is also treated as `true` by `manage-files open-in-ide`.
 DEFAULT_OPEN_IN_IDE = True
 
+# Plan-wide coverage default (`plan.coverage` in marshal.json — two-dial cell).
+# The `inherit` seed is byte-identical to the resolver's implicit fallback; it
+# exists only to make the plan-wide coverage knob operator-visible. The
+# per-invocation identifier + expanded instruction are gathered into status.json
+# metadata per the coverage-gathering contract — there are NO per-phase coverage
+# seeds.
+DEFAULT_PLAN_COVERAGE = {'thoroughness': 'inherit', 'scope': 'inherit'}
+
 # Phase-specific plan defaults
 DEFAULT_PLAN_INIT = {
     'branch_strategy': 'feature',
@@ -366,6 +374,7 @@ def get_default_config() -> dict:
         'ci': copy.deepcopy(DEFAULT_CI),
         'plan': {
             'open_in_ide': DEFAULT_OPEN_IN_IDE,
+            'coverage': copy.deepcopy(DEFAULT_PLAN_COVERAGE),
             'phase-1-init': copy.deepcopy(DEFAULT_PLAN_INIT),
             'phase-2-refine': copy.deepcopy(DEFAULT_PLAN_REFINE),
             'phase-3-outline': copy.deepcopy(DEFAULT_PLAN_OUTLINE),

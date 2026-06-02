@@ -224,23 +224,29 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ### Coverage two-knob configuration
 
-Coverage is a two-dial contract — `thoroughness` (T1–T5) × `scope` (change-set…overall) — orthogonal to the `effort` model-tier dial. A per-phase override lives under the phase entry's `coverage` key; the plan-wide fallback is `plan.coverage`. The `read`/`resolve` verbs mirror the `effort` resolver's lookup shape, resolving each field independently and enforcing the scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) at lookup time. See [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md) § Coupling Constraint.
+Coverage is a two-dial contract — `thoroughness` (T1–T5) × `scope` (change-set…overall) — orthogonal to the `effort` model-tier dial. A per-phase override lives under the phase entry's `coverage` key; the plan-wide fallback is `plan.coverage` (seeded `inherit/inherit`). The `read`/`resolve` verbs mirror the `effort` resolver's lookup shape, resolving each field independently from `marshal.json` only (the project-DEFAULT tier — no per-plan tier), and enforcing the scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) at lookup time. See [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md) § Coupling Constraint.
+
+`coverage`'s consumers are the broad-pass components that implement the [coverage-gathering contract](../dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — wide audits, compliance sweeps, simplification/refactor campaigns, pre-submission review. Each gathers a `(thoroughness, scope)` cell from the user at invocation, expands it via `coverage expand`, persists the identifier + expanded instruction in `status.json` metadata, and consumes the expanded instruction to govern its breadth/depth. `coverage resolve` is the project-default tier consulted when no per-invocation cell was gathered.
 
 ```bash
-# Resolve the coverage cell for a phase
+# Resolve the coverage cell for a phase (project default)
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   coverage read --phase phase-5-execute
 
-# Resolve cell + coupling result for downstream consumers (gate, budget)
+# Resolve cell + coupling result (project default)
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   coverage resolve --phase phase-5-execute
 
 # Raw plan-wide fallback
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   coverage read --default
+
+# Expand the identifier into the contract's operational instruction block
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  coverage expand --thoroughness T3 --scope component
 ```
 
-An incoherent stored cell (e.g. `thoroughness: T4`, `scope: change-set`) is rejected at lookup time with `error_type: coverage_coupling_violation`; unconfigured fields resolve to `inherit`.
+`coverage expand` is the static identifier→instruction expander (backed by `coverage_presets.py`): it maps the `(thoroughness, scope)` identifier to the canonical operational instruction text defined by the coverage-gathering contract's expansion table. `inherit/inherit` expands to the behavior-preserving instruction. An incoherent cell (e.g. `thoroughness: T4`, `scope: change-set`) is rejected at lookup/expand time with `error_type: coverage_coupling_violation`; unconfigured fields resolve to `inherit`.
 
 ### Resolve Skills for a Domain and Profile
 
@@ -729,6 +735,13 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config covera
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage resolve \
   [--role ROLE] [--phase PHASE] [--default]
+```
+
+### coverage expand
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage expand \
+  --thoroughness THOROUGHNESS --scope SCOPE
 ```
 
 ### resolve-domain-skills

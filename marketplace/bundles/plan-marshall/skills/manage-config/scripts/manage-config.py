@@ -16,7 +16,7 @@ Usage:
 
 import argparse
 
-from _cmd_coverage import cmd_coverage_read, cmd_coverage_resolve
+from _cmd_coverage import cmd_coverage_expand, cmd_coverage_read, cmd_coverage_resolve
 from _cmd_domain_detect import cmd_domain_detect
 from _cmd_effort import cmd_effort, cmd_effort_apply_preset, cmd_effort_resolve_target
 from _cmd_ext_defaults import cmd_ext_defaults
@@ -425,6 +425,22 @@ def main() -> int:
         help='Resolve via `plan.coverage` (no phase/role lookup).',
     )
 
+    coverage_expand = coverage_sub.add_parser(
+        'expand',
+        help='Expand a (thoroughness, scope) cell into the contract instruction block',
+        allow_abbrev=False,
+    )
+    coverage_expand.add_argument(
+        '--thoroughness',
+        required=True,
+        help='Thoroughness rung (T1-T5 or inherit).',
+    )
+    coverage_expand.add_argument(
+        '--scope',
+        required=True,
+        help='Scope rung (change-set/artifact/component/module/overall or inherit).',
+    )
+
     # --- finalize-steps ---
     p_finalize_steps = subparsers.add_parser(
         'finalize-steps',
@@ -590,6 +606,8 @@ def main() -> int:
             return 2
         if args.verb == 'resolve':
             result = cmd_coverage_resolve(args)
+        elif args.verb == 'expand':
+            result = cmd_coverage_expand(args)
         else:
             result = cmd_coverage_read(args)
     elif args.noun == 'finalize-steps':
