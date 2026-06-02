@@ -2942,6 +2942,33 @@ class TestScopeGatedFinalizePreFilter:
         assert 'project:finalize-step-pre-submission-self-review' not in steps
         assert 'project:finalize-step-plugin-doctor' not in steps
 
+    def test_lightweight_override_inert_on_non_scope_gated(self, plan_context):
+        """lightweight_track_override=true is INERT on a non-scope-gated plan:
+        automated-review is retained on multi_module scope even with the
+        override set, so flipping the project-wide knob cannot silently disable
+        bot review on a large plan (PR #551 reviewer finding)."""
+        _write_lightweight_override_marshal(plan_context.fixture_dir, override=True)
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='scope-multi-override',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=10,
+                phase_5_steps='quality_check,build_verify',
+                phase_6_steps=','.join(_SCOPE_GATE_PHASE_6),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest('scope-multi-override')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Override is inert at multi_module scope — automated-review RETAINED.
+        assert 'automated-review' in steps
+        # No scope subtraction at multi_module — full set survives.
+        assert 'plan-marshall:plan-retrospective' in steps
+        assert 'project:finalize-step-pre-submission-self-review' in steps
+        assert 'project:finalize-step-plugin-doctor' in steps
+
     def test_single_module_drops_only_plan_retrospective(self, plan_context):
         """single_module scope drops only plan-retrospective; the other two
         non-guarded steps and automated-review are retained."""

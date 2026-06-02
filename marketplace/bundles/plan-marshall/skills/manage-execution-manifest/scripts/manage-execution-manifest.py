@@ -1128,9 +1128,13 @@ def _apply_scope_gated_finalize(
 
     ``automated-review`` is NEVER subtracted by the implicit scope gate (the
     bot-enforcement guard would re-add it, making the subtraction a no-op).
-    When ``lightweight_track_override`` is ``True``, the gate additionally drops
-    ``automated-review`` — the only path that suppresses the bot-review gate,
-    explicitly opted into via marshal.json.
+    When ``lightweight_track_override`` is ``True`` AND the plan is itself
+    scope-gated (``scope_estimate in ('surgical', 'single_module')``), the gate
+    additionally drops ``automated-review`` — the only path that suppresses the
+    bot-review gate, explicitly opted into via marshal.json. The override is
+    scoped, not global: on non-scope-gated plans (``multi_module`` / ``broad`` /
+    ``none``) the override is inert, so flipping the project-wide knob can never
+    silently disable bot review on a large plan.
 
     Consistent with the composer's "rows and pre-filters only ever narrow the
     candidate list" architecture, this pre-filter runs before the seven-row
@@ -1146,7 +1150,7 @@ def _apply_scope_gated_finalize(
     else:
         drop_set = frozenset()
 
-    if lightweight_track_override:
+    if lightweight_track_override and scope_estimate in ('surgical', 'single_module'):
         drop_set = drop_set | _SCOPE_GATED_OVERRIDE_DROP
 
     if not drop_set:

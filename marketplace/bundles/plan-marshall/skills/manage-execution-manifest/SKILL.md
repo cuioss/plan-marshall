@@ -314,7 +314,7 @@ Before the seven-row matrix and the bot-enforcement guard, the composer applies 
 
 `automated-review` is NEVER dropped by the implicit scope gate: the bot-enforcement guard re-adds it on GitHub/GitLab plans, so an implicit drop would be a silently-undone no-op. The only path that suppresses `automated-review` is the explicit `lightweight_track_override` escape hatch.
 
-**`lightweight_track_override`** — read from `marshal.json` at `plan.phase-6-finalize.lightweight_track_override` (default `false`). When `true`, the scope gate additionally drops `automated-review` on scope-gated plans — the single deliberate path that suppresses the bot-review gate, explicitly opted into. The default keeps the bot-review invariant intact.
+**`lightweight_track_override`** — read from `marshal.json` at `plan.phase-6-finalize.lightweight_track_override` (default `false`). When `true` **and** the plan is itself scope-gated (`scope_estimate ∈ {surgical, single_module}`), the scope gate additionally drops `automated-review` — the single deliberate path that suppresses the bot-review gate, explicitly opted into. The override is scoped, not global: on `multi_module` / `broad` / `none` plans it is inert, so flipping the project-wide knob can never silently disable bot review on a large plan. The default keeps the bot-review invariant intact.
 
 The composer emits one `decision.log` line per scope-gated subtraction (canonical prefix `(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction`) and surfaces `scope_gated_finalize_dropped` and `lightweight_track_override` in the `compose` result for observability.
 
