@@ -46,17 +46,6 @@ def test_capture_worktree_applicable(plan_context, stubbed_invariants, stub_meta
     assert result['invariants']['worktree_sha'] == 'wt-sha'
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        'Root-cause notation fix (underscore manage_status -> hyphen manage-status '
-        'in _handshake_commands.py:_load_status_metadata) is owned by plan '
-        'renaming-a-marketplace-script-file-silently-chang. Until that plan lands, '
-        '_load_status_metadata invokes an unresolvable executor notation. This '
-        'contract test flips to a real pass once the sibling fix merges; the xfail '
-        'marker is removed in a follow-up.'
-    ),
-)
 def test_load_status_metadata_uses_resolvable_manage_status_notation() -> None:
     """End-to-end contract: _load_status_metadata must invoke a resolvable notation."""
     handshake_src = (SCRIPTS_DIR / '_handshake_commands.py').read_text(encoding='utf-8')
