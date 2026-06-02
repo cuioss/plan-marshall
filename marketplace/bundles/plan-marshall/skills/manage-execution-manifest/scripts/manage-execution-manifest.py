@@ -891,7 +891,10 @@ def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
         return None
-    data = read_json(marshal_path, default={})
+    try:
+        data = read_json(marshal_path, default={})
+    except (OSError, ValueError):
+        return None
     if not isinstance(data, dict):
         return None
     plan = data.get('plan')
