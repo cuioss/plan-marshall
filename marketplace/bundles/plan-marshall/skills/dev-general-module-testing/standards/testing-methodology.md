@@ -173,6 +173,36 @@ Each test must be independent:
 * Each test creates its own test data
 * Each test cleans up its own resources (or uses framework lifecycle hooks)
 
+### Compose Isolation, Don't Impose It
+
+**Trigger**: An isolation fixture mutates *global resolution state* — config roots, environment variables, module-search paths, the working directory, or any other process-wide lookup that decides which file/resource the code under test resolves to. The seductive shortcut is to make such a fixture **auto-applied to every test in scope** (e.g. `autouse=True` in pytest, a global `beforeEach`, a base-class setup every test inherits) so isolation becomes the default and no test has to opt in.
+
+A blanket auto-applied redirect has **repo-wide blast radius**: it runs before every test in scope, including tests that deliberately stage their own version of the redirected resource. The moment one test sets up its own config file (or env var, or search path) and a global fixture silently re-points resolution somewhere else, that test fails — not because of any change to the code it exercises, but because a blanket fixture overrode the resource root it carefully established. The failure presents as "resolved the wrong file / read empty config", not as a logic error in the tested code.
+
+**Durable rule**: a fixture that mutates global resolution state must be **explicit and parameterized, not auto-applied**. Auto-application is appropriate only for redirections that are *universally correct for every test in scope*. The instant a single test needs to stage its own version of the redirected resource, decompose the auto-applied fixture into an **opt-in helper that re-points resolution at a caller-supplied target** — each test (or each subtree's setup) invokes the helper explicitly with its own file:
+
+* A test that needs an empty/default resource calls the helper pointed at its own empty sandbox.
+* A test that stages its own resource calls the helper pointed at *that* resource.
+* Isolation becomes a composable building block each test opts into with the right target.
+
+**When adding a blanket isolation fixture, audit the tests in scope first** for ones that manage their own version of the resource the fixture redirects (search for tests that write the resolved config/manifest/reference file into their own fixture directory). Those tests are the collision set — they are exactly the ones a global redirect will silently break.
+
+The originating lesson is `2026-06-02-10-001` (the autouse-redirect analogue of "one layer's path-resolution decision silently overrides another layer's intent").
+
+### Bound Per-Test Guard Traversal by the Test's Own Footprint
+
+**Trigger**: An isolation or pollution-detection guard walks a shared directory tree to verify a test did not leave stray files behind (or to redirect/scan resolved paths). The guard runs per test, and the tree it walks can grow to contain **unrelated full checkouts** — sibling worktree checkouts, vendored dependencies, build output, version-control object stores.
+
+The trap: a *recursive* walk rooted at a directory that can contain full checkouts is an **O(repo-size × test-count)** cost. If hundreds of tests each pay a recursive walk over a tree holding several worktree checkouts (each with its own object store, build output, and nested caches), the guard — not the framework, not parallelism — becomes the dominant runtime cost. The symptom is a suite whose wall time scales with the *number of retained checkouts in the shared tree*, not with the code under change.
+
+**Durable rule**: a per-test guard's traversal cost must be bounded by the **test's own footprint**, never by the size of a shared tree that can contain unrelated full checkouts. Apply all three:
+
+* **Never recurse from the shared root.** Do not walk every descendant of a directory that can hold worktree checkouts or vendored trees.
+* **Depth-limit and scope the walk.** Restrict the guard to the specific directories a test is allowed to write (its own fixture sandbox / redirected base directory), or walk only the top one or two levels with explicit exclusions.
+* **Prune heavy subtrees** from any traversal that must touch the shared tree at all — worktree-checkout directories, version-control object stores, build-output directories, dependency caches, and bytecode caches.
+
+The originating lesson is `2026-06-02-10-002` (a recursive guard over a worktrees tree was the real build slowdown, not subprocess/parallelism thrash). A corollary from the same lesson: before attributing a performance regression to a hypothesized cause, **measure on a quiescent machine** with no concurrent runs and no orphaned background builds — a conclusion built on a contended machine sends the fix in the wrong direction.
+
 ## Integration Test Separation
 
 Integration tests must be separated from unit tests:
