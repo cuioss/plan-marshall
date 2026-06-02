@@ -38,6 +38,7 @@ The pre-filters run in this order:
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
 3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when `references.modified_files` is empty.
 4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
+5. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. `automated-review` is dropped ONLY via the explicit `lightweight_track_override` opt-in, never by the implicit scope gate.
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
@@ -121,6 +122,30 @@ When `modified_files` is non-empty, the pre-filter is a no-op and emits no log e
 When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-simplify` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_submission_self_review_inactive` and *before* every row of the seven-row matrix.
+
+### Pre-Filter: `scope_gated_finalize`
+
+**Condition**: `scope_estimate ∈ {surgical, single_module}` (the implicit gate), OR `lightweight_track_override == true` (the explicit `automated-review` opt-in).
+
+**Effect**: heavyweight phase-6 review/audit steps are removed from `phase_6_candidates` by scope before the rows are evaluated:
+
+- **`scope_estimate == 'surgical'`** — drops `plan-marshall:plan-retrospective`, `project:finalize-step-pre-submission-self-review`, and `project:finalize-step-plugin-doctor`. Both bare and prefixed forms are matched (the candidate list is `default:`-namespace-normalized at intake, but `project:` / `bundle:skill` prefixes are preserved verbatim, so the match-set lists both forms).
+- **`scope_estimate == 'single_module'`** — drops only `plan-marshall:plan-retrospective`.
+- **`scope_estimate ∈ {none, multi_module, broad}`** — no implicit subtraction; the full candidate set survives into the matrix.
+
+**The deliberate `automated-review` carve-out**: the implicit scope gate NEVER drops `automated-review`. The active `bot_enforcement_guard` (documented below) re-adds `automated-review` in-place on any GitHub/GitLab plan where it is missing, so an implicit drop would be a silently-undone no-op — and dropping it would contradict the documented invariant that "review gates a project opted into are NEVER silently suppressed by the planner". The only path that suppresses `automated-review` is the explicit `lightweight_track_override` opt-in: when `marshal.json`'s `plan.phase-6-finalize.lightweight_track_override` is `true`, the scope gate additionally drops `automated-review` on scope-gated plans. The default (`false`) keeps the bot-review invariant intact. This resolves the request's "exclude automated-review for surgical scope" instruction by extending — not contradicting — the bot-enforcement model: the exclusion is opt-in and explicit, never implicit.
+
+**Why a pre-filter (not an eighth row)**: the subtraction depends only on `scope_estimate` (and the `lightweight_track_override` config knob), both orthogonal to the change-type / recipe inputs the seven-row matrix consumes. Modeling it as a pre-filter keeps the seven-row matrix unchanged and is consistent with the composer's "rows and pre-filters only ever narrow the candidate list" architecture. It runs after `simplify_inactive` and before the matrix and the bot-enforcement guard, so every row — and the guard — sees a candidate list already narrowed by the scope gate.
+
+**Decision log line** (one per subtraction, in addition to the row's own log line and any other pre-filter log line):
+
+```
+(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction — scope_estimate={value}, dropped {step} from phase_6.steps
+```
+
+When `scope_estimate ∈ {none, multi_module, broad}` and `lightweight_track_override == false`, the pre-filter is a no-op and emits no log entry; the full candidate set survives into the seven-row matrix.
+
+**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `simplify_inactive` and *before* every row of the seven-row matrix and the bot-enforcement guard.
 
 ## Post-Matrix Rule: docs-only classifier
 

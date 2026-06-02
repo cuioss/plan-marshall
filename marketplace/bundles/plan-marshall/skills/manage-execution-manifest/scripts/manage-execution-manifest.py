@@ -1055,6 +1055,122 @@ def _apply_simplify_inactive(
     return [s for s in phase_6_candidates if s != 'finalize-step-simplify'], True
 
 
+# Scope-gated phase-6 subtraction sets. Each entry lists the step references the
+# scope_gated_finalize pre-filter drops, expressed as match-sets that cover both
+# the bare and prefixed forms a candidate list may carry. The candidate list is
+# boundary-normalized by ``_strip_default_prefix`` before pre-filters run, so the
+# optional ``default:`` prefix is already gone; ``project:`` and ``bundle:skill``
+# prefixes are preserved verbatim, so the surgical set lists both forms. See
+# standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
+#
+# ``automated-review`` is deliberately NOT in either implicit set: the
+# bot-enforcement guard re-adds it on GitHub/GitLab plans, so dropping it via
+# the implicit scope gate would be a silently-undone no-op. The only path that
+# suppresses ``automated-review`` is the explicit ``lightweight_track_override``
+# opt-in (see ``_apply_scope_gated_finalize``).
+_SCOPE_GATED_SURGICAL_DROP = frozenset(
+    {
+        'plan-retrospective',
+        'plan-marshall:plan-retrospective',
+        'finalize-step-pre-submission-self-review',
+        'project:finalize-step-pre-submission-self-review',
+        'finalize-step-plugin-doctor',
+        'project:finalize-step-plugin-doctor',
+    }
+)
+_SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
+    {
+        'plan-retrospective',
+        'plan-marshall:plan-retrospective',
+    }
+)
+_SCOPE_GATED_OVERRIDE_DROP = frozenset({'automated-review', 'default:automated-review'})
+
+
+def _read_lightweight_track_override() -> bool:
+    """Read ``plan.phase-6-finalize.lightweight_track_override`` from marshal.json.
+
+    Returns ``False`` when the file is missing, the keys are absent, or the
+    value is not a boolean ``True``. The escape hatch defaults to off: only an
+    explicit ``true`` in marshal.json activates the additional
+    ``automated-review`` suppression in the scope_gated_finalize pre-filter.
+    """
+    marshal_path = get_marshal_path()
+    if marshal_path is None or not marshal_path.exists():
+        return False
+    data = read_json(marshal_path, default={})
+    if not isinstance(data, dict):
+        return False
+    plan = data.get('plan')
+    if not isinstance(plan, dict):
+        return False
+    phase_6 = plan.get('phase-6-finalize')
+    if not isinstance(phase_6, dict):
+        return False
+    return phase_6.get('lightweight_track_override') is True
+
+
+def _apply_scope_gated_finalize(
+    phase_6_candidates: list[str],
+    scope_estimate: str,
+    lightweight_track_override: bool,
+) -> tuple[list[str], list[str]]:
+    """Pre-filter: drop heavyweight phase-6 review/audit steps by scope.
+
+    Subtractions:
+
+    - ``scope_estimate == 'surgical'`` → drop ``plan-marshall:plan-retrospective``,
+      ``project:finalize-step-pre-submission-self-review``, and
+      ``project:finalize-step-plugin-doctor`` (both bare and prefixed forms).
+    - ``scope_estimate == 'single_module'`` → drop only
+      ``plan-marshall:plan-retrospective``.
+    - Any other scope value → no implicit subtraction.
+
+    ``automated-review`` is NEVER subtracted by the implicit scope gate (the
+    bot-enforcement guard would re-add it, making the subtraction a no-op).
+    When ``lightweight_track_override`` is ``True``, the gate additionally drops
+    ``automated-review`` — the only path that suppresses the bot-review gate,
+    explicitly opted into via marshal.json.
+
+    Consistent with the composer's "rows and pre-filters only ever narrow the
+    candidate list" architecture, this pre-filter runs before the seven-row
+    matrix and the bot-enforcement guard. Returns the filtered candidate list
+    plus the list of step references that were dropped (for per-subtraction
+    decision-log emission). The dropped list preserves the candidate's verbatim
+    form so the decision log names exactly what was removed.
+    """
+    if scope_estimate == 'surgical':
+        drop_set: frozenset[str] = _SCOPE_GATED_SURGICAL_DROP
+    elif scope_estimate == 'single_module':
+        drop_set = _SCOPE_GATED_SINGLE_MODULE_DROP
+    else:
+        drop_set = frozenset()
+
+    if lightweight_track_override:
+        drop_set = drop_set | _SCOPE_GATED_OVERRIDE_DROP
+
+    if not drop_set:
+        return phase_6_candidates, []
+
+    kept: list[str] = []
+    dropped: list[str] = []
+    for step in phase_6_candidates:
+        if step in drop_set:
+            dropped.append(step)
+        else:
+            kept.append(step)
+    return kept, dropped
+
+
+def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dropped_step: str) -> None:
+    """Emit one decision-log entry per scope_gated_finalize subtraction."""
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction — '
+        f'scope_estimate={scope_estimate}, dropped {dropped_step} from phase_6.steps'
+    )
+    _emit_decision_log(plan_id, message)
+
+
 def _read_ci_provider() -> str | None:
     """Return the CI provider identifier (``github``, ``gitlab``) from marshal.json.
 
@@ -1642,6 +1758,20 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates, args.change_type, affected_files_count
     )
 
+    # Pre-filter 5 (scope_gated_finalize) drops heavyweight phase-6 review/audit
+    # steps by scope: surgical drops the three non-guarded steps, single_module
+    # drops only plan-retrospective, and the lightweight_track_override escape
+    # hatch additionally drops automated-review. It runs after the other
+    # pre-filters and before the seven-row matrix and the bot-enforcement guard,
+    # so it only ever narrows the candidate list. automated-review is dropped
+    # ONLY via the explicit override — never by the implicit scope gate — so the
+    # bot-enforcement invariant stays intact by default. See
+    # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
+    lightweight_track_override = _read_lightweight_track_override()
+    phase_6_candidates, scope_gated_dropped = _apply_scope_gated_finalize(
+        phase_6_candidates, args.scope_estimate, lightweight_track_override
+    )
+
     body, rule = _decide(
         change_type=args.change_type,
         track=args.track,
@@ -1771,6 +1901,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_pre_submission_self_review_omitted(plan_id)
     if simplify_omitted:
         _log_simplify_omitted(plan_id, args.change_type, affected_files_count)
+    for dropped_step in scope_gated_dropped:
+        _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
     if docs_only_classifier_fired:
         _log_docs_only_classifier_fired(plan_id, len(bundle_change_paths))
     _log_decision(plan_id, rule, body)
@@ -1794,6 +1926,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
         'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
         'simplify_omitted': simplify_omitted,
+        'scope_gated_finalize_dropped': scope_gated_dropped,
+        'lightweight_track_override': lightweight_track_override,
         'docs_only_classifier_fired': docs_only_classifier_fired,
         'plan_wide_bucket': plan_wide_bucket,
     }
