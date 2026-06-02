@@ -291,7 +291,7 @@ Parse the returned TOON:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: reconcile-files post-rebase returned {status} — skipping ledger reconcile, continuing"
+    work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: reconcile-files post-rebase returned {error} — skipping ledger reconcile, continuing"
   ```
 
 - non-zero script exit → follow this document's **Exit-code convention** (STOP and return the stderr verbatim to the dispatcher).
