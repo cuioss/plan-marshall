@@ -96,6 +96,36 @@ def _build_absorb_scenario(repo: Path) -> None:
     _git(repo, 'merge', 'main', '--no-edit')
 
 
+def _build_no_overlap_rebase_scenario(repo: Path) -> None:
+    """Construct a no_overlap **rebase** scenario — feature rebased onto an
+    advanced main, not merged.
+
+    Layout (differs from ``_build_absorb_scenario`` only in the final step:
+    ``git rebase main`` instead of ``git merge main``):
+        main:    base.txt
+        feature: branches from main, adds plan_change.py (genuine plan work)
+        main:    advances with upstream_only.py (disjoint from the plan —
+                 the no_overlap condition)
+        feature: REBASED onto the advanced main — HEAD's merge-base with main
+                 is now the advanced main tip, so the three-dot ``main...HEAD``
+                 diff excludes upstream_only.py and includes only plan_change.py.
+    """
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+
+    # Feature branch: genuine plan change.
+    _git(repo, 'checkout', '-b', 'feature')
+    _commit(repo, 'plan change', {'plan_change.py': 'print("plan")\n'})
+
+    # Upstream advances on main with a file disjoint from the plan.
+    _git(repo, 'checkout', 'main')
+    _commit(repo, 'upstream only', {'upstream_only.py': 'print("upstream")\n'})
+
+    # Rebase feature onto the advanced main (rather than merging main in).
+    _git(repo, 'checkout', 'feature')
+    _git(repo, 'rebase', 'main')
+
+
 def _write_references(base_dir: Path, plan_id: str, refs: dict) -> Path:
     """Write references.json into the PLAN_BASE_DIR fixture tree."""
     plan_dir = base_dir / 'plans' / plan_id
@@ -242,6 +272,46 @@ class TestReconcileFilesWriteBack:
         assert 'upstream_only.py' in (data.get('removed') or [])
         assert data['before_count'] == 2
         assert data['after_count'] == 1
+
+
+# =============================================================================
+# Core behaviour: no_overlap rebase path
+# =============================================================================
+
+
+class TestReconcileFilesNoOverlapRebase:
+    """Pin the previously-untested no_overlap **rebase** scenario (feature
+    rebased onto an advanced main, not merged). Mirrors the merge/absorb
+    assertions on the rebase path."""
+
+    def test_rebase_drops_absorbed_upstream_file_from_ledger(self, tmp_path):
+        """After a no_overlap rebase, an absorbed-upstream file present in the
+        ledger (but absent from the plan-branch-only diff) is REMOVED, while the
+        genuine plan change is retained."""
+        repo = tmp_path / 'worktree'
+        _build_no_overlap_rebase_scenario(repo)
+        base_dir = tmp_path / 'plan-base'
+        # Ledger polluted with both the genuine plan file and the upstream-only file.
+        _write_references(
+            base_dir,
+            CANONICAL_PLAN_ID,
+            {
+                'base_branch': 'main',
+                'modified_files': ['plan_change.py', 'upstream_only.py'],
+            },
+        )
+
+        result = _run_reconcile(base_dir, CANONICAL_PLAN_ID, repo)
+        assert result.returncode == 0, f'stderr={result.stderr!r}'
+        data = result.toon()
+        assert data['status'] == 'success'
+
+        persisted = _read_references(base_dir, CANONICAL_PLAN_ID)
+        # The genuine plan change is retained.
+        assert 'plan_change.py' in persisted['modified_files']
+        # The absorbed-upstream file is dropped — after the rebase it is at/below
+        # the merge-base and therefore excluded from the three-dot main...HEAD diff.
+        assert 'upstream_only.py' not in persisted['modified_files']
 
 
 # =============================================================================

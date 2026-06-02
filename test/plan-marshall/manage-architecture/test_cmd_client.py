@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: I001
 """Tests for ``_cmd_client.py`` — read-side commands.
 
 Pins the per-module on-disk layout: readers iterate ``_project.json``'s
