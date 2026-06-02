@@ -120,7 +120,7 @@ The workflow body covers research scope and the synthesis contract; the prompt b
 - No established best practice exists for the situation
 - The decision has significant downstream impact
 
-**Surface the tradeoff when you proceed:** On the non-blocking path — when you proceed on judgment between approaches that carry a non-trivial tradeoff rather than blocking to ask — state the tradeoff you accepted in your response, so the user sees the decision even though you did not stop for it.
+**Surface the tradeoff when you proceed:** On the non-blocking path — when you proceed on judgment between approaches that carry tradeoffs which do not warrant blocking to ask — state the tradeoff you accepted in your response, so the user sees the decision even though you did not stop for it.
 
 **Example:** User says "Add validation" → don't guess, ask: "What should I validate? (input format, business rules, data constraints)"
 
