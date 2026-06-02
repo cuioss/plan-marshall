@@ -19,6 +19,8 @@ Leave code cleaner than you found it. When modifying a file, fix existing qualit
 
 This applies equally to production code, test code, and documentation.
 
+**Note — deliberate divergence from "clean up only your own mess":** This always-fix default is an intentional choice for a standards-enforcement system, not an oversight. It deliberately diverges from the widely-cited best practice of touching only what the task strictly requires ("clean up only your own mess"). The divergence is safe because the blast radius is bounded by two existing mechanisms: (a) the coverage scope dial the user sets (`change-set ⊂ artifact ⊂ component ⊂ module ⊂ overall`, defined in [`thoroughness.md`](thoroughness.md)), which caps how wide an opportunistic fix may reach; and (b) the cascade-tripwire above ("if fixes cascade beyond reasonable scope, stop and ask the user how to proceed"), which halts a fix that would exceed that cap. With both bounds in place, the divergence from "touch only what you must" is a conscious design choice, not an accident.
+
 ### Principle 1: Ask When In Doubt
 
 **Rule:** If in doubt, ask the user.
@@ -117,6 +119,8 @@ The workflow body covers research scope and the synthesis contract; the prompt b
 - Multiple valid approaches exist with different trade-offs
 - No established best practice exists for the situation
 - The decision has significant downstream impact
+
+**Surface the tradeoff when you proceed:** On the non-blocking path — when you proceed on judgment between approaches that carry tradeoffs which do not warrant blocking to ask — state the tradeoff you accepted in your response, so the user sees the decision even though you did not stop for it.
 
 **Example:** User says "Add validation" → don't guess, ask: "What should I validate? (input format, business rules, data constraints)"
 
