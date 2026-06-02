@@ -22,6 +22,21 @@ Generic, domain-invariant recipe skill for refactoring code to comply with the c
 
 ---
 
+## Step 0: Gather + expand + persist the coverage cell
+
+This recipe implements the [coverage-gathering contract](../dev-agent-behavior-rules/standards/coverage-gathering-contract.md). At invocation, gather the `(thoroughness, scope)` cell from the user via the contract's canonical `AskUserQuestion` shape — a `scope` question (`component`/`module`/`overall` + an explicit `inherit (default — behave exactly as today)`) and a `thoroughness` question (`T1`…`T5` + `inherit`). The coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) constrains the offered scope options when the user picks `T4`/`T5`. Then expand the identifier and persist BOTH the identifier and the expanded instruction to `status.json` metadata (this recipe is plan-bound):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage expand --thoroughness {T} --scope {S}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id {plan_id} --set --field coverage_thoroughness --value {T}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id {plan_id} --set --field coverage_scope --value {S}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id {plan_id} --set --field coverage_instruction --value {expanded_instruction}
+```
+
+`coverage expand` applies the coupling check at expand time and emits `error_type: coverage_coupling_violation` for an incoherent cell — re-prompt the gather on that error (do NOT re-implement the coupling math). Consume the **expanded instruction** (NOT the raw cell) in Steps 2–3. `inherit/inherit` (the default) reproduces today's module/package full-read iteration. See `dev-agent-behavior-rules/standards/thoroughness.md` for the ladders and `coverage-gathering-contract.md` for the gather shape and cell→instruction table — restate neither here.
+
+---
+
 ## Step 1: Resolve Skills
 
 Resolve the skills for the selected profile from the configured skill domains:
@@ -53,6 +68,8 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture m
 ```
 
 Present module list to user for confirmation/filtering. User may exclude modules (e.g., parent POMs, modules without source/test files).
+
+**Coverage breadth (from Step 0's expanded instruction)**: the gathered scope rung pre-filters this module list and the per-package radius — `component` → a single component/package sub-tree; `module` → a bundle set; `overall` → every module. `inherit/inherit` pre-filters nothing (today's full module/package iteration).
 
 ---
 
@@ -95,7 +112,7 @@ Collect one deliverable per package (in-memory, for use in Step 4):
 - **Skills**: All skills resolved in Step 1 (comma-separated)
 - **Affected files**: All files in the package (from architecture data `files` field, or via `manage-files discover` when the architecture record reports `file_count: 0`)
 
-> **Coverage contract**: a profile-standards refactor campaign is a *thoroughness ≈ T4 / scope ≈ component-or-module* sweep — every file in each package is read in full and its relations traced before changing it, and the unit's thoroughness grades to the FLOOR across its packages (a campaign where some packages were only sampled is graded at the sampled rung). The coupling constraint `reject thoroughness ≥ T4 ∧ scope < component` is why the sweep operates at package/module scope, never change-set. See the two-dial ladders and the grade-to-the-floor rule in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).
+> **Coverage contract**: the per-package read depth is governed by the cell gathered + expanded in Step 0 — no longer an implicit fixed rung. The gathered thoroughness rung sets the depth: `T2` → full-read each file in the package; `T3` → also trace each file's callers and tests; `T4`/`T5` → build a scope-wide relation model across the radius before any change. The unit's thoroughness grades to the FLOOR across its packages (a campaign where some packages were only sampled is graded at the sampled rung). The coupling constraint `reject thoroughness ≥ T4 ∧ scope < component` is why a `T4`/`T5` sweep operates at package/module scope, never change-set. `inherit/inherit` reproduces today's full-read iteration. See the two-dial ladders and the grade-to-the-floor rule in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md), and the gather/expand/consume obligation in [`coverage-gathering-contract.md`](../dev-agent-behavior-rules/standards/coverage-gathering-contract.md).
 
 ---
 

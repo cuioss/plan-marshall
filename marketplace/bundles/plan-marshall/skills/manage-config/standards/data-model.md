@@ -282,10 +282,13 @@ Coverage is a two-dial contract — `thoroughness` (T1–T5) × `scope` (change-
 
 **Coupling constraint** — `reject thoroughness ≥ T4 ∧ scope < component`. A relation-tracing thoroughness (T4/T5) cannot be honoured below `component` scope because the siblings the relations point at are out of radius. The constraint is enforced at lookup time (from both `coverage read` and `coverage resolve`) with `error_type: coverage_coupling_violation`. An `inherit` on either field is unconstrained. The constraint is defined verbatim in [`dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) § Coupling Constraint.
 
+`plan.coverage` is the project-default knob (seeded `inherit/inherit`); the `read`/`resolve` verbs read `marshal.json` only (no per-plan tier). The per-invocation user-gathered identifier + expanded instruction live in `status.json` metadata per the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — the components that implement that contract are coverage's consumers. `coverage resolve` is the project-default tier those components fall back to when no per-invocation cell was gathered.
+
 Resolved via:
-- `coverage read --phase phase-5-execute` (resolve a phase's cell)
-- `coverage resolve --phase phase-5-execute` (resolve cell + coupling result for downstream consumers)
+- `coverage read --phase phase-5-execute` (resolve a phase's cell, project default)
+- `coverage resolve --phase phase-5-execute` (resolve cell + coupling result, project default)
 - `coverage read --default` (raw `plan.coverage` lookup)
+- `coverage expand --thoroughness T3 --scope component` (static identifier → contract instruction block; `inherit/inherit` → behavior-preserving instruction)
 
 ## Section: ci
 

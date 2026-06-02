@@ -20,7 +20,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _arch_fixtures import create_test_project  # noqa: E402
 from _arch_fixtures import seed_project as _seed_project  # noqa: E402
 
-
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 

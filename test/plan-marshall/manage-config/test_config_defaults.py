@@ -492,3 +492,42 @@ def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
     assert descriptions['default:finalize-step-simplify'], (
         'default:finalize-step-simplify description must be non-empty'
     )
+
+
+def test_default_plan_coverage_is_inherit_inherit():
+    """DEFAULT_PLAN_COVERAGE must declare the behavior-preserving inherit/inherit seed."""
+    # Arrange
+    coverage_default = _config_defaults_mod.DEFAULT_PLAN_COVERAGE
+
+    # Act / Assert
+    assert coverage_default == {'thoroughness': 'inherit', 'scope': 'inherit'}, (
+        'DEFAULT_PLAN_COVERAGE must be the byte-identical inherit/inherit fallback seed'
+    )
+
+
+def test_get_default_config_includes_plan_wide_coverage():
+    """get_default_config() must surface plan.coverage == inherit/inherit (plan-wide knob)."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    assert config['plan']['coverage'] == {'thoroughness': 'inherit', 'scope': 'inherit'}
+
+
+def test_get_default_config_seeds_no_per_phase_coverage():
+    """No per-phase default block may carry a coverage key — coverage is plan-wide only.
+
+    The per-invocation coverage cell lives in status.json metadata per the
+    coverage-gathering contract; only plan.coverage is the operator-visible
+    project default. A per-phase coverage seed would be inert and is forbidden.
+    """
+    # Arrange / Act
+    plan_config = _config_defaults_mod.get_default_config()['plan']
+
+    # Assert — walk every per-phase block (keys shaped 'phase-N-...')
+    for key, block in plan_config.items():
+        if key.startswith('phase-') and isinstance(block, dict):
+            assert 'coverage' not in block, (
+                f'per-phase block {key!r} must NOT seed a coverage key — '
+                'coverage is plan-wide only'
+            )

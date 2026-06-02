@@ -2,6 +2,10 @@
   "plan": {
     "effort": "high",
     "open_in_ide": true,
+    "coverage": {
+      "thoroughness": "inherit",
+      "scope": "inherit"
+    },
     "phase-1-init": {
       "branch_strategy": "feature",
       "use_worktree": true,

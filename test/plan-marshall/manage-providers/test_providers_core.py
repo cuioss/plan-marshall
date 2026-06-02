@@ -22,9 +22,9 @@ from _providers_core import (  # type: ignore[import-not-found]
     save_credential,
     verify_system_auth,
 )
+from _providers_fixtures import stage_marshal
 
 import conftest  # noqa: F401
-from _providers_fixtures import stage_marshal
 
 # =============================================================================
 # Path Resolution Tests

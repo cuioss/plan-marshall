@@ -64,3 +64,14 @@ Coverage-class work — sweeps, audits, refactors, refines, and any task whose v
 - **What was assumed-not-read** — the items deliberately left unexamined, named so the gap is visible rather than hidden behind an average.
 
 The self-report is the mechanism that makes the declared-vs-achieved comparison auditable. Without it, "thorough" is an unfalsifiable claim.
+
+The self-report is the quality signal for coverage-class work — there is no blocking gate and no mechanical thoroughness measurement. A component honors the contract by stating its floor-graded asked-for-vs-achieved cell, not by passing an enforcement check.
+
+## See Also
+
+This standard defines the **levels** — the two ladders, grade-to-the-floor, the coupling constraint, and the self-report. It deliberately does NOT define what each `(thoroughness, scope)` cell *operationally means* for a broad-pass component (which files to cover, which relations to trace, how many lenses, sampling-vs-exhaustive, how many loop-until-dry rounds). That **operational instruction per cell** is owned by the [coverage-gathering contract](coverage-gathering-contract.md), whose static expansion table maps each cell to its instruction text. The division is explicit and non-duplicating:
+
+- **`thoroughness.md` (this standard) defines the LEVELS** — T1–T5, the scope ladder, grade-to-the-floor, the coupling constraint, the self-report.
+- **`coverage-gathering-contract.md` defines the OPERATIONAL INSTRUCTION per cell** — what a level *means* for a component's breadth and depth, gathered from the user via `AskUserQuestion`, expanded via `manage-config coverage expand`, and consumed by the components that implement the contract.
+
+Coverage is gathered, expanded, and consumed per the coverage-gathering contract; the ladders here are cross-referenced by it, never restated there.

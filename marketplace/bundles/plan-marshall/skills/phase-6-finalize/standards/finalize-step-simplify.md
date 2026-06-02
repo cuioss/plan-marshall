@@ -57,6 +57,18 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 The `simplicity` value (`lean` / `pragmatic` / `defensive`) tunes how aggressively the review deletes surplus structure: `lean` deletes everything not justified by a live caller, `pragmatic` keeps low-risk surplus, `defensive` only flags the clearest cases.
 
+Also resolve the per-invocation **coverage instruction** — this step is a runtime CONSUMER of the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md). Read the contract runtime path: `coverage_instruction` (the expanded block) → re-expand the identifier via `coverage expand` → `coverage resolve --phase phase-6-finalize` (project default) → `inherit/inherit` (behavior-preserving):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field coverage_scope
+
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field coverage_instruction
+```
+
+Capture `{cov_scope}` and `{cov_instruction}` (absent → treat as `inherit`). **`simplicity` controls aggressiveness; coverage controls scope + depth.** When `--scope` is unset, derive the effective scope from `{cov_scope}`: `change-set`/`inherit` → `changeset`; `artifact`/`component`/`module`/`overall` → `artifact`. `inherit/inherit` reproduces today's default (`changeset` scope, face-value review).
+
 ### Step 2: Resolve the dispatch target
 
 The cognitive review dispatches under `--phase phase-6-finalize` (no `--role`; finalize-step-simplify tracks `phase-6-finalize.default`):
@@ -96,6 +108,10 @@ Task: plan-marshall:{target}
       failures, near-identical helpers collapsible into one, signature-restating
       docstrings, single-caller config keys, and speculative abstractions with
       no second implementation. Apply edits directly to the worktree via Edit.
+      Coverage depth (from the resolved coverage instruction "{cov_instruction}"):
+      at T1/T2/inherit, review each anti-pattern at face value (today's behavior);
+      at T3+, trace each deletion candidate's callers and cross-references before
+      deleting it. inherit/inherit reproduces today's face-value review.
       When a deletion would change a public/protected element or could plausibly
       serve an imminent requirement, leave it and record it as a finding instead
       of editing. Return TOON with status, findings[] (file/line/anti_pattern/

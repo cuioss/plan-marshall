@@ -615,6 +615,47 @@ class TestDetectContractSources:
         assert files.get('marketplace/bundles/b1/skills/my-skill/standards/toon-schema.md') == 'toon'
 
 
+class TestContractRadiusMonotonicBreadth:
+    """The --contract-radius dial (wired by the coverage-gathering contract's
+    scope rung in pre-submission-self-review) must produce strictly wider
+    schema-bearing breadth at a larger radius. Proves the scope→radius wiring
+    has a real effect the workflow relies on (D13)."""
+
+    @staticmethod
+    def _build_nested_schema_fixture(root: Path) -> tuple[Path, str]:
+        """Build a tree where a schema-bearing markdown sits several levels ABOVE
+        the modified file, so a small radius excludes it and a large radius
+        includes it. Returns (project_root, modified_rel_path)."""
+        project = root / 'project'
+        # A schema-bearing md at the bundle level — several dirs above the file.
+        bundle = project / 'marketplace' / 'bundles' / 'b1'
+        bundle.mkdir(parents=True)
+        (bundle / 'bundle-schema.md').write_text('# Bundle Schema\n```json\n{"k": 1}\n```\n')
+        # The modified file sits deep under the bundle, in a scripts/ dir with no md.
+        scripts = bundle / 'skills' / 'my-skill' / 'scripts'
+        scripts.mkdir(parents=True)
+        (scripts / 'mod.py').write_text('def main(): pass\n')
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
+        return project, rel
+
+    def test_larger_radius_surfaces_strictly_wider_schema_set(self, tmp_path: Path):
+        # Arrange
+        project, rel = self._build_nested_schema_fixture(tmp_path)
+
+        # Act
+        _, schema_narrow = _detect_contract_sources([rel], project, radius=1)
+        _, schema_wide = _detect_contract_sources([rel], project, radius=5)
+        narrow_files = {entry['file'] for entry in schema_narrow}
+        wide_files = {entry['file'] for entry in schema_wide}
+
+        # Assert — the bundle-level schema is out of reach at radius 1 but in
+        # reach at radius 5; the wide set is a strict superset of the narrow set.
+        schema_path = 'marketplace/bundles/b1/bundle-schema.md'
+        assert schema_path not in narrow_files
+        assert schema_path in wide_files
+        assert narrow_files < wide_files
+
+
 # =============================================================================
 # Test: _detect_keep_markers
 # =============================================================================
