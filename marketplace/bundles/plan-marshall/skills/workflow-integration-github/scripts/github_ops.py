@@ -57,6 +57,7 @@ Output: TOON format
 
 import argparse
 import json
+import re
 import sys
 from typing import Any
 from urllib.parse import quote
@@ -1117,6 +1118,8 @@ def _extract_job_id_from_link(link: str | None) -> str:
         return ''
     tail = link[idx + len(marker):]
     job_id = tail.split('/', 1)[0]
+    if not re.match(r'^\d+$', job_id):
+        return ''
     return job_id
 
 
