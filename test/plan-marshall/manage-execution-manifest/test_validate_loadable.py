@@ -61,8 +61,9 @@ def _validate_loadable_ns(
     plan_id: str = 'vl-test',
     step_id: str | None = None,
     use_all: bool = False,
+    check_seed: bool = False,
 ) -> Namespace:
-    return Namespace(plan_id=plan_id, step_id=step_id, all=use_all)
+    return Namespace(plan_id=plan_id, step_id=step_id, all=use_all, check_seed=check_seed)
 
 
 def _compose_ns(
@@ -374,3 +375,84 @@ class TestAscendingOrderGuard:
         assert message is not None
         assert 'commit-push' in message
         assert 'create-pr' in message
+
+
+# =============================================================================
+# Seed-order guard (--check-seed) — reads marshal.json directly
+# =============================================================================
+
+
+class TestCheckSeedMode:
+    def test_inverted_seed_returns_seed_order_inversion(self, plan_context, monkeypatch):
+        """A seed whose phase-6-finalize steps are inverted returns seed_order_inversion."""
+        # The actual bug: regenerate-executor (90) precedes deploy-target (80).
+        inverted = [
+            'default:commit-push',
+            'project:finalize-step-regenerate-executor',
+            'project:finalize-step-deploy-target',
+            'project:finalize-step-sync-plugin-cache',
+        ]
+        monkeypatch.setattr(_mem, '_read_marshal_phase_steps', lambda phase_key: inverted)
+
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-seed-inverted', check_seed=True))
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'seed_order_inversion'
+        assert 'project:finalize-step-deploy-target' in result['message']
+        assert 'project:finalize-step-regenerate-executor' in result['message']
+
+    def test_correct_seed_passes(self, plan_context, monkeypatch):
+        """A seed with ascending phase-6-finalize order returns success."""
+        ascending = [
+            'default:commit-push',
+            'default:create-pr',
+            'project:finalize-step-deploy-target',
+            'project:finalize-step-sync-plugin-cache',
+            'project:finalize-step-regenerate-executor',
+        ]
+        monkeypatch.setattr(_mem, '_read_marshal_phase_steps', lambda phase_key: ascending)
+
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-seed-ok', check_seed=True))
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['step_count'] == len(ascending)
+        assert 'error' not in result
+
+    def test_unreadable_seed_returns_seed_unreadable(self, plan_context, monkeypatch):
+        """When the seed cannot be read, the mode returns seed_unreadable."""
+        monkeypatch.setattr(_mem, '_read_marshal_phase_steps', lambda phase_key: None)
+
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-seed-missing', check_seed=True))
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'seed_unreadable'
+
+    def test_check_seed_reads_phase_6_finalize_key(self, plan_context, monkeypatch):
+        """--check-seed sources steps from the phase-6-finalize marshal key."""
+        seen: list[str] = []
+
+        def _spy(phase_key):
+            seen.append(phase_key)
+            return ['default:commit-push']
+
+        monkeypatch.setattr(_mem, '_read_marshal_phase_steps', _spy)
+        cmd_validate_loadable(_validate_loadable_ns('vl-seed-key', check_seed=True))
+        assert seen == ['phase-6-finalize']
+
+    def test_check_seed_is_mutually_exclusive_with_step_id(self, plan_context):
+        """Supplying both --step-id and --check-seed is an invalid_arguments error."""
+        result = cmd_validate_loadable(
+            _validate_loadable_ns('vl-seed-both', step_id='commit-push', check_seed=True)
+        )
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_arguments'
+
+    def test_check_seed_is_mutually_exclusive_with_all(self, plan_context):
+        """Supplying both --all and --check-seed is an invalid_arguments error."""
+        result = cmd_validate_loadable(
+            _validate_loadable_ns('vl-seed-all', use_all=True, check_seed=True)
+        )
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_arguments'

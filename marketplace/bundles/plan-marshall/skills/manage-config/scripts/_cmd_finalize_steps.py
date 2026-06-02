@@ -11,6 +11,7 @@ The write path imports :class:`FinalizeStepPresets` from this skill.
 this module only adds the preset writer.
 """
 
+from _cmd_quality_phases import _resolve_step_orders
 from _config_core import (
     error_exit,
     is_initialized,
@@ -82,13 +83,23 @@ def cmd_finalize_steps_apply_preset(args) -> dict:
             f"plan['{_PHASE_SECTION}'] exists but is not a dict; "
             f'cannot merge steps attribute'
         )
-    phase_entry['steps'] = steps
+
+    # Sort the preset's step list ascending by resolved frontmatter `order`
+    # before persisting, reusing the same helper `set-steps`/`add-step` use.
+    # This closes the durability gap that let a preset persist an out-of-order
+    # phase-6-finalize steps list. On the helper's error return (missing order
+    # / collision) propagate the error rather than persisting.
+    resolved, err = _resolve_step_orders(steps, _PHASE_SECTION)
+    if err is not None:
+        return err
+    sorted_steps = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
+    phase_entry['steps'] = sorted_steps
 
     save_config(config)
 
     return success_exit(
         {
             'preset': args.preset,
-            'steps_count': len(steps),
+            'steps_count': len(sorted_steps),
         }
     )

@@ -891,7 +891,10 @@ def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
         return None
-    data = read_json(marshal_path, default={})
+    try:
+        data = read_json(marshal_path, default={})
+    except (OSError, ValueError):
+        return None
     if not isinstance(data, dict):
         return None
     plan = data.get('plan')
@@ -2019,11 +2022,15 @@ def _check_step_loadable(step_id: str) -> dict[str, Any]:
 def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
     """Verify standards-file loadability for `phase_6.steps` entries.
 
-    Two modes (mutually exclusive):
+    Three modes (mutually exclusive):
 
     - ``--step-id ID``: validate one step. Returns the per-step dict directly.
     - ``--all``: walk every entry in ``manifest.phase_6.steps`` and return a
       ``results[]`` table plus ``unloadable_count``.
+    - ``--check-seed``: read ``plan.phase-6-finalize.steps`` directly from
+      ``marshal.json`` (independent of the composed ``execution.toon``) and run
+      the ascending-order guard against the seed. Catches a seed-order
+      inversion before manifest composition.
 
     Built-in steps resolve to ``phase-6-finalize/standards/{name}.md`` in the
     marketplace source tree (the cache layout is a deployment concern;
@@ -2034,13 +2041,45 @@ def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
 
     step_id = getattr(args, 'step_id', None)
     use_all = bool(getattr(args, 'all', False))
+    check_seed = bool(getattr(args, 'check_seed', False))
 
-    if (step_id is None and not use_all) or (step_id is not None and use_all):
+    selected = [bool(step_id is not None), use_all, check_seed]
+    if sum(selected) != 1:
         return {
             'status': 'error',
             'plan_id': plan_id,
             'error': 'invalid_arguments',
-            'message': 'validate-loadable requires exactly one of --step-id or --all',
+            'message': (
+                'validate-loadable requires exactly one of '
+                '--step-id, --all, or --check-seed'
+            ),
+        }
+
+    if check_seed:
+        seed_steps = _read_marshal_phase_steps('phase-6-finalize')
+        if seed_steps is None:
+            return {
+                'status': 'error',
+                'plan_id': plan_id,
+                'error': 'seed_unreadable',
+                'message': (
+                    'could not read plan.phase-6-finalize.steps from marshal.json '
+                    f'({get_marshal_path()})'
+                ),
+            }
+        order_message = _check_ascending_order(seed_steps)
+        if order_message is not None:
+            return {
+                'status': 'error',
+                'plan_id': plan_id,
+                'error': 'seed_order_inversion',
+                'message': order_message,
+                'step_count': len(seed_steps),
+            }
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'step_count': len(seed_steps),
         }
 
     if step_id is not None:
@@ -2256,6 +2295,15 @@ def _build_parser() -> argparse.ArgumentParser:
         '--all',
         action='store_true',
         help='Validate every entry in manifest.phase_6.steps',
+    )
+    validate_loadable_group.add_argument(
+        '--check-seed',
+        action='store_true',
+        help=(
+            'Read plan.phase-6-finalize.steps directly from marshal.json and '
+            'assert ascending frontmatter order (detects seed-order inversion '
+            'before manifest composition)'
+        ),
     )
 
     return parser
