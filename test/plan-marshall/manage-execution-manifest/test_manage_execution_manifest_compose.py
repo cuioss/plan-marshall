@@ -2845,3 +2845,226 @@ def test_duplicate_orchestrator_routings_are_deduped(plan_context, monkeypatch):
     steps = manifest['phase_5']['verification_steps']
     # default:build_verify appears exactly once.
     assert steps.count('default:build_verify') == 1
+
+
+# =============================================================================
+# scope_gated_finalize pre-filter tests
+#
+# Deliverable 2: the composer drops heavyweight phase-6 review/audit steps by
+# scope. surgical drops the three non-guarded steps (plan-retrospective,
+# pre-submission-self-review, plugin-doctor) but RETAINS automated-review by
+# default (the bot-enforcement guard re-adds it on GitHub/GitLab plans);
+# lightweight_track_override=true additionally drops automated-review;
+# single_module drops only plan-retrospective. multi_module/broad retain the
+# full set. One decision-log line is emitted per subtraction.
+# =============================================================================
+
+
+# Candidate set covering the three scope-gated steps in their canonical
+# prefixed forms plus the review gates and a few baseline steps. The composer
+# boundary-normalizes only the `default:` namespace, so `project:` /
+# `plan-marshall:` prefixes survive intake and the scope gate matches them
+# against its match-sets.
+_SCOPE_GATE_PHASE_6 = (
+    'commit-push',
+    'create-pr',
+    'automated-review',
+    'sonar-roundtrip',
+    'project:finalize-step-pre-submission-self-review',
+    'project:finalize-step-plugin-doctor',
+    'lessons-capture',
+    'plan-marshall:plan-retrospective',
+    'branch-cleanup',
+    'archive-plan',
+)
+
+
+def _write_lightweight_override_marshal(fixture_dir: Path, *, override: bool) -> None:
+    """Write a marshal.json with the lightweight_track_override knob set."""
+    marshal_path = fixture_dir / 'marshal.json'
+    data = {'plan': {'phase-6-finalize': {'lightweight_track_override': override}}}
+    marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+
+class TestScopeGatedFinalizePreFilter:
+    """Scope-gated phase-6 subtraction pre-filter (scope_gated_finalize)."""
+
+    def test_surgical_drops_three_non_guarded_steps_retains_automated_review(self, plan_context):
+        """surgical scope drops plan-retrospective, pre-submission-self-review,
+        and plugin-doctor — but RETAINS automated-review by default."""
+        # Use change_type=feature so the surgical row matrix does not pre-empt
+        # the candidate list; the scope gate runs before the matrix regardless.
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='scope-surgical',
+                change_type='feature',
+                scope_estimate='surgical',
+                affected_files_count=2,
+                phase_5_steps='quality_check,build_verify',
+                phase_6_steps=','.join(_SCOPE_GATE_PHASE_6),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest('scope-surgical')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Three non-guarded steps dropped.
+        assert 'plan-marshall:plan-retrospective' not in steps
+        assert 'project:finalize-step-pre-submission-self-review' not in steps
+        assert 'project:finalize-step-plugin-doctor' not in steps
+        # automated-review RETAINED by default (no override).
+        assert 'automated-review' in steps
+        # Baseline steps survive.
+        assert 'commit-push' in steps
+        assert 'lessons-capture' in steps
+
+    def test_lightweight_override_additionally_drops_automated_review(self, plan_context):
+        """lightweight_track_override=true additionally drops automated-review."""
+        _write_lightweight_override_marshal(plan_context.fixture_dir, override=True)
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='scope-surgical-override',
+                change_type='feature',
+                scope_estimate='surgical',
+                affected_files_count=2,
+                phase_5_steps='quality_check,build_verify',
+                phase_6_steps=','.join(_SCOPE_GATE_PHASE_6),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest('scope-surgical-override')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # automated-review dropped under the explicit override.
+        assert 'automated-review' not in steps
+        # Three non-guarded steps still dropped.
+        assert 'plan-marshall:plan-retrospective' not in steps
+        assert 'project:finalize-step-pre-submission-self-review' not in steps
+        assert 'project:finalize-step-plugin-doctor' not in steps
+
+    def test_lightweight_override_inert_on_non_scope_gated(self, plan_context):
+        """lightweight_track_override=true is INERT on a non-scope-gated plan:
+        automated-review is retained on multi_module scope even with the
+        override set, so flipping the project-wide knob cannot silently disable
+        bot review on a large plan (PR #551 reviewer finding)."""
+        _write_lightweight_override_marshal(plan_context.fixture_dir, override=True)
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='scope-multi-override',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=10,
+                phase_5_steps='quality_check,build_verify',
+                phase_6_steps=','.join(_SCOPE_GATE_PHASE_6),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest('scope-multi-override')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Override is inert at multi_module scope — automated-review RETAINED.
+        assert 'automated-review' in steps
+        # No scope subtraction at multi_module — full set survives.
+        assert 'plan-marshall:plan-retrospective' in steps
+        assert 'project:finalize-step-pre-submission-self-review' in steps
+        assert 'project:finalize-step-plugin-doctor' in steps
+
+    def test_single_module_drops_only_plan_retrospective(self, plan_context):
+        """single_module scope drops only plan-retrospective; the other two
+        non-guarded steps and automated-review are retained."""
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='scope-single-module',
+                change_type='feature',
+                scope_estimate='single_module',
+                affected_files_count=4,
+                phase_5_steps='quality_check,build_verify',
+                phase_6_steps=','.join(_SCOPE_GATE_PHASE_6),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest('scope-single-module')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Only plan-retrospective dropped.
+        assert 'plan-marshall:plan-retrospective' not in steps
+        # The other two non-guarded steps survive at single_module.
+        assert 'project:finalize-step-pre-submission-self-review' in steps
+        assert 'project:finalize-step-plugin-doctor' in steps
+        assert 'automated-review' in steps
+
+    def test_multi_module_retains_full_set(self, plan_context):
+        """multi_module scope retains the full candidate set (no scope subtraction)."""
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='scope-multi-module',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=10,
+                phase_5_steps='quality_check,build_verify',
+                phase_6_steps=','.join(_SCOPE_GATE_PHASE_6),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest('scope-multi-module')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # All three scope-gated steps RETAINED at multi_module scope.
+        assert 'plan-marshall:plan-retrospective' in steps
+        assert 'project:finalize-step-pre-submission-self-review' in steps
+        assert 'project:finalize-step-plugin-doctor' in steps
+        assert 'automated-review' in steps
+
+    def test_surgical_emits_one_decision_log_per_subtraction(self, plan_context):
+        """surgical scope emits one decision-log line per dropped step."""
+        captured: list[tuple[str, str]] = []
+        original = _mem._emit_decision_log
+
+        def _capture(plan_id: str, message: str) -> None:
+            captured.append((plan_id, message))
+
+        _mem._emit_decision_log = _capture
+        try:
+            cmd_compose(
+                _compose_ns(
+                    plan_id='scope-surgical-log',
+                    change_type='feature',
+                    scope_estimate='surgical',
+                    affected_files_count=2,
+                    phase_5_steps='quality_check,build_verify',
+                    phase_6_steps=','.join(_SCOPE_GATE_PHASE_6),
+                )
+            )
+        finally:
+            _mem._emit_decision_log = original
+
+        subtraction_entries = [
+            (pid, msg) for pid, msg in captured if 'scope_gated_finalize subtraction' in msg
+        ]
+        # Three non-guarded steps dropped → three decision-log lines.
+        assert len(subtraction_entries) == 3
+        for pid, msg in subtraction_entries:
+            assert pid == 'scope-surgical-log'
+            assert 'scope_estimate=surgical' in msg
+
+    def test_result_carries_scope_gated_observability_fields(self, plan_context):
+        """The compose result exposes scope_gated_finalize_dropped and
+        lightweight_track_override for observability."""
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='scope-observability',
+                change_type='feature',
+                scope_estimate='surgical',
+                affected_files_count=2,
+                phase_5_steps='quality_check,build_verify',
+                phase_6_steps=','.join(_SCOPE_GATE_PHASE_6),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['lightweight_track_override'] is False
+        dropped = result['scope_gated_finalize_dropped']
+        assert 'plan-marshall:plan-retrospective' in dropped
+        assert 'project:finalize-step-pre-submission-self-review' in dropped
+        assert 'project:finalize-step-plugin-doctor' in dropped
+        # automated-review NOT in the dropped set without the override.
+        assert 'automated-review' not in dropped

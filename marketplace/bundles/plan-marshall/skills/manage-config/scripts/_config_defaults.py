@@ -322,6 +322,17 @@ DEFAULT_PLAN_FINALIZE = {
     'pre_push_quality_gate': {
         'activation_globs': [],
     },
+    # Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter
+    # (manage-execution-manifest.py). The implicit scope gate drops the three
+    # non-guarded heavyweight phase-6 steps (plan-retrospective,
+    # pre-submission-self-review, plugin-doctor) on `surgical` plans and
+    # `plan-retrospective` on `single_module` plans, but NEVER drops
+    # `automated-review` — the bot-enforcement guard re-adds it on GitHub/GitLab
+    # plans, so an implicit drop would be a silently-undone no-op. Set this to
+    # True to explicitly opt into additionally dropping `automated-review` on
+    # scope-gated plans (the only path that suppresses the bot-review gate). The
+    # default False keeps the bot-review invariant intact.
+    'lightweight_track_override': False,
     'steps': list(BUILT_IN_FINALIZE_STEPS),
 }
 
