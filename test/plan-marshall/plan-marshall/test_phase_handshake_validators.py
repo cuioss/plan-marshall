@@ -120,6 +120,23 @@ def test_canonical_inputs_dont_trigger_invalid_field(subcommand, tmp_path):
     The script will likely fail with another error (no plan dir, no
     handshake row, etc.), but it MUST NOT mis-attribute the failure to
     the canonical identifier validators.
+
+    Isolation note: ``capture`` fans out to ~10 invariant-capture
+    subprocesses (``_invariants.capture_all`` → ``manage-*`` via the
+    executor, plus ``git`` on the main checkout). ``_repo_root()`` and
+    ``git_main_checkout_root()`` both fall back to the *process cwd* when
+    ``PLAN_BASE_DIR`` does not resolve to the canonical ``.../​.plan/local``
+    shape — which is exactly the case here (the env points at ``tmp_path``).
+    Without pinning cwd, those subprocesses run ``git status --porcelain``
+    and resolve ``<repo>/.plan/execute-script.py`` against the REAL repo
+    working tree, so under ``-n auto`` they observe transient state mutated
+    by concurrent workers (a known recurring real-tree-leak signature) and
+    the aggregate capture becomes non-deterministic. Running with
+    ``cwd=tmp_path`` (a non-git, isolated dir) makes ``git_main_checkout_root``
+    return ``None`` so the executor/git fan-out short-circuits cleanly to
+    "not applicable" — the identifier validators still run at PARSE time
+    (the only behaviour this test asserts), so coverage is unchanged while
+    the contention source is removed.
     """
     result = run_script(
         SCRIPT_PATH,
@@ -128,6 +145,7 @@ def test_canonical_inputs_dont_trigger_invalid_field(subcommand, tmp_path):
         HAPPY_VALUES['plan_id'],
         '--phase',
         HAPPY_VALUES['phase'],
+        cwd=str(tmp_path),
         env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
     )
     assert_not_invalid_field(result, 'invalid_plan_id')
@@ -135,12 +153,20 @@ def test_canonical_inputs_dont_trigger_invalid_field(subcommand, tmp_path):
 
 
 def test_list_subcommand_canonical_plan_id(tmp_path):
-    """``list`` accepts only --plan-id; happy-path must pass the validator."""
+    """``list`` accepts only --plan-id; happy-path must pass the validator.
+
+    Pins ``cwd=tmp_path`` for the same isolation reason documented on
+    ``test_canonical_inputs_dont_trigger_invalid_field``: although ``list``
+    itself does not fan out to invariant captures, running every canonical
+    happy-path invocation against an isolated, non-git cwd keeps the parse-
+    time validator assertion free of any dependency on the real repo tree.
+    """
     result = run_script(
         SCRIPT_PATH,
         'list',
         '--plan-id',
         HAPPY_VALUES['plan_id'],
+        cwd=str(tmp_path),
         env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
     )
     assert_not_invalid_field(result, 'invalid_plan_id')
