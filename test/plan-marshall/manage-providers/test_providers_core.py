@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: I001
 """Tests for _providers_core.py module.
 
 Covers path resolution, credential file I/O, RestClient, and provider discovery.

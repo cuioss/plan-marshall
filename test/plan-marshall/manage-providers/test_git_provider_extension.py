@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: I001
 """Tests for Git provider loading from marshal.json declarations."""
 
 from _providers_core import load_declared_providers  # type: ignore[import-not-found]

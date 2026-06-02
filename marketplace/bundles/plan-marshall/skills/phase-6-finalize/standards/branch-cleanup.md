@@ -267,6 +267,35 @@ Parse the returned TOON and branch on `status`:
 
   Then return — do NOT proceed with force-push or merge.
 
+#### Reconcile the modified-files ledger
+
+On the rebase-success branch (both `action: noop` and `action: rebased` — either way HEAD is now anchored on the current `origin/{base_branch}` tip), reconcile `references.modified_files` against the freshly advanced base BEFORE force-pushing, so any upstream-absorbed file the base advance pulled in is dropped from the ledger that downstream finalize consumers read:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  reconcile-files --plan-id {plan_id} --worktree-path {worktree_path}
+```
+
+No `--base-ref` override — the default `references.base_branch` resolution is correct here because after the rebase `origin/{base_branch}` is the branch's true fork point for the three-dot diff.
+
+Parse the returned TOON:
+
+- `status: success` → continue to force-push below. Emit one decision-log entry recording the reconcile:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: reconciled modified-files ledger post-rebase — removed={removed}, after_count={after_count}"
+  ```
+
+- non-success operation status (e.g. `references_not_found`, `worktree_not_found`) → the ledger reconcile is best-effort cleanup, not a merge blocker. Log a `[WARNING]` work-log entry and continue to force-push below:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: reconcile-files post-rebase returned {status} — skipping ledger reconcile, continuing"
+  ```
+
+- non-zero script exit → follow this document's **Exit-code convention** (STOP and return the stderr verbatim to the dispatcher).
+
 On a successful rebase, push the rewritten history to the remote with a lease guard via the `force-push-with-lease` verb (see `workflow-integration-git` Canonical invocations → `force-push-with-lease`):
 
 ```bash

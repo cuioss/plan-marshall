@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: I001
 """Tests for _cred_verify.py module.
 
 Tests connectivity verification with mocked HTTP and system auth routing.
