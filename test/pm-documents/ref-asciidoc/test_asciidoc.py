@@ -112,6 +112,7 @@ def test_stats_lists_count_on_indented_markers():
         '  2. space-indented numbered marker\n'
         'term:: definition\n'
         'A plain sentence without markers.\n'
+        'Use std::cout here -- C++ scope operator, not a labeled list.\n'
     )
     with tempfile.NamedTemporaryFile(mode='w', suffix='.adoc', delete=False) as f:
         f.write(content)
