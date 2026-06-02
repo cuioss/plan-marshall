@@ -66,6 +66,27 @@ def _read_finalize_section(fixture_dir: Path) -> dict:
     return config.get('plan', {}).get('phase-6-finalize', {})
 
 
+# ``apply-preset`` sorts the preset's step list ascending by resolved
+# frontmatter ``order`` before persisting (Deliverable 3). The FULL preset
+# is declared with ``archive-plan`` (order=1000) ahead of
+# ``plan-marshall:plan-retrospective`` (order=995), so the persisted order
+# differs from the literal ``FinalizeStepPresets.FULL`` constant. LOCAL and
+# STANDARD are already in ascending order, so the sort is a no-op for them.
+_FULL_SORTED: list[str] = [
+    'default:pre-push-quality-gate',
+    'default:commit-push',
+    'default:create-pr',
+    'default:ci-verify',
+    'default:automated-review',
+    'default:sonar-roundtrip',
+    'default:lessons-capture',
+    'default:branch-cleanup',
+    'default:record-metrics',
+    'plan-marshall:plan-retrospective',
+    'default:archive-plan',
+]
+
+
 # =============================================================================
 # (1) apply-preset writes the expected steps list per preset
 # =============================================================================
@@ -94,14 +115,19 @@ def test_apply_preset_standard_writes_standard_steps(plan_context):
     assert section['steps'] == FinalizeStepPresets.STANDARD
 
 
-def test_apply_preset_full_writes_full_steps(plan_context):
+def test_apply_preset_full_writes_full_steps_sorted(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
     result = cmd_finalize_steps_apply_preset(Namespace(preset='full'))
 
     assert result['status'] == 'success'
+    assert result['steps_count'] == len(FinalizeStepPresets.FULL)
     section = _read_finalize_section(plan_context.fixture_dir)
-    assert section['steps'] == FinalizeStepPresets.FULL
+    # The persisted list is the FULL preset sorted ascending by frontmatter
+    # order — same membership, ascending order (plan-retrospective before
+    # archive-plan), not the literal constant order.
+    assert section['steps'] == _FULL_SORTED
+    assert set(section['steps']) == set(FinalizeStepPresets.FULL)
 
 
 # =============================================================================
@@ -141,7 +167,7 @@ def test_apply_preset_is_idempotent(plan_context):
     second = _read_finalize_section(plan_context.fixture_dir)
 
     assert first == second
-    assert second['steps'] == FinalizeStepPresets.FULL
+    assert second['steps'] == _FULL_SORTED
 
 
 def test_apply_preset_overwrites_previous_preset(plan_context):
@@ -186,4 +212,37 @@ def test_apply_preset_uppercase_alias_succeeds(plan_context):
 
     assert result['status'] == 'success'
     section = _read_finalize_section(plan_context.fixture_dir)
-    assert section['steps'] == FinalizeStepPresets.FULL
+    assert section['steps'] == _FULL_SORTED
+
+
+# =============================================================================
+# (6) Auto-sort — persisted steps are ascending by resolved frontmatter order
+# =============================================================================
+
+
+def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context):
+    """apply-preset sorts the preset's steps ascending by frontmatter order.
+
+    The FULL preset is declared with ``default:archive-plan`` (order=1000)
+    ahead of ``plan-marshall:plan-retrospective`` (order=995). Before the
+    auto-sort, that out-of-order pair would persist verbatim into
+    ``plan.phase-6-finalize.steps`` — exactly the durability gap this
+    deliverable closes. After the sort, the persisted list must be ascending.
+    """
+    _resolve_step_orders = _cmd_mod._resolve_step_orders
+
+    create_marshal_json(plan_context.fixture_dir)
+    result = cmd_finalize_steps_apply_preset(Namespace(preset='full'))
+    assert result['status'] == 'success'
+
+    persisted = _read_finalize_section(plan_context.fixture_dir)['steps']
+    resolved, err = _resolve_step_orders(persisted, 'phase-6-finalize')
+    assert err is None
+    orders = [order for _, order in resolved]
+    assert orders == sorted(orders), (
+        f'persisted phase-6-finalize.steps are not ascending by order: {orders}'
+    )
+    # Concretely: plan-retrospective (995) must precede archive-plan (1000).
+    assert persisted.index('plan-marshall:plan-retrospective') < persisted.index(
+        'default:archive-plan'
+    )

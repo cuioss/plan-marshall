@@ -45,6 +45,13 @@ def test_pyproject_and_uv_lock_are_config():
     assert 'uv.lock' in result['config']
 
 
+def test_marshal_json_is_config():
+    result = _ext.classify_paths(['.plan/marshal.json'])
+    assert '.plan/marshal.json' in result['config']
+    for role in ('production', 'test', 'documentation'):
+        assert '.plan/marshal.json' not in result[role]
+
+
 def test_py_outside_scripts_or_test_is_unclaimed():
     """A .py path outside scripts/ and test/ is intentionally omitted."""
     result = _ext.classify_paths(['random/foo.py'])
