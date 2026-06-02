@@ -222,8 +222,6 @@ This matters for **flag-parameterised commands**. When a caller introduces a new
 * When introducing a new flag combination for a command known to run long, pass an explicit generous `--timeout` sized for the cold/un-learned case so the first run does not time out before any history exists.
 * Remember that `--timeout` is a **fallback used only when no learned value exists for the key**; it does not override an established learned value, and it does not help once the new key has accumulated its own history.
 
-This keying behaviour is documented in lesson `2026-06-02-10-002` (Root Cause B: a fresh adaptive-timeout key falling back to the 300s default after a `--command-args` flag change).
-
 ## CLI Interface
 
 Extensions expose a single `run` subcommand with format and mode selection:

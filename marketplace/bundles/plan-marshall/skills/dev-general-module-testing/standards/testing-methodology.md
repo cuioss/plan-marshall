@@ -187,8 +187,6 @@ A blanket auto-applied redirect has **repo-wide blast radius**: it runs before e
 
 **When adding a blanket isolation fixture, audit the tests in scope first** for ones that manage their own version of the resource the fixture redirects (search for tests that write the resolved config/manifest/reference file into their own fixture directory). Those tests are the collision set — they are exactly the ones a global redirect will silently break.
 
-The originating lesson is `2026-06-02-10-001` (the autouse-redirect analogue of "one layer's path-resolution decision silently overrides another layer's intent").
-
 ### Bound Per-Test Guard Traversal by the Test's Own Footprint
 
 **Trigger**: An isolation or pollution-detection guard walks a shared directory tree to verify a test did not leave stray files behind (or to redirect/scan resolved paths). The guard runs per test, and the tree it walks can grow to contain **unrelated full checkouts** — sibling worktree checkouts, vendored dependencies, build output, version-control object stores.
@@ -201,7 +199,7 @@ The trap: a *recursive* walk rooted at a directory that can contain full checkou
 * **Depth-limit and scope the walk.** Restrict the guard to the specific directories a test is allowed to write (its own fixture sandbox / redirected base directory), or walk only the top one or two levels with explicit exclusions.
 * **Prune heavy subtrees** from any traversal that must touch the shared tree at all — worktree-checkout directories, version-control object stores, build-output directories, dependency caches, and bytecode caches.
 
-The originating lesson is `2026-06-02-10-002` (a recursive guard over a worktrees tree was the real build slowdown, not subprocess/parallelism thrash). A corollary from the same lesson: before attributing a performance regression to a hypothesized cause, **measure on a quiescent machine** with no concurrent runs and no orphaned background builds — a conclusion built on a contended machine sends the fix in the wrong direction.
+**Corollary — measure on a quiescent machine before attributing a regression.** Before blaming a hypothesized cause for a performance regression, measure with no concurrent runs and no orphaned background builds: a recursive guard over a shared worktrees tree can be the real slowdown rather than the subprocess/parallelism thrash first suspected, and a conclusion built on a contended machine sends the fix in the wrong direction.
 
 ## Integration Test Separation
 
