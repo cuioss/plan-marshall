@@ -6,16 +6,18 @@ canned ``classify_paths`` claims and per-(path, role) specificity scores,
 plus a ``fake_extensions`` helper that constructs the standard set of
 fakes used by the rewritten legacy classifier tests.
 
-The module is named ``_fixtures.py`` (NOT ``conftest.py``) per the
-plan-marshall sibling-conftest ban — a sibling ``conftest.py`` under
+The module is named ``_execution_manifest_fixtures.py`` (NOT ``conftest.py``)
+per the plan-marshall sibling-conftest ban — a sibling ``conftest.py`` under
 ``test/<bundle>/<skill>/`` would shadow the top-level ``test/conftest.py``
-and silently disable shared fixtures. See
+and silently disable shared fixtures. The basename is bundle-unique (rather
+than a bare ``_fixtures.py``) to avoid a basename collision in the
+plan-marshall test-collection namespace. See
 ``plan-marshall:dev-general-module-testing`` for the authoritative
 ``_fixtures.py`` convention.
 
 Tests import the fixtures explicitly::
 
-    from test.plan_marshall.manage_execution_manifest._fixtures import (
+    from test.plan_marshall.manage_execution_manifest._execution_manifest_fixtures import (
         FakeExtension, fake_extensions,
     )
 """

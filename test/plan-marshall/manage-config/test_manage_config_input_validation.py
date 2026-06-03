@@ -10,7 +10,7 @@ The script-CLI boundary translates argparse type-validator failures into
 from __future__ import annotations
 
 import pytest
-from _input_validation_fixtures import (  # type: ignore[import-not-found]
+from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,

@@ -45,8 +45,8 @@ import json
 import sys
 from pathlib import Path
 
-# Sibling _fixtures.py / conftest.py rely on the existing sys.path setup
-# pattern used by the other retrospective tests.
+# Sibling _plan_retrospective_fixtures.py / conftest.py rely on the existing
+# sys.path setup pattern used by the other retrospective tests.
 sys.path.insert(0, str(Path(__file__).parent))
 
 from conftest import MARKETPLACE_ROOT, get_script_path, run_script  # noqa: E402

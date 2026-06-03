@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _fixtures import build_happy_plan_dir  # noqa: E402
+from _plan_retrospective_fixtures import build_happy_plan_dir  # noqa: E402
 
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 

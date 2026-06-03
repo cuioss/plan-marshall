@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _fixtures import (  # noqa: E402
+from _plan_retrospective_fixtures import (  # noqa: E402
     setup_archived_plan,
     setup_live_plan,
     write_captured_real_log,
@@ -463,7 +463,8 @@ class TestRegressionRealLogShape:
     """Regression guard: the pre-fix parser required an inline ``exit_code=`` token and silently dropped real continuation-line failures.
 
     Replays a frozen, verbatim-shape excerpt of a production
-    ``script-execution.log`` (see ``_fixtures.write_captured_real_log``) through
+    ``script-execution.log`` (see
+    ``_plan_retrospective_fixtures.write_captured_real_log``) through
     the aspect. Under the documented Error Entry format the exit code lives ONLY
     on a two-space-indented continuation line; the pre-fix parser required an
     inline ``exit_code=N`` token on the header and therefore dropped every

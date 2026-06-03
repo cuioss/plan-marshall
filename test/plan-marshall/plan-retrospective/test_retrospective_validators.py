@@ -11,7 +11,7 @@ All scripts wrap their parser via ``parse_args_with_toon_errors`` so the
 canonical TOON contract applies: malformed input emits
 ``status: error / error: invalid_<field>`` on stdout with exit 0.
 
-Re-uses ``test/plan-marshall/_input_validation_fixtures.py`` for the
+Re-uses ``test/plan-marshall/_pm_input_validation_fixtures.py`` for the
 canonical 6-axis matrix (TASK-2 foundation).
 """
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from _input_validation_fixtures import (  # type: ignore[import-not-found]
+from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,

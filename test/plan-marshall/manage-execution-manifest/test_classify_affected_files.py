@@ -4,9 +4,10 @@
 The legacy ``_classify_affected_files`` helper has been replaced by
 ``_classify_paths_via_extensions``, which dispatches to every registered
 ExtensionBase.classify_paths() and resolves overlaps via longest-glob-wins.
-These tests use the ``FakeExtension`` fixture from ``_fixtures.py`` to
-exercise the aggregator's six-bucket vocabulary, overlap resolution, and
-``unknown`` branch in isolation from real extension loading.
+These tests use the ``FakeExtension`` fixture from
+``_execution_manifest_fixtures.py`` to exercise the aggregator's six-bucket
+vocabulary, overlap resolution, and ``unknown`` branch in isolation from
+real extension loading.
 
 The six plan-wide bucket values:
 
@@ -22,10 +23,11 @@ import importlib.util
 from pathlib import Path
 
 # Import the FakeExtension fixture explicitly (per the _fixtures.py
-# convention — sibling conftest.py is banned).
-_FIXTURES_PATH = Path(__file__).parent / '_fixtures.py'
+# convention — sibling conftest.py is banned). The fixture basename is
+# bundle-unique to avoid a collision in the plan-marshall test namespace.
+_FIXTURES_PATH = Path(__file__).parent / '_execution_manifest_fixtures.py'
 _fixtures_spec = importlib.util.spec_from_file_location(
-    '_fixtures_classifier_tests', _FIXTURES_PATH
+    '_execution_manifest_fixtures_classifier_tests', _FIXTURES_PATH
 )
 assert _fixtures_spec is not None and _fixtures_spec.loader is not None
 _fixtures_mod = importlib.util.module_from_spec(_fixtures_spec)

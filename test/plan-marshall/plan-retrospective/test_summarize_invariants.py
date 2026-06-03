@@ -2,8 +2,9 @@
 
 The script reads phase-handshake captures from ``<plan_dir>/handshakes.toon``
 (canonical storage owned by ``plan-marshall:plan-marshall:phase_handshake``)
-rather than ``status.metadata.phase_handshake``. Fixtures in ``_fixtures.py``
-materialize the file in the same TOON shape ``_handshake_store.save_rows``
+rather than ``status.metadata.phase_handshake``. Fixtures in
+``_plan_retrospective_fixtures.py`` materialize the file in the same TOON
+shape ``_handshake_store.save_rows``
 emits in production.
 """
 
@@ -16,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _fixtures import (  # noqa: E402
+from _plan_retrospective_fixtures import (  # noqa: E402
     _HAPPY_HANDSHAKE_ROWS,
     setup_archived_plan,
     setup_broken_plan,
@@ -244,7 +245,7 @@ class TestConditionalPhaseStepsExpectation:
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         # Strip phase_steps_complete from the 1-init row to simulate a plan
         # captured before the invariant existed.
-        from _fixtures import write_handshakes  # noqa: PLC0415
+        from _plan_retrospective_fixtures import write_handshakes  # noqa: PLC0415
         rows = [dict(r) for r in _HAPPY_HANDSHAKE_ROWS]
         rows[0].pop('phase_steps_complete', None)
         rows[0]['phase_steps_complete'] = ''
@@ -263,7 +264,7 @@ class TestConditionalPhaseStepsExpectation:
     def test_phase_with_required_steps_flagged_when_missing(self, tmp_path, monkeypatch):
         """Phase 6-finalize has required-steps.md; absent phase_steps_complete is a real gap."""
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
-        from _fixtures import write_handshakes  # noqa: PLC0415
+        from _plan_retrospective_fixtures import write_handshakes  # noqa: PLC0415
         rows = [dict(r) for r in _HAPPY_HANDSHAKE_ROWS]
         # Clear the phase_steps_complete column for the 6-finalize row.
         rows[1]['phase_steps_complete'] = ''
