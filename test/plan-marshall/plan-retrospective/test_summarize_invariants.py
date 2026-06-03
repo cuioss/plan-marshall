@@ -245,7 +245,6 @@ class TestConditionalPhaseStepsExpectation:
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         # Strip phase_steps_complete from the 1-init row to simulate a plan
         # captured before the invariant existed.
-        from _plan_retrospective_fixtures import write_handshakes  # noqa: PLC0415
         rows = [dict(r) for r in _HAPPY_HANDSHAKE_ROWS]
         rows[0].pop('phase_steps_complete', None)
         rows[0]['phase_steps_complete'] = ''
@@ -264,7 +263,6 @@ class TestConditionalPhaseStepsExpectation:
     def test_phase_with_required_steps_flagged_when_missing(self, tmp_path, monkeypatch):
         """Phase 6-finalize has required-steps.md; absent phase_steps_complete is a real gap."""
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
-        from _plan_retrospective_fixtures import write_handshakes  # noqa: PLC0415
         rows = [dict(r) for r in _HAPPY_HANDSHAKE_ROWS]
         # Clear the phase_steps_complete column for the 6-finalize row.
         rows[1]['phase_steps_complete'] = ''
