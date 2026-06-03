@@ -97,14 +97,16 @@ def _url_host(url: str) -> str:
 
     permission_web.categorize_domain / check_red_flags expect a host, not a
     full URL with a path — e.g. 'github.com', not 'https://github.com/o/r'.
-    urlparse gives the netloc for scheme-bearing URLs; for a bare host or a
-    host+path with no scheme it falls back to the first path segment.
+    Uses urlparse().hostname which correctly handles IPv6 addresses
+    (e.g. [2001:db8::1]), ports, and userinfo. Schemeless URLs are normalised
+    by prepending '//' so urlparse treats them as netloc rather than path.
     """
-    parsed = urlparse(url)
-    host = parsed.netloc or parsed.path
-    # Strip any path, port, or userinfo that survived (e.g. 'github.com/o/r').
-    host = host.split('/')[0].split('@')[-1].split(':')[0]
-    return host
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', url) and not url.startswith('//'):
+        url = '//' + url
+    try:
+        return urlparse(url).hostname or ''
+    except Exception:
+        return ''
 
 
 def _domain_allowed(url: str) -> bool:

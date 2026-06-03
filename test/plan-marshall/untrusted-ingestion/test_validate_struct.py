@@ -188,3 +188,13 @@ def test_red_flag_host_rejected():
     data = _validate('issue-body', struct)
     assert data['status'] == 'error'
     assert data['error_code'] == 'domain_rejected'
+
+
+def test_ipv6_url_rejected_as_unknown_host():
+    # IPv6 literal addresses are not in the allowlist and should be rejected
+    # via the domain_rejected path — not crash with a malformed host like '['.
+    # Regression for the fragile split(':')[0] implementation.
+    struct = {'narrative': 'ok', 'references': ['http://[2001:db8::1]/path']}
+    data = _validate('issue-body', struct)
+    assert data['status'] == 'error'
+    assert data['error_code'] == 'domain_rejected'
