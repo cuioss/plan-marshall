@@ -311,7 +311,16 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
         return _assert_cwd_unchanged(wt_err)
     assert worktree_path is not None  # noqa: S101 — narrow for type-checker
 
-    main_plan_dir = resolve_main_anchored_path(f'plans/{plan_id}')
+    try:
+        main_plan_dir = resolve_main_anchored_path(f'plans/{plan_id}')
+    except RuntimeError as exc:
+        return _assert_cwd_unchanged(
+            make_error(
+                f'cannot resolve main plan directory: {exc}',
+                code=ErrorCode.NOT_FOUND,
+                plan_id=plan_id,
+            )
+        )
     wt_plan_dir = worktree_path / PLAN_DIR_NAME / 'local' / 'plans' / plan_id
     wt_global_logs = worktree_path / PLAN_DIR_NAME / 'local' / 'logs'
 

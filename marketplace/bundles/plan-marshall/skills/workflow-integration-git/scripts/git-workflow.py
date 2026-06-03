@@ -1246,12 +1246,26 @@ def cmd_worktree_rebase_to(args):
             'message': 'cannot resolve main git checkout root for rebase',
         }
 
+    # Early-return when the worktree directory is absent: the subsequent
+    # ``git -C {target}`` calls would otherwise spawn subprocesses that fail and
+    # print to stderr before ``_detect_worktree_state`` reports the same verdict.
+    if not target.is_dir():
+        return {
+            'plan_id': args.plan_id,
+            'worktree_path': str(target),
+            'base': args.base,
+            'rebase_ref': args.base,
+            'state': 'missing-target',
+            'status': 'error',
+            'error': 'missing_target',
+            'message': f'worktree path does not exist: {target}',
+        }
+
     # Fetch the remote base so ``origin/{base}`` reflects the current remote tip,
     # then resolve the actual rebase target. When the worktree has no ``origin``
     # remote (local-only fixtures), the fetch fails softly and we fall back to the
     # local ``{base}`` ref so existing no-remote flows still resolve.
-    if target.is_dir():
-        run_git(['-C', str(target), 'fetch', 'origin', args.base])
+    run_git(['-C', str(target), 'fetch', 'origin', args.base])
     rc_remote, _remote_out, _remote_err = run_git(
         ['-C', str(target), 'rev-parse', '--verify', f'origin/{args.base}^{{commit}}']
     )
