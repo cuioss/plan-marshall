@@ -18,9 +18,9 @@ that ``manage-logging`` performs. Live mode produces the same values as
 Folded-in global logs: under the move-based finalize model the plan's OWN
 global logs (``{prefix}-YYYY-MM-DD.log``) are folded into ``<plan_dir>/logs/``
 at integrate-into-main. This script parses those folded-in copies for per-plan
-operational signals (error/non-INFO lines, slow calls, fixture leaks) — the
-per-plan replacement for the retired cross-plan ``global-log-analysis`` audit
-check. A plan with no folded-in global logs (pre-fold archives, live mode
+operational signals (error/non-INFO lines, slow calls, fixture leaks) — a
+per-plan complement to the cross-plan ``global-log-analysis`` audit check's
+live-corpus correlation. A plan with no folded-in global logs (pre-fold archives, live mode
 before finalize) yields all-zero signal counts.
 
 Usage:
@@ -80,7 +80,7 @@ _NOTATION_RE = re.compile(r'([a-z][\w-]*:[\w-]+:[\w-]+)')
 # Folded-in global-log line grammar — the bracketed
 # ``[ts] [LEVEL] [hash] <rest>`` shape written by manage-logging into the
 # date-stamped ``{prefix}-YYYY-MM-DD.log`` files folded into the plan dir at
-# finalize. Mirrors the (retired) cross-plan global-log-analysis grammar.
+# finalize. Mirrors the cross-plan global-log-analysis grammar.
 _GLOBAL_LOG_LINE_RE = re.compile(
     r'^\[(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z\]\s+'
     r'\[(?P<level>[A-Z]+)\]\s+\[(?P<hash>[0-9a-f]+)\]\s+(?P<rest>.*)$'
@@ -590,10 +590,10 @@ def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
     Globs the date-stamped ``{script-execution,work,decision}-*.log`` files
     folded into ``<plan_dir>/logs/`` at finalize and surfaces per-plan signal
     counts: total lines parsed, error/non-INFO lines, slow calls
-    (``>= _GLOBAL_LOG_SLOW_SECONDS``), and fixture leaks. This is the per-plan
-    replacement for the retired cross-plan ``global-log-analysis`` audit check
-    (the cross-plan correlation it did is no longer maintained; each plan's own
-    signals are surfaced here from its folded-in copies).
+    (``>= _GLOBAL_LOG_SLOW_SECONDS``), and fixture leaks. This per-plan view
+    complements the cross-plan ``global-log-analysis`` audit check (each plan's own
+    signals are surfaced here from its folded-in copies, while the audit check
+    does the cross-plan live-corpus correlation).
 
     A plan with no folded-in global logs (live mode before finalize, pre-fold
     archives) yields all-zero counts and ``logs_present: false``.
@@ -719,8 +719,8 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # logging-gap bag.
     dispatch_boundaries = read_dispatch_boundaries_per_phase(plan_dir)
 
-    # Folded-in global-log per-plan signals (per-plan replacement for the
-    # retired cross-plan global-log-analysis audit check). Surfaces a finding
+    # Folded-in global-log per-plan signals (a per-plan complement to the
+    # cross-plan global-log-analysis audit check). Surfaces a finding
     # when the plan's own folded-in global logs carry error lines or fixture
     # leaks; slow-call counts ride the fragment for the LLM to weigh.
     global_log_signals = analyze_folded_global_logs(logs_dir)

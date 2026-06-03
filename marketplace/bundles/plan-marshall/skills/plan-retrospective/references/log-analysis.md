@@ -43,8 +43,10 @@ global_log_signals:
 Under the move-based finalize model the plan's OWN global logs
 (`{prefix}-YYYY-MM-DD.log`) are folded into `<plan_dir>/logs/` at
 integrate-into-main. `analyze-logs` parses those folded-in copies for per-plan
-operational signals (`global_log_signals`) — the per-plan replacement for the
-retired cross-plan `global-log-analysis` audit check. A plan with no folded-in
+operational signals (`global_log_signals`) — a complement to the cross-plan
+`global-log-analysis` audit check (which does cross-plan live-corpus correlation
+over phases 1-4); the per-plan view here surfaces each plan's own folded-in
+signals. A plan with no folded-in
 global logs (live mode before finalize, pre-fold archives) yields all-zero
 counts and `logs_present: false`.
 
