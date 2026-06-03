@@ -3,6 +3,7 @@ name: recipe-plan-review
 description: Recipe skill that reviews a recently landed (archived) plan against its original request and surfaces fix-worthy gaps
 user-invocable: false
 allowed-tools: Read, Glob, Bash, AskUserQuestion, Skill
+implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 
 # Recipe: Review and Improve a Recently Landed Plan
