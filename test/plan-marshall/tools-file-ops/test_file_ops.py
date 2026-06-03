@@ -14,6 +14,7 @@ Tests functions:
 """
 
 import os
+import subprocess
 import sys
 from io import StringIO
 from pathlib import Path
@@ -594,13 +595,51 @@ def test_get_executor_path_pinned_in_worktree_resolves_worktree_resident(tmp_pat
 
 
 def test_get_executor_path_without_plan_root_raises(tmp_path, monkeypatch):
-    """When no .plan/local ancestor of cwd resolves, get_executor_path raises."""
+    """When no .plan/local ancestor of cwd resolves AND cwd is not inside a git
+    repository, get_executor_path raises."""
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     bare = tmp_path / 'bare'
     bare.mkdir()
     monkeypatch.chdir(bare)
     with pytest.raises(RuntimeError, match='plan root'):
         get_executor_path()
+
+
+def _git_toplevel(cwd):
+    return Path(
+        subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    )
+
+
+def test_get_base_dir_git_toplevel_fallback(tmp_path, monkeypatch):
+    """In a clean git checkout with NO .plan/local ancestor (CI runners, fresh
+    clones, consumer installs — .plan/ is gitignored), get_base_dir falls back
+    to <git-toplevel>/.plan/local rather than raising. The git-toplevel fallback
+    in _resolve_plan_root restores the clean-environment robustness the prior
+    git_main_checkout_root resolver provided (regression guard for PR #556 CI)."""
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-q'], cwd=repo, check=True)
+    monkeypatch.chdir(repo)
+    assert get_base_dir() == _git_toplevel(repo) / '.plan' / 'local'
+
+
+def test_get_executor_path_git_toplevel_fallback(tmp_path, monkeypatch):
+    """In a clean git checkout with NO .plan/local ancestor, get_executor_path
+    falls back to <git-toplevel>/.plan/execute-script.py instead of raising."""
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-q'], cwd=repo, check=True)
+    monkeypatch.chdir(repo)
+    assert get_executor_path() == _git_toplevel(repo) / '.plan' / 'execute-script.py'
 
 
 # =============================================================================

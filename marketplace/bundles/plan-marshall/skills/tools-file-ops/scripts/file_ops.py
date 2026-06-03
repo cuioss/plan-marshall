@@ -258,6 +258,38 @@ def guard_worktree_cwd(plan_id: str) -> dict[str, Any] | None:
     }
 
 
+def _resolve_plan_root() -> Path | None:
+    """Resolve the plan-root directory by the uniform cwd rule, with a
+    clean-checkout git fallback.
+
+    Primary: walk up from cwd to the nearest ``.plan/local`` ancestor
+    (:func:`_find_plan_root_from_cwd`). Fallback: when no such ancestor exists —
+    CI runners, fresh clones, and consumer installs have no ``.plan/local`` yet
+    because ``.plan/`` is gitignored — resolve the enclosing git working tree
+    via ``git rev-parse --show-toplevel``. This restores the clean-environment
+    robustness the prior ``git_main_checkout_root`` resolver provided while
+    keeping the cwd-walk-up as the primary path (ADR-002): the git toplevel is
+    consulted ONLY as a last resort, so phase-5+ cwd-pinning is never overridden
+    when ``.plan/local`` is present. Returns ``None`` only when neither resolves
+    (no ``.plan/local`` ancestor AND not inside a git repository).
+    """
+    root = _find_plan_root_from_cwd()
+    if root is not None:
+        return root
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    toplevel = result.stdout.strip()
+    return Path(toplevel) if toplevel else None
+
+
 def get_executor_path() -> Path:
     """Return the canonical path to ``.plan/execute-script.py``.
 
@@ -278,7 +310,8 @@ def get_executor_path() -> Path:
 
     Raises:
         RuntimeError: when the base directory cannot be resolved (no override,
-            no ``PLAN_BASE_DIR``, and no ``.plan/local`` ancestor of cwd).
+            no ``PLAN_BASE_DIR``, no ``.plan/local`` ancestor of cwd, AND the
+            cwd is not inside a git repository — see :func:`_resolve_plan_root`).
     """
     # Honour the set_base_dir() / PLAN_BASE_DIR override exactly as get_base_dir
     # does, but anchor the executor at <override>/execute-script.py (the override
@@ -291,7 +324,7 @@ def get_executor_path() -> Path:
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir) / 'execute-script.py'
-    root = _find_plan_root_from_cwd()
+    root = _resolve_plan_root()
     if root is None:
         raise RuntimeError(
             'get_executor_path() requires a resolvable plan root; no .plan/local '
@@ -346,14 +379,17 @@ def get_base_dir() -> Path:
 
     Raises:
         RuntimeError: when none of the above resolve (no override, no env var,
-            and no ``.plan/local`` ancestor of the current working directory).
+            no ``.plan/local`` ancestor of the current working directory, AND
+            the cwd is not inside a git repository — the git-toplevel fallback
+            in :func:`_resolve_plan_root` covers clean checkouts / CI / fresh
+            clones that have no ``.plan/local`` yet).
     """
     if _BASE_DIR_OVERRIDE is not None:
         return _BASE_DIR_OVERRIDE
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir)
-    root = _find_plan_root_from_cwd()
+    root = _resolve_plan_root()
     if root is None:
         raise RuntimeError(
             'plan-marshall runtime state requires a resolvable plan root; '
