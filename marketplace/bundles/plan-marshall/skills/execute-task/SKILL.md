@@ -207,7 +207,7 @@ Production code creation and modification.
 
 ### Path Resolution
 
-When the plan runs in an isolated worktree (resolvable via `plan-marshall:manage-status:manage-status get-worktree-path --plan-id {plan_id}` returning a non-empty path), every Edit/Write/Read tool call in this profile MUST resolve its file path against the returned path. If a subagent is dispatched from this profile, embed the path-free Worktree Header (`WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block — see phase-5-execute § Dispatch Protocol) so the child propagates the constraint without leaking the absolute path. The auto-injection sub-step under Common Workflow → Step: Run Verification handles Bucket B forwarding structurally; Bucket A `manage-*` scripts remain cwd-agnostic. See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding and `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the Bucket A/B split.
+This skill runs as a leaf inside the `execution-context` envelope — it issues no `Task:` subagent dispatches. When the plan runs in an isolated worktree, cwd is pinned to the worktree root by ADR-002, so every Edit/Write/Read tool call in this profile uses the path verbatim (relative to the pinned cwd). Bucket A `manage-*` scripts remain cwd-agnostic (they take `--plan-id`). See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding and `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the Bucket A/B split.
 
 ### Compatibility Strategy
 
@@ -250,7 +250,7 @@ Unit and module test creation.
 
 ### Path Resolution
 
-When the plan runs in an isolated worktree (resolvable via `plan-marshall:manage-status:manage-status get-worktree-path --plan-id {plan_id}` returning a non-empty path), every Edit/Write/Read tool call in this profile MUST resolve its file path against the returned path. If a subagent is dispatched from this profile, embed the path-free Worktree Header (`WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block — see phase-5-execute § Dispatch Protocol) so the child propagates the constraint without leaking the absolute path. The auto-injection sub-step under Common Workflow → Step: Run Verification handles Bucket B forwarding structurally; Bucket A `manage-*` scripts remain cwd-agnostic. See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding and `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the Bucket A/B split.
+This skill runs as a leaf inside the `execution-context` envelope — it issues no `Task:` subagent dispatches. When the plan runs in an isolated worktree, cwd is pinned to the worktree root by ADR-002, so every Edit/Write/Read tool call in this profile uses the path verbatim (relative to the pinned cwd). Bucket A `manage-*` scripts remain cwd-agnostic (they take `--plan-id`). See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding and `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the Bucket A/B split.
 
 ### Workflow
 
