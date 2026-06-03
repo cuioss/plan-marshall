@@ -128,13 +128,16 @@ Three step types are supported, distinguished by prefix notation:
 | Type | Notation | Resolution |
 |------|----------|------------|
 | **built-in** | `default:` prefix (e.g., `default:commit-push`) | Strip prefix, read `standards/{name}.md` and follow all steps |
-| **project** | `project:` prefix (e.g., `project:finalize-step-foo`) | `Skill: {notation}` with interface contract parameters |
-| **skill** | fully-qualified `bundle:skill` (e.g., `pm-dev-java:java-post-pr`) | `Skill: {notation}` with interface contract parameters |
+| **project (dispatched)** | `project:` prefix classified DISPATCHED (e.g., `project:finalize-step-plugin-doctor`) | `Task: execution-context-{level}` with `workflow: {step's own SKILL.md notation}` — see Step 3 item 5 DISPATCHED branch |
+| **project (inline)** | `project:` prefix classified INLINE (e.g., `project:finalize-step-deploy-target`) | `Skill: {notation}` with interface contract parameters |
+| **skill** | fully-qualified `bundle:skill` (e.g., `pm-dev-java:java-post-pr`) | DISPATCHED → `Task: execution-context-{level}`; INLINE → `Skill: {notation}` with interface contract parameters, per the same classification |
 
 **Type detection logic**:
 - Starts with `default:` -> built-in type (strip prefix, validate against dispatch table)
-- Starts with `project:` -> project type
-- Contains `:` (other) -> fully-qualified skill type
+- Starts with `project:` -> project type; further classified DISPATCHED vs INLINE per the "Dispatched workflows vs inline steps" section
+- Contains `:` (other) -> fully-qualified skill type; classified DISPATCHED vs INLINE the same way
+
+The dispatched-vs-inline classification (which project/skill steps dispatch under `Task: execution-context-{level}` vs load inline via `Skill:`) is owned by the "Dispatched workflows vs inline steps" section above — it is the single source of truth, and the "Interface Contract for External Steps" section's `Skill:` template applies only to INLINE external steps.
 
 Each step declares an `order: <int>` value in its authoritative source — frontmatter on built-in standards docs (`standards/{name}.md`), frontmatter on project-local `SKILL.md` for `project:` steps, and the return-dict `order` field for extension-contributed skills. `marshall-steward` sorts the `steps` list by this value when writing it to `marshal.json`. This skill iterates the list as written and does NOT re-sort or validate `order` at runtime — the persisted order is the runtime order.
 
@@ -158,14 +161,28 @@ Each step declares an `order: <int>` value in its authoritative source — front
 
 ### Interface Contract for External Steps
 
-Project and skill steps receive these parameters:
+External steps split by the dispatched-vs-inline classification in the
+"Dispatched workflows vs inline steps" section.
+
+**INLINE external steps** (e.g., `project:finalize-step-deploy-target`,
+`project:finalize-step-sync-plugin-cache`) load in the main context and receive
+these parameters:
 
 ```
 Skill: {step_reference}
   Arguments: --plan-id {plan_id} --iteration {iteration} [--session-id {session_id}]
 ```
 
-The step skill can access the plan's context via manage-* scripts (references, status, config).
+**DISPATCHED external steps** (e.g., `project:finalize-step-pre-submission-self-review`,
+`project:finalize-step-plugin-doctor`) do NOT use the `Skill:` template above —
+they dispatch under `Task: execution-context-{level}` with the step's own SKILL.md
+as the `workflow` prompt-body field. Their input contract is the 5-field
+prompt-body shape (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) plus any
+workflow-specific runtime inputs (`--iteration`, `producer`, whitelisted
+`--session-id`). See Step 3 item 5 § "DISPATCHED project/skill step" for the
+dispatch shape.
+
+In both cases the step body can access the plan's context via manage-* scripts (references, status, config).
 
 #### Session-id forwarding
 
@@ -739,10 +756,64 @@ FOR each step_id in manifest.phase_6.steps:
      - BUILT-IN (inline-only: commit-push, architecture-refresh, branch-cleanup, record-metrics, archive-plan):
        Read the standards document from dispatch table and follow all steps in main context. Inline steps are not wrapped by the per-agent timeout block above — they execute under the host platform's standard per-call ceiling.
 
-     - PROJECT/SKILL: Load the skill with interface contract:
+     - PROJECT/SKILL: Branch on the dispatched-vs-inline classification from the
+       "Dispatched workflows vs inline steps" section. A `project:` / `bundle:skill`
+       step is DISPATCHED when that section lists it as dispatched
+       (`project:finalize-step-pre-submission-self-review`,
+       `project:finalize-step-plugin-doctor`, and any external step that section
+       marks dispatched); every other external step is INLINE.
+
+       **DISPATCHED project/skill step** — route through the generic
+       `execution-context-{level}` dispatcher exactly like an agent-suitable
+       built-in, wrapped with the resolved per-agent timeout:
+
+       (1) Resolve the level-bound target via the resolver:
+           ```
+           target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+             effort resolve-target --phase phase-6-finalize [--role <subkey>]
+           ```
+           Use the step's resolved role from the "Dispatched workflows vs inline steps"
+           section (`project:finalize-step-pre-submission-self-review` → `phase-6-finalize`,
+           no `--role`; `project:finalize-step-plugin-doctor` → `phase-6-finalize --role
+           verification-feedback` with `producer=plugin-doctor` runtime input).
+       (2) Emit the standardized `[DISPATCH]` work-log line (see
+           [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md)
+           § Emission contract). Substitute `{role}` with `default` when no `--role`
+           flag was passed, otherwise the explicit sub-key value:
+           ```bash
+           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+             work --plan-id {plan_id} --level INFO \
+             --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role={role} workflow={step's own SKILL.md notation} plan_id={plan_id}"
+           ```
+       (3) Dispatch via the Task tool. The workflow doc for a dispatched project/skill
+           step is the project skill's own SKILL.md (e.g.
+           `project:finalize-step-plugin-doctor/SKILL.md`):
+           ```
+           Task: plan-marshall:{target}
+             prompt: |
+               name: {step_name}
+               plan_id: {plan_id}
+               skills[N]:
+               - <step-specific skills>
+               workflow: {step's own SKILL.md notation}
+               WORKTREE: {worktree_path}
+           ```
+           Forward `--plan-id {plan_id}`, `--iteration {iteration}`, and any
+           `producer` runtime input as workflow-specific prompt-body inputs. The
+           `[--session-id {session_id}]` runtime input follows the same whitelist
+           rule documented under "Interface Contract for External Steps".
+
+       The DISPATCHED branch obeys the same "On timeout" handling as the
+       agent-suitable built-in branch (item 5 above): log ERROR, mark the step
+       `failed`, continue to the next step.
+
+     - INLINE project/skill step — load the skill with interface contract in the
+       main context:
        Skill: {step_ref}
          Arguments: --plan-id {plan_id} --iteration {iteration} [--session-id {session_id}]
 
+       The INLINE branch is reserved for genuinely-inline external steps
+       (`project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`).
        Append `--session-id {session_id}` ONLY when `step_ref` is on the
        Session-id forwarding whitelist documented under "Interface Contract
        for External Steps" above (the table at that section is the single
