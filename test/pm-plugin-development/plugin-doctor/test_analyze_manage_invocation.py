@@ -1713,6 +1713,135 @@ class TestUniversalFlagAllowlist:
         assert invalid[0]['details']['flag'] == 'bogus'
 
 
+def _routing_flag_nested_source() -> str:
+    """A top-level routing flag declared BEFORE the subcommand, plus a nested
+    sub-verb chain — the real ``ci``/``sonar`` shape.
+
+    ``--project-dir`` is a top-level routing/global flag consumed by the router
+    argparse layer before the subcommand positional. ``pr`` is a nested
+    subcommand whose ``prepare-comment`` sub-verb is the real command. A valid
+    invocation places ``--project-dir X`` BEFORE ``pr prepare-comment`` — the
+    parser must skip the routing flag and resolve the ``pr prepare-comment``
+    chain, never mis-read it as a missing/unknown subcommand.
+    """
+    return textwrap.dedent('''
+        import argparse
+
+        def main():
+            parser = argparse.ArgumentParser()
+            parser.add_argument('--project-dir')
+            subparsers = parser.add_subparsers(dest='cmd')
+
+            pr = subparsers.add_parser('pr')
+            pr_subs = pr.add_subparsers(dest='sub')
+
+            prepare = pr_subs.add_parser('prepare-comment')
+            prepare.add_argument('--plan-id', required=True)
+            prepare.add_argument('--pr-number', required=True)
+
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
+class TestLeadingRoutingFlagBeforeSubcommand:
+    """A top-level routing flag placed BEFORE the subcommand is skipped, and the
+    real subcommand/sub-verb chain is THEN resolved and validated.
+
+    Reproduces the false-positive caught by the scoped finalize gate:
+    ``ci --project-dir {WORKTREE} pr prepare-comment …`` was mis-parsed as a
+    missing/unknown subcommand because the positional extractor stopped at the
+    leading ``--project-dir`` flag and extracted zero positionals.
+    """
+
+    def _index(self, tmp_path: Path) -> dict:
+        script = tmp_path / 'syn_routing.py'
+        script.write_text(_routing_flag_nested_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+        assert tree is not None
+        return {_SYN_NOTATION: tree}
+
+    def test_routing_flag_before_subcommand_validates_clean(
+        self, tmp_path: Path
+    ) -> None:
+        index = self._index(tmp_path)
+        # ``--project-dir {WORKTREE}`` is a leading routing flag; the real
+        # subcommand chain is ``pr prepare-comment``. Mirrors triage.md.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
+            f'--project-dir {{WORKTREE}} pr prepare-comment '
+            f'--plan-id {{plan_id}} --pr-number {{pr_number}}\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert invalid == [], (
+            f'leading --project-dir routing flag produced false positives: {invalid}'
+        )
+
+    def test_routing_flag_with_continuation_validates_clean(
+        self, tmp_path: Path
+    ) -> None:
+        index = self._index(tmp_path)
+        # The same shape spread across a backslash continuation, as authored.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} \\\n'
+            f'  --project-dir {{WORKTREE}} pr prepare-comment \\\n'
+            f'  --plan-id {{plan_id}} --pr-number {{pr_number}}\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert invalid == [], (
+            f'continuation routing flag produced false positives: {invalid}'
+        )
+
+    def test_concrete_routing_flag_value_validates_clean(
+        self, tmp_path: Path
+    ) -> None:
+        index = self._index(tmp_path)
+        # Non-templated concrete value for the routing flag — the value token
+        # must be consumed wholesale so ``pr`` is the first positional.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
+            f'--project-dir /abs/path pr prepare-comment '
+            f'--plan-id p --pr-number 7\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert invalid == [], (
+            f'concrete routing-flag value produced false positives: {invalid}'
+        )
+
+    def test_wrong_sub_verb_after_routing_flag_still_flagged(
+        self, tmp_path: Path
+    ) -> None:
+        index = self._index(tmp_path)
+        # The fix must NOT blind the validator: a genuinely-wrong sub-verb after
+        # the leading routing flag must still resolve the real ``pr`` subcommand
+        # and report the bad sub-verb.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
+            f'--project-dir /abs/path pr bogus-verb --plan-id p\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert len(invalid) == 1, (
+            f'wrong sub-verb after routing flag should still be flagged: {invalid}'
+        )
+        assert invalid[0]['details']['reason'] == 'sub_verb_unknown'
+        assert invalid[0]['details']['sub_verb'] == 'bogus-verb'
+
+
 # NOTE: The zero-false-positive smokes against the REAL plan-marshall bundle
 # (``TestRealMarketplaceZeroFalsePositives``) probe the live
 # ``.plan/execute-script.py`` executor and live in the integration suite

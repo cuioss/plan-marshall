@@ -935,17 +935,78 @@ def _join_continuation_lines(content: str) -> list[tuple[int, str]]:
     return result
 
 
+# Long-flag token at the current scan position: leading whitespace run, then
+# ``--name``. Used to skip a leading run of top-level routing/global flags that
+# argparse consumes BEFORE the subcommand positional (``--project-dir X``,
+# ``--plan-id Y``, ``--audit-plan-id Z``).
+_LEADING_FLAG_RE = re.compile(r'\s+--[A-Za-z][A-Za-z0-9_\-]*')
+
+# Any non-flag, non-whitespace value token at the current scan position: a
+# leading whitespace run, then a run of non-whitespace NOT beginning with ``-``.
+# Matches identifiers AND non-identifier values a routing flag may carry —
+# ``{WORKTREE}`` templates, ``/abs/paths``, ``key=value`` — so the value token
+# of ``--project-dir {WORKTREE}`` is consumed wholesale rather than leaving the
+# template stranded as a stray positional.
+_VALUE_TOKEN_RE = re.compile(r'\s+(?P<val>[^\s\-][^\s]*)')
+
+
+def _skip_leading_routing_flags(rest: str) -> int:
+    """Return the scan offset past any leading ``--flag value`` run in ``rest``.
+
+    A top-level routing/global flag (``--project-dir``, ``--plan-id``,
+    ``--audit-plan-id``) is consumed by the executor/router argparse layer
+    BEFORE the subcommand positional. argparse always requires the subcommand —
+    the first bare positional — to follow any top-level optionals, so a leading
+    flag token can never BE the subcommand.
+
+    The skip rule (per the executor router idiom, whose global flags all take a
+    value): while the next token is a ``--flag``, consume it AND its one
+    following value token, unless that following token is itself a ``--flag``
+    (the flag was a bare switch) or there is no further token. Stop at the first
+    bare positional token — that is the subcommand.
+
+    Returning the post-skip offset lets ``_extract_positional_tokens`` begin
+    where the real subcommand chain starts, so an invocation that places a
+    routing flag before the subcommand (``ci --project-dir X pr prepare-comment``)
+    resolves the same ``pr prepare-comment`` chain as the flag-free form. A
+    genuinely wrong sub-verb after the routing flag still fails resolution and
+    is reported — the routing flag is skipped, the real subcommand is THEN
+    validated.
+    """
+    pos = 0
+    while True:
+        flag_match = _LEADING_FLAG_RE.match(rest, pos)
+        if not flag_match:
+            break
+        pos = flag_match.end()
+        # Consume the flag's value token unless the next token is another flag
+        # (this flag was a bare switch) or the line ended.
+        if _LEADING_FLAG_RE.match(rest, pos) is not None:
+            continue
+        value_match = _VALUE_TOKEN_RE.match(rest, pos)
+        if value_match is None:
+            break
+        pos = value_match.end()
+    return pos
+
+
 def _extract_positional_tokens(rest: str, max_positionals: int = 8) -> list[str]:
     """Extract the leading run of positional tokens from ``rest``.
 
-    Stops at the first flag token (``-`` prefix) or end-of-line. The default
-    cap is generous (8) because argparse subparser chains can be three or more
-    positionals deep (``plan phase-5-execute set``); the tree walk consumes
-    only as many as resolve along registered children and treats the rest as
-    positional arguments, so over-collecting here is harmless.
+    A leading run of top-level routing/global flags (``--project-dir X``,
+    ``--plan-id Y``) is skipped first so the FIRST extracted positional is the
+    real subcommand even when a routing flag precedes it. See
+    ``_skip_leading_routing_flags``.
+
+    Stops at the first flag token (``-`` prefix) AFTER the subcommand chain
+    starts, or end-of-line. The default cap is generous (8) because argparse
+    subparser chains can be three or more positionals deep
+    (``plan phase-5-execute set``); the tree walk consumes only as many as
+    resolve along registered children and treats the rest as positional
+    arguments, so over-collecting here is harmless.
     """
     tokens: list[str] = []
-    pos = 0
+    pos = _skip_leading_routing_flags(rest)
     while pos < len(rest) and len(tokens) < max_positionals:
         match = _NEXT_POSITIONAL_RE.match(rest, pos)
         if not match:
