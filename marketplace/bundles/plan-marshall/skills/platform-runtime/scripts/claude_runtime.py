@@ -63,21 +63,46 @@ _SESSION_ID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
 
+# Missing-executor guard. While a worktree-backed plan sits mid-phase-5 the
+# executor can be absent from the main checkout's cwd. Each executor-invoking
+# hook command is wrapped so an absent ``.plan/execute-script.py`` is a silent
+# no-op: ``[ -f ... ]`` is false, so the ``python3`` invocation never runs and no
+# ``[Errno 2] No such file or directory`` is surfaced as a "hook blocked" error.
+# A present executor runs the command normally. The trailing ``|| true`` keeps
+# the cosmetic terminal-title hook fail-soft on ANY command error — a
+# title-render failure must never block the user's prompt. These wrap the command
+# constants at their single source, so every install site inherits the guard.
+_EXECUTOR_GUARD_PREFIX = "[ -f .plan/execute-script.py ] && "
+_EXECUTOR_GUARD_SUFFIX = " || true"
+
 # Hook command installed by project initial-setup. Captures $CLAUDE_CODE_SESSION_ID
 # and stores it via manage-status; the renderer reads this cache to resolve the
 # active plan for the current session.
-_HOOK_COMMAND = "python3 .plan/execute-script.py plan-marshall:platform-runtime:claude_hook"
+_HOOK_COMMAND = (
+    f"{_EXECUTOR_GUARD_PREFIX}"
+    "python3 .plan/execute-script.py plan-marshall:platform-runtime:claude_hook"
+    f"{_EXECUTOR_GUARD_SUFFIX}"
+)
 
 # Render-title hook command installed across all seven render-trigger events
 # plus statusLine. Invoked by Claude Code on SessionStart (matcher-less + matcher
 # "clear"), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion,
 # PostToolUse:AskUserQuestion, and PostToolUse:Bash; the statusLine variant
-# appends ``--statusline`` for plain-text emission.
+# appends ``--statusline`` for plain-text emission. The statusLine variant is
+# built explicitly (not by appending to the guarded render command) so
+# ``--statusline`` lands on the python3 invocation, not after ``|| true``.
 _RENDER_HOOK_COMMAND = (
+    f"{_EXECUTOR_GUARD_PREFIX}"
     "python3 .plan/execute-script.py "
     "plan-marshall:platform-runtime:platform_runtime session render-title"
+    f"{_EXECUTOR_GUARD_SUFFIX}"
 )
-_STATUSLINE_COMMAND = f"{_RENDER_HOOK_COMMAND} --statusline"
+_STATUSLINE_COMMAND = (
+    f"{_EXECUTOR_GUARD_PREFIX}"
+    "python3 .plan/execute-script.py "
+    "plan-marshall:platform-runtime:platform_runtime session render-title --statusline"
+    f"{_EXECUTOR_GUARD_SUFFIX}"
+)
 
 # Render-trigger hook events that each receive a single matcher-less entry
 # invoking the renderer. SessionStart receives BOTH a matcher-less entry AND a

@@ -182,7 +182,7 @@ pushed: true
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `prepare` | `--plan-id [--branch] [--base]` | Atomic phase-5 move-in: materializes the worktree (delegating to `worktree-create`), then MOVES the plan directory (`.plan/local/plans/{plan_id}`) and executor (`.plan/execute-script.py`) from main into their worktree-resident locations, and returns the canonical `worktree_path`. Atomic-with-rollback (a partial-move failure leaves plan state WHOLLY on main), idempotent (already-moved-in → no-op success), and never changes the caller's cwd — the phase-5 orchestrator pins its own cwd to the returned `worktree_path`. `--branch` is required only on first run (when the worktree has not yet been materialized); on re-entry it is ignored. See ADR-002. |
+| `prepare` | `--plan-id [--branch] [--base]` | Atomic phase-5 move-in: materializes the worktree (delegating to `worktree-create`), then MOVES the plan directory (`.plan/local/plans/{plan_id}`) from main into its worktree-resident location and GENERATES a worktree-bound executor (`.plan/execute-script.py`) into the worktree — the executor is per-tree derived state, NOT moved; main's copy stays present and untouched. Returns the canonical `worktree_path`. Atomic-with-rollback (a partial-move failure leaves plan state WHOLLY on main), idempotent (already-moved-in → no-op success), and never changes the caller's cwd — the phase-5 orchestrator pins its own cwd to the returned `worktree_path`. `--branch` is required only on first run (when the worktree has not yet been materialized); on re-entry it is ignored. See ADR-002. |
 
 **Script**: `plan-marshall:workflow-integration-git:merge_lock`
 
@@ -195,7 +195,7 @@ pushed: true
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `integrate` | `--plan-id` | Atomic finalize move-back: in ONE call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`), FOLDS the plan's own global logs into the plan dir, MOVES the plan directory back from the worktree to main, REGENERATES the executor against main (gated by the modified-files filter — only when the plan touched a `.py` under `marketplace/bundles/*/skills/*/scripts/`; idempotent and non-fatal), and RELEASES the lock on every exit path. Runs while the worktree is STILL PRESENT (branch cleanup removes the worktree AFTER this returns). Atomic-with-rollback (a partial move-back rolls the plan dir back into the worktree, lock released), idempotent (already-integrated → no-op success). Does NOT change the caller's cwd and does NOT remove the worktree — the finalize orchestrator returns its own cwd to main after the call. `integrate_into_main` is the SINGLE owner of finalize executor regeneration. See ADR-002. |
+| `integrate` | `--plan-id` | Atomic finalize move-back: in ONE call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`), FOLDS the plan's own global logs into the plan dir, MOVES the plan directory back from the worktree to main, and RELEASES the lock on every exit path. Does NOT regenerate the executor — on-main executor regeneration is the project-level `finalize-step-sync-plugin-cache` step's responsibility (meta-project-only), run after the cache sync. Runs while the worktree is STILL PRESENT (branch cleanup removes the worktree AFTER this returns). Atomic-with-rollback (a partial move-back rolls the plan dir back into the worktree, lock released), idempotent (already-integrated → no-op success). Does NOT change the caller's cwd and does NOT remove the worktree — the finalize orchestrator returns its own cwd to main after the call. See ADR-002. |
 
 The `worktree-*` subcommands implement the §9 two-state contract: `--plan-id` is mandatory (these verbs operate on a worktree), and path resolution flows through `manage-status get-worktree-path` so a single plan-id is sufficient — no `--project-dir`, no filesystem layout re-derivation. `worktree-create` is the only verb that materializes a path on disk; it computes `get_worktree_root() / <plan-id>`, runs `git worktree add`, and writes the resolved path back to status metadata so subsequent verbs resolve through the canonical channel.
 
@@ -510,7 +510,7 @@ worktrees[2]{plan_id,path,branch}:
 
 ### prepare_execute — prepare
 
-Atomic phase-5 move-in (notation `plan-marshall:workflow-integration-git:prepare_execute`). In ONE call it materializes the worktree (delegating to the `worktree-create` machinery so a single code path owns `git worktree add` + `.plan` bookkeeping), then MOVES (not copies) the plan-scoped non-git runtime state from the main checkout into the worktree-resident location: the plan directory (`.plan/local/plans/{plan_id}`) and the executor (`.plan/execute-script.py`). It returns the canonical `worktree_path`.
+Atomic phase-5 move-in (notation `plan-marshall:workflow-integration-git:prepare_execute`). In ONE call it materializes the worktree (delegating to the `worktree-create` machinery so a single code path owns `git worktree add` + `.plan` bookkeeping), then MOVES (not copies) the plan directory (`.plan/local/plans/{plan_id}`) from the main checkout into its worktree-resident location and GENERATES a worktree-bound executor (`.plan/execute-script.py`) into the worktree via `generate_executor --marketplace-root {worktree}`. The executor is per-tree DERIVED state, NOT a moved slot — main's copy stays present and untouched; generation is non-fatal. It returns the canonical `worktree_path`.
 
 **The script does NOT change the caller's cwd** — a subprocess cannot mutate its parent's cwd. It RETURNS `worktree_path`; the phase-5 orchestrator pins ITS OWN cwd to that path for the remainder of phase-5+ (D8 wires the pin). The move is atomic-with-rollback (a partial-move failure rolls back so plan state is left WHOLLY on main, never half-moved, returning `status: error`) and idempotent (an already-moved-in plan is a no-op success returning the same path). See ADR-002 and the TOCTOU mitigation menu in `dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
 
@@ -530,9 +530,10 @@ status: success
 plan_id: EXAMPLE-PLAN
 worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
 action: moved
-moved_in[2]:
+moved_in[1]:
   - /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/local/plans/EXAMPLE-PLAN
-  - /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py
+worktree_executor_generated: true
+executor_detail: "worktree executor generated at /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py"
 ```
 
 **Output** (TOON, re-entry — already moved in):
@@ -559,7 +560,7 @@ Cooperative merge lock (notation `plan-marshall:workflow-integration-git:merge_l
 
 **Concurrency correctness.** `acquire` collapses the does-the-lock-exist → create-it check-then-act into a single atomic `os.open(..., O_CREAT | O_EXCL | O_WRONLY)`: two sessions racing to create the path — exactly one wins, the loser gets `EEXIST` and retries with simple backoff. Stale reclamation (a holder whose plan directory no longer exists) is itself a check-then-act and re-verifies atomically: the stale file is removed and the `O_EXCL` create immediately re-attempted, so a third session winning the race in between makes the reclaimer lose cleanly and retry. No fair queue, no elaborate data structure — the lock contents are a single line recording the holder. See the TOCTOU mitigation menu in `dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
 
-`integrate_into_main` (D5) acquires before move-back/regenerate/merge and releases after, on every exit path.
+`integrate_into_main` (D5) acquires before move-back/merge and releases after, on every exit path.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:merge_lock acquire \
@@ -601,11 +602,11 @@ lock_path: /repo/.plan/local/merge.lock
 
 ### integrate_into_main — integrate
 
-Atomic finalize move-back (notation `plan-marshall:workflow-integration-git:integrate_into_main`) — the inverse of `prepare_execute`. In ONE atomic call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`), FOLDS the plan's own global logs into the plan dir's `logs/`, MOVES the plan directory back from the worktree to the main checkout, REGENERATES the executor against main, and RELEASES the lock.
+Atomic finalize move-back (notation `plan-marshall:workflow-integration-git:integrate_into_main`) — the inverse of `prepare_execute`. In ONE atomic call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`), FOLDS the plan's own global logs into the plan dir's `logs/`, MOVES the plan directory back from the worktree to the main checkout, and RELEASES the lock. It does NOT regenerate the executor.
 
 **Runs while the worktree is STILL PRESENT** — branch cleanup removes the worktree AFTER this script returns. **The script does NOT change the caller's cwd** (a subprocess cannot mutate its parent's cwd) and **does NOT remove the worktree**. It RETURNS a status TOON; the finalize orchestrator returns ITS OWN cwd to main after the call so the uniform cwd rule resumes main resolution for retrospective + archive. The move-back is atomic-with-rollback (a partial move-back rolls the plan dir back into the worktree, leaving the authoritative copy whole, and releases the lock) and idempotent (an already-integrated plan is a no-op success that never acquires the lock). The merge lock is released on EVERY exit path, including rollback. See ADR-002 and the TOCTOU mitigation menu in `dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
 
-**Executor regeneration ownership.** Regenerating the executor against main on script changes remains a NECESSITY (newly added script notations must resolve post-merge). `integrate_into_main` is the SINGLE owner of that regeneration at finalize — it folds in the modified-files filter (regenerate only when `references.modified_files` include a `.py` under `marketplace/bundles/*/skills/*/scripts/`), the idempotent non-fatal `generate_executor generate` invocation, and the skip-clean exit. The regen runs with the working directory on main, so the uniform cwd rule resolves the executor to main's `.plan/` (NOT a file-move — a worktree-bound executor moved onto main re-introduces the boundary defect). This script is the only executor-regeneration site at finalize.
+**Executor regeneration ownership.** `integrate_into_main` does NOT regenerate the executor. On-main executor regeneration (when a plan changes the marketplace script SET — newly added notations must resolve post-merge) is a project-level, meta-project-only finalize step (`finalize-step-sync-plugin-cache`, run after the cache sync), NOT this script's responsibility. The executor is per-tree DERIVED state (ADR-002): main keeps its copy present throughout phase-5+, each worktree generates its own at move-in, and the on-main copy is refreshed by the cache-sync step. This script only moves the plan dir back under the merge lock.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:integrate_into_main integrate \
@@ -623,8 +624,6 @@ action: integrated
 plan_dir: /repo/.plan/local/plans/EXAMPLE-PLAN
 folded_logs[1]:
   - work.log
-regenerated: true
-regen_detail: "executor regenerated against main"
 ```
 
 **Output** (TOON, re-entry — already integrated):

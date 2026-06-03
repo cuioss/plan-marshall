@@ -3,9 +3,13 @@
 
 This is the test whose absence let the move-in defect ship (PR #556). It uses a
 REAL ``git init`` + ``git worktree add`` and the REAL resolvers — NO mocked
-``get_worktree_root`` / ``get_plan_dir`` / ``get_executor_path`` /
-``cmd_worktree_create`` / ``resolve_main_anchored_path`` — so it exercises the
-post-redesign no-symlink contract end-to-end.
+``get_worktree_root`` / ``get_plan_dir`` / ``cmd_worktree_create`` /
+``resolve_main_anchored_path`` — so it exercises the post-redesign no-symlink
+contract end-to-end. The worktree-bound executor generation (which shells out to
+generate_executor.py + marketplace discovery, absent from the tmp fixture) is
+stubbed to write the worktree executor file; the move-in contract under test is
+that main's executor is NOT moved, not the generator internals (covered by
+generate_executor's own tests).
 
 Contract under test (solution_outline.md §5, deliverable 5):
 
@@ -15,6 +19,8 @@ Contract under test (solution_outline.md §5, deliverable 5):
 * NO symlink exists anywhere under ``worktree/.plan/local`` (the core
   post-redesign invariant).
 * main no longer holds ``.plan/local/plans/{plan_id}`` after move-in.
+* FIX 1: main's ``.plan/execute-script.py`` is NOT moved — it stays present
+  after move-in — and a worktree-bound executor is generated into the worktree.
 * A symlinked ``worktree/.plan/local`` is rejected by ``prepare_execute``.
 * From a worktree cwd, run-config + lessons writes land on MAIN via
   ``resolve_main_anchored_path`` (the b8912f main-anchored-via-utility
@@ -50,6 +56,12 @@ _pe_spec = importlib.util.spec_from_file_location('prepare_execute', _PE_PATH)
 assert _pe_spec is not None and _pe_spec.loader is not None
 prepare_execute = importlib.util.module_from_spec(_pe_spec)
 _pe_spec.loader.exec_module(prepare_execute)
+
+_II_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'integrate_into_main.py')
+_ii_spec = importlib.util.spec_from_file_location('integrate_into_main', _II_PATH)
+assert _ii_spec is not None and _ii_spec.loader is not None
+integrate_into_main = importlib.util.module_from_spec(_ii_spec)
+_ii_spec.loader.exec_module(integrate_into_main)
 
 _RC_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
 _rc_spec = importlib.util.spec_from_file_location('run_config', _RC_PATH)
@@ -106,6 +118,19 @@ def real_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
     monkeypatch.chdir(main)
 
+    # Stub the worktree-bound executor generation: the real helper shells out to
+    # generate_executor.py with marketplace discovery, which the tmp fixture has
+    # no marketplace tree for. Simulate a clean generation by writing the worktree
+    # executor file, so the move-in contract (main executor NOT moved, worktree
+    # executor produced) is asserted without the real subprocess.
+    def fake_generate(worktree_path: Path) -> tuple[bool, str]:
+        wt_exec = worktree_path / '.plan' / 'execute-script.py'
+        wt_exec.parent.mkdir(parents=True, exist_ok=True)
+        wt_exec.write_text('#!/usr/bin/env python3\n# worktree-bound\n')
+        return True, f'worktree executor generated at {wt_exec}'
+
+    monkeypatch.setattr(prepare_execute, '_generate_worktree_executor', fake_generate)
+
     return {'main': main, 'main_local': main_local, 'plan_id': _PLAN_ID}
 
 
@@ -143,6 +168,66 @@ class TestWorktreeMoveLifecycle:
 
         # (4) main no longer holds the plan dir (moved, not copied).
         assert not (main_local / 'plans' / plan_id).exists()
+
+        # (5) FIX 1: main's executor is NOT moved — it stays present after
+        # move-in. This is the regression the whole plan exists to fix: a
+        # main-anchored hook shelling out to .plan/execute-script.py must never
+        # find it missing while a worktree-backed plan sits mid-phase-5.
+        main_executor = real_repo['main'] / '.plan' / 'execute-script.py'
+        assert main_executor.is_file()
+        assert not main_executor.is_symlink()
+
+        # (6) FIX 1: the worktree gained its OWN generated executor, and the
+        # payload reports the executor as no longer part of the moved slot set.
+        assert result['worktree_executor_generated'] is True
+        assert (worktree / '.plan' / 'execute-script.py').is_file()
+        assert result['moved_in[1]'] == [str(wt_plan_dir)]
+        assert 'moved_in[2]' not in result
+
+    def test_integrate_round_trip_leaves_main_executor_untouched(self, real_repo: dict) -> None:
+        """FIX 1 + Deliverable 5: across the full move-in → move-back round-trip,
+        main's executor is present and byte-for-byte UNCHANGED, and
+        ``integrate_into_main`` does NOT touch (move or regenerate) any
+        ``.plan/execute-script.py``. On-main executor regeneration is relocated to
+        the project-level ``finalize-step-sync-plugin-cache`` step — it is no
+        longer ``integrate_into_main``'s responsibility, so the integrate payload
+        carries no regen fields."""
+        main = real_repo['main']
+        main_local = real_repo['main_local']
+        plan_id = real_repo['plan_id']
+        main_executor = main / '.plan' / 'execute-script.py'
+
+        # Snapshot main's executor content before the round-trip.
+        before = main_executor.read_text()
+
+        create = git_workflow.cmd_worktree_create(
+            Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
+        )
+        assert create['status'] == 'success', create
+
+        move_in = prepare_execute.run_prepare_execute(
+            Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
+        )
+        assert move_in['status'] == 'success', move_in
+        # Main executor present + unchanged right after move-in (never moved).
+        assert main_executor.is_file()
+        assert main_executor.read_text() == before
+
+        # Move the plan dir back into main.
+        move_back = integrate_into_main.run_integrate_into_main(Namespace(plan_id=plan_id))
+        assert move_back['status'] == 'success', move_back
+        assert move_back['action'] == 'integrated'
+
+        # Deliverable 5: integrate carries NO regen fields and never touched the executor.
+        assert 'regenerated' not in move_back
+        assert 'regen_detail' not in move_back
+
+        # Main's executor is present and byte-for-byte unchanged across the round-trip.
+        assert main_executor.is_file()
+        assert main_executor.read_text() == before
+
+        # The plan dir is back on main.
+        assert (main_local / 'plans' / plan_id).is_dir()
 
     def test_main_anchored_writes_from_worktree_cwd_land_on_main(
         self, real_repo: dict, monkeypatch: pytest.MonkeyPatch

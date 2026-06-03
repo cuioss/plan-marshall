@@ -65,10 +65,15 @@ default:record-metrics (990)
 `order: 85` places this step immediately after
 `project:finalize-step-deploy-target` (so the cache mirrors the
 just-regenerated `target/claude/` content), post-`branch-cleanup` on the
-main checkout. Executor regeneration is NOT a separate finalize step —
-`integrate_into_main` (invoked during the move-back, before
-`branch-cleanup`) is the single owner of executor regeneration against
-main.
+main checkout. This step is the single project-level owner of on-main
+executor regeneration: after the cache sync succeeds it regenerates
+`.plan/execute-script.py` against the freshly-synced cache (Execution
+step 3). `integrate_into_main` performs the move-back only and does NOT
+regenerate the executor — the executor stays a per-tree derived artifact
+(ADR-002). Coupling regen to this step (CLAUDE.md's canonical "sync cache →
+regenerate executor" sequence) closes the no-worktree staleness gap: the
+regen runs in BOTH worktree and no-worktree finalize flows because it is
+just a finalize step, not a move-back side effect.
 
 ## Inputs
 
@@ -97,7 +102,38 @@ The script returns a TOON document with `status` (`success` |
 | `status: partial` | Some bundles failed; record `outcome=failed` and surface `summary_message` in `display_detail` |
 | `status: error` | Hard failure (no bundles synced); record `outcome=failed` and surface `summary_message` |
 
-### 3. Mark step complete
+### 3. Regenerate the on-main executor (after a successful sync)
+
+When the sync `status` is `success`, regenerate `.plan/execute-script.py`
+against the freshly-synced host cache. This runs on the main checkout, so
+the generator's cwd-relative resolution writes main's executor with mappings
+that point at the just-synced cache — refreshing the on-main mapping after a
+plan that changed the marketplace script *set*. This is the project-level,
+meta-project-only owner of on-main executor regeneration; it replaces the
+former `integrate_into_main` regen and runs in BOTH worktree and no-worktree
+finalize flows (closing the no-worktree staleness gap).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate
+```
+
+Regeneration is **unconditional-after-successful-sync** (always re-deriving
+the executor from the fresh cache is cheap, deterministic, and eliminates the
+staleness class without a gating heuristic) and **non-fatal**: a non-zero exit
+or failure logs a WARN and the step still records its sync outcome — finalize
+must not block on a mapping refresh.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[STATUS] (project:finalize-step-sync-plugin-cache) On-main executor regeneration failed (non-fatal); run /marshall-steward to recover"
+```
+
+When the sync `status` is `partial` or `error`, SKIP regeneration — the cache
+is incomplete, so regenerating against it would be wrong; the step records the
+sync failure (Step 4) and an operator recovers.
+
+### 4. Mark step complete
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
@@ -107,7 +143,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   --display-detail "{display_detail}"
 ```
 
-On `status: success`, `{display_detail}` is `"{synced_count} bundles synced"`.
+On `status: success`, `{display_detail}` is
+`"{synced_count} bundles synced; on-main executor regenerated"` (append
+`" (regen failed — run /marshall-steward)"` instead when the Step 3 regen
+exited non-zero — the sync outcome is still `done`).
 On `status: partial` or `status: error`, surface the engine's
 `summary_message` field verbatim in `--display-detail` so the renderer
 shows the underlying failure for triage.
