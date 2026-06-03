@@ -604,10 +604,9 @@ def _scoped_manage_invocation(
     seen: set[Path] = set()
     unique_md: list[Path] = []
     for md in md_files:
-        resolved = md.resolve()
-        if resolved in seen:
+        if md in seen:
             continue
-        seen.add(resolved)
+        seen.add(md)
         unique_md.append(md)
 
     # Collect distinct referenced notations across the scoped files.
