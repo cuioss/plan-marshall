@@ -1433,7 +1433,16 @@ def cmd_locate_plan_checkout(args):
     # State (b): a registered worktree holds the plan dir, but the current
     # checkout does not. Resolve through the canonical manage-status channel
     # and confirm the plan's status.json exists on disk in the worktree.
-    worktree_path, _error = _resolve_worktree_path_for_plan(plan_id)
+    worktree_path, error = _resolve_worktree_path_for_plan(plan_id)
+    if error is not None:
+        # Propagate critical infrastructure failures (executor missing, timeout,
+        # parse error) instead of silently masking them as "not_found". Expected
+        # non-worktree or missing-plan errors contain well-known substrings and
+        # are treated as "not_found" so the caller can proceed normally.
+        msg = error.get('message', '').lower()
+        _expected_substrings = ('no worktree configured', 'not found', 'does not exist')
+        if not any(s in msg for s in _expected_substrings):
+            return error
     if worktree_path is not None:
         status_json = worktree_path / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
         if status_json.is_file():
