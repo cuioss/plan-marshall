@@ -614,6 +614,165 @@ class TestDetectContractSources:
         files = {entry['file']: entry['format'] for entry in schema}
         assert files.get('marketplace/bundles/b1/skills/my-skill/standards/toon-schema.md') == 'toon'
 
+    @staticmethod
+    def _build_sibling_script_fixture(root: Path) -> Path:
+        """Build a project with a sibling skill 'sib-skill' (carrying SKILL.md +
+        a script) and a separate workflow doc that references it. Returns the
+        project root."""
+        project = root / 'project'
+        sib = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'sib-skill'
+        (sib / 'scripts').mkdir(parents=True)
+        (sib / 'SKILL.md').write_text('---\nname: sib-skill\n---\n# Sib\n')
+        (sib / 'scripts' / 'do_thing.py').write_text('def main(): pass\n')
+        # A workflow doc living in a DIFFERENT skill directory.
+        wf = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'consumer' / 'workflow'
+        wf.mkdir(parents=True)
+        (wf.parent / 'SKILL.md').write_text('---\nname: consumer\n---\n# Consumer\n')
+        return project
+
+    def test_doc_prose_reference_surfaces_sibling_skill_md(self, tmp_path: Path):
+        # An .md doc whose added lines reference a sibling script AND a TOON
+        # field surfaces that script's SKILL.md as a contract source.
+        project = self._build_sibling_script_fixture(tmp_path)
+        rel = 'marketplace/bundles/b1/skills/consumer/workflow/run.md'
+        added = [
+            (rel, 1, 'Run python3 .plan/execute-script.py b1:sib-skill:do_thing run'),
+            (rel, 2, 'Parse the {status} field from the TOON output.'),
+        ]
+        contract, _ = _detect_contract_sources([rel], project, radius=3, added=added)
+        by_file = {e['file']: e['sources'] for e in contract}
+        assert rel in by_file
+        assert 'marketplace/bundles/b1/skills/sib-skill/SKILL.md' in by_file[rel]
+
+    def test_doc_prose_reference_unioned_with_structural_sources(self, tmp_path: Path):
+        # The doc lives inside the 'consumer' skill (structural source) AND
+        # references the sibling script (doc-prose source). Both must appear.
+        project = self._build_sibling_script_fixture(tmp_path)
+        rel = 'marketplace/bundles/b1/skills/consumer/workflow/run.md'
+        added = [
+            (rel, 1, 'execute-script.py b1:sib-skill:do_thing run --plan-id X'),
+            (rel, 2, 'On {error} the run aborts.'),
+        ]
+        contract, _ = _detect_contract_sources([rel], project, radius=3, added=added)
+        by_file = {e['file']: e['sources'] for e in contract}
+        sources = by_file[rel]
+        # Structural source: the consumer skill's own SKILL.md.
+        assert 'marketplace/bundles/b1/skills/consumer/SKILL.md' in sources
+        # Doc-prose source: the referenced sibling script's SKILL.md.
+        assert 'marketplace/bundles/b1/skills/sib-skill/SKILL.md' in sources
+
+    def test_dangling_notation_surfaces_nothing(self, tmp_path: Path):
+        # A notation whose SKILL.md does not exist on disk surfaces no source.
+        project = self._build_sibling_script_fixture(tmp_path)
+        rel = 'README.md'
+        (project / 'README.md').write_text('# Project\n')
+        added = [
+            (rel, 1, 'execute-script.py b1:does-not-exist:ghost run'),
+            (rel, 2, 'Reads the {status} field.'),
+        ]
+        contract, _ = _detect_contract_sources([rel], project, radius=3, added=added)
+        assert contract == []
+
+    def test_notation_without_toon_field_surfaces_nothing(self, tmp_path: Path):
+        # An execute-script notation with NO TOON-field token in the added lines
+        # does not surface the sibling SKILL.md (both signals required).
+        project = self._build_sibling_script_fixture(tmp_path)
+        rel = 'README.md'
+        (project / 'README.md').write_text('# Project\n')
+        added = [
+            (rel, 1, 'execute-script.py b1:sib-skill:do_thing run'),
+            (rel, 2, 'Plain prose with no field token.'),
+        ]
+        contract, _ = _detect_contract_sources([rel], project, radius=3, added=added)
+        assert contract == []
+
+    def test_toon_field_without_notation_surfaces_nothing(self, tmp_path: Path):
+        # A TOON-field token with NO execute-script notation surfaces nothing.
+        project = self._build_sibling_script_fixture(tmp_path)
+        rel = 'README.md'
+        (project / 'README.md').write_text('# Project\n')
+        added = [
+            (rel, 1, 'Parse the {status} field from somewhere.'),
+            (rel, 2, 'No script notation here.'),
+        ]
+        contract, _ = _detect_contract_sources([rel], project, radius=3, added=added)
+        assert contract == []
+
+    def test_signals_on_separate_added_lines_are_both_honored(self, tmp_path: Path):
+        # The notation and the TOON-field token need not share a line.
+        project = self._build_sibling_script_fixture(tmp_path)
+        rel = 'README.md'
+        (project / 'README.md').write_text('# Project\n')
+        added = [
+            (rel, 5, 'execute-script.py b1:sib-skill:do_thing run'),
+            (rel, 9, 'Later the doc mentions {error} handling.'),
+        ]
+        contract, _ = _detect_contract_sources([rel], project, radius=3, added=added)
+        by_file = {e['file']: e['sources'] for e in contract}
+        assert 'marketplace/bundles/b1/skills/sib-skill/SKILL.md' in by_file[rel]
+
+    def test_added_none_keeps_augmentation_inert(self, tmp_path: Path):
+        # Callers that pass no diff content get only structural sources — the
+        # content-aware augmentation is inert (backward-compatible default).
+        project = _build_skill_fixture(tmp_path)
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/do_thing.py'
+        contract, _ = _detect_contract_sources([rel], project, radius=3)
+        assert len(contract) == 1
+        assert contract[0]['file'] == rel
+
+    def test_py_modified_file_with_both_signals_is_not_augmented(self, tmp_path: Path):
+        # The doc-prose augmentation is .md-only: a modified .py file carrying
+        # BOTH an execute-script notation and a {field} token in its added lines
+        # must NOT surface the sibling SKILL.md. A top-level .py outside any
+        # skill isolates the .md-only guard from the directory-structural branch.
+        project = self._build_sibling_script_fixture(tmp_path)
+        rel = 'top_level.py'
+        (project / 'top_level.py').write_text('# module\n')
+        added = [
+            (rel, 1, '# execute-script.py b1:sib-skill:do_thing run'),
+            (rel, 2, '# reads the {status} field'),
+        ]
+        contract, _ = _detect_contract_sources([rel], project, radius=3, added=added)
+        assert contract == []
+
+    def test_repeated_notation_in_doc_surfaces_single_source(self, tmp_path: Path):
+        # The same {bundle}:{skill} notation referenced on multiple added lines
+        # is deduplicated to one source entry (set + sorted in the resolver).
+        project = self._build_sibling_script_fixture(tmp_path)
+        rel = 'README.md'
+        (project / 'README.md').write_text('# Project\n')
+        added = [
+            (rel, 1, 'execute-script.py b1:sib-skill:do_thing run'),
+            (rel, 2, 'Again: execute-script.py b1:sib-skill:do_thing surface'),
+            (rel, 3, 'Parse the {status} field.'),
+        ]
+        contract, _ = _detect_contract_sources([rel], project, radius=3, added=added)
+        by_file = {e['file']: e['sources'] for e in contract}
+        sib = 'marketplace/bundles/b1/skills/sib-skill/SKILL.md'
+        assert by_file[rel].split('; ').count(sib) == 1
+
+    def test_two_distinct_notations_surface_both_sources(self, tmp_path: Path):
+        # A doc referencing two distinct sibling scripts (both with an on-disk
+        # SKILL.md) surfaces both SKILL.md paths, sorted and unioned.
+        project = self._build_sibling_script_fixture(tmp_path)
+        # Add a second sibling skill with its own SKILL.md + script.
+        sib2 = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'sib-two'
+        (sib2 / 'scripts').mkdir(parents=True)
+        (sib2 / 'SKILL.md').write_text('---\nname: sib-two\n---\n# Sib Two\n')
+        (sib2 / 'scripts' / 'other.py').write_text('def main(): pass\n')
+        rel = 'README.md'
+        (project / 'README.md').write_text('# Project\n')
+        added = [
+            (rel, 1, 'execute-script.py b1:sib-skill:do_thing run'),
+            (rel, 2, 'execute-script.py b1:sib-two:other run'),
+            (rel, 3, 'Both emit a {status} field.'),
+        ]
+        contract, _ = _detect_contract_sources([rel], project, radius=3, added=added)
+        by_file = {e['file']: e['sources'] for e in contract}
+        sources = by_file[rel]
+        assert 'marketplace/bundles/b1/skills/sib-skill/SKILL.md' in sources
+        assert 'marketplace/bundles/b1/skills/sib-two/SKILL.md' in sources
+
 
 class TestContractRadiusMonotonicBreadth:
     """The --contract-radius dial (wired by the coverage-gathering contract's
