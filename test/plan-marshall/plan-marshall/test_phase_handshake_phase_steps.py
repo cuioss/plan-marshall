@@ -177,6 +177,69 @@ def test_capture_phase_steps_no_phase_entry(required_steps_path: Path) -> None:
     assert set(excinfo.value.missing) == {'step-a', 'step-b'}
 
 
+# --- manifest intersection (required-steps.md Activation note) ------------
+
+
+def test_capture_phase_steps_manifest_absent_step_not_enforced(
+    monkeypatch: pytest.MonkeyPatch, required_steps_path: Path
+) -> None:
+    """A required step ABSENT from the plan's manifest is NOT enforced (the
+    required-steps.md Activation note). With the manifest scheduling only
+    step-a, a phase_entry where step-a is done captures cleanly even though
+    step-b (required but unscheduled) is absent — guards against a manifest
+    pruning deadlocking the phase transition (PR #556)."""
+    monkeypatch.setattr(inv, '_read_manifest_steps', lambda _pid, _phase: {'step-a'})
+    metadata = {'phase_steps': {'5-execute': {'step-a': {'outcome': 'done', 'display_detail': None}}}}
+    result = inv._capture_phase_steps_complete('pid', metadata, '5-execute')
+    assert isinstance(result, str)
+    assert len(result) == 16
+
+
+def test_capture_phase_steps_manifest_scheduled_step_still_enforced(
+    monkeypatch: pytest.MonkeyPatch, required_steps_path: Path
+) -> None:
+    """A required step that IS scheduled in the manifest remains enforced —
+    intersection narrows the required set, it does not disable enforcement."""
+    monkeypatch.setattr(inv, '_read_manifest_steps', lambda _pid, _phase: {'step-a', 'step-b'})
+    metadata = {'phase_steps': {'5-execute': {'step-a': {'outcome': 'done', 'display_detail': None}}}}
+    with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
+        inv._capture_phase_steps_complete('pid', metadata, '5-execute')
+    assert excinfo.value.missing == ['step-b']
+
+
+def test_capture_phase_steps_unreadable_manifest_falls_back_to_full(
+    monkeypatch: pytest.MonkeyPatch, required_steps_path: Path
+) -> None:
+    """When the manifest cannot be read (None), the full required list is
+    enforced — a conservative fallback that never silently drops enforcement
+    when the schedule is unknown."""
+    monkeypatch.setattr(inv, '_read_manifest_steps', lambda _pid, _phase: None)
+    metadata = {'phase_steps': {'5-execute': {'step-a': {'outcome': 'done', 'display_detail': None}}}}
+    with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
+        inv._capture_phase_steps_complete('pid', metadata, '5-execute')
+    assert excinfo.value.missing == ['step-b']
+
+
+def test_read_manifest_steps_reads_phase_block(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    base = tmp_path / 'base'
+    (base / 'plans' / 'pid').mkdir(parents=True)
+    (base / 'plans' / 'pid' / 'execution.toon').write_text(
+        'manifest_version: 1\nphase_6:\n  steps[2]:\n    - commit-push\n    - "project:foo"\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(inv, 'get_base_dir', lambda: base)
+    assert inv._read_manifest_steps('pid', '6-finalize') == {'commit-push', 'project:foo'}
+
+
+def test_read_manifest_steps_missing_returns_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(inv, 'get_base_dir', lambda: tmp_path / 'nonexistent')
+    assert inv._read_manifest_steps('pid', '6-finalize') is None
+
+
 # --- cmd_capture / cmd_verify integration --------------------------------
 
 

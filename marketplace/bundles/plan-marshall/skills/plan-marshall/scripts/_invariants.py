@@ -354,6 +354,40 @@ def _parse_required_steps(path: Path) -> list[str]:
     return steps
 
 
+def _read_manifest_steps(plan_id: str, phase: str) -> set[str] | None:
+    """Return the set of step IDs scheduled in the plan's execution manifest
+    for ``phase``, or ``None`` when the manifest cannot be read.
+
+    The manifest lives at ``<base>/plans/{plan_id}/execution.toon`` and stores
+    the phase step list under ``phase_{N}.steps`` where ``N`` is the leading
+    numeric segment of the phase key (e.g. ``6-finalize`` → ``phase_6``). Step
+    IDs are returned verbatim — bare for built-ins (``commit-push``), prefixed
+    for project / fully-qualified steps (``project:finalize-step-...``) — so
+    they match the entries parsed from ``required-steps.md`` by exact string.
+
+    Returns ``None`` (rather than an empty set) on any read/parse failure so the
+    caller can distinguish "manifest unreadable — fall back to the full required
+    list" from "manifest read, phase schedules zero required steps".
+    """
+    section = f'phase_{phase.split("-", 1)[0]}'
+    try:
+        manifest_path = get_base_dir() / 'plans' / plan_id / 'execution.toon'
+        if not manifest_path.is_file():
+            return None
+        parsed = parse_toon(manifest_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError, KeyError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    phase_block = parsed.get(section)
+    if not isinstance(phase_block, dict):
+        return None
+    steps = phase_block.get('steps')
+    if not isinstance(steps, list):
+        return None
+    return {str(step) for step in steps}
+
+
 # --- capture functions ---------------------------------------------------
 
 
@@ -1354,6 +1388,21 @@ def _capture_phase_steps_complete(
     required = _parse_required_steps(required_path)
     if not required:
         return None
+
+    # Activation note (required-steps.md): a required step ABSENT from the
+    # plan's manifest.phase_{N}.steps is NOT enforced — the handshake checks
+    # completion only for steps the manifest actually scheduled, so pruning a
+    # step from the manifest (e.g. a docs-only plan that drops the test gate, or
+    # a bug_fix plan whose composer omits architecture-refresh) never deadlocks
+    # the phase transition. Intersect the declared required list with the
+    # manifest's scheduled steps. Fall back to the full required list ONLY when
+    # the manifest cannot be read at all (conservative — never silently drop
+    # enforcement when scheduling is unknown).
+    manifest_steps = _read_manifest_steps(_plan_id, phase)
+    if manifest_steps is not None:
+        required = [step for step in required if step in manifest_steps]
+        if not required:
+            return None
 
     phase_steps = metadata.get('phase_steps') or {}
     phase_entry: dict[str, Any] = {}
