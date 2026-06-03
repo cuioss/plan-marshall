@@ -10,7 +10,7 @@ Covers the canonical identifier flags declared by the script:
   starts with ``argument --phase:`` so ``parse_args_with_toon_errors``
   translates it into the canonical ``invalid_phase`` TOON contract.
 
-Re-uses ``test/plan-marshall/_input_validation_fixtures.py`` for the
+Re-uses ``test/plan-marshall/_pm_input_validation_fixtures.py`` for the
 canonical 6-axis matrix (TASK-2 foundation).
 """
 
@@ -21,7 +21,7 @@ import sys
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from _input_validation_fixtures import (  # type: ignore[import-not-found]
+from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,

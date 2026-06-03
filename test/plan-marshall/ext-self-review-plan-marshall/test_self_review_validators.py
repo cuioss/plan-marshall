@@ -7,7 +7,7 @@ Covers the ``--plan-id`` flag declared by the ``surface`` subcommand
 malformed input now produces ``status: error / error: invalid_plan_id``
 on stdout TOON (exit 0) instead of argparse's default exit-2 stderr error.
 
-Re-uses ``test/plan-marshall/_input_validation_fixtures.py`` for the
+Re-uses ``test/plan-marshall/_pm_input_validation_fixtures.py`` for the
 canonical 6-axis matrix (TASK-2 foundation).
 """
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from _input_validation_fixtures import (  # type: ignore[import-not-found]
+from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,

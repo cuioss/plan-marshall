@@ -5,6 +5,10 @@ from inside pytest's ``tmp_path`` fixture closures. This avoids introducing
 a sibling ``conftest.py`` that would shadow the top-level ``conftest``
 module — the existing test tree (see ``test/plan-marshall/manage-lessons``)
 never uses sub-conftests.
+
+The basename is bundle-unique (``_plan_retrospective_fixtures.py`` rather
+than a bare ``_fixtures.py``) to avoid a basename collision in the
+plan-marshall test-collection namespace.
 """
 
 from __future__ import annotations

@@ -29,7 +29,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _input_validation_fixtures import (  # type: ignore[import-not-found]  # noqa: E402
+from _manage_interface_input_validation_fixtures import (  # type: ignore[import-not-found]  # noqa: E402
     HAPPY_VALUES,
     MALFORMED_AXES,
     parse_toon_output,

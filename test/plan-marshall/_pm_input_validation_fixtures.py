@@ -19,11 +19,14 @@ The 6 axes mirror the canonical fixture set from
 This file is intentionally a sibling helper (``_fixtures.py`` style) and
 is NOT a ``conftest.py`` — placing a ``conftest.py`` under
 ``test/plan-marshall/`` would silently shadow the top-level
-``test/conftest.py`` and disable shared fixtures.
+``test/conftest.py`` and disable shared fixtures. The basename is
+prefixed (``_pm_input_validation_fixtures.py`` rather than a bare
+``_input_validation_fixtures.py``) to avoid a basename collision in the
+plan-marshall test-collection namespace.
 
 Usage::
 
-    from _input_validation_fixtures import (
+    from _pm_input_validation_fixtures import (
         REJECTION_AXES,
         assert_invalid_field,
     )

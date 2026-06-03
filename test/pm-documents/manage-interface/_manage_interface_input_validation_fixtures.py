@@ -2,10 +2,12 @@
 """Sibling fixtures helper for ``pm-documents/manage-interface`` tests.
 
 Mirrors the canonical 6-axis matrix exposed by
-``test/plan-marshall/_input_validation_fixtures.py`` for the ``--field``
+``test/plan-marshall/_pm_input_validation_fixtures.py`` for the ``--field``
 flag. Duplicated here per the ``dev-general-module-testing``
 ``_fixtures.py`` convention because cross-bundle PYTHONPATH only covers
-``test/plan-marshall`` and ``test/pm-plugin-development``.
+``test/plan-marshall`` and ``test/pm-plugin-development``. The basename is
+skill-prefixed (``_manage_interface_input_validation_fixtures.py``) to
+avoid a basename collision in the pm-documents test-collection namespace.
 """
 
 from __future__ import annotations
