@@ -184,7 +184,9 @@ class TestWorktreeMoveLifecycle:
         assert result['moved_in[1]'] == [str(wt_plan_dir)]
         assert 'moved_in[2]' not in result
 
-    def test_integrate_round_trip_leaves_main_executor_untouched(self, real_repo: dict) -> None:
+    def test_integrate_round_trip_leaves_main_executor_untouched(
+        self, real_repo: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """FIX 1 + Deliverable 5: across the full move-in → move-back round-trip,
         main's executor is present and byte-for-byte UNCHANGED, and
         ``integrate_into_main`` does NOT touch (move or regenerate) any
@@ -204,6 +206,7 @@ class TestWorktreeMoveLifecycle:
             Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
         )
         assert create['status'] == 'success', create
+        worktree = Path(create['worktree_path'])
 
         move_in = prepare_execute.run_prepare_execute(
             Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
@@ -212,6 +215,18 @@ class TestWorktreeMoveLifecycle:
         # Main executor present + unchanged right after move-in (never moved).
         assert main_executor.is_file()
         assert main_executor.read_text() == before
+
+        # integrate resolves its SOURCE worktree path via the manage-status
+        # get-worktree-path channel (cwd-independent — Deliverable 1). The tmp
+        # fixture's executor stub is not a working executor, so stub the SOURCE
+        # resolver to the real worktree path created above; the DESTINATION
+        # resolver (resolve_main_anchored_path) still runs REAL against
+        # PLAN_BASE_DIR-anchored main.
+        monkeypatch.setattr(
+            integrate_into_main,
+            '_resolve_worktree_path_for_plan',
+            lambda pid: (worktree, None),
+        )
 
         # Move the plan dir back into main.
         move_back = integrate_into_main.run_integrate_into_main(Namespace(plan_id=plan_id))

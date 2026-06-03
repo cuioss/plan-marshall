@@ -34,6 +34,15 @@ cleanup owns that, after this returns). The finalize orchestrator returns ITS OW
 cwd to main after the call (so the uniform cwd rule resumes main resolution for
 retrospective + archive).
 
+SOURCE and DESTINATION are resolved **cwd-independently** so the verb is correct
+from ANY cwd (worktree or main): the SOURCE worktree path is resolved via the
+canonical ``manage-status get-worktree-path`` channel (mirroring
+``git-workflow.py``'s ``_resolve_worktree_path_for_plan``), and the DESTINATION
+main plan dir is resolved via the single sanctioned main-anchored resolver
+``resolve_main_anchored_path('plans/{plan_id}')`` (ADR-002). Neither resolution
+depends on the process cwd, so the idempotence guard returns ``noop`` ONLY when
+the SOURCE is genuinely absent AND the main DESTINATION is present.
+
 Atomic-with-rollback (solution_outline.md §5): a partial move-back failure rolls
 the plan dir BACK into the worktree so the authoritative copy is never split, and
 the merge lock is released on the rollback path too. Idempotent: an
@@ -50,16 +59,18 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import subprocess
 import sys
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from file_ops import (  # type: ignore[import-not-found]
-    get_plan_dir,
-    get_worktree_root,
+from file_ops import get_executor_path  # type: ignore[import-not-found]
+from marketplace_paths import (  # type: ignore[import-not-found]
+    PLAN_DIR_NAME,
+    resolve_main_anchored_path,
 )
-from marketplace_paths import PLAN_DIR_NAME  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     create_workflow_cli,
@@ -91,6 +102,98 @@ def _load_module_by_path(name: str, path: Path) -> Any:
 def _load_merge_lock() -> Any:
     """Import ``merge_lock.py`` by file path."""
     return _load_module_by_path('merge_lock', _MERGE_LOCK_PATH)
+
+
+# ---------------------------------------------------------------------------
+# cwd-independent SOURCE worktree-path resolution
+# ---------------------------------------------------------------------------
+# Mirrors git-workflow.py's _manage_status_call + _resolve_worktree_path_for_plan:
+# resolve the SOURCE worktree path via the canonical ``manage-status
+# get-worktree-path`` channel so the move-back is correct regardless of caller
+# cwd (the bug this script fixes — get_worktree_root() resolved cwd-relatively
+# and produced a false noop when invoked from the worktree cwd).
+
+
+def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | None]:
+    """Resolve ``status.metadata.worktree_path`` for ``plan_id`` cwd-independently.
+
+    Returns ``(path, None)`` on success, ``(None, error_dict)`` on failure. The
+    error dict is a fully-formed TOON-shaped payload ready to return from the
+    handler. Resolution failure (executor missing, non-success TOON,
+    ``use_worktree`` false, or empty ``worktree_path``) yields a
+    ``NOT_FOUND`` / ``plan_resolution_failed`` error.
+    """
+    try:
+        executor = get_executor_path()
+    except RuntimeError as exc:
+        return None, make_error(
+            f'cannot resolve plan-marshall executor: {exc}',
+            code=ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+    if not executor.exists():
+        return None, make_error(
+            'plan-marshall executor not available (.plan/execute-script.py missing)',
+            code=ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+
+    try:
+        result = subprocess.run(
+            [
+                'python3',
+                str(executor),
+                'plan-marshall:manage-status:manage-status',
+                'get-worktree-path',
+                '--plan-id',
+                plan_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return None, make_error(
+            f'manage-status get-worktree-path failed: {exc}',
+            code=ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+
+    if result.returncode != 0:
+        return None, make_error(
+            (result.stderr or result.stdout).strip()
+            or 'manage-status get-worktree-path failed',
+            code=ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+
+    try:
+        parsed = parse_toon(result.stdout)
+    except Exception as exc:  # noqa: BLE001 — defensive against TOON drift
+        return None, make_error(
+            f'failed to parse manage-status output: {exc}',
+            code=ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+
+    if parsed.get('status') == 'error' or parsed.get('error'):
+        return None, make_error(
+            parsed.get('message') or 'manage-status reported an error',
+            code=ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+
+    use_worktree = bool(parsed.get('use_worktree'))
+    worktree_path_value = parsed.get('worktree_path') or ''
+    if not use_worktree or not worktree_path_value:
+        return None, make_error(
+            'No worktree configured for this plan — '
+            'status.metadata.use_worktree is false or worktree_path is unset',
+            code=ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+
+    return Path(str(worktree_path_value)), None
 
 
 # ---------------------------------------------------------------------------
@@ -199,22 +302,25 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
             )
         return payload
 
-    # Resolve the worktree-resident source and the main destination. This runs
-    # with cwd = main (finalize regenerate-on-main path), so get_worktree_root()
-    # and get_plan_dir() resolve against main's .plan/local via the uniform cwd
-    # rule.
+    # Resolve the worktree-resident SOURCE and the main DESTINATION
+    # cwd-independently, so the verb is correct from ANY cwd (worktree or main).
+    # SOURCE: the canonical manage-status get-worktree-path channel. DESTINATION:
+    # the single sanctioned main-anchored resolver (ADR-002).
+    worktree_path, wt_err = _resolve_worktree_path_for_plan(plan_id)
+    if wt_err is not None:
+        return _assert_cwd_unchanged(wt_err)
+    assert worktree_path is not None  # noqa: S101 — narrow for type-checker
+
     try:
-        worktree_path = get_worktree_root() / plan_id
+        main_plan_dir = resolve_main_anchored_path(f'plans/{plan_id}')
     except RuntimeError as exc:
         return _assert_cwd_unchanged(
             make_error(
-                f'cannot resolve worktree root: {exc}',
+                f'cannot resolve main plan directory: {exc}',
                 code=ErrorCode.NOT_FOUND,
                 plan_id=plan_id,
             )
         )
-
-    main_plan_dir = get_plan_dir(plan_id)
     wt_plan_dir = worktree_path / PLAN_DIR_NAME / 'local' / 'plans' / plan_id
     wt_global_logs = worktree_path / PLAN_DIR_NAME / 'local' / 'logs'
 
