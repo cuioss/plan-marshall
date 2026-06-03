@@ -106,20 +106,54 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
   --plan-id {plan_id} --phase 4-plan --strict
 ```
 
-The execute phase runs as ONE `execution-context` envelope (dispatched under the `phase-5-execute` role key) that drives the task loop in-context using a simple loop:
+The execute phase runs as ONE `execution-context` envelope dispatched under the `phase-5-execute` role key. **This execution-context dispatch is the ONLY documented per-task execution path** — there is no "delegate to a domain agent" alternative. Mirror the explicit per-phase dispatch block that the sibling `planning.md` provides for every phase dispatch.
+
+Compute the dispatch target via the role resolver and resolve the active worktree path so the Worktree Header can be populated explicitly (when `metadata.use_worktree==false`, `get-worktree-path` returns the main checkout, so the same call covers both flows):
 
 ```bash
-# Get next pending task
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next --plan-id {plan_id}
-
-# After each step completion, finalize step
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step --plan-id {plan_id} --task-number {task_number} --step {step_number} --outcome done
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --phase phase-5-execute
 ```
 
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  get-worktree-path --plan-id {plan_id}
+```
+
+Extract the `worktree_path` field from the TOON output. Use that value as `{worktree_path}` in the dispatch's `WORKTREE:` header below.
+
+Emit the standardized post-resolve dispatch log line — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract for the field semantics and placement rule:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-5-execute workflow=plan-marshall:execute-task/SKILL.md plan_id={plan_id}"
+```
+
+Dispatch:
+
+```
+Task: plan-marshall:{target}
+  prompt: |
+    name: phase-5-execute
+    plan_id: {plan_id}
+    skills[N]:
+    - plan-marshall:phase-5-execute
+    - plan-marshall:execute-task
+    - <task-declared domain skills>
+    workflow: plan-marshall:execute-task/SKILL.md
+    WORKTREE: {worktree_path}
+    task_number: {N}
+```
+
+Forward `task_number: {N}` as the per-task runtime input (and `iteration: {I}` where the re-queued-verification-task path applies). The dispatched subagent **inherits the orchestrator's pinned cwd** (the worktree root pinned at phase-5 entry by `prepare_execute.py`, per ADR-002) — it does NOT start at the repo root and does NOT need a worktree path forwarded for `.plan/` resolution, which is cwd-relative; the `WORKTREE` prompt-body field is the never-edit-main-checkout salience reminder, not a path-routing mechanism. This refutes the "a subagent starts at repo root and cannot resolve the moved plan state" worry. See [`../../phase-5-execute/SKILL.md`](../../phase-5-execute/SKILL.md) § "Dispatch Protocol (cwd-Pinned Inheritance)" for the canonical contract — it is not restated here.
+
 Inside that single envelope, for each task:
-1. Read task details via manage-tasks
-2. Load `execute-task` in-context as a `Skill:` (leaf-legal in-context skill loading per `dev-agent-behavior-rules` — NOT a per-task `Task:` subagent dispatch) and run the profile-appropriate workflow
-3. Mark task complete
+1. Read task details via `manage-tasks next --plan-id {plan_id}`
+2. Load `execute-task` in-context as a `Skill:` (leaf-legal in-context skill loading per `dev-agent-behavior-rules` — NOT a per-task `Task:` subagent dispatch; the new `Task:` block above is the orchestrator-to-execute-envelope dispatch, not a per-task subagent spawn) and run the profile-appropriate workflow
+3. Mark step/task complete via `manage-tasks finalize-step --plan-id {plan_id} --task-number {task_number} --step {step_number} --outcome done`
 
 The dispatch unit is budget-bounded — neither per-task nor per-deliverable: one envelope runs as many tasks as the per-task budget reserve permits (bundling several small deliverables into one envelope, possibly spanning a single large deliverable across several envelopes), then yields at a TASK boundary on the budget sentinel / `triage_required` / `baseline_drift`, and the orchestrator re-dispatches a fresh envelope to resume the loop until all tasks are done.
 
