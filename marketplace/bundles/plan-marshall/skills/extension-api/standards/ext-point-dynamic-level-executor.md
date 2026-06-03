@@ -1,6 +1,6 @@
 # Extension Point: Dynamic-Level Executor
 
-> **Type**: Agent Extension (declarative, build-time variant emission) | **Declaration**: `implements:` frontmatter on agent file | **Implementations**: 1 (`execution-context`) | **Status**: Active
+> **Type**: Agent Extension (declarative, build-time variant emission) | **Declaration**: `implements:` frontmatter on agent file | **Implementations**: 2 (`execution-context`, `execution-context-reader`) | **Status**: Active
 
 ## Overview
 
@@ -193,8 +193,11 @@ The `resolve-target` subcommand returns `execution-context` when the level is `i
 
 ## Current Implementations
 
-| Bundle | Agent | `levels:` whitelist |
-|--------|-------|---------------------|
-| plan-marshall | execution-context | (default — all five) |
+| Bundle | Agent | `levels:` whitelist | Lever |
+|--------|-------|---------------------|-------|
+| plan-marshall | execution-context | (default — all five) | level/effort lever — write-capable dispatcher |
+| plan-marshall | execution-context-reader | (default — all five) | read-only tool-surface lever — untrusted-content ingestion |
 
-This is the sole implementor. The agent is a generic dispatcher whose body is parameterised by the `workflow` field in its prompt-body contract (see [`ext-point-execution-context-workflow`](ext-point-execution-context-workflow.md) for the workflow-doc side of the contract). Any number of workflow docs across the marketplace can be dispatched through the six emitted variants of this one agent.
+`execution-context` is the generic write-capable dispatcher whose body is parameterised by the `workflow` field in its prompt-body contract (see [`ext-point-execution-context-workflow`](ext-point-execution-context-workflow.md) for the workflow-doc side of the contract). Any number of workflow docs across the marketplace can be dispatched through its emitted variants.
+
+`execution-context-reader` is the read-only ingestion dispatcher for untrusted external content (see `plan-marshall:untrusted-ingestion`). It rides the same variant-emission machinery but supplies a **restricted, read-only tool surface** (`WebSearch, WebFetch, Read, Grep` — no Write/Edit/Bash/Skill); its candidate output is untrusted until the deterministic `untrusted-ingestion:validate_struct` script certifies it. The read-only tool surface is a distinct lever from the level/effort lever both implementors ride — see ADR-003.
