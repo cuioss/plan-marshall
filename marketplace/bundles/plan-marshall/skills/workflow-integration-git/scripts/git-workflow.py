@@ -14,6 +14,7 @@ Usage:
     git-workflow.py worktree-remove --plan-id <plan-id> [--force]
     git-workflow.py worktree-list
     git-workflow.py worktree-rebase-to --plan-id <plan-id> --base <branch>
+    git-workflow.py locate-plan-checkout --plan-id <plan-id>
     git-workflow.py --help
 
 Subcommands:
@@ -29,6 +30,8 @@ Subcommands:
     worktree-list             Enumerate plans whose status.json declares a worktree
     worktree-rebase-to        Rebase the worktree's branch onto --base, dispatching
                               on the eight documented worktree states
+    locate-plan-checkout      Report where a plan's directory currently lives
+                              (current | worktree | not_found)
 
 Examples:
     # Format a commit message
@@ -1380,6 +1383,84 @@ def cmd_worktree_list(_args):
     }
 
 
+def _plan_dir_on_current_checkout(plan_id: str) -> bool:
+    """Return True when the plan directory lives on the CURRENT checkout.
+
+    Reuses the uniform cwd walk-up (:func:`_find_plan_root_from_cwd`) to find
+    the enclosing checkout root, then probes
+    ``{root}/.plan/local/plans/{plan_id}/status.json`` on disk. This is the
+    same single cwd-relative rule the rest of the codebase uses (ADR-002), so
+    an already-cwd-pinned worktree resolves to its own plan dir (``current``)
+    and a main-checkout plan resolves to main's plan dir (``current``).
+    """
+    root = _find_plan_root_from_cwd()
+    if root is None:
+        return False
+    return (root / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json').is_file()
+
+
+def cmd_locate_plan_checkout(args):
+    """Report where a plan's directory currently lives.
+
+    Resolves one of three states without raw ``git worktree list --porcelain``
+    re-parsing — reusing :func:`_plan_dir_on_current_checkout` (the uniform cwd
+    walk-up) and :func:`_resolve_worktree_path_for_plan` (the canonical
+    manage-status channel):
+
+    - ``current`` — the plan directory exists on the current checkout's
+      ``.plan/local/plans/{plan_id}/status.json`` (covers both main-checkout
+      plans and the already-cwd-pinned-in-worktree case; idempotent).
+    - ``worktree`` — a registered worktree resolves for the plan whose
+      ``{worktree}/.plan/local/plans/{plan_id}/status.json`` exists on disk,
+      but the current checkout does NOT hold the plan dir.
+    - ``not_found`` — neither location holds the plan dir.
+
+    Returns TOON ``{status: success, plan_id, location, worktree_path?}`` where
+    ``worktree_path`` is present only for ``location == worktree``.
+    """
+    plan_id = args.plan_id
+
+    # State (a): plan dir on the current checkout (main or already-pinned
+    # worktree). This is checked first so an already-cwd-pinned worktree
+    # returns ``current`` (idempotent — no double-cd at the entry preflight).
+    if _plan_dir_on_current_checkout(plan_id):
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'location': 'current',
+        }
+
+    # State (b): a registered worktree holds the plan dir, but the current
+    # checkout does not. Resolve through the canonical manage-status channel
+    # and confirm the plan's status.json exists on disk in the worktree.
+    worktree_path, error = _resolve_worktree_path_for_plan(plan_id)
+    if error is not None:
+        # Propagate critical infrastructure failures (executor missing, timeout,
+        # parse error) instead of silently masking them as "not_found". Expected
+        # non-worktree or missing-plan errors contain well-known substrings and
+        # are treated as "not_found" so the caller can proceed normally.
+        msg = error.get('message', '').lower()
+        _expected_substrings = ('no worktree configured', 'not found', 'does not exist')
+        if not any(s in msg for s in _expected_substrings):
+            return error
+    if worktree_path is not None:
+        status_json = worktree_path / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
+        if status_json.is_file():
+            return {
+                'status': 'success',
+                'plan_id': plan_id,
+                'location': 'worktree',
+                'worktree_path': str(worktree_path),
+            }
+
+    # State (c): neither location holds the plan dir.
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'location': 'not_found',
+    }
+
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -1403,6 +1484,7 @@ Examples:
   git-workflow.py worktree-remove --plan-id EXAMPLE-PLAN [--force]
   git-workflow.py worktree-list
   git-workflow.py worktree-rebase-to --plan-id EXAMPLE-PLAN --base main
+  git-workflow.py locate-plan-checkout --plan-id EXAMPLE-PLAN
 """,
         subcommands=[
             {
@@ -1615,6 +1697,19 @@ Examples:
                 'help': 'Enumerate plans whose status.json declares a worktree',
                 'handler': cmd_worktree_list,
                 'args': [],
+            },
+            {
+                'name': 'locate-plan-checkout',
+                'help': "Report where a plan's directory currently lives (current | worktree | not_found)",
+                'handler': cmd_locate_plan_checkout,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory — resolves the plan checkout location)',
+                    },
+                ],
             },
             {
                 'name': 'worktree-rebase-to',

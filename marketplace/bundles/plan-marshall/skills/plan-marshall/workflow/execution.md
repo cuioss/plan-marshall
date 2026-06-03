@@ -48,6 +48,25 @@ Use /plan-marshall to complete 1-init through 4-plan phases first.
 
 ---
 
+## Step 0: Entry-point preflight (cross-session re-anchor)
+
+A fresh session entering this workflow directly via `/plan-marshall action=execute plan={plan_id}` or `/plan-marshall action=finalize plan={plan_id}` runs from the main checkout. Under the ADR-002 move-based model a phase-5+ plan's directory has already been MOVED into its worktree, so a routing/status call run from main resolves nothing and fails with `plan_not_found`. Before any phase-5/6 work — including the metrics boundary call and the phase handshake below — resolve where the plan dir currently lives and re-anchor cwd into the worktree when needed.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout \
+  --plan-id {plan_id}
+```
+
+(See [`workflow-integration-git` SKILL.md](../../workflow-integration-git/SKILL.md) Canonical invocations → `locate-plan-checkout` for the verb's argparse surface and the three-state output contract.) Branch on the returned `location`:
+
+- **`location == worktree`** — the plan dir was moved into the worktree carried in `worktree_path`. Log a `[STATUS]` re-anchor decision, then issue a STANDALONE `cd {worktree_path}` Bash call (exactly one command — no `&&`, no chaining), and re-run the plan's routing/status resolution from inside the worktree before any phase-5/6 work — concretely, the metrics boundary call and the phase handshake `manage-status` calls in the steps below now resolve against the worktree-resident plan dir, not main. (The SKILL.md Auto-Detect entry path re-runs `get-routing-context` at this same point; execution.md is entered with the phase already known, so the equivalent re-resolution is the metrics-boundary + phase-handshake calls below.) After the `cd`, cwd is pinned to the worktree and the single uniform cwd-relative rule resolves every subsequent `.plan/` lookup to the worktree-resident copy; the orchestrator's own cwd-pinning responsibility (§ "Orchestrator cwd-pinning") is already satisfied for the re-entry case.
+- **`location == current`** — the plan dir is on the current checkout (a main-checkout plan, or an already-cwd-pinned worktree). Proceed unchanged; do NOT `cd`.
+- **`location == not_found`** — neither the current checkout nor any registered worktree holds the plan dir. Emit the existing `plan_not_found` error and stop.
+
+The preflight is **idempotent**: a session already cwd-pinned inside the worktree resolves `current` (the verb's on-disk probe finds the plan dir on the current checkout), so there is no double-`cd`. It runs from the main checkout using main's present executor — main's `.plan/execute-script.py` stays present and untouched throughout phase-5+ (per PR-558, the executor is per-tree derived state generated into the worktree at move-in, never removed from main).
+
+---
+
 ## Execute Phase (DUMB LOOP Pattern)
 
 ### Orchestrator cwd-pinning (phase-5+)

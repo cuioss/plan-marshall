@@ -176,6 +176,7 @@ pushed: true
 | `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add` plus project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`) |
 | `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
 | `worktree-list` | _(none)_ | List plans whose `status.metadata.use_worktree == true` |
+| `locate-plan-checkout` | `--plan-id` | Report where a plan's directory currently lives (`current` \| `worktree` \| `not_found`). Reuses `_resolve_worktree_path_for_plan` / `get_worktree_root` and the uniform cwd walk-up — no inline `git worktree list --porcelain` re-parsing. Used by the cross-session re-entry preflight at the `/plan-marshall` entry sites. |
 | `baseline-reconcile` | `--plan-id [--base-branch] [--worktree-path] [--skip-fetch] [--no-emit]` | Mechanical baseline reconciliation for phase-2-refine Step 3d. Resolves the worktree path (from `status.metadata.worktree_path`), fetches `origin/{base_branch}`, lists upstream commits since the captured `worktree_sha`, and runs `git merge-tree` to detect potential conflicts — no working-tree mutation. Each conflicted file becomes a Q-Gate finding under `--source qgate` so the phase-2-refine iterate-to-confidence loop addresses the drift. The LLM-judgement classification step (which upstream commit warrants scope adjustment) stays bundled in the existing phase-2-refine dispatch. `--skip-fetch` bypasses the network round-trip for tests / replay scenarios. |
 
 **Script**: `plan-marshall:workflow-integration-git:prepare_execute`
@@ -508,6 +509,45 @@ worktrees[2]{plan_id,path,branch}:
   other,/repo/.plan/local/worktrees/other,feature/other
 ```
 
+### locate-plan-checkout
+
+Report where a plan's directory currently lives, resolving one of three states without raw `git worktree list --porcelain` re-parsing — it reuses the uniform cwd walk-up (`_find_plan_root_from_cwd`) for the current-checkout probe and `_resolve_worktree_path_for_plan` (the canonical `manage-status get-worktree-path` channel) for the worktree probe. The verb is read-only and idempotent: a call made from inside the worktree (already cwd-pinned) returns `location: current`, so the cross-session re-entry preflight never double-`cd`s.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout \
+  --plan-id EXAMPLE-PLAN
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier (mandatory — resolves the plan checkout location).
+
+**Resolution states**:
+- `current` — the plan directory exists on the current checkout's `.plan/local/plans/{plan_id}/status.json` (covers both main-checkout plans and the already-cwd-pinned-in-worktree case).
+- `worktree` — a registered worktree resolves for the plan whose `{worktree}/.plan/local/plans/{plan_id}/status.json` exists on disk, but the current checkout does NOT hold the plan dir. `worktree_path` is present only in this state.
+- `not_found` — neither location holds the plan dir.
+
+**Output** (TOON, plan dir on the current checkout):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+location: current
+```
+
+**Output** (TOON, plan dir moved into a worktree — call made from main):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+location: worktree
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+```
+
+**Output** (TOON, unknown plan):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+location: not_found
+```
+
 ### prepare_execute — prepare
 
 Atomic phase-5 move-in (notation `plan-marshall:workflow-integration-git:prepare_execute`). In ONE call it materializes the worktree (delegating to the `worktree-create` machinery so a single code path owns `git worktree add` + `.plan` bookkeeping), then MOVES (not copies) the plan directory (`.plan/local/plans/{plan_id}`) from the main checkout into its worktree-resident location and GENERATES a worktree-bound executor (`.plan/execute-script.py`) into the worktree via `generate_executor --marketplace-root {worktree}`. The executor is per-tree DERIVED state, NOT a moved slot — main's copy stays present and untouched; generation is non-fatal. It returns the canonical `worktree_path`.
@@ -741,6 +781,13 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-rebase-to \
   --plan-id PLAN_ID --base BASE_REF
+```
+
+### locate-plan-checkout
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout \
+  --plan-id PLAN_ID
 ```
 
 ### baseline-reconcile

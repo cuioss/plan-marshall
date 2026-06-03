@@ -50,6 +50,12 @@ A small set of survivors is **explicitly justified and kept**:
 - **Main-session `get-worktree-path`** — retained only where a main-session caller legitimately needs the path: the orchestrator's initial pin (it reads the path `prepare_execute.py` returns, then pins its own cwd) and the shared utility's main resolution.
 - **Cross-tree `git -C {path}`** — retained for genuinely cross-tree or main-checkout-from-worktree contexts per the `dev-agent-behavior-rules` git rule. Inside a phase-5+ pinned-cwd context, prefer plain `git`.
 
+## Cross-session re-entry re-anchors cwd to the worktree
+
+The cwd-as-anchor policy covers fresh sessions, not only the session that performed the move-in. A new shell entering `/plan-marshall action=execute|finalize plan={plan_id}` against a phase-5+ plan starts on the main checkout, where the plan directory no longer lives (it was moved into the worktree at move-in). Such a session re-anchors cwd to the worktree before any phase-5/6 work, which is consistent with — not an exception to — the single uniform cwd-relative rule: once cwd is pinned to the worktree, every `.plan/` lookup resolves to the worktree-resident copy exactly as it does for the move-in session.
+
+The re-entry preflight resolves the plan's checkout location via the read-only `locate-plan-checkout` verb (`plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout --plan-id {plan_id}`), then `cd`s into the reported `worktree_path` on the `worktree` result. The verb reuses the same shared resolution channel (`_resolve_worktree_path_for_plan` over `manage-status get-worktree-path`) as the other worktree verbs — it does NOT raw-parse `git worktree list --porcelain`, so it adds no new sideways resolver. The preflight is idempotent: a session already cwd-pinned inside the worktree resolves `current`, so there is no double-`cd`. It runs from main using main's present executor, which stays present and untouched throughout phase-5+ (the executor is per-tree derived state — see ADR-002 § "The executor is per-tree derived state").
+
 ## Rationale
 
 - **Worktree isolation**: a plan running in a pinned worktree edits, builds, and tests against its own moved-in state without touching the main checkout or any sibling worktree — because every `.plan/` lookup resolves cwd-relatively to the worktree-resident copy.
