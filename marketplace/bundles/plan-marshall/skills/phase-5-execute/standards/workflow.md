@@ -184,7 +184,7 @@ Where `N` is the per-task budget reserve read from `marshal.json`'s `plan.phase-
 
 **Budget items consumed per task** (the sentinel's accounting model):
 
-1. **`execute-task` agent dispatch** — the per-task subagent invocation. Largest cost per task; includes the agent's own context plus the standards it loads on entry.
+1. **`execute-task` in-context skill load** — the per-task `Skill:` load of `execute-task` within the single phase-5-execute envelope (NOT a subagent dispatch). Largest cost per task; includes the skill body plus the standards it loads on entry.
 2. **Auto-injected `--project-dir` verify step** — `plan-marshall:execute-task:inject_project_dir` rewrites each `task.verification.commands[N]` to forward the worktree path when the plan resolves to a worktree. The rewritten command consumes additional executor + build-system context that the budget model MUST account for.
 
 **Fallback when the knob is absent**: `N = 50000` tokens. The fallback exists so plans that have not yet migrated to the manifest-driven model still observe a deterministic yield boundary rather than running until the host platform forces a `harness_cancellation`.
@@ -197,9 +197,9 @@ The sentinel governs continue-vs-yield only; every exit from the loop is still o
 2. A fatal error captured via the **Error Handling** section (including the pending-task drift error).
 3. A triage-driven `blocked` outcome that the skill itself acknowledges via `manage-tasks` status updates.
 
-When the sentinel says "yield", the agent still MUST exit via one of the three terminal paths above — yielding does NOT mean "return a partial-completion checkpoint". That path is explicitly forbidden. The orchestrator re-dispatches the next per-task `phase-5-execute` envelope on the next round; the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
+When the sentinel says "yield", the agent still MUST exit via one of the three terminal paths above — yielding does NOT mean "return a partial-completion checkpoint". That path is explicitly forbidden. The orchestrator re-dispatches a fresh `phase-5-execute` envelope that resumes the task loop, running as many tasks as the per-task budget reserve permits — which bundles several small deliverables into one envelope and may span a single large deliverable across several envelopes (the dispatch unit is budget-bounded, explicitly NEITHER per-task NOR per-deliverable, and per-task `execute-task` is an in-context `Skill:` load, not a `Task:` dispatch); the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
 
-**Audit diagnostic ledger**: when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), compare the work-log entries against the `phase-5-execute` per-task dispatch shape — the `execution-context-{level}` dispatcher adds a small fixed cost per dispatch (skill-load + Worktree Header echo); the trace-shape difference is the first thing to inspect when budget accounting drifts.
+**Audit diagnostic ledger**: when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), compare the work-log entries against the `phase-5-execute` budget-bounded dispatch shape — the `execution-context-{level}` dispatcher adds a small fixed cost per dispatch (skill-load + Worktree Header echo); the trace-shape difference is the first thing to inspect when budget accounting drifts.
 
 ## Pre-Implemented Work
 

@@ -50,6 +50,8 @@ image::../resources/diagrams/context-isolation.svg[Side-by-side comparison of tw
 
 Net effect: a plan that would consume 30-50 K tokens (or overflow the window) in a single-context shape consumes ~6 K orchestrator-side in Plan Marshall, with each `execution-context-{level}` variant's larger context being independent — and never additive — because variants do not see each other's history. The 8-step dispatch lifecycle is described in xref:execution-context.adoc[Execution Context].
 
+The `phase-5-execute` task loop applies this isolation as a **budget-bounded** dispatch: one envelope runs as many tasks as the per-task budget reserve permits before yielding, and the reserve is operator-tunable — see xref:../user/configuration.adoc#per-task-budget-reserve[Configuration › Per-task budget reserve].
+
 == Bonus side-effect — process compliance survives long sessions
 
 Every `execution-context-{level}` dispatch is a fresh context that re-loads `dev-agent-behavior-rules` plus the caller-named skills. The hard rules — `.plan/` scripts-only, one Bash command per call, architecture-resolve for builds — are *present in the variant's context at every dispatch*, never "decayed out" by an accumulating chat. This is the link between context management and xref:process-enforcement.adoc[Process Enforcement]: per-dispatch isolation isn't just cheaper, it's *more compliant* over the lifetime of a long plan.

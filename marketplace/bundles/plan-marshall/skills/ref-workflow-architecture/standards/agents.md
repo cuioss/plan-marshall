@@ -110,6 +110,12 @@ This table is the canonical rule for choosing `Skill:` vs `Task:`. A workflow wh
 | Per-iteration parallel work (one envelope per input item) | `Task:` fan-out from the orchestrator | Only when each subagent runs independently; the fan-out originates from the main context |
 | A leaf envelope reaches a step that calls for a further dispatch | return a signal to the orchestrator | The leaf does NOT dispatch; the orchestrator reads the return signal and owns the dispatch |
 
+### Dispatch-overload note: in-context `Skill:` load is NOT a `Task:` dispatch
+
+The word "dispatch" is overloaded — guard against reading every `execute-task` reference as a per-task `Task:` subagent dispatch. The `phase-5-execute` envelope LOADS `execute-task` **in-context** once per task (a `Skill:` load — leaf-legal, inheriting no new dispatch capability and spawning no subagent), which is categorically distinct from a `Task:` subagent dispatch. A leaf must therefore **never** return a `leaf_cannot_dispatch_execute_task` signal: loading `execute-task` is an in-context `Skill:` load the leaf performs itself, not a dispatch it needs the orchestrator to perform.
+
+The same note fixes the granularity framing. The phase-5-execute dispatch unit is **budget-bounded** — explicitly NEITHER per-task NOR per-deliverable: one `execution-context` envelope greedily runs the task loop over as many tasks as the per-task budget reserve permits (bundling several small deliverables into one envelope and possibly spanning a single large deliverable across several envelopes), loading `execute-task` in-context per task, and yields to the orchestrator only at a TASK boundary (budget sentinel / `triage_required` / `baseline_drift`). Deliverable boundaries govern the Step 10 per-deliverable commit + focused-build **sub-events**, which fire within OR across envelopes and are **NOT** dispatch boundaries.
+
 ---
 
 ## Agent Inventory

@@ -6,9 +6,9 @@ user-invocable: false
 
 # Execute-Task Skill
 
-**Role**: Unified, domain-agnostic workflow skill for executing tasks during phase-5-execute. Handles all profiles: `implementation`, `module_testing`, and `verification`. Loaded by `plan-marshall:phase-5-execute` when executing any task.
+**Role**: Unified, domain-agnostic workflow skill for executing tasks during phase-5-execute. Handles all profiles: `implementation`, `module_testing`, and `verification`. Loaded in-context as a `Skill:` by the single `plan-marshall:phase-5-execute` envelope, once per task — this is leaf-legal in-context skill loading, NOT a per-task `Task:` subagent dispatch.
 
-**Key Pattern**: Agent loads this skill via `resolve-execute-task-skill --profile {profile}`. Skill reads the task's profile and follows the appropriate workflow. Domain-specific knowledge comes from `task.skills` (loaded by agent).
+**Key Pattern**: The phase-5-execute envelope loads this skill in-context via `resolve-execute-task-skill --profile {profile}` (a `Skill:` load within the single envelope, not a subagent dispatch). The skill reads the task's profile and follows the appropriate workflow. Domain-specific knowledge comes from `task.skills` (loaded in-context alongside this skill).
 
 **Base Contract**: This skill follows the execute-task skill contract defined in [execute-task-skills.md](../ref-workflow-architecture/standards/execute-task-skills.md) for input/output contracts, error handling, and script notations.
 
@@ -50,7 +50,7 @@ Every invocation of this skill MUST provide the following inputs:
 | `task_number` | number | Yes | Numeric task id to execute |
 | `worktree_path` | string | Deprecated | **Deprecated** — kept only for backward compatibility with callers that still pass an absolute path. New callers MUST forward only `plan_id`. When supplied, the value MUST agree with the path resolved from `plan_id`; treat any disagreement as fail-loud. |
 
-Callers (typically `execution-context-{level}` dispatching this skill via the `phase-5-execute` role key) MUST forward `plan_id` verbatim — no absolute-path forwarding is required. Child subagent dispatches issued from within this skill MUST echo the path-free Worktree Header verbatim into their own prompts (template: `WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block defined in `plan-marshall:phase-5-execute` § Dispatch Protocol).
+Callers (the `phase-5-execute` envelope, itself dispatched as `execution-context-{level}` under the `phase-5-execute` role key, which then LOADS this skill in-context once per task — "dispatching this skill" here means in-context `Skill:` loading within that single envelope, never a per-task `Task:` subagent dispatch) MUST forward `plan_id` verbatim — no absolute-path forwarding is required. Child subagent dispatches issued from within this skill MUST echo the path-free Worktree Header verbatim into their own prompts (template: `WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block defined in `plan-marshall:phase-5-execute` § Dispatch Protocol).
 
 All profiles share the steps below. Profile-specific steps are documented in each profile section.
 

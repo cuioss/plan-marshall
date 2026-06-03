@@ -97,6 +97,23 @@ Order is significant — phase-5 runs verify steps in list order until one fails
 
 Reference: `data-model.md` §§ phase-5-execute / phase-6-finalize; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-verify-steps.md[`ext-point-verify-steps.md`]; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-steps.md[`ext-point-finalize-steps.md`].
 
+[#per-task-budget-reserve]
+=== Per-task budget reserve
+
+`plan.phase-5-execute.per_task_budget_reserve` (default `50000`) is the per-task budget **reserve** — the minimum context-window margin that must remain free before the `phase-5-execute` task loop is allowed to start another task. It governs the loop's continue-vs-yield sentinel.
+
+The dispatch model is **budget-bounded**, neither per-task nor per-deliverable. One `execution-context` envelope runs as many tasks as the reserve permits — so it bundles several small deliverables into one envelope and may span a single large deliverable across several envelopes — then yields, and the orchestrator re-dispatches a fresh envelope to resume the loop. The reserve is the operator-tunable knob for that granularity: raise it to make each envelope yield earlier (smaller dispatches), lower it to pack more tasks into each envelope.
+
+Set via:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field per_task_budget_reserve --value 50000
+----
+
+For the conceptual home of per-dispatch context isolation see xref:../concepts/token-management.adoc[Concepts › Token Management]. Canonical schema: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+
 [#build-systems]
 === Build systems and profiles
 
