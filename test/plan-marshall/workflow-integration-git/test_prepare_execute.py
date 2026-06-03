@@ -4,9 +4,10 @@
 Contract under test (solution_outline.md §4):
 
 * **Happy path** — materializes the worktree (delegated to ``cmd_worktree_create``),
-  MOVES the plan dir (``.plan/local/plans/{plan_id}``) and executor
-  (``.plan/execute-script.py``) into the worktree-resident ``.plan/``, and returns
-  the canonical ``worktree_path``.
+  MOVES the plan dir (``.plan/local/plans/{plan_id}``) into the worktree-resident
+  ``.plan/``, GENERATES a worktree-bound executor into the worktree, and returns
+  the canonical ``worktree_path``. The executor is per-tree DERIVED state: main's
+  ``.plan/execute-script.py`` is NOT moved — it stays present and untouched.
 * **Idempotent re-run** — an already-moved-in plan is a no-op success returning the
   same path.
 * **Rollback-on-partial-failure** — a move-in step that raises leaves the plan
@@ -55,12 +56,14 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
           main/.plan/execute-script.py         (executor to move in)
           worktrees/                            (get_worktree_root() target)
 
-    Pins cwd to ``main`` and monkeypatches the three resolvers
-    (``get_plan_dir`` / ``get_executor_path`` / ``get_worktree_root``) directly
-    on the ``prepare_execute`` module so they resolve against the isolated tree
-    with the production path shapes (executor at ``.plan/execute-script.py``,
-    NOT under ``.plan/local``). Stubs ``cmd_worktree_create`` to materialize the
-    worktree ``.plan`` tree without a real ``git worktree add``.
+    Pins cwd to ``main`` and monkeypatches the two resolvers
+    (``get_plan_dir`` / ``get_worktree_root``) directly on the ``prepare_execute``
+    module so they resolve against the isolated tree with the production path
+    shapes. The main executor at ``.plan/execute-script.py`` is staged (it must
+    STAY present — it is no longer moved). Stubs ``cmd_worktree_create`` to
+    materialize the worktree ``.plan`` tree without a real ``git worktree add``,
+    and stubs ``_generate_worktree_executor`` to simulate the worktree-bound
+    executor generation without shelling out to the real generator.
     """
     plan_id = 'sample-plan'
 
@@ -81,8 +84,21 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     # isolated tree with production path shapes — no PLAN_BASE_DIR coupling
     # (which would place the executor under .plan/local).
     monkeypatch.setattr(prepare_execute, 'get_plan_dir', lambda pid: main / '.plan' / 'local' / 'plans' / pid)
-    monkeypatch.setattr(prepare_execute, 'get_executor_path', lambda: executor)
     monkeypatch.setattr(prepare_execute, 'get_worktree_root', lambda: worktrees_root)
+
+    # Stub the worktree-bound executor generation. The real helper shells out to
+    # generate_executor.py (marketplace discovery + write to the cwd-resolved
+    # tracked-config dir). Simulate a clean generation by writing the worktree
+    # executor file directly, so the test asserts prepare_execute's contract
+    # (main executor untouched, worktree executor produced) without invoking the
+    # real subprocess or coupling to PLAN_BASE_DIR resolution.
+    def fake_generate(worktree_path: Path) -> tuple[bool, str]:
+        wt_exec = worktree_path / '.plan' / 'execute-script.py'
+        wt_exec.parent.mkdir(parents=True, exist_ok=True)
+        wt_exec.write_text('#!/usr/bin/env python3\n# worktree-bound\n')
+        return True, f'worktree executor generated at {wt_exec}'
+
+    monkeypatch.setattr(prepare_execute, '_generate_worktree_executor', fake_generate)
 
     def fake_worktree_create(args: Namespace) -> dict:
         # Mimic the post-fix worktree-create contract: materialize a REAL
@@ -116,7 +132,9 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 
 
 class TestPrepareExecuteHappyPath:
-    def test_moves_plan_dir_and_executor_and_returns_path(self, isolated_env: dict) -> None:
+    def test_moves_plan_dir_keeps_main_executor_generates_worktree_executor(
+        self, isolated_env: dict
+    ) -> None:
         env = isolated_env
         result = prepare_execute.run_prepare_execute(
             Namespace(plan_id=env['plan_id'], branch='feature/sample-plan', base=None)
@@ -132,14 +150,24 @@ class TestPrepareExecuteHappyPath:
         assert not wt_plan_dir.is_symlink()
         assert (wt_plan_dir / 'status.json').is_file()
 
-        # ...and the executor is moved in as a real (non-symlink) file.
+        # ...and the plan dir is GONE from main (moved, not copied).
+        assert not env['plan_dir'].exists()
+
+        # FIX 1: main's executor is NOT moved — it stays present and untouched.
+        assert env['executor'].is_file()
+        assert not env['executor'].is_symlink()
+
+        # The worktree got its OWN generated executor (per-tree derived state).
+        assert result['worktree_executor_generated'] is True
+        assert 'executor_detail' in result
         wt_exec = env['worktree_path'] / '.plan' / 'execute-script.py'
         assert wt_exec.is_file()
         assert not wt_exec.is_symlink()
 
-        # The plan dir + executor are GONE from main (moved, not copied).
-        assert not env['plan_dir'].exists()
-        assert not env['executor'].exists()
+        # The payload reports ONLY the plan dir as moved — the executor is no
+        # longer part of the move-in slot set.
+        assert result['moved_in[1]'] == [str(wt_plan_dir)]
+        assert 'moved_in[2]' not in result
 
         # No-symlink contract: NOTHING under the worktree .plan/local is a
         # symlink — the move-based model owns a fully real .plan/local.
@@ -246,25 +274,19 @@ class TestPrepareExecuteIdempotent:
 
 
 class TestPrepareExecuteRollback:
-    def test_partial_failure_rolls_back_to_main(
+    def test_move_failure_leaves_plan_state_wholly_on_main(
         self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When the SECOND slot (executor) move raises, the FIRST (plan dir)
-        move must be rolled back so plan state ends up WHOLLY on main."""
+        """When the (sole) plan-dir move raises, the script returns ``status:
+        error`` and the plan state ends up WHOLLY on main — never half-moved.
+        With the executor removed from the slot set the plan dir is the only
+        move-in slot, so a failure leaves it untouched on main."""
         env = isolated_env
 
-        real_move = prepare_execute._move_in_slot
-        call_count = {'n': 0}
+        def failing_move(src: Path, dst: Path) -> None:
+            raise OSError('simulated move failure on plan-dir slot')
 
-        def flaky_move(src: Path, dst: Path) -> None:
-            call_count['n'] += 1
-            # Let the first slot (plan dir) succeed; fail the second (executor).
-            if call_count['n'] == 1:
-                real_move(src, dst)
-                return
-            raise OSError('simulated move failure on executor slot')
-
-        monkeypatch.setattr(prepare_execute, '_move_in_slot', flaky_move)
+        monkeypatch.setattr(prepare_execute, '_move_in_slot', failing_move)
 
         result = prepare_execute.run_prepare_execute(
             Namespace(plan_id=env['plan_id'], branch='feature/sample-plan', base=None)
@@ -273,11 +295,14 @@ class TestPrepareExecuteRollback:
         assert result['status'] == 'error', result
         assert 'rolled back' in result['error']
 
-        # Plan dir must be back on main (rolled back), not stranded in the worktree.
+        # Plan dir stays WHOLLY on main, not stranded in the worktree.
         assert env['plan_dir'].is_dir()
         assert (env['plan_dir'] / 'status.json').is_file()
         wt_plan_dir = env['worktree_path'] / '.plan' / 'local' / 'plans' / env['plan_id']
         assert not (wt_plan_dir.exists() and not wt_plan_dir.is_symlink())
+
+        # Main's executor is never touched on the failure path either.
+        assert env['executor'].is_file()
 
     def test_missing_plan_dir_on_main_errors_without_moving(
         self, isolated_env: dict

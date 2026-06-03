@@ -4,26 +4,23 @@
 Contract under test (solution_outline.md §5):
 
 * **Happy path** — ACQUIRES the merge lock, FOLDS the plan's own global logs into
-  the plan dir, MOVES the plan dir back from the worktree to main, REGENERATES the
-  executor against main (gated by the modified-files filter), and RELEASES the lock.
+  the plan dir, MOVES the plan dir back from the worktree to main, and RELEASES the
+  lock. The executor is NOT regenerated — on-main executor regeneration is the
+  project-level finalize-step-sync-plugin-cache step's responsibility (Deliverable 5).
 * **Idempotent re-run** — an already-integrated plan (plan dir on main, none in the
   worktree) is a no-op success that never acquires the lock.
 * **Rollback-on-partial-failure** — a move-back step that raises rolls the plan dir
   BACK into the worktree (authoritative copy never split) and releases the lock.
 * **Lock released on every exit path** — including the rollback path.
-* **Regen gated by the modified-files filter** — regen skipped when no marketplace
-  script changed; fired when one did.
 * **cwd invariant** — the script never mutates the process cwd.
 * **Worktree NOT removed** — the worktree directory survives the call.
-* **Worktree-bound executor never survives onto main** — reproduced as a
-  guarded-against negative (the executor is REGENERATED against main, not file-moved
-  from the worktree).
+* **Executor never touched** — integrate neither moves nor regenerates any
+  ``.plan/execute-script.py``; the success payload carries no regen fields.
 
 Isolation (test-isolation lessons 2026-06-02-12-001/002/003): every test runs
 against an isolated tree staged under ``tmp_path`` with cwd pinned to a stable
-location; ``merge_lock`` and ``generate_executor`` delegations are stubbed so no
-real lock file is contended and no real executor is regenerated — the suite never
-contends for the real ``.plan/`` under ``-n auto``.
+location; the ``merge_lock`` delegation is stubbed so no real lock file is
+contended — the suite never contends for the real ``.plan/`` under ``-n auto``.
 """
 
 from __future__ import annotations
@@ -82,10 +79,10 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
           worktrees/{plan_id}/.plan/local/plans/{plan_id}/   (worktree-resident plan)
           worktrees/{plan_id}/.plan/local/logs/work.log      (plan's global logs)
 
-    Pins cwd to ``main`` (the finalize regenerate-on-main path) and monkeypatches
-    the two resolvers (``get_plan_dir`` → main destination, ``get_worktree_root``
-    → the worktrees root) plus the ``merge_lock`` / ``_regenerate_executor``
-    delegations.
+    Pins cwd to ``main`` (the finalize move-back path) and monkeypatches the two
+    resolvers (``get_plan_dir`` → main destination, ``get_worktree_root`` → the
+    worktrees root) plus the ``merge_lock`` delegation. integrate no longer
+    regenerates the executor, so there is no regen delegation to stub.
     """
     plan_id = 'sample-plan'
 
@@ -113,14 +110,6 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     fake_lock = _FakeMergeLock()
     monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: fake_lock)
 
-    regen_calls = {'n': 0}
-
-    def fake_regen() -> dict:
-        regen_calls['n'] += 1
-        return {'regenerated': True, 'regen_detail': 'executor regenerated against main'}
-
-    monkeypatch.setattr(integrate_into_main, '_regenerate_executor', fake_regen)
-
     return {
         'plan_id': plan_id,
         'main': main,
@@ -129,7 +118,6 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         'wt_plan_dir': wt_plan_dir,
         'wt_global_logs': wt_global_logs,
         'fake_lock': fake_lock,
-        'regen_calls': regen_calls,
     }
 
 
@@ -162,6 +150,11 @@ class TestIntegrateHappyPath:
         assert env['fake_lock'].acquired == 1
         assert env['fake_lock'].released == 1
 
+        # Deliverable 5: the success payload carries NO regen fields — integrate
+        # no longer regenerates the executor.
+        assert 'regenerated' not in result
+        assert 'regen_detail' not in result
+
     def test_does_not_change_cwd(self, isolated_env: dict) -> None:
         env = isolated_env
         cwd_before = os.getcwd()
@@ -174,62 +167,27 @@ class TestIntegrateHappyPath:
         # The worktree directory itself survives — branch-cleanup owns removal.
         assert env['worktree_path'].is_dir()
 
-    def test_worktree_bound_executor_never_survives_onto_main(self, isolated_env: dict) -> None:
-        """Guarded-against negative: the executor is REGENERATED against main, never
-        file-moved from the worktree. Stage a worktree-resident executor and assert
-        it is NOT moved onto main (no .plan/execute-script.py materialized by move-back).
+    def test_executor_never_touched_by_integrate(self, isolated_env: dict) -> None:
+        """Deliverable 5: integrate neither moves nor regenerates any executor.
+        Stage both a main-resident executor and a worktree-bound one, and assert
+        both are left byte-for-byte untouched across the move-back — integrate has
+        no executor responsibility at all.
         """
         env = isolated_env
-        # Stage a (poisoned) worktree-bound executor that must NOT travel to main.
+        # Stage a main-resident executor (it must stay present and unchanged)...
+        main_executor = env['main'] / '.plan' / 'execute-script.py'
+        main_executor.write_text('# main executor — must stay untouched\n')
+        # ...and a worktree-bound one (it must NOT travel to main).
         wt_executor = env['worktree_path'] / '.plan' / 'execute-script.py'
         wt_executor.write_text('# worktree-bound executor — MUST NOT reach main\n')
 
         integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
 
-        # No executor file was file-moved onto main — regen (stubbed) is the only
-        # path that would (re)create it, and it never copies the worktree file.
-        assert not (env['main'] / '.plan' / 'execute-script.py').exists()
-        # The worktree-bound executor is left where it was (worktree removal handles it).
+        # Main's executor is present and byte-for-byte unchanged (never regenerated).
+        assert main_executor.read_text() == '# main executor — must stay untouched\n'
+        # The worktree-bound executor is left where it was (worktree removal handles it),
+        # never file-moved onto a fresh main slot.
         assert wt_executor.is_file()
-
-
-# =============================================================================
-# Regen gating
-# =============================================================================
-
-
-class TestIntegrateRegenGating:
-    def test_regen_skipped_when_no_marketplace_script_changed(self, isolated_env: dict) -> None:
-        env = isolated_env  # references default: only doc/foo.md changed
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        assert result['regenerated'] is False
-        assert env['regen_calls']['n'] == 0
-
-    def test_regen_fired_when_marketplace_script_changed(self, isolated_env: dict) -> None:
-        env = isolated_env
-        # Rewrite references in the WORKTREE plan dir (read after move-back from main).
-        (env['wt_plan_dir'] / 'references.json').write_text(
-            json.dumps(
-                {
-                    'modified_files': [
-                        'marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/integrate_into_main.py'
-                    ]
-                }
-            )
-        )
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        assert result['regenerated'] is True
-        assert env['regen_calls']['n'] == 1
-
-    def test_filter_excludes_nested_script_subdirectories(self) -> None:
-        # Only .py DIRECTLY under skills/*/scripts/ qualifies.
-        assert integrate_into_main._has_marketplace_script_change(
-            ['marketplace/bundles/b/skills/s/scripts/foo.py']
-        )
-        assert not integrate_into_main._has_marketplace_script_change(
-            ['marketplace/bundles/b/skills/s/scripts/build/foo.py']
-        )
-        assert not integrate_into_main._has_marketplace_script_change(['doc/foo.md'])
 
 
 # =============================================================================

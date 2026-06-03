@@ -48,24 +48,28 @@ Runtime Side-effects:
 
 Executor-guard backstop decision (ADR-002):
     Under the move-based, cwd-pinned hermetic worktree model (ADR-002), the
-    PRIMARY enforcement that the executor is never regenerated worktree-bound and
-    moved onto main is STRUCTURAL: the executor is regenerated against main at
-    finalize with the working directory resolving to main's ``.plan/``
-    (``integrate_into_main.py`` is the single owner of that regeneration), and
-    direct executor access during phase-5+ targets the worktree-resident copy via
-    the single uniform cwd/worktree-relative resolution rule. There is no shared
-    main executor for a phase-5+ caller to clobber, because cwd-pinning makes the
-    cwd-relative resolution land on the worktree copy.
+    executor is per-tree DERIVED state, NOT a moved slot: main's
+    ``.plan/execute-script.py`` stays present and untouched throughout phase-5+,
+    and each worktree gets its OWN executor, generated at phase-5 move-in by
+    ``prepare_execute.py`` invoking this generator with ``--marketplace-root``
+    and the subprocess cwd pinned to the worktree (so the cwd-relative output
+    path lands inside the worktree, never on main). On-main regeneration after a
+    plan changes the marketplace script set is a project-level, meta-project-only
+    finalize step (``finalize-step-sync-plugin-cache``, run after the cache sync)
+    — NOT a responsibility of ``integrate_into_main`` (which performs the
+    plan-dir move-back only). Because the worktree-bound generation pins cwd to
+    the worktree, it never clobbers main's executor.
 
     DECISION: no runtime worktree-write refusal guard is added to this generator.
     A secondary runtime guard inside ``generate_executor.py`` was evaluated and
-    REJECTED as redundant — the structural cwd-pinning already closes the leak
-    surface it would defend, so the guard would add no residual defense-in-depth
-    value while enlarging the surface. Per ``compatibility: breaking`` and the
-    ``lean`` simplicity setting, the smaller surface is preferred. The
-    ``--marketplace-root`` / ``PM_MARKETPLACE_ROOT`` anchor (documented above)
-    survives ONLY as the explicit escape hatch for a non-cwd-pinned caller that
-    must pin discovery to an alternate marketplace tree; it is not a guard.
+    REJECTED as redundant — the caller-owned cwd-pinning already lands each tree's
+    output in the correct ``.plan/``, so the guard would add no residual
+    defense-in-depth value while enlarging the surface. Per
+    ``compatibility: breaking`` and the ``lean`` simplicity setting, the smaller
+    surface is preferred. The ``--marketplace-root`` / ``PM_MARKETPLACE_ROOT``
+    anchor (documented above) survives as the explicit escape hatch for a
+    non-cwd-pinned caller that must pin discovery to an alternate marketplace
+    tree; it is not a guard.
 """
 
 import argparse

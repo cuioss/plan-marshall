@@ -217,6 +217,8 @@ This synchronizes all bundles from `marketplace/bundles/` to `~/.claude/plugins/
 
 Cluster 02 onward, the slash command and its finalize-step counterpart are project-local under `.claude/skills/` (`.claude/skills/sync-plugin-cache/` for the engine + `/sync-plugin-cache` invocable, `.claude/skills/finalize-step-{deploy-target,sync-plugin-cache}/` for the phase-6 bodies). They read from `target/claude/` (populated by `python3 marketplace/targets/generate.py --target claude --output target/claude`, or by the project-local `project:finalize-step-deploy-target` step) and refuse to sync when that directory is missing or stale relative to `marketplace/bundles/`. Consumer projects of plan-marshall do not get any of this surface — it is meta-project-only.
 
+On-main executor regeneration (`.plan/execute-script.py`) is performed by `project:finalize-step-sync-plugin-cache` immediately after the cache sync, in both worktree and no-worktree finalize flows — `integrate_into_main` performs the plan-dir move-back only and does NOT regenerate the executor. The executor is per-tree derived state (ADR-002): each worktree gets its own generated copy at phase-5 move-in (so main's `.plan/execute-script.py` stays present and untouched throughout phase-5+), and main's copy is refreshed at finalize by the cache-sync step when a plan changed the marketplace script set.
+
 For manual recovery scenarios where a commit landed without running phase-6-finalize (e.g. lesson `2026-05-20-08-005`), see [`doc/developer/manual-sync-recovery.adoc`](doc/developer/manual-sync-recovery.adoc) for the symptom → command decision table.
 
 ### Registered Marketplace Path

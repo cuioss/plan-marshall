@@ -10,10 +10,11 @@ model (ADR-002, solution_outline.md §4):
   1. **Materialize** the worktree + feature branch (delegating to the existing
      ``git-workflow.py worktree-create`` machinery so a single code path owns
      ``git worktree add`` + ``.plan`` bookkeeping).
-  2. **Move** (not copy) the plan-scoped non-git runtime state from the main
-     checkout into the worktree-resident location: the plan directory
-     (``.plan/local/plans/{plan_id}``) and the executor
-     (``.plan/execute-script.py``).
+  2. **Move** (not copy) the plan directory (``.plan/local/plans/{plan_id}``)
+     from the main checkout into the worktree-resident location. The executor
+     (``.plan/execute-script.py``) is NOT moved — it is per-tree DERIVED state:
+     main's copy stays present and untouched, and a worktree-bound copy is
+     GENERATED into the worktree (via ``generate_executor --marketplace-root``).
   3. **Return** a status TOON carrying the canonical ``worktree_path`` and a
      ``status`` field.
 
@@ -45,13 +46,13 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import subprocess
 import sys
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
 from file_ops import (  # type: ignore[import-not-found]
-    get_executor_path,
     get_plan_dir,
     get_worktree_root,
 )
@@ -103,15 +104,12 @@ def _is_real_moved_in(dst: Path) -> bool:
     """Return True when ``dst`` is a real (non-symlink) materialized path AND no
     ancestor up to the ``.plan`` directory is a symlink.
 
-    Generic over BOTH move-in slots — the plan dir (``.plan/local/plans/{id}``)
-    and the executor (``.plan/execute-script.py``). A fixed ``dst.parent.parent``
-    check only held for the plan dir; for the executor it mis-resolved to the
-    worktree root (and ``_restore_slot`` can pass the executor slot here during
-    rollback). Walking up to the ``.plan`` directory and rejecting any symlinked
-    ancestor keeps the "already moved in" verdict robust to residual symlink
-    traversal for either slot: under the no-symlink model every ancestor is a
-    real directory, so a ``dst`` reachable only through a symlinked ancestor is
-    rejected as not-yet-moved (correct first-run behaviour).
+    Applies to the plan-dir move-in slot (``.plan/local/plans/{id}``). Walking
+    up to the ``.plan`` directory and rejecting any symlinked ancestor keeps the
+    "already moved in" verdict robust to residual symlink traversal: under the
+    no-symlink model every ancestor is a real directory, so a ``dst`` reachable
+    only through a symlinked ancestor is rejected as not-yet-moved (correct
+    first-run behaviour).
     """
     if not (dst.exists() and not dst.is_symlink()):
         return False
@@ -162,6 +160,68 @@ def _restore_slot(src: Path, dst: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# worktree-bound executor generation
+# ---------------------------------------------------------------------------
+#
+# The executor is per-tree DERIVED state, NOT a moved slot: main's copy stays
+# present and untouched, and the worktree gets its own copy with worktree-bound
+# mappings, generated here. This mirrors the worktree-fresh-executor pattern in
+# finalize-step-plugin-doctor. Generation is universal (every new worktree needs
+# a working executor) — distinct from the meta-project-only finalize REgeneration
+# of main's executor after a script-set change.
+
+_GENERATE_EXECUTOR_PATH = (
+    _THIS_DIR.parent.parent / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
+)
+
+
+def _generate_worktree_executor(worktree_path: Path) -> tuple[bool, str]:
+    """Generate ``worktree_path/.plan/execute-script.py`` with worktree-bound mappings.
+
+    Invokes ``generate_executor.py generate --marketplace-root {worktree_path}``
+    as a subprocess. NON-FATAL and idempotent: any failure (missing generator,
+    non-zero exit, launch error) is reported in the return value and NEVER
+    raised, so the already-completed plan-dir move is preserved — the worktree
+    can recover later via ``/marshall-steward``.
+
+    The subprocess runs with ``cwd`` pinned to ``worktree_path``: the generator
+    writes its output to ``get_tracked_config_dir()/execute-script.py``, which is
+    resolved by walking up from the cwd to the nearest ``.plan/local`` ancestor.
+    At move-in the orchestrator's cwd is still MAIN (the pin to the worktree
+    happens AFTER this returns), so without the explicit ``cwd`` the generator
+    would clobber main's executor — the exact regression this fix prevents.
+    ``--marketplace-root`` only pins bundle DISCOVERY, not the output location.
+
+    Returns ``(generated, detail)``: ``generated`` is True on a clean generation,
+    ``detail`` is a short human-readable status string for the payload.
+    """
+    if not _GENERATE_EXECUTOR_PATH.exists():
+        return False, f'generator not found at {_GENERATE_EXECUTOR_PATH}'
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(_GENERATE_EXECUTOR_PATH),
+                'generate',
+                '--marketplace-root',
+                str(worktree_path),
+            ],
+            cwd=str(worktree_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        return False, f'generation failed to launch: {exc}'
+    if result.returncode != 0:
+        lines = (result.stderr or result.stdout or '').strip().splitlines()
+        tail = lines[-1] if lines else f'exit {result.returncode}'
+        return False, f'generation exited {result.returncode}: {tail}'
+    wt_executor = worktree_path / PLAN_DIR_NAME / 'execute-script.py'
+    return True, f'worktree executor generated at {wt_executor}'
+
+
+# ---------------------------------------------------------------------------
 # main action
 # ---------------------------------------------------------------------------
 
@@ -203,23 +263,13 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
             )
         )
 
-    # The main checkout's plan-scoped state (read via the uniform cwd rule:
-    # the caller runs phase-5 with cwd still on main at this point).
+    # The main checkout's plan directory (read via the uniform cwd rule: the
+    # caller runs phase-5 with cwd still on main at this point).
     main_plan_dir = get_plan_dir(plan_id)
-    try:
-        main_executor = get_executor_path()
-    except RuntimeError as exc:
-        return _assert_cwd_unchanged(
-            make_error(
-                f'cannot resolve executor path: {exc}',
-                code=ErrorCode.NOT_FOUND,
-                plan_id=plan_id,
-            )
-        )
 
-    # Worktree-resident destinations for the moved-in state.
+    # Worktree-resident destination for the moved-in plan directory. The
+    # executor is NOT moved — its worktree copy is generated post-move below.
     wt_plan_dir = worktree_path / PLAN_DIR_NAME / 'local' / 'plans' / plan_id
-    wt_executor = worktree_path / PLAN_DIR_NAME / 'execute-script.py'
     wt_plan_local = worktree_path / PLAN_DIR_NAME / 'local'
 
     # --- Step 1: materialize the worktree (idempotent re-use) --------------
@@ -287,7 +337,6 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
     completed: list[tuple[Path, Path]] = []
     slots: list[tuple[Path, Path]] = [
         (main_plan_dir, wt_plan_dir),
-        (main_executor, wt_executor),
     ]
 
     # Pre-flight: the plan dir MUST exist on main to move it in. Its absence
@@ -304,11 +353,8 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
 
     for src, dst in slots:
         if not src.exists() and not src.is_symlink():
-            # The executor may legitimately be absent in a fresh repo before
-            # /marshall-steward regeneration; skip a missing executor slot but
-            # never skip the plan dir (guarded above).
-            if dst == wt_executor:
-                continue
+            # Only the plan dir is moved now, and the pre-flight check above
+            # guarantees its presence — a missing source here is unexpected.
             # Roll back what we already moved and abort.
             for done_src, done_dst in reversed(completed):
                 _restore_slot(done_src, done_dst)
@@ -335,13 +381,21 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
                 )
             )
 
+    # --- Step 3: generate a worktree-bound executor ------------------------
+    # The executor is per-tree DERIVED state — main's copy is never moved, so
+    # the worktree needs its own. Generation is non-fatal: a failure is reported
+    # in the payload but never rolls back the completed plan-dir move.
+    generated, executor_detail = _generate_worktree_executor(worktree_path)
+
     return _assert_cwd_unchanged(
         {
             'status': 'success',
             'plan_id': plan_id,
             'worktree_path': str(worktree_path),
             'action': 'moved',
-            'moved_in[2]': [str(wt_plan_dir), str(wt_executor)],
+            'moved_in[1]': [str(wt_plan_dir)],
+            'worktree_executor_generated': generated,
+            'executor_detail': executor_detail,
         }
     )
 

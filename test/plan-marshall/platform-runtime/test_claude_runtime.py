@@ -25,6 +25,7 @@ test that exercises the happy-path of project_initial_setup without mocking.
 from __future__ import annotations  # noqa: I001
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -219,6 +220,85 @@ def _collect_commands(entries: list[dict[str, Any]]) -> list[str]:
 def _count_command(entries: list[dict[str, Any]], command: str) -> int:
     """Count how many times *command* appears across a hooks-event entry list."""
     return sum(1 for c in _collect_commands(entries) if c == command)
+
+
+# =============================================================================
+# 1c. Missing-executor fail-soft guard (FIX 2)
+# =============================================================================
+
+
+class TestExecutorGuardFailSoft:
+    """The executor-invoking hook commands are wrapped in a missing-executor
+    guard so an absent ``.plan/execute-script.py`` is a silent no-op (exit 0, no
+    output the hook surfaces as a block) while a present executor still runs.
+
+    This is the FIX-2 stopgap: while a worktree-backed plan sits mid-phase-5 the
+    main checkout's executor is transiently absent, and an unguarded hook command
+    would raise ``[Errno 2] No such file or directory`` on every user prompt.
+    """
+
+    def test_command_constants_are_guarded(self):
+        """Every executor-invoking command constant carries the guard wrapper."""
+        for command in (_RENDER_HOOK_COMMAND, _STATUSLINE_COMMAND, _HOOK_COMMAND):
+            assert command.startswith("[ -f .plan/execute-script.py ] && ")
+            assert command.endswith(" || true")
+            assert "python3 .plan/execute-script.py" in command
+        # The statusLine variant passes --statusline to the renderer (BEFORE the
+        # trailing || true), never after it.
+        assert "render-title --statusline || true" in _STATUSLINE_COMMAND
+
+    def test_absent_executor_exits_zero_silently(self, tmp_path):
+        """With no .plan/execute-script.py in cwd, the guarded render command exits
+        0 and emits nothing — the [ -f ] test short-circuits before python3 runs."""
+        result = subprocess.run(
+            _RENDER_HOOK_COMMAND,
+            shell=True,
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
+
+    def test_present_executor_runs_the_command(self, tmp_path):
+        """With a .plan/execute-script.py present, the guard's then-branch fires and
+        runs the command (a stub executor writes a marker proving it ran)."""
+        plan_dir = tmp_path / ".plan"
+        plan_dir.mkdir()
+        marker = tmp_path / "ran.txt"
+        (plan_dir / "execute-script.py").write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib\n"
+            f"pathlib.Path({str(marker)!r}).write_text('ran')\n"
+        )
+        result = subprocess.run(
+            _RENDER_HOOK_COMMAND,
+            shell=True,
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert marker.is_file()
+        assert marker.read_text() == "ran"
+
+    def test_install_writes_guarded_command_and_health_check_matches(self, rt, tmp_path):
+        """_install_terminal_title_hooks writes the guarded command form, and
+        _has_render_entry still matches it (install + health-check stay consistent
+        because both read the same single-sourced constant)."""
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        settings = json.loads(target.read_text())
+        ups = settings["hooks"]["UserPromptSubmit"]
+        commands = _collect_commands(ups)
+        assert commands  # at least one render entry installed
+        assert all(c == _RENDER_HOOK_COMMAND for c in commands)
+        assert all(c.startswith("[ -f .plan/execute-script.py ] && ") for c in commands)
+        # The health-check matcher recognizes the guarded installed command.
+        assert _cr._has_render_entry(ups, matcher="")
 
 
 class TestInstallTerminalTitleHooks:

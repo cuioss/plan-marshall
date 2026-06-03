@@ -260,14 +260,14 @@ From this point on, every standards document loaded by the finalize pipeline inh
 
 Per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), the orchestrator enters finalize still cwd-pinned to the worktree (the pin established at phase-5 entry by `prepare_execute.py` — see `plan-marshall/workflow/execution.md` § "Orchestrator cwd-pinning (phase-5+)"). The finalize phase ends that pin, but the cwd return to main and the worktree removal are SEQUENCED, not simultaneous:
 
-1. **Move-back while the worktree is still present.** The atomic move-back script (deliverable 5) folds the plan's own global logs into the plan directory, moves the plan directory back to main, regenerates the executor against main, and runs under the merge lock — all while the worktree still exists:
+1. **Move-back while the worktree is still present.** The atomic move-back script (deliverable 5) folds the plan's own global logs into the plan directory, moves the plan directory back to main, and runs under the merge lock — all while the worktree still exists:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-git:integrate_into_main integrate \
      --plan-id {plan_id}
    ```
 
-   `integrate_into_main.py` does NOT change the caller's working directory and does NOT remove the worktree. The executor is REGENERATED against main (not file-moved) so a worktree-bound executor never survives onto main; the regeneration runs with the working directory resolving to main's `.plan/`.
+   `integrate_into_main.py` does NOT change the caller's working directory, does NOT remove the worktree, and does NOT regenerate the executor. On-main executor regeneration is performed later by the project-level `project:finalize-step-sync-plugin-cache` step (meta-project-only) after the cache sync — the executor stays a per-tree derived artifact (ADR-002), never file-moved onto main.
 
 2. **Return cwd to main.** Only AFTER the move-back returns does the orchestrator return its own working directory to `{main_checkout}`. The plan directory and executor now live on main again, so the uniform cwd rule resolves them on main from this point.
 
@@ -399,11 +399,12 @@ plan-marshall repo itself), the project-local Phase 6 ordering pairs
 **after** `default:branch-cleanup`, against the main checkout
 post-merge. The cache mirrors the `target/claude/` content from the
 merged source tree, so the next session-boot re-derivation reads the
-same authoritative tree the dispatcher just wrote to. Executor
-regeneration is NOT a separate finalize step — `integrate_into_main`
-(invoked at Step 0 § move-back, before `branch-cleanup`) is the single
-owner of executor regeneration against main, gated by the modified-files
-filter.
+same authoritative tree the dispatcher just wrote to. On-main executor
+regeneration is performed by the project-level
+`project:finalize-step-sync-plugin-cache` step (order 85) immediately
+after the cache sync, in both worktree and no-worktree finalize flows;
+`integrate_into_main` performs the move-back only and does NOT regenerate
+the executor.
 
 Meta-project finalize agents dispatched between `create-pr` and
 `branch-cleanup` see pre-plan skill bodies in the host cache (the cache
