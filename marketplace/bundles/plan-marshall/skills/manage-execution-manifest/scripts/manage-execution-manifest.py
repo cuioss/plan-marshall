@@ -1957,6 +1957,37 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any] | None:
     }
 
 
+def cmd_classify_affected_files(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Expose the docs-only verdict as a read-only CLI verb.
+
+    Wraps the existing internal classification pipeline —
+    ``_read_bundle_change_paths(plan_id)`` feeding
+    ``_classify_paths_via_extensions(paths, plan_id=plan_id)`` — and returns
+    the plan-wide bucket so callers (notably ``phase-4-plan`` Step 7) can read
+    the verdict without re-implementing the classification. The verb is the
+    single source of truth: its bucket equals exactly what ``compose()``
+    consumes via the same two helpers.
+
+    The verb is strictly read-only. It does NOT write ``execution.toon`` nor
+    mutate any plan artifact. The underlying classifier may emit a best-effort
+    ``[STATUS]`` decision-log warning when paths are unclaimed, which is
+    observability only — no plan state changes.
+    """
+    plan_id = require_valid_plan_id(args)
+
+    paths = _read_bundle_change_paths(plan_id)
+    bucket, unclaimed_paths = _classify_paths_via_extensions(paths, plan_id=plan_id)
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'bucket': bucket,
+        'paths_count': len(paths),
+        'unclaimed_paths': unclaimed_paths,
+        'is_documentation_only': bucket == 'documentation_only',
+    }
+
+
 # =============================================================================
 # Loadability Check (validate-loadable)
 # =============================================================================
@@ -2412,6 +2443,13 @@ def _build_parser() -> argparse.ArgumentParser:
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)
     add_plan_id_arg(read_parser)
 
+    classify_parser = subparsers.add_parser(
+        'classify-affected-files',
+        help='Classify the plan-wide affected-files union into a docs-only verdict (read-only)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(classify_parser)
+
     validate_parser = subparsers.add_parser('validate', help='Validate execution.toon', allow_abbrev=False)
     add_plan_id_arg(validate_parser)
     validate_parser.add_argument('--phase-5-steps', default=None, help='Comma-separated allowed Phase 5 step IDs')
@@ -2455,6 +2493,7 @@ def main() -> int:
     handlers = {
         'compose': cmd_compose,
         'read': cmd_read,
+        'classify-affected-files': cmd_classify_affected_files,
         'validate': cmd_validate,
         'validate-loadable': cmd_validate_loadable,
     }
