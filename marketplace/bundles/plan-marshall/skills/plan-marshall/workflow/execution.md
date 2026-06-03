@@ -87,7 +87,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
   --plan-id {plan_id} --phase 4-plan --strict
 ```
 
-The execute phase iterates through tasks using a simple loop:
+The execute phase runs as ONE `execution-context` envelope (dispatched under the `phase-5-execute` role key) that drives the task loop in-context using a simple loop:
 
 ```bash
 # Get next pending task
@@ -97,11 +97,12 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next --p
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step --plan-id {plan_id} --task-number {task_number} --step {step_number} --outcome done
 ```
 
-For each task:
+Inside that single envelope, for each task:
 1. Read task details via manage-tasks
-2. Delegate to domain agent based on domain
+2. Load `execute-task` in-context as a `Skill:` (leaf-legal in-context skill loading per `dev-agent-behavior-rules` — NOT a per-task `Task:` subagent dispatch) and run the profile-appropriate workflow
 3. Mark task complete
-4. Repeat until all tasks done
+
+The dispatch unit is budget-bounded — neither per-task nor per-deliverable: one envelope runs as many tasks as the per-task budget reserve permits (bundling several small deliverables into one envelope, possibly spanning a single large deliverable across several envelopes), then yields at a TASK boundary on the budget sentinel / `triage_required` / `baseline_drift`, and the orchestrator re-dispatches a fresh envelope to resume the loop until all tasks are done.
 
 ### After execution-context returns
 
