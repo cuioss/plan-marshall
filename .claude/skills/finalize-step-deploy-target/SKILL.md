@@ -53,10 +53,12 @@ project:finalize-step-sync-plugin-cache (85)
 `order: 80` places this step immediately after `default:branch-cleanup`
 and before `project:finalize-step-sync-plugin-cache`. The generator must
 run on the post-merge main checkout so the cache sync that follows mirrors
-the just-regenerated `target/claude/` content. Executor regeneration is
-NOT a separate finalize step — `integrate_into_main` (invoked during the
-move-back, before `branch-cleanup`) is the single owner of executor
-regeneration against main.
+the just-regenerated `target/claude/` content. On-main executor regeneration
+is performed by `project:finalize-step-sync-plugin-cache` (order 85) after the
+cache sync, in both worktree and no-worktree finalize flows —
+`integrate_into_main` (invoked during the move-back, before `branch-cleanup`)
+performs the plan-dir move-back only and does NOT regenerate the executor. The
+executor is per-tree derived state (generated, not file-moved) per ADR-002.
 
 ## Inputs
 
