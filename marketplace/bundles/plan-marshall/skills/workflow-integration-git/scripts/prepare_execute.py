@@ -100,19 +100,29 @@ def _load_git_workflow() -> Any:
 
 
 def _is_real_moved_in(dst: Path) -> bool:
-    """Return True when ``dst`` is a real (non-symlink) materialized path AND its
-    parent ``.plan/local`` is itself a real (non-symlink) directory.
+    """Return True when ``dst`` is a real (non-symlink) materialized path AND no
+    ancestor up to the ``.plan`` directory is a symlink.
 
-    The parent check makes the "already moved in" verdict robust to any residual
-    symlink traversal: under the no-symlink model the parent is always a real
-    directory, so a ``dst`` reported as moved-in through a symlinked ancestor is
-    rejected as not-yet-moved (correct first-run behaviour). ``dst.parent`` is
-    ``.plan/local/plans``; its parent is ``.plan/local``, which must be real.
+    Generic over BOTH move-in slots — the plan dir (``.plan/local/plans/{id}``)
+    and the executor (``.plan/execute-script.py``). A fixed ``dst.parent.parent``
+    check only held for the plan dir; for the executor it mis-resolved to the
+    worktree root (and ``_restore_slot`` can pass the executor slot here during
+    rollback). Walking up to the ``.plan`` directory and rejecting any symlinked
+    ancestor keeps the "already moved in" verdict robust to residual symlink
+    traversal for either slot: under the no-symlink model every ancestor is a
+    real directory, so a ``dst`` reachable only through a symlinked ancestor is
+    rejected as not-yet-moved (correct first-run behaviour).
     """
     if not (dst.exists() and not dst.is_symlink()):
         return False
-    plan_local = dst.parent.parent  # .plan/local/plans/{id} -> .plan/local
-    return plan_local.is_dir() and not plan_local.is_symlink()
+    curr = dst.parent
+    while curr != curr.parent:
+        if curr.is_symlink():
+            return False
+        if curr.name == PLAN_DIR_NAME:
+            break
+        curr = curr.parent
+    return True
 
 
 def _move_in_slot(src: Path, dst: Path) -> None:

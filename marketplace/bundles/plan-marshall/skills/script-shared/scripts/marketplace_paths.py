@@ -93,7 +93,7 @@ def _main_checkout_root() -> Path:
     """
     try:
         result = subprocess.run(
-            ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+            ['git', 'rev-parse', '--git-common-dir'],
             capture_output=True,
             text=True,
             check=True,
@@ -101,7 +101,14 @@ def _main_checkout_root() -> Path:
         )
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError(f'cannot resolve main checkout via git common dir: {exc}') from exc
+    # ``--path-format=absolute`` (Git >= 2.31) is intentionally NOT passed so the
+    # resolver works on older Git (e.g. 2.25 on Ubuntu 20.04 LTS). Without it,
+    # ``--git-common-dir`` returns an absolute path from a linked worktree but a
+    # cwd-relative ``.git`` from the main checkout — resolve() only when the path
+    # is not already absolute to avoid a redundant syscall.
     common_dir = Path(result.stdout.strip())
+    if not common_dir.is_absolute():
+        common_dir = common_dir.resolve()
     # The common dir is <main-root>/.git; its parent is the main checkout root.
     return common_dir.parent
 

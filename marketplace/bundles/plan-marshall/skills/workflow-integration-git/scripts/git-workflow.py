@@ -918,6 +918,15 @@ def _ensure_worktree_plan_local_real(worktree: Path) -> tuple[bool, str]:
     a genuine mkdir / OS failure.
     """
     plan_local = worktree / _PLAN_DIR_NAME / 'local'
+    # A pre-existing symlink (a worktree created by an older symlinking revision,
+    # or manual intervention) would let mkdir(exist_ok=True) succeed while leaving
+    # the symlink in place — violating the fully-REAL guarantee. Unlink it first;
+    # unlink(missing_ok=True) avoids a TOCTOU check-then-act race.
+    if plan_local.is_symlink():
+        try:
+            plan_local.unlink(missing_ok=True)
+        except OSError as exc:
+            return False, f'failed to remove existing {_PLAN_DIR_NAME}/local symlink: {exc}'
     try:
         plan_local.mkdir(parents=True, exist_ok=True)
     except OSError as exc:

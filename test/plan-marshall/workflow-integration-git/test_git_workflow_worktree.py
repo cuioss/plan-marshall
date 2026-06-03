@@ -159,6 +159,26 @@ class TestEnsureWorktreePlanLocalReal:
         assert ok, err
         assert (worktree / '.plan' / 'local').is_dir()
 
+    def test_replaces_preexisting_symlink_with_real_dir(self, tmp_path: Path) -> None:
+        """A pre-existing ``.plan/local`` symlink (a worktree created by an older
+        symlinking revision, or manual intervention) is unlinked and replaced by a
+        real directory — mkdir(exist_ok=True) alone would leave the symlink in
+        place, violating the fully-REAL guarantee (PR #557 review)."""
+        worktree = tmp_path / 'wt'
+        (worktree / '.plan').mkdir(parents=True)
+        main_local = tmp_path / 'main' / '.plan' / 'local'
+        main_local.mkdir(parents=True)
+        # .plan/local starts as a symlink into a (real) main corpus.
+        link = worktree / '.plan' / 'local'
+        link.symlink_to(main_local, target_is_directory=True)
+        assert link.is_symlink()
+
+        ok, err = git_workflow._ensure_worktree_plan_local_real(worktree)
+
+        assert ok, err
+        assert link.is_dir()
+        assert not link.is_symlink()
+
 
 # =============================================================================
 # CLI argparse rejection — missing --plan-id
