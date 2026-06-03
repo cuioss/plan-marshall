@@ -806,9 +806,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 The accepted enum values are `simple | complex`. `manage-execution-manifest compose --track` and phase-4-plan read this field as the single source of truth — `manage-references get --field track` returns the value without inference once refine writes it here. The value is also returned in the Step 13 TOON below.
 
-**Note**: Compatibility is NOT persisted to references.json:
-- **Track**: IS persisted to references.json (above). decision.log retains the human-readable track-reasoning entry (Step 9, Step 13); references.json is the machine-readable source of truth consumed by the manifest composer and phase-4-plan.
-- **Compatibility**: Read directly from marshal.json by consumers
+**Note**: Compatibility is NOT persisted to references.json (it is read directly from marshal.json by consumers).
 
 ### Log Decisions (with duplicate guard)
 
