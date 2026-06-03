@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit archived plans across thirteen retrospective checks.
+"""Audit archived plans across fourteen retrospective checks.
 
 Walks `.plan/local/archived-plans/{plan_id}/` directories and, per plan, runs a
 suite of deterministic checks:
@@ -23,6 +23,11 @@ suite of deterministic checks:
   surfaces any appearing in N≥3 plans as a systemic signal.
 - `token-efficiency-trend` (cross-plan) — orders plans chronologically and
   detects a sustained upward trend in tokens-per-phase.
+- `global-log-analysis` (cross-plan) — parses the global `.plan/local/logs/`
+  corpus (script-execution / work / decision logs), buckets by level, aggregates
+  per notation+subcommand, and flags error/warning lines, slow calls,
+  high-frequency callers, impossible/hang durations, and test-fixture leaks —
+  each correlated to the archived-plan execution window it falls inside.
 - `token-economics` (cross-plan) — joins each plan's per-phase `metrics.toon`
   tokens to `references.json` (scope_estimate, footprint) and
   `status.json::metadata` (change_type), computes per-plan token shares and
@@ -77,10 +82,8 @@ suite of deterministic checks:
   correlating with global-log ERROR/argparse-rejection counts and
   quality-verification unfiled signatures (collapsed to ONE candidate); and (e)
   scope-estimate under-estimation correlating with task-count and token-per-file.
-  The argparse-signature coupling correlates recurring-pattern argparse
-  signatures with quality-verification unfiled signatures (collapsed to ONE
-  candidate). Each coupling carries its qualifying caveat and the D1 severity
-  column. The block operationalizes the SKILL.md Step-4b completeness critic.
+  Each coupling carries its qualifying caveat and the D1 severity column. The
+  block operationalizes the SKILL.md Step-4b completeness critic.
 
 Each check emits one bespoke-TOON block. Intended consumer:
 `/audit-archived-plan-retrospectives`.
@@ -121,6 +124,7 @@ CHECK_NAMES = [
     "scope-estimate-accuracy",
     "pr-merge-velocity",
     "task-count-efficiency",
+    "global-log-analysis",
     "token-economics",
     "quality-chain",
     "sequence-and-build-minimality",
@@ -138,6 +142,7 @@ CHECK_NAMES = [
 CROSS_PLAN_CHECKS = {
     "recurring-pattern-detector",
     "token-efficiency-trend",
+    "global-log-analysis",
     "token-economics",
     "quality-chain",
     "sequence-and-build-minimality",
@@ -201,6 +206,11 @@ THRESHOLDS: dict[str, Any] = {
     "build_clustering_minutes": 10.0,
     # Long-session message-count ceiling: a session above this is flagged long.
     "long_session_messages": 200,
+    # Global-log slow-call ceiling (seconds): a script call at/over this is slow.
+    "slow_call_seconds": 30.0,
+    # Global-log high-frequency caller ceiling: a notation+subcommand called at
+    # least this many times across the corpus is flagged high-frequency.
+    "high_frequency_calls": 50,
     # Scope-estimate file-count bands. Maps a declared scope_estimate to the
     # inclusive [low, high] band of expected total touched files. `None` upper
     # bound means "unbounded".
@@ -1101,6 +1111,268 @@ def cross_token_trend(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         "plans_in_series": len(series),
         "regression": regression,
         "rows": series,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Cross-plan: global-log-analysis
+# ---------------------------------------------------------------------------
+#
+# Parses the global `.plan/local/logs/` corpus — `script-execution-*.log`,
+# `work-*.log`, and `decision-*.log` — and surfaces operational signals the
+# per-plan checks cannot see because they read only a single plan's artifacts:
+# error/warning lines, slow script calls, high-frequency callers, impossible or
+# hang-shaped durations, and test-fixture leaks (synthetic bundle/plan ids that
+# escaped a test run into the shared corpus). Every flagged line is correlated to
+# the archived-plan execution window(s) it falls inside (per-phase start/end times
+# from each plan's `work/metrics.toon`) so a signal can be attributed to the plan
+# that produced it, or marked ad-hoc when it falls outside every window.
+#
+# Thresholds (`slow_call_seconds`, `high_frequency_calls`) come from the
+# centralized `THRESHOLDS` table; no magic number is re-declared here.
+
+# `[2026-05-31T22:00:01Z] [INFO] [3befe7] <rest>` — shared line grammar across
+# script-execution / work / decision logs. The trailing `Z` and the bracketed
+# hash are mandatory; `<rest>` is the notation+message body.
+_LOG_LINE_RE = re.compile(
+    r"^\[(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z\]\s+"
+    r"\[(?P<level>[A-Z]+)\]\s+\[(?P<hash>[0-9a-f]+)\]\s+(?P<rest>.*)$"
+)
+
+# Trailing `(0.22s)` script-call duration, anchored to end-of-line. The capture
+# is a strict decimal float (`\d+(?:\.\d+)?`) so a malformed multi-dot token such
+# as `1.2.3` can never reach the `float()` at the call site below.
+_LOG_DUR_RE = re.compile(r"\((\d+(?:\.\d+)?)s\)\s*$")
+
+# Script-execution head: `bundle:skill:script subcommand ... (0.22s)`. The
+# notation is the three-segment colon form; the first whitespace-delimited token
+# after it is the subcommand (the aggregation key drops the trailing args).
+_LOG_SCRIPT_HEAD_RE = re.compile(
+    r"^(?P<notation>[a-z0-9-]+:[a-z0-9_-]+:[a-z0-9_-]+)"
+    r"\s+(?P<sub>\S+)?"
+)
+
+# Lines whose body signals a failure even when the LEVEL cell is INFO (a script
+# can exit non-zero while the logging wrapper stamps INFO). Mirrors the prototype
+# FAIL_MARKERS set.
+_LOG_FAIL_MARKERS_RE = re.compile(
+    r"invalid choice|unrecognized arguments|the following arguments are required"
+    r"|Traceback|exit[_ ]?code\s*[=:]?\s*[12]|argparse_rejection|\bError\b|\bfailed\b"
+    r"|status:\s*error",
+    re.IGNORECASE,
+)
+
+# Impossible / hang-shaped duration ceiling (seconds). A single deterministic
+# script call recorded at/over this is not a real wall-clock cost — it is a
+# clock-skew artifact or a hung-then-killed call. Distinct from the
+# `slow_call_seconds` *slow* band: slow is "worth investigating", impossible is
+# "the recording itself is suspect".
+_IMPOSSIBLE_DURATION_SECONDS = 600.0
+
+# Test-fixture leak signatures: synthetic bundle / plan ids that exist only
+# inside the test suite's tmp fixtures and must NEVER appear in the shared global
+# log corpus. Their presence means a test run wrote to the real
+# `.plan/local/logs/` instead of an isolated `PLAN_BASE_DIR`. Matched
+# case-insensitively against each line body.
+_FIXTURE_LEAK_RE = re.compile(
+    r"\bfake-[a-z0-9-]*bundle\b|\bidem-bundle\b|\braising-bundle\b|\borphan-md-[a-z0-9-]+\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_log_ts(value: str) -> datetime | None:
+    """Parse the `YYYY-MM-DDTHH:MM:SS` log timestamp (sans trailing Z)."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return None
+
+
+def plan_execution_windows(roots: list[Path]) -> dict[str, tuple[datetime, datetime]]:
+    """Map `plan_id -> (earliest start, latest end)` from per-phase metrics.
+
+    Reads every plan's `work/metrics.toon` and collects the per-phase
+    `start_time` / `end_time` lines, returning the enclosing window
+    `(min start, max end)` per plan. Plans whose metrics carry no parseable
+    window are omitted. Used to attribute a flagged log line to the plan whose
+    execution window contains it.
+    """
+    windows: dict[str, tuple[datetime, datetime]] = {}
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for plan_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+            metrics = plan_dir / "work" / "metrics.toon"
+            if not metrics.is_file():
+                continue
+            try:
+                text = metrics.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            starts: list[datetime] = []
+            ends: list[datetime] = []
+            for raw in text.splitlines():
+                stripped = raw.strip()
+                if stripped.startswith("start_time:"):
+                    ts = _parse_log_ts(stripped.split(":", 1)[1].strip().rstrip("Z"))
+                    if ts is not None:
+                        starts.append(ts)
+                elif stripped.startswith("end_time:"):
+                    ts = _parse_log_ts(stripped.split(":", 1)[1].strip().rstrip("Z"))
+                    if ts is not None:
+                        ends.append(ts)
+            if starts and ends:
+                windows[plan_dir.name] = (min(starts), max(ends))
+    return windows
+
+
+def _attribute_to_plans(
+    ts: datetime | None, windows: dict[str, tuple[datetime, datetime]]
+) -> list[str]:
+    """Return the plan ids whose execution window contains `ts` (sorted)."""
+    if ts is None:
+        return []
+    return sorted(pid for pid, (s, e) in windows.items() if s <= ts <= e)
+
+
+def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
+    """Parse the global log corpus and surface operational signals.
+
+    Reads `script-execution-*.log`, `work-*.log`, and `decision-*.log` under
+    `.plan/local/logs/`, buckets lines by LEVEL, aggregates script calls per
+    `notation subcommand`, and flags: non-INFO / failure-marker lines, slow calls
+    (`>= slow_call_seconds`), impossible/hang durations
+    (`>= _IMPOSSIBLE_DURATION_SECONDS`), high-frequency callers
+    (`>= high_frequency_calls`), and test-fixture leaks. Each flagged line is
+    correlated to the archived-plan execution window(s) it falls within.
+
+    Returns a result dict consumed by `emit_global_log_block`. Best-effort: a
+    missing logs directory yields an empty (all-zero) result rather than raising.
+    """
+    logs_dir = (repo_root / ".plan/local/logs").resolve()
+    slow_ceiling = float(THRESHOLDS["slow_call_seconds"])
+    high_freq_ceiling = int(THRESHOLDS["high_frequency_calls"])
+
+    # Correlate against both archived and active plan windows.
+    windows = plan_execution_windows(
+        [repo_root / ".plan/local/archived-plans", repo_root / ".plan/local/plans"]
+    )
+
+    level_counts: dict[str, int] = defaultdict(int)
+    call_counts: dict[str, int] = defaultdict(int)
+    call_seconds: dict[str, float] = defaultdict(float)
+    error_lines: list[dict[str, Any]] = []
+    slow_calls: list[dict[str, Any]] = []
+    impossible_calls: list[dict[str, Any]] = []
+    fixture_leaks: list[dict[str, Any]] = []
+    total_lines = 0
+    total_seconds = 0.0
+
+    if logs_dir.is_dir():
+        patterns = ("script-execution-*.log", "work-*.log", "decision-*.log")
+        log_files: list[Path] = []
+        for pat in patterns:
+            log_files.extend(logs_dir.glob(pat))
+        for log in sorted(log_files):
+            try:
+                content = log.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for raw in content.splitlines():
+                m = _LOG_LINE_RE.match(raw)
+                if not m:
+                    continue
+                total_lines += 1
+                level = m.group("level")
+                rest = m.group("rest")
+                ts_text = m.group("ts")
+                ts = _parse_log_ts(ts_text)
+                level_counts[level] += 1
+
+                head = _LOG_SCRIPT_HEAD_RE.match(rest)
+                if head:
+                    sub = head.group("sub") or ""
+                    key = f"{head.group('notation')} {sub}".strip()
+                    call_counts[key] += 1
+                    dur_m = _LOG_DUR_RE.search(rest)
+                    if dur_m:
+                        seconds = float(dur_m.group(1))
+                        call_seconds[key] += seconds
+                        total_seconds += seconds
+                        if seconds >= _IMPOSSIBLE_DURATION_SECONDS:
+                            impossible_calls.append(
+                                {
+                                    "ts": ts_text,
+                                    "seconds": seconds,
+                                    "key": key,
+                                    "plans": _attribute_to_plans(ts, windows),
+                                }
+                            )
+                        elif seconds >= slow_ceiling:
+                            slow_calls.append(
+                                {
+                                    "ts": ts_text,
+                                    "seconds": seconds,
+                                    "key": key,
+                                    "plans": _attribute_to_plans(ts, windows),
+                                }
+                            )
+
+                if level != "INFO" or _LOG_FAIL_MARKERS_RE.search(rest):
+                    error_lines.append(
+                        {
+                            "ts": ts_text,
+                            "level": level,
+                            "detail": rest[:160],
+                            "plans": _attribute_to_plans(ts, windows),
+                        }
+                    )
+
+                if _FIXTURE_LEAK_RE.search(rest):
+                    leak_m = _FIXTURE_LEAK_RE.search(rest)
+                    fixture_leaks.append(
+                        {
+                            "ts": ts_text,
+                            "signature": leak_m.group(0) if leak_m else "",
+                            "detail": rest[:160],
+                            "plans": _attribute_to_plans(ts, windows),
+                        }
+                    )
+
+    frequent: list[tuple[str, int]] = sorted(
+        ((key, count) for key, count in call_counts.items() if count >= high_freq_ceiling),
+        key=lambda kc: (-kc[1], kc[0]),
+    )
+    high_frequency: list[dict[str, Any]] = [
+        {
+            "key": key,
+            "count": count,
+            "total_seconds": round(call_seconds.get(key, 0.0), 1),
+        }
+        for key, count in frequent
+    ]
+
+    slow_calls.sort(key=lambda r: -float(r["seconds"]))
+    impossible_calls.sort(key=lambda r: -float(r["seconds"]))
+
+    return {
+        "logs_present": logs_dir.is_dir(),
+        "plan_windows_derived": len(windows),
+        "total_log_lines": total_lines,
+        "total_script_seconds": round(total_seconds, 1),
+        "level_counts": dict(level_counts),
+        "error_count": len(error_lines),
+        "error_lines": error_lines,
+        "slow_call_count": len(slow_calls),
+        "slow_calls": slow_calls,
+        "impossible_count": len(impossible_calls),
+        "impossible_calls": impossible_calls,
+        "high_frequency_count": len(high_frequency),
+        "high_frequency": high_frequency,
+        "fixture_leak_count": len(fixture_leaks),
+        "fixture_leaks": fixture_leaks,
+        "slow_ceiling": slow_ceiling,
+        "high_frequency_ceiling": high_freq_ceiling,
     }
 
 
@@ -2917,6 +3189,101 @@ def emit_trend_block(result: dict[str, Any]) -> str:
     return "\n".join(out) + "\n"
 
 
+def emit_global_log_block(result: dict[str, Any]) -> str:
+    """Emit the cross-plan global-log-analysis block.
+
+    Every flagged line — error/non-INFO, slow call, impossible duration,
+    high-frequency caller, or fixture leak — is a genuine signal, so it is
+    stamped `severity: genuine` via the shared `_severity_summary` helper (D1
+    infra). The block carries summary counts (level bucket totals, corpus size)
+    followed by one `rows[N]{kind,detail,attributed_plans,severity}` table over
+    the consolidated signals. Informational context (level_counts,
+    total_log_lines) rides the summary lines, not the table, so the
+    `genuine_signal_count` reflects only actionable rows.
+    """
+    signals: list[dict[str, Any]] = []
+
+    for r in result["error_lines"]:
+        signals.append(
+            {
+                "kind": f"error:{r['level']}",
+                "detail": r["detail"],
+                "attributed_plans": ";".join(r["plans"]) or "ad-hoc",
+            }
+        )
+    for r in result["impossible_calls"]:
+        signals.append(
+            {
+                "kind": "impossible-duration",
+                "detail": f"{r['seconds']:.1f}s {r['key']}",
+                "attributed_plans": ";".join(r["plans"]) or "ad-hoc",
+            }
+        )
+    for r in result["slow_calls"]:
+        signals.append(
+            {
+                "kind": "slow-call",
+                "detail": f"{r['seconds']:.1f}s {r['key']}",
+                "attributed_plans": ";".join(r["plans"]) or "ad-hoc",
+            }
+        )
+    for r in result["high_frequency"]:
+        signals.append(
+            {
+                "kind": "high-frequency-caller",
+                "detail": f"{r['count']}x {r['total_seconds']:.1f}s {r['key']}",
+                "attributed_plans": "",
+            }
+        )
+    for r in result["fixture_leaks"]:
+        signals.append(
+            {
+                "kind": "fixture-leak",
+                "detail": f"{r['signature']} :: {r['detail']}",
+                "attributed_plans": ";".join(r["plans"]) or "ad-hoc",
+            }
+        )
+
+    # Every surfaced row is a genuine, actionable signal by construction.
+    rows, genuine_signal_count = _severity_summary(signals, lambda _r: True)
+
+    level_summary = ";".join(
+        f"{lvl}={cnt}" for lvl, cnt in sorted(result["level_counts"].items())
+    )
+    out = [
+        "check: global-log-analysis",
+        "status: success",
+        f"logs_present: {str(result['logs_present']).lower()}",
+        f"plan_windows_derived: {result['plan_windows_derived']}",
+        f"total_log_lines: {result['total_log_lines']}",
+        f"total_script_seconds: {result['total_script_seconds']}",
+        f"level_counts: {_cell(level_summary)}",
+        f"error_count: {result['error_count']}",
+        f"slow_call_count: {result['slow_call_count']}",
+        f"impossible_count: {result['impossible_count']}",
+        f"high_frequency_count: {result['high_frequency_count']}",
+        f"fixture_leak_count: {result['fixture_leak_count']}",
+        f"slow_ceiling_seconds: {result['slow_ceiling']}",
+        f"high_frequency_ceiling: {result['high_frequency_ceiling']}",
+        f"genuine_signal_count: {genuine_signal_count}",
+        f"rows[{len(rows)}]{{kind,detail,attributed_plans,severity}}:",
+    ]
+    for r in rows:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    r["kind"],
+                    r["detail"],
+                    r["attributed_plans"],
+                    r["severity"],
+                ]
+            )
+        )
+    return "\n".join(out) + "\n"
+
+
 def emit_token_economics_block(result: dict[str, Any]) -> str:
     """Emit the cross-plan token-economics block with the D1 severity column.
 
@@ -3255,9 +3622,10 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
 #       CI re-run / heavy finalize is the shift-right tax — the PR round-trip paid
 #       for what an earlier gate could have caught.
 #   (d) argparse_signature_cluster  — recurring-pattern argparse-shaped signatures
-#       correlate with quality-verification unfiled signatures. COLLAPSED to ONE
-#       candidate (the two facets are two views of the same source-keyed drift,
-#       per the SKILL.md source-keyed argparse-rejection rule). Caveat: file ONE
+#       correlate with global-log ERROR / argparse_rejection counts AND
+#       quality-verification unfiled signatures. COLLAPSED to ONE candidate (the
+#       three facets are three views of the same source-keyed drift, per the
+#       SKILL.md source-keyed argparse-rejection rule). Caveat: file ONE
 #       source-keyed lesson, not one per facet.
 #   (e) scope_underestimate_cost    — a plan flagged scope-estimate-accuracy
 #       under-estimation that ALSO sits in the high tokens-per-file / high
@@ -3265,8 +3633,8 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
 #       the coupling names the predicted-vs-actual gap, not a fresh finding.
 
 # argparse-rejection signatures the recurring-pattern detector surfaces — the
-# wording the per-plan script-failure analysis uses for an invented-subcommand /
-# missing-flag / invented-flag drift.
+# wording the global-log FAIL markers and the per-plan script-failure analysis
+# share for an invented-subcommand / missing-flag / invented-flag drift.
 _SYN_ARGPARSE_SIG_RE = re.compile(
     r"argparse|invalid choice|unrecognized argument|required.*argument|exit[_ ]?code",
     re.IGNORECASE,
@@ -3321,6 +3689,7 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
     metrics_rows = all_results.get("metrics")
     quality_chain = all_results.get("quality-chain")
     recurring = all_results.get("recurring-pattern-detector")
+    global_log = all_results.get("global-log-analysis")
     quality_verification = all_results.get("quality-verification-report")
     scope = all_results.get("scope-estimate-accuracy")
     task_count = all_results.get("task-count-efficiency")
@@ -3421,24 +3790,28 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
         for r in (recurring.get("rows", []) if isinstance(recurring, dict) else [])
         if isinstance(r, dict) and _SYN_ARGPARSE_SIG_RE.search(str(r.get("signature") or ""))
     )
+    global_error_count = (
+        int(global_log.get("error_count", 0)) if isinstance(global_log, dict) else 0
+    )
     qv_unfiled_total = 0
     for r in quality_verification or []:
         if isinstance(r, dict):
             qv_unfiled_total += int(r.get("unfiled_lessons") or 0)
-    d_fired = bool(argparse_signatures and qv_unfiled_total > 0)
+    d_fired = bool(argparse_signatures and global_error_count > 0 and qv_unfiled_total > 0)
     rows.append(
         {
             "coupling": "argparse_signature_cluster",
             "fired": d_fired,
             "detail": (
                 f"argparse signatures={';'.join(argparse_signatures)} correlate with "
-                f"unfiled quality-verification signatures={qv_unfiled_total} — collapse "
-                f"to ONE source-keyed candidate"
+                f"global-log errors={global_error_count} and unfiled "
+                f"quality-verification signatures={qv_unfiled_total} — collapse to ONE "
+                f"source-keyed candidate"
                 if d_fired
-                else f"argparse_signatures={len(argparse_signatures)};qv_unfiled={qv_unfiled_total}"
+                else f"argparse_signatures={len(argparse_signatures)};global_errors={global_error_count};qv_unfiled={qv_unfiled_total}"
             ),
             "caveat": (
-                "the two facets are two views of ONE source-keyed argparse "
+                "the three facets are three views of ONE source-keyed argparse "
                 "drift — file ONE source-keyed lesson, not one per facet"
             ),
         }
@@ -3684,6 +4057,16 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             blocks.append(emit_trend_block(result))
             summary_metrics["token-efficiency-trend_regression"] = bool(result["regression"])
 
+    if "global-log-analysis" in selected or synth_needed:
+        log_result = cross_global_log_analysis(repo_root)
+        all_results["global-log-analysis"] = log_result
+        if "global-log-analysis" in selected:
+            blocks.append(emit_global_log_block(log_result))
+            summary_metrics["global-log-analysis_errors"] = log_result["error_count"]
+            summary_metrics["global-log-analysis_fixture_leaks"] = log_result[
+                "fixture_leak_count"
+            ]
+
     if "token-economics" in selected or synth_needed:
         te_result = cross_token_economics(all_inputs)
         all_results["token-economics"] = te_result
@@ -3755,7 +4138,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Audit archived plans across thirteen retrospective checks."
+        description="Audit archived plans across fourteen retrospective checks."
     )
     parser.add_argument(
         "--plan-dir",

@@ -444,6 +444,8 @@ class TestThresholdsCentralization:
             'build_heavy_seconds',
             'build_clustering_minutes',
             'long_session_messages',
+            'slow_call_seconds',
+            'high_frequency_calls',
             'scope_file_bands',
             'tasks_per_deliverable_low',
             'tasks_per_deliverable_high',
@@ -911,6 +913,515 @@ class TestDedupPretag:
 
         # Assert
         assert tag == 'covered_by:lesson-7'
+
+
+# =============================================================================
+# D2 — global-log-analysis cross-plan check
+# =============================================================================
+
+
+def _write_log(repo_root: Path, name: str, lines: list[str]) -> None:
+    """Write a global log file under ``{repo_root}/.plan/local/logs/{name}``.
+
+    ``name`` MUST match one of the three globbed patterns
+    (``script-execution-*.log`` / ``work-*.log`` / ``decision-*.log``) for
+    ``cross_global_log_analysis`` to pick it up. Each entry in ``lines`` is one
+    raw log line written verbatim.
+    """
+    logs_dir = repo_root / '.plan' / 'local' / 'logs'
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / name).write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+
+def _write_metrics_window(
+    repo_root: Path,
+    plan_id: str,
+    start: str,
+    end: str,
+    *,
+    archived: bool = True,
+) -> None:
+    """Seed an archived (or active) plan's ``work/metrics.toon`` window.
+
+    Writes a single-phase ``metrics.toon`` carrying ``start_time`` / ``end_time``
+    lines so ``plan_execution_windows`` derives a ``(start, end)`` window for the
+    plan. ``start`` / ``end`` are ``YYYY-MM-DDTHH:MM:SSZ`` strings (trailing ``Z``
+    is stripped by the parser).
+    """
+    sub = 'archived-plans' if archived else 'plans'
+    work = repo_root / '.plan' / 'local' / sub / plan_id / 'work'
+    work.mkdir(parents=True, exist_ok=True)
+    body = (
+        'report: metrics\n'
+        'phases:\n'
+        '  - phase: 5-execute\n'
+        f'    start_time: {start}\n'
+        f'    end_time: {end}\n'
+    )
+    (work / 'metrics.toon').write_text(body, encoding='utf-8')
+
+
+def _line(ts: str, level: str, rest: str, *, hash_: str = '3befe7') -> str:
+    """Build a single log line in the shared ``_LOG_LINE_RE`` grammar."""
+    return f'[{ts}] [{level}] [{hash_}] {rest}'
+
+
+class TestGlobalLogAnalysisLineGrammar:
+    """The shared line grammar drives every downstream signal — a line that does
+    not match ``_LOG_LINE_RE`` is silently skipped and never counted."""
+
+    def test_well_formed_line_is_counted_by_level(self, tmp_path: Path):
+        # Arrange — two grammar-valid lines at distinct levels
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', '[STATUS] (x) ok'),
+                _line('2026-06-01T10:00:01Z', 'WARNING', '[STATUS] (x) heads up'),
+            ],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — both lines parsed; level buckets reflect each LEVEL cell
+        assert result['total_log_lines'] == 2
+        assert result['level_counts'] == {'INFO': 1, 'WARNING': 1}
+
+    def test_malformed_lines_are_skipped(self, tmp_path: Path):
+        # Arrange — only the first line matches the bracketed grammar
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', '[STATUS] (x) ok'),
+                'this line has no bracketed timestamp/level/hash prefix',
+                '[2026-06-01T10:00:02Z] INFO missing-hash-brackets',
+            ],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — only the single well-formed line is counted
+        assert result['total_log_lines'] == 1
+        assert result['level_counts'] == {'INFO': 1}
+
+    def test_missing_logs_dir_yields_empty_all_zero_result(self, tmp_path: Path):
+        # Arrange — no .plan/local/logs directory at all
+        # Act — best-effort: empty result rather than raising
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert
+        assert result['logs_present'] is False
+        assert result['total_log_lines'] == 0
+        assert result['error_count'] == 0
+        assert result['slow_call_count'] == 0
+        assert result['high_frequency_count'] == 0
+        assert result['fixture_leak_count'] == 0
+
+
+class TestGlobalLogAnalysisCallAggregation:
+    """Script-execution lines aggregate per ``notation subcommand`` key, summing
+    call counts and durations across the corpus."""
+
+    def test_calls_aggregate_per_notation_and_subcommand(self, tmp_path: Path):
+        # Arrange — three calls: two share a key, one is a different subcommand
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', 'pm:manage-tasks:manage-tasks read --plan-id p (0.10s)'),
+                _line('2026-06-01T10:00:01Z', 'INFO', 'pm:manage-tasks:manage-tasks read --plan-id q (0.20s)'),
+                _line('2026-06-01T10:00:02Z', 'INFO', 'pm:manage-tasks:manage-tasks update --status done (0.30s)'),
+            ],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — total wall-clock summed; per-key aggregation distinct by subcommand
+        assert result['total_script_seconds'] == 0.6
+        # no high-frequency / slow rows at these low counts/durations
+        assert result['high_frequency_count'] == 0
+        assert result['slow_call_count'] == 0
+
+    def test_high_frequency_caller_flagged_at_ceiling(self, tmp_path: Path):
+        # Arrange — exactly high_frequency_calls (50) identical-key calls
+        ceiling = audit.THRESHOLDS['high_frequency_calls']
+        lines = [
+            _line(
+                '2026-06-01T10:00:00Z',
+                'INFO',
+                'pm:manage-logging:manage-logging work --plan-id p (0.01s)',
+            )
+            for _ in range(ceiling)
+        ]
+        _write_log(tmp_path, 'script-execution-2026-06-01.log', lines)
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — the >=ceiling key surfaces as a single high-frequency row
+        assert result['high_frequency_count'] == 1
+        row = result['high_frequency'][0]
+        assert row['count'] == ceiling
+        assert row['key'] == 'pm:manage-logging:manage-logging work'
+
+    def test_below_high_frequency_ceiling_not_flagged(self, tmp_path: Path):
+        # Arrange — one call below the (50) ceiling
+        ceiling = audit.THRESHOLDS['high_frequency_calls']
+        lines = [
+            _line('2026-06-01T10:00:00Z', 'INFO', 'pm:manage-files:manage-files exists --file f (0.01s)')
+            for _ in range(ceiling - 1)
+        ]
+        _write_log(tmp_path, 'script-execution-2026-06-01.log', lines)
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — under threshold, no high-frequency row
+        assert result['high_frequency_count'] == 0
+
+
+class TestGlobalLogAnalysisDurationBands:
+    """Durations split into three bands: normal (< slow), slow
+    (slow <= d < impossible), and impossible (>= impossible ceiling)."""
+
+    def test_slow_call_flagged_at_slow_ceiling(self, tmp_path: Path):
+        # Arrange — a call exactly at slow_call_seconds (30.0)
+        slow = audit.THRESHOLDS['slow_call_seconds']
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [
+                _line(
+                    '2026-06-01T10:00:00Z',
+                    'INFO',
+                    f'pm:build-pyproject:pyproject_build run --command-args verify ({slow:.1f}s)',
+                ),
+            ],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — lands in the slow band, not impossible
+        assert result['slow_call_count'] == 1
+        assert result['impossible_count'] == 0
+        assert result['slow_calls'][0]['seconds'] == slow
+
+    def test_fast_call_not_flagged_slow(self, tmp_path: Path):
+        # Arrange — just under the slow ceiling
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:s:s run (29.9s)')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert
+        assert result['slow_call_count'] == 0
+        assert result['impossible_count'] == 0
+
+    def test_impossible_duration_flagged_separately_from_slow(self, tmp_path: Path):
+        # Arrange — a hang-shaped duration at the impossible ceiling (600s)
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:s:s run (650.0s)')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — counted as impossible, NOT double-counted as slow
+        assert result['impossible_count'] == 1
+        assert result['slow_call_count'] == 0
+        assert result['impossible_calls'][0]['seconds'] == 650.0
+
+    def test_slow_calls_sorted_descending_by_seconds(self, tmp_path: Path):
+        # Arrange — two slow calls of differing magnitude
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', 'pm:a:a run (35.0s)'),
+                _line('2026-06-01T10:00:01Z', 'INFO', 'pm:b:b run (90.0s)'),
+            ],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — slowest first
+        seconds = [r['seconds'] for r in result['slow_calls']]
+        assert seconds == [90.0, 35.0]
+
+
+class TestGlobalLogAnalysisErrorFlagging:
+    """Non-INFO levels and INFO lines carrying a failure marker both surface as
+    error lines."""
+
+    def test_non_info_level_flagged(self, tmp_path: Path):
+        # Arrange — an ERROR-level line with no failure marker in the body
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'ERROR', '[STATUS] (x) something off')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert
+        assert result['error_count'] == 1
+        assert result['error_lines'][0]['level'] == 'ERROR'
+
+    def test_info_line_with_failure_marker_flagged(self, tmp_path: Path):
+        # Arrange — INFO level but the body carries a fail marker (status: error)
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:x:x run -> status: error exit_code: 1')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — an INFO line still counts when a fail marker fires
+        assert result['error_count'] == 1
+        assert result['error_lines'][0]['level'] == 'INFO'
+
+    def test_clean_info_line_not_flagged(self, tmp_path: Path):
+        # Arrange — INFO with no failure markers
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', '[STATUS] (x) all good')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert
+        assert result['error_count'] == 0
+
+
+class TestGlobalLogAnalysisPlanAttribution:
+    """A flagged line is attributed to every archived/active plan whose execution
+    window (from ``metrics.toon`` start/end) contains its timestamp; a line
+    outside every window is ad-hoc."""
+
+    def test_in_window_line_attributed_to_plan(self, tmp_path: Path):
+        # Arrange — a plan window enclosing the error line's timestamp
+        _write_metrics_window(
+            tmp_path, 'plan-alpha', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
+        )
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [_line('2026-06-01T10:30:00Z', 'ERROR', '[STATUS] (x) inside window')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — the error row names the enclosing plan
+        assert result['plan_windows_derived'] == 1
+        assert result['error_lines'][0]['plans'] == ['plan-alpha']
+
+    def test_outside_window_line_is_ad_hoc(self, tmp_path: Path):
+        # Arrange — the error timestamp falls OUTSIDE the plan window
+        _write_metrics_window(
+            tmp_path, 'plan-alpha', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
+        )
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [_line('2026-06-01T23:00:00Z', 'ERROR', '[STATUS] (x) after window')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — no plan window contains it; attribution is empty (emitted ad-hoc)
+        assert result['error_lines'][0]['plans'] == []
+
+    def test_active_plan_window_also_correlated(self, tmp_path: Path):
+        # Arrange — a window seeded under active plans/ (not archived-plans/)
+        _write_metrics_window(
+            tmp_path,
+            'plan-active',
+            '2026-06-01T09:00:00Z',
+            '2026-06-01T09:30:00Z',
+            archived=False,
+        )
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [_line('2026-06-01T09:15:00Z', 'WARNING', '[STATUS] (x) mid active run')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — active-plan windows are correlated alongside archived ones
+        assert result['plan_windows_derived'] == 1
+        assert result['error_lines'][0]['plans'] == ['plan-active']
+
+    def test_overlapping_windows_attribute_all_enclosing_plans(self, tmp_path: Path):
+        # Arrange — two plans whose windows both contain the timestamp
+        _write_metrics_window(
+            tmp_path, 'plan-aaa', '2026-06-01T10:00:00Z', '2026-06-01T12:00:00Z'
+        )
+        _write_metrics_window(
+            tmp_path, 'plan-bbb', '2026-06-01T11:00:00Z', '2026-06-01T13:00:00Z'
+        )
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [_line('2026-06-01T11:30:00Z', 'ERROR', '[STATUS] (x) overlap zone')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — both enclosing plans named, sorted
+        assert result['error_lines'][0]['plans'] == ['plan-aaa', 'plan-bbb']
+
+
+class TestGlobalLogAnalysisFixtureLeak:
+    """Synthetic test-fixture bundle/plan ids must NEVER appear in the shared
+    global log; their presence is a leak (a test wrote to the real logs)."""
+
+    def test_fake_bundle_signature_flagged(self, tmp_path: Path):
+        # Arrange — a synthetic fixture bundle id leaked into the corpus
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', 'fake-test-bundle:skill:script run (0.01s)')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — leak detector fires and captures the signature
+        assert result['fixture_leak_count'] == 1
+        assert 'fake-test-bundle' in result['fixture_leaks'][0]['signature']
+
+    def test_idem_and_raising_bundle_signatures_flagged(self, tmp_path: Path):
+        # Arrange — the other two synthetic-bundle signatures from the regex
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', '[STATUS] idem-bundle wrote a file'),
+                _line('2026-06-01T10:00:01Z', 'INFO', '[STATUS] raising-bundle threw'),
+            ],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert — both synthetic-bundle leaks captured
+        assert result['fixture_leak_count'] == 2
+
+    def test_orphan_md_signature_flagged(self, tmp_path: Path):
+        # Arrange — an orphan-md-* synthetic plan id
+        _write_log(
+            tmp_path,
+            'decision-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', '(x) plan orphan-md-xyz123 resolved')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert
+        assert result['fixture_leak_count'] == 1
+        assert 'orphan-md-xyz123' in result['fixture_leaks'][0]['signature']
+
+    def test_clean_corpus_has_no_fixture_leaks(self, tmp_path: Path):
+        # Arrange — only real-looking notations, no synthetic signatures
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:manage-tasks:manage-tasks read (0.01s)')],
+        )
+
+        # Act
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Assert
+        assert result['fixture_leak_count'] == 0
+
+
+class TestEmitGlobalLogBlock:
+    """``emit_global_log_block`` renders the result dict to a TOON block: every
+    flagged line is a genuine signal, ad-hoc attribution fills empty windows, and
+    the summary lines carry the level buckets and per-band counts."""
+
+    def test_block_carries_summary_lines_and_genuine_count(self, tmp_path: Path):
+        # Arrange — one ERROR (in-window) + one slow call
+        _write_metrics_window(
+            tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
+        )
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:10:00Z', 'ERROR', 'pm:x:x run -> boom (0.10s)'),
+                _line('2026-06-01T10:20:00Z', 'INFO', 'pm:y:y run (40.0s)'),
+            ],
+        )
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Act
+        block = audit.emit_global_log_block(result)
+
+        # Assert — header, counts, and a genuine-only signal total
+        assert 'check: global-log-analysis' in block
+        assert 'status: success' in block
+        # one error line + one slow call = 2 genuine signals
+        assert 'genuine_signal_count: 2' in block
+        assert 'error_count: 1' in block
+        assert 'slow_call_count: 1' in block
+        assert 'rows[2]{kind,detail,attributed_plans,severity}:' in block
+
+    def test_empty_result_renders_zero_signal_block(self, tmp_path: Path):
+        # Arrange — no logs at all
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Act
+        block = audit.emit_global_log_block(result)
+
+        # Assert — well-formed block with zero rows and zero genuine signals
+        assert 'genuine_signal_count: 0' in block
+        assert 'logs_present: false' in block
+        assert 'rows[0]{kind,detail,attributed_plans,severity}:' in block
+
+    def test_ad_hoc_attribution_when_no_enclosing_window(self, tmp_path: Path):
+        # Arrange — an error line with no plan window covering it
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'ERROR', 'orphaned error with no window')],
+        )
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        # Act
+        block = audit.emit_global_log_block(result)
+
+        # Assert — the empty attribution renders as the literal ad-hoc sentinel
+        assert 'ad-hoc' in block
+
+    def test_global_log_analysis_in_check_registry(self):
+        # Arrange / Act / Assert — the check is registered and cross-plan scoped
+        assert 'global-log-analysis' in audit.CHECK_NAMES
+        assert 'global-log-analysis' in audit.CROSS_PLAN_CHECKS
 
 
 # =============================================================================
@@ -3142,6 +3653,7 @@ class TestInputIntegrityEmitBlock:
 #   metrics                       -> [{plan_id, disproportionate_token}]
 #   quality-chain                 -> {rows: [{plan_id, flags:[...]}]}
 #   recurring-pattern-detector    -> {rows: [{signature}]}
+#   global-log-analysis           -> {error_count}
 #   quality-verification-report   -> [{unfiled_lessons}]
 #   scope-estimate-accuracy       -> [{plan_id, mismatch}]
 #   task-count-efficiency         -> [{plan_id, outlier}]
@@ -3388,16 +3900,16 @@ class TestCrossCheckSynthesisCouplingC:
 
 class TestCrossCheckSynthesisCouplingD:
     """Coupling (d) argparse_signature_cluster: argparse-shaped recurring
-    signatures AND unfiled quality-verification signatures —
-    collapse-to-ONE source-keyed candidate (two facets after the
-    global-log-analysis check was retired)."""
+    signatures AND global-log errors AND unfiled quality-verification
+    signatures — collapse-to-ONE source-keyed candidate."""
 
-    def test_fires_when_both_facets_present(self):
-        # Arrange — an argparse signature and an unfiled lesson
+    def test_fires_when_all_three_facets_present(self):
+        # Arrange — an argparse signature, a global-log error, an unfiled lesson
         all_results = {
             'recurring-pattern-detector': {
                 'rows': [{'signature': 'argparse: invalid choice foo'}]
             },
+            'global-log-analysis': {'error_count': 3},
             'quality-verification-report': [{'unfiled_lessons': 1}],
         }
 
@@ -3409,20 +3921,21 @@ class TestCrossCheckSynthesisCouplingD:
         assert row['fired'] is True
         assert 'collapse to ONE' in row['detail']
 
-    def test_does_not_fire_without_unfiled_lessons(self):
-        # Arrange — argparse signature but ZERO unfiled quality-verification lessons
+    def test_does_not_fire_without_global_errors(self):
+        # Arrange — argparse signature + unfiled lesson but ZERO global errors
         all_results = {
             'recurring-pattern-detector': {
                 'rows': [{'signature': 'argparse: unrecognized argument'}]
             },
-            'quality-verification-report': [{'unfiled_lessons': 0}],
+            'global-log-analysis': {'error_count': 0},
+            'quality-verification-report': [{'unfiled_lessons': 2}],
         }
 
         # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'argparse_signature_cluster')
 
-        # Assert — missing one of the two facets => not fired
+        # Assert — missing one of the three facets => not fired
         assert row['fired'] is False
 
     def test_does_not_fire_when_signature_not_argparse_shaped(self):
@@ -3431,6 +3944,7 @@ class TestCrossCheckSynthesisCouplingD:
             'recurring-pattern-detector': {
                 'rows': [{'signature': 'flaky network timeout'}]
             },
+            'global-log-analysis': {'error_count': 5},
             'quality-verification-report': [{'unfiled_lessons': 1}],
         }
 

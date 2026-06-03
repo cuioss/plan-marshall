@@ -1,6 +1,6 @@
 ---
 name: audit-archived-plan-retrospectives
-description: Audit archived plans across thirteen retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, PR-merge velocity, task-count efficiency, token-economics, quality-chain, sequence-and-build-minimality, input-integrity corpus completeness, and cross-check-synthesis facet-completeness — file lessons through the three-gate policy, and dormate reviewed plans
+description: Audit archived plans across fourteen retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, PR-merge velocity, task-count efficiency, global-log analysis, token-economics, quality-chain, sequence-and-build-minimality, input-integrity corpus completeness, and cross-check-synthesis facet-completeness — file lessons through the three-gate policy, and dormate reviewed plans
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Write, AskUserQuestion
 ---
@@ -85,7 +85,7 @@ names, anomaly classes, or verdicts that the script did not emit.
 | `--plan-dir PATH` | optional | Override the default `.plan/local/archived-plans` root. Useful when auditing a vendored snapshot. |
 | `--plan-id ID` | optional | Restrict the scan to one archived plan (its directory basename). |
 | `--include-active` | optional | Additionally scan `.plan/local/plans/` so in-flight plans are reported alongside archived ones. Active plans without a manifest are reported as `incomplete`, not `drift`. |
-| `--check NAME` | optional | Run a single check instead of all. Valid names: `execution-context-manifest`, `quality-verification-report`, `metrics`, `recurring-pattern-detector`, `token-efficiency-trend`, `scope-estimate-accuracy`, `pr-merge-velocity`, `task-count-efficiency`, `token-economics`, `quality-chain`, `sequence-and-build-minimality`, `input-integrity`, `cross-check-synthesis`. Default: run every check. When `--check cross-check-synthesis` is selected, the script still computes the upstream checks it consumes (without emitting their blocks) so the synthesis can fire. |
+| `--check NAME` | optional | Run a single check instead of all. Valid names: `execution-context-manifest`, `quality-verification-report`, `metrics`, `recurring-pattern-detector`, `token-efficiency-trend`, `scope-estimate-accuracy`, `pr-merge-velocity`, `task-count-efficiency`, `global-log-analysis`, `token-economics`, `quality-chain`, `sequence-and-build-minimality`, `input-integrity`, `cross-check-synthesis`. Default: run every check. When `--check cross-check-synthesis` is selected, the script still computes the upstream checks it consumes (without emitting their blocks) so the synthesis can fire. |
 | `--dormate-global-logs --confirmed` | optional | Relocate COMPLETE past-date global logs (`{prefix}-YYYY-MM-DD.log`) from `.plan/local/logs/` to `.plan/temp/dormated-plans/global-logs/`. Today's still-active log is never moved. Inert (refused, exit 0) without `--confirmed`; on a destination-name clash the whole move refuses (`status: error`) rather than overwriting. The interactive confirmation is owned by the LLM body (Step 5), never delegated to the script. |
 
 ## Available checks
@@ -105,11 +105,12 @@ the rows.
 | Scope-estimate accuracy | [`checks/scope-estimate-accuracy.md`](checks/scope-estimate-accuracy.md) | Declared `scope_estimate` vs actual affected/modified file count. |
 | PR-merge velocity | [`checks/pr-merge-velocity.md`](checks/pr-merge-velocity.md) | PR open-to-merge duration; long-review-cycle flagging. |
 | Task-count efficiency | [`checks/task-count-efficiency.md`](checks/task-count-efficiency.md) | Under-decomposed / over-decomposed task-count outliers. |
+| Global-log analysis | [`checks/global-log-analysis.md`](checks/global-log-analysis.md) | Cross-plan `.plan/local/logs/` parse: error/warning lines, slow calls, high-frequency callers, impossible/hang durations, and test-fixture leaks — correlated to plan execution windows. |
 | Token economics | [`checks/token-economics.md`](checks/token-economics.md) | Cross-plan per-phase token shares + efficiency ratios joined to scope/change_type, with corpus-derived (never hard-coded) anti-pattern flags: fixed-overhead floor, planning≫execute, outline/refine/finalize-heavy, big-spend-tiny-footprint, long sessions, execute-metrics blindness. |
 | Quality chain | [`checks/quality-chain.md`](checks/quality-chain.md) | Cross-plan findings classified by mechanism (build / self-review / auto-review / human-review) × resolution (direct_fix / loop_back / rerun_flake / accepted / suppressed / pending / lesson); per-plan matrix + corpus totals, chain anti-pattern flags (build_pending_pile, auto_review_only, review_body_duplicate, no_qgate6), and shift-left tiering (Tier 1-4) of auto-review findings against the ext-self-review surfacer remit. Per-finding rows, walked step-by-step. |
 | Sequence and build minimality | [`checks/sequence-and-build-minimality.md`](checks/sequence-and-build-minimality.md) | Cross-plan call-sequence reconstruction from `logs/script-execution.log`, bucketed into phases by the `logs/work.log` `[DISPATCH] role=phase-N` timeline; per-build duration classification (minimal `<120s` / scoped / heavy `>400s`) and work.log build-verb mining (verify / scoped-vs-all module-tests / quality-gate / coverage / compile), with redundancy / non-minimality flags (build_churn, non_minimal_build, docs_only_build, ci_rerun, phase_reentry, arch_over_resolution, consecutive_dup). Carries three structural caveats (finalize-fold conflation, verify-count-upper-bound vs heavy-duration-floor, consecutive_dup over-count) documented in the sub-doc. |
 | Input integrity | [`checks/input-integrity.md`](checks/input-integrity.md) | Per-plan input presence/health (execution.toon / metrics.toon / references.json / tasks/ / artifacts/findings/ / logs/script-execution.log) plus three input-health flags (metrics_blind, incomplete_lifecycle, missing_dispatch_markers) and a corpus data_confidence summary (fully-recorded / partial / blind). The **no-false-healthy foundation**: every other check MUST annotate rows derived from a metrics_blind plan as "floor, not truth", and no check may claim "all healthy" over blind-input plans. |
-| Cross-check synthesis | [`checks/cross-check-synthesis.md`](checks/cross-check-synthesis.md) | The **facet-completeness critic** (runs LAST). Joins the OTHER checks' retained structured results into five cross-check couplings single rows miss: `trend_empty_untrustworthy` (empty token-trend regression over blind-execute plans), `churn_explains_cost` (non_minimal_build/build_churn explaining token-economics finalize/big-spend cost or a metrics disproportionate_token), `qgate_gap_chain` (no_qgate6/auto_review_only correlating with ci_rerun / finalize_heavy), `argparse_signature_cluster` (recurring-pattern argparse signatures correlating with unfiled quality-verification signatures — collapsed to ONE candidate), and `scope_underestimate_cost` (scope under-estimation correlating with high tokens/file or a task-count outlier). Each coupling carries its qualifying caveat and the D1 severity column; the block operationalizes the Step-4b completeness gate. |
+| Cross-check synthesis | [`checks/cross-check-synthesis.md`](checks/cross-check-synthesis.md) | The **facet-completeness critic** (runs LAST). Joins the OTHER checks' retained structured results into five cross-check couplings single rows miss: `trend_empty_untrustworthy` (empty token-trend regression over blind-execute plans), `churn_explains_cost` (non_minimal_build/build_churn explaining token-economics finalize/big-spend cost or a metrics disproportionate_token), `qgate_gap_chain` (no_qgate6/auto_review_only correlating with ci_rerun / finalize_heavy), `argparse_signature_cluster` (recurring-pattern argparse signatures correlating with global-log errors and unfiled quality-verification signatures — collapsed to ONE candidate), and `scope_underestimate_cost` (scope under-estimation correlating with high tokens/file or a task-count outlier). Each coupling carries its qualifying caveat and the D1 severity column; the block operationalizes the Step-4b completeness gate. |
 
 ## Usage Examples
 
@@ -184,7 +185,9 @@ restate them.
 
 For EVERY row that is a potential signal — `drift`, a populated `name_drift`,
 `impossible_value`, a scope mismatch, unfiled proposed lessons, a systemic
-recurring pattern, a PR-velocity flag, a task-count outlier, a token-economics anti-pattern flag
+recurring pattern, a PR-velocity flag, a task-count outlier, a global-log
+signal (error/non-INFO line, slow call, impossible-duration call, high-frequency
+caller, or fixture leak), a token-economics anti-pattern flag
 (`fixed_overhead_floor`, `planning_gt_exec`, `outline_heavy` / `refine_heavy` /
 `finalize_heavy`, `big_spend_tiny_footprint`, `long_session`,
 `exec_metrics_blind`), a quality-chain signal (a chain anti-pattern flag —
@@ -324,7 +327,8 @@ cannot pass the gate while any coupling fired unresolved.
       sub-document — none skipped or sampled.
 - [ ] Every genuine-signal row (`severity: genuine`, `impossible_value`, real
       `drift`, unresolved-role `name_drift`, scope mismatch, unfiled lesson,
-      systemic pattern, PR-velocity flag, task-count outlier, token-economics
+      systemic pattern, PR-velocity flag, task-count outlier, global-log
+      error/slow/impossible/high-frequency/fixture-leak signal, token-economics
       anti-pattern flag, quality-chain anti-pattern flag, `genuine`
       quality-chain per-finding row, or sequence-and-build-minimality flag —
       `build_churn`, `non_minimal_build`, `docs_only_build`, `ci_rerun`,
