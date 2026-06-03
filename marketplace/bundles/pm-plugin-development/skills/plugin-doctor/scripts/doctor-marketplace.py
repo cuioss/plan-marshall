@@ -3,14 +3,17 @@
 doctor-marketplace.py - Batch marketplace analysis and fixing.
 
 Provides automated batch operations across the entire marketplace:
-- scan: Discover all components (agents, commands, skills, scripts)
+- list-components: Enumerate components (agents, commands, skills, scripts);
+  runs no rules — use quality-gate for linting
 - analyze: Batch analyze all components for issues (includes the
   hardcoded-model-on-canonical rule introduced by the role-variants plan;
   see plugin-doctor/standards/doctor-agents.md)
 - fix: Apply safe fixes automatically across marketplace
 - report: Generate comprehensive report for LLM review
 - quality-gate: Run pure-static-analysis rules as a build gate
-  (exit 1 on findings; intended for invocation from `quality-gate` build target)
+  (exit 1 on findings; intended for invocation from `quality-gate` build
+  target). Accepts an optional `--paths` filter to scope the findings to
+  specific component paths while running the same invariant rule set.
 
 This is Phase 1 of the hybrid doctor workflow. It handles deterministic
 operations that can be fully automated. Phase 2 (LLM) handles semantic
@@ -19,10 +22,11 @@ analysis and complex fixes.
 Output: TOON to stdout.
 
 Usage:
-    python3 doctor-marketplace.py scan [--bundles NAMES] [--paths PATH [PATH ...]]
+    python3 doctor-marketplace.py list-components [--bundles NAMES] [--paths PATH [PATH ...]]
     python3 doctor-marketplace.py analyze [--bundles NAMES] [--type TYPE] [--name NAME]
     python3 doctor-marketplace.py fix [--bundles NAMES] [--type TYPE] [--name NAME] [--dry-run]
     python3 doctor-marketplace.py report [--bundles NAMES] [--output FILE]
+    python3 doctor-marketplace.py quality-gate [--paths PATH [PATH ...]] [--marketplace-root DIR]
 """
 
 import argparse
@@ -38,7 +42,14 @@ from _analyze_bash_fence_inline_code_exemption import (
 )
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
-from _analyze_manage_invocation import scan_manage_invocation
+from _analyze_manage_invocation import (
+    _NOTATION_RE,
+    _resolve_executor,
+    analyze_manage_invocation_markdown,
+    check_missing_canonical_blocks,
+    derive_script_tree,
+    scan_manage_invocation,
+)
 from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
@@ -225,8 +236,8 @@ def collect_filtered_components(
 # =============================================================================
 
 
-def _scan_paths(paths: list[str]) -> dict:
-    """Scan explicitly provided component paths."""
+def _list_components_paths(paths: list[str]) -> dict:
+    """Enumerate explicitly provided component paths (runs no rules)."""
     resolved = resolve_component_paths(paths)
     if not resolved:
         return {
@@ -268,11 +279,11 @@ def _scan_paths(paths: list[str]) -> dict:
     }
 
 
-def cmd_scan(args) -> dict:
-    """Scan marketplace and list all components."""
+def cmd_list_components(args) -> dict:
+    """Enumerate marketplace components (runs no rules; use quality-gate to lint)."""
     # --paths mode: resolve explicit paths, skip marketplace discovery
     if hasattr(args, 'paths') and args.paths:
-        return _scan_paths(args.paths)
+        return _list_components_paths(args.paths)
 
     marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
     if not marketplace_root:
@@ -522,6 +533,123 @@ def cmd_fix(args) -> dict:
     }
 
 
+def _resolve_scope_dirs(paths: list[str]) -> list[Path]:
+    """Resolve `--paths` strings to absolute, existing directories.
+
+    A supplied path may be a directory (the skill dir) or a file; in both
+    cases the containing directory is the scope unit. Non-existent paths are
+    dropped silently — `quality-gate --paths` over a deleted directory simply
+    scopes to nothing rather than erroring.
+    """
+    scope_dirs: list[Path] = []
+    for path_str in paths:
+        resolved = Path(path_str).resolve()
+        if not resolved.exists():
+            continue
+        scope_dirs.append(resolved if resolved.is_dir() else resolved.parent)
+    return scope_dirs
+
+
+def _finding_in_scope(finding: dict, scope_dirs: list[Path]) -> bool:
+    """True when the finding's `file` resolves under one of the scope dirs.
+
+    Findings without a `file` key (or with an unresolvable one) are treated as
+    out-of-scope so a path-filtered run never leaks an unanchored finding.
+    """
+    file_value = finding.get('file')
+    if not file_value:
+        return False
+    try:
+        finding_path = Path(file_value).resolve()
+    except (OSError, ValueError):
+        return False
+    return any(
+        finding_path == scope_dir or scope_dir in finding_path.parents
+        for scope_dir in scope_dirs
+    )
+
+
+def _scoped_manage_invocation(
+    marketplace_root: Path, scope_dirs: list[Path]
+) -> list[dict]:
+    """Run the manage-invocation cluster scoped to `scope_dirs`.
+
+    Unlike the marketplace-wide `scan_manage_invocation`, this NEVER calls
+    `build_script_index` (which eagerly derives the `--help` surface of every
+    in-scope script via a thread pool — the expensive path the gate's budget
+    note warns about). Instead it:
+
+      1. reads only the markdown files under the supplied scope dirs,
+      2. extracts the executor notations REFERENCED in those files (reusing
+         `_NOTATION_RE`),
+      3. derives each distinct referenced notation's surface once via the
+         cache-backed `derive_script_tree`,
+      4. validates the scoped markdown against that small index, and
+      5. runs `check_missing_canonical_blocks` filtered to the scoped SKILL.md
+         files only.
+
+    When the executor is unreachable the index is empty and the invocation
+    rule emits nothing, preserving the no-false-positive contract.
+    """
+    executor = _resolve_executor(marketplace_root)
+    if executor is None:
+        return []
+
+    # Enumerate the scoped markdown files (SKILL.md + standards/references/etc).
+    md_files: list[Path] = []
+    for scope_dir in scope_dirs:
+        if scope_dir.is_dir():
+            md_files.extend(sorted(scope_dir.rglob('*.md')))
+    # Dedup while preserving order (overlapping scope dirs may share files).
+    seen: set[Path] = set()
+    unique_md: list[Path] = []
+    for md in md_files:
+        resolved = md.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique_md.append(md)
+
+    # Collect distinct referenced notations across the scoped files.
+    file_contents: list[tuple[Path, str]] = []
+    referenced: set[str] = set()
+    for md in unique_md:
+        try:
+            content = md.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        file_contents.append((md, content))
+        for line in content.splitlines():
+            match = _NOTATION_RE.search(line)
+            if match:
+                referenced.add(
+                    f"{match.group('bundle')}:{match.group('skill')}:{match.group('script')}"
+                )
+
+    # Derive only the referenced notations' surfaces (never the whole index).
+    script_index: dict = {}
+    for notation in sorted(referenced):
+        tree = derive_script_tree(notation, executor)
+        if tree is not None:
+            script_index[notation] = tree
+
+    findings: list[dict] = []
+    if script_index:
+        for md, content in file_contents:
+            findings.extend(
+                analyze_manage_invocation_markdown(content, str(md), script_index)
+            )
+
+    # missing-canonical-block for scoped SKILL.md files only. The whole-tree
+    # `check_missing_canonical_blocks` is filtered down to the scope dirs so a
+    # scoped gate does not flag SKILL.md files outside the touched paths.
+    for block_finding in check_missing_canonical_blocks(marketplace_root):
+        if _finding_in_scope(block_finding, scope_dirs):
+            findings.append(block_finding)
+
+    return findings
+
+
 def cmd_quality_gate(args) -> dict:
     """Run pure-static-analysis invariant rules across the marketplace as a build gate.
 
@@ -567,21 +695,53 @@ def cmd_quality_gate(args) -> dict:
     the existing marketplace tree pre-dates these rules and would require a
     large upfront cleanup sweep.  They are unconditionally active in ``analyze``
     mode and can be run explicitly via ``doctor-marketplace.py analyze``.
+
+    ``--paths`` scoping
+    -------------------
+    With ``--paths {dir}...`` the SAME invariant rule set runs, but the
+    file-scopeable findings are filtered to those whose ``file`` resolves under
+    a supplied path. No flag = today's marketplace-wide behavior, byte-for-byte
+    unchanged. Two rules behave specially under ``--paths``:
+
+      - ``validate_extension_contracts`` ALWAYS runs whole-tree and its findings
+        are included UNFILTERED — extension-contract compliance has no
+        meaningful per-path subset, and a scoped finalize gate should still
+        catch a broken extension contract the change introduced.
+      - the manage-invocation cluster runs via a referenced-notation index
+        (``derive_script_tree`` per distinct referenced notation), never the
+        eager ``build_script_index`` — keeping the scoped manage-invocation
+        check cheap. ``missing-canonical-block`` is filtered to scoped SKILL.md
+        files only.
     """
     marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
     if not marketplace_root:
         return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
-    # quality-gate is intentionally marketplace-wide — bundle filtering would
+    paths = getattr(args, 'paths', None)
+    scope_dirs = _resolve_scope_dirs(paths) if paths else []
+
+    # quality-gate is intentionally NOT bundle-filtered — bundle filtering would
     # break the "real marketplace must produce zero findings" invariant the
-    # gate exists to enforce. No --bundles flag is exposed.
+    # gate exists to enforce. No --bundles flag is exposed. The optional --paths
+    # filter scopes the FINDINGS (a strict subset), not the rule set.
     all_issues: list[dict] = []
     rule_summaries: list[dict] = []
 
-    argparse_findings = scan_argparse_safety(marketplace_root)
+    # File-scopeable rules: each emits file-anchored findings, so running them
+    # marketplace-wide and filtering by `file` produces a strict subset under
+    # --paths. The filter is the identity when `scope_dirs` is empty.
+    def _scoped(findings: list[dict]) -> list[dict]:
+        if not scope_dirs:
+            return findings
+        return [f for f in findings if _finding_in_scope(f, scope_dirs)]
+
+    argparse_findings = _scoped(scan_argparse_safety(marketplace_root))
     all_issues.extend(argparse_findings)
     rule_summaries.append({'rule': 'scan_argparse_safety', 'findings': len(argparse_findings)})
 
+    # validate_extension_contracts ALWAYS runs whole-tree and is NEVER filtered,
+    # even under --paths — extension-contract compliance has no per-path subset,
+    # and a scoped gate must still catch a broken extension contract.
     contract_result = validate_extension_contracts(marketplace_root.parent)
     contract_errors = contract_result.get('errors', [])
     for err in contract_errors:
@@ -596,11 +756,11 @@ def cmd_quality_gate(args) -> dict:
         )
     rule_summaries.append({'rule': 'validate_extension_contracts', 'findings': len(contract_errors)})
 
-    naming_findings = analyze_argument_naming(marketplace_root)
+    naming_findings = _scoped(analyze_argument_naming(marketplace_root))
     all_issues.extend(naming_findings)
     rule_summaries.append({'rule': 'analyze_argument_naming', 'findings': len(naming_findings)})
 
-    shell_substitution_findings = analyze_shell_substitution_in_skills(marketplace_root)
+    shell_substitution_findings = _scoped(analyze_shell_substitution_in_skills(marketplace_root))
     all_issues.extend(shell_substitution_findings)
     rule_summaries.append(
         {'rule': 'analyze_shell_substitution_in_skills', 'findings': len(shell_substitution_findings)}
@@ -613,19 +773,19 @@ def cmd_quality_gate(args) -> dict:
     # rules could enforce.  Invoke via ``analyze`` for explicit drift sweeps;
     # new code written after this plan is checked by the analyze path.
 
-    lesson_id_findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+    lesson_id_findings = _scoped(analyze_lesson_id_in_skill_prose(marketplace_root))
     all_issues.extend(lesson_id_findings)
     rule_summaries.append(
         {'rule': 'analyze_lesson_id_in_skill_prose', 'findings': len(lesson_id_findings)}
     )
 
-    historical_prose_findings = analyze_historical_prose_in_skills(marketplace_root)
+    historical_prose_findings = _scoped(analyze_historical_prose_in_skills(marketplace_root))
     all_issues.extend(historical_prose_findings)
     rule_summaries.append(
         {'rule': 'analyze_historical_prose_in_skills', 'findings': len(historical_prose_findings)}
     )
 
-    role_field_findings = analyze_role_field(marketplace_root)
+    role_field_findings = _scoped(analyze_role_field(marketplace_root))
     all_issues.extend(role_field_findings)
     rule_summaries.append({'rule': 'analyze_role_field', 'findings': len(role_field_findings)})
 
@@ -643,7 +803,12 @@ def cmd_quality_gate(args) -> dict:
     # ``bundles/``) so their layout probing and executor discovery resolve —
     # the same ``.parent`` conversion already used for
     # ``validate_extension_contracts`` above.
-    manage_invocation_findings = scan_manage_invocation(marketplace_root.parent)
+    if scope_dirs:
+        # Scoped: derive only the notations the scoped docs reference (never the
+        # eager whole-marketplace build_script_index).
+        manage_invocation_findings = _scoped_manage_invocation(marketplace_root.parent, scope_dirs)
+    else:
+        manage_invocation_findings = scan_manage_invocation(marketplace_root.parent)
     all_issues.extend(manage_invocation_findings)
     rule_summaries.append(
         {'rule': 'scan_manage_invocation', 'findings': len(manage_invocation_findings)}
@@ -836,17 +1001,23 @@ def main() -> int:
         allow_abbrev=False,
         epilog="""
 Examples:
-  # Scan entire marketplace
-  %(prog)s scan
+  # Enumerate entire marketplace
+  %(prog)s list-components
 
-  # Scan specific bundles
-  %(prog)s scan --bundles pm-dev-java,plan-marshall
+  # Enumerate specific bundles
+  %(prog)s list-components --bundles pm-dev-java,plan-marshall
 
-  # Scan explicit component paths
-  %(prog)s scan --paths marketplace/bundles/plan-marshall/skills/phase-4-plan
+  # Enumerate explicit component paths
+  %(prog)s list-components --paths marketplace/bundles/plan-marshall/skills/phase-4-plan
 
-  # Scan multiple paths (marketplace and project-local)
-  %(prog)s scan --paths marketplace/bundles/plan-marshall/skills/phase-4-plan .claude/skills/my-skill
+  # Enumerate multiple paths (marketplace and project-local)
+  %(prog)s list-components --paths marketplace/bundles/plan-marshall/skills/phase-4-plan .claude/skills/my-skill
+
+  # Run the quality gate marketplace-wide
+  %(prog)s quality-gate
+
+  # Run the quality gate scoped to a touched skill
+  %(prog)s quality-gate --paths marketplace/bundles/plan-marshall/skills/phase-4-plan --marketplace-root marketplace
 
   # Analyze all components
   %(prog)s analyze
@@ -877,15 +1048,19 @@ Examples:
         'NOT bundles/ itself.'
     )
 
-    # scan subcommand
-    p_scan = subparsers.add_parser('scan', help='Scan marketplace components', allow_abbrev=False)
-    scan_source = p_scan.add_mutually_exclusive_group()
-    scan_source.add_argument('--bundles', help='Comma-separated list of bundle names to scan')
-    scan_source.add_argument(
-        '--paths', nargs='+', help='Explicit component paths to scan (mutually exclusive with --bundles)'
+    # list-components subcommand
+    p_list_components = subparsers.add_parser(
+        'list-components',
+        help='Enumerate components (runs no rules; use quality-gate for linting)',
+        allow_abbrev=False,
     )
-    p_scan.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
-    p_scan.set_defaults(func=cmd_scan)
+    list_components_source = p_list_components.add_mutually_exclusive_group()
+    list_components_source.add_argument('--bundles', help='Comma-separated list of bundle names to enumerate')
+    list_components_source.add_argument(
+        '--paths', nargs='+', help='Explicit component paths to enumerate (mutually exclusive with --bundles)'
+    )
+    p_list_components.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
+    p_list_components.set_defaults(func=cmd_list_components)
 
     # analyze subcommand
     p_analyze = subparsers.add_parser('analyze', help='Analyze all components for issues', allow_abbrev=False)
@@ -933,8 +1108,20 @@ Examples:
     # quality-gate subcommand
     p_quality_gate = subparsers.add_parser(
         'quality-gate',
-        help='Run pure-static-analysis rules as a build gate (exit 1 on findings, marketplace-wide only)',
+        help='Run pure-static-analysis rules as a build gate (exit 1 on findings)',
         allow_abbrev=False,
+    )
+    p_quality_gate.add_argument(
+        '--paths',
+        nargs='+',
+        dest='paths',
+        help=(
+            'Optional explicit component paths to scope the findings to. The SAME '
+            'invariant rule set runs; file-anchored findings are filtered to those '
+            'under a supplied path. No flag = marketplace-wide (byte-for-byte '
+            'unchanged). NOTE: validate_extension_contracts ALWAYS runs whole-tree '
+            'and is included unfiltered even under --paths.'
+        ),
     )
     p_quality_gate.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_quality_gate.set_defaults(func=cmd_quality_gate)

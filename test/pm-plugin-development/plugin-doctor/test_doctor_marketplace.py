@@ -2,10 +2,11 @@
 """Tests for doctor-marketplace.py - batch marketplace analysis and fixing.
 
 Tests the hybrid Phase 1 script that provides automated batch operations:
-- scan: Discover all components
+- list-components: Enumerate all components (runs no rules)
 - analyze: Batch analyze for issues
 - fix: Apply safe fixes automatically
 - report: Generate comprehensive report
+- quality-gate: Run invariant rules as a build gate (optionally --paths scoped)
 
 Output format: TOON (parsed via toon_parser).
 
@@ -70,11 +71,12 @@ def test_main_help():
     """Test main --help displays all subcommands."""
     result = run_script(SCRIPT_PATH, '--help')
     combined = result.stdout + result.stderr
-    assert 'scan' in combined, 'scan subcommand in help'
+    assert 'list-components' in combined, 'list-components subcommand in help'
     assert 'analyze' in combined, 'analyze subcommand in help'
     assert 'fix' in combined, 'fix subcommand in help'
     assert 'report' in combined, 'report subcommand in help'
     assert 'quality-gate' in combined, 'quality-gate subcommand in help'
+    assert 'scan' not in combined.split(), 'scan subcommand must be removed (renamed to list-components)'
 
 
 def test_no_command_shows_help():
@@ -82,24 +84,30 @@ def test_no_command_shows_help():
     result = run_script(SCRIPT_PATH)
     assert result.returncode != 0, 'Should return error without command'
     combined = result.stdout + result.stderr
-    assert 'scan' in combined or 'usage' in combined.lower(), 'Should show usage information'
+    assert 'list-components' in combined or 'usage' in combined.lower(), 'Should show usage information'
 
 
 # =============================================================================
-# Scan Subcommand Tests (Tier 3 - subprocess, cwd-dependent)
+# list-components Subcommand Tests (Tier 3 - subprocess, cwd-dependent)
 # =============================================================================
 
 
-def test_scan_help():
-    """Test scan --help is available."""
-    result = run_script(SCRIPT_PATH, 'scan', '--help')
+def test_list_components_help():
+    """Test list-components --help is available."""
+    result = run_script(SCRIPT_PATH, 'list-components', '--help')
     combined = result.stdout + result.stderr
     assert 'bundles' in combined.lower(), 'Help should mention bundles option'
 
 
-# Real-tree scan shape tests (test_scan_returns_valid_toon, test_scan_finds_bundles,
-# test_scan_bundle_structure, test_scan_bundle_filter) were removed — the contract
-# is covered in-process by the synthetic test_fixture_scan / test_fixture_scan_bundle_filter.
+def test_scan_subcommand_removed():
+    """The renamed-away `scan` subcommand now fails with argparse exit 2."""
+    result = run_script(SCRIPT_PATH, 'scan', '--paths', '/tmp')
+    assert result.returncode == 2, f'scan must be rejected with argparse exit 2, got {result.returncode}'
+    assert 'invalid choice' in (result.stdout + result.stderr).lower(), 'argparse should report invalid choice'
+
+
+# Real-tree enumeration shape tests are covered in-process by the synthetic
+# test_fixture_list_components / test_fixture_list_components_bundle_filter.
 
 
 # =============================================================================
@@ -230,27 +238,27 @@ This skill provides testing capabilities.
             shutil.rmtree(self.temp_dir)
 
 
-def test_fixture_scan():
-    """Test scan with fixture marketplace."""
+def test_fixture_list_components():
+    """Test list-components with fixture marketplace."""
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
         result = run_script(
             SCRIPT_PATH,
-            'scan',
+            'list-components',
             env_overrides={
                 'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
                 'PLAN_BASE_DIR': str(temp_dir / '.plan'),
                 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
             },
         )
-        assert result.returncode == 0, f'Scan failed: {result.stderr}'
+        assert result.returncode == 0, f'list-components failed: {result.stderr}'
 
         data = parse_output(result)
-        # Default scan (no --paths/--bundles) must NOT be in paths mode
+        # Default enumeration (no --paths/--bundles) must NOT be in paths mode
         # (covers the former real-tree test_scan_without_paths_or_bundles).
-        assert 'mode' not in data or data.get('mode') != 'paths', 'Default scan should not be in paths mode'
+        assert 'mode' not in data or data.get('mode') != 'paths', 'Default enumeration should not be in paths mode'
         assert 'bundles' in data, 'Should have bundles field'
         assert 'total_bundles' in data, 'Should have total_bundles field'
         assert 'total_components' in data, 'Should have total_components field'
@@ -265,15 +273,15 @@ def test_fixture_scan():
         fixture.cleanup()
 
 
-def test_fixture_scan_bundle_filter():
-    """Test scan --bundles filter restricts output to the named bundle."""
+def test_fixture_list_components_bundle_filter():
+    """Test list-components --bundles filter restricts output to the named bundle."""
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
         result = run_script(
             SCRIPT_PATH,
-            'scan',
+            'list-components',
             '--bundles',
             'test-bundle',
             env_overrides={
@@ -282,7 +290,7 @@ def test_fixture_scan_bundle_filter():
                 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
             },
         )
-        assert result.returncode == 0, f'Scan --bundles failed: {result.stderr}'
+        assert result.returncode == 0, f'list-components --bundles failed: {result.stderr}'
 
         data = parse_output(result)
         assert data['total_bundles'] == 1, 'Should have exactly one bundle'
@@ -847,17 +855,17 @@ def _collect_issues(data, path_filter=None):
 
 
 # =============================================================================
-# Scan --paths Flag Tests (Tier 3 - subprocess)
+# list-components --paths Flag Tests (Tier 3 - subprocess)
 # =============================================================================
 
 
-def test_scan_paths_valid_skill(tmp_path):
-    """Test scan --paths with a valid skill directory containing SKILL.md."""
+def test_list_components_paths_valid_skill(tmp_path):
+    """Test list-components --paths with a valid skill directory containing SKILL.md."""
     skill_dir = tmp_path / 'my-skill'
     skill_dir.mkdir()
     (skill_dir / 'SKILL.md').write_text("""---
 name: my-skill
-description: A test skill for paths scanning
+description: A test skill for paths enumeration
 ---
 
 # My Skill
@@ -865,18 +873,20 @@ description: A test skill for paths scanning
 Content here.
 """)
 
-    result = run_script(SCRIPT_PATH, 'scan', '--paths', str(skill_dir))
-    assert result.returncode == 0, f'Scan --paths failed: {result.stderr}'
+    result = run_script(SCRIPT_PATH, 'list-components', '--paths', str(skill_dir))
+    assert result.returncode == 0, f'list-components --paths failed: {result.stderr}'
 
     data = parse_output(result)
     assert data['mode'] == 'paths', 'Should report paths mode'
     assert data['total_components'] == 1, f'Should find 1 component, got {data["total_components"]}'
     assert data['components'][0]['type'] == 'skill', 'Should detect skill type'
     assert data['components'][0]['name'] == 'my-skill', 'Should use directory name as skill name'
+    # list-components enumerates only — it must NOT carry an issues field.
+    assert 'issues' not in data, 'list-components must not produce an issues field'
 
 
-def test_scan_paths_multiple(tmp_path):
-    """Test scan --paths with multiple paths (skill and agent)."""
+def test_list_components_paths_multiple(tmp_path):
+    """Test list-components --paths with multiple paths (skill and agent)."""
     # Create a skill directory
     skill_dir = tmp_path / 'test-skill'
     skill_dir.mkdir()
@@ -900,8 +910,8 @@ tools: Read, Write
 # Test Agent
 """)
 
-    result = run_script(SCRIPT_PATH, 'scan', '--paths', str(skill_dir), str(agents_parent))
-    assert result.returncode == 0, f'Scan --paths failed: {result.stderr}'
+    result = run_script(SCRIPT_PATH, 'list-components', '--paths', str(skill_dir), str(agents_parent))
+    assert result.returncode == 0, f'list-components --paths failed: {result.stderr}'
 
     data = parse_output(result)
     assert data['mode'] == 'paths', 'Should report paths mode'
@@ -911,12 +921,12 @@ tools: Read, Write
     assert 'skill' in types_found, 'Should find the skill component'
 
 
-def test_scan_paths_invalid_path(tmp_path):
-    """Test scan --paths with a non-existent path skips it with warning."""
+def test_list_components_paths_invalid_path(tmp_path):
+    """Test list-components --paths with a non-existent path skips it with warning."""
     nonexistent = str(tmp_path / 'does-not-exist')
 
-    result = run_script(SCRIPT_PATH, 'scan', '--paths', nonexistent)
-    assert result.returncode == 0, f'Scan --paths should succeed even with invalid path: {result.stderr}'
+    result = run_script(SCRIPT_PATH, 'list-components', '--paths', nonexistent)
+    assert result.returncode == 0, f'list-components --paths should succeed even with invalid path: {result.stderr}'
 
     data = parse_output(result)
     assert data['mode'] == 'paths', 'Should report paths mode'
@@ -924,15 +934,15 @@ def test_scan_paths_invalid_path(tmp_path):
     assert 'WARNING' in result.stderr, 'Should emit warning on stderr for missing path'
 
 
-def test_scan_paths_mutual_exclusion_with_bundles():
-    """Test scan --paths and --bundles are mutually exclusive."""
-    result = run_script(SCRIPT_PATH, 'scan', '--paths', '/some/path', '--bundles', 'plan-marshall')
+def test_list_components_paths_mutual_exclusion_with_bundles():
+    """Test list-components --paths and --bundles are mutually exclusive."""
+    result = run_script(SCRIPT_PATH, 'list-components', '--paths', '/some/path', '--bundles', 'plan-marshall')
     assert result.returncode != 0, 'Should fail when both --paths and --bundles are provided'
 
 
 # Real-tree test_scan_without_paths_or_bundles was removed — the default-mode
 # contract (no 'mode' key, total_bundles/bundles present) is covered in-process
-# by the synthetic test_fixture_scan.
+# by the synthetic test_fixture_list_components.
 
 
 # =============================================================================
@@ -1080,8 +1090,10 @@ def test_quality_gate_help():
     result = run_script(SCRIPT_PATH, 'quality-gate', '--help')
     combined = result.stdout + result.stderr
     assert 'marketplace-root' in combined.lower(), 'Help should mention --marketplace-root override'
-    # quality-gate is intentionally marketplace-wide — no --bundles filter exposed
+    # quality-gate is intentionally NOT bundle-filtered — no --bundles flag exposed
     assert '--bundles' not in combined, 'quality-gate must NOT expose a --bundles flag'
+    # The optional --paths scoping flag IS exposed.
+    assert '--paths' in combined, 'quality-gate should expose the --paths scoping flag'
 
 
 def test_quality_gate_clean_fixture_passes(tmp_path):
@@ -1123,6 +1135,193 @@ def test_quality_gate_argparse_violation_fails(tmp_path):
     data = parse_output(result)
     assert data['status'] == 'fail', f'Expected status: fail on violation fixture, got: {data}'
     assert data['total_issues'] >= 1, 'Should report at least one finding'
+
+
+def _build_two_skill_scope_fixture(temp_root: Path) -> tuple[Path, Path, Path]:
+    """Build a fixture with a violating skill A and a clean skill B.
+
+    Skill A carries a script that violates argparse_safety (no
+    allow_abbrev=False); skill B is clean. Returns
+    ``(temp_root, skill_a_dir, skill_b_dir)`` so the scoping tests can target
+    each skill dir directly.
+    """
+    bundles_dir = temp_root / 'marketplace' / 'bundles'
+    bundles_dir.mkdir(parents=True)
+    bundle = bundles_dir / 'qg-scope'
+    bundle.mkdir()
+
+    plugin_dir = bundle / '.claude-plugin'
+    plugin_dir.mkdir()
+    (plugin_dir / 'plugin.json').write_text(json.dumps({'name': 'qg-scope', 'version': '1.0.0'}))
+
+    # Skill A — violating script.
+    skill_a = bundle / 'skills' / 'skill-a'
+    skill_a.mkdir(parents=True)
+    (skill_a / 'SKILL.md').write_text(
+        '---\nname: skill-a\ndescription: A skill with a violating script\nuser-invocable: false\n---\n\n# Skill A\n'
+    )
+    scripts_a = skill_a / 'scripts'
+    scripts_a.mkdir()
+    (scripts_a / 'bad_script.py').write_text(
+        'import argparse\n'
+        '\n'
+        "parser = argparse.ArgumentParser(description='no allow_abbrev')\n"
+        "parser.add_argument('--foo')\n"
+    )
+
+    # Skill B — clean.
+    skill_b = bundle / 'skills' / 'skill-b'
+    skill_b.mkdir(parents=True)
+    (skill_b / 'SKILL.md').write_text(
+        '---\nname: skill-b\ndescription: A clean skill\nuser-invocable: false\n---\n\n# Skill B\n'
+    )
+    return temp_root, skill_a, skill_b
+
+
+def _quality_gate_env(temp_root: Path) -> dict:
+    return {
+        'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
+        'PLAN_BASE_DIR': str(temp_root / '.plan'),
+        'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
+    }
+
+
+def test_quality_gate_paths_runs_extension_contracts_whole_tree(tmp_path):
+    """validate_extension_contracts ALWAYS runs under --paths (whole-tree, unfiltered).
+
+    Pins the documented exception: --paths scopes the file-anchored rules but
+    extension-contract validation has no per-path subset, so it must still
+    appear in rules_run even on a scoped run over a clean skill. The rules_run
+    enumeration is the observable signal that the contract rule executed.
+    """
+    temp_root, _skill_a, skill_b = _build_two_skill_scope_fixture(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        'quality-gate',
+        '--paths',
+        str(skill_b),
+        env_overrides=_quality_gate_env(temp_root),
+    )
+    data = parse_output(result)
+    rules = {entry['rule'] for entry in data['rules_run']}
+    assert 'validate_extension_contracts' in rules, (
+        f'validate_extension_contracts must run whole-tree even under --paths, rules_run={data["rules_run"]}'
+    )
+
+
+def test_quality_gate_paths_scopes_to_violating_skill(tmp_path):
+    """quality-gate --paths {skill-a} surfaces skill A's violation."""
+    temp_root, skill_a, _skill_b = _build_two_skill_scope_fixture(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        'quality-gate',
+        '--paths',
+        str(skill_a),
+        env_overrides=_quality_gate_env(temp_root),
+    )
+    assert result.returncode == 1, f'Expected exit 1 scoping to the violating skill, got {result.returncode}'
+
+    data = parse_output(result)
+    assert data['status'] == 'fail', f'Scoped run over skill A should fail, got: {data}'
+    assert data['total_issues'] >= 1, 'Scoped run over skill A should report the violation'
+    # Every reported finding must be anchored under skill A.
+    for issue in data['issues']:
+        assert str(skill_a) in issue['file'], f'Scoped finding leaked outside skill A: {issue["file"]}'
+
+
+def test_quality_gate_paths_clean_skill_filters_out_violation(tmp_path):
+    """quality-gate --paths {skill-b} reports pass — skill A's violation is filtered out."""
+    temp_root, _skill_a, skill_b = _build_two_skill_scope_fixture(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        'quality-gate',
+        '--paths',
+        str(skill_b),
+        env_overrides=_quality_gate_env(temp_root),
+    )
+    assert result.returncode == 0, f'Expected exit 0 scoping to the clean skill, got {result.returncode}: {result.stderr}'
+
+    data = parse_output(result)
+    assert data['status'] == 'pass', f'Scoped run over clean skill B should pass, got: {data}'
+    assert data['total_issues'] == 0, f'Scoped run over skill B must filter out skill A violation, got: {data}'
+
+
+def test_quality_gate_no_flag_still_reports_violation(tmp_path):
+    """No-flag quality-gate (whole-tree) still reports skill A's violation.
+
+    Pins that --paths is purely additive: the no-flag default path is unchanged
+    and still surfaces the marketplace-wide finding.
+    """
+    temp_root, skill_a, _skill_b = _build_two_skill_scope_fixture(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        'quality-gate',
+        env_overrides=_quality_gate_env(temp_root),
+    )
+    assert result.returncode == 1, f'No-flag whole-tree gate should fail on the violation, got {result.returncode}'
+
+    data = parse_output(result)
+    assert data['status'] == 'fail', f'No-flag gate should fail, got: {data}'
+    files = {issue['file'] for issue in data['issues']}
+    assert any(str(skill_a) in f for f in files), 'No-flag gate should still report skill A violation'
+
+
+def test_scoped_manage_invocation_derives_per_referenced_notation(tmp_path, monkeypatch):
+    """`_scoped_manage_invocation` derives ONLY the referenced notations via
+    `derive_script_tree`, NEVER the eager whole-marketplace `build_script_index`.
+
+    This is the cost contract: a --paths run must not cold-derive the entire
+    in-scope script set. The test monkeypatches the module's `derive_script_tree`
+    (recording the notations it is asked to derive) and asserts the scoped helper
+    only derives notations referenced in the scoped markdown — and that no caller
+    in the scoped path invokes `build_script_index`.
+    """
+    # Arrange — a scoped skill citing exactly one doctor-marketplace invocation.
+    skill = tmp_path / 'marketplace' / 'bundles' / 'qg-mi' / 'skills' / 'citing-skill'
+    skill.mkdir(parents=True)
+    (skill / 'SKILL.md').write_text(
+        '---\nname: citing-skill\ndescription: cites one invocation\n---\n\n'
+        '# Citing Skill\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py '
+        'pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --marketplace-root marketplace\n'
+        '```\n'
+        '\n## Canonical invocations\n\n### quality-gate\n\n'
+        '```bash\npython3 .plan/execute-script.py '
+        'pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate\n```\n'
+    )
+
+    derived: list[str] = []
+
+    def _fake_derive(notation, executor):
+        derived.append(notation)
+        return None  # empty surface — no findings, but the call is recorded
+
+    # Resolve a real executor location so `_resolve_executor` returns non-None;
+    # the .plan/execute-script.py only needs to exist (derive is faked).
+    plan_dir = tmp_path / 'marketplace' / '.plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'execute-script.py').write_text('# stub executor\n')
+
+    monkeypatch.setattr(_doctor_marketplace, 'derive_script_tree', _fake_derive)
+
+    def _fail_build_index(*_args, **_kwargs):
+        raise AssertionError('scoped path must NOT call build_script_index')
+
+    # build_script_index is imported transitively; guard the symbol the scoped
+    # helper would reach if it regressed to the eager path.
+    if hasattr(_doctor_marketplace, 'build_script_index'):
+        monkeypatch.setattr(_doctor_marketplace, 'build_script_index', _fail_build_index)
+
+    # Act — call the scoped helper directly. marketplace_root is the parent of
+    # bundles/ (the convention the manage-invocation helpers expect).
+    marketplace_root = tmp_path / 'marketplace'
+    _doctor_marketplace._scoped_manage_invocation(marketplace_root, [skill])
+
+    # Assert — exactly the one referenced notation was derived, nothing else.
+    assert derived == ['pm-plugin-development:plugin-doctor:doctor-marketplace'], (
+        f'Scoped helper should derive only the referenced notation, got: {derived}'
+    )
 
 
 # =============================================================================

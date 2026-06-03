@@ -239,10 +239,11 @@ Only `doctor-marketplace.py` is registered in the executor. The other scripts (`
 
 | Script | Subcommand | Mode | Purpose |
 |--------|------------|------|---------|
-| `doctor-marketplace.py` | `scan` | **EXECUTE** | Batch discovery of all marketplace components (`--bundles`, `--paths`) |
+| `doctor-marketplace.py` | `list-components` | **EXECUTE** | Batch discovery / enumeration of components (`--bundles`, `--paths`); runs no rules |
 | `doctor-marketplace.py` | `analyze` | **EXECUTE** | Batch analysis of all components for issues (`--bundles`, `--type`, `--name`) |
 | `doctor-marketplace.py` | `fix` | **EXECUTE** | Auto-apply safe fixes across marketplace (`--bundles`, `--type`, `--name`, `--dry-run`) |
 | `doctor-marketplace.py` | `report` | **EXECUTE** | Generate comprehensive report for LLM review |
+| `doctor-marketplace.py` | `quality-gate` | **EXECUTE** | Run invariant rules as a build gate; optional `--paths` scoping (exit 1 on findings) |
 
 **Notation**: `pm-plugin-development:plugin-doctor:doctor-marketplace {subcommand}`
 
@@ -260,23 +261,23 @@ Only `doctor-marketplace.py` is registered in the executor. The other scripts (`
 
 #### Hybrid Batch Processing
 
-Subcommands: `scan` → `analyze` → `fix` → `report`. See [standards/doctor-marketplace.md](standards/doctor-marketplace.md) for the complete two-phase (script + LLM) workflow, report output format, and directory structure.
+Subcommands: `list-components` → `analyze` → `fix` → `report`. See [standards/doctor-marketplace.md](standards/doctor-marketplace.md) for the complete two-phase (script + LLM) workflow, report output format, and directory structure.
 
-#### `scan --paths` (Explicit Path Mode)
+#### `list-components --paths` (Explicit Path Mode)
 
-The `scan` subcommand accepts `--paths` to scan explicit component paths instead of discovering from the marketplace. This is mutually exclusive with `--bundles`.
+The `list-components` subcommand enumerates components and runs no rules — use `quality-gate` for linting. It accepts `--paths` to enumerate explicit component paths instead of discovering from the marketplace. This is mutually exclusive with `--bundles`.
 
 ```bash
-# Scan a marketplace skill by path
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan \
+# Enumerate a marketplace skill by path
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace list-components \
   --paths marketplace/bundles/plan-marshall/skills/phase-4-plan
 
-# Scan project-local skills
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan \
+# Enumerate project-local skills
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace list-components \
   --paths .claude/skills/my-custom-skill
 
-# Scan multiple paths (mixed marketplace and project-local)
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan \
+# Enumerate multiple paths (mixed marketplace and project-local)
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace list-components \
   --paths marketplace/bundles/plan-marshall/skills/phase-4-plan \
          marketplace/bundles/pm-dev-java/agents/java-verify-agent.md \
          .claude/skills/project-local-skill
@@ -289,7 +290,7 @@ When `--paths` is provided:
 - Marketplace root validation is skipped entirely
 - Invalid or missing paths produce a warning on stderr and are skipped
 
-**Note**: `--paths` and `--bundles` are mutually exclusive. Use `--bundles` for bundle-scoped discovery, `--paths` for targeting specific components.
+**Note**: `--paths` and `--bundles` are mutually exclusive. Use `--bundles` for bundle-scoped discovery, `--paths` for targeting specific components. `list-components` enumerates only — to run the invariant rule set scoped to specific paths, use `quality-gate --paths {dir}...`.
 
 #### Worktree-Aware Invocation
 
@@ -387,14 +388,14 @@ This skill is designed to run without user prompts for safe operations. Required
 
 The canonical argparse surface for `doctor-marketplace.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
-### scan
+### list-components
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan \
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace list-components \
   [--bundles BUNDLES | --paths PATHS [PATHS ...]] [--marketplace-root MARKETPLACE_ROOT]
 ```
 
-`--bundles` and `--paths` are mutually exclusive.
+`--bundles` and `--paths` are mutually exclusive. `list-components` enumerates components only and runs no rules — use `quality-gate` to lint.
 
 ### analyze
 
@@ -422,8 +423,10 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marke
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate \
-  [--marketplace-root MARKETPLACE_ROOT]
+  [--paths PATHS [PATHS ...]] [--marketplace-root MARKETPLACE_ROOT]
 ```
+
+`--paths` scopes the file-anchored findings to the supplied component paths (the same invariant rule set runs). No flag = marketplace-wide. `validate_extension_contracts` always runs whole-tree even under `--paths`.
 
 ### test-conventions
 

@@ -265,7 +265,7 @@ For localized changes where targets are already known from module_mapping.
 
 Before assigning `profiles[]` to any deliverable, every author MUST classify the deliverable's `**Affected files:**` list against the six-bucket file-type classifier. The buckets, predicates, profile assignments, and verification commands are documented in [`standards/outline-workflow-detail.md` § File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The rule is normative — assigning `module_testing` to a `documentation_only` deliverable is a contract violation that phase-4-plan refuses to translate into a paired pytest task and instead emits a Q-Gate finding back to this phase. The aggregator that produces the bucket lives in `manage-execution-manifest._classify_paths_via_extensions`; per-domain predicates are owned by each bundle's `ExtensionBase.classify_paths()` override.
 
-The canonical doctor invocation cited in all `documentation_only` deliverable Verification fields is `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}` (NOT the stale `:plugin-doctor:plugin-doctor`).
+The canonical doctor invocation cited in all `documentation_only` deliverable Verification fields is `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root marketplace` (NOT the stale `:plugin-doctor:plugin-doctor`, and NOT the rule-less `scan`/`list-components` enumerate verbs).
 
 ### Value-change test-sweep rule (normative)
 
@@ -410,7 +410,7 @@ Each deliverable in solution_outline.md MUST follow this field order. The author
 
 The `<!-- bucket: ... -->` comment on the `**Profiles:**` line is REQUIRED and records the resolved file-type bucket from the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The bucket determines which profiles are valid for the deliverable:
 
-- `documentation_only` → `implementation` only; never paired with `module_testing`. Verification cites `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}`.
+- `documentation_only` → `implementation` only; never paired with `module_testing`. Verification cites `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root marketplace`.
 - `production_only` → `implementation` + `module_testing`. Verification cites the resolved `quality-gate` and `module-tests` commands.
 - `test_only` → `module_testing` only (test-only deliverable). Verification cites the resolved `module-tests` command.
 - `mixed_code` → `implementation` + `module_testing` (production + test paths, no documentation). Verification cites the resolved `quality-gate` and `module-tests` commands.

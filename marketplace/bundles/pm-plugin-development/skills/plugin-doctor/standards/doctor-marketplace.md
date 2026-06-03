@@ -8,7 +8,7 @@ Full marketplace batch analysis using hybrid two-phase workflow.
 
 ## Phase 1: Script Batch Processing
 
-**EXECUTE** the batch script to scan, analyze, and apply safe fixes.
+**EXECUTE** the batch script to enumerate, analyze, and apply safe fixes.
 
 If executor exists, use notation:
 ```bash
