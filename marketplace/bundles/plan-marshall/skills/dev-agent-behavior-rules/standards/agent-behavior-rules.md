@@ -55,7 +55,9 @@ This applies equally to production code, test code, and documentation.
 
 **Dispatch the research-best-practices workflow** (NOT web search tools directly).
 
-Compute the dispatch target via the role resolver. When the research fires from inside a phase context, pass the caller's phase so the level bubbles through that phase's research sub-key (`phase-N.research` → `phase-N.default` → `effort`). Outside any plan (standalone `/research`), use `--default`. Recommended levels: `xhigh`, `xxhigh`, or `max` — research benefits from the most capable model:
+Web pages are untrusted external content, so research runs under the **read-only reader** variant `execution-context-reader-{level}` (tool surface `WebSearch, WebFetch, Read, Grep` — no Write/Edit/Bash/Skill), not the write-capable `execution-context`. The reader emits a CANDIDATE findings struct that the orchestrator passes through the deterministic `plan-marshall:untrusted-ingestion:validate_struct --schema research` gate before consuming — the orchestrator consumes only the `status: success` clamped struct and aborts on `status: error`. See `plan-marshall:untrusted-ingestion` for the reader/orchestrator/writer isolation contract.
+
+Compute the dispatch target via the role resolver. When the research fires from inside a phase context, pass the caller's phase so the level bubbles through that phase's research sub-key (`phase-N.research` → `phase-N.default` → `effort`). Outside any plan (standalone `/research`), use `--default`. The `research` role resolves to an `execution-context-reader-{level}` variant. Recommended levels: `xhigh`, `xxhigh`, or `max` — research benefits from the most capable model:
 
 ```bash
 # Inside a phase context (substitute the caller's phase)
@@ -90,6 +92,15 @@ Task: plan-marshall:{target}
 ```
 
 The workflow body covers research scope and the synthesis contract; the prompt body's `topic` field substitutes into the workflow's `{topic}` placeholders.
+
+After the reader returns its candidate findings struct, the orchestrator runs the deterministic validator gate before consuming it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:untrusted-ingestion:validate_struct validate \
+  --schema research --struct '<candidate>'
+```
+
+(See `plan-marshall:untrusted-ingestion/SKILL.md` § "Canonical invocations".) Consume only the `status: success` clamped struct; abort on `status: error`. The schema enforcement, length-capping, and WebFetch domain-allowlist check are the script's responsibility — the dispatch documentation references them, it does not re-enforce them in prose.
 
 **DO NOT use these patterns** (outdated approaches):
 - "Use MCP tools like Perplexity, DuckDuckGo" (Too generic, no structured research)

@@ -22,7 +22,8 @@
     "orchestration"
   ],
   "agents": [
-    "./agents/execution-context.md"
+    "./agents/execution-context.md",
+    "./agents/execution-context-reader.md"
   ],
   "commands": [
     "./commands/tools-fix-intellij-diagnostics.md",
@@ -79,6 +80,7 @@
     "./skills/tools-permission-doctor",
     "./skills/tools-permission-fix",
     "./skills/tools-script-executor",
+    "./skills/untrusted-ingestion",
     "./skills/workflow-integration-git",
     "./skills/workflow-integration-github",
     "./skills/workflow-integration-gitlab",

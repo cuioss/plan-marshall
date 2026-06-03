@@ -1,0 +1,64 @@
+= ADR-003: Reader isolation as a tool-surface lever
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+== Status
+
+Accepted
+
+== Context
+
+Plan-marshall routinely ingests bytes it does not author and cannot trust: web pages fetched during research, GitHub issue/PR/comment bodies fetched during CI/review surfaces, and Sonar issue messages fetched during issue triage. Any of these can carry an attacker-controlled prompt-injection payload — text crafted to read as instructions ("ignore previous instructions and …") that hijacks a write-capable LLM context.
+
+The marketplace already had one variant-emission lever: the *level/effort lever*. A role-eligible agent declaring `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor` is auto-expanded by the build target into per-level variants, each pinned to a `(model, effort)` primitive (see xref:002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc[ADR-002] for the worktree model these variants execute inside). That lever varies *how capable* the dispatched model is. It does NOT vary *what the dispatched agent is allowed to do* — every level variant of the write-capable `execution-context` carries the same full tool surface (`Write`, `Edit`, `Bash`, `Skill`, …).
+
+The problem this ADR addresses: a write-capable context that consumes untrusted external bytes directly is a prompt-injection target. Restricting the model's capability (the level lever) does not contain the injection — a hijacked high-capability context is more dangerous, not less.
+
+== Decision
+
+=== Reader isolation is a second, orthogonal lever
+
+We introduce a second variant-emission lever: the *read-only tool-surface lever*. A new canonical agent, `execution-context-reader`, declares the same `implements: ext-point-dynamic-level-executor` and is auto-expanded into per-level variants by the same data-driven emitter — but its tool surface is restricted to `WebSearch, WebFetch, Read, Grep` (no `Write`, `Edit`, `Bash`, `Skill`, `AskUserQuestion`). It rides the same variant-emission machinery as `execution-context`; no `generate.py` / `variant_emitter.py` change was required, because `is_role_eligible()` keys purely on the `implements:` declaration.
+
+The two levers are orthogonal:
+
+* *Level/effort lever* — varies the `(model, effort)` primitive. Both `execution-context` and `execution-context-reader` ride it.
+* *Read-only tool-surface lever* — varies *what the agent may do*. `execution-context-reader` is the read-only implementor; `execution-context` is the write-capable implementor.
+
+=== The read-only tool surface alone is NOT the containment
+
+This is the load-bearing decision. Restricting the reader's tool surface bounds the blast radius of a hijack — a hijacked reader has no `Write`/`Edit`/`Bash`/`Skill` to abuse — but it does NOT by itself guarantee that the struct a write-capable context consumes is well-formed and in-policy. A hijacked reader can still emit a candidate struct with oversized fields, undeclared keys, or URLs pointing at attacker-controlled hosts.
+
+The containment boundary is the *deterministic `plan-marshall:untrusted-ingestion:validate_struct` script* — not the read-only surface, and not the reader's good behaviour. The reader performs *semantic extraction only*: it parses raw external text into a CANDIDATE struct. That candidate is untrusted on emission. The orchestrator/writer then runs `validate_struct` on the candidate before any write-capable context consumes it. The script:
+
+* enforces the output schema (`additionalProperties:false` + `maxLength` + `maxItems` + `pattern`) — rejecting any structural violation;
+* length-caps / truncates strings and arrays — clamping over-runs;
+* performs the WebFetch domain-allowlist check on every URL by reusing `workflow-permission-web` logic (`permission_web.categorize_domain` / `permission_web.check_red_flags`) — rejecting any host that categorizes to `unknown` or trips a red flag.
+
+The write-capable context consumes ONLY a `status: success` struct the script certified. Security therefore does not rest on the reader behaving — it rests on a deterministic script the orchestrator runs before consumption.
+
+=== One shared contract
+
+A single shared standard, `plan-marshall:untrusted-ingestion`, defines the threat model, the read-only-reader contract, and the output-schema discipline; its `scripts/validate_struct.py` is the enforcement mechanism. Every ingestion surface — the web research workflow, the GitHub/Sonar CI/review surfaces, and the external-issue-body refine path — loads this contract and applies the reader-dispatch-then-validate pipeline.
+
+== Consequences
+
+=== Positive
+
+* Untrusted external content can no longer reach a write-capable context unvalidated. The injection-relevant path (raw bytes → write-capable LLM) is broken by construction: the reader cannot act, and the writer consumes only a script-certified struct.
+* The containment is deterministic and testable — it is a script with a TOON contract, not reader prose. Its schema-reject / clamp / domain-gate paths are covered by module tests.
+* The new lever reuses the existing variant-emission machinery; adding the read-only implementor required no emitter code change.
+
+=== Negative / cost
+
+* Each ingestion surface gains *one extra dispatch hop plus the script gate*: the surface dispatches the reader, the reader emits a candidate, the orchestrator runs `validate_struct`, and only then does the write-capable context consume the validated struct. This is a deliberate, bounded cost paid at every untrusted-ingestion point in exchange for the containment guarantee.
+* Surface authors must remember to route untrusted bodies through the reader-plus-validator pipeline rather than consuming them directly; the shared `untrusted-ingestion` contract and the per-surface prose make this explicit, but it is a discipline the surfaces must uphold.
+
+=== Cross-references
+
+* `plan-marshall:untrusted-ingestion` — the shared contract (threat model, reader contract, output-schema rules) and the `validate_struct` script.
+* `plan-marshall:extension-api/standards/ext-point-dynamic-level-executor` — the variant-emission extension point both levers ride.
+* xref:002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc[ADR-002] — the worktree model the dispatched variants execute inside.
