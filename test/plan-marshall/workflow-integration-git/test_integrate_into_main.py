@@ -17,6 +17,16 @@ Contract under test (solution_outline.md §5):
 * **Executor never touched** — integrate neither moves nor regenerates any
   ``.plan/execute-script.py``; the success payload carries no regen fields.
 
+cwd-independence (this plan, Deliverable 1): integrate resolves its SOURCE
+(worktree via ``manage-status get-worktree-path``, stubbed here at the
+``_resolve_worktree_path_for_plan`` seam) and its DESTINATION (main via the
+sanctioned ``resolve_main_anchored_path`` resolver, driven REAL through
+``PLAN_BASE_DIR``) cwd-independently. The
+:class:`TestIntegrateCwdIndependent` regression suite invokes the script from the
+**worktree** cwd (the misuse that produced the historical false ``noop``) WITHOUT
+mocking the DESTINATION resolver, exercising the real path resolution
+(related lesson 2026-06-03-13-001).
+
 Isolation (test-isolation lessons 2026-06-02-12-001/002/003): every test runs
 against an isolated tree staged under ``tmp_path`` with cwd pinned to a stable
 location; the ``merge_lock`` delegation is stubbed so no real lock file is
@@ -79,17 +89,25 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
           worktrees/{plan_id}/.plan/local/plans/{plan_id}/   (worktree-resident plan)
           worktrees/{plan_id}/.plan/local/logs/work.log      (plan's global logs)
 
-    Pins cwd to ``main`` (the finalize move-back path) and monkeypatches the two
-    resolvers (``get_plan_dir`` → main destination, ``get_worktree_root`` → the
-    worktrees root) plus the ``merge_lock`` delegation. integrate no longer
-    regenerates the executor, so there is no regen delegation to stub.
+    Resolution seams (cwd-independent — Deliverable 1):
+
+    * **DESTINATION** is resolved by the REAL ``resolve_main_anchored_path`` via
+      ``PLAN_BASE_DIR`` pointing at the staged main ``.plan/local`` — NOT mocked.
+    * **SOURCE** worktree-path resolution (``_resolve_worktree_path_for_plan``)
+      is stubbed to return the staged worktree path — that seam is orthogonal to
+      the cwd-independence defect under test.
+
+    Pins cwd to ``main`` by default (the historical finalize move-back path); the
+    :class:`TestIntegrateCwdIndependent` suite re-pins cwd to the worktree to
+    exercise the misuse that produced the historical false ``noop``.
     """
     plan_id = 'sample-plan'
 
     main = tmp_path / 'main'
-    main_plan_dir = main / '.plan' / 'local' / 'plans' / plan_id
+    main_local = main / '.plan' / 'local'
+    main_plan_dir = main_local / 'plans' / plan_id
     # main destination does NOT yet hold the plan dir (it is resident in the worktree)
-    (main / '.plan' / 'local' / 'plans').mkdir(parents=True)
+    (main_local / 'plans').mkdir(parents=True)
 
     worktrees_root = tmp_path / 'worktrees'
     worktree_path = worktrees_root / plan_id
@@ -104,8 +122,19 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 
     monkeypatch.chdir(main)
 
-    monkeypatch.setattr(integrate_into_main, 'get_plan_dir', lambda pid: main / '.plan' / 'local' / 'plans' / pid)
-    monkeypatch.setattr(integrate_into_main, 'get_worktree_root', lambda: worktrees_root)
+    # DESTINATION: drive the REAL resolve_main_anchored_path at the staged main
+    # via PLAN_BASE_DIR (the sanctioned test override). resolve_main_anchored_path
+    # returns file_ops.get_base_dir() / subpath, so 'plans/{plan_id}' resolves to
+    # main/.plan/local/plans/{plan_id} regardless of cwd.
+    monkeypatch.setenv('PLAN_BASE_DIR', str(main_local))
+
+    # SOURCE: stub the worktree-path resolver (orthogonal seam) to the staged
+    # worktree path. Mirrors the manage-status get-worktree-path channel.
+    monkeypatch.setattr(
+        integrate_into_main,
+        '_resolve_worktree_path_for_plan',
+        lambda pid: (worktree_path, None),
+    )
 
     fake_lock = _FakeMergeLock()
     monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: fake_lock)
@@ -114,6 +143,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         'plan_id': plan_id,
         'main': main,
         'main_plan_dir': main_plan_dir,
+        'worktrees_root': worktrees_root,
         'worktree_path': worktree_path,
         'wt_plan_dir': wt_plan_dir,
         'wt_global_logs': wt_global_logs,
@@ -188,6 +218,62 @@ class TestIntegrateHappyPath:
         # The worktree-bound executor is left where it was (worktree removal handles it),
         # never file-moved onto a fresh main slot.
         assert wt_executor.is_file()
+
+
+# =============================================================================
+# cwd-independence regression (Deliverable 1 — related lesson 2026-06-03-13-001)
+# =============================================================================
+
+
+class TestIntegrateCwdIndependent:
+    """Regression suite for the false-``noop``-from-worktree-cwd defect.
+
+    The historical bug resolved both SOURCE and DESTINATION cwd-relatively
+    (``get_worktree_root()`` / ``get_plan_dir()``), so invoking integrate from the
+    worktree cwd resolved the DESTINATION inside the worktree, found the plan dir
+    "already there", and returned a false ``action: noop`` — the move-back never
+    happened. These tests pin cwd to the WORKTREE and assert an actual move,
+    WITHOUT mocking the DESTINATION resolver (the real ``resolve_main_anchored_path``
+    runs, driven through ``PLAN_BASE_DIR``).
+    """
+
+    def test_move_back_from_worktree_cwd_is_not_noop(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env = isolated_env
+        # Re-pin cwd to the WORKTREE — the misuse that triggered the false noop.
+        monkeypatch.chdir(env['worktree_path'])
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+
+        # An ACTUAL move-back, never noop — the DESTINATION resolved to the staged
+        # main via the REAL resolver despite cwd being the worktree.
+        assert result['status'] == 'success', result
+        assert result['action'] == 'integrated', result
+        # Plan dir now resident at MAIN (not inside the worktree)...
+        assert env['main_plan_dir'].is_dir()
+        assert (env['main_plan_dir'] / 'status.json').is_file()
+        # ...and ABSENT from the worktree.
+        assert not env['wt_plan_dir'].exists()
+
+    def test_destination_resolver_is_real_not_mocked(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The DESTINATION resolution must run the real resolve_main_anchored_path.
+
+        Guard against a regression where the test stubs the resolver and so cannot
+        catch the cwd-dependence defect: assert the resolved main_plan_dir lands
+        exactly under the PLAN_BASE_DIR-staged main, computed by the real resolver.
+        """
+        env = isolated_env
+        monkeypatch.chdir(env['worktree_path'])
+
+        # Sanity: the real resolver targets the staged main, cwd notwithstanding.
+        resolved = integrate_into_main.resolve_main_anchored_path(f'plans/{env["plan_id"]}')
+        assert resolved == env['main_plan_dir']
+
+        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+        assert env['main_plan_dir'].is_dir()
 
 
 # =============================================================================
@@ -282,6 +368,29 @@ class TestIntegrateNotFound:
         assert result['status'] == 'error'
         assert result.get('error_code') == integrate_into_main.ErrorCode.NOT_FOUND
         # The lock was never acquired (idempotence/not-found guards run first).
+        assert env['fake_lock'].acquired == 0
+
+    def test_worktree_resolution_failure_errors_without_acquiring_lock(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A SOURCE resolution failure (no worktree configured / resolver error)
+        surfaces the resolver's error TOON verbatim and never acquires the lock.
+        """
+        env = isolated_env
+        err = integrate_into_main.make_error(
+            'No worktree configured for this plan',
+            code=integrate_into_main.ErrorCode.NOT_FOUND,
+            plan_id=env['plan_id'],
+        )
+        monkeypatch.setattr(
+            integrate_into_main,
+            '_resolve_worktree_path_for_plan',
+            lambda pid: (None, err),
+        )
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+        assert result['status'] == 'error'
+        assert result.get('error_code') == integrate_into_main.ErrorCode.NOT_FOUND
         assert env['fake_lock'].acquired == 0
 
 

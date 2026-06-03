@@ -21,6 +21,17 @@ short-circuited by monkeypatching ``_resolve_worktree_path_for_plan``
 so the tests never depend on the real plan-marshall executor or any
 ``manage-status`` state on disk.
 
+Rebase target (Deliverable 2): ``cmd_worktree_rebase_to`` fetches
+``origin/{base}`` and rebases onto the fetched remote tip — NOT the stale
+local ``{base}`` ref. The fixtures clone from ``main_repo`` (so the worktree
+has an ``origin`` remote and ``origin/main``); the base-advancing helper commits
+to ``origin``'s (``main_repo``'s) ``main`` so the worktree's
+``git fetch origin main`` (run by the production code) observes the advance.
+``TestRebaseToStaleLocalBaseRegression`` asserts the defect fix directly:
+``origin/main`` advanced past the worktree's local ``main`` is fully absorbed by
+a SINGLE rebase. ``TestRebaseToNoRemoteFallback`` covers the soft-fallback to the
+local ``{base}`` ref when the worktree has no ``origin`` remote.
+
 There is no sibling ``conftest.py`` here on purpose — module-level
 helper functions defined below provide the shared fixture-build
 logic that pytest discovery cannot reach via auto-loading. See
@@ -131,6 +142,18 @@ def _advance_main_via_branch_switch(repo: Path, name: str, content: str, message
     _git(repo, 'checkout', '-q', 'main')
     _commit_file(repo, name, content, message)
     _git(repo, 'checkout', '-q', current_branch)
+
+
+def _advance_origin_main(origin_repo: Path, name: str, content: str, message: str) -> None:
+    """Commit ``name`` to ``origin_repo``'s ``main`` (the remote the worktree clones).
+
+    Deliverable 2: the rebase now targets ``origin/{base}``, so advancing the
+    base means committing to the ORIGIN's ``main`` (``main_repo``), then letting
+    the production code's ``git fetch origin main`` pull the advance into the
+    worktree's ``origin/main`` remote-tracking ref. The worktree's OWN local
+    ``main`` is deliberately left stale to reproduce the defect scenario.
+    """
+    _commit_file(origin_repo, name, content, message)
 
 
 # ---------------------------------------------------------------------------
@@ -268,18 +291,18 @@ class TestRebaseToBehind(_RebaseTestBase):
 
     def test_behind_state_rebases_successfully(self) -> None:
         _create_branch_worktree(self.main_repo, self.worktree, 'feature/behind')
-        # Advance ``main`` inside the cloned target so the feature branch
-        # is strictly behind it. The clone has its own object DB, so
-        # the main commit must happen here (not in ``self.main_repo``).
-        _advance_main_via_branch_switch(
-            self.worktree, 'main_only.txt', 'main only\n', 'feat: advance main', 'feature/behind'
-        )
+        # Advance ``origin``'s ``main`` (= main_repo) so the feature branch is
+        # strictly behind ``origin/main``. The production code fetches origin/main
+        # and computes behind against it; the worktree's stale local ``main`` is
+        # irrelevant to the new target.
+        _advance_origin_main(self.main_repo, 'main_only.txt', 'main only\n', 'feat: advance origin main')
 
         result = self._invoke_rebase()
 
         self.assertEqual(result['status'], 'success')
         self.assertEqual(result['state'], 'behind')
         self.assertEqual(result['action'], 'rebased')
+        self.assertEqual(result['rebase_ref'], 'origin/main')
         self.assertEqual(result['ahead'], 0)
         self.assertEqual(result['behind'], 1)
         # The new base commit's file should now be reachable from the
@@ -297,16 +320,10 @@ class TestRebaseToConflict(_RebaseTestBase):
 
     def test_conflict_state_reports_conflicting_paths(self) -> None:
         _create_branch_worktree(self.main_repo, self.worktree, 'feature/conflict')
-        # Both branches modify the same line of file.txt in incompatible
-        # ways. The clone has its own ``main`` ref, so we advance it
-        # inside the target repo (see _advance_main_via_branch_switch).
-        _advance_main_via_branch_switch(
-            self.worktree,
-            'file.txt',
-            'main version\n',
-            'fix: rewrite on main',
-            'feature/conflict',
-        )
+        # ``origin/main`` and the branch both rewrite the same line of file.txt
+        # in incompatible ways. Advance ORIGIN's main (= main_repo) so the rebase
+        # onto the fetched origin/main produces the conflict.
+        _advance_origin_main(self.main_repo, 'file.txt', 'main version\n', 'fix: rewrite on origin main')
         _commit_file(self.worktree, 'file.txt', 'feature version\n', 'feat: rewrite on branch')
 
         result = self._invoke_rebase()
@@ -409,6 +426,79 @@ class TestRebaseToMissingTarget(_RebaseTestBase):
         self.assertEqual(result['status'], 'error')
         self.assertEqual(result['error'], 'no_worktree_configured')
         self.assertEqual(result['plan_id'], 'plan-x')
+
+
+# ---------------------------------------------------------------------------
+# Deliverable 2 — stale-local-base regression (related lesson 2026-06-03-13-001)
+# ---------------------------------------------------------------------------
+
+
+class TestRebaseToStaleLocalBaseRegression(_RebaseTestBase):
+    """origin/{base} advanced past the worktree's local {base} — one rebase lands it.
+
+    The defect: rebasing onto the bare local ``{base}`` ref left the branch behind
+    ``origin/{base}`` (the orchestrator only fetched origin, never advanced local
+    base), failing branch protection's "up to date with base" check. The fix
+    fetches and rebases onto ``origin/{base}`` so a SINGLE invocation lands the
+    branch up-to-date with the remote tip. This is the exact assertion the
+    request names: ``git log HEAD..origin/{base}`` is empty after one rebase.
+    """
+
+    def test_single_rebase_lands_branch_on_advanced_origin_base(self) -> None:
+        _create_branch_worktree(self.main_repo, self.worktree, 'feature/stale-base')
+        # The branch has its own commit (so it is not a trivial fast-forward).
+        _commit_file(self.worktree, 'feature.txt', 'feature\n', 'feat: add feature')
+        # Advance ORIGIN's main with a DISJOINT file (no conflict) WITHOUT
+        # advancing the worktree's local ``main`` — the stale-local-base scenario.
+        _advance_origin_main(self.main_repo, 'upstream.txt', 'upstream\n', 'feat: advance origin main')
+
+        # The worktree's local ``main`` is still at the original commit; only
+        # ``origin/main`` (after the production fetch) carries the upstream commit.
+        result = self._invoke_rebase()
+
+        self.assertEqual(result['status'], 'success', result)
+        self.assertEqual(result['action'], 'rebased')
+        self.assertEqual(result['rebase_ref'], 'origin/main')
+
+        # The decisive assertion: after a SINGLE rebase, the branch contains the
+        # upstream commit — HEAD..origin/main is empty.
+        log_out = _git(
+            self.worktree, 'log', '--oneline', 'HEAD..origin/main'
+        ).stdout.strip()
+        self.assertEqual(log_out, '', f'branch still behind origin/main after one rebase: {log_out!r}')
+        # Both the upstream file and the branch's own commit are present.
+        self.assertTrue((self.worktree / 'upstream.txt').exists())
+        self.assertTrue((self.worktree / 'feature.txt').exists())
+
+
+# ---------------------------------------------------------------------------
+# Deliverable 2 — no-origin fallback to the local {base} ref
+# ---------------------------------------------------------------------------
+
+
+class TestRebaseToNoRemoteFallback(_RebaseTestBase):
+    """A worktree with no ``origin`` remote falls back to rebasing onto local {base}."""
+
+    def test_no_origin_remote_rebases_onto_local_base(self) -> None:
+        # Build a standalone repo with a feature branch but NO origin remote.
+        _git(self.main_repo, 'checkout', '-q', '-b', 'feature/no-remote', 'main')
+        # The worktree IS the main repo here (no clone, no origin). Resolver and
+        # base-ref resolution both point at this single repo.
+        self._resolver_target = self.main_repo
+        self._main_root = self.main_repo
+        # Advance local ``main`` so the branch is behind it (the only base ref
+        # available without a remote).
+        _advance_main_via_branch_switch(
+            self.main_repo, 'main_only.txt', 'main only\n', 'feat: advance local main', 'feature/no-remote'
+        )
+
+        result = self._invoke_rebase(base='main')
+
+        self.assertEqual(result['status'], 'success', result)
+        self.assertEqual(result['action'], 'rebased')
+        # No origin remote → rebase_ref falls back to the bare local ``main``.
+        self.assertEqual(result['rebase_ref'], 'main')
+        self.assertTrue((self.main_repo / 'main_only.txt').exists())
 
 
 # ---------------------------------------------------------------------------

@@ -258,7 +258,7 @@ From this point on, every standards document loaded by the finalize pipeline inh
 
 #### Return-to-main ordering
 
-Per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), the orchestrator enters finalize still cwd-pinned to the worktree (the pin established at phase-5 entry by `prepare_execute.py` — see `plan-marshall/workflow/execution.md` § "Orchestrator cwd-pinning (phase-5+)"). The finalize phase ends that pin, but the cwd return to main and the worktree removal are SEQUENCED, not simultaneous:
+Per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), the orchestrator enters finalize still cwd-pinned to the worktree (the pin established at phase-5 entry by `prepare_execute.py` — see `plan-marshall/workflow/execution.md` § "Orchestrator cwd-pinning (phase-5+)"). The finalize phase ends that pin, but the move-back and the worktree removal are SEQUENCED, not simultaneous:
 
 1. **Move-back while the worktree is still present.** The atomic move-back script (deliverable 5) folds the plan's own global logs into the plan directory, moves the plan directory back to main, and runs under the merge lock — all while the worktree still exists:
 
@@ -267,11 +267,11 @@ Per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-
      --plan-id {plan_id}
    ```
 
-   `integrate_into_main.py` does NOT change the caller's working directory, does NOT remove the worktree, and does NOT regenerate the executor. On-main executor regeneration is performed later by the project-level `project:finalize-step-sync-plugin-cache` step (meta-project-only) after the cache sync — the executor stays a per-tree derived artifact (ADR-002), never file-moved onto main.
+   `integrate_into_main.py` resolves its SOURCE (the worktree-resident plan dir, via `manage-status get-worktree-path`) and its DESTINATION (main's plan dir, via the sanctioned main-anchored resolver) **cwd-independently**, so it is correct whether invoked before or after the cwd return — it does NOT require any particular working directory. It also does NOT change the caller's working directory, does NOT remove the worktree, and does NOT regenerate the executor. On-main executor regeneration is performed later by the project-level `project:finalize-step-sync-plugin-cache` step (meta-project-only) after the cache sync — the executor stays a per-tree derived artifact (ADR-002), never file-moved onto main.
 
-2. **Return cwd to main.** Only AFTER the move-back returns does the orchestrator return its own working directory to `{main_checkout}`. The plan directory and executor now live on main again, so the uniform cwd rule resolves them on main from this point.
+2. **Return cwd to main.** After the move-back returns, the orchestrator returns its own working directory to `{main_checkout}`. The plan directory and executor now live on main again, so the uniform cwd rule resolves them on main from this point. Because `integrate_into_main` is cwd-independent, the cwd return is not a precondition of the move-back — the only hard ordering constraint is the worktree-removal sequencing in step 3.
 
-3. **Resume the remaining finalize steps, then remove the worktree.** With cwd back on main, the orchestrator resumes the remaining finalize pipeline; the worktree is removed last, by the `branch-cleanup` step. Removing the worktree before the move-back completes would strand the authoritative plan-state copy; returning cwd to main before the move-back completes would break the worktree-relative resolution the move-back depends on. The ordering — move-back → return-cwd-to-main → resume → worktree removal — is therefore load-bearing.
+3. **Resume the remaining finalize steps, then remove the worktree.** With cwd back on main, the orchestrator resumes the remaining finalize pipeline; the worktree is removed last, by the `branch-cleanup` step. Removing the worktree before the move-back completes would strand the authoritative plan-state copy, so the move-back MUST precede worktree removal. That sequencing — move-back → resume → worktree removal — is the load-bearing constraint; the cwd return is independent of it.
 
 The worktree-lifecycle and dispatch contract is the central standard at `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md`; this section documents only the finalize-side return-to-main ordering and does not re-inline that contract.
 

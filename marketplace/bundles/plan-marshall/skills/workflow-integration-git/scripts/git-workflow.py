@@ -1212,15 +1212,25 @@ def _detect_worktree_state(
 
 
 def cmd_worktree_rebase_to(args):
-    """Rebase the worktree's branch onto ``--base``.
+    """Rebase the worktree's branch onto ``origin/{base}`` (the fetched remote tip).
 
-    Detects the current state per :func:`_detect_worktree_state`,
-    dispatches the rebase accordingly, and returns a TOON payload with
-    ``status`` (``success``, ``error``, ``conflict``) and ``state`` (one
-    of the eight documented labels). On conflict, the rebase is left in
-    progress with conflict markers so the caller can inspect or abort.
-    All git invocations use ``git -C {worktree_path}``; no working
-    directory is implicitly assumed.
+    Fetches ``origin/{base}`` first so the rebase and the ahead/behind
+    computation target the CURRENT remote tip — not the stale local ``{base}``
+    ref the orchestrator never advances. A single invocation therefore always
+    lands the branch up-to-date with the remote base (the defect this fixes:
+    rebasing onto the local ``{base}`` left the branch behind ``origin/{base}``
+    and failed branch protection's "up to date with base" check). When the
+    worktree has no ``origin`` remote (local-only fixtures / detached setups) the
+    fetch is a soft signal and the command falls back to the local ``{base}`` ref.
+
+    Detects the current state per :func:`_detect_worktree_state`, dispatches the
+    rebase accordingly, and returns a TOON payload with ``status`` (``success``,
+    ``error``, ``conflict``) and ``state`` (one of the eight documented labels).
+    The reported ``base`` field stays the logical base the caller asked for;
+    ``rebase_ref`` carries the actual ref rebased onto so the behaviour is
+    observable. On conflict, the rebase is left in progress with conflict markers
+    so the caller can inspect or abort. All git invocations use
+    ``git -C {worktree_path}``; no working directory is implicitly assumed.
     """
     target, error = _resolve_worktree_path_for_plan(args.plan_id)
     if error is not None:
@@ -1236,12 +1246,24 @@ def cmd_worktree_rebase_to(args):
             'message': 'cannot resolve main git checkout root for rebase',
         }
 
-    state, evidence = _detect_worktree_state(target, args.base, main_root)
+    # Fetch the remote base so ``origin/{base}`` reflects the current remote tip,
+    # then resolve the actual rebase target. When the worktree has no ``origin``
+    # remote (local-only fixtures), the fetch fails softly and we fall back to the
+    # local ``{base}`` ref so existing no-remote flows still resolve.
+    if target.is_dir():
+        run_git(['-C', str(target), 'fetch', 'origin', args.base])
+    rc_remote, _remote_out, _remote_err = run_git(
+        ['-C', str(target), 'rev-parse', '--verify', f'origin/{args.base}^{{commit}}']
+    )
+    rebase_base = f'origin/{args.base}' if rc_remote == 0 else args.base
+
+    state, evidence = _detect_worktree_state(target, rebase_base, main_root)
 
     base_payload: dict[str, Any] = {
         'plan_id': args.plan_id,
         'worktree_path': str(target),
         'base': args.base,
+        'rebase_ref': rebase_base,
         'state': state,
     }
     base_payload.update(evidence)
@@ -1259,7 +1281,7 @@ def cmd_worktree_rebase_to(args):
             **base_payload,
             'status': 'error',
             'error': 'missing_base',
-            'message': f'base ref not found: {args.base}',
+            'message': f'base ref not found: {rebase_base}',
         }
     if state == 'detached':
         return {
@@ -1289,14 +1311,16 @@ def cmd_worktree_rebase_to(args):
         }
 
     # ``ahead`` and ``behind`` both attempt a rebase. The detected state
-    # is preserved in the response so callers can distinguish.
-    rc, _stdout, stderr = run_git(['-C', str(target), 'rebase', args.base])
+    # is preserved in the response so callers can distinguish. Rebase onto the
+    # resolved ``rebase_base`` (``origin/{base}`` when present, else local
+    # ``{base}``) so a single invocation lands the branch on the remote tip.
+    rc, _stdout, stderr = run_git(['-C', str(target), 'rebase', rebase_base])
     if rc == 0:
         return {
             **base_payload,
             'status': 'success',
             'action': 'rebased',
-            'message': f'rebased {evidence.get("head_branch", "HEAD")} onto {args.base}',
+            'message': f'rebased {evidence.get("head_branch", "HEAD")} onto {rebase_base}',
         }
 
     # Non-zero exit means rebase produced conflicts (or another git
