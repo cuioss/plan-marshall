@@ -1,6 +1,6 @@
 # Worktree Handling
 
-Single canonical reference for the worktree mechanism used by plan-marshall: why it exists, where worktrees live, how they propagate through agent dispatch, the git invocation rule that applies inside them, the never-edit-main-checkout invariant, the cleanup ordering, and the `--plan-id` two-state contract that replaces per-call path forwarding.
+Single canonical reference for the worktree mechanism used by plan-marshall: why it exists, where worktrees live, how they propagate through agent dispatch, the git invocation rule that applies inside them, the never-edit-main-checkout invariant, the cleanup ordering, and the `--plan-id` three-state contract that replaces per-call path forwarding.
 
 This document is the source of truth. Sibling skills and standards reference it rather than duplicating the narrative. The per-call-site rule (e.g., "use `git -C` here", "pass `--plan-id` to the build wrapper there") stays at the call site; the worktree-specific application of that rule lives here.
 
@@ -9,7 +9,7 @@ This document is the source of truth. Sibling skills and standards reference it 
 Plans run in **isolated git worktrees** for three independent reasons:
 
 1. **Isolation** — uncommitted edits, generated files, and partial test runs stay confined to the plan's own working tree. A failed or aborted plan never pollutes the main checkout's index, working tree, or branch state.
-2. **Parallelism** — multiple plans can execute simultaneously without contending for the main checkout's HEAD. Each worktree has its own branch and index; the only shared state is the `.git/` repository (commits, refs, objects) and the `.plan/` metadata directory (resolved via `git rev-parse --git-common-dir`).
+2. **Parallelism** — multiple plans can execute simultaneously without contending for the main checkout's HEAD. Each worktree has its own branch and index, and under the move-based model (ADR-002) each holds its own authoritative copy of the plan's non-git state moved in at phase-5 start; the only shared state is the `.git/` repository (commits, refs, objects).
 3. **No main-checkout pollution** — the main checkout remains the user's primary working environment. The agent never edits, builds, or tests inside the main checkout while a plan is in flight.
 
 A plan opts into worktree mode at `phase-1-init` via `branch_strategy: feature` (the default for new plans). Plans that target the main checkout directly (e.g., docs-only patches with `branch_strategy: main`) skip worktree allocation and run against the main checkout — every rule below that mentions `{worktree_path}` substitutes `{main_checkout}` for those plans.
@@ -54,6 +54,12 @@ The lifecycle is a deliberate **deferred-materialization** pattern: the agent re
 
 The post-materialization state ends when the cleanup ordering below removes the worktree directory; from that point the plan is back to the main checkout for the remaining branch / PR operations.
 
+### Concurrent-Session Visibility
+
+Per ADR-002, the move-based model means a plan's non-git-controlled runtime state — its plan directory (`.plan/local/plans/{plan_id}`) and the executor — MOVES into the worktree at phase-5 materialization (state 3 → state 4) and moves back to main at finalize. While the plan is post-materialization (state 4), there is exactly one authoritative copy of that state and it lives in the worktree; main does not hold it during execution.
+
+The consequence for concurrent sessions: a plan-discovery operation (`manage-status list`) resolves plan directories via the single uniform cwd/worktree-relative rule, so a session operating from the main checkout will NOT see an in-flight plan whose state currently lives in another session's worktree — the plan reappears in the main-checkout listing only after its finalize move-back returns the plan directory to main. A session operating from inside that worktree (the orchestrator running the plan, with cwd pinned to the worktree root) resolves and sees the in-flight plan normally. This is expected behaviour, not a discovery defect: it is the direct corollary of moving (rather than copying) the plan state, which is what removes the reconcile-or-merge problem between a worktree copy and a main copy. The shared corpora (`lessons-learned/`, `archived-plans/`) and the cooperative `merge.lock` stay main-anchored by design and remain visible to every session throughout. The `manage-status list` operation documents the user-facing form of this property — see `manage-status/SKILL.md` § "list" → "Concurrent-session visibility".
+
 ### Tri-State Assertion Contract
 
 Every script and skill that consumes `worktree_path` MUST treat it as a **tri-state** signal, not a boolean:
@@ -64,13 +70,13 @@ Every script and skill that consumes `worktree_path` MUST treat it as a **tri-st
 | `use_worktree == true` AND `worktree_path` empty | states 1-2 — intent recorded but worktree not yet materialized | bind to main checkout for this call; do NOT treat empty path as an error; do NOT auto-create the worktree from outside Step 2.5 |
 | `use_worktree == true` AND `worktree_path` non-empty | state 4 — worktree exists on disk | bind to `worktree_path`; all rules below apply |
 
-The middle row is the load-bearing case. `manage-status get-worktree-path --plan-id X` returns an empty string in states 1-2; callers MUST treat that as "main checkout" rather than as a fail-loud condition. The `--plan-id` three-state contract documented below handles this automatically — Bucket B scripts invoked with `--plan-id` resolve internally and fall back to the main checkout when the path is empty.
+The middle row is the load-bearing case. `manage-status get-worktree-path --plan-id X` returns an empty string in states 1-2; callers MUST treat that as "main checkout" rather than as a fail-loud condition. Under cwd-pinning the common path never needs to consult this signal — the inherited cwd binds the caller to the correct tree. The `--plan-id` three-state contract documented below covers the residual escape-hatch callers that still resolve explicitly: invoked with `--plan-id`, they resolve internally and fall back to the cwd-relative plan root when the path is empty.
 
 ### Pre-Materialization Bypass
 
-During states 1-2 (phases 2-4), `manage-status get-worktree-path` returns an empty string even though `use_worktree == true`. Bucket B scripts invoked with `--plan-id` during these phases route to the main checkout automatically via the empty-path fallback (see the `--plan-id` Three-State Contract section below); no `--project-dir` override is needed and no per-call workaround is required. Bucket A `manage-*` scripts are cwd-agnostic regardless of state.
+During states 1-2 (phases 2-4) there is no worktree on disk and the orchestrator's cwd is the main checkout. Subagents inherit that cwd, so `.plan/` and project content resolve to main cwd-relatively (the uniform walk-up; ADR-002). Bucket A `manage-*` scripts are cwd-agnostic regardless of state, and Bucket B scripts resolve against the inherited cwd without any routing flag.
 
-The practical consequence: phase-2 / phase-3 / phase-4 agents follow the same dispatch shape they would use for a `use_worktree == false` plan. They forward `--plan-id` to every Bucket B call, never construct a worktree path themselves, and never embed a Worktree Header into subagent prompts (the header is meaningful only post-materialization, and the path-resolution rationale block would be misleading when the path is empty).
+The practical consequence: phase-2 / phase-3 / phase-4 agents follow the same dispatch shape they would use for a `use_worktree == false` plan. They never construct a worktree path, never forward `--plan-id`/`--project-dir` for path resolution (the inherited main-checkout cwd binds them), and never embed a Worktree Header into subagent prompts (the header is a phase-5+ reminder and would be misleading before materialization).
 
 ### Materialization in Phase-5 Step 2.5
 
@@ -83,29 +89,26 @@ The transition from state 2 to state 4 is a single atomic step inside `phase-5-e
 
 If Step 2.5 fails (e.g., branch already checked out elsewhere, base ref missing, worktree directory already occupied with conflicting content), the plan halts before any task dispatch and `worktree_path` remains empty — the plan is still in state 2 and the operator must either resolve the materialization failure or downgrade the plan to `use_worktree: false`.
 
-## Dispatch Protocol (Subagent Header Propagation)
+## Dispatch Protocol (cwd-Pinned Inheritance)
 
-**Applies in state 4 (post-materialization) only.** During states 1-2, subagent dispatches MUST NOT embed the Worktree Header (the header would carry a misleading path-resolution rationale when `worktree_path` is empty). Forward `--plan-id` as a structured prompt-body field and let the child agents resolve to the main checkout via the empty-path fallback.
+**Applies in state 4 (post-materialization) only.** During states 1-2 there is no worktree on disk; the orchestrator's cwd is the main checkout and subagents inherit that cwd, so `.plan/` and project content resolve to main automatically via the uniform cwd walk-up. No header and no path forwarding are required pre-materialization.
 
-When the plan runs in an isolated worktree, every subagent dispatch — `Task:` invocations against `plan-marshall:execution-context-{level}`, `Skill:` invocations that accept free-form prompts, and any other delegation — MUST embed the **Worktree Header** as the first lines of the dispatch prompt:
+Under the move-based, cwd-pinned model (ADR-002), the worktree binding is carried by the **pinned current working directory**, not by per-call parameter forwarding. At phase-5 materialization the orchestrator pins its cwd to the worktree root after `prepare_execute.py` moves the plan directory and the executor in; every subprocess it spawns — and every subagent it dispatches — inherits that cwd. Because `.plan/` resolution is cwd-relative (`file_ops.get_base_dir()` walks up from cwd to the nearest ancestor containing `.plan/local`), a dispatched subagent resolves the worktree-resident state without being told a path. See [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) for the single cwd-unchanged invariant — it is not restated here.
+
+The consequence for dispatch: subagents do NOT forward `--plan-id` or `--project-dir` to working-tree-touching scripts for path resolution. The pinned cwd already binds them to the worktree. The only structured input a dispatched workflow takes is `plan_id` as the *plan-identifier* prompt-body field (selecting which plan's metadata to operate on — unrelated to cwd binding), per the workflow's own input contract (`execute-task`, the per-phase workflow doc loaded by `execution-context-{level}`).
+
+A short header MAY be embedded as a reinforcement reminder so the never-edit-main-checkout invariant stays salient through free-form delegation:
 
 ```
-WORKTREE: --plan-id {plan_id}
-All Edit/Write/Read tool calls MUST resolve against the worktree allocated for this plan.
-Raw git/mvn/npm commands MUST operate against that worktree (use the tool's native cwd flag).
-.plan/execute-script.py invocations that touch a working tree MUST pass --plan-id {plan_id};
-manage-* scripts (Bucket A) remain cwd-agnostic and MUST NOT receive --plan-id.
-NEVER edit the main checkout.
+WORKTREE: cwd is pinned to this plan's worktree (ADR-002 cwd-pinned model).
+Resolution is cwd-relative — do NOT forward a worktree path; do NOT pass --project-dir.
+All Edit/Write/Read tool calls and raw git/mvn/npm commands operate against the pinned cwd.
+NEVER edit the main checkout. See tools-script-executor/standards/cwd-policy.md.
 ```
 
-Two requirements coexist:
+The header is a reminder, not a path-routing mechanism — the binding holds whether or not the header is present, because cwd-pinning carries it. Child agents inherit the same pinned cwd and MUST NOT re-derive or forward a worktree path into any further dispatch.
 
-- **Prompt embedding** — the header propagates the constraint through free-form delegation so child agents inherit the worktree binding even when they call further subagents.
-- **Parameter passing** — the structured input contract of the dispatched workflow (e.g., `execute-task`, the per-phase workflow doc loaded by `execution-context-{level}`) takes `plan_id` as an explicit prompt-body field; the embedded header does not replace the field, it reinforces it.
-
-The path-free `--plan-id` form is the **preferred contract** for Bucket B scripts (build wrappers, CI integration, Sonar) — the worktree absolute path never leaks into model context. The dispatched script resolves the path internally via `manage-status get-worktree-path`. The `--project-dir <abs>` flag is the **explicit override / escape hatch** for the rare case where a caller already holds an absolute path (e.g., post-worktree-removal cleanup, fixture-driven test invocations). `--plan-id` and `--project-dir` are mutually exclusive at every call site; passing both is a hard error.
-
-Child agents MUST echo the same header verbatim into any further dispatches they issue.
+`--project-dir <abs>` survives **only as the escape hatch** for callers invoked outside a pinned-cwd context — post-worktree-removal cleanup, fixture-driven test invocations, or ad-hoc invocations from outside any plan. It binds subprocesses verbatim to the supplied path. Inside a phase-5+ pinned-cwd dispatch it is never needed and MUST NOT be forwarded. `--plan-id` and `--project-dir` remain mutually exclusive at every call site; passing both is a hard error.
 
 ## The `git -C {path}` Rule (Worktree Application)
 
@@ -143,7 +146,7 @@ Every Edit/Write/Read tool call MUST resolve its target against `{worktree_path}
 
 This invariant is enforced at four layers:
 
-- **Layer A — Bucket A / `manage-*` scripts** resolve `.plan/` via `git rev-parse --git-common-dir` and stay cwd-agnostic. The shared metadata directory belongs to the main checkout regardless of which worktree the agent runs in, so layer A is path-stable by construction.
+- **Layer A — `manage-*` scripts** resolve `.plan/` via the uniform cwd walk-up (ADR-002): they find the nearest ancestor of cwd containing `.plan/local`. During phase-5+ the orchestrator's cwd is pinned to the worktree, so these scripts resolve the worktree-resident `.plan/` copy moved in at phase-5 start. They are path-stable for a given pinned cwd by construction.
 - **Layer B — Bucket B `--plan-id` auto-routing** binds build / CI / Sonar wrappers to the worktree path internally; the main checkout is not reachable from those subprocess trees.
 - **Layer C — Raw tool flags** (`git -C`, `mvn -f`, `pytest --rootdir`, etc.) target the worktree explicitly when the agent invokes external CLIs directly. This is the call-site rule documented in `dev-agent-behavior-rules/standards/tool-usage-patterns.md`.
 - **Layer D — Phase-handshake strict-verify drift detection** catches free-form filesystem leaks that escape layers A/B/C. See the next section.
@@ -214,7 +217,7 @@ The proper-superset rule means the operator does not need to *clean* pre-existin
 
 ### Filter Rule: `.plan/` Paths Are Excluded
 
-The invariant filters paths beginning with `.plan/` out of both the capture and the comparison. The plan-marshall `.plan/` directory holds plan metadata, status files, lessons aggregate state, etc. — these legitimately live in the main checkout (the worktree shares the parent `.git` common-dir's `.plan/local/` writes via `manage-*` scripts that resolve via `git rev-parse --git-common-dir`), so dirtying `.plan/` is part of normal phase-boundary bookkeeping.
+The invariant filters paths beginning with `.plan/` out of both the capture and the comparison. The plan-marshall `.plan/` directory holds plan metadata, status files, lessons aggregate state, etc. During phases 1-4 these resolve to the main checkout's `.plan/local/` via the uniform cwd walk-up (cwd is main); the lessons corpus stays main-only throughout. Dirtying `.plan/` is part of normal phase-boundary bookkeeping.
 
 A user-side hook (the original lesson's proposal) would need a complex allow-list of `.plan/`, `.plan/local/`, `.plan/temp/` etc. patterns to avoid false positives. The handshake-driven approach uses a single canonical filter applied identically at capture and verify time, eliminating the allow-list-drift class of bug entirely.
 
@@ -249,13 +252,13 @@ The contract has three states:
 |------------|-----------|------------------------|
 | `--plan-id X` (preferred) | Script calls `manage-status get-worktree-path --plan-id X` internally, binds subprocesses to the resolved path. | The worktree at `<project_root>/.plan/local/worktrees/X/`. |
 | `--project-dir <abs>` (override) | Script binds subprocesses verbatim to `<abs>`. Used when a caller already holds an absolute path — e.g., post-worktree-removal cleanup, fixture-driven test invocations. | The supplied absolute path. |
-| Neither flag | Script binds subprocesses to the main checkout (the project root resolved via `git rev-parse --show-toplevel`). | The main checkout. |
+| Neither flag | Script binds subprocesses to the plan root resolved cwd-relatively (the nearest ancestor of cwd containing `.plan/local`; ADR-002). | The cwd-resolved tree — main in phases 1-4, the pinned worktree in phase-5+. |
 
 `--plan-id` and `--project-dir` are **mutually exclusive at every call site**; passing both is a hard error.
 
-When a script invoked with `--plan-id X` resolves an empty path (i.e., the plan exists but `metadata.use_worktree == false`), the script falls back to the main checkout — the plan opted out of worktree mode at init time, and the caller's `--plan-id` becomes a no-op for path resolution.
+When a script invoked with `--plan-id X` resolves an empty path (i.e., the plan exists but `metadata.use_worktree == false`), the script falls back to the cwd-relative plan root — the plan opted out of worktree mode at init time, and the caller's `--plan-id` becomes a no-op for path resolution.
 
-Bucket A `manage-*` scripts MUST NOT accept `--plan-id` for cwd binding — they resolve `.plan/` via `git rev-parse --git-common-dir` regardless of the active worktree. (Many `manage-*` scripts already accept `--plan-id` as a *plan-identifier* argument that selects which plan's metadata to read or write — that usage is unrelated to the cwd contract here.) See [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) for the authoritative Bucket A / Bucket B / Bucket C split.
+Bucket A `manage-*` scripts MUST NOT accept `--plan-id` for cwd binding — they resolve `.plan/` via the uniform cwd walk-up regardless of how the script was invoked. (Many `manage-*` scripts already accept `--plan-id` as a *plan-identifier* argument that selects which plan's metadata to read or write — that usage is unrelated to the cwd contract here.) See [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) for the authoritative single uniform cwd-relative rule and the merge-lock exception.
 
 ## The Consolidated Branch-Cleanup Verbs
 
@@ -265,7 +268,7 @@ Three verbs — `force-push-with-lease`, `switch-and-pull`, and `prune-local-and
 
 All three verbs accept `--plan-id` as the primary resolution path and `--project-dir` as the escape hatch. They are mutually exclusive; passing both is a hard error.
 
-**Primary path (`--plan-id`)**: The verb calls `manage-status get-worktree-path --plan-id {plan_id}` internally to resolve the working tree. For `force-push-with-lease`, the resolved path is the **worktree** (the branch lives there until `worktree-remove` runs). For `switch-and-pull` and `prune-local-and-remote-ref`, the verb derives the **main checkout** root from `marketplace_paths.git_main_checkout_root()` because those operations target the main checkout after worktree removal.
+**Primary path (`--plan-id`)**: The verb calls `manage-status get-worktree-path --plan-id {plan_id}` internally to resolve the working tree. For `force-push-with-lease`, the resolved path is the **worktree** (the branch lives there until `worktree-remove` runs). For `switch-and-pull` and `prune-local-and-remote-ref`, the verb derives the **main checkout** root via the uniform cwd-relative resolution (`file_ops.get_base_dir()` / `marketplace_paths._find_plan_root_from_cwd()`) because those operations run after worktree removal, when cwd is back on main.
 
 **Escape hatch (`--project-dir [--branch|--head]`)**: Useful in post-worktree-removal cleanup, non-plan contexts, or fixture-driven test invocations where the caller already holds the path. All git calls use `git -C {project_dir}`.
 
@@ -291,7 +294,7 @@ remote_sha: {sha after push}
 
 Checks out `--base` on the main checkout and pulls from `origin` using `git pull origin {base_branch}` (the explicit form; never plain `git pull`). Captures `pre_sha` and `post_sha` and computes `commits_pulled` via `git rev-list --count`.
 
-Resolution: `--plan-id` → main checkout root from `marketplace_paths.git_main_checkout_root()`.
+Resolution: `--plan-id` → main checkout root via the uniform cwd-relative resolution (`file_ops.get_base_dir()`).
 
 **Output** (success):
 ```toon
@@ -316,7 +319,7 @@ Safety invariants:
 3. `show-ref` guard before `update-ref -d` — targeted ref deletion only; no `git fetch --prune`.
 4. `local_only` mode skips all remote-tracking ref operations.
 
-Resolution: `--plan-id` → `worktree_branch` and main checkout root from `manage-status get-worktree-path` + `marketplace_paths`.
+Resolution: `--plan-id` → `worktree_branch` from `manage-status get-worktree-path`, and main checkout root via the uniform cwd-relative resolution (`file_ops.get_base_dir()`).
 
 **Output** (success — full deletion):
 ```toon
@@ -404,7 +407,7 @@ Per the never-edit-main-checkout invariant above, `worktree-rebase-to` operates 
 ## Related
 
 - [`dev-agent-behavior-rules/standards/tool-usage-patterns.md`](../../dev-agent-behavior-rules/standards/tool-usage-patterns.md) — universal "no `cd && <tool>`" rule, native cwd flags for every tool.
-- [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) — Bucket A/B/C policy for marketplace scripts.
+- [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) — the single uniform cwd-relative resolution rule and the merge-lock exception for marketplace scripts.
 - [`phase-5-execute/SKILL.md`](../../phase-5-execute/SKILL.md) — Dispatch Protocol section anchors the Worktree Header at the orchestration layer.
 - [`execute-task/SKILL.md`](../../execute-task/SKILL.md) — execute-task input contract surfaces `plan_id` so the skill can resolve the worktree internally.
 - [`tools-integration-ci/SKILL.md`](../../tools-integration-ci/SKILL.md) — CI leaf subcommands accept `--plan-id` for worktree-aware invocation.

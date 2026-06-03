@@ -5,12 +5,11 @@ introduced by deliverable 2 of plan
 ``target-claude-staleness-silently-halts-phase-6-en`` (lesson
 ``2026-05-20-08-005``).
 
-The bug: ``marshal.json``'s phase-6-finalize manifest lists three project
-steps under fully-qualified IDs (``project:finalize-step-pre-submission-
-self-review``, ``project:finalize-step-plugin-doctor``, ``project:finalize-
-step-regenerate-executor``), but the recording side was inconsistent — the
-``pre-submission-self-review`` workflow doc recorded under the bare name,
-and the ``plugin-doctor`` / ``regenerate-executor`` wrappers did not call
+The bug: ``marshal.json``'s phase-6-finalize manifest lists project steps
+under fully-qualified IDs (``project:finalize-step-pre-submission-
+self-review``, ``project:finalize-step-plugin-doctor``), but the recording
+side was inconsistent — the ``pre-submission-self-review`` workflow doc
+recorded under the bare name, and the ``plugin-doctor`` wrapper did not call
 ``mark-step-done`` at all. The ``phase_steps_complete`` handshake invariant
 therefore raised ``PhaseStepsIncomplete`` (or the renderer emitted
 ``<missing display_detail>``) at the end of every finalize run that
@@ -26,7 +25,7 @@ These tests pin the end-to-end contract:
    when the manifest declares a prefixed required step but the recorded
    entry is keyed by the bare suffix — the regression that originally bit
    lesson ``2026-05-20-08-005``. Reverting deliverable 2's fix on any of
-   the three wrappers re-introduces this exact failure mode.
+   the wrappers re-introduces this exact failure mode.
 4. The renderer's exact-then-strip-prefix lookup helper (specified in
    ``output-template.md`` § Emission step 5) returns the bare entry when
    the manifest carries a ``project:`` prefixed key and the recorded
@@ -289,13 +288,11 @@ def test_finalize_step_wrappers_mark_step_done_calls_present() -> None:
     ``2026-05-20-08-005`` defect (renderer emits ``<missing display_detail>``
     or handshake raises ``PhaseStepsIncomplete``).
 
-    Three sources MUST each carry at least one ``mark-step-done --step
+    Two sources MUST each carry at least one ``mark-step-done --step
     project:finalize-step-{name}`` invocation:
 
     - ``.claude/skills/finalize-step-plugin-doctor/SKILL.md`` — recording
       lives directly in the wrapper.
-    - ``.claude/skills/finalize-step-regenerate-executor/SKILL.md`` —
-      recording lives directly in the wrapper.
     - ``marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/
       pre-submission-self-review.md`` — recording lives in the dispatched
       workflow body, not in the project-local ``.claude/skills/finalize-
@@ -310,10 +307,6 @@ def test_finalize_step_wrappers_mark_step_done_calls_present() -> None:
         (
             _PROJECT_SKILLS / 'finalize-step-plugin-doctor' / 'SKILL.md',
             'project:finalize-step-plugin-doctor',
-        ),
-        (
-            _PROJECT_SKILLS / 'finalize-step-regenerate-executor' / 'SKILL.md',
-            'project:finalize-step-regenerate-executor',
         ),
         (
             _PRE_SUBMISSION_WORKFLOW,

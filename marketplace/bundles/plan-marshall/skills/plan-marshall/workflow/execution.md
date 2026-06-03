@@ -50,6 +50,17 @@ Use /plan-marshall to complete 1-init through 4-plan phases first.
 
 ## Execute Phase (DUMB LOOP Pattern)
 
+### Orchestrator cwd-pinning (phase-5+)
+
+Per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), phases 5 and 6 operate from the plan's own worktree with the orchestrator's working directory pinned to the worktree root. At phase-5 entry the orchestrator performs the atomic move-in by calling the dedicated lifecycle script (deliverable 4), then pins ITS OWN working directory to the path the script returns:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:prepare_execute prepare \
+  --plan-id {plan_id} --branch {worktree_branch} [--base {base_ref}]
+```
+
+`prepare_execute.py` materializes the worktree + feature branch, MOVES the plan-scoped non-git state (the plan directory and the executor) into the worktree, and RETURNS the canonical `worktree_path` together with a `status`. It does NOT change the caller's working directory — a subprocess cannot mutate its parent's cwd. The orchestrator reads the returned `worktree_path` and pins its own working directory there for the remainder of phase-5+. From that point the single uniform cwd/worktree-relative rule resolves every `.plan/` lookup to the worktree-resident copy (there is exactly one authoritative copy — main no longer holds it during execution), so no per-phase resolution branch and no reconcile-or-merge step is required. The move-in is atomic-with-rollback (a failed move-in leaves plan state wholly on main) and idempotent (an already-moved plan is a no-op success returning the same path), so a phase-5 re-entry re-pins to the same path without re-moving. The orchestrator returns its working directory to main only at finalize, AFTER the move-back script completes — see § "Finalize Phase" → "Return-to-main ordering" and `phase-6-finalize/SKILL.md`. The worktree-lifecycle and dispatch contract is the central standard at `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md`; this section documents only the orchestrator's cwd-pinning responsibility and does not re-inline that contract.
+
 **Metrics**: The start of `5-execute` was already recorded by the
 `4-plan → 5-execute` fused boundary call emitted at the end of the planning
 workflow (see `workflow/planning.md`). When the execute workflow is entered

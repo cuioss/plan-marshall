@@ -155,9 +155,9 @@ protected_identifiers[N9]:
 
 ## Cwd Policy
 
-This script is **Bucket B** (per `tools-script-executor/standards/cwd-policy.md`): callers MUST identify the worktree via either `--plan-id {plan_id}` (auto-resolved through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (explicit override / escape hatch). The script does NOT call `git rev-parse --git-common-dir` to discover its own root — the resolved path from those flags is the only authoritative source.
+This script is a **worktree-scoped (Bucket B)** script (per `tools-script-executor/standards/cwd-policy.md`): callers MAY identify the working tree via either `--plan-id {plan_id}` (auto-resolved through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (explicit override / escape hatch). The script does NOT reintroduce a sideways main-anchored resolver to discover its own root — the resolved path from those flags, or the uniform cwd walk-up (ADR-002), is the only authoritative source.
 
-`manage-references` and `manage-status` reads (Bucket A) inside this script do NOT receive `--project-dir`; they discover `.plan/` via `git rev-parse --git-common-dir` from the script's own cwd.
+`manage-references` and `manage-status` reads inside this script do NOT receive `--project-dir`; they discover `.plan/` via the uniform cwd walk-up (ADR-002) from the script's own cwd — main in phases 1-4, the pinned worktree in phase-5+.
 
 ## Tests
 

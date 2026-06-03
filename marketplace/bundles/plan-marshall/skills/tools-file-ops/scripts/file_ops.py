@@ -18,7 +18,8 @@ Usage:
         set_base_dir,
         base_path,
         get_temp_dir,
-        get_executor_path
+        get_executor_path,
+        guard_worktree_cwd
     )
 """
 
@@ -64,6 +65,15 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa
 # directory and the executor MOVE into the worktree at phase-5 start and move
 # back at finalize; the shared corpora (lessons-learned/, archived-plans/) and
 # the merge.lock stay main-anchored by design.
+#
+# The SINGLE cwd-unchanged invariant — "during phase-5+ the cwd never leaves
+# the worktree" — is realized as a caller-side GUARD, not a script side effect.
+# A subprocess cannot mutate its parent's cwd, so pinning cwd is the caller's
+# (orchestrator's) responsibility; the lifecycle scripts (prepare_execute.py
+# D4, integrate_into_main.py D5) and phase-5+ manage-* callers ASSERT the
+# invariant by calling guard_worktree_cwd(plan_id) (below). The guard verifies
+# the current cwd is the expected worktree path and returns an error envelope
+# when cwd has left the worktree — it never SETS the cwd.
 
 # Runtime-overridable base directory (set by set_base_dir for tests).
 # None means "resolve from environment / git on each call".
@@ -182,6 +192,70 @@ def get_worktree_root() -> Path:
             against.
     """
     return get_base_dir() / 'worktrees'
+
+
+def guard_worktree_cwd(plan_id: str) -> dict[str, Any] | None:
+    """Caller-side guard asserting the process cwd is the plan's worktree root.
+
+    This helper is the script-side realization of the SINGLE cwd-unchanged
+    invariant (ADR-002 / Option 5'): during phase-5+ the orchestrator pins its
+    cwd to the moved-in worktree and never changes it away until finalize moves
+    the plan dir back. The lifecycle scripts (``prepare_execute.py`` D4,
+    ``integrate_into_main.py`` D5) and phase-5+ ``manage-*`` callers ASSERT this
+    invariant by calling this guard at the top of their action.
+
+    The guard ASSERTS; it never SETS the caller's cwd. A subprocess cannot
+    mutate its parent's working directory, so the invariant cannot be a script
+    side effect — pinning cwd is the caller's responsibility (the orchestrator
+    pins it to the path returned by ``prepare_execute``). This function only
+    reports whether the current cwd matches the expected worktree path.
+
+    Returns ``None`` (assertion passes) when the current working directory
+    resolves to the canonical worktree root for ``plan_id``
+    (``get_worktree_root() / plan_id``). Returns a structured error envelope
+    (``status: error``, ``error: cwd_left_worktree``) when cwd has left the
+    worktree — the caller surfaces it as a TOON refusal. Returns ``None`` when
+    the worktree root cannot be resolved (no base dir) OR when the canonical
+    worktree directory does not exist on disk: in those cases there is no
+    worktree to be pinned to (a main-checkout plan, or a pre-materialization
+    window), so the guard is not applicable and must not fire a false positive.
+
+    Args:
+        plan_id: Plan identifier whose worktree the cwd is expected to be.
+
+    Returns:
+        ``None`` when the assertion passes or is not applicable; a structured
+        error dict ``{status, error, expected_worktree, actual_cwd, message}``
+        when cwd has demonstrably left the worktree.
+    """
+    try:
+        expected = (get_worktree_root() / plan_id).resolve()
+    except RuntimeError:
+        # No resolvable base dir → no worktree to anchor against. Not
+        # applicable (main-checkout flow or unconfigured test harness).
+        return None
+    if not expected.is_dir():
+        # The worktree directory does not exist on disk — either a
+        # main-checkout plan (no worktree) or a pre-materialization window
+        # before phase-5 created it. Nothing to be pinned to; not applicable.
+        return None
+    actual = Path.cwd().resolve()
+    if actual == expected:
+        return None
+    return {
+        'status': 'error',
+        'error': 'cwd_left_worktree',
+        'plan_id': plan_id,
+        'expected_worktree': str(expected),
+        'actual_cwd': str(actual),
+        'message': (
+            f'cwd-unchanged invariant violated for plan {plan_id!r}: the process '
+            f'working directory is {str(actual)!r} but the plan worktree is '
+            f'{str(expected)!r}. Phase-5+ callers MUST keep cwd pinned to the '
+            'worktree (the path returned by prepare_execute); this guard asserts '
+            'the invariant and never sets the cwd itself.'
+        ),
+    }
 
 
 def get_executor_path() -> Path:

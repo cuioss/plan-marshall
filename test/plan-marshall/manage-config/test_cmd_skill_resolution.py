@@ -394,7 +394,7 @@ def test_list_finalize_steps_special_case_branch_retired(tmp_path):
     candidate list whenever ``.claude/skills/finalize-step-sync-plugin-cache/``
     existed. Cluster 02 retired that branch — sync-plugin-cache is now an
     ordinary project-local finalize-step skill (Source 2), discovered the same
-    way as ``finalize-step-plugin-doctor`` and ``finalize-step-regenerate-executor``.
+    way as ``finalize-step-plugin-doctor`` and ``finalize-step-deploy-target``.
     """
     with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
         steps = _run_discovery_in_cwd(tmp_path)

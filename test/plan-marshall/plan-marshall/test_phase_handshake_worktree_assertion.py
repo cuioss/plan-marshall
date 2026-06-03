@@ -764,7 +764,11 @@ def _layer_d_invariants() -> list:
 def test_layer_d_clean_baseline_and_live_succeeds(
     monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
 ) -> None:
-    """(a) Worktree-routed plan, no dirty paths at either capture → verify ok."""
+    """(a) Worktree-routed plan, no dirty paths at either capture → verify ok.
+
+    Uses a planning-phase boundary (``4-plan``) where the layer-D check is
+    RETAINED; a clean baseline+live set must still verify ``ok`` there.
+    """
     plan_id = 'layer-d-clean'
     md_state = {'use_worktree': True, 'worktree_path': str(git_worktree)}
     monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
@@ -774,18 +778,63 @@ def test_layer_d_clean_baseline_and_live_succeeds(
     _patch_main_dirty_files(monkeypatch, [[], []])
 
     plan_context.plan_dir_for(plan_id)
-    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='4-plan'))
     assert cap['status'] == 'success', cap
-    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='4-plan'))
 
     assert result['status'] == 'ok', f'clean baseline+live must verify ok, got {result}'
 
 
-def test_layer_d_proper_superset_drift_raises_with_payload(
+def test_layer_d_proper_superset_drift_raises_at_planning_boundary(
     monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
 ) -> None:
-    """(b) Worktree plan, live set is a proper superset → structured error."""
+    """(b) Worktree plan, live set is a proper superset → structured error.
+
+    The layer-D leak-into-main guard is RETAINED at the planning-phase
+    boundaries that still run on main. Verified at ``4-plan``; the relaxation
+    at the ``5-execute → 6-finalize`` boundary is pinned by
+    ``test_layer_d_relaxed_at_phase_5_boundary`` below.
+    """
     plan_id = 'layer-d-drift'
+    md_state = {'use_worktree': True, 'worktree_path': str(git_worktree)}
+    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
+    narrowed = _layer_d_invariants()
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+
+    baseline = ['existing.txt']
+    live = ['existing.txt', 'leaked-readme.md', 'src/leaked.py']
+    _patch_main_dirty_files(monkeypatch, [baseline, live])
+
+    plan_context.plan_dir_for(plan_id)
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='4-plan'))
+    assert cap['status'] == 'success', cap
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='4-plan'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'main_checkout_dirtied_during_plan'
+    assert result['plan_id'] == plan_id
+    assert result['phase'] == '4-plan'
+    assert sorted(result['baseline']) == ['existing.txt']
+    assert sorted(result['observed']) == ['existing.txt', 'leaked-readme.md', 'src/leaked.py']
+    assert sorted(result['newly_dirty']) == ['leaked-readme.md', 'src/leaked.py'], (
+        'newly_dirty must list ONLY the paths that appeared between captures, '
+        f'got {result["newly_dirty"]}'
+    )
+
+
+def test_layer_d_relaxed_at_phase_5_boundary(
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
+) -> None:
+    """Layer-D leak-into-main guard is RELAXED at the 5-execute → 6-finalize
+    boundary under the cwd-pinned move model (Option 5' / ADR-002).
+
+    The SAME proper-superset drift input that raises at ``4-plan`` must verify
+    ``ok`` at ``5-execute``: once the worktree is materialized and the
+    orchestrator's cwd is pinned to it, plan work lands in the worktree by
+    construction, so the leak-into-main guard has nothing to catch.
+    """
+    plan_id = 'layer-d-relaxed-p5'
     md_state = {'use_worktree': True, 'worktree_path': str(git_worktree)}
     monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
     narrowed = _layer_d_invariants()
@@ -801,22 +850,20 @@ def test_layer_d_proper_superset_drift_raises_with_payload(
     assert cap['status'] == 'success', cap
     result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
 
-    assert result['status'] == 'error'
-    assert result['error'] == 'main_checkout_dirtied_during_plan'
-    assert result['plan_id'] == plan_id
-    assert result['phase'] == '5-execute'
-    assert sorted(result['baseline']) == ['existing.txt']
-    assert sorted(result['observed']) == ['existing.txt', 'leaked-readme.md', 'src/leaked.py']
-    assert sorted(result['newly_dirty']) == ['leaked-readme.md', 'src/leaked.py'], (
-        'newly_dirty must list ONLY the paths that appeared between captures, '
-        f'got {result["newly_dirty"]}'
+    assert result['status'] == 'ok', (
+        'layer-D drift must be RELAXED at the 5-execute boundary under the '
+        f'cwd-pinned move model; got {result}'
     )
 
 
 def test_layer_d_main_checkout_plan_is_gated_off(
     monkeypatch: pytest.MonkeyPatch, plan_context,
 ) -> None:
-    """(c) ``use_worktree=false`` plan dirties main freely → no drift error."""
+    """(c) ``use_worktree=false`` plan dirties main freely → no drift error.
+
+    Verified at ``4-plan`` so the worktree-routing gate (gate 2) is genuinely
+    exercised rather than short-circuited by the phase-5 relaxation (gate 1).
+    """
     plan_id = 'layer-d-main-checkout'
     md_state = {'use_worktree': False}
     monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
@@ -832,9 +879,9 @@ def test_layer_d_main_checkout_plan_is_gated_off(
     )
 
     plan_context.plan_dir_for(plan_id)
-    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='4-plan'))
     assert cap['status'] == 'success', cap
-    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='4-plan'))
 
     assert result['status'] == 'ok', (
         'main-checkout plans must not trip the layer-D drift invariant '
@@ -852,6 +899,9 @@ def test_layer_d_dot_plan_paths_are_filtered_and_do_not_trip(
     confirming the captured list is empty even though git reports
     ``.plan/`` paths as dirty. Then verify must produce ``status: ok``
     because the filter strips the would-be drift.
+
+    Verified at ``4-plan`` so the filter logic is genuinely exercised rather
+    than short-circuited by the phase-5 relaxation.
     """
     plan_id = 'layer-d-dot-plan-filter'
     md_state = {'use_worktree': True, 'worktree_path': str(git_worktree)}
@@ -876,9 +926,9 @@ def test_layer_d_dot_plan_paths_are_filtered_and_do_not_trip(
     monkeypatch.setattr(inv, 'git_dirty_files', _git_dirty_files_stub)
 
     plan_context.plan_dir_for(plan_id)
-    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='4-plan'))
     assert cap['status'] == 'success', cap
-    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='4-plan'))
 
     assert result['status'] == 'ok', (
         '``.plan/`` paths must be filtered before the drift check fires, '
@@ -903,15 +953,17 @@ def test_layer_d_baseline_equal_live_yields_no_drift(
     monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
     monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
 
-    # Same dirty file at both captures — baseline-equal.
+    # Same dirty file at both captures — baseline-equal. Verified at ``4-plan``
+    # so the proper-superset rule is genuinely exercised rather than
+    # short-circuited by the phase-5 relaxation.
     baseline = ['preexisting-dirty.txt']
     live = ['preexisting-dirty.txt']
     _patch_main_dirty_files(monkeypatch, [baseline, live])
 
     plan_context.plan_dir_for(plan_id)
-    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='4-plan'))
     assert cap['status'] == 'success', cap
-    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='4-plan'))
 
     assert result['status'] == 'ok', (
         'baseline-equal main-dirty (identical sets across boundaries) '
@@ -922,11 +974,13 @@ def test_layer_d_baseline_equal_live_yields_no_drift(
 def test_cli_strict_propagates_nonzero_exit_on_main_dirty_drift(
     monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
 ) -> None:
-    """``verify --strict`` exits non-zero on layer-D drift.
+    """``verify --strict`` exits non-zero on layer-D drift at a planning boundary.
 
     Mirrors the strict-flag tests for ``worktree_unresolved`` and
     ``worktree_metadata_drift``: drives ``main()`` directly so the
-    in-process monkeypatched metadata loader and capture stub apply.
+    in-process monkeypatched metadata loader and capture stub apply. Uses
+    ``4-plan`` because the layer-D guard is RETAINED at the planning-phase
+    boundaries (and relaxed at ``5-execute`` per the move model).
     """
     plan_id = 'strict-layer-d-drift'
     md_state = {'use_worktree': True, 'worktree_path': str(git_worktree)}
@@ -942,7 +996,7 @@ def test_cli_strict_propagates_nonzero_exit_on_main_dirty_drift(
 
     plan_context.plan_dir_for(plan_id)
     # Capture establishes the baseline row.
-    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='4-plan'))
     assert cap['status'] == 'success', cap
 
     monkeypatch.setattr(
@@ -954,7 +1008,7 @@ def test_cli_strict_propagates_nonzero_exit_on_main_dirty_drift(
             '--plan-id',
             plan_id,
             '--phase',
-            '5-execute',
+            '4-plan',
             '--strict',
         ],
     )

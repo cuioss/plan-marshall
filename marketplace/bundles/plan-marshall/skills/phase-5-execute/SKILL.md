@@ -43,9 +43,9 @@ Every `manage-*` script call in this document carries the following exit-code co
 
 Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them.
 - On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run.
-- Every subagent dispatch (Task / Skill / execution-context invocation) MUST embed the Worktree Header in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `execution-context`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
+- Every subagent dispatch (Task / Skill / execution-context invocation) MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `execution-context`). Under the cwd-pinned model the worktree binding is inherited via the pinned cwd, not forwarded per call — subagents resolve `.plan/` cwd-relatively. A short reminder header MAY be embedded (see **Dispatch Protocol** below); it is a salience reminder, not a path-routing mechanism.
 
-See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention, never-edit-main-checkout invariant, dispatch header propagation, `--plan-id` two-state contract).
+See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention, never-edit-main-checkout invariant, cwd-pinned dispatch inheritance, `--plan-id`/`--project-dir` escape-hatch contract).
 
 ## Phase-Entry Worktree Assertion
 
@@ -53,20 +53,26 @@ The Phase Entry Protocol's `phase_handshake verify --phase {previous_phase_key} 
 
 **Phase 5 is the materialization phase.** Phases 1–4 only *declare* the worktree intent (`metadata.use_worktree` and `metadata.worktree_branch` written by `phase-1-init`); Step 2.5 below is the single point where the worktree directory and feature branch are actually created on disk. **Step 2.5 is unconditional and runs BEFORE the `early_terminate` short-circuit evaluation (Step 2.6 below).** Hoisting Step 2.5 above the short-circuit guarantees that `metadata.worktree_path` is always backfilled regardless of the manifest's `early_terminate` flag — otherwise an analysis-only plan that the composer marks `early_terminate=true` would transition to finalize without ever populating the worktree path, and the `phase_handshake verify` assertion at the 5→6 boundary would fail with `worktree_unresolved`. This ordering rules out an early-terminate path that transitions to finalize without ever populating the worktree path. Re-entry semantics: when phase-4-plan's capture ran without a populated `metadata.worktree_path` (because Step 2.5 had not yet executed), the `phase_handshake verify --phase 4-plan --strict` call MUST tolerate the still-empty value at phase-5 entry, then Step 2.5 populates `worktree_path` in both `references.json` and `status.metadata` before any task dispatch. On every subsequent phase-5 re-entry (orchestrator re-dispatch), Step 2.5's idempotence guard observes the populated `worktree_path` and short-circuits — no re-creation, no duplicate `git checkout -b`.
 
-## Dispatch Protocol (Worktree Header)
+## Dispatch Protocol (cwd-Pinned Inheritance)
 
-**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `execution-context` delegations — MUST begin with the canonical path-free Worktree Header:
+Under the move-based, cwd-pinned model (ADR-002), the worktree binding is carried by the **pinned current working directory**, not by per-call path forwarding. Step 2.5 pins the orchestrator's cwd to the worktree root after `prepare_execute.py` moves the plan directory and the executor in; every subprocess spawned and every subagent dispatched inherits that cwd, and `.plan/` resolution is cwd-relative (`file_ops.get_base_dir()` walks up to the nearest ancestor containing `.plan/local`). A dispatched subagent therefore resolves the worktree-resident state without being told a path. See [`../tools-script-executor/standards/cwd-policy.md`](../tools-script-executor/standards/cwd-policy.md) for the single cwd-unchanged invariant — it is not restated here.
+
+**Consequence for dispatch**: subagents do NOT forward `--plan-id` or `--project-dir` to working-tree-touching scripts for path resolution — the inherited pinned cwd binds them. The only structured input a dispatched workflow takes is `plan_id` as the *plan-identifier* prompt-body field (selecting which plan's metadata to operate on; unrelated to cwd binding), per the dispatched workflow's own Input Contract (`execute-task`, the per-phase workflow doc loaded by `execution-context-{level}`).
+
+When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), a short reminder header MAY be embedded as the first lines of the dispatch prompt to keep the never-edit-main-checkout invariant salient through free-form delegation:
 
 ```
-WORKTREE: --plan-id {plan_id}
-Resolved internally via `manage-status get-worktree-path`. All Edit/Write/Read tool calls and tool invocations (git -C, mvn -f, etc.) MUST target the resolved worktree path, NOT the main checkout. See workflow-integration-git/standards/worktree-handling.md for the canonical contract.
+WORKTREE: cwd is pinned to this plan's worktree (ADR-002 cwd-pinned model).
+Resolution is cwd-relative — do NOT forward a worktree path; do NOT pass --project-dir.
+All Edit/Write/Read tool calls and tool invocations (git, mvn, npm) operate against the pinned cwd.
+NEVER edit the main checkout. See tools-script-executor/standards/cwd-policy.md.
 ```
 
-The header is **path-free**: it carries `--plan-id {plan_id}` rather than the absolute worktree path. The dispatched skill resolves the path internally via `manage-status get-worktree-path --plan-id {plan_id}`. The worktree absolute path MUST NOT appear in dispatch prompts. The complete contract — header semantics, propagation rules, the `--plan-id` two-state binding, and rationale — is documented in `workflow-integration-git/standards/worktree-handling.md` § Dispatch Protocol.
+The header is a **reminder, not a path-routing mechanism** — the binding holds whether or not the header is present, because cwd-pinning carries it. The worktree absolute path MUST NOT appear in dispatch prompts. `--project-dir <abs>` survives only as the **escape hatch** for callers invoked outside a pinned-cwd context (post-worktree-removal cleanup, fixture-driven test invocations); it MUST NOT be forwarded inside a phase-5+ pinned-cwd dispatch. The complete contract — cwd-pinned inheritance, the merge-lock exception, and the `--plan-id`/`--project-dir` three-state escape-hatch binding — is documented in `workflow-integration-git/standards/worktree-handling.md` § Dispatch Protocol and `../tools-script-executor/standards/cwd-policy.md`.
 
-The `[STATUS] Active worktree: ...` work-log line is the observability signal that the worktree was detected; embedding the header in every dispatch prompt is the active propagation mechanism. Skip the header only when no worktree is active.
+The `[STATUS] Active worktree: ...` work-log line is the observability signal that the worktree was materialized and cwd was pinned. Child agents inherit the same pinned cwd and MUST NOT re-derive or forward a worktree path into any further dispatch.
 
-This applies to every dispatch in the execution loop, including (but not limited to) **Step 6 (Execute Steps)** task dispatches and **Step 9 (Independent Change Verification)** subagent invocations. Child agents must echo the same header verbatim into any further dispatches they issue.
+This applies to every dispatch in the execution loop, including (but not limited to) **Step 6 (Execute Steps)** task dispatches and **Step 9 (Independent Change Verification)** subagent invocations.
 
 See `standards/operations.md` for the complete set of dispatch pattern templates and `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule.
 
@@ -260,26 +266,28 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Materialization branch (when `worktree_path` is empty)**: branch on `metadata.use_worktree`.
 
-**Case A — `use_worktree == true`**: create an isolated worktree at the canonical path under `.plan/local/worktrees/{plan_id}` and check out the feature branch from `origin/{base_branch}`:
+**Case A — `use_worktree == true`**: CALL the atomic move-in script `prepare_execute`. In one call it materializes the worktree + feature branch (delegating to `worktree-create`), MOVES the plan directory and the executor into the worktree-resident `.plan/`, and RETURNS the canonical `worktree_path`:
 
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:prepare_execute prepare \
+  --plan-id {plan_id} --branch {worktree_branch} --base {base_branch}
 ```
-Skill: plan-marshall:workflow-integration-git
-  Arguments: worktree create --plan-id {plan_id} --branch {worktree_branch} --base {base_branch}
-```
 
-Capture the returned `worktree_path` from the skill's TOON output.
+Parse `status` and `worktree_path` from the returned TOON. On `status: success`, capture `worktree_path`. The move is atomic-with-rollback and idempotent — a re-entry returns `action: noop` carrying the same path (the idempotence guard above normally short-circuits before this CALL, but the script's own guard is the structural backstop). See `workflow-integration-git` Canonical invocations → `prepare_execute` for the full contract.
 
-**Case B — `use_worktree == false`**: the plan runs against the main checkout. Create the feature branch in place via `git -C .`:
+**Pin cwd to the returned path**: immediately after a successful CALL, the phase-5 orchestrator pins ITS OWN cwd to `worktree_path` for the remainder of phase-5+ (the script does NOT change the caller's cwd — a subprocess cannot mutate its parent's cwd). Under the uniform cwd rule (ADR-002) every subsequent `.plan/` resolution then targets the worktree-resident state moved in by this CALL. The single execution-time invariant is that cwd is never changed away from the worktree until finalize moves the plan dir back. D8 owns the caller-side cwd-unchanged guard the lifecycle scripts assert.
+
+**Case B — `use_worktree == false`**: the plan runs against the main checkout — there is NO worktree to materialize and NO move-in. Create the feature branch in place via `git -C .`:
 
 ```bash
 git -C . checkout -b {worktree_branch}
 ```
 
-Set `worktree_path` to the empty string (the main-checkout flow uses `.` everywhere `worktree_path` would otherwise apply; see Step 3's `worktree_path` absent → substitute `.` rule).
+Set `worktree_path` to the empty string (the main-checkout flow uses `.` everywhere `worktree_path` would otherwise apply; see Step 3's `worktree_path` absent → substitute `.` rule). Do NOT call `prepare_execute` in Case B — cwd stays on main and resolution is already main-relative.
 
 **Fatal-error contract**: if either branch fails, abort the phase fail-loud and do NOT silently proceed to the task loop. Emit the canonical `[ERROR]` line per the Error Handling section and return the structured error TOON; the orchestrator surfaces the failure for human repair. The failure driver differs by case:
 
-- **Case A failure** (worktree create exits non-zero, `git worktree add` fails, branch already exists with divergent history at the worktree destination): phase-1's expectation has already committed downstream consumers to the worktree path. Do NOT silently fall back to the main checkout — that would orphan every subsequent `--plan-id`-resolved Bucket B call.
+- **Case A failure** (`prepare_execute` returns `status: error` — worktree create failed, the plan dir is missing on main, or a move-in step failed and rolled back): the script's atomic-with-rollback contract guarantees the plan state is left WHOLLY on main, never half-moved. phase-1's expectation has already committed downstream consumers to the worktree path. Do NOT silently fall back to the main checkout — that would orphan every subsequent `--plan-id`-resolved Bucket B call. Do NOT pin cwd, and do NOT proceed to the task loop.
 - **Case B failure** (`git checkout -b {worktree_branch}` exits non-zero, branch already exists with divergent history on the main checkout): the plan is already bound to the main checkout; the failure is the inability to create the feature branch in place. Do NOT silently fall back to `main` or `--no-branch` — phase-1 committed downstream consumers to a dedicated feature branch.
 
 ```bash
@@ -533,7 +541,7 @@ Returns next task with status `pending` or `in_progress`, including embedded goa
 
 For each step in task's `steps[]` array:
 1. Parse the step text
-2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `execution-context`, the prompt MUST begin with the Worktree Header from the **Dispatch Protocol** section above (omit only when no worktree is active).
+2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `execution-context`, the subagent inherits the pinned cwd per the **Dispatch Protocol** section above; pass `plan_id` as the structured input and optionally embed the reminder header.
 3. Mark step complete via `manage-tasks:finalize-step`
 
 ### Step 6.5: Scope-Creep Guard (per-task)
@@ -595,7 +603,7 @@ The orchestrator's `phase-boundary` call in `workflow/execution.md` (recorded at
 
 **Applies to**: `implementation` and `module_testing` profile tasks only. Skip this step for `verification` profile tasks.
 
-After task completion but before committing, independently verify that the task agent produced genuine results rather than trusting self-reports. Any subagent dispatch made during this step (e.g., a follow-up Task invocation) MUST embed the Worktree Header per the **Dispatch Protocol** section above.
+After task completion but before committing, independently verify that the task agent produced genuine results rather than trusting self-reports. Any subagent dispatch made during this step (e.g., a follow-up Task invocation) inherits the pinned cwd per the **Dispatch Protocol** section above and resolves `.plan/` cwd-relatively.
 
 **9a. File-change invariant**: Verify that at least one file was modified in the worktree. Run in the worktree directory (or main checkout if no worktree):
 
@@ -1035,7 +1043,7 @@ When `per_task_budget_reserve` is set, use its value as `N`. **Fallback when the
 
 **Cross-reference to the three terminal outcomes** — the sentinel is the **continue-vs-yield** decision, not a fourth terminal outcome. When the sentinel says "yield", the agent still MUST exit via one of the three documented terminal paths above (queue empty → transition; fatal error → structured error TOON; triage `blocked` → manage-tasks status update). Yielding does NOT mean "return a partial-completion checkpoint" — that path is explicitly forbidden by the section above. The orchestrator re-dispatches the execution-context on the next round; the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
 
-**Audit diagnostic ledger** — when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), inspect the per-dispatch overhead in the work log. Each `execution-context` dispatch carries a fixed cost (skill-load preamble + Worktree Header echo + return-TOON marshalling); the ratio of overhead to useful work per dispatch is the first thing to check when budget accounting drifts.
+**Audit diagnostic ledger** — when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), inspect the per-dispatch overhead in the work log. Each `execution-context` dispatch carries a fixed cost (skill-load preamble + optional reminder-header echo + return-TOON marshalling); the ratio of overhead to useful work per dispatch is the first thing to check when budget accounting drifts.
 
 ---
 

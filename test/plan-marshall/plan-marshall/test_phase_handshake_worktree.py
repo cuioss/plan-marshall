@@ -133,3 +133,34 @@ class TestOrphanCanonicalBypass:
             metadata = {'use_worktree': use_worktree_value} if use_worktree_value is not None else {}
             result = inv._capture_worktree_orphan(plan_id, metadata, phase)
             assert result is None
+
+
+class TestWorktreeStateDriftBlockingScopeRelaxation:
+    """Pin the phase-keyed relaxation of the worktree-state drift invariants.
+
+    Under the cwd-pinned move model (Option 5' / ADR-002) the worktree-state
+    drift checks (``main_dirty_files`` layer-D leak guard + the sideways
+    ``worktree_sha`` / ``worktree_dirty`` / ``worktree_orphan`` invariants) are
+    RELAXED for the ``5-execute → 6-finalize`` boundary and RETAINED for the
+    planning-phase boundaries (1-init / 2-refine / 3-outline / 4-plan). The
+    discriminator is the boundary phase, asserted here directly against
+    ``is_invariant_blocking_at_phase``.
+    """
+
+    _RELAXED_INVARIANTS = (
+        'main_dirty_files',
+        'worktree_sha',
+        'worktree_dirty',
+        'worktree_orphan',
+    )
+
+    @pytest.mark.parametrize('invariant', _RELAXED_INVARIANTS)
+    @pytest.mark.parametrize('phase', _PRE_MATERIALIZATION_PHASES_FOR_TEST)
+    def test_blocking_at_planning_boundaries(self, invariant: str, phase: str) -> None:
+        """Retained: drift in these invariants is blocking at phases 1-4."""
+        assert inv.is_invariant_blocking_at_phase(invariant, phase) is True
+
+    @pytest.mark.parametrize('invariant', _RELAXED_INVARIANTS)
+    def test_not_blocking_at_phase_5_boundary(self, invariant: str) -> None:
+        """Relaxed: drift in these invariants is NOT blocking at 5-execute."""
+        assert inv.is_invariant_blocking_at_phase(invariant, '5-execute') is False

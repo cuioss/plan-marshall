@@ -14,7 +14,8 @@ Two-state contract (per script):
 * ``--plan-id X`` only — resolve via ``manage-status get-worktree-path``.
   When ``use_worktree`` is true, return the persisted ``worktree_path``.
   When ``use_worktree`` is false (or metadata absent), fall back to the
-  main-checkout root (``git rev-parse --show-toplevel``).
+  plan root resolved cwd-relatively (the nearest ancestor of cwd
+  containing ``.plan/local``; ADR-002 uniform cwd rule).
 * ``--project-dir Y`` only — return ``Y`` verbatim. Legacy / escape
   hatch — preserved for callers that need an explicit path (test
   fixtures, ad-hoc invocations from outside any plan).

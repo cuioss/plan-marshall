@@ -2287,7 +2287,6 @@ def test_marshal_json_preferred_over_csv_preserves_project_prefixes(plan_context
         'default:lessons-capture',
         'project:finalize-step-plugin-doctor',
         'default:branch-cleanup',
-        'project:finalize-step-regenerate-executor',
         'default:record-metrics',
         'plan-marshall:plan-retrospective',
         'default:archive-plan',
@@ -2303,7 +2302,6 @@ def test_marshal_json_preferred_over_csv_preserves_project_prefixes(plan_context
             'lessons-capture',
             'plugin-doctor',
             'branch-cleanup',
-            'regenerate-executor',
             'record-metrics',
             'plan-retrospective',
             'archive-plan',
@@ -2328,13 +2326,11 @@ def test_marshal_json_preferred_over_csv_preserves_project_prefixes(plan_context
     assert 'project:finalize-step-deploy-target' in steps
     assert 'project:finalize-step-sync-plugin-cache' in steps
     assert 'project:finalize-step-plugin-doctor' in steps
-    assert 'project:finalize-step-regenerate-executor' in steps
     assert 'plan-marshall:plan-retrospective' in steps
     # Bare names from the CSV must not appear in the manifest output.
     assert 'deploy-target' not in steps
     assert 'sync-plugin-cache' not in steps
     assert 'plugin-doctor' not in steps
-    assert 'regenerate-executor' not in steps
     assert 'plan-retrospective' not in steps
     # `default:` prefixes ARE stripped by boundary normalization.
     assert 'commit-push' in steps

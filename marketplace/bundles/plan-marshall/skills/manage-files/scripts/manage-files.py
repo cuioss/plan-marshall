@@ -209,8 +209,9 @@ def _resolve_document_path(plan_id: str, document: str) -> tuple[Path | None, st
     the manage-files convention of delegating to sibling manage-* scripts).
     """
     notation, sub_args = DOCUMENT_RESOLVERS[document]
-    # The executor lives at the main checkout's `.plan/execute-script.py`;
-    # get_executor_path() resolves it worktree-safely via git-common-dir.
+    # The executor lives at `<plan-root>/.plan/execute-script.py`;
+    # get_executor_path() resolves it cwd-relatively via the uniform cwd rule
+    # (ADR-002) — worktree-resident during phase-5+, main during the regenerate path.
     # Fall back to the canonical PATH-based lookup if resolution fails or the
     # path is unavailable (defensive — should not trigger in normal operation
     # since the executor is always staged at the repo root by manage-architecture).

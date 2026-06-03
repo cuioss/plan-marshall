@@ -1066,3 +1066,46 @@ def test_write_active_plan_validate_helper_rejects_unsafe_session_id(tmp_path, m
     # No file under ~/.cache/plan-marshall/etc or similar.
     escape_dir = tmp_path / '.cache' / 'plan-marshall' / 'etc'
     assert not escape_dir.exists(), 'Helper must not traverse out of sessions/ via malformed session id'
+
+
+# =============================================================================
+# TESTS: executor-guard backstop decision (ADR-002, deliverable 11)
+#
+# Under the move-based, cwd-pinned hermetic worktree model the structural
+# cwd-pinning is the PRIMARY enforcement; a secondary runtime worktree-write
+# refusal guard inside generate_executor.py was evaluated and REJECTED as
+# redundant. These tests pin the recorded decision so the rejected backstop is
+# not silently reintroduced and the ADR cross-reference does not rot.
+# =============================================================================
+
+
+def test_module_docstring_records_executor_guard_backstop_decision():
+    """The module docstring MUST record the keep/remove backstop decision and
+    cross-reference ADR-002 (deliverable 11 acceptance criterion)."""
+    module = load_module()
+    docstring = module.__doc__ or ''
+
+    assert 'ADR-002' in docstring, 'Module docstring must cross-reference ADR-002'
+    # The decision is recorded explicitly (keep/remove wording present).
+    assert 'DECISION:' in docstring, 'Module docstring must record an explicit DECISION line'
+    lowered = docstring.lower()
+    assert 'backstop' in lowered, 'Decision must frame the guard/lint as a secondary backstop'
+    assert 'cwd-pinning' in lowered or 'cwd pinning' in lowered, (
+        'Decision must name structural cwd-pinning as the primary enforcement'
+    )
+
+
+def test_no_worktree_write_refusal_guard_symbol_present():
+    """The rejected runtime worktree-write refusal guard must NOT exist — guards
+    against accidental reintroduction of the redundant backstop."""
+    module = load_module()
+    for symbol in (
+        'refuse_worktree_write',
+        'assert_main_checkout',
+        'guard_worktree_executor',
+        '_refuse_worktree_bound_regen',
+    ):
+        assert not hasattr(module, symbol), (
+            f'Rejected worktree-write refusal guard symbol {symbol!r} must be absent '
+            f'(ADR-002: structural cwd-pinning is the primary enforcement)'
+        )

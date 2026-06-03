@@ -560,3 +560,167 @@ class TestPhase5LoggingGapExtractors:
             assert boundaries == {}
         else:
             assert not boundaries
+
+
+# =============================================================================
+# Folded-in global-log per-plan signals
+# =============================================================================
+#
+# Under the move-based finalize model the plan's OWN global logs
+# (``{prefix}-YYYY-MM-DD.log``) are folded into ``<plan_dir>/logs/``. The
+# ``analyze_folded_global_logs`` helper parses those folded-in copies for
+# per-plan operational signals (error/non-INFO lines, slow calls, fixture
+# leaks) — the per-plan replacement for the retired cross-plan
+# ``global-log-analysis`` audit check.
+
+
+def _line(ts: str, level: str, rest: str, *, hash_: str = '3befe7') -> str:
+    """Build one folded-in global-log line in the bracketed grammar."""
+    return f'[{ts}] [{level}] [{hash_}] {rest}'
+
+
+def _write_folded_log(logs_dir: Path, name: str, lines: list[str]) -> None:
+    """Write a folded-in global-log file under ``logs_dir/{name}``."""
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / name).write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+
+class TestAnalyzeFoldedGlobalLogs:
+    def test_no_logs_dir_yields_all_zero_signals(self, tmp_path):
+        # Arrange — logs_dir does not exist
+        logs_dir = tmp_path / 'logs'
+
+        # Act
+        result = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        # Assert
+        assert result['logs_present'] is False
+        assert result['folded_log_files'] == 0
+        assert result['total_lines'] == 0
+        assert result['error_count'] == 0
+        assert result['slow_call_count'] == 0
+        assert result['fixture_leak_count'] == 0
+
+    def test_only_canonical_logs_no_folded_globals_yields_no_signals(self, tmp_path):
+        # Arrange — canonical per-plan logs only; no date-stamped folded copies
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'work.log',
+            [_line('2026-06-01T10:00:00Z', 'ERROR', '[STATUS] (x) boom')],
+        )
+
+        # Act
+        result = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        # Assert — work.log is NOT a folded ``work-*.log`` glob match
+        assert result['logs_present'] is False
+        assert result['folded_log_files'] == 0
+        assert result['error_count'] == 0
+
+    def test_well_formed_lines_counted_and_error_flagged(self, tmp_path):
+        # Arrange — one INFO + one ERROR line in a folded global log
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'work-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', '[STATUS] (x) ok'),
+                _line('2026-06-01T10:00:01Z', 'ERROR', '[STATUS] (x) off'),
+            ],
+        )
+
+        # Act
+        result = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        # Assert — both parsed; the ERROR line surfaces in error_count
+        assert result['logs_present'] is True
+        assert result['folded_log_files'] == 1
+        assert result['total_lines'] == 2
+        assert result['error_count'] == 1
+
+    def test_info_line_with_failure_marker_flagged(self, tmp_path):
+        # Arrange — INFO level but the body carries a fail marker (status: error)
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'script-execution-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:x:x run -> status: error exit_code: 1')],
+        )
+
+        # Act
+        result = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        # Assert
+        assert result['error_count'] == 1
+
+    def test_slow_call_flagged_at_ceiling(self, tmp_path):
+        # Arrange — a call at the slow ceiling (30.0s) and a fast call
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', 'pm:a:a run (30.0s)'),
+                _line('2026-06-01T10:00:01Z', 'INFO', 'pm:b:b run (1.0s)'),
+            ],
+        )
+
+        # Act
+        result = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        # Assert — only the >=ceiling call is slow
+        assert result['slow_call_count'] == 1
+
+    def test_fixture_leak_signature_flagged(self, tmp_path):
+        # Arrange — a synthetic test-fixture id leaked into the folded log
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'decision-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', '(x) plan orphan-md-xyz123 resolved')],
+        )
+
+        # Act
+        result = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        # Assert
+        assert result['fixture_leak_count'] == 1
+        assert 'orphan-md-xyz123' in result['fixture_leak_signatures']
+
+    def test_malformed_lines_skipped(self, tmp_path):
+        # Arrange — only the first line matches the bracketed grammar
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'work-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', '[STATUS] (x) ok'),
+                'no bracketed prefix here',
+            ],
+        )
+
+        # Act
+        result = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        # Assert — only the well-formed line counted
+        assert result['total_lines'] == 1
+
+    def test_cmd_run_surfaces_global_log_signals_and_fixture_leak_finding(self, tmp_path, monkeypatch):
+        # Arrange — a live plan whose folded-in global log carries a fixture leak
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-folded-leak')
+        _write_folded_log(
+            plan_dir / 'logs',
+            'work-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', '[STATUS] fake-test-bundle leaked')],
+        )
+
+        # Act
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+
+        # Assert — the global_log_signals key is present and a leak finding fired
+        assert result.success, result.stderr
+        data = result.toon()
+        assert 'global_log_signals' in data
+        signals = data['global_log_signals']
+        assert int(signals['fixture_leak_count']) == 1

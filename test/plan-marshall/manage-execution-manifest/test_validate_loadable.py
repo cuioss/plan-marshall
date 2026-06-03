@@ -267,13 +267,12 @@ class TestAscendingOrderGuard:
         manifest = _mem.read_manifest('vl-order-ok')
         assert manifest is not None
         # Built-in steps in ascending order (commit-push=10, create-pr=20)
-        # followed by project steps in ascending order (80, 85, 90).
+        # followed by project steps in ascending order (80, 85).
         manifest['phase_6']['steps'] = [
             'commit-push',
             'create-pr',
             'project:finalize-step-deploy-target',
             'project:finalize-step-sync-plugin-cache',
-            'project:finalize-step-regenerate-executor',
         ]
         _mem.write_manifest('vl-order-ok', manifest)
 
@@ -288,12 +287,11 @@ class TestAscendingOrderGuard:
         cmd_compose(_compose_ns('vl-order-inverted'))
         manifest = _mem.read_manifest('vl-order-inverted')
         assert manifest is not None
-        # The actual bug: regenerate-executor (90) precedes deploy-target (80).
+        # An inversion: sync-plugin-cache (85) precedes deploy-target (80).
         manifest['phase_6']['steps'] = [
             'commit-push',
-            'project:finalize-step-regenerate-executor',
-            'project:finalize-step-deploy-target',
             'project:finalize-step-sync-plugin-cache',
+            'project:finalize-step-deploy-target',
         ]
         _mem.write_manifest('vl-order-inverted', manifest)
 
@@ -303,9 +301,9 @@ class TestAscendingOrderGuard:
         assert result['error'] == 'order_inversion'
         # The message names both out-of-order step IDs and their order values.
         assert 'project:finalize-step-deploy-target' in result['message']
-        assert 'project:finalize-step-regenerate-executor' in result['message']
+        assert 'project:finalize-step-sync-plugin-cache' in result['message']
         assert 'order=80' in result['message']
-        assert 'order=90' in result['message']
+        assert 'order=85' in result['message']
         # The existing loadability payload is preserved alongside the order error.
         assert result['unloadable_count'] == 0
         assert isinstance(result['results'], list)
@@ -314,7 +312,6 @@ class TestAscendingOrderGuard:
         """project: step order is read from .claude/skills/{name}/SKILL.md frontmatter."""
         assert _mem._resolve_step_order('project:finalize-step-deploy-target') == 80
         assert _mem._resolve_step_order('project:finalize-step-sync-plugin-cache') == 85
-        assert _mem._resolve_step_order('project:finalize-step-regenerate-executor') == 90
 
     def test_builtin_step_order_resolves_from_standards_frontmatter(self):
         """Built-in step order is read from its standards/workflow doc frontmatter."""
@@ -335,13 +332,13 @@ class TestAscendingOrderGuard:
         # Interleave unresolvable-order steps between ascending resolvable ones.
         # The ghost step has no file (order None); the bundle:skill step has no
         # project-local SKILL.md (order None). Neither participates in the check,
-        # so the resolvable subsequence (10, 80, 90) stays ascending and passes.
+        # so the resolvable subsequence (10, 80, 85) stays ascending and passes.
         manifest['phase_6']['steps'] = [
             'commit-push',
             'plan-marshall:plan-retrospective',
             'project:finalize-step-deploy-target',
             'ghost-step-not-on-disk',
-            'project:finalize-step-regenerate-executor',
+            'project:finalize-step-sync-plugin-cache',
         ]
         _mem.write_manifest('vl-order-skip', manifest)
 
@@ -357,7 +354,7 @@ class TestAscendingOrderGuard:
     def test_single_step_id_path_has_no_order_check(self, plan_context):
         """The order guard applies to --all only; --step-id is unchanged."""
         result = cmd_validate_loadable(
-            _validate_loadable_ns('vl-order-single', step_id='project:finalize-step-regenerate-executor')
+            _validate_loadable_ns('vl-order-single', step_id='project:finalize-step-sync-plugin-cache')
         )
         assert result is not None
         assert result['status'] == 'success'
@@ -385,12 +382,11 @@ class TestAscendingOrderGuard:
 class TestCheckSeedMode:
     def test_inverted_seed_returns_seed_order_inversion(self, plan_context, monkeypatch):
         """A seed whose phase-6-finalize steps are inverted returns seed_order_inversion."""
-        # The actual bug: regenerate-executor (90) precedes deploy-target (80).
+        # An inversion: sync-plugin-cache (85) precedes deploy-target (80).
         inverted = [
             'default:commit-push',
-            'project:finalize-step-regenerate-executor',
-            'project:finalize-step-deploy-target',
             'project:finalize-step-sync-plugin-cache',
+            'project:finalize-step-deploy-target',
         ]
         monkeypatch.setattr(_mem, '_read_marshal_phase_steps', lambda phase_key: inverted)
 
@@ -399,7 +395,7 @@ class TestCheckSeedMode:
         assert result['status'] == 'error'
         assert result['error'] == 'seed_order_inversion'
         assert 'project:finalize-step-deploy-target' in result['message']
-        assert 'project:finalize-step-regenerate-executor' in result['message']
+        assert 'project:finalize-step-sync-plugin-cache' in result['message']
 
     def test_correct_seed_passes(self, plan_context, monkeypatch):
         """A seed with ascending phase-6-finalize order returns success."""
@@ -408,7 +404,6 @@ class TestCheckSeedMode:
             'default:create-pr',
             'project:finalize-step-deploy-target',
             'project:finalize-step-sync-plugin-cache',
-            'project:finalize-step-regenerate-executor',
         ]
         monkeypatch.setattr(_mem, '_read_marshal_phase_steps', lambda phase_key: ascending)
 

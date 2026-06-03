@@ -10,7 +10,7 @@ Every dispatched phase or step follows the same shape:
 
 1. **Orchestrator: pick role key + workflow doc + skills.** From a slash-command action, a manifest step, or an inline call site.
 2. **Orchestrator: resolve the level** via `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort resolve-target --role <role_key>`. Returns the variant target name (`execution-context-{level}` or canonical `execution-context` for `inherit`).
-3. **Orchestrator: construct prompt body** — five required fields (`name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, `WORKTREE`) plus any workflow-specific runtime inputs.
+3. **Orchestrator: construct prompt body** — five required fields (`name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, `WORKTREE`) plus any workflow-specific runtime inputs. Under the cwd-pinned model the `WORKTREE` field is **path-free** — it carries `--plan-id {plan_id}` (a salience reminder), not a worktree absolute path. The subagent inherits the orchestrator's pinned cwd and resolves `.plan/` cwd-relatively; see [`../../tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md).
 4. **Orchestrator: dispatch** — `Task: plan-marshall:execution-context-{level}` with the prompt body.
 5. **Subagent: load skills + read workflow** — `dev-agent-behavior-rules` first (implicit), then each `skills[]` entry in order, then `Read` the resolved workflow path.
 6. **Subagent: execute the workflow** — runtime inputs substitute into the doc's `{placeholder}` tokens.
@@ -67,7 +67,7 @@ skills[3]:
 - plan-marshall:manage-references
 - plan-marshall:manage-plan-documents
 workflow: plan-marshall:phase-2-refine/SKILL.md
-WORKTREE: .plan/local/worktrees/lesson-2026-05-11-foo
+WORKTREE: --plan-id lesson-2026-05-11-foo
 ```
 
 **Step 5 (dispatch):**
@@ -170,7 +170,7 @@ workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
 producer: pr-comment
 pr_number: 142
 caller_phase: phase-6-finalize
-WORKTREE: .plan/local/worktrees/feature-jwt-auth
+WORKTREE: --plan-id feature-jwt-auth
 ```
 
 **Step 5 (dispatch):** `Task: plan-marshall:execution-context-high` with the block above.
@@ -234,12 +234,13 @@ The only per-iteration parallel dispatch in the contract. Phase-6 `architecture-
 
 ```bash
 # Discover affected modules from the worktree diff against the pre-snapshot
-# captured at Tier-0 entry. The affected set is the bucket union
-# added ∪ removed ∪ changed read from this call's TOON output — it is held in
-# memory for the dispatch fan-out, not persisted via a separate command.
+# captured at Tier-0 entry. cwd is pinned to the plan's worktree (the cwd-pinned
+# model), so the diff resolves against the pinned worktree without a path arg.
+# The affected set is the bucket union added ∪ removed ∪ changed read from this
+# call's TOON output — it is held in memory for the dispatch fan-out, not
+# persisted via a separate command.
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  diff-modules --pre .plan/local/plans/feature-jwt-auth/architecture-pre \
-  --project-dir .plan/local/worktrees/feature-jwt-auth
+  diff-modules --pre .plan/local/plans/feature-jwt-auth/architecture-pre
 ```
 
 If `affected_modules` is empty → Tier-1 is skipped; the step marks done with `display_detail: "no modules affected"`.
@@ -266,7 +267,7 @@ skills[1]:
 - plan-marshall:manage-architecture
 workflow: plan-marshall:plan-marshall/workflow/enrich-module.md
 module: auth-core
-WORKTREE: .plan/local/worktrees/feature-jwt-auth
+WORKTREE: --plan-id feature-jwt-auth
 ```
 
 Two more identical prompts for `auth-jwt` and `auth-tests`, only the `module` field changes.

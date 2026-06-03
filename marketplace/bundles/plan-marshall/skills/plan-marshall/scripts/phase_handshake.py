@@ -9,6 +9,33 @@ Usage:
 
 All subcommands emit TOON to stdout. `verify` with ``--strict`` exits 1 on
 ``status: drift`` so callers can gate progress at the CLI level.
+
+Retained-vs-relaxed worktree-state drift map (Option 5' / ADR-002), keyed on
+the boundary phase the handshake verifies (the phase transitioned OUT of):
+
+    boundary           worktree-state drift checks
+    -----------------  --------------------------------------------------
+    1-init  → 2-refine  RETAINED (planning runs on main; leaks possible)
+    2-refine → 3-outline RETAINED
+    3-outline → 4-plan   RETAINED
+    4-plan  → 5-execute  RETAINED
+    5-execute → 6-finalize RELAXED  (cwd-pinned move model; checks moot)
+
+The "worktree-state drift checks" relaxed at phase-5+ are the layer-D
+leak-into-main guard (``main_dirty_files`` / ``_check_main_dirty_drift``) and
+the sideways worktree invariants (``worktree_sha`` / ``worktree_dirty`` /
+``worktree_orphan``). Under the move-based, cwd-pinned hermetic worktree model
+the worktree is materialized at phase-5 start and the plan dir is MOVED into
+it; from then the orchestrator's cwd IS the worktree and the single
+cwd-unchanged invariant (asserted by ``file_ops.guard_worktree_cwd``) keeps it
+pinned there. Plan work lands in the worktree by construction, so a leak-into-
+main guard and a sideways worktree-SHA comparison have nothing to catch at the
+``5-execute → 6-finalize`` boundary. The relaxation is realized via the
+per-phase blocking scope in ``_invariants.INVARIANT_BLOCKING_SCOPE`` and the
+mirrored boundary-phase gate in ``_handshake_commands._check_main_dirty_drift``
+— the discriminator is the boundary phase already known to the handshake, NOT
+a runtime resolver branch, so the handshake never references a removed check at
+a boundary that still needs it.
 """
 
 from __future__ import annotations

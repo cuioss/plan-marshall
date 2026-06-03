@@ -144,6 +144,8 @@ The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-
 
 The `script-failure-analysis` script (aspect 8) consumes the plan's `script-execution.log` directly and classifies non-zero-exit calls by stderr signature (`invalid choice:` → `invented_subcommand`; `the following arguments are required:` → `missing_required_flag`; `unrecognized arguments:` → `invented_flag`; non-argparse exit-1 → `script_internal_error`). The TOON fragment carries deduped `findings[]` and seed `lessons[]` for downstream classification; the orchestrator does NOT inject LLM judgement at this point. See `references/script-failure-analysis.md` for the finding shape; the LLM aspects that follow may augment the script-emitted findings with source-component tracing.
 
+The `analyze-logs` script (aspect 2) additionally parses the plan's **folded-in global logs** (the `{prefix}-YYYY-MM-DD.log` files folded into `<plan_dir>/logs/` at integrate-into-main) and surfaces per-plan operational signals under `global_log_signals` (error/non-INFO lines, slow calls, fixture leaks). This is the per-plan replacement for the retired cross-plan `global-log-analysis` audit check — each plan's own signals are surfaced from its folded-in copies; the cross-plan correlation the audit check did is no longer maintained. See `references/log-analysis.md` § "Folded-in global logs".
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:{script} \
   run --plan-id {plan_id} --mode {live|archived} > work/fragment-{aspect}.toon

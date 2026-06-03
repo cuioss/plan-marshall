@@ -13,6 +13,7 @@ Canonical definitions for terms used across the plan-marshall bundle. When a ter
 | **phase** | One of 6 sequential lifecycle stages: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`. Phases execute in order; skipping is not allowed. |
 | **track** | Outline creation strategy determined during phase-2-refine. **Simple track**: localized changes with known targets. **Complex track**: codebase-wide discovery requiring domain skill involvement. |
 | **Q-Gate** | Quality gate — a verification checkpoint between phases. See [findings-pipeline.md § Store](findings-pipeline.md#store) for storage and [findings-pipeline.md § Invariant Gate](findings-pipeline.md#invariant-gate) for resolution before phase advance. |
+| **worktree** | The git worktree a plan executes in during phases 5-6 (or the main checkout when `use_worktree=false`). At phase-5 start the plan directory and executor MOVE into the worktree and the orchestrator pins its cwd there; every `.plan/` lookup resolves cwd-relatively from that point. cwd-pinning is an implementation detail of how the right tree is targeted — callers do not pass worktree paths. See [`../../workflow-integration-git/standards/worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) for the lifecycle and [`../../tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) for the resolution rule. |
 
 ## Work Artifacts
 

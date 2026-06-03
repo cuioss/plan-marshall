@@ -1,6 +1,7 @@
 """Tests for _build_shared utilities and resolve_project_dir executor resolution."""
 
 import importlib
+import os
 import sys
 from pathlib import Path
 
@@ -50,9 +51,10 @@ class TestGetBashTimeout:
 class TestResolveProjectDirExecutorPath:
     """Tests for resolve_project_dir._executor_path().
 
-    _executor_path() delegates to file_ops.get_executor_path() (worktree-safe
-    resolution via git-common-dir) and re-wraps a RuntimeError (no git repo)
-    into WorktreeResolutionError so callers can surface the message verbatim.
+    _executor_path() delegates to file_ops.get_executor_path() (cwd-relative
+    resolution via the uniform cwd rule, ADR-002) and re-wraps a RuntimeError
+    (no git repo) into WorktreeResolutionError so callers can surface the
+    message verbatim.
     """
 
     def test_returns_resolved_executor_path(self, tmp_path, monkeypatch):
@@ -69,3 +71,43 @@ class TestResolveProjectDirExecutorPath:
         monkeypatch.setattr(_resolve_project_dir, 'get_executor_path', _raise)
         with pytest.raises(_resolve_project_dir.WorktreeResolutionError, match='Cannot locate executor'):
             _resolve_project_dir._executor_path()
+
+
+class TestResolveProjectDirMainCheckoutRoot:
+    """Tests for resolve_project_dir._main_checkout_root().
+
+    _main_checkout_root() is the fallback returned when neither --plan-id nor
+    --project-dir is supplied, and when --plan-id resolves to use_worktree=false.
+    Under the uniform cwd rule (ADR-002) it resolves cwd-relatively via
+    marketplace_paths._find_plan_root_from_cwd() — the nearest ancestor of cwd
+    containing .plan/local — NOT via git rev-parse --show-toplevel. These tests
+    lock in that cwd-relative routing behaviour.
+    """
+
+    def test_returns_cwd_relative_plan_root(self, tmp_path, monkeypatch):
+        """When _find_plan_root_from_cwd resolves a root, it is returned verbatim."""
+        plan_root = tmp_path / 'checkout'
+        monkeypatch.setattr(_resolve_project_dir, '_find_plan_root_from_cwd', lambda: plan_root)
+        result = _resolve_project_dir._main_checkout_root()
+        assert result == str(plan_root)
+
+    def test_falls_back_to_cwd_when_plan_root_unresolvable(self, tmp_path, monkeypatch):
+        """When no .plan/local ancestor exists, the absolute cwd is the last-ditch fallback."""
+        monkeypatch.setattr(_resolve_project_dir, '_find_plan_root_from_cwd', lambda: None)
+        monkeypatch.chdir(tmp_path)
+        result = _resolve_project_dir._main_checkout_root()
+        # tmp_path may be a symlink target on macOS; compare resolved absolute paths.
+        assert result == os.path.abspath(os.getcwd())
+
+    def test_neither_flag_routes_through_main_checkout_root(self, monkeypatch):
+        """resolve_project_dir(None, None) delegates to the cwd-relative resolver."""
+        monkeypatch.setattr(_resolve_project_dir, '_main_checkout_root', lambda: '/tmp/cwd-relative-root')
+        resolved = _resolve_project_dir.resolve_project_dir(None, '.', default='.')
+        assert resolved == '/tmp/cwd-relative-root'
+
+    def test_plan_id_use_worktree_false_routes_through_main_checkout_root(self, monkeypatch):
+        """--plan-id with use_worktree=false falls back to the cwd-relative resolver."""
+        monkeypatch.setattr(_resolve_project_dir, '_query_worktree_path', lambda _pid: (False, ''))
+        monkeypatch.setattr(_resolve_project_dir, '_main_checkout_root', lambda: '/tmp/cwd-relative-root')
+        resolved = _resolve_project_dir.resolve_project_dir('some-plan', '.', default='.')
+        assert resolved == '/tmp/cwd-relative-root'

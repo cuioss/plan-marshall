@@ -13,6 +13,7 @@ Tests functions:
 - get_base_dir/set_base_dir/base_path: Base directory configuration
 """
 
+import os
 import sys
 from io import StringIO
 from pathlib import Path
@@ -31,6 +32,7 @@ from file_ops import (
     get_plan_dir,
     get_temp_dir,
     get_worktree_root,
+    guard_worktree_cwd,
     output_error,
     output_success,
     parse_markdown_metadata,
@@ -699,3 +701,104 @@ def test_jsonl_store_source_uses_canonical_local_plans_path():
     assert '.plan/local/plans/' in source
     legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
     assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'
+
+
+# =============================================================================
+# guard_worktree_cwd tests — the caller-side cwd-unchanged invariant guard
+# =============================================================================
+#
+# guard_worktree_cwd(plan_id) is the script-side realization of the single
+# cwd-unchanged invariant (ADR-002 / Option 5'). It ASSERTS that the process
+# cwd resolves to the plan's canonical worktree root
+# (get_worktree_root() / plan_id) and NEVER sets the cwd. These tests pin
+# PLAN_BASE_DIR + cwd per the test-isolation lessons so the worktree root the
+# helper resolves is exactly the one the test materialises under tmp_path.
+# =============================================================================
+
+
+def _make_worktree(tmp_path: Path, plan_id: str) -> Path:
+    """Materialise the canonical worktree dir for ``plan_id`` under tmp_path.
+
+    With PLAN_BASE_DIR pinned to ``tmp_path``, ``get_worktree_root()`` resolves
+    to ``tmp_path/worktrees`` so the plan worktree is
+    ``tmp_path/worktrees/{plan_id}`` — exactly what the guard expects.
+    """
+    worktree = tmp_path / 'worktrees' / plan_id
+    worktree.mkdir(parents=True, exist_ok=True)
+    return worktree
+
+
+def test_guard_passes_when_cwd_is_the_worktree(tmp_path, monkeypatch):
+    """cwd == canonical worktree root → assertion passes (returns None)."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    worktree = _make_worktree(tmp_path, 'plan-cwd-ok')
+    monkeypatch.chdir(worktree)
+
+    assert guard_worktree_cwd('plan-cwd-ok') is None
+
+
+def test_guard_returns_error_when_cwd_left_worktree(tmp_path, monkeypatch):
+    """cwd is NOT the worktree (but the worktree exists) → error envelope."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    worktree = _make_worktree(tmp_path, 'plan-cwd-left')
+    elsewhere = tmp_path / 'somewhere-else'
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    result = guard_worktree_cwd('plan-cwd-left')
+
+    assert result is not None
+    assert result['status'] == 'error'
+    assert result['error'] == 'cwd_left_worktree'
+    assert result['plan_id'] == 'plan-cwd-left'
+    assert result['expected_worktree'] == str(worktree.resolve())
+    assert result['actual_cwd'] == str(elsewhere.resolve())
+
+
+def test_guard_never_mutates_process_cwd(tmp_path, monkeypatch):
+    """The guard ASSERTS but never SETS cwd — process cwd is unchanged.
+
+    Exercised on the failure path (cwd left the worktree), which is the only
+    place a SETs-cwd bug could plausibly hide (a naive "restore" branch).
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    _make_worktree(tmp_path, 'plan-no-mutate')
+    elsewhere = tmp_path / 'outside'
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    cwd_before = os.getcwd()
+    guard_worktree_cwd('plan-no-mutate')
+    assert os.getcwd() == cwd_before, 'guard_worktree_cwd must not mutate the process cwd'
+
+
+def test_guard_not_applicable_when_worktree_dir_absent(tmp_path, monkeypatch):
+    """Worktree dir does not exist (main-checkout / pre-materialization) → None.
+
+    No worktree to be pinned to, so the guard must not fire a false positive
+    even when cwd is somewhere unrelated.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    # Deliberately do NOT create tmp_path/worktrees/{plan_id}.
+    elsewhere = tmp_path / 'main-checkout'
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    assert guard_worktree_cwd('plan-no-worktree') is None
+
+
+def test_guard_not_applicable_when_base_dir_unresolvable(tmp_path, monkeypatch):
+    """No resolvable base dir → None (not applicable), no exception.
+
+    Clears PLAN_BASE_DIR and the set_base_dir override, and runs from an
+    isolated non-.plan/local cwd so get_worktree_root() raises RuntimeError
+    internally; the guard swallows it and returns None.
+    """
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    monkeypatch.delenv('PLAN_TRACKED_CONFIG_DIR', raising=False)
+    file_ops._BASE_DIR_OVERRIDE = None
+    isolated = tmp_path / 'no-plan-root'
+    isolated.mkdir()
+    monkeypatch.chdir(isolated)
+
+    assert guard_worktree_cwd('plan-unresolvable') is None

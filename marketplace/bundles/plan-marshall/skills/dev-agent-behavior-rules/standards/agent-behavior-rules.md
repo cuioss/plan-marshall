@@ -146,7 +146,7 @@ The workflow body covers research scope and the synthesis contract; the prompt b
 | Edit existing file | `Edit` | `sed`, `awk` |
 
 **Bash Should ONLY Be Used For:**
-- Git operations (`git status`, `git commit`, etc.)
+- Git operations (`git status`, `git commit`, etc.) — in a phase-5+ cwd-pinned context (the move-based, cwd-pinned model, ADR-002) use plain `git`, since cwd is pinned to the correct tree; reserve `git -C {path}` for genuinely cross-tree or non-pinned contexts; never `cd {path} && git ...`. See [`SKILL.md` § Git targeting](../SKILL.md#git-targeting-plain-git-in-a-cwd-pinned-context-git--c-path-cross-tree-never-cd-path--git-) and [`tool-usage-patterns.md` § When Bash IS Appropriate](tool-usage-patterns.md#when-bash-is-appropriate).
 - Build commands (`mvn`, `./mvnw`, `npm`, etc.)
 - Operations that truly require shell execution
 
