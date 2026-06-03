@@ -298,3 +298,45 @@ class TestCli:
         result = run_script(SCRIPT_PATH, 'release')
         assert result.returncode != 0
         assert '--plan-id' in result.stderr or '--plan-id' in result.stdout
+
+
+# =============================================================================
+# Refactor regression guard — resolution delegates to the shared utility (D4)
+# =============================================================================
+
+
+class TestResolutionDelegatesToSharedUtility:
+    """merge_lock no longer owns its main-anchored resolution (deliverable 4).
+
+    The private ``_main_checkout_root`` / ``_override_is_set`` git-common-dir
+    copy was deleted; resolution now delegates to the single sanctioned
+    ``marketplace_paths.resolve_main_anchored_path``. These guards fail if the
+    inline copy is ever reintroduced. The behavioural contract (lock resolves to
+    main, holder-liveness anchors at main) is pinned by the unchanged
+    ``TestMainAnchoredResolution`` tests above.
+    """
+
+    def test_imports_shared_resolver(self) -> None:
+        # The shared utility must be imported into the merge_lock module.
+        assert hasattr(merge_lock, 'resolve_main_anchored_path')
+
+    def test_inline_git_common_dir_helpers_are_gone(self) -> None:
+        # The private inline resolvers were deleted — no parallel copy survives.
+        assert not hasattr(merge_lock, '_main_checkout_root')
+        assert not hasattr(merge_lock, '_override_is_set')
+
+    def test_no_inline_git_rev_parse_in_source(self) -> None:
+        # No inline ``git rev-parse --git-common-dir`` subprocess call remains in
+        # merge_lock.py — the resolution belongs to the shared utility now.
+        src = SCRIPT_PATH.read_text(encoding='utf-8')
+        assert '--git-common-dir' not in src
+
+    def test_resolve_main_lock_path_delegates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Behaviour preserved: under PLAN_BASE_DIR the lock still resolves to
+        # ``<base>/merge.lock`` (override-first branch of the shared utility).
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        main_base.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+        assert merge_lock._resolve_main_lock_path() == main_base / 'merge.lock'

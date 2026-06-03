@@ -14,15 +14,19 @@ checkout's ``.plan/local/merge.lock``. It exposes two actions:
     atomically after the reclaim decision).
   * ``release`` — remove the lock file (only when this caller holds it).
 
-**Main-anchored resolution — the single deliberate exception (ADR-002):** every
+**Main-anchored resolution — via the single sanctioned utility (ADR-002):** every
 other path resolution in the codebase is uniform cwd-relative (see
 ``dev-agent-behavior-rules`` / ``tools-script-executor/standards/cwd-policy.md``
-and :func:`file_ops.get_base_dir`). This script — and ONLY this script — always
-resolves its lock file against the MAIN checkout regardless of the caller's cwd,
-because cross-session coordination is inherently main-scoped: phase-5+ callers
-run with cwd pinned to their own worktree, yet they must all contend for one
-shared lock. It MUST remain the only main-anchored resolver so the codebase
-cannot regrow a pervasive git-common-dir-style hack. See
+and :func:`file_ops.get_base_dir`). The merge lock always resolves its lock file
+against the MAIN checkout regardless of the caller's cwd, because cross-session
+coordination is inherently main-scoped: phase-5+ callers run with cwd pinned to
+their own worktree, yet they must all contend for one shared lock. This script
+no longer owns that resolution — it CALLS the single sanctioned main-anchored
+resolver :func:`marketplace_paths.resolve_main_anchored_path`, which is the ONE
+mechanism covering the bounded exception set of three corpora: ``merge.lock``,
+``run-configuration.json``, and ``lessons-learned``. merge_lock is one of those
+three consumers; the codebase cannot regrow a pervasive git-common-dir-style
+hack because new cross-session state routes through that one utility. See
 ADR-002 (``doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc``)
 and ``tools-script-executor/standards/cwd-policy.md`` (D6) for the contract.
 
@@ -45,17 +49,16 @@ from __future__ import annotations
 
 import errno
 import os
-import subprocess
 import sys
 import time
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from file_ops import (  # type: ignore[import-not-found]
-    get_base_dir,
+from marketplace_paths import (  # type: ignore[import-not-found]
+    PLAN_DIR_NAME,
+    resolve_main_anchored_path,
 )
-from marketplace_paths import PLAN_DIR_NAME  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     create_workflow_cli,
@@ -81,65 +84,15 @@ _LOCK_FILENAME = 'merge.lock'
 def _resolve_main_lock_path() -> Path:
     """Resolve the merge-lock path against the MAIN checkout, cwd-independent.
 
-    Resolution precedence:
-
-      1. Test override — :func:`file_ops.get_base_dir` honours the
-         ``set_base_dir()`` / ``PLAN_BASE_DIR`` override. Under that override the
-         base dir IS the main-checkout ``.plan/local`` stand-in, so the lock
-         lives at ``<base_dir>/merge.lock``. This keeps test isolation working
-         (each test points the override at its own tmp tree and never contends
-         for the real ``.plan/``).
-      2. Production — ``git rev-parse --git-common-dir`` returns the MAIN
-         checkout's ``.git`` directory even when the caller's cwd is pinned to a
-         linked worktree (a worktree's ``.git`` is a file, but the common dir
-         always points at main). Its parent is the main checkout root; the lock
-         lives at ``<main-root>/.plan/local/merge.lock``.
-
-    This is the ONLY function in the codebase that resolves to the main checkout
-    regardless of cwd — every other resolver is uniform cwd-relative (ADR-002).
+    Delegates to the shared main-anchored resolver
+    :func:`marketplace_paths.resolve_main_anchored_path` — the single sanctioned
+    mechanism (ADR-002) that resolves to the main checkout regardless of cwd
+    (test override first, then git-common-dir). The lock lives at
+    ``<main>/.plan/local/merge.lock``. merge_lock is now ONE of three consumers
+    of that utility (alongside ``run_config`` and ``manage-lessons``), not the
+    sole owner of the resolution.
     """
-    # 1. Honour the test override exactly as get_base_dir does. When an override
-    #    or PLAN_BASE_DIR is set, that directory stands in for the main-checkout
-    #    .plan/local, so the lock lives directly under it.
-    if os.environ.get('PLAN_BASE_DIR') or _override_is_set():
-        return get_base_dir() / _LOCK_FILENAME
-
-    # 2. Production: resolve the MAIN checkout via the git common dir, which
-    #    points at main's .git even from a linked worktree.
-    main_root = _main_checkout_root()
-    return main_root / PLAN_DIR_NAME / 'local' / _LOCK_FILENAME
-
-
-def _override_is_set() -> bool:
-    """Return True when file_ops has a set_base_dir() override installed."""
-    import file_ops  # type: ignore[import-not-found]
-
-    return getattr(file_ops, '_BASE_DIR_OVERRIDE', None) is not None
-
-
-def _main_checkout_root() -> Path:
-    """Return the MAIN checkout root via ``git rev-parse --git-common-dir``.
-
-    The common dir is main's ``.git`` directory even when invoked from a linked
-    worktree; its parent is the main checkout root. Falls back to the toplevel
-    when the common dir resolves to a bare path without an obvious parent.
-
-    Raises:
-        RuntimeError: when git cannot resolve the common dir (not a repo).
-    """
-    try:
-        result = subprocess.run(
-            ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f'cannot resolve main checkout via git common dir: {exc}') from exc
-    common_dir = Path(result.stdout.strip())
-    # The common dir is <main-root>/.git; its parent is the main checkout root.
-    return common_dir.parent
+    return resolve_main_anchored_path(_LOCK_FILENAME)
 
 
 # ---------------------------------------------------------------------------
@@ -151,15 +104,14 @@ def _main_plan_local_base() -> Path:
     """Resolve the main checkout's ``.plan/local`` base, cwd-independent.
 
     Returns the same anchor :func:`_resolve_main_lock_path` uses for the lock
-    file: the ``set_base_dir()`` / ``PLAN_BASE_DIR`` override stand-in under test
-    isolation, else ``<main-root>/.plan/local`` resolved via the git common dir.
-    Both holder-liveness checks below MUST anchor here — never the caller's
+    file, via the shared :func:`marketplace_paths.resolve_main_anchored_path`
+    utility: the ``set_base_dir()`` / ``PLAN_BASE_DIR`` override stand-in under
+    test isolation, else ``<main-root>/.plan/local`` resolved via the git common
+    dir. Both holder-liveness checks below MUST anchor here — never the caller's
     cwd-relative plan root — so a holder is judged against main + its worktree
     regardless of which worktree the acquiring caller is pinned to.
     """
-    if os.environ.get('PLAN_BASE_DIR') or _override_is_set():
-        return get_base_dir()
-    return _main_checkout_root() / PLAN_DIR_NAME / 'local'
+    return resolve_main_anchored_path('')
 
 
 def _holder_is_dead(holder: str) -> bool:

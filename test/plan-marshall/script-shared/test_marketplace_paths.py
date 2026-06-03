@@ -8,18 +8,21 @@ cwd. These tests pin both PLAN_BASE_DIR and cwd and never contend for the real
 ``.plan/`` under ``-n auto``.
 """
 
+import subprocess
 from pathlib import Path
 
 import marketplace_paths
 import pytest
 from marketplace_paths import (
     CLAUDE_DIR,
+    PLAN_DIR_NAME,
     PLUGIN_CACHE_SUBPATH,
     _find_plan_root_from_cwd,
     find_marketplace_path,
     get_base_path,
     get_plugin_cache_path,
     get_temp_dir,
+    resolve_main_anchored_path,
     safe_relative_path,
 )
 
@@ -415,3 +418,139 @@ class TestGetBasePath:
     def test_invalid_scope_raises(self):
         with pytest.raises(ValueError, match='Invalid scope'):
             get_base_path('bogus')
+
+
+def _init_repo(repo: Path) -> None:
+    """Initialise a fixture git repo so ``git worktree add`` runs end-to-end.
+
+    Tracks a placeholder file and gitignores ``.plan/local`` so the worktree
+    add materialises a clean tree. Mirrors the helper shape in
+    ``test_git_workflow_worktree.py`` / ``test_git_merge_lock.py``.
+    """
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
+    subprocess.run(['git', '-C', str(repo), 'config', 'user.email', 't@t.test'], check=True)
+    subprocess.run(['git', '-C', str(repo), 'config', 'user.name', 'Test'], check=True)
+    (repo / 'README.md').write_text('x\n')
+    (repo / '.gitignore').write_text('.plan/local\n.plan/local/worktrees/\n')
+    subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
+    subprocess.run(['git', '-C', str(repo), 'commit', '-q', '-m', 'init'], check=True)
+
+
+class TestResolveMainAnchoredPath:
+    """The single sanctioned main-anchored exception resolver (ADR-002).
+
+    Mirrors ``test_git_merge_lock.py``'s main-anchoring tests: override-first,
+    worktree-cwd-resolves-to-main (real ``git worktree add``), and not-a-repo
+    raises. The override-first branch keeps every PLAN_BASE_DIR-based consumer
+    test green; the production branch resolves via the git common dir.
+    """
+
+    def test_resolve_main_anchored_path_honours_plan_base_dir_override(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: PLAN_BASE_DIR set to a main-checkout stand-in; cwd pinned into
+        # an unrelated worktree-like dir so we prove the override wins over cwd.
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        main_base.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        # Act: resolve a subpath under the override.
+        resolved = resolve_main_anchored_path('merge.lock')
+
+        # Assert: lands under the override base, NOT the worktree-relative path.
+        assert resolved == main_base / 'merge.lock'
+        assert resolved != worktree / '.plan' / 'local' / 'merge.lock'
+
+    def test_resolve_main_anchored_path_resolves_to_main_from_worktree_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: a REAL git repo with a REAL linked worktree; no override set,
+        # so the production git-common-dir branch is exercised. cwd is pinned
+        # into the worktree.
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        import file_ops  # type: ignore[import-not-found]
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        main_repo = tmp_path / 'main'
+        main_repo.mkdir()
+        _init_repo(main_repo)
+        worktree = tmp_path / 'wt'
+        subprocess.run(
+            ['git', '-C', str(main_repo), 'worktree', 'add', '-q', '-b', 'feat', str(worktree)],
+            check=True,
+        )
+        monkeypatch.chdir(worktree)
+
+        # Act: resolve from inside the worktree cwd.
+        resolved = resolve_main_anchored_path('merge.lock')
+
+        # Assert: anchored under MAIN's .plan/local, NOT the worktree's.
+        expected = main_repo.resolve() / PLAN_DIR_NAME / 'local' / 'merge.lock'
+        assert resolved.resolve() == expected
+        assert resolved.resolve() != (worktree.resolve() / PLAN_DIR_NAME / 'local' / 'merge.lock')
+
+    def test_resolve_main_anchored_path_resolves_from_main_checkout_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: a REAL git repo, no override, cwd pinned at the main checkout
+        # itself (not a linked worktree) — the production branch must anchor at
+        # the same main root.
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        import file_ops  # type: ignore[import-not-found]
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        main_repo = tmp_path / 'main'
+        main_repo.mkdir()
+        _init_repo(main_repo)
+        monkeypatch.chdir(main_repo)
+
+        # Act: resolve from the main checkout cwd.
+        resolved = resolve_main_anchored_path('run-configuration.json')
+
+        # Assert: anchored under the main checkout's .plan/local.
+        expected = main_repo.resolve() / PLAN_DIR_NAME / 'local' / 'run-configuration.json'
+        assert resolved.resolve() == expected
+
+    def test_resolve_main_anchored_path_lazy_file_ops_import_no_cycle(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: force the override branch so the in-function ``import
+        # file_ops`` executes; a circular import would surface as an ImportError
+        # the moment resolve_main_anchored_path runs. The function returning a
+        # path proves the lazy import resolved cleanly.
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        main_base.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+
+        # Act: invoke the override branch (exercises the deferred file_ops import).
+        resolved = resolve_main_anchored_path('lessons-learned')
+
+        # Assert: no ImportError raised; the path resolved under the override.
+        assert resolved == main_base / 'lessons-learned'
+        # Guard: marketplace_paths carries NO module-top file_ops import (the
+        # import must stay in-function to avoid the import cycle).
+        import inspect
+
+        src = inspect.getsource(marketplace_paths)
+        module_top = src.split('def ', 1)[0]
+        assert 'import file_ops' not in module_top
+
+    def test_resolve_main_anchored_path_raises_when_not_a_repo(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: outside any git repo, no override — the production branch must
+        # raise RuntimeError (identical contract to merge_lock).
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        import file_ops  # type: ignore[import-not-found]
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        bare = tmp_path / 'bare'
+        bare.mkdir()
+        monkeypatch.chdir(bare)
+
+        # Act / Assert: not a repo → RuntimeError.
+        with pytest.raises(RuntimeError):
+            resolve_main_anchored_path('merge.lock')

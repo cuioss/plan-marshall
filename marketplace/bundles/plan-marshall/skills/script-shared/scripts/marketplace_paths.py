@@ -17,6 +17,7 @@ every other resolution in the codebase is cwd-relative.
 """
 
 import os
+import subprocess
 from pathlib import Path
 
 # Central configuration
@@ -54,6 +55,109 @@ def _find_plan_root_from_cwd() -> Path | None:
         if (candidate / PLAN_DIR_NAME / 'local').is_dir():
             return candidate
     return None
+
+
+# =============================================================================
+# Main-anchored resolution — THE single sanctioned exception (ADR-002)
+# =============================================================================
+# Every OTHER resolver in the codebase is uniform cwd-relative
+# (``_find_plan_root_from_cwd`` above, ``file_ops.get_base_dir``). The function
+# below is the ONE deliberate exception: it resolves to the MAIN checkout's
+# ``.plan/local`` regardless of caller cwd. The resolution logic was lifted
+# verbatim from ``merge_lock.py``'s private ``_resolve_main_lock_path`` /
+# ``_main_checkout_root`` so all cross-session shared state shares one
+# mechanism instead of proliferating ad-hoc git-common-dir copies.
+
+
+def _override_is_set() -> bool:
+    """Return True when file_ops has a ``set_base_dir()`` override installed.
+
+    The ``import file_ops`` is deferred (in-function) on purpose:
+    ``marketplace_paths`` is imported BY ``file_ops``, so a module-top import
+    here would create a circular import. Mirrors ``merge_lock._override_is_set``.
+    """
+    import file_ops  # type: ignore[import-not-found]
+
+    return getattr(file_ops, '_BASE_DIR_OVERRIDE', None) is not None
+
+
+def _main_checkout_root() -> Path:
+    """Return the MAIN checkout root via ``git rev-parse --git-common-dir``.
+
+    The common dir is main's ``.git`` directory even when invoked from a linked
+    worktree (a worktree's ``.git`` is a file, but the common dir always points
+    at main); its parent is the main checkout root.
+
+    Raises:
+        RuntimeError: when git cannot resolve the common dir (not a repo).
+    """
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--git-common-dir'],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f'cannot resolve main checkout via git common dir: {exc}') from exc
+    # ``--path-format=absolute`` (Git >= 2.31) is intentionally NOT passed so the
+    # resolver works on older Git (e.g. 2.25 on Ubuntu 20.04 LTS). Without it,
+    # ``--git-common-dir`` returns an absolute path from a linked worktree but a
+    # cwd-relative ``.git`` from the main checkout — resolve() only when the path
+    # is not already absolute to avoid a redundant syscall.
+    common_dir = Path(result.stdout.strip())
+    if not common_dir.is_absolute():
+        common_dir = common_dir.resolve()
+    # The common dir is <main-root>/.git; its parent is the main checkout root.
+    return common_dir.parent
+
+
+def resolve_main_anchored_path(subpath: str | Path) -> Path:
+    """Resolve ``subpath`` under the MAIN checkout's ``.plan/local``, cwd-independent.
+
+    This is THE single sanctioned main-anchored exception resolver (ADR-002).
+    It is the ONLY mechanism that resolves to the main checkout regardless of
+    cwd; every other resolution in the codebase is uniform cwd-relative. New
+    cross-session shared state MUST route through this function rather than
+    re-implementing git-common-dir resolution. The bounded exception set is
+    exactly: ``merge.lock``, ``run-configuration.json``, ``lessons-learned``.
+
+    Resolution precedence:
+
+      1. Test override — when ``PLAN_BASE_DIR`` is set or ``file_ops`` carries a
+         ``set_base_dir()`` override, that directory IS the main-checkout
+         ``.plan/local`` stand-in, so the result is ``<base>/subpath``. This
+         preserves every existing ``PLAN_BASE_DIR``-based test in every consumer.
+      2. Production — ``git rev-parse --git-common-dir`` resolves main's ``.git``
+         even from a linked worktree; its parent is the main checkout root, so
+         the result is ``<main-root>/.plan/local/subpath``.
+
+    Args:
+        subpath: Path under the main checkout's ``.plan/local`` to resolve.
+            An empty string resolves to the ``.plan/local`` base itself.
+
+    Returns:
+        The absolute path to ``subpath`` anchored under the main checkout's
+        ``.plan/local``.
+
+    Raises:
+        RuntimeError: in the production branch when git cannot resolve the
+            common dir (not a repo and no override set).
+    """
+    # 1. Honour the test override exactly as file_ops.get_base_dir does. Under
+    #    an override or PLAN_BASE_DIR, that directory stands in for the
+    #    main-checkout .plan/local, so the subpath lives directly under it. The
+    #    file_ops import is deferred — see _override_is_set's docstring.
+    if os.environ.get('PLAN_BASE_DIR') or _override_is_set():
+        import file_ops  # type: ignore[import-not-found]
+
+        return file_ops.get_base_dir() / subpath
+
+    # 2. Production: resolve the MAIN checkout via the git common dir, which
+    #    points at main's .git even from a linked worktree.
+    main_root = _main_checkout_root()
+    return main_root / PLAN_DIR_NAME / 'local' / subpath
 
 
 def get_temp_dir(subdir: str) -> Path:

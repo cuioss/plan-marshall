@@ -85,10 +85,11 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(prepare_execute, 'get_worktree_root', lambda: worktrees_root)
 
     def fake_worktree_create(args: Namespace) -> dict:
-        # Mimic git worktree add materializing the worktree's .plan tree, but
-        # NOT the moved-in real content — the move-in step provides that.
+        # Mimic the post-fix worktree-create contract: materialize a REAL
+        # .plan/local directory and create NO symlinks and NO plans/ subdir —
+        # the move-in step lands the real plans/{plan_id} directory.
         target = worktrees_root / args.plan_id
-        (target / '.plan' / 'local' / 'plans').mkdir(parents=True, exist_ok=True)
+        (target / '.plan' / 'local').mkdir(parents=True, exist_ok=True)
         return {
             'status': 'success',
             'plan_id': args.plan_id,
@@ -139,6 +140,41 @@ class TestPrepareExecuteHappyPath:
         # The plan dir + executor are GONE from main (moved, not copied).
         assert not env['plan_dir'].exists()
         assert not env['executor'].exists()
+
+        # No-symlink contract: NOTHING under the worktree .plan/local is a
+        # symlink — the move-based model owns a fully real .plan/local.
+        wt_plan_local = env['worktree_path'] / '.plan' / 'local'
+        assert wt_plan_local.is_dir() and not wt_plan_local.is_symlink()
+        for entry in wt_plan_local.rglob('*'):
+            assert not entry.is_symlink(), f'unexpected symlink under worktree .plan/local: {entry}'
+
+    def test_rejects_symlinked_plan_local(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A symlinked worktree .plan/local is rejected before any move-in: the
+        # move-based model requires a real directory. Pre-materialize the
+        # worktree with .plan/local as a symlink back to main.
+        env = isolated_env
+
+        def symlink_worktree_create(args: Namespace) -> dict:
+            target = env['worktrees_root'] / args.plan_id
+            (target / '.plan').mkdir(parents=True, exist_ok=True)
+            (target / '.plan' / 'local').symlink_to(
+                env['main'] / '.plan' / 'local', target_is_directory=True
+            )
+            return {'status': 'success', 'plan_id': args.plan_id, 'worktree_path': str(target)}
+
+        fake_module = type('M', (), {'cmd_worktree_create': staticmethod(symlink_worktree_create)})()
+        monkeypatch.setattr(prepare_execute, '_load_git_workflow', lambda: fake_module)
+
+        result = prepare_execute.run_prepare_execute(
+            Namespace(plan_id=env['plan_id'], branch='feature/sample-plan', base=None)
+        )
+
+        assert result['status'] == 'error'
+        assert result.get('error_code') == prepare_execute.ErrorCode.INVALID_INPUT
+        # The plan dir stays WHOLLY on main — no move happened.
+        assert env['plan_dir'].exists()
 
     def test_does_not_change_cwd(self, isolated_env: dict) -> None:
         env = isolated_env

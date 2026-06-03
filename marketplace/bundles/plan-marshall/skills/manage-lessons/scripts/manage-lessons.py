@@ -39,7 +39,6 @@ from _lessons_crud import set_body  # type: ignore[import-not-found]
 from constants import DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
-    base_path,
     get_marshal_path,
     output_toon,
     parse_markdown_metadata,
@@ -52,6 +51,7 @@ from input_validation import (  # type: ignore[import-not-found]
     parse_args_with_toon_errors,
     validate_lesson_id,
 )
+from marketplace_paths import resolve_main_anchored_path  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 VALID_CATEGORIES = LESSON_CATEGORIES
@@ -70,8 +70,18 @@ DEFAULT_LESSONS_SUPERSEDED_DAYS = 0
 
 
 def get_lessons_dir() -> Path:
-    """Get the lessons-learned directory."""
-    return base_path(DIR_LESSONS)
+    """Get the lessons-learned directory.
+
+    The lessons corpus is a genuinely-shared cross-session global-scope state,
+    so it is main-anchored via the single sanctioned resolver
+    :func:`marketplace_paths.resolve_main_anchored_path` (ADR-002): it resolves
+    to the MAIN checkout regardless of caller cwd (test override first, then
+    git-common-dir). This is required by the audit finding — a phase-5
+    ``execute-task`` lesson recording runs with cwd pinned to the worktree, and
+    without main-anchoring the lesson would land in the worktree's empty corpus
+    and be lost on move-back. There is NO local git-common-dir copy here.
+    """
+    return resolve_main_anchored_path(DIR_LESSONS)
 
 
 def get_tombstones_dir() -> Path:
@@ -117,7 +127,7 @@ def get_next_id() -> str:
     if tombstones_dir.exists():
         existing_ids.update(f.stem for f in tombstones_dir.glob(f'{prefix}-*.json'))
 
-    plans_dir = base_path('plans')
+    plans_dir = resolve_main_anchored_path('plans')
     if plans_dir.exists():
         existing_ids.update(
             f.stem[len('lesson-'):]
@@ -588,7 +598,7 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
 
     lessons_dir = get_lessons_dir().resolve()
     source = (lessons_dir / f'{args.lesson_id}.md').resolve()
-    plan_parent = base_path('plans').resolve()
+    plan_parent = resolve_main_anchored_path('plans').resolve()
     plan_dir = (plan_parent / args.plan_id).resolve()
 
     if source.parent != lessons_dir or plan_dir.parent != plan_parent:
@@ -649,7 +659,7 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
             'message': 'Identifiers must not contain path separators or traversal sequences',
         }
 
-    plan_parent = base_path('plans').resolve()
+    plan_parent = resolve_main_anchored_path('plans').resolve()
     plan_dir = (plan_parent / args.plan_id).resolve()
     lessons_dir = get_lessons_dir().resolve()
 

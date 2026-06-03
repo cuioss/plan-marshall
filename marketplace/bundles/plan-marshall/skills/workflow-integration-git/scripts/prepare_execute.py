@@ -91,24 +91,48 @@ def _load_git_workflow() -> Any:
 # ---------------------------------------------------------------------------
 #
 # A "move-in slot" pairs a source path on the main checkout with its
-# worktree-resident destination. ``worktree-create`` symlinks .plan/local and
-# .plan/execute-script.py into main; the move-in replaces those symlinks with
-# the real moved content so the worktree owns an authoritative copy.
+# worktree-resident destination. Under the move-based model (ADR-002) the
+# worktree owns a fully REAL ``.plan/local`` with NO symlinks: ``worktree-create``
+# materializes ``.plan/local`` as a real directory, and the move-in lands the
+# real plan dir + executor inside it. There is no symlink for the move-in to
+# replace; the genuinely-shared cross-session corpora are reached by the
+# main-anchored resolver, not by filesystem symlinks.
 
 
 def _is_real_moved_in(dst: Path) -> bool:
-    """Return True when ``dst`` is a real (non-symlink) materialized path."""
-    return dst.exists() and not dst.is_symlink()
+    """Return True when ``dst`` is a real (non-symlink) materialized path AND no
+    ancestor up to the ``.plan`` directory is a symlink.
+
+    Generic over BOTH move-in slots — the plan dir (``.plan/local/plans/{id}``)
+    and the executor (``.plan/execute-script.py``). A fixed ``dst.parent.parent``
+    check only held for the plan dir; for the executor it mis-resolved to the
+    worktree root (and ``_restore_slot`` can pass the executor slot here during
+    rollback). Walking up to the ``.plan`` directory and rejecting any symlinked
+    ancestor keeps the "already moved in" verdict robust to residual symlink
+    traversal for either slot: under the no-symlink model every ancestor is a
+    real directory, so a ``dst`` reachable only through a symlinked ancestor is
+    rejected as not-yet-moved (correct first-run behaviour).
+    """
+    if not (dst.exists() and not dst.is_symlink()):
+        return False
+    curr = dst.parent
+    while curr != curr.parent:
+        if curr.is_symlink():
+            return False
+        if curr.name == PLAN_DIR_NAME:
+            break
+        curr = curr.parent
+    return True
 
 
 def _move_in_slot(src: Path, dst: Path) -> None:
-    """Move ``src`` to ``dst``, replacing any symlink/stale dst first.
+    """Move ``src`` to ``dst``, replacing any stale dst first.
 
     The destination's parent must already exist (the worktree's ``.plan`` /
-    ``.plan/local`` tree is materialized by ``git worktree add`` +
-    ``worktree-create``). When ``dst`` is a symlink (the placeholder
-    ``worktree-create`` created pointing back at main) it is unlinked before the
-    move so the real content takes its place.
+    ``.plan/local`` tree is materialized as a REAL directory by ``git worktree
+    add`` + ``worktree-create``). The ``dst.is_symlink()`` unlink branch is a
+    defensive no-op under the no-symlink model (the leaf is absent on a fresh
+    move-in and the parent is real) but is retained as harmless robustness.
     """
     if dst.is_symlink():
         dst.unlink()
@@ -196,21 +220,7 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
     # Worktree-resident destinations for the moved-in state.
     wt_plan_dir = worktree_path / PLAN_DIR_NAME / 'local' / 'plans' / plan_id
     wt_executor = worktree_path / PLAN_DIR_NAME / 'execute-script.py'
-
-    # --- Idempotence guard -------------------------------------------------
-    # If the plan dir is already a real (non-symlink) path resident in the
-    # worktree, the move-in already ran (this is a phase-5 re-entry). Return a
-    # no-op success carrying the same path.
-    if _is_real_moved_in(wt_plan_dir):
-        return _assert_cwd_unchanged(
-            {
-                'status': 'success',
-                'plan_id': plan_id,
-                'worktree_path': str(worktree_path),
-                'action': 'noop',
-                'message': 'plan state already moved into worktree',
-            }
-        )
+    wt_plan_local = worktree_path / PLAN_DIR_NAME / 'local'
 
     # --- Step 1: materialize the worktree (idempotent re-use) --------------
     # worktree-create returns error 'worktree_exists' when the path is already
@@ -237,6 +247,39 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
                     'plan_id': plan_id,
                 }
             )
+
+    # --- Symlinked .plan/local rejection -----------------------------------
+    # Under the no-symlink model (ADR-002) the worktree's .plan/local is a fully
+    # real directory. A symlinked .plan/local is a residue of the retired
+    # symlink machinery (or a hand-rolled link) that would make the move-in land
+    # plan state on main through the symlink. Reject it loudly rather than move
+    # through it.
+    if wt_plan_local.is_symlink():
+        return _assert_cwd_unchanged(
+            make_error(
+                f'worktree .plan/local is a symlink ({wt_plan_local}); the move-based model '
+                'requires a real .plan/local directory. Remove the symlink and re-create the '
+                'worktree (worktree-create now materializes a real .plan/local).',
+                code=ErrorCode.INVALID_INPUT,
+                plan_id=plan_id,
+            )
+        )
+
+    # --- Idempotence guard (materialize-then-guard) ------------------------
+    # Runs AFTER worktree materialization so .plan/local is guaranteed present.
+    # If the plan dir is already a real (non-symlink) path resident in the
+    # worktree AND its parent .plan/local is a real directory, the move-in
+    # already ran (phase-5 re-entry). Return a no-op success carrying the path.
+    if _is_real_moved_in(wt_plan_dir):
+        return _assert_cwd_unchanged(
+            {
+                'status': 'success',
+                'plan_id': plan_id,
+                'worktree_path': str(worktree_path),
+                'action': 'noop',
+                'message': 'plan state already moved into worktree',
+            }
+        )
 
     # --- Step 2: move plan-scoped state into the worktree (atomic) ---------
     # Track completed moves so a later failure can roll them back, leaving the
