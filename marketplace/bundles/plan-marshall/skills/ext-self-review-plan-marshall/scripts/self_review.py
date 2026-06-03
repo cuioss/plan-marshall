@@ -111,6 +111,19 @@ _KEEP_MARKER = re.compile(
     r'<!--\s*self-review:\s*keep\s+(\S+?)\s*-->'
 )
 
+# Doc-prose script-contract reference detection.
+# An ``execute-script.py`` invocation that names a script via the three-part
+# ``{bundle}:{skill}:{script}`` notation. Group 1/2 capture the bundle and skill
+# segments; the script segment is captured to anchor the match but is not needed
+# for SKILL.md resolution (SKILL.md lives at the skill-directory root).
+_EXECUTE_SCRIPT_NOTATION = re.compile(
+    r'execute-script\.py\s+([a-z0-9][a-z0-9-]*):([a-z0-9][a-z0-9-]*):[a-z0-9][a-z0-9_-]*'
+)
+# A TOON-field reference: a ``{field}`` interpolation token (e.g. ``{status}``,
+# ``{error}``) where ``field`` is a bare identifier. This is the content signal
+# that the doc prose is talking about a sibling script's output-contract field.
+_TOON_FIELD_TOKEN = re.compile(r'\{[A-Za-z_][A-Za-z0-9_]*\}')
+
 
 # =============================================================================
 # Helpers
@@ -493,14 +506,58 @@ def _collect_schema_bearing_within_radius(
     return out
 
 
+def _doc_referenced_skill_sources(
+    md_added: list[tuple[int, str]], project_dir: Path
+) -> list[str]:
+    """Return repo-relative SKILL.md paths referenced by a doc's added lines.
+
+    A doc *references* a sibling script's output contract when its added lines
+    contain BOTH an ``execute-script.py`` invocation via ``{bundle}:{skill}:{script}``
+    notation AND a TOON-field reference (a ``{field}`` interpolation token such as
+    ``{status}`` or ``{error}``). The two signals need not appear on the same
+    added line — the doc as a whole (its added hunk content) must satisfy both.
+
+    For each distinct ``{bundle}:{skill}`` notation found, the referenced
+    script's ``SKILL.md`` resolves to
+    ``marketplace/bundles/{bundle}/skills/{skill}/SKILL.md``. A path is emitted
+    only when that ``SKILL.md`` exists on disk under ``project_dir`` (a dangling
+    notation surfaces nothing). The returned list is sorted and deduplicated.
+    """
+    has_toon_field = any(_TOON_FIELD_TOKEN.search(content) for _, content in md_added)
+    if not has_toon_field:
+        return []
+
+    rel_sources: set[str] = set()
+    for _, content in md_added:
+        for m in _EXECUTE_SCRIPT_NOTATION.finditer(content):
+            bundle, skill = m.group(1), m.group(2)
+            rel = f'marketplace/bundles/{bundle}/skills/{skill}/SKILL.md'
+            if (project_dir / rel).is_file():
+                rel_sources.add(rel)
+    return sorted(rel_sources)
+
+
 def _detect_contract_sources(
-    modified_files: list[str], project_dir: Path, radius: int
+    modified_files: list[str],
+    project_dir: Path,
+    radius: int,
+    added: list[tuple[str, int, str]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Return (contract_sources, schema_bearing_files).
 
-    ``contract_sources``: one entry per modified file inside a skill directory.
-    The ``sources`` field is a ``; ``-joined string of repo-relative paths to
-    SKILL.md and every standards/*.md in the same skill.
+    ``contract_sources``: one entry per modified file that has any contract
+    source. Sources come from two unioned origins:
+
+    * **directory-structural** — when the modified file is nested inside a skill
+      directory, every SKILL.md and standards/*.md in that skill;
+    * **doc-prose script reference** (``.md`` files only) — when the doc's added
+      lines reference a sibling script's output contract (an
+      ``execute-script.py`` invocation via ``{bundle}:{skill}:{script}`` notation
+      AND a TOON-field token such as ``{status}``), the referenced script's
+      SKILL.md. See ``_doc_referenced_skill_sources``.
+
+    The ``sources`` field is a ``; ``-joined, sorted, deduplicated string of the
+    unioned repo-relative paths.
 
     ``schema_bearing_files``: a flat, deduplicated list of *.md files within
     ``radius`` directory levels of any modified file whose content contains a
@@ -509,6 +566,14 @@ def _detect_contract_sources(
     contract_entries: list[dict[str, Any]] = []
     schema_seen: dict[Path, str] = {}
 
+    # Group added lines by modified .md file so each doc's reference scan sees
+    # only its own added hunk content. When ``added`` is None (callers that do
+    # not pass diff content), the content-aware augmentation is simply inert.
+    md_added_by_file: dict[str, list[tuple[int, str]]] = {}
+    for added_path, added_lineno, added_content in added or []:
+        if added_path.endswith('.md'):
+            md_added_by_file.setdefault(added_path, []).append((added_lineno, added_content))
+
     for rel in modified_files:
         modified_path = (project_dir / rel).resolve()
         try:
@@ -516,17 +581,25 @@ def _detect_contract_sources(
         except ValueError:
             continue
 
+        union_sources: set[str] = set()
+
         skill_dir = _find_skill_dir(modified_path, project_dir)
         if skill_dir is not None:
-            sources = _collect_skill_contract_sources(skill_dir)
-            if sources:
-                rel_sources = [str(p.relative_to(project_dir)) for p in sources]
-                contract_entries.append(
-                    {
-                        'file': rel,
-                        'sources': '; '.join(rel_sources),
-                    }
-                )
+            structural = _collect_skill_contract_sources(skill_dir)
+            union_sources.update(str(p.relative_to(project_dir)) for p in structural)
+
+        if rel.endswith('.md'):
+            union_sources.update(
+                _doc_referenced_skill_sources(md_added_by_file.get(rel, []), project_dir)
+            )
+
+        if union_sources:
+            contract_entries.append(
+                {
+                    'file': rel,
+                    'sources': '; '.join(sorted(union_sources)),
+                }
+            )
 
         for path, fmt in _collect_schema_bearing_within_radius(modified_path, project_dir, radius):
             schema_seen.setdefault(path, fmt)
@@ -834,7 +907,9 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     md_sections = _detect_markdown_sections(added, project_dir)
     sym_pairs = _detect_symmetric_pairs(added, project_dir)
     flag_guard_pairs = _detect_flag_guard_pairs(added)
-    contract_sources, schema_bearing = _detect_contract_sources(modified_files, project_dir, args.contract_radius)
+    contract_sources, schema_bearing = _detect_contract_sources(
+        modified_files, project_dir, args.contract_radius, added
+    )
     keep_markers, protected_identifiers = _detect_keep_markers(added, project_dir)
 
     output = {
