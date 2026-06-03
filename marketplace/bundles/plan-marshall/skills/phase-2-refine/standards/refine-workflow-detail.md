@@ -795,8 +795,19 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 The accepted enum values are `none | surgical | single_module | multi_module | broad` — the same enum documented in `manage-solution-outline:standards/solution-outline-standard.md`. The value is also returned in the Step 13 TOON below.
 
-**Note**: Track and compatibility are NOT persisted to references.json:
-- **Track**: Already logged to decision.log (Step 9, Step 13)
+### Persist track to references.json
+
+Persist the `track` value selected in Step 9 so phase-4-plan and the manifest composer read a single source of truth — symmetric to the `scope_estimate` persist above:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  set --plan-id {plan_id} --field track --value {track}
+```
+
+The accepted enum values are `simple | complex`. `manage-execution-manifest compose --track` and phase-4-plan read this field as the single source of truth — `manage-references get --field track` returns the value without inference once refine writes it here. The value is also returned in the Step 13 TOON below.
+
+**Note**: Compatibility is NOT persisted to references.json:
+- **Track**: IS persisted to references.json (above). decision.log retains the human-readable track-reasoning entry (Step 9, Step 13); references.json is the machine-readable source of truth consumed by the manifest composer and phase-4-plan.
 - **Compatibility**: Read directly from marshal.json by consumers
 
 ### Log Decisions (with duplicate guard)
