@@ -731,14 +731,6 @@ _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 _BOOTSTRAP_TIMEOUT_SECONDS = 120
 
-#: Gitignored subpaths under ``.plan/`` that must be shared across
-#: worktrees by symlinking into the main checkout. Everything else under
-#: ``.plan/`` is tracked and materialized natively by ``git worktree add``.
-_SHARED_PLAN_SUBPATHS: tuple[tuple[str, bool], ...] = (
-    ('local', True),
-    ('execute-script.py', False),
-)
-
 
 def _executor_path() -> Path | None:
     """Locate the ``.plan/execute-script.py`` executor via the uniform cwd rule.
@@ -903,60 +895,33 @@ def _bootstrap_pyprojectx(worktree: Path) -> tuple[str, str]:
     return 'ok', ''
 
 
-def _ensure_worktree_plan_symlinks(worktree: Path) -> tuple[bool, str]:
-    """Link gitignored ``.plan/`` subpaths into the main checkout.
+def _ensure_worktree_plan_local_real(worktree: Path) -> tuple[bool, str]:
+    """Materialize ``worktree/.plan/local`` as a fully REAL directory — NO symlinks.
 
-    The worktree's ``.plan`` directory itself is left alone —
-    ``git worktree add`` already materializes any tracked content there.
-    Only the entries listed in :data:`_SHARED_PLAN_SUBPATHS` are linked
-    to the main checkout so runtime state and the executor stay in sync
-    across worktrees.
+    Under the move-based model (ADR-002) the worktree owns a fully real
+    ``.plan/local``; nothing under it is a symlink. The genuinely-shared
+    cross-session corpora (``merge.lock``, ``run-configuration.json``,
+    ``lessons-learned``) are reached by the main-anchored resolver
+    :func:`marketplace_paths.resolve_main_anchored_path`, NOT by filesystem
+    symlinks. The executor and the plan directory are MOVED in by
+    ``prepare_execute`` (the ``wt_executor`` / plan-dir slots), so neither is
+    symlinked here — a symlink placeholder would only be one the move-in must
+    then replace.
 
-    For each shared subpath:
-    - If it already exists as a symlink pointing at the expected target,
-      skip it.
-    - If it exists as a stale symlink, replace it.
-    - If it exists as a real file or directory, refuse with an error
-      that names the specific offending subpath.
-    - If it is missing, create the symlink.
+    This function therefore creates ``worktree/.plan/local`` as a real directory
+    and creates NOTHING else: in particular it does NOT create
+    ``.plan/local/plans`` (the move-in lands that real directory). The blanket
+    ``.plan/local`` symlink and the ``execute-script.py`` symlink that earlier
+    revisions created here are gone.
 
-    Returns ``(success, error_message)``.
+    Returns ``(success, error_message)`` — ``error_message`` is non-empty only on
+    a genuine mkdir / OS failure.
     """
-    main_root = _find_plan_root_from_cwd()
-    if main_root is None:
-        return False, 'cannot resolve main git checkout root for .plan symlinks'
-
-    plan_dir = worktree / _PLAN_DIR_NAME
-    # Ensure .plan exists as a real directory. git worktree add creates
-    # it when tracked content lives there; fall back to mkdir otherwise.
-    plan_dir.mkdir(parents=True, exist_ok=True)
-
-    for subpath, is_dir in _SHARED_PLAN_SUBPATHS:
-        target = (main_root / _PLAN_DIR_NAME / subpath).resolve()
-        link_path = plan_dir / subpath
-        rel_display = f'{_PLAN_DIR_NAME}/{subpath}'
-
-        if link_path.is_symlink():
-            try:
-                if link_path.resolve() == target:
-                    continue
-            except OSError:
-                pass
-            link_path.unlink()
-        elif link_path.exists():
-            kind = 'directory' if link_path.is_dir() else 'file'
-            return False, (
-                f'{link_path} exists as a real {kind}; refusing to replace '
-                f'{rel_display} with symlink. Remove it manually or inspect '
-                'for user data.'
-            )
-
-        # Use a relative symlink so the worktree stays portable.
-        rel_target = os.path.relpath(target, link_path.parent)
-        try:
-            os.symlink(rel_target, link_path, target_is_directory=is_dir)
-        except OSError as exc:
-            return False, f'failed to create {rel_display} symlink: {exc}'
+    plan_local = worktree / _PLAN_DIR_NAME / 'local'
+    try:
+        plan_local.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return False, f'failed to create real {_PLAN_DIR_NAME}/local directory: {exc}'
     return True, ''
 
 
@@ -1032,13 +997,13 @@ def cmd_worktree_create(args):
             'branch': args.branch,
         }
 
-    ok, link_err = _ensure_worktree_plan_symlinks(target)
+    ok, link_err = _ensure_worktree_plan_local_real(target)
     if not ok:
         return {
             'status': 'error',
             'plan_id': args.plan_id,
-            'error': 'plan_symlink_failed',
-            'message': f'Worktree created but .plan symlinks failed: {link_err}',
+            'error': 'plan_local_failed',
+            'message': f'Worktree created but real .plan/local materialization failed: {link_err}',
             'worktree_path': str(target),
         }
 

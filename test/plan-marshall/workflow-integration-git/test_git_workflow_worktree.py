@@ -107,11 +107,57 @@ def _init_repo(repo: Path) -> None:
     subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
     subprocess.run(['git', '-C', str(repo), 'commit', '-q', '-m', 'init'], check=True)
 
-    # Seed the shared subpaths the symlink helper expects.
+    # Seed the main checkout's real .plan/local + executor (no symlinks under
+    # the move-based model — the worktree gets its OWN real .plan/local).
     (plan_dir / 'local').mkdir(exist_ok=True)
     executor = plan_dir / 'execute-script.py'
     if not executor.exists():
         executor.write_text('#!/usr/bin/env python3\n')
+
+
+# =============================================================================
+# No-symlink contract for the worktree .plan/local materializer
+# =============================================================================
+
+
+class TestEnsureWorktreePlanLocalReal:
+    """``_ensure_worktree_plan_local_real`` creates a REAL .plan/local with NO
+    symlinks (deliverable 5). The retired ``_ensure_worktree_plan_symlinks``
+    symlinked ``.plan/local`` and ``.plan/execute-script.py`` into main; the
+    move-based model owns a fully real worktree ``.plan/local`` instead.
+    """
+
+    def test_symlink_helper_is_gone(self) -> None:
+        # The old symlink machinery must not survive — neither the helper nor
+        # the subpath table.
+        assert not hasattr(git_workflow, '_ensure_worktree_plan_symlinks')
+        assert not hasattr(git_workflow, '_SHARED_PLAN_SUBPATHS')
+
+    def test_creates_real_plan_local_no_symlinks(self, tmp_path: Path) -> None:
+        worktree = tmp_path / 'wt'
+        worktree.mkdir()
+
+        ok, err = git_workflow._ensure_worktree_plan_local_real(worktree)
+
+        assert ok, err
+        plan_local = worktree / '.plan' / 'local'
+        # .plan/local is a REAL directory, not a symlink.
+        assert plan_local.is_dir()
+        assert not plan_local.is_symlink()
+        # plans/ is NOT created here — the move-in lands it.
+        assert not (plan_local / 'plans').exists()
+        # No symlink anywhere under .plan/local.
+        for entry in plan_local.rglob('*'):
+            assert not entry.is_symlink(), f'unexpected symlink: {entry}'
+
+    def test_idempotent_on_existing_real_plan_local(self, tmp_path: Path) -> None:
+        worktree = tmp_path / 'wt'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+
+        ok, err = git_workflow._ensure_worktree_plan_local_real(worktree)
+
+        assert ok, err
+        assert (worktree / '.plan' / 'local').is_dir()
 
 
 # =============================================================================

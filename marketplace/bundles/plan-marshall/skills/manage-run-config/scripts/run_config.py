@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Any
 
 from constants import VALID_WARNING_CATEGORIES  # type: ignore[import-not-found]
-from file_ops import get_base_dir, output_toon, read_json, safe_main, write_json  # type: ignore[import-not-found]
+from file_ops import output_toon, read_json, safe_main, write_json  # type: ignore[import-not-found]
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
+from marketplace_paths import resolve_main_anchored_path  # type: ignore[import-not-found]
 
 # Constants for timeout handling
 SAFETY_MARGIN = 1.25  # Multiplier applied to persisted values on retrieval
@@ -173,12 +174,17 @@ def cmd_validate(args: argparse.Namespace) -> dict:
 def get_run_config_path(project_dir: str | None = None) -> Path:
     """Get path to run-configuration.json.
 
-    Delegates to file_ops.get_base_dir() for consistent path resolution.
+    run-configuration.json is a genuinely-shared cross-session corpus, so it is
+    main-anchored via the single sanctioned resolver
+    :func:`marketplace_paths.resolve_main_anchored_path` (ADR-002) — it resolves
+    to the MAIN checkout regardless of caller cwd (test override first, then
+    git-common-dir), so a phase-5 worktree-cwd read/write lands on main. There is
+    NO local git-common-dir copy here; the shared utility owns the resolution.
 
     Args:
         project_dir: Ignored. Kept for API compatibility.
     """
-    return get_base_dir() / 'run-configuration.json'
+    return resolve_main_anchored_path('run-configuration.json')
 
 
 def read_run_config(config_path: Path) -> dict[str, Any]:

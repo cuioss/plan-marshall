@@ -94,23 +94,38 @@ defect. The regeneration runs with the working directory set to main, so the uni
 resolves it to main's `.plan/`. `integrate_into_main.py` is the SINGLE owner of executor
 regeneration at finalize; there is exactly one executor-regeneration site.
 
-=== The merge lock is the single main-anchored exception
+=== One sanctioned main-anchored resolver utility for three shared corpora
 
-Concurrent finalizes are serialized by a cooperative merge lock: a single lock file at the
-main checkout's `.plan/local/merge.lock` whose contents record the holder source
-(`plan_id` / session). `merge_lock.py`
-(notation `plan-marshall:workflow-integration-git:merge_lock`) provides `acquire` and `release`
-actions over that file: `acquire` atomically creates the file via an `O_EXCL` create writing
-the holder source, retries with simple backoff when the file is held, and performs minimal
-stale-holder reclamation; `release` removes the file. `integrate_into_main.py` acquires the
-lock before move-back/regenerate/merge and releases it after, on every exit path.
+A small, bounded set of `.plan/local` state is genuinely shared across sessions and must
+resolve to the MAIN checkout regardless of which worktree a caller's cwd is pinned to. There
+are exactly THREE such corpora:
 
-The merge lock is the SINGLE, deliberate exception to cwd-relative resolution. `merge_lock.py`
-(and only it) always resolves `.plan/local/merge.lock` against the MAIN checkout, because
-cross-session coordination is inherently main-scoped. It is the ONLY main-anchored resolver in
-the codebase; every other resolution is cwd-relative. Confining the one main-anchored
-resolution to this single lock prevents a pervasive main-anchored resolution layer from
-re-forming.
+* `merge.lock` — the cooperative finalize lock (a single lock file whose contents record the
+  holder `plan_id` / session). `merge_lock.py`
+  (notation `plan-marshall:workflow-integration-git:merge_lock`) provides `acquire` (atomic
+  `O_EXCL` create writing the holder, simple-backoff retry, minimal stale-holder reclamation)
+  and `release`; `integrate_into_main.py` acquires it before move-back/regenerate/merge and
+  releases it on every exit path.
+* `run-configuration.json` — the adaptive-timeout corpus written/read by every plan
+  (`manage-run-config/run_config.py`).
+* `lessons-learned` — the global lessons corpus, including the id-allocation `plans` scan
+  (`manage-lessons/manage-lessons.py`).
+
+These three are reached through ONE sanctioned main-anchored resolver UTILITY:
+`resolve_main_anchored_path` in `script-shared/marketplace_paths.py`. It resolves a subpath
+under the MAIN checkout's `.plan/local` cwd-independently — honouring the
+`set_base_dir()` / `PLAN_BASE_DIR` test override first, then resolving via
+`git rev-parse --git-common-dir` (which points at main's `.git` even from a linked worktree).
+All three consumers CALL the utility rather than each carrying its own git-common-dir copy;
+`merge_lock.py` is now one of three consumers, not the sole owner of the resolution.
+
+This is the SINGLE, deliberate exception to cwd-relative resolution: every other resolution in
+the codebase is uniform cwd-relative. Confining the main-anchored resolution to ONE small,
+explicitly-enumerated utility — used by exactly three consumers — prevents a pervasive
+main-anchored resolution layer from re-forming; new cross-session shared state MUST route
+through the utility rather than re-implement git-common-dir resolution. Correspondingly, the
+worktree's `.plan/local` carries NO symlinks: it is a fully real directory, and cross-session
+visibility comes from the utility, not from any filesystem symlink back to main.
 
 == Consequences
 
@@ -136,8 +151,12 @@ model:
 === Which state moves and which stays main-shared
 
 The plan directory and the executor MOVE into the worktree during phase-5+ and move back at
-finalize. The shared corpora — `lessons-learned/`, `archived-plans/` — and the `merge.lock`
-stay main-anchored by design.
+finalize. The three genuinely-shared cross-session corpora — `merge.lock`,
+`run-configuration.json`, and `lessons-learned/` — stay main-anchored by design, each resolved
+through the single `resolve_main_anchored_path` utility rather than via filesystem symlinks
+(the worktree's `.plan/local` is fully real, no symlinks). `archived-plans/` is also
+main-resident but is touched only at finalize after cwd has returned to main, so the uniform
+cwd rule suffices and it needs no resolver.
 
 === Concurrent-session visibility
 
@@ -148,8 +167,11 @@ is expected behaviour.
 
 == References
 
-* `marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md` — the uniform cwd-relative resolution rule and the merge-lock exception.
+* `marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md` — the uniform cwd-relative resolution rule and the one-utility / three-consumer main-anchored exception.
 * `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` — the worktree-lifecycle and dispatch contract.
+* `marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_paths.py` — `resolve_main_anchored_path`, the single sanctioned main-anchored resolver utility.
 * `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/prepare_execute.py` — the atomic move-in script.
 * `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/integrate_into_main.py` — the atomic move-back script.
-* `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/merge_lock.py` — the single main-anchored merge lock.
+* `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/merge_lock.py` — the cooperative merge lock, one of three consumers of the shared resolver utility.
+* `marketplace/bundles/plan-marshall/skills/manage-run-config/scripts/run_config.py` — main-anchors `run-configuration.json` via the shared resolver utility.
+* `marketplace/bundles/plan-marshall/skills/manage-lessons/scripts/manage-lessons.py` — main-anchors the lessons corpus via the shared resolver utility.

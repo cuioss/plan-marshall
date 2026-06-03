@@ -4,15 +4,26 @@
 Tests run-configuration.json initialization, validation, and cleanup.
 """
 
+import importlib.util
 import json
 import os
 import shutil
+import subprocess
 import time
+from pathlib import Path
+
+import pytest
 
 from conftest import get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
+
+# In-process handle for resolver-behaviour tests (mirrors test_git_merge_lock.py).
+_spec = importlib.util.spec_from_file_location('run_config', SCRIPT_PATH)
+assert _spec is not None and _spec.loader is not None
+run_config = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(run_config)
 
 
 # =============================================================================
@@ -758,3 +769,99 @@ def test_cleanup_status_help():
     """Cleanup-status subcommand shows help."""
     result = run_script(SCRIPT_PATH, 'cleanup-status', '--help')
     assert result.success
+
+
+# =============================================================================
+# Main-anchored resolution via the shared utility (deliverable 2)
+# =============================================================================
+
+
+def _init_repo(repo: Path) -> None:
+    """Initialise a fixture git repo so ``git worktree add`` runs end-to-end."""
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
+    subprocess.run(['git', '-C', str(repo), 'config', 'user.email', 't@t.test'], check=True)
+    subprocess.run(['git', '-C', str(repo), 'config', 'user.name', 'Test'], check=True)
+    (repo / 'README.md').write_text('x\n')
+    (repo / '.gitignore').write_text('.plan/local\n.plan/local/worktrees/\n')
+    subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
+    subprocess.run(['git', '-C', str(repo), 'commit', '-q', '-m', 'init'], check=True)
+
+
+class TestRunConfigMainAnchoring:
+    """run-configuration.json resolves to the MAIN checkout via
+    ``resolve_main_anchored_path`` regardless of caller cwd (deliverable 2).
+
+    The override-first branch keeps every PLAN_BASE_DIR-based test green; the
+    production branch (real ``git worktree add``) proves a worktree-cwd resolve
+    still lands on main.
+    """
+
+    def test_run_config_resolves_to_main_even_when_cwd_is_a_worktree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: PLAN_BASE_DIR as the main-checkout stand-in; cwd pinned into a
+        # worktree dir with its own .plan/local — the override must win over cwd.
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        main_base.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+        import file_ops  # type: ignore[import-not-found]
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        # Act
+        resolved = run_config.get_run_config_path()
+
+        # Assert: lands under MAIN's base, NOT the worktree-relative path.
+        assert resolved == main_base / 'run-configuration.json'
+        assert resolved != worktree / '.plan' / 'local' / 'run-configuration.json'
+
+    def test_run_config_resolves_to_main_via_git_common_dir_from_worktree_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: REAL git repo + REAL linked worktree, no override — exercises
+        # the production git-common-dir branch of the shared utility.
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        import file_ops  # type: ignore[import-not-found]
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        main_repo = tmp_path / 'main'
+        main_repo.mkdir()
+        _init_repo(main_repo)
+        worktree = tmp_path / 'wt'
+        subprocess.run(
+            ['git', '-C', str(main_repo), 'worktree', 'add', '-q', '-b', 'feat', str(worktree)],
+            check=True,
+        )
+        monkeypatch.chdir(worktree)
+
+        # Act
+        resolved = run_config.get_run_config_path()
+
+        # Assert: anchored under MAIN's .plan/local, NOT the worktree's.
+        expected = main_repo.resolve() / '.plan' / 'local' / 'run-configuration.json'
+        assert resolved.resolve() == expected
+
+    def test_timeout_set_writes_to_main_base_from_worktree_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: PLAN_BASE_DIR main stand-in; cwd in a worktree with its own
+        # .plan/local. timeout_set must land the write on main, not the worktree.
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        main_base.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+        import file_ops  # type: ignore[import-not-found]
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        # Act
+        run_config.timeout_set('build:verify', 300)
+
+        # Assert: the write landed under MAIN's base, NOT the worktree.
+        assert (main_base / 'run-configuration.json').is_file()
+        assert not (worktree / '.plan' / 'local' / 'run-configuration.json').exists()

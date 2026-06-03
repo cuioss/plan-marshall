@@ -573,3 +573,85 @@ class TestCliPlumbingAdd:
 
         assert not result.success
         assert 'unrecognized arguments' in result.stderr
+
+
+# =============================================================================
+# Tier 2: main-anchored lessons corpus via the shared utility (deliverable 3)
+# =============================================================================
+
+
+class TestLessonsCorpusMainAnchoring:
+    """The lessons corpus resolves to the MAIN checkout via
+    ``resolve_main_anchored_path`` regardless of caller cwd (deliverable 3).
+
+    Audit finding: phase-5 ``execute-task`` records lessons with cwd pinned to a
+    worktree. With the corpus main-anchored, a ``cmd_add`` from a worktree cwd
+    lands the lesson under MAIN's ``lessons-learned``, NOT the worktree's empty
+    corpus. The override-first branch keeps every PLAN_BASE_DIR-based test green.
+    """
+
+    def test_add_writes_lesson_under_main_base_from_worktree_cwd(self, tmp_path, monkeypatch):
+        """``cmd_add`` from a worktree cwd lands the lesson under MAIN's corpus."""
+        # Arrange: PLAN_BASE_DIR = main-checkout stand-in; cwd pinned into a
+        # worktree fixture that owns its OWN .plan/local (empty corpus).
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        (main_base / 'lessons-learned').mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+        import file_ops  # type: ignore[import-not-found]
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local' / 'lessons-learned').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        # Act
+        result = cmd_add(
+            Namespace(
+                component='worktree-cwd-component',
+                category='bug',
+                title='Worktree-recorded Lesson',
+                bundle=None,
+            )
+        )
+
+        # Assert: the lesson landed under MAIN's lessons-learned, NOT the worktree.
+        assert result['status'] == 'success'
+        path = Path(result['path'])
+        assert path.parent == (main_base / 'lessons-learned').resolve()
+        assert path.exists()
+        assert not list((worktree / '.plan' / 'local' / 'lessons-learned').glob('*.md'))
+        # The corpus resolver itself anchors at MAIN regardless of cwd.
+        assert _mod.get_lessons_dir() == (main_base / 'lessons-learned')
+
+    def test_get_next_id_scans_main_plans_corpus_from_worktree_cwd(self, tmp_path, monkeypatch):
+        """id-allocation scans MAIN's plans corpus, not the worktree's.
+
+        Seeds a plan-derived lesson reserving sequence 001 under MAIN's corpus;
+        from a worktree cwd ``get_next_id`` must clear that reservation and
+        return ``-002``, proving the ``plans`` scan is main-anchored.
+        """
+        from datetime import datetime as real_datetime
+
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        (main_base / 'lessons-learned').mkdir(parents=True)
+        plan_dir = main_base / 'plans' / 'lesson-2025-01-01-02-001'
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'lesson-2025-01-01-02-001.md').write_text(
+            'id=2025-01-01-02-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# converted\n'
+        )
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+        import file_ops  # type: ignore[import-not-found]
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        frozen = real_datetime(2025, 1, 1, 2, 30, 0)
+        monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
+
+        # Act
+        next_id = get_next_id()
+
+        # Assert: the main-anchored plans scan reserved 001 → next is 002.
+        assert next_id == '2025-01-01-02-002'
