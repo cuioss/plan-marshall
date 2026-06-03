@@ -1,6 +1,6 @@
 ---
 name: finalize-step-lessons-housekeeping
-description: Finalize-phase wrapper that reconciles the just-finished plan's outcome against the lessons-learned corpus, removing fully-covered lessons and trimming partially-covered ones
+description: Finalize-phase wrapper that reconciles the just-finished plan's outcome against the lessons-learned corpus, removing fully-covered lessons, promoting reusable residue into the governing skill before retiring the lesson, and trimming partially-covered ones
 user-invocable: false
 allowed-tools: Bash, Read, Edit
 order: 996
@@ -10,13 +10,14 @@ order: 996
 
 ## Purpose
 
-Perform lessons-learned housekeeping after a plan finishes. Reason from the just-completed plan's outcome (what it changed, what it codified, which failure modes it eliminated) about the standing lessons-learned corpus, then:
+Perform lessons-learned housekeeping after a plan finishes. Reason from the just-completed plan's outcome (what it changed, what it codified, which failure modes it eliminated) about the standing lessons-learned corpus, reconciling it into an actionable-by-construction queue rather than running a plain remove/trim pass:
 
-- **Remove** lessons the plan made wholly redundant — the guarded failure mode can no longer occur, or the recommended practice is now codified/enforced.
+- **Remove** lessons the plan made wholly redundant — the guarded failure mode can no longer occur, or the recommended practice is now codified/enforced, and no durable reusable rule remains to relocate.
+- **Promote-then-retire** lessons that are completely covered *and* whose residue is a durable reusable rule — promote that rule into the governing skill's `standards/`/`references/` (or `CLAUDE.md` for repo-wide rules), cross-referencing the originating lesson id, then tombstone + remove the now-promoted lesson.
 - **Trim** lessons the plan made only partly redundant, removing the now-covered portion while preserving the still-relevant guidance.
 - **Retain** everything else, biasing toward retention whenever coverage is ambiguous.
 
-Every change — removal, adaptation, or deliberate retain — is recorded to the decision log so the housekeeping is fully auditable.
+Every change — removal, promotion-then-retire, adaptation, or deliberate retain — is recorded to the decision log so the housekeeping is fully auditable.
 
 ## Interface Contract
 
@@ -35,8 +36,9 @@ This step is granted **direct `Read`/`Edit` access to `.plan/local/lessons-learn
 
 The exception is deliberately narrow:
 
-- **Removals still route through `manage-lessons remove`** — never delete a lesson `.md` file directly. The script writes an auditable tombstone, which the direct-`Edit` path cannot.
+- **Removals still route through `manage-lessons remove`** — never delete a lesson `.md` file directly. The script writes an auditable tombstone, which the direct-`Edit` path cannot. This applies equally to the promote-then-retire disposition (Step 4b): after the residue is promoted, the lesson is retired via `manage-lessons remove`, never by deleting the file.
 - **Only the partial-coverage *adaptation* edits touch lesson `.md` bodies directly** — trimming the now-covered portion of a lesson is a surgical body edit that no `manage-lessons` verb expresses, so it is performed with `Edit` against `.plan/local/lessons-learned/{id}.md`.
+- **Promotion edits target governing-skill docs — outside the lessons corpus.** The promote-then-retire disposition (Step 4b) uses `Edit` against the governing skill's `standards/*.md` / `references/*.md` (or `CLAUDE.md` for repo-wide rules) — a path *outside* `.plan/local/lessons-learned/**`. These are ordinary source-doc edits, not `.plan/` edits, so they fall outside the `.plan/`-scoped hard rule entirely; they are noted here only so the full set of files this step may write is documented in one place. The subsequent lesson retirement still routes through `manage-lessons remove`.
 - **Reads** of lesson bodies for classification go through `manage-lessons list --full` / `manage-lessons get` where possible; direct `Read` of a lesson `.md` is permitted only to inspect the exact body region an adaptation will trim.
 
 ## Ordering
@@ -98,13 +100,31 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 For each lesson, classify it against the plan outcome using a **conservative subsumption bar**:
 
-- **Completely covered** — requires that the lesson's guarded failure mode can no longer occur, **OR** its recommended practice is now codified/enforced by this plan. Nothing weaker qualifies.
+- **Completely covered** — requires that the lesson's guarded failure mode can no longer occur, **OR** its recommended practice is now codified/enforced by this plan. Nothing weaker qualifies. The residue is already codified elsewhere, so the lesson is removed outright (Step 4).
+- **Completely covered, residue is a reusable rule** — the lesson's guarded failure mode can no longer occur (so it qualifies as completely covered) **AND** the lesson body still carries a durable reusable rule — an operating rule, a convention, an anti-pattern, or a contract-guard — whose correct home is the governing skill's `standards/`/`references/` (or `CLAUDE.md` for repo-wide rules) rather than the lessons queue. Distinguish it from plain "Completely covered" (residue already codified elsewhere → remove outright) using the **Placement test** below. This classification routes to the promote-then-retire disposition (Step 4b).
 - **Partially covered** — the plan eliminated or codified *part* of what the lesson guards, but a residual concern remains.
 - **Ambiguous / none** — anything that does not clearly meet the bar above. **Leave untouched (bias to retain)** and log the no-action decision.
 
-When in doubt, retain. The cost of keeping a stale lesson is far lower than the cost of deleting a still-load-bearing one.
+When in doubt, retain. The cost of keeping a stale lesson is far lower than the cost of deleting a still-load-bearing one. Promote-then-retire fires only when the residue clearly maps to a load-bearing home; an ambiguous residue retains.
+
+### Placement test: route durable knowledge to its load-bearing home
+
+When a completely-covered lesson still carries durable knowledge, decide where that knowledge belongs by asking the single question: **"where is this knowledge loaded at the moment it must change behavior?"** Route by the answer:
+
+| Residue kind | Load-bearing home |
+|--------------|-------------------|
+| Operating rule / convention / anti-pattern | The governing skill's `standards/*.md` |
+| Contract + recurrence-guard | The owning skill's `references/*.md` |
+| Repo-wide workflow / process hard rule | `CLAUDE.md` / `dev-agent-behavior-rules` |
+| Decision with weighed alternatives | An ADR (NOT a convention/bug record) |
+| Open, un-shipped recurrence | Stays in `lessons-learned/` (retain) |
+| Pure "this bug was fixed", no reusable rule | Delete (remove outright, Step 4) |
+
+**Promotion-vs-ADR note** (extends lesson `2026-05-26-17-001`): a closed lesson's residue is a **standard, not an ADR**. A standard codifies *what to do* (a rule, convention, or contract a skill loads to change behavior); an ADR records *why a decision was made among weighed alternatives*. Promote a reusable rule into `standards/`/`references/` (or `CLAUDE.md`); reach for an ADR only when the residue is genuinely a decision with documented trade-offs, not an operating rule.
 
 ### Step 4: Remove completely-covered lessons
+
+For lessons classified **completely covered** whose residue is already codified elsewhere (no durable reusable rule to relocate):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
@@ -112,6 +132,29 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remo
 ```
 
 This writes a tombstone — the removal stays auditable. The owning `{plan_id}` is folded into the `--reason` text (the `remove` verb has no separate plan flag) and is also captured by the Step 6 decision-log entry.
+
+### Step 4b: Promote-then-retire residue-bearing lessons
+
+For each lesson classified **completely covered, residue is a reusable rule**, promote the residue into its load-bearing home *before* retiring the lesson — never the reverse, so the rule is never momentarily lost:
+
+1. **Promote** the reusable rule into the home selected by the **Placement test** — the governing skill's `standards/*.md` / `references/*.md` (or `CLAUDE.md` for repo-wide rules) — using the `Edit` tool, cross-referencing the originating lesson id so the promoted rule's provenance stays traceable:
+
+   ```
+   Edit: marketplace/bundles/{bundle}/skills/{skill}/standards/{file}.md   (or references/{file}.md, or CLAUDE.md)
+   ```
+
+   Write the rule as a durable standard in the host doc's voice (not a transcription of the lesson record) and include a short `(extends lesson {id})` / `(promoted from lesson {id})` cross-reference.
+
+2. **Retire** the now-promoted lesson via the tombstone-writing `remove` verb — never by deleting the file:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
+     --lesson-id {id} --force --reason "residue promoted to {target} (plan {plan_id})"
+   ```
+
+   The `{target}` names the doc the rule was promoted into, so the tombstone records *where* the knowledge went.
+
+Keep the bias-to-retain posture: Step 4b fires only when the residue clearly maps to a load-bearing home per the Placement test. If the residue's home is ambiguous, **retain** the lesson untouched rather than guessing. A failed promotion (Step 4b.1) leaves the lesson in place and does NOT proceed to the retirement in Step 4b.2 — see Error Handling.
 
 ### Step 5: Trim partially-covered lessons
 
@@ -125,12 +168,12 @@ Trim **only** the now-covered portion. Preserve the `key=value` header block at 
 
 ### Step 6: Log every change
 
-Record a decision-log entry for **every** removal, **every** adaptation, **and every** deliberate retain:
+Record a decision-log entry for **every** removal, **every** promote-then-retire, **every** adaptation, **and every** deliberate retain. For a promotion, name the target doc the residue was promoted into:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(project:finalize-step-lessons-housekeeping) {removed|adapted|retained} {id}: {reason}"
+  --message "(project:finalize-step-lessons-housekeeping) {removed|promoted|adapted|retained} {id}: {reason}"
 ```
 
 ### Step 7: Record the step outcome
@@ -138,7 +181,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-lessons-housekeeping --outcome done \
-  --display-detail "{N} removed, {M} adapted, {K} retained"
+  --display-detail "{N} removed, {P} promoted, {M} adapted, {K} retained"
 ```
 
 ## Error Handling
@@ -146,11 +189,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 | Scenario | Action |
 |----------|--------|
 | Empty lessons corpus | Skip-clean exit — record `mark-step-done --outcome done --display-detail "0 lessons — nothing to reconcile"` so the `phase_steps_complete` handshake counts the step as done |
-| Coverage ambiguous | Retain the lesson untouched (bias to retain) and log the no-action decision via `manage-logging decision` |
+| Coverage ambiguous (including ambiguous residue home) | Retain the lesson untouched (bias to retain) and log the no-action decision via `manage-logging decision` |
 | `manage-lessons remove` failure on one lesson | Non-fatal — log the failure, leave that lesson in place, and continue with the remaining lessons. Housekeeping must never block finalize. |
+| Promotion `Edit` failure (Step 4b.1) on one lesson | Non-fatal — log the failure, leave the lesson in place, and **do NOT** proceed to the Step 4b.2 retirement for that lesson. A retirement without a successful promotion would lose the rule, so the two stay atomic-by-convention: no promotion, no retire. Continue with the remaining lessons. |
 | Adaptation `Edit` failure on one lesson | Non-fatal — log the failure, leave that lesson untouched, and continue. |
 | Missing `quality-verification-report.md` | Non-fatal — proceed using `request.md` + `modified_files` alone; log that the retrospective report was unavailable |
-| Step completes | Record `mark-step-done --outcome done --display-detail "{N} removed, {M} adapted, {K} retained"` |
+| Step completes | Record `mark-step-done --outcome done --display-detail "{N} removed, {P} promoted, {M} adapted, {K} retained"` |
 
 The step's posture is **non-fatal throughout**: finalize must never abort because lessons housekeeping hit a snag on an individual lesson.
 
