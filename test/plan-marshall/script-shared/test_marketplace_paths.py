@@ -1,4 +1,12 @@
-"""Tests for marketplace_paths shared module."""
+"""Tests for marketplace_paths shared module.
+
+Resolution follows a SINGLE uniform cwd/worktree-relative rule (ADR-002):
+PLAN_BASE_DIR override → walk up from cwd to the nearest ``.plan/local``
+ancestor. There is no ``git rev-parse --git-common-dir`` sideways resolution.
+``find_marketplace_path`` resolves ``marketplace/bundles`` by walking up from
+cwd. These tests pin both PLAN_BASE_DIR and cwd and never contend for the real
+``.plan/`` under ``-n auto``.
+"""
 
 from pathlib import Path
 
@@ -7,12 +15,29 @@ import pytest
 from marketplace_paths import (
     CLAUDE_DIR,
     PLUGIN_CACHE_SUBPATH,
+    _find_plan_root_from_cwd,
     find_marketplace_path,
     get_base_path,
     get_plugin_cache_path,
     get_temp_dir,
     safe_relative_path,
 )
+
+
+class TestNoGitMainCheckoutRoot:
+    """Regression guard for the removal of the git-common-dir resolver.
+
+    ``git_main_checkout_root`` / ``_resolve_git_main_checkout_root`` were the
+    sideways ``git rev-parse --git-common-dir`` resolution path that the uniform
+    cwd rule (ADR-002) replaced. This guard fails if either symbol is ever
+    reintroduced into the shared module.
+    """
+
+    def test_git_main_checkout_root_is_not_a_module_attribute(self):
+        assert not hasattr(marketplace_paths, 'git_main_checkout_root')
+
+    def test_resolve_git_main_checkout_root_is_not_a_module_attribute(self):
+        assert not hasattr(marketplace_paths, '_resolve_git_main_checkout_root')
 
 
 class TestNoOrphanGetPlanDir:
@@ -31,11 +56,60 @@ class TestNoOrphanGetPlanDir:
         assert not has_attr
 
 
+class TestFindPlanRootFromCwd:
+    """The uniform cwd walk-up: nearest ancestor of cwd containing .plan/local."""
+
+    def test_cwd_in_root_with_plan_local(self, tmp_path, monkeypatch):
+        (tmp_path / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(tmp_path)
+        assert _find_plan_root_from_cwd() == tmp_path.resolve()
+
+    def test_cwd_below_root_walks_up_to_nearest(self, tmp_path, monkeypatch):
+        (tmp_path / '.plan' / 'local').mkdir(parents=True)
+        deep = tmp_path / 'a' / 'b' / 'c'
+        deep.mkdir(parents=True)
+        monkeypatch.chdir(deep)
+        assert _find_plan_root_from_cwd() == tmp_path.resolve()
+
+    def test_cwd_pinned_in_worktree_resolves_worktree_resident(self, tmp_path, monkeypatch):
+        # A moved-in worktree has its own .plan/local; cwd pinned inside it
+        # resolves to the worktree, not the main checkout above it.
+        main = tmp_path / 'main'
+        (main / '.plan' / 'local').mkdir(parents=True)
+        worktree = main / '.plan' / 'local' / 'worktrees' / 'plan-x'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+        assert _find_plan_root_from_cwd() == worktree.resolve()
+
+    def test_cwd_in_unpopulated_worktree_falls_back_to_ancestor(self, tmp_path, monkeypatch):
+        # A materialized-but-not-yet-populated worktree (no .plan/local) falls
+        # back to the nearest ancestor that has one — the main checkout.
+        main = tmp_path / 'main'
+        (main / '.plan' / 'local').mkdir(parents=True)
+        worktree = main / 'sub' / 'plan-x'
+        worktree.mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+        assert _find_plan_root_from_cwd() == main.resolve()
+
+    def test_no_plan_local_ancestor_returns_none(self, tmp_path, monkeypatch):
+        bare = tmp_path / 'bare'
+        bare.mkdir()
+        monkeypatch.chdir(bare)
+        assert _find_plan_root_from_cwd() is None
+
+
 class TestGetTempDir:
-    def test_returns_subdir_under_plan_temp(self, monkeypatch):
+    def test_plan_base_dir_override_takes_precedence(self, monkeypatch):
         monkeypatch.setenv('PLAN_BASE_DIR', '/tmp/base-dir')
         result = get_temp_dir('my-tool')
         assert result == Path('/tmp/base-dir') / 'temp' / 'my-tool'
+
+    def test_cwd_walk_up_anchors_temp(self, tmp_path, monkeypatch):
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        (tmp_path / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(tmp_path)
+        result = get_temp_dir('my-tool')
+        assert result == tmp_path.resolve() / '.plan' / 'temp' / 'my-tool'
 
 
 class TestSafeRelativePath:
@@ -50,46 +124,32 @@ class TestSafeRelativePath:
         assert safe_relative_path(outside) == '/some/other/path'
 
 
-def _suppress_git_root_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Force ``find_marketplace_path`` branch 3 (git-root resolution) to miss.
-
-    Without this helper, branch 3 calls ``git_main_checkout_root()`` which runs
-    ``git rev-parse --git-common-dir`` and resolves to the real main checkout
-    root, which contains ``marketplace/bundles``. Branch 3 then short-circuits
-    before branch 4 (cwd-based fallback) can fire, breaking tests that exercise
-    cwd discovery in isolation.
-
-    We patch ``marketplace_paths.git_main_checkout_root`` to return a synthetic
-    directory under ``tmp_path`` that does NOT contain ``marketplace/bundles``,
-    so branch 3 falls through and branch 4 runs.
-    """
-    empty_root = tmp_path / '__suppress_git_root'
-    empty_root.mkdir()
-    monkeypatch.setattr(marketplace_paths, 'git_main_checkout_root', lambda: empty_root)
-
-
 class TestFindMarketplacePath:
     def test_cwd_based_discovery(self, tmp_path, monkeypatch):
-        _suppress_git_root_branch(tmp_path, monkeypatch)
         bundles = tmp_path / 'marketplace' / 'bundles'
         bundles.mkdir(parents=True)
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(tmp_path)
         result = find_marketplace_path()
         assert result == bundles
 
     def test_parent_cwd_discovery(self, tmp_path, monkeypatch):
-        _suppress_git_root_branch(tmp_path, monkeypatch)
         bundles = tmp_path / 'marketplace' / 'bundles'
         bundles.mkdir(parents=True)
         child = tmp_path / 'subdir'
         child.mkdir()
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(child)
         result = find_marketplace_path()
         assert result == bundles
 
     def test_not_found(self, tmp_path, monkeypatch):
-        _suppress_git_root_branch(tmp_path, monkeypatch)
-        monkeypatch.chdir(tmp_path)
+        # tmp_path is outside the repo, so the cwd walk-up finds no
+        # marketplace/bundles ancestor.
+        bare = tmp_path / 'bare'
+        bare.mkdir()
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+        monkeypatch.chdir(bare)
         result = find_marketplace_path()
         assert result is None
 
@@ -100,12 +160,12 @@ class TestFindMarketplacePathResolutionOrder:
     Resolution priority (highest first):
         1. Explicit ``marketplace_root`` parameter
         2. ``PM_MARKETPLACE_ROOT`` environment variable
-        3. Git-root resolution via ``git_main_checkout_root()``
-        4. cwd-based discovery (legacy bootstrap fallback)
+        3. cwd walk-up — nearest ancestor of cwd containing ``marketplace/bundles``
+        4. cwd/parent discovery (legacy bootstrap fallback)
 
-    Each branch short-circuits on a positive hit (and on a negative hit for the
-    explicit param and env var branches — they do NOT fall through). Tests below
-    pin each branch's priority and the early-return semantics.
+    Branches 1 and 2 are hard short-circuits (a missing candidate returns None
+    without falling through). Branches 3 and 4 both probe cwd-relatively under
+    the uniform cwd rule (ADR-002).
     """
 
     @staticmethod
@@ -133,7 +193,7 @@ class TestFindMarketplacePathResolutionOrder:
 
     def test_explicit_param_returns_none_without_falling_through(self, tmp_path, monkeypatch):
         """Branch 1 is a hard short-circuit: a missing candidate returns None
-        even when env, git-root resolution, or cwd would otherwise resolve.
+        even when env or cwd would otherwise resolve.
         """
         explicit_anchor = tmp_path / 'does-not-exist'
         env_anchor = self._make_bundles_root(tmp_path, 'env')
@@ -145,16 +205,15 @@ class TestFindMarketplacePathResolutionOrder:
         result = find_marketplace_path(marketplace_root=explicit_anchor)
         assert result is None
 
-    def test_env_var_wins_over_git_root_and_cwd(self, tmp_path, monkeypatch):
-        """Branch 2 wins when no explicit param is given, even if git-root
-        resolution and cwd would also resolve.
+    def test_env_var_wins_over_cwd(self, tmp_path, monkeypatch):
+        """Branch 2 wins when no explicit param is given, even if the cwd
+        walk-up would also resolve.
         """
         env_anchor = self._make_bundles_root(tmp_path, 'env')
         cwd_anchor = self._make_bundles_root(tmp_path, 'cwd')
 
         monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(env_anchor))
         monkeypatch.chdir(cwd_anchor)
-        # Git-root resolution would resolve to the real checkout, but env wins.
 
         result = find_marketplace_path()
         assert result == env_anchor / 'marketplace' / 'bundles'
@@ -174,7 +233,7 @@ class TestFindMarketplacePathResolutionOrder:
 
     def test_env_var_returns_none_without_falling_through(self, tmp_path, monkeypatch):
         """Branch 2 is a hard short-circuit: a missing candidate returns None
-        even when git-root resolution or cwd would otherwise resolve.
+        even when the cwd walk-up would otherwise resolve.
         """
         env_anchor = tmp_path / 'env-missing'
         cwd_anchor = self._make_bundles_root(tmp_path, 'cwd')
@@ -185,44 +244,20 @@ class TestFindMarketplacePathResolutionOrder:
         result = find_marketplace_path()
         assert result is None
 
-    def test_git_root_resolves_when_param_and_env_unset(self, tmp_path, monkeypatch):
-        """Branch 3 resolves using ``git_main_checkout_root()`` when both
-        branches 1 and 2 are unset.
-
-        We patch ``marketplace_paths.git_main_checkout_root`` to return a
-        synthetic checkout root that anchors a freshly-created
-        ``marketplace/bundles`` tree, so the assertion is deterministic
-        regardless of where the test runs.
+    def test_cwd_walk_up_resolves_when_param_and_env_unset(self, tmp_path, monkeypatch):
+        """Branch 3 resolves by walking up from cwd to the nearest ancestor
+        containing ``marketplace/bundles`` when both branches 1 and 2 are unset.
         """
-        # Build the synthetic git-root anchor containing marketplace/bundles.
         anchor = tmp_path / 'synthetic-anchor'
         (anchor / 'marketplace' / 'bundles').mkdir(parents=True)
+        deep = anchor / 'a' / 'b'
+        deep.mkdir(parents=True)
 
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-        monkeypatch.chdir(tmp_path)  # No marketplace/bundles directly under cwd
-        monkeypatch.setattr(marketplace_paths, 'git_main_checkout_root', lambda: anchor)
+        monkeypatch.chdir(deep)
 
         result = find_marketplace_path()
         assert result == anchor / 'marketplace' / 'bundles'
-
-    def test_cwd_fallback_only_fires_when_earlier_branches_fail(self, tmp_path, monkeypatch):
-        """Branch 4 (cwd-based) only fires when explicit, env, and
-        git-root resolution all fail to yield a valid bundles dir.
-
-        We force git-root resolution to miss by patching
-        ``git_main_checkout_root`` to return None, so resolution must fall
-        through to the cwd-based legacy probe.
-        """
-        # Set up cwd-based bundles dir under tmp_path.
-        cwd_bundles = tmp_path / 'marketplace' / 'bundles'
-        cwd_bundles.mkdir(parents=True)
-
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setattr(marketplace_paths, 'git_main_checkout_root', lambda: None)
-
-        result = find_marketplace_path()
-        assert result == cwd_bundles
 
 
 class TestGetBasePathResolutionOrder:
@@ -261,8 +296,10 @@ class TestGetBasePathResolutionOrder:
     def test_marketplace_scope_honors_explicit_param(self, tmp_path, monkeypatch):
         explicit_anchor = self._make_bundles_root(tmp_path, 'explicit')
         # cwd has no bundles, env unset — only the explicit param resolves.
+        bare = tmp_path / 'bare'
+        bare.mkdir()
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-        monkeypatch.chdir(tmp_path)
+        monkeypatch.chdir(bare)
 
         result = get_base_path('marketplace', marketplace_root=explicit_anchor)
         assert result == explicit_anchor / 'marketplace' / 'bundles'
@@ -273,7 +310,9 @@ class TestGetBasePathResolutionOrder:
         # No plugin cache under tmp_path/.claude/plugins/cache/plan-marshall.
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-        monkeypatch.chdir(tmp_path)
+        bare = tmp_path / 'bare'
+        bare.mkdir()
+        monkeypatch.chdir(bare)
 
         result = get_base_path('cache-first', marketplace_root=explicit_anchor)
         assert result == explicit_anchor / 'marketplace' / 'bundles'
@@ -309,17 +348,19 @@ class TestGetPluginCachePath:
 
 class TestGetBasePath:
     def test_auto_prefers_marketplace(self, tmp_path, monkeypatch):
-        _suppress_git_root_branch(tmp_path, monkeypatch)
         bundles = tmp_path / 'marketplace' / 'bundles'
         bundles.mkdir(parents=True)
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(tmp_path)
         result = get_base_path('auto')
         assert result == bundles
 
     def test_auto_raises_without_marketplace(self, tmp_path, monkeypatch):
         """auto scope no longer falls back to cache; it requires marketplace."""
-        _suppress_git_root_branch(tmp_path, monkeypatch)
-        monkeypatch.chdir(tmp_path)
+        bare = tmp_path / 'bare'
+        bare.mkdir()
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+        monkeypatch.chdir(bare)
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
@@ -327,8 +368,10 @@ class TestGetBasePath:
             get_base_path('auto')
 
     def test_auto_raises_when_nothing_found(self, tmp_path, monkeypatch):
-        _suppress_git_root_branch(tmp_path, monkeypatch)
-        monkeypatch.chdir(tmp_path)
+        bare = tmp_path / 'bare'
+        bare.mkdir()
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+        monkeypatch.chdir(bare)
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         with pytest.raises(FileNotFoundError):
             get_base_path('auto')
@@ -338,15 +381,16 @@ class TestGetBasePath:
         bundles.mkdir(parents=True)
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         result = get_base_path('cache-first')
         assert result == cache
 
     def test_marketplace_scope(self, tmp_path, monkeypatch):
-        _suppress_git_root_branch(tmp_path, monkeypatch)
         bundles = tmp_path / 'marketplace' / 'bundles'
         bundles.mkdir(parents=True)
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(tmp_path)
         result = get_base_path('marketplace')
         assert result == bundles

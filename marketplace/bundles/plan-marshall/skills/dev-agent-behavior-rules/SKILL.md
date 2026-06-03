@@ -112,16 +112,19 @@ You may be running inside a dispatched `execution-context` envelope. A dispatche
 
 Canonical contract: [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) is the single source of truth for the leaf/dispatch-topology invariant. Do not restate the topology diagram here — see that document for the normative statement.
 
-### Git: always use `git -C {path}`, never `cd {path} && git ...`
+### Git targeting: plain `git` in a cwd-pinned context, `git -C {path}` cross-tree, never `cd {path} && git ...`
 
-Every repo-targeted git command MUST use the `git -C {path} <subcommand>` form. The compound form `cd {path} && git <subcommand>` is forbidden — even when the target path is a worktree absolute path that the model already has in context.
+The `cd {path} && git <subcommand>` compound form is **always forbidden** — even when the target path is a worktree absolute path that the model already has in context. Two reasons, both load-bearing:
 
-Two reasons, both load-bearing:
+1. **Security prompt**: the host platform treats `cd` followed by `git` in the same Bash call as a potential bare-repository-attack pattern and pops a permission prompt that disrupts the user.
+2. **One-command-per-call**: `cd {path} && git ...` is two commands joined by `&&`, which already violates the [Bash: One command per call](#bash-one-command-per-call) rule above.
 
-1. **Security prompt**: the host platform treats `cd` followed by `git` in the same Bash call as a potential bare-repository-attack pattern and pops a permission prompt that disrupts the user. The `-C` form does not trip the heuristic.
-2. **One-command-per-call**: `cd {path} && git ...` is two commands joined by `&&`, which already violates the [Bash: One command per call](#bash-one-command-per-call) rule above. Using `git -C {path} ...` is one command and satisfies both rules at once.
+The git-targeting form to use depends on the execution context:
 
-When a plan runs in an isolated worktree, the canonical `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. When operating against the main checkout, use `git -C .` — never `cd && git`.
+- **Phase-5+ cwd-pinned context** (the move-based, cwd-pinned model, ADR-002): cwd is pinned to the plan's worktree (or to the main checkout when `use_worktree=false`), so plain `git <subcommand>` already acts on the correct tree. Use plain `git` — do NOT route through `git -C {worktree_path}`. The pinned cwd is the resolution anchor; explicit path forwarding is redundant and re-leaks the worktree absolute path the cwd-pinned model deliberately removed. See [`tools-script-executor/standards/cwd-policy.md`](../tools-script-executor/standards/cwd-policy.md) § "Worktree-path passing is unnecessary under cwd-pinning".
+- **Cross-tree or non-pinned context**: when a git command must target a tree that is NOT the pinned cwd — a genuinely cross-tree operation, a main-checkout-from-worktree read, or any caller invoked outside a pinned-cwd context (phases 1-4, post-worktree-removal cleanup, fixture-driven invocations) — use the explicit `git -C {path} <subcommand>` form. This is the only surviving use of `git -C`.
+
+When operating against the main checkout outside a pinned context, plain `git` (cwd already the main checkout) or `git -C .` are both acceptable — never `cd && git`. See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule.
 
 ## Related
 

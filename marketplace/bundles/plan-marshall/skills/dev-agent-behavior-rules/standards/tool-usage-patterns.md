@@ -82,13 +82,18 @@ Grep(pattern="pattern", path="/path", glob="*.md", output_mode="content")
 
 ## When Bash IS Appropriate
 
-**Git operations** (always use `git -C {path}` — never `cd {path} && git ...`):
+**Git operations** — plain `git` in a phase-5+ cwd-pinned context, `git -C {path}` cross-tree, never `cd {path} && git ...`:
 ```
-Bash(command="git -C /path/to/worktree status")
-Bash(command="git -C /path/to/worktree log --oneline -10")
+# Phase-5+ cwd-pinned context (ADR-002): cwd is the worktree (or main when use_worktree=false) —
+# plain git acts on the correct tree. Do NOT route through git -C {worktree_path}.
+Bash(command="git status")
+Bash(command="git log --oneline -10")
+
+# Cross-tree / non-pinned context only: target a tree that is NOT the pinned cwd.
+Bash(command="git -C /path/to/other-tree status")
 ```
 
-See [`cd <path> && <anything>` is forbidden for every tool, not just git](#cd-path--anything-is-forbidden-for-every-tool-not-just-git) below for the rule and rationale (the same `cd && X` prohibition applies to every tool, not just git). See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule.
+In the move-based, cwd-pinned model (ADR-002), cwd is pinned to the plan's worktree during phase-5+, so a plain `git` command already acts on the right tree — explicit `git -C {worktree_path}` forwarding is redundant and re-leaks the worktree absolute path the model deliberately removed. Reserve `git -C {path}` for genuinely cross-tree operations or callers invoked outside a pinned-cwd context (phases 1-4, cleanup, fixtures). See [`cd <path> && <anything>` is forbidden for every tool, not just git](#cd-path--anything-is-forbidden-for-every-tool-not-just-git) below for the always-forbidden `cd && X` rule and rationale, [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) § "Worktree-path passing is unnecessary under cwd-pinning" for the cwd-pinned resolution model, and `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule.
 
 **CI/Git provider operations (PRs, issues, CI status, reviews):**
 

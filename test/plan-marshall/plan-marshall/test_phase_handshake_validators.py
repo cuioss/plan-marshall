@@ -16,6 +16,8 @@ canonical 6-axis matrix (TASK-2 foundation).
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
@@ -29,6 +31,14 @@ from _input_validation_fixtures import (  # type: ignore[import-not-found]
 from conftest import get_script_path, run_script  # type: ignore[import-not-found]
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
+
+# Bootstrap the script dir so the underscore-prefixed sibling modules
+# (_invariants) are importable for the retained-vs-relaxed behaviour tests.
+_SCRIPTS_DIR = SCRIPT_PATH.parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+import _invariants as inv  # type: ignore[import-not-found]  # noqa: E402
 
 # Subcommands that declare ``--plan-id`` (all four).
 _PLAN_ID_SUBCOMMANDS = ('capture', 'verify', 'list', 'clear')
@@ -170,3 +180,99 @@ def test_list_subcommand_canonical_plan_id(tmp_path):
         env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
     )
     assert_not_invalid_field(result, 'invalid_plan_id')
+
+
+# =============================================================================
+# Retained-vs-relaxed worktree-state drift validators (Option 5' / ADR-002)
+# =============================================================================
+#
+# Under the cwd-pinned move model the worktree-state drift checks
+# (``main_dirty_files`` layer-D leak guard + the sideways ``worktree_sha`` /
+# ``worktree_dirty`` / ``worktree_orphan`` invariants) are RETAINED for the
+# planning-phase boundaries (1-init / 2-refine / 3-outline / 4-plan) that still
+# run on main, and RELAXED for the ``5-execute → 6-finalize`` boundary the move
+# model makes safe. The single cwd-unchanged invariant — asserted by
+# ``file_ops.guard_worktree_cwd`` — is what makes the relaxation sound: cwd
+# stays pinned to the worktree so plan work cannot leak into main. These
+# validators pin both halves of the contract at the function level.
+# =============================================================================
+
+_RELAXED_WORKTREE_INVARIANTS = (
+    'main_dirty_files',
+    'worktree_sha',
+    'worktree_dirty',
+    'worktree_orphan',
+)
+_PLANNING_PHASES = ('1-init', '2-refine', '3-outline', '4-plan')
+
+
+@pytest.mark.parametrize('invariant', _RELAXED_WORKTREE_INVARIANTS)
+@pytest.mark.parametrize('phase', _PLANNING_PHASES)
+def test_worktree_state_drift_retained_at_planning_boundaries(invariant, phase):
+    """RETAINED: drift in the worktree-state invariants is blocking at 1-4."""
+    assert inv.is_invariant_blocking_at_phase(invariant, phase) is True
+
+
+@pytest.mark.parametrize('invariant', _RELAXED_WORKTREE_INVARIANTS)
+def test_worktree_state_drift_relaxed_at_phase_5_boundary(invariant):
+    """RELAXED: drift in the worktree-state invariants is NOT blocking at 5-execute."""
+    assert inv.is_invariant_blocking_at_phase(invariant, '5-execute') is False
+
+
+def test_check_main_dirty_drift_gated_to_planning_phases():
+    """``_check_main_dirty_drift`` mirrors the relaxation: it fires only for the
+    pre-materialization (planning) phases.
+
+    Drives the function directly with a proper-superset drift input and a
+    worktree-routed plan. At ``4-plan`` it raises ``MainCheckoutDirtiedDuringPlan``;
+    at ``5-execute`` it returns ``None`` (relaxed) for the SAME input.
+    """
+    import _handshake_commands as cmds  # type: ignore[import-not-found]
+
+    captured_row = {'main_dirty_files': ['existing.txt']}
+    observed = {'main_dirty_files': ['existing.txt', 'leaked.py']}
+    metadata = {'use_worktree': True}
+
+    # Planning boundary → retained → raises.
+    with pytest.raises(inv.MainCheckoutDirtiedDuringPlan):
+        cmds._check_main_dirty_drift('p', '4-plan', captured_row, observed, metadata)
+
+    # Phase-5 boundary → relaxed → no raise.
+    assert (
+        cmds._check_main_dirty_drift('p', '5-execute', captured_row, observed, metadata)
+        is None
+    )
+
+
+def test_cwd_unchanged_invariant_guard_holds_when_cwd_is_worktree(tmp_path, monkeypatch):
+    """The single cwd-unchanged invariant guard passes when cwd is the worktree.
+
+    ``guard_worktree_cwd`` is the caller-side assertion that underpins the
+    phase-5+ relaxation: with cwd pinned to the worktree the guard returns
+    ``None`` (invariant holds). Pins ``PLAN_BASE_DIR`` + cwd per the
+    test-isolation lessons.
+    """
+    import file_ops  # type: ignore[import-not-found]
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    worktree = tmp_path / 'worktrees' / 'plan-guard-ok'
+    worktree.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(worktree)
+
+    assert file_ops.guard_worktree_cwd('plan-guard-ok') is None
+
+
+def test_cwd_unchanged_invariant_guard_flags_when_cwd_left_worktree(tmp_path, monkeypatch):
+    """The guard flags a violation when cwd has left the worktree."""
+    import file_ops  # type: ignore[import-not-found]
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    worktree = tmp_path / 'worktrees' / 'plan-guard-left'
+    worktree.mkdir(parents=True, exist_ok=True)
+    elsewhere = tmp_path / 'main'
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    result = file_ops.guard_worktree_cwd('plan-guard-left')
+    assert result is not None
+    assert result['error'] == 'cwd_left_worktree'

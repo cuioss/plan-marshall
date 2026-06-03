@@ -8,8 +8,7 @@ contract from three angles:
 
 1. **Frontmatter and ordering** — the skill declares ``order: 80`` so
    the dispatcher places it post-merge after ``default:branch-cleanup``
-   (70) and ``project:finalize-step-regenerate-executor`` (75), and
-   before ``project:finalize-step-sync-plugin-cache`` (85).
+   (70) and before ``project:finalize-step-sync-plugin-cache`` (85).
 2. **Project-local registration** — the skill lives at
    ``.claude/skills/finalize-step-deploy-target/SKILL.md`` (NOT in any
    marketplace bundle, NOT in ``BUILT_IN_FINALIZE_STEPS``).
@@ -71,8 +70,8 @@ def test_skill_frontmatter_has_canonical_fields():
     assert fm.get('name') == 'finalize-step-deploy-target'
     assert fm.get('description'), 'description must be non-empty'
     assert fm.get('order') == '80', (
-        'deploy-target order must be 80 (post-merge: after branch-cleanup=70 '
-        'and regenerate-executor=75, before sync-plugin-cache=85)'
+        'deploy-target order must be 80 (post-merge: after branch-cleanup=70, '
+        'before sync-plugin-cache=85)'
     )
 
 

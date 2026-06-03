@@ -45,6 +45,27 @@ Runtime Side-effects:
     I/O error is silently swallowed and the executor's exit code, stdout, and
     stderr are unaffected. The helper (``_write_active_plan``) lives entirely
     in the template; no generator-time substitution is required.
+
+Executor-guard backstop decision (ADR-002):
+    Under the move-based, cwd-pinned hermetic worktree model (ADR-002), the
+    PRIMARY enforcement that the executor is never regenerated worktree-bound and
+    moved onto main is STRUCTURAL: the executor is regenerated against main at
+    finalize with the working directory resolving to main's ``.plan/``
+    (``integrate_into_main.py`` is the single owner of that regeneration), and
+    direct executor access during phase-5+ targets the worktree-resident copy via
+    the single uniform cwd/worktree-relative resolution rule. There is no shared
+    main executor for a phase-5+ caller to clobber, because cwd-pinning makes the
+    cwd-relative resolution land on the worktree copy.
+
+    DECISION: no runtime worktree-write refusal guard is added to this generator.
+    A secondary runtime guard inside ``generate_executor.py`` was evaluated and
+    REJECTED as redundant — the structural cwd-pinning already closes the leak
+    surface it would defend, so the guard would add no residual defense-in-depth
+    value while enlarging the surface. Per ``compatibility: breaking`` and the
+    ``lean`` simplicity setting, the smaller surface is preferred. The
+    ``--marketplace-root`` / ``PM_MARKETPLACE_ROOT`` anchor (documented above)
+    survives ONLY as the explicit escape hatch for a non-cwd-pinned caller that
+    must pin discovery to an alternate marketplace tree; it is not a guard.
 """
 
 import argparse

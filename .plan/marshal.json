@@ -48,6 +48,15 @@
       "review_bot_buffer_seconds": 300,
       "pr_merge_strategy": "squash",
       "loop_back_without_asking": true,
+      "auto_merge_after_ci": true,
+      "auto_rebase_threshold": "no_overlap_only",
+      "pre_push_quality_gate": {
+        "activation_globs": [
+          "marketplace/bundles/*/skills/*/scripts/**/*.py",
+          "test/**/*.py"
+        ]
+      },
+      "lightweight_track_override": false,
       "steps": [
         "default:pre-push-quality-gate",
         "project:finalize-step-pre-submission-self-review",
@@ -60,7 +69,6 @@
         "default:branch-cleanup",
         "project:finalize-step-deploy-target",
         "project:finalize-step-sync-plugin-cache",
-        "project:finalize-step-regenerate-executor",
         "default:record-metrics",
         "plan-marshall:plan-retrospective",
         "default:finalize-step-print-phase-breakdown",
@@ -70,15 +78,7 @@
         "default": "high",
         "verification-feedback": "high",
         "post-run-review": "xhigh"
-      },
-      "pre_push_quality_gate": {
-        "activation_globs": [
-          "marketplace/bundles/*/skills/*/scripts/**/*.py",
-          "test/**/*.py"
-        ]
-      },
-      "auto_merge_after_ci": true,
-      "auto_rebase_threshold": "no_overlap_only"
+      }
     }
   },
   "providers": [

@@ -270,7 +270,7 @@ class TestWorktreeCreate:
         target_root = tmp_path / 'worktrees-root'
         target_root.mkdir()
         monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: target_root)
-        monkeypatch.setattr(git_workflow, 'git_main_checkout_root', lambda: tmp_path)
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: tmp_path)
 
         # Fake git_worktree_add: just create the directory so downstream
         # symlink/bookkeeping logic has something to bind against.
@@ -362,7 +362,7 @@ class TestWorktreeRemove:
         worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'rm-me'
         worktree.mkdir(parents=True)
 
-        monkeypatch.setattr(git_workflow, 'git_main_checkout_root', lambda: tmp_path)
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: tmp_path)
 
         # Stub the resolution + branch-name reads.
         _stub_manage_status_call(
@@ -424,7 +424,7 @@ class TestWorktreeRemove:
         ``cmd_worktree_remove`` must surface ``plan_resolution_failed``
         and never call ``git worktree remove``."""
 
-        monkeypatch.setattr(git_workflow, 'git_main_checkout_root', lambda: tmp_path)
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: tmp_path)
 
         _stub_manage_status_call(
             monkeypatch,

@@ -6,7 +6,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 Workflow for the `lessons-aggregate` action (aggressive cross-lesson aggregation + superseded-stub prune in a single command).
 
-> **cwd for `.plan/execute-script.py` calls**: `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd — do **NOT** pin cwd, do **NOT** pass routing flags, and never use `env -C`. Build / CI / Sonar scripts (Bucket B) accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
+> **cwd for `.plan/execute-script.py` calls**: `manage-*` scripts resolve `.plan/` via the uniform cwd walk-up (ADR-002) — the nearest ancestor of cwd containing `.plan/local`. The orchestrator runs on the main checkout in phases 1-4 (resolving main's `.plan/`) and pins cwd to the worktree in phase-5+ (resolving the moved-in worktree copy); do **NOT** pass routing flags to `manage-*`, and never use `env -C`. Build / CI / Sonar scripts accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
 
 ## Action: lessons-aggregate
 

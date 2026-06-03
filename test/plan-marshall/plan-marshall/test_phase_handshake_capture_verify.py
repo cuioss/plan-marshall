@@ -321,12 +321,31 @@ def test_classifier_main_sha_informational_at_planning_phases() -> None:
         )
 
 
-def test_classifier_main_dirty_and_files_classified_same_as_main_sha() -> None:
-    """main_dirty and main_dirty_files share the same blocking scope as main_sha."""
-    for invariant in ('main_dirty', 'main_dirty_files'):
-        assert inv.is_invariant_blocking_at_phase(invariant, '5-execute') is True
-        for planning_phase in ('1-init', '2-refine', '3-outline', '4-plan'):
-            assert inv.is_invariant_blocking_at_phase(invariant, planning_phase) is False
+def test_classifier_main_dirty_classified_same_as_main_sha() -> None:
+    """main_dirty shares main_sha's scope: blocking at 5-execute, informational at planning.
+
+    NOTE: ``main_dirty_files`` (the layer-D leak-into-main path list) does NOT
+    share this scope — under the cwd-pinned move model (Option 5' / ADR-002)
+    its leak guard is RELAXED at the 5-execute boundary and RETAINED at the
+    planning boundaries, the inverse of main_dirty. See
+    ``test_classifier_main_dirty_files_relaxed_at_phase_5`` below.
+    """
+    assert inv.is_invariant_blocking_at_phase('main_dirty', '5-execute') is True
+    for planning_phase in ('1-init', '2-refine', '3-outline', '4-plan'):
+        assert inv.is_invariant_blocking_at_phase('main_dirty', planning_phase) is False
+
+
+def test_classifier_main_dirty_files_relaxed_at_phase_5() -> None:
+    """main_dirty_files (layer-D leak guard) is RELAXED at 5-execute, RETAINED at planning.
+
+    Inverse of main_sha / main_dirty: the cwd-pinned move model closes the
+    leak-into-main surface at the 5-execute → 6-finalize boundary (cwd is the
+    worktree), so the guard is moot there; it still matters at the planning
+    boundaries that run on main.
+    """
+    assert inv.is_invariant_blocking_at_phase('main_dirty_files', '5-execute') is False
+    for planning_phase in ('1-init', '2-refine', '3-outline', '4-plan'):
+        assert inv.is_invariant_blocking_at_phase('main_dirty_files', planning_phase) is True
 
 
 def test_classifier_task_state_hash_blocking_everywhere() -> None:
@@ -337,12 +356,15 @@ def test_classifier_task_state_hash_blocking_everywhere() -> None:
         )
 
 
-def test_classifier_other_invariants_blocking_everywhere() -> None:
-    """All non-main_* invariants remain blocking at every boundary."""
+def test_classifier_plan_internal_invariants_blocking_everywhere() -> None:
+    """Plan-internal invariants remain blocking at every boundary.
+
+    The worktree-state drift invariants (worktree_sha / worktree_dirty /
+    worktree_orphan) are NO LONGER in this set — under the cwd-pinned move
+    model (Option 5' / ADR-002) they are RELAXED at the 5-execute boundary.
+    See ``test_classifier_worktree_state_invariants_relaxed_at_phase_5``.
+    """
     always_blocking = (
-        'worktree_sha',
-        'worktree_dirty',
-        'worktree_orphan',
         'references_valid',
         'task_state_hash',
         'qgate_open_count',
@@ -357,6 +379,24 @@ def test_classifier_other_invariants_blocking_everywhere() -> None:
         for phase in ('1-init', '3-outline', '4-plan', '5-execute', '6-finalize'):
             assert inv.is_invariant_blocking_at_phase(invariant, phase) is True, (
                 f'{invariant} must remain blocking at {phase}'
+            )
+
+
+def test_classifier_worktree_state_invariants_relaxed_at_phase_5() -> None:
+    """worktree_sha / worktree_dirty / worktree_orphan are RELAXED at 5-execute.
+
+    Under the cwd-pinned move model the sideways worktree-state comparisons
+    are subsumed by main_sha / main_dirty (cwd IS the worktree), and the
+    inverse-direction orphan check is moot post-materialization. They REMAIN
+    blocking at the planning-phase boundaries that run on main.
+    """
+    for invariant in ('worktree_sha', 'worktree_dirty', 'worktree_orphan'):
+        assert inv.is_invariant_blocking_at_phase(invariant, '5-execute') is False, (
+            f'{invariant} must be relaxed (non-blocking) at the 5-execute boundary'
+        )
+        for planning_phase in ('1-init', '2-refine', '3-outline', '4-plan'):
+            assert inv.is_invariant_blocking_at_phase(invariant, planning_phase) is True, (
+                f'{invariant} must remain blocking at planning boundary {planning_phase}'
             )
 
 

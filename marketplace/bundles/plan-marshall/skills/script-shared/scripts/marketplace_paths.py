@@ -5,13 +5,18 @@ Provides centralized path discovery for marketplace bundles and plugin cache.
 Used by generate_executor.py, scan-marketplace-inventory.py, and other scripts
 that need to locate marketplace infrastructure.
 
-Runtime plan-marshall state lives at ``<git_main_checkout_root>/.plan/local/``
-(project-local, covered by the existing ``Write(.plan/**)`` permission).
+Resolution follows a SINGLE uniform cwd/worktree-relative rule (see ADR-002):
+``set_base_dir()`` override (file_ops) → ``PLAN_BASE_DIR`` env override → walk
+up from the current working directory to the nearest ancestor containing a
+``.plan/local`` directory. There is no per-phase branch and no sideways
+resolution indirection — phases 1-4 resolve to the main checkout because the
+working directory IS main, and phase-5+ resolve to the pinned worktree because
+the working directory is pinned there. The single deliberate exception is the
+merge lock (``merge_lock.py``), which always resolves to the main checkout;
+every other resolution in the codebase is cwd-relative.
 """
 
-import functools
 import os
-import subprocess
 from pathlib import Path
 
 # Central configuration
@@ -22,72 +27,51 @@ PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 
 
 # =============================================================================
-# Canonical git-root + project-dir-name resolver
+# Uniform cwd-relative plan-root resolver
 # =============================================================================
-# These primitives live here (in script-shared, the foundation bundle) and are
-# imported by tools-file-ops/file_ops.py. Do NOT duplicate them — the lesson
+# This primitive lives here (in script-shared, the foundation bundle) and is
+# imported by tools-file-ops/file_ops.py. Do NOT duplicate it — the lesson
 # from PR #160 review was to consolidate, not maintain parallel copies.
 
 
-@functools.lru_cache(maxsize=8)
-def _resolve_git_main_checkout_root(cwd_marker: str) -> Path | None:
-    """Cached worker for git_main_checkout_root.
+def _find_plan_root_from_cwd() -> Path | None:
+    """Walk up from the current working directory to the nearest ancestor
+    containing a ``.plan/local`` directory and return that ancestor.
 
-    Cache key is the resolved absolute cwd at call time, so a test that
-    monkeypatches ``os.chdir`` into a different directory gets a fresh
-    lookup. ``maxsize=8`` is enough to absorb cwd-juggling test loops
-    while keeping production (single cwd) effectively cache-of-one.
+    This is the single uniform cwd-relative discovery step (ADR-002). It finds
+    the FIRST ancestor whose ``<ancestor>/.plan/local`` directory exists, so a
+    working directory inside a materialized-but-not-yet-populated worktree (no
+    ``.plan/local`` yet) falls back to the nearest enclosing ancestor that does
+    have one — during the move-in window that is still the main checkout. There
+    is no sideways resolution; every path is found by walking up from cwd.
+
+    Returns:
+        The ancestor directory containing ``.plan/local``, or ``None`` when no
+        ancestor of the current working directory contains one.
     """
-    del cwd_marker  # only used as the cache key
-    try:
-        result = subprocess.run(
-            ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=5,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    common_dir = result.stdout.strip()
-    if not common_dir:
-        return None
-    return Path(common_dir).parent
-
-
-def git_main_checkout_root() -> Path | None:
-    """Return the main git checkout root, or None if not in a git repo.
-
-    Worktree-safe: uses ``git rev-parse --git-common-dir`` so worktrees
-    resolve to the same main checkout as the primary working tree. The
-    result is cached per cwd to avoid spawning a git subprocess on every
-    base-dir lookup.
-
-    Note: this resolution is location-independent — it works identically
-    whether worktrees live under ``<root>/.claude/worktrees/`` (legacy)
-    or ``<root>/.plan/local/worktrees/`` (current). See the
-    ``plan-marshall:workflow-integration-git`` skill for the canonical
-    worktree layout and lifecycle.
-    """
-    return _resolve_git_main_checkout_root(os.getcwd())
+    cwd = Path.cwd().resolve()
+    for candidate in (cwd, *cwd.parents):
+        if (candidate / PLAN_DIR_NAME / 'local').is_dir():
+            return candidate
+    return None
 
 
 def get_temp_dir(subdir: str) -> Path:
-    """Get temp directory under the repo-local .plan/temp/{subdir}.
+    """Get temp directory under the cwd-relative ``.plan/temp/{subdir}``.
 
-    temp/ intentionally stays project-local (unlike runtime state under
-    file_ops.get_base_dir()) so each worktree keeps its own isolated temp and
-    the existing ``Write(.plan/**)`` permission keeps covering it.
+    temp/ stays alongside the runtime state resolved by the uniform cwd rule so
+    each worktree keeps its own isolated temp and the existing
+    ``Write(.plan/**)`` permission keeps covering it.
 
-    When PLAN_BASE_DIR is set (tests), it takes precedence and temp lands
-    under that override directory for consistency with file_ops.get_temp_dir.
+    Resolution precedence: ``PLAN_BASE_DIR`` override (tests) → cwd walk-up to
+    the nearest ``.plan/local`` ancestor → relative ``.plan/temp`` fallback.
     """
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir) / 'temp' / subdir
-    root = git_main_checkout_root()
+    root = _find_plan_root_from_cwd()
     if root is not None:
-        return root / '.plan' / 'temp' / subdir
+        return root / PLAN_DIR_NAME / 'temp' / subdir
     return Path(PLAN_DIR_NAME) / 'temp' / subdir
 
 
@@ -109,12 +93,12 @@ def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
        ``marketplace_root / 'marketplace/bundles'`` if that directory exists.
     2. ``PM_MARKETPLACE_ROOT`` environment variable — same anchor semantics as
        the explicit parameter, but sourced from the environment.
-    3. Git-root resolution via :func:`git_main_checkout_root` — anchors to the
-       main checkout root that contains ``marketplace/bundles``. This is robust
-       to cwd changes and worktrees because ``git rev-parse --git-common-dir``
-       resolves worktrees back to the primary checkout, where the source
-       ``marketplace/bundles`` tree lives.
-    4. cwd-based discovery — the legacy fallback that probes ``Path.cwd()`` and
+    3. cwd walk-up — probes ``Path.cwd()`` and each ancestor for the standard
+       ``marketplace/bundles`` layout. Under the uniform cwd rule (ADR-002) the
+       working directory IS main (phases 1-4) or the pinned worktree (phase-5+),
+       so the source tree is found by walking up from cwd; there is no
+       sideways resolution indirection.
+    4. cwd/parent discovery — the legacy fallback that probes ``Path.cwd()`` and
        its immediate parent for the standard ``marketplace/bundles`` layout.
        Retained for backward-compat with first-run bootstrap scenarios.
 
@@ -142,18 +126,18 @@ def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
             return candidate
         return None
 
-    # Branch 3: git-root resolution
-    # The source marketplace/bundles tree lives at the main checkout root.
-    # git_main_checkout_root() resolves worktrees back to that primary
-    # checkout via `git rev-parse --git-common-dir`, replacing the brittle
-    # parents[6] index-arithmetic anchor.
-    git_root = git_main_checkout_root()
-    if git_root is not None:
-        candidate = git_root / MARKETPLACE_BUNDLES_PATH
+    # Branch 3: cwd walk-up resolution
+    # The source marketplace/bundles tree lives at whichever checkout the
+    # working directory is in — main (phases 1-4) or the pinned worktree
+    # (phase-5+). Walk up from cwd to the nearest ancestor that contains
+    # marketplace/bundles (ADR-002 uniform cwd rule).
+    cwd = Path.cwd().resolve()
+    for candidate_root in (cwd, *cwd.parents):
+        candidate = candidate_root / MARKETPLACE_BUNDLES_PATH
         if candidate.is_dir():
             return candidate
 
-    # Branch 4: cwd-based discovery (legacy bootstrap fallback)
+    # Branch 4: cwd/parent discovery (legacy bootstrap fallback)
     if (Path.cwd() / MARKETPLACE_BUNDLES_PATH).is_dir():
         return Path.cwd() / MARKETPLACE_BUNDLES_PATH
     if (Path.cwd().parent / MARKETPLACE_BUNDLES_PATH).is_dir():

@@ -1,0 +1,155 @@
+= ADR-002: Plan-scoped operations move into a cwd-pinned hermetic worktree
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+== Status
+
+Accepted
+
+== Context
+
+A plan-scoped operation MUST resolve against, and write into, ONLY the plan's own
+worktree-resident state while that plan is executing. It MUST NOT touch shared
+main-checkout state, repo-root state, or host-global state during execution. This is the
+boundary invariant the architecture enforces.
+
+Plan-marshall runs a plan through six phases. Phases 1-4 (init, refine, outline, plan)
+operate on the main checkout. Phase 5 (execute) and phase 6 (finalize) operate on an
+isolated git worktree dedicated to the plan. The plan's non-git-controlled runtime state —
+the plan directory (`.plan/local/plans/{plan_id}`), the executor (`.plan/execute-script.py`),
+and any other runtime state required for execution — must be reachable from whichever phase
+is running, and only one authoritative copy of that state may exist at any moment so that no
+reconciliation or merge step is ever required between a worktree copy and a main copy.
+
+Concurrent plans may reach finalize at the same time. Their write-back to main (moving the
+plan directory back, regenerating the executor, merging the feature branch) must be
+serialized so that two finalizes never interleave their main-checkout mutations.
+
+== Decision
+
+=== The move-based, cwd-pinned model
+
+Phases 1-4 run on the main checkout: the working directory IS the main checkout, so every
+`.plan/` lookup resolves to main's `.plan/local`.
+
+At phase-5 start the worktree is materialized and the plan-scoped, non-git-controlled state
+is MOVED (not copied) into it: the plan directory, the executor, and any other required
+runtime state. After the move there is exactly one authoritative copy of the plan's state —
+it lives in the worktree, and main no longer holds it during execution. Because there is only
+one copy, there is no reconcile-or-merge problem between a worktree copy and a main copy.
+
+Phase-5+ pins the working directory to the worktree root. Resolution is then a SINGLE uniform
+cwd/worktree-relative rule, evaluated in this precedence:
+
+1. an explicit `set_base_dir()` override,
+2. the `PLAN_BASE_DIR` environment override,
+3. a walk up from the current working directory to the nearest ancestor containing `.plan/local`.
+
+There is no per-phase branch in the resolver and no sideways indirection. Phases 1-4 resolve
+to main because the working directory is main; phase-5+ resolve to the worktree because the
+working directory is pinned there. `PLAN_BASE_DIR` is the sole environment override and exists
+as a test-isolation hook.
+
+The SOLE execution-time invariant is that the working directory is never changed away from the
+worktree during phase-5+.
+
+=== Implementation shape: two atomic lifecycle scripts
+
+The move-in and the move-back are each performed by ONE dedicated atomic script in the
+`workflow-integration-git` skill, alongside the other worktree-lifecycle machinery.
+
+`prepare_execute.py` (notation `plan-marshall:workflow-integration-git:prepare_execute`)
+materializes the worktree and feature branch, moves the plan-scoped non-git state into the
+worktree, and RETURNS the canonical worktree path together with a status. It is
+atomic-with-rollback (a failed move-in leaves the plan state wholly on main, never half-moved)
+and idempotent (an already-moved plan is a no-op success returning the same path).
+
+`integrate_into_main.py` (notation `plan-marshall:workflow-integration-git:integrate_into_main`)
+acquires the merge lock, folds the plan's own global logs into the plan directory, moves the
+plan directory back to main, regenerates the executor against main, and releases the merge
+lock. It runs while the worktree is still present; worktree removal happens after it returns.
+It is atomic-with-rollback (the lock is released on every exit path) and idempotent (an
+already-moved-back plan is a no-op success).
+
+=== CWD is the caller's responsibility
+
+A subprocess cannot change its parent's working directory. Neither lifecycle script mutates
+the caller's working directory. Each script RETURNS a status; the caller pins ITS OWN working
+directory to the returned path (mirroring `manage-status get-worktree-path`). A script MAY
+assert/guard that it was invoked from the expected working directory — that cheap caller-side
+guard is the script-side realization of the single cwd-unchanged invariant. The phase-5
+orchestrator calls `prepare_execute.py`, reads the returned worktree path, and pins its own
+working directory there for the remainder of phase-5+; the finalize orchestrator returns its
+own working directory to main after `integrate_into_main.py` completes.
+
+=== Executor regeneration is a retained necessity, owned on main
+
+Regenerating the executor against main when a plan touches a marketplace script remains
+necessary: newly added script notations must resolve after merge. The executor is REGENERATED
+against main (not file-moved) — a worktree-bound executor moved back to main re-introduces the
+defect. The regeneration runs with the working directory set to main, so the uniform cwd rule
+resolves it to main's `.plan/`. `integrate_into_main.py` is the SINGLE owner of executor
+regeneration at finalize; there is exactly one executor-regeneration site.
+
+=== The merge lock is the single main-anchored exception
+
+Concurrent finalizes are serialized by a cooperative merge lock: a single lock file at the
+main checkout's `.plan/local/merge.lock` whose contents record the holder source
+(`plan_id` / session). `merge_lock.py`
+(notation `plan-marshall:workflow-integration-git:merge_lock`) provides `acquire` and `release`
+actions over that file: `acquire` atomically creates the file via an `O_EXCL` create writing
+the holder source, retries with simple backoff when the file is held, and performs minimal
+stale-holder reclamation; `release` removes the file. `integrate_into_main.py` acquires the
+lock before move-back/regenerate/merge and releases it after, on every exit path.
+
+The merge lock is the SINGLE, deliberate exception to cwd-relative resolution. `merge_lock.py`
+(and only it) always resolves `.plan/local/merge.lock` against the MAIN checkout, because
+cross-session coordination is inherently main-scoped. It is the ONLY main-anchored resolver in
+the codebase; every other resolution is cwd-relative. Confining the one main-anchored
+resolution to this single lock prevents a pervasive main-anchored resolution layer from
+re-forming.
+
+== Consequences
+
+=== What the move model subsumes
+
+The move-based cwd-pinned model collapses the shared-versus-worktree split, so several
+instances of the boundary invariant fall out structurally and need no independent fix:
+
+* *Two-dot diff versus merge-base* — with plan state and execution pinned to one authoritative worktree, the plan's diff surface is the worktree branch's own `base...HEAD`; there is no stale-worktree-tree-versus-advancing-shared-tip framing.
+* *Recursive walk into a sibling worktrees tree* — a recursive walk rooted at the pinned worktree never reaches sibling worktrees, because plan state and source no longer share a `.plan/local` parent reached sideways; the cross-worktree recursion surface does not exist.
+* *Finalize-step discovery against the main-checkout working directory* — cwd-pinning during phase-5+ makes discovery resolve against the tree that holds the feature-branch step, so a step that lives in the worktree is found.
+* *`marshal.json` re-canonicalization drift* — a config save from the pinned worktree resolves to the worktree-resident copy via the uniform cwd rule, so it does not touch shared main-checkout config during execution.
+
+=== What stays independent
+
+These remain orthogonal to the shared-versus-worktree split and are not addressed by the move
+model:
+
+* The `.plan/temp` lifecycle reaper is a lifecycle gap, not a resolution gap.
+* `.claude/skills/` routing relative to the module-scoped quality gate is a gate-routing gap.
+* Fresh-worktree virtualenv versus a pinned CI toolchain is a toolchain-pinning gap.
+
+=== Which state moves and which stays main-shared
+
+The plan directory and the executor MOVE into the worktree during phase-5+ and move back at
+finalize. The shared corpora — `lessons-learned/`, `archived-plans/` — and the `merge.lock`
+stay main-anchored by design.
+
+=== Concurrent-session visibility
+
+While a plan is executing, its plan directory lives in its worktree. A main-checkout listing
+that resolves the plan directory via the uniform cwd rule from main will not show that plan
+mid-flight; the plan reappears in the main-checkout listing after the finalize move-back. This
+is expected behaviour.
+
+== References
+
+* `marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md` — the uniform cwd-relative resolution rule and the merge-lock exception.
+* `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` — the worktree-lifecycle and dispatch contract.
+* `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/prepare_execute.py` — the atomic move-in script.
+* `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/integrate_into_main.py` — the atomic move-back script.
+* `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/merge_lock.py` — the single main-anchored merge lock.

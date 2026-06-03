@@ -15,6 +15,14 @@ because archived plans do not participate in the ``PLAN_BASE_DIR`` lookup
 that ``manage-logging`` performs. Live mode produces the same values as
 ``manage-logging read`` would, keyed by the same file layout.
 
+Folded-in global logs: under the move-based finalize model the plan's OWN
+global logs (``{prefix}-YYYY-MM-DD.log``) are folded into ``<plan_dir>/logs/``
+at integrate-into-main. This script parses those folded-in copies for per-plan
+operational signals (error/non-INFO lines, slow calls, fixture leaks) — the
+per-plan replacement for the retired cross-plan ``global-log-analysis`` audit
+check. A plan with no folded-in global logs (pre-fold archives, live mode
+before finalize) yields all-zero signal counts.
+
 Usage:
     python3 analyze-logs.py run --plan-id EXAMPLE-PLAN --mode live
     python3 analyze-logs.py run --archived-plan-path /abs/path --mode archived
@@ -68,6 +76,38 @@ _DURATION_RE = re.compile(r'\((\d+\.?\d*)s\)')
 # Regex for script-log notation extraction. Script log lines look like
 # ``{TS} LEVEL {notation} {subcommand} (0.23s)``.
 _NOTATION_RE = re.compile(r'([a-z][\w-]*:[\w-]+:[\w-]+)')
+
+# Folded-in global-log line grammar — the bracketed
+# ``[ts] [LEVEL] [hash] <rest>`` shape written by manage-logging into the
+# date-stamped ``{prefix}-YYYY-MM-DD.log`` files folded into the plan dir at
+# finalize. Mirrors the (retired) cross-plan global-log-analysis grammar.
+_GLOBAL_LOG_LINE_RE = re.compile(
+    r'^\[(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z\]\s+'
+    r'\[(?P<level>[A-Z]+)\]\s+\[(?P<hash>[0-9a-f]+)\]\s+(?P<rest>.*)$'
+)
+
+# Trailing ``(0.22s)`` script-call duration, anchored to end-of-line.
+_GLOBAL_LOG_DUR_RE = re.compile(r'\(([0-9.]+)s\)\s*$')
+
+# Body signals a failure even when the LEVEL cell is INFO (a script can exit
+# non-zero while the logging wrapper stamps INFO).
+_GLOBAL_LOG_FAIL_RE = re.compile(
+    r'invalid choice|unrecognized arguments|the following arguments are required'
+    r'|Traceback|exit[_ ]?code\s*[=:]?\s*[12]|argparse_rejection|\bError\b|\bfailed\b'
+    r'|status:\s*error',
+    re.IGNORECASE,
+)
+
+# Slow-call ceiling (seconds): a folded-in script call at/over this is slow.
+_GLOBAL_LOG_SLOW_SECONDS = 30.0
+
+# Test-fixture leak signatures: synthetic bundle/plan ids that must NEVER
+# appear in a real plan's folded-in global log. Their presence means a test run
+# wrote to the real logs instead of an isolated ``PLAN_BASE_DIR``.
+_GLOBAL_LOG_FIXTURE_LEAK_RE = re.compile(
+    r'\bfake-[a-z0-9-]*bundle\b|\bidem-bundle\b|\braising-bundle\b|\borphan-md-[a-z0-9-]+\b',
+    re.IGNORECASE,
+)
 
 
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -544,6 +584,73 @@ def read_dispatch_boundaries_per_phase(plan_dir: Path) -> dict[str, dict[str, An
     return per_phase
 
 
+def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
+    """Parse the plan's folded-in global logs for per-plan operational signals.
+
+    Globs the date-stamped ``{script-execution,work,decision}-*.log`` files
+    folded into ``<plan_dir>/logs/`` at finalize and surfaces per-plan signal
+    counts: total lines parsed, error/non-INFO lines, slow calls
+    (``>= _GLOBAL_LOG_SLOW_SECONDS``), and fixture leaks. This is the per-plan
+    replacement for the retired cross-plan ``global-log-analysis`` audit check
+    (the cross-plan correlation it did is no longer maintained; each plan's own
+    signals are surfaced here from its folded-in copies).
+
+    A plan with no folded-in global logs (live mode before finalize, pre-fold
+    archives) yields all-zero counts and ``logs_present: false``.
+    """
+    patterns = ('script-execution-*.log', 'work-*.log', 'decision-*.log')
+    log_files: list[Path] = []
+    if logs_dir.is_dir():
+        for pat in patterns:
+            log_files.extend(logs_dir.glob(pat))
+
+    total_lines = 0
+    error_count = 0
+    slow_call_count = 0
+    fixture_leak_count = 0
+    fixture_leak_signatures: list[str] = []
+
+    for log in sorted(log_files):
+        try:
+            content = log.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        for raw in content.splitlines():
+            match = _GLOBAL_LOG_LINE_RE.match(raw)
+            if not match:
+                continue
+            total_lines += 1
+            level = match.group('level')
+            rest = match.group('rest')
+
+            dur_match = _GLOBAL_LOG_DUR_RE.search(rest)
+            if dur_match:
+                try:
+                    seconds = float(dur_match.group(1))
+                except ValueError:
+                    seconds = 0.0
+                if seconds >= _GLOBAL_LOG_SLOW_SECONDS:
+                    slow_call_count += 1
+
+            if level != 'INFO' or _GLOBAL_LOG_FAIL_RE.search(rest):
+                error_count += 1
+
+            leak_match = _GLOBAL_LOG_FIXTURE_LEAK_RE.search(rest)
+            if leak_match:
+                fixture_leak_count += 1
+                fixture_leak_signatures.append(leak_match.group(0))
+
+    return {
+        'logs_present': bool(log_files),
+        'folded_log_files': len(log_files),
+        'total_lines': total_lines,
+        'error_count': error_count,
+        'slow_call_count': slow_call_count,
+        'fixture_leak_count': fixture_leak_count,
+        'fixture_leak_signatures': sorted(set(fixture_leak_signatures)),
+    }
+
+
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
     logs_dir = plan_dir / 'logs'
@@ -612,6 +719,36 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # logging-gap bag.
     dispatch_boundaries = read_dispatch_boundaries_per_phase(plan_dir)
 
+    # Folded-in global-log per-plan signals (per-plan replacement for the
+    # retired cross-plan global-log-analysis audit check). Surfaces a finding
+    # when the plan's own folded-in global logs carry error lines or fixture
+    # leaks; slow-call counts ride the fragment for the LLM to weigh.
+    global_log_signals = analyze_folded_global_logs(logs_dir)
+    if global_log_signals['error_count'] > 0:
+        findings.append(
+            {
+                'severity': 'warning',
+                'message': (
+                    f"GLOBAL_LOG_ERRORS: {global_log_signals['error_count']} error/non-INFO "
+                    f"line(s) in the plan's folded-in global logs "
+                    f"({global_log_signals['folded_log_files']} file(s)). "
+                    'See log-analysis.md § Folded-in global logs.'
+                ),
+            }
+        )
+    if global_log_signals['fixture_leak_count'] > 0:
+        findings.append(
+            {
+                'severity': 'error',
+                'message': (
+                    f"GLOBAL_LOG_FIXTURE_LEAK: {global_log_signals['fixture_leak_count']} synthetic "
+                    f"test-fixture signature(s) leaked into the plan's folded-in global logs "
+                    f"({';'.join(global_log_signals['fixture_leak_signatures'])}) — a test run wrote "
+                    'to the real logs instead of an isolated PLAN_BASE_DIR.'
+                ),
+            }
+        )
+
     return {
         'status': 'success',
         'aspect': 'log_analysis',
@@ -635,6 +772,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'top_error_tags': top_n(error_tags, 5),
         'phase5_logging_gaps': phase5_logging_gaps,
         'dispatch_boundaries': dispatch_boundaries,
+        'global_log_signals': global_log_signals,
         'findings': findings,
     }
 

@@ -354,6 +354,40 @@ def _parse_required_steps(path: Path) -> list[str]:
     return steps
 
 
+def _read_manifest_steps(plan_id: str, phase: str) -> set[str] | None:
+    """Return the set of step IDs scheduled in the plan's execution manifest
+    for ``phase``, or ``None`` when the manifest cannot be read.
+
+    The manifest lives at ``<base>/plans/{plan_id}/execution.toon`` and stores
+    the phase step list under ``phase_{N}.steps`` where ``N`` is the leading
+    numeric segment of the phase key (e.g. ``6-finalize`` → ``phase_6``). Step
+    IDs are returned verbatim — bare for built-ins (``commit-push``), prefixed
+    for project / fully-qualified steps (``project:finalize-step-...``) — so
+    they match the entries parsed from ``required-steps.md`` by exact string.
+
+    Returns ``None`` (rather than an empty set) on any read/parse failure so the
+    caller can distinguish "manifest unreadable — fall back to the full required
+    list" from "manifest read, phase schedules zero required steps".
+    """
+    section = f'phase_{phase.split("-", 1)[0]}'
+    try:
+        manifest_path = get_base_dir() / 'plans' / plan_id / 'execution.toon'
+        if not manifest_path.is_file():
+            return None
+        parsed = parse_toon(manifest_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError, KeyError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    phase_block = parsed.get(section)
+    if not isinstance(phase_block, dict):
+        return None
+    steps = phase_block.get('steps')
+    if not isinstance(steps, list):
+        return None
+    return {str(step) for step in steps}
+
+
 # --- capture functions ---------------------------------------------------
 
 
@@ -371,12 +405,11 @@ def _filter_main_dirty_paths(paths: list[str]) -> list[str]:
 
     The single filter rule: drop every path that begins with ``.plan/``.
     The plan-marshall ``.plan/`` directory holds plan metadata, status
-    files, lessons, lessons-aggregate working state, etc. — these legitimately
-    live in the main checkout (the worktree shares the parent ``.git``
-    common-dir's ``.plan/local/`` writes via ``manage-*`` scripts that resolve
-    via ``git rev-parse --git-common-dir``), so dirtying ``.plan/`` is part
-    of normal phase-boundary bookkeeping and MUST NOT trip the layer-D
-    drift invariant.
+    files, lessons, lessons-aggregate working state, etc. During phases 1-4
+    these resolve to the main checkout's ``.plan/local/`` via the uniform
+    cwd walk-up (cwd is main; ADR-002), so dirtying ``.plan/`` is part of
+    normal phase-boundary bookkeeping and MUST NOT trip the layer-D drift
+    invariant.
 
     Operates on the porcelain-string set (sorted, deduplicated) returned by
     :func:`_git_helpers.git_dirty_files`; preserves sort order so callers
@@ -1356,6 +1389,21 @@ def _capture_phase_steps_complete(
     if not required:
         return None
 
+    # Activation note (required-steps.md): a required step ABSENT from the
+    # plan's manifest.phase_{N}.steps is NOT enforced — the handshake checks
+    # completion only for steps the manifest actually scheduled, so pruning a
+    # step from the manifest (e.g. a docs-only plan that drops the test gate, or
+    # a bug_fix plan whose composer omits architecture-refresh) never deadlocks
+    # the phase transition. Intersect the declared required list with the
+    # manifest's scheduled steps. Fall back to the full required list ONLY when
+    # the manifest cannot be read at all (conservative — never silently drop
+    # enforcement when scheduling is unknown).
+    manifest_steps = _read_manifest_steps(_plan_id, phase)
+    if manifest_steps is not None:
+        required = [step for step in required if step in manifest_steps]
+        if not required:
+            return None
+
     phase_steps = metadata.get('phase_steps') or {}
     phase_entry: dict[str, Any] = {}
     if isinstance(phase_steps, dict):
@@ -1448,21 +1496,67 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
 # ``pending_findings_blocking_count``, ``unfinished_tasks_count``,
 # ``pending_findings_by_type``, ``task_graph_valid``) describe plan-internal
 # state that should remain stable across every boundary and stay blocking
-# everywhere. Worktree-applicable invariants (``worktree_sha``,
-# ``worktree_dirty``) stay blocking when their ``applies_fn`` returns true.
-# The inverse-direction ``worktree_orphan`` invariant stays blocking
-# everywhere — its capture-time exception path already enforces the
-# writer-chain contract.
+# everywhere.
+#
+# Retained-vs-relaxed worktree-state drift map (Option 5', ADR-002):
+#
+# - ``main_dirty_files`` (layer-D leak-into-main), ``worktree_sha``,
+#   ``worktree_dirty``, ``worktree_orphan`` are RELAXED for the phase-5+
+#   boundaries the cwd-pinned move model makes safe and RETAINED for the
+#   phases-1-4 boundaries (scope ``_WORKTREE_STATE_DRIFT_BLOCKING_PHASES``).
+#   Once phase-5 materializes the worktree and moves the plan dir in, the
+#   orchestrator's cwd IS the worktree and the single cwd-unchanged invariant
+#   (asserted by ``file_ops.guard_worktree_cwd``) keeps it pinned there, so a
+#   sideways worktree-SHA/dirty comparison and a leak-into-main guard have
+#   nothing to catch. They still matter at the planning-phase boundaries that
+#   run on main, where a leak or an orphan-dir/metadata mismatch can occur.
+#   The layer-D verify check ``_check_main_dirty_drift`` mirrors this gate:
+#   it fires only for the pre-materialization phases. The discriminator is
+#   the boundary phase already known to the handshake — NOT a runtime
+#   resolver branch — so the handshake never references a removed check at a
+#   boundary that still needs it.
 
 BlockingScope = str | frozenset[str]
+
+# Phase boundaries at which the worktree-state drift invariants still add
+# value, keyed on the boundary phase the handshake verifies (the phase being
+# transitioned OUT of). Under the move-based, cwd-pinned hermetic worktree
+# model (ADR-002 / Option 5'), the on-disk worktree directory and feature
+# branch are materialized at phase-5 start and the plan dir is MOVED into the
+# worktree; from that point the orchestrator's cwd IS the worktree and never
+# leaves it (the single cwd-unchanged invariant, asserted by
+# ``file_ops.guard_worktree_cwd``). The sideways worktree-state comparisons
+# (worktree_sha / worktree_dirty / worktree_orphan) and the layer-D
+# leak-into-main guard (main_dirty_files) are therefore STRUCTURALLY MOOT at
+# the ``5-execute → 6-finalize`` boundary: plan work lands in the worktree by
+# construction, so there is nothing for these checks to catch. They REMAIN
+# blocking at the planning-phase boundaries (1→2, 2→3, 3→4, 4→5), which still
+# run on the main checkout where a leak could legitimately occur. The
+# discriminator is the boundary phase, NOT a runtime resolver branch.
+_WORKTREE_STATE_DRIFT_BLOCKING_PHASES: frozenset[str] = frozenset({
+    '1-init',
+    '2-refine',
+    '3-outline',
+    '4-plan',
+})
+
 
 INVARIANT_BLOCKING_SCOPE: dict[str, BlockingScope] = {
     'main_sha': frozenset({'5-execute'}),
     'main_dirty': frozenset({'5-execute'}),
-    'main_dirty_files': frozenset({'5-execute'}),
-    'worktree_sha': 'blocking_at_every_boundary',
-    'worktree_dirty': 'blocking_at_every_boundary',
-    'worktree_orphan': 'blocking_at_every_boundary',
+    # Relaxed for phase-5+ per Option 5' (cwd-pinned move model): the layer-D
+    # leak-into-main guard is moot once the orchestrator's cwd is the worktree.
+    # Retained for the phases-1-4 boundaries that still operate on main.
+    'main_dirty_files': _WORKTREE_STATE_DRIFT_BLOCKING_PHASES,
+    # Relaxed for phase-5+: the sideways worktree-SHA / worktree-dirty
+    # comparisons are subsumed by main_sha / main_dirty once cwd IS the
+    # worktree. The inverse-direction worktree_orphan writer-chain check is
+    # likewise moot post-materialization (the move-in makes the worktree-
+    # resident plan dir the signal); it stays blocking at the planning-phase
+    # boundaries where an orphan-dir-vs-metadata mismatch can still surface.
+    'worktree_sha': _WORKTREE_STATE_DRIFT_BLOCKING_PHASES,
+    'worktree_dirty': _WORKTREE_STATE_DRIFT_BLOCKING_PHASES,
+    'worktree_orphan': _WORKTREE_STATE_DRIFT_BLOCKING_PHASES,
     'references_valid': 'blocking_at_every_boundary',
     'task_state_hash': 'blocking_at_every_boundary',
     'qgate_open_count': 'blocking_at_every_boundary',

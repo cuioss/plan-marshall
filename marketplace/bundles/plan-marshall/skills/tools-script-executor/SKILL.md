@@ -10,7 +10,7 @@ user-invocable: false
 
 **Execution mode**: All marketplace scripts must be executed through the executor proxy.
 
-**Executor is cwd-pass-through. All cwd control is explicit at the call site.** See [standards/cwd-policy.md](standards/cwd-policy.md) for the three buckets (plan metadata, worktree-scoped operations, meta-tools) and the mechanism each script category must use.
+**Executor is cwd-pass-through. All cwd control is explicit at the call site.** See [standards/cwd-policy.md](standards/cwd-policy.md) for the single uniform cwd-relative resolution rule (ADR-002) and the cwd-unchanged invariant every script obeys.
 
 **Prohibited actions:**
 - Do not execute marketplace scripts directly by path; always use the executor notation
@@ -22,7 +22,7 @@ user-invocable: false
 - All scripts use `python3 .plan/execute-script.py {notation} {subcommand} {args}`
 - Bootstrap pattern is only for first run when executor does not exist yet
 - Plan-scoped logging requires `--plan-id` or `--audit-plan-id`
-- Plan-metadata scripts resolve `.plan/` via `file_ops.get_base_dir()` (anchored on `script_shared.marketplace_paths.git_main_checkout_root()` when `PLAN_BASE_DIR` is unset); worktree-scoped scripts accept either `--plan-id` (auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir` (explicit override / escape hatch — the two flags are mutually exclusive) or use `git -C {worktree_path}`; meta-tools always run against the main checkout
+- Plan-metadata scripts resolve `.plan/` via `file_ops.get_base_dir()`, which uses the single uniform cwd walk-up (`set_base_dir()` → `PLAN_BASE_DIR` → nearest ancestor containing `.plan/local`; ADR-002) — main in phases 1-4, the pinned worktree in phase-5+. Worktree-scoped build / CI / Sonar scripts accept either `--plan-id` (auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir` (explicit override / escape hatch — the two flags are mutually exclusive); the merge lock is the single main-anchored resolver. See `standards/cwd-policy.md`
 
 ---
 

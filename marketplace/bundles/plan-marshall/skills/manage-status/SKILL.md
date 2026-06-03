@@ -514,6 +514,8 @@ my-feature,3-outline,in_progress
 bugfix-123,5-execute,in_progress
 ```
 
+**Concurrent-session visibility**: per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), a plan's non-git-controlled runtime state (its plan directory) MOVES into the plan's own worktree at phase-5 entry and moves back to main at finalize. While a plan is executing (phase-5+), its plan directory therefore lives in its worktree, not on main. A `list` invocation resolves plan directories via the single uniform cwd/worktree-relative rule, so a `list` run from the main checkout will NOT show a plan that is mid-flight in another session's worktree — the plan reappears in the main-checkout listing only after its finalize move-back completes. This is expected behaviour, not a discovery bug; a concurrent session operating from inside that worktree resolves and sees the in-flight plan normally. See `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` for the worktree lifecycle that produces this property.
+
 ### transition
 
 Mark a phase as done and advance to next phase. Validates phase ordering.

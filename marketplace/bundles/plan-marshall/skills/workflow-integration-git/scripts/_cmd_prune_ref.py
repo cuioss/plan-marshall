@@ -136,16 +136,18 @@ def _resolve_project_dir_and_head(args) -> tuple[Path | None, str | None, dict |
                 'message': 'worktree_branch absent from manage-status response',
             }
 
-        # For prune-local-and-remote-ref, we operate on the main checkout.
+        # For prune-local-and-remote-ref, we operate on the checkout the working
+        # directory is in. Derive the checkout root via the uniform cwd rule
+        # (ADR-002): the nearest ancestor of cwd containing ``.plan/local``.
         try:
-            from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
-            main_root = git_main_checkout_root()
+            from marketplace_paths import _find_plan_root_from_cwd  # type: ignore[import-not-found]
+            main_root = _find_plan_root_from_cwd()
             if main_root is None:
                 return None, None, {
                     **envelope,
                     'status': 'error',
                     'error_type': 'plan_not_found',
-                    'message': 'cannot resolve main git checkout root',
+                    'message': 'cannot resolve checkout root from cwd',
                 }
             return main_root, head_branch, None
         except ImportError:

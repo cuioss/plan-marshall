@@ -33,7 +33,7 @@ from _plan_parsing import (  # type: ignore[import-not-found]
 from _tasks_core import get_all_tasks, get_tasks_dir
 from constants import FILE_SOLUTION_OUTLINE  # type: ignore[import-not-found]
 from file_ops import get_plan_dir  # type: ignore[import-not-found]
-from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
+from marketplace_paths import _find_plan_root_from_cwd  # type: ignore[import-not-found]
 
 _PHASE = '4-plan'
 _QGATE_SOURCE = 'qgate'
@@ -518,10 +518,14 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
             'message': f'Plan directory not found: {plan_dir}',
         }
 
-    # plan_dir resolves to .plan/local/plans/{plan_id} — four levels deep
-    # from the repo root, so the fallback walks four parents when the git
-    # resolver is unavailable (e.g. tests outside a git checkout).
-    repo_root = git_main_checkout_root() or plan_dir.resolve().parent.parent.parent.parent
+    # The repo root (which holds the marketplace/ source tree the files-exist
+    # check resolves against) is found cwd-relatively (ADR-002): the nearest
+    # ancestor of cwd containing .plan/local — main during phases 1-4, the
+    # pinned worktree during phase-5+. Falls back to the four-parent walk from
+    # plan_dir (.plan/local/plans/{plan_id} → repo root) when no cwd ancestor
+    # resolves (e.g. a PLAN_BASE_DIR-isolated fixture whose plan dir is not
+    # nested under a .plan/local tree).
+    repo_root = _find_plan_root_from_cwd() or plan_dir.resolve().parent.parent.parent.parent
 
     task_dir = get_tasks_dir(plan_id)
     all_tasks = [task for _path, task in get_all_tasks(task_dir)]

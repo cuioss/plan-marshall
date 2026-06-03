@@ -44,7 +44,7 @@ evaluated.
 | `trend_empty_untrustworthy` | `token-efficiency-trend` `regression` is **empty** AND `input-integrity` reports ≥1 `data_confidence: blind` plan. | token-efficiency-trend, input-integrity | An empty regression over blind-execute plans is **floor, not truth** — the trend saw no rise because execute tokens were never recorded, not because spend is flat. The empty regression is NOT itself a finding; the coupling marks it untrustworthy. |
 | `churn_explains_cost` | A plan flagged sequence `non_minimal_build` / `build_churn` that is ALSO flagged token-economics `finalize_heavy` / `big_spend_tiny_footprint` OR carries a metrics `disproportionate_token`. | sequence-and-build-minimality, token-economics, metrics | The build redundancy is a plausible **cause** of the execute/finalize token cost — a correlation across facets, to be confirmed against the per-build durations (sequence sub-doc) before filing. |
 | `qgate_gap_chain` | A plan flagged quality-chain `no_qgate6` / `auto_review_only` that ALSO carries sequence `ci_rerun` OR token-economics `finalize_heavy`. | quality-chain, sequence-and-build-minimality, token-economics | A missing self-review surface co-occurring with a CI re-run / heavy finalize is the **shift-right tax** — the PR round-trip paid for what an earlier gate could have caught. |
-| `argparse_signature_cluster` | recurring-pattern argparse-shaped signatures correlate with global-log ERROR / argparse-rejection counts AND quality-verification unfiled signatures — **collapsed to ONE candidate**. | recurring-pattern-detector, global-log-analysis, quality-verification-report | The three facets are three views of **ONE** source-keyed argparse drift — file ONE source-keyed lesson, not one per facet (per the SKILL.md source-keyed argparse-rejection rule). |
+| `argparse_signature_cluster` | recurring-pattern argparse-shaped signatures correlate with quality-verification unfiled signatures — **collapsed to ONE candidate**. | recurring-pattern-detector, quality-verification-report | The two facets are two views of **ONE** source-keyed argparse drift — file ONE source-keyed lesson, not one per facet (per the SKILL.md source-keyed argparse-rejection rule). |
 | `scope_underestimate_cost` | A plan flagged scope-estimate-accuracy under-estimation (`mismatch`) that ALSO sits in the high tokens-per-file tail (≥ corpus-median `tokens_per_file`) OR carries a task-count outlier. | scope-estimate-accuracy, token-economics, task-count-efficiency | An under-estimated scope **predicts** the over-spend — the coupling names the predicted-vs-actual gap, not a fresh finding. |
 
 ## Emitted columns
@@ -91,8 +91,8 @@ completeness critic:
   with the quality-chain shift-left tiers: a Tier-1 `auto_review_only` finding on
   a plan that also re-ran CI is the strongest avoidable-rework signal.
 - **`argparse_signature_cluster`** — collapse to ONE source-keyed candidate. Do
-  NOT file one lesson per facet (recurring-pattern, global-log, quality-verification
-  each surface the same drift). Route the single candidate through the three-gate
+  NOT file one lesson per facet (recurring-pattern and quality-verification each
+  surface the same drift). Route the single candidate through the three-gate
   policy keyed to the **source notation** that argparse rejected, per SKILL.md
   Step 4's source-keyed argparse-rejection rule.
 - **`scope_underestimate_cost`** — the under-estimated scope predicted the

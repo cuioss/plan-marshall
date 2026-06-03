@@ -302,9 +302,22 @@ def _check_main_dirty_drift(
 ) -> None:
     """Layer-D enforcement: raise on proper-superset main-checkout drift.
 
-    Gate: only fires when ``metadata.use_worktree`` is truthy. Plans that
-    run against the main checkout (``use_worktree==false`` or absent)
-    legitimately dirty main, so the invariant is not enforced there.
+    Gate 1 (boundary phase): only fires at the pre-materialization
+    (planning-phase) boundaries ``1-init`` / ``2-refine`` / ``3-outline`` /
+    ``4-plan``. Under the move-based, cwd-pinned hermetic worktree model
+    (ADR-002 / Option 5'), phase-5 materializes the worktree and MOVES the
+    plan dir in; from that point the orchestrator's cwd IS the worktree and
+    the single cwd-unchanged invariant keeps it pinned there, so plan work
+    lands in the worktree by construction and the leak-into-main guard is
+    structurally moot at the ``5-execute → 6-finalize`` boundary. Mirrors the
+    ``main_dirty_files`` blocking-scope relaxation in
+    ``_invariants.INVARIANT_BLOCKING_SCOPE`` — the discriminator is the
+    boundary phase, not a runtime resolver branch.
+
+    Gate 2 (worktree routing): only fires when ``metadata.use_worktree`` is
+    truthy. Plans that run against the main checkout (``use_worktree==false``
+    or absent) legitimately dirty main, so the invariant is not enforced
+    there.
 
     Compares ``captured_row['main_dirty_files']`` (the previous-boundary
     baseline) against ``observed.get('main_dirty_files')`` (the live
@@ -325,6 +338,11 @@ def _check_main_dirty_drift(
     file that got cleaned between captures is benign. Only newly-dirty
     paths count.
     """
+    # Gate 1 — boundary phase: relaxed for phase-5+ (move model makes the
+    # leak-into-main surface structurally closed); retained for phases 1-4.
+    if phase not in _PRE_MATERIALIZATION_PHASES:
+        return
+    # Gate 2 — worktree routing: main-checkout plans dirty main freely.
     if not _is_truthy_metadata(metadata.get('use_worktree')):
         return
     baseline = _coerce_path_list(captured_row.get('main_dirty_files'))

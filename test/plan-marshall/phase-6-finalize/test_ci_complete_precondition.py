@@ -1482,9 +1482,10 @@ def test_parse_toon_inline_table_handles_colon_in_first_column_csv():
 
 # ---------------------------------------------------------------------------
 # Helper-based executor resolution — the precondition helper resolves the
-# executor proxy via file_ops.get_executor_path() (worktree-safe via
-# git-common-dir) rather than parent-arithmetic on __file__. These tests pin
-# that the resolved path is forwarded into the spawned subprocess argv.
+# executor proxy via file_ops.get_executor_path() (the uniform cwd rule,
+# ADR-002) rather than parent-arithmetic on __file__. These tests pin that the
+# resolved path is forwarded into the spawned subprocess argv, and that a
+# resolver failure (RuntimeError) degrades the helper to its default.
 # ---------------------------------------------------------------------------
 
 
@@ -1503,7 +1504,6 @@ def test_run_config_timeout_get_uses_resolved_executor(tmp_path, monkeypatch):
 
         return _Proc()
 
-    monkeypatch.setattr(_resolver_mod, 'git_main_checkout_root', lambda: tmp_path)
     monkeypatch.setattr(_resolver_mod, 'get_executor_path', lambda: executor)
     monkeypatch.setattr(_resolver_mod.subprocess, 'run', fake_run)
 
@@ -1513,19 +1513,22 @@ def test_run_config_timeout_get_uses_resolved_executor(tmp_path, monkeypatch):
     assert str(executor) in captured['cmd']
 
 
-def test_run_config_timeout_get_degrades_when_no_git_repo(monkeypatch):
-    """When git_main_checkout_root is None, the helper degrades to the default
-    without ever resolving or invoking the executor."""
-    executor_called = {'hit': False}
+def test_run_config_timeout_get_degrades_when_executor_unresolvable(monkeypatch):
+    """When get_executor_path raises (no resolvable plan root), the helper
+    degrades to the default without spawning a subprocess."""
+    run_called = {'hit': False}
 
-    def _should_not_run():
-        executor_called['hit'] = True
-        raise AssertionError('get_executor_path must not be called when no repo')
+    def _should_not_run(*args, **kwargs):
+        run_called['hit'] = True
+        raise AssertionError('subprocess.run must not be called when unresolvable')
 
-    monkeypatch.setattr(_resolver_mod, 'git_main_checkout_root', lambda: None)
-    monkeypatch.setattr(_resolver_mod, 'get_executor_path', _should_not_run)
+    def _raise_resolver():
+        raise RuntimeError('no .plan/local ancestor of cwd')
+
+    monkeypatch.setattr(_resolver_mod, 'get_executor_path', _raise_resolver)
+    monkeypatch.setattr(_resolver_mod.subprocess, 'run', _should_not_run)
 
     result = _resolver_mod._run_run_config_timeout_get(600)
 
     assert result == 600
-    assert executor_called['hit'] is False
+    assert run_called['hit'] is False

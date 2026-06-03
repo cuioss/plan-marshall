@@ -18,7 +18,8 @@ Usage:
         set_base_dir,
         base_path,
         get_temp_dir,
-        get_executor_path
+        get_executor_path,
+        guard_worktree_cwd
     )
 """
 
@@ -34,9 +35,9 @@ from pathlib import Path
 from typing import Any
 
 # Bootstrap sys.path so script-shared/scripts is importable. file_ops needs
-# git_main_checkout_root from script-shared.marketplace_paths (the canonical
-# implementation lives there to avoid byte-for-byte duplication between the
-# two bundles — see PR #160 review). The walk locates the bundle's
+# _find_plan_root_from_cwd from script-shared.marketplace_paths (the canonical
+# uniform cwd-relative resolver lives there to avoid byte-for-byte duplication
+# between the two bundles — see PR #160 review). The walk locates the bundle's
 # skills/ root from this script's own __file__ and inserts script-shared/scripts
 # at the front of sys.path. Doing this in module init means callers (tests,
 # bootstrap scripts) don't have to remember to set up PYTHONPATH first.
@@ -50,16 +51,29 @@ for _ancestor in _THIS_FILE.parents:
 
 from marketplace_paths import (  # type: ignore[import-not-found]  # noqa: E402
     PLAN_DIR_NAME,
-    git_main_checkout_root,
+    _find_plan_root_from_cwd,
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
 
 # Plan-marshall runtime state (plans, archived-plans, run-configuration.json,
-# lessons-learned, logs) lives at ``<git_main_checkout_root>/.plan/local``
-# — project-local, covered by the existing ``Write(.plan/**)`` permission.
-# Worktrees are anchored under the same tree at
-# ``<git_main_checkout_root>/.plan/local/worktrees/`` so they inherit the
-# ``Write(.plan/**)`` permission and live alongside other plan-local state.
+# lessons-learned, logs) is resolved by the SINGLE uniform cwd-relative rule
+# (ADR-002): set_base_dir() override → PLAN_BASE_DIR → walk up from the current
+# working directory to the nearest ``.plan/local`` ancestor. Phases 1-4 resolve
+# to the main checkout (cwd is main); phase-5+ resolve to the pinned worktree
+# (cwd is pinned there). The SOLE execution-time invariant is that the working
+# directory is never changed away from the worktree during phase-5+. The plan
+# directory and the executor MOVE into the worktree at phase-5 start and move
+# back at finalize; the shared corpora (lessons-learned/, archived-plans/) and
+# the merge.lock stay main-anchored by design.
+#
+# The SINGLE cwd-unchanged invariant — "during phase-5+ the cwd never leaves
+# the worktree" — is realized as a caller-side GUARD, not a script side effect.
+# A subprocess cannot mutate its parent's cwd, so pinning cwd is the caller's
+# (orchestrator's) responsibility; the lifecycle scripts (prepare_execute.py
+# D4, integrate_into_main.py D5) and phase-5+ manage-* callers ASSERT the
+# invariant by calling guard_worktree_cwd(plan_id) (below). The guard verifies
+# the current cwd is the expected worktree path and returns an error envelope
+# when cwd has left the worktree — it never SETS the cwd.
 
 # Runtime-overridable base directory (set by set_base_dir for tests).
 # None means "resolve from environment / git on each call".
@@ -160,47 +174,162 @@ def get_worktree_root() -> Path:
 
     Resolves to ``<base_dir>/worktrees`` where ``<base_dir>`` is the
     plan-local runtime-state root returned by :func:`get_base_dir`. In
-    production this is ``<git_main_checkout_root>/.plan/local/worktrees`` —
-    worktrees live under the existing plan-local tree so they inherit the
+    production this is ``<plan-root>/.plan/local/worktrees`` where
+    ``<plan-root>`` is resolved by the uniform cwd rule (ADR-002) — worktrees
+    live under the existing plan-local tree so they inherit the
     ``Write(.plan/**)`` permission and sit next to other plan-scoped state.
 
-    Anchoring on :func:`get_base_dir` (rather than recomputing
-    ``git_main_checkout_root()`` directly) means ``get_worktree_root`` honours
-    the ``PLAN_BASE_DIR`` env var and the :func:`set_base_dir` override, so
-    tests that isolate runtime state under a tmp directory also isolate the
-    worktree root — no leakage into the real repo's ``.plan/local/worktrees``.
+    Anchoring on :func:`get_base_dir` (the uniform cwd-relative resolver, ADR-002)
+    means ``get_worktree_root`` honours the ``PLAN_BASE_DIR`` env var and the
+    :func:`set_base_dir` override, so tests that isolate runtime state under a
+    tmp directory also isolate the worktree root — no leakage into the real
+    repo's ``.plan/local/worktrees``.
 
     Raises:
-        RuntimeError: when the base directory cannot be resolved (no
-            override, no ``PLAN_BASE_DIR``, and not inside a git repository).
-            Worktrees require a base directory to anchor against.
+        RuntimeError: when the base directory cannot be resolved (no override,
+            no ``PLAN_BASE_DIR``, and no ``.plan/local`` ancestor of the current
+            working directory). Worktrees require a base directory to anchor
+            against.
     """
     return get_base_dir() / 'worktrees'
+
+
+def guard_worktree_cwd(plan_id: str) -> dict[str, Any] | None:
+    """Caller-side guard asserting the process cwd is the plan's worktree root.
+
+    This helper is the script-side realization of the SINGLE cwd-unchanged
+    invariant (ADR-002 / Option 5'): during phase-5+ the orchestrator pins its
+    cwd to the moved-in worktree and never changes it away until finalize moves
+    the plan dir back. The lifecycle scripts (``prepare_execute.py`` D4,
+    ``integrate_into_main.py`` D5) and phase-5+ ``manage-*`` callers ASSERT this
+    invariant by calling this guard at the top of their action.
+
+    The guard ASSERTS; it never SETS the caller's cwd. A subprocess cannot
+    mutate its parent's working directory, so the invariant cannot be a script
+    side effect — pinning cwd is the caller's responsibility (the orchestrator
+    pins it to the path returned by ``prepare_execute``). This function only
+    reports whether the current cwd matches the expected worktree path.
+
+    Returns ``None`` (assertion passes) when the current working directory
+    resolves to the canonical worktree root for ``plan_id``
+    (``get_worktree_root() / plan_id``). Returns a structured error envelope
+    (``status: error``, ``error: cwd_left_worktree``) when cwd has left the
+    worktree — the caller surfaces it as a TOON refusal. Returns ``None`` when
+    the worktree root cannot be resolved (no base dir) OR when the canonical
+    worktree directory does not exist on disk: in those cases there is no
+    worktree to be pinned to (a main-checkout plan, or a pre-materialization
+    window), so the guard is not applicable and must not fire a false positive.
+
+    Args:
+        plan_id: Plan identifier whose worktree the cwd is expected to be.
+
+    Returns:
+        ``None`` when the assertion passes or is not applicable; a structured
+        error dict ``{status, error, expected_worktree, actual_cwd, message}``
+        when cwd has demonstrably left the worktree.
+    """
+    try:
+        expected = (get_worktree_root() / plan_id).resolve()
+    except RuntimeError:
+        # No resolvable base dir → no worktree to anchor against. Not
+        # applicable (main-checkout flow or unconfigured test harness).
+        return None
+    if not expected.is_dir():
+        # The worktree directory does not exist on disk — either a
+        # main-checkout plan (no worktree) or a pre-materialization window
+        # before phase-5 created it. Nothing to be pinned to; not applicable.
+        return None
+    actual = Path.cwd().resolve()
+    if actual == expected:
+        return None
+    return {
+        'status': 'error',
+        'error': 'cwd_left_worktree',
+        'plan_id': plan_id,
+        'expected_worktree': str(expected),
+        'actual_cwd': str(actual),
+        'message': (
+            f'cwd-unchanged invariant violated for plan {plan_id!r}: the process '
+            f'working directory is {str(actual)!r} but the plan worktree is '
+            f'{str(expected)!r}. Phase-5+ callers MUST keep cwd pinned to the '
+            'worktree (the path returned by prepare_execute); this guard asserts '
+            'the invariant and never sets the cwd itself.'
+        ),
+    }
+
+
+def _resolve_plan_root() -> Path | None:
+    """Resolve the plan-root directory by the uniform cwd rule, with a
+    clean-checkout git fallback.
+
+    Primary: walk up from cwd to the nearest ``.plan/local`` ancestor
+    (:func:`_find_plan_root_from_cwd`). Fallback: when no such ancestor exists —
+    CI runners, fresh clones, and consumer installs have no ``.plan/local`` yet
+    because ``.plan/`` is gitignored — resolve the enclosing git working tree
+    via ``git rev-parse --show-toplevel``. This restores the clean-environment
+    robustness the prior ``git_main_checkout_root`` resolver provided while
+    keeping the cwd-walk-up as the primary path (ADR-002): the git toplevel is
+    consulted ONLY as a last resort, so phase-5+ cwd-pinning is never overridden
+    when ``.plan/local`` is present. Returns ``None`` only when neither resolves
+    (no ``.plan/local`` ancestor AND not inside a git repository).
+    """
+    root = _find_plan_root_from_cwd()
+    if root is not None:
+        return root
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    toplevel = result.stdout.strip()
+    return Path(toplevel) if toplevel else None
 
 
 def get_executor_path() -> Path:
     """Return the canonical path to ``.plan/execute-script.py``.
 
-    The executor lives at the main checkout's ``.plan/`` directory and is
-    canonical there. This helper runs correctly from any worktree because
-    it anchors against ``git_main_checkout_root()`` (resolved via
-    ``git rev-parse --git-common-dir``) rather than the cwd, so callers in
-    an isolated worktree still resolve the executor at the main checkout.
+    The executor is resolved cwd-relatively (ADR-002): the parent of the
+    base directory returned by :func:`get_base_dir` (i.e. the ``.plan`` dir of
+    whichever checkout the working directory is in). During phase-5+ the
+    working directory is pinned to the worktree, so this resolves the
+    worktree-resident executor moved in at phase-5 start; during the finalize
+    regenerate-on-main step the working directory is main, so it resolves
+    main's executor.
 
     Joins the existing ``get_plan_dir`` / ``get_base_dir`` /
     ``get_worktree_root`` helper family.
 
     Returns:
-        Path to ``<git_main_checkout_root>/.plan/execute-script.py``.
+        Path to ``<plan-root>/.plan/execute-script.py`` where ``<plan-root>`` is
+        resolved by the uniform cwd rule.
 
     Raises:
-        RuntimeError: when not inside a git repository (the executor path
-            requires a main checkout to anchor against).
+        RuntimeError: when the base directory cannot be resolved (no override,
+            no ``PLAN_BASE_DIR``, no ``.plan/local`` ancestor of cwd, AND the
+            cwd is not inside a git repository — see :func:`_resolve_plan_root`).
     """
-    root = git_main_checkout_root()
+    # Honour the set_base_dir() / PLAN_BASE_DIR override exactly as get_base_dir
+    # does, but anchor the executor at <override>/execute-script.py (the override
+    # IS the .plan-local stand-in in tests). In production, walk up from cwd to
+    # the nearest .plan/local ancestor (its parent <plan-root>/.plan holds the
+    # executor): worktree-resident during phase-5+, main during the finalize
+    # regenerate-on-main path.
+    if _BASE_DIR_OVERRIDE is not None:
+        return Path(_BASE_DIR_OVERRIDE) / 'execute-script.py'
+    env_dir = os.environ.get('PLAN_BASE_DIR')
+    if env_dir:
+        return Path(env_dir) / 'execute-script.py'
+    root = _resolve_plan_root()
     if root is None:
         raise RuntimeError(
-            'get_executor_path() requires a git repository; no main checkout root could be resolved from cwd.'
+            'get_executor_path() requires a resolvable plan root; no .plan/local '
+            'ancestor of the current working directory could be found. '
+            'Set PLAN_BASE_DIR to override (tests).'
         )
     return root / PLAN_DIR_NAME / 'execute-script.py'
 
@@ -238,26 +367,34 @@ def normalize_to_repo_relative(path: str) -> str:
 def get_base_dir() -> Path:
     """Get the base directory for plan-marshall runtime state.
 
-    Resolution order:
+    Resolution follows the SINGLE uniform cwd-relative rule (ADR-002):
         1. Explicit set_base_dir() override (tests).
         2. PLAN_BASE_DIR environment variable (tests, user override).
-        3. ``<git_main_checkout_root>/.plan/local`` when inside a git repo.
+        3. ``<plan-root>/.plan/local`` where ``<plan-root>`` is the nearest
+           ancestor of the current working directory containing ``.plan/local``.
+
+    Phases 1-4 resolve to the main checkout (cwd is main); phase-5+ resolve to
+    the pinned worktree (cwd is pinned there). There is no per-phase branch and
+    no sideways resolution — every path is found by walking up from cwd.
 
     Raises:
-        RuntimeError: when none of the above resolve (no override, no
-            env var, and not inside a git repository).
+        RuntimeError: when none of the above resolve (no override, no env var,
+            no ``.plan/local`` ancestor of the current working directory, AND
+            the cwd is not inside a git repository — the git-toplevel fallback
+            in :func:`_resolve_plan_root` covers clean checkouts / CI / fresh
+            clones that have no ``.plan/local`` yet).
     """
     if _BASE_DIR_OVERRIDE is not None:
         return _BASE_DIR_OVERRIDE
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir)
-    root = git_main_checkout_root()
+    root = _resolve_plan_root()
     if root is None:
         raise RuntimeError(
-            'plan-marshall runtime state requires a git checkout; '
-            'no main checkout root could be resolved from cwd. '
-            'Set PLAN_BASE_DIR to override (tests).'
+            'plan-marshall runtime state requires a resolvable plan root; '
+            'no .plan/local ancestor of the current working directory could be '
+            'found. Set PLAN_BASE_DIR to override (tests).'
         )
     return root / PLAN_DIR_NAME / 'local'
 
@@ -394,7 +531,9 @@ def get_tracked_config_dir() -> Path:
         3. PLAN_BASE_DIR environment variable (backward compatibility for
            tests that already stage both runtime state AND marshal.json in
            the same fixture directory).
-        4. {git-main-checkout-root}/.plan when inside a git repo.
+        4. ``<plan-root>/.plan`` where ``<plan-root>`` is the nearest ancestor
+           of the current working directory containing ``.plan/local`` (the
+           uniform cwd rule, ADR-002).
         5. ./.plan relative to cwd (fallback).
     """
     if _BASE_DIR_OVERRIDE is not None:
@@ -405,7 +544,7 @@ def get_tracked_config_dir() -> Path:
     env_base = os.environ.get('PLAN_BASE_DIR')
     if env_base:
         return Path(env_base)
-    root = git_main_checkout_root()
+    root = _find_plan_root_from_cwd()
     if root is not None:
         return root / PLAN_DIR_NAME
     return Path(PLAN_DIR_NAME)

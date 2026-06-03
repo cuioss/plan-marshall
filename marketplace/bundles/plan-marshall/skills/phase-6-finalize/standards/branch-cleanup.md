@@ -38,7 +38,11 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 Both `{worktree_path}` and `{main_checkout}` were resolved at finalize entry (see SKILL.md Step 0) and are available throughout this workflow. If `worktree_path` is absent (`use_worktree == false`), the consolidated verbs invoked below (`force-push-with-lease`, `switch-and-pull`, `prune-local-and-remote-ref`) resolve the correct working tree internally via `--plan-id {plan_id}` — no path substitution is required at the call site.
 
-The cleanup ordering — **remove worktree first, then delete branch** — is enforced here at the call site because `git worktree remove` refuses to operate on a worktree that is the cwd of any shell, and the local branch cannot be deleted while still checked out in a worktree. The consolidated verbs are designed to be invoked after worktree removal (they target the main checkout); the `worktree-remove` verb handles the worktree removal step before these cleanup verbs run.
+The cleanup ordering — **move-back first (via `integrate_into_main`), then remove worktree, then delete branch** — is enforced by the surrounding finalize wiring and here at the call site. The atomic move-back script `plan-marshall:workflow-integration-git:integrate_into_main` runs in `phase-6-finalize/SKILL.md` Step 0 § move-back, AFTER the PR merge and BEFORE this `branch-cleanup` step: it acquires the merge lock, folds the plan's own global logs into the plan dir, moves the plan directory back from the worktree to main, regenerates the executor against main, and releases the lock — all while the worktree is STILL PRESENT. The worktree MUST be retained until that move-back completes, because the plan's authoritative state lives in the worktree until then; removing it first would strand the plan-state copy. `branch-cleanup` therefore removes the worktree only AFTER `integrate_into_main` has returned.
+
+Worktree removal is sequenced before branch deletion here at the call site because `git worktree remove` refuses to operate on a worktree that is the cwd of any shell, and the local branch cannot be deleted while still checked out in a worktree. The consolidated verbs are designed to be invoked after worktree removal (they target the main checkout); the `worktree-remove` verb handles the worktree removal step before these cleanup verbs run.
+
+**Executor regeneration is owned by `integrate_into_main`, not by this step.** The executor is REGENERATED against main by `integrate_into_main` during move-back (run with the working directory resolving to main's `.plan/`, so a worktree-bound executor never survives onto main — it is never file-moved). There is no separate finalize step for executor regeneration; `integrate_into_main` is the single owner.
 
 See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention, never-edit-main-checkout invariant, cleanup ordering rationale).
 
@@ -404,7 +408,7 @@ Parse the TOON output:
 
 Then proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the auto-merge fallback path remains active on a branch-protection error.
 
-> **Sync note**: the `merge-lock` verb is a new `manage-status` subcommand. After this plan merges, finalize will run `/sync-plugin-cache` + executor regeneration so the new notation resolves — already covered by the phase-6 finalize steps (`finalize-step-regenerate-executor`, `finalize-step-sync-plugin-cache`).
+> **Sync note**: the `merge-lock` verb is a new `manage-status` subcommand. After this plan merges, finalize runs `/sync-plugin-cache` (the `finalize-step-sync-plugin-cache` step) and `integrate_into_main` regenerates the executor against main, so the new notation resolves.
 
 #### Interactive merge prompt (`auto_merge_after_ci == false`)
 

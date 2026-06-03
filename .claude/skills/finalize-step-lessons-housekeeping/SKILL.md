@@ -157,7 +157,6 @@ The step's posture is **non-fatal throughout**: finalize must never abort becaus
 ## Related
 
 - [.claude/skills/finalize-step-plugin-doctor/SKILL.md](../finalize-step-plugin-doctor/SKILL.md) — sibling project-local finalize step (reads references.json, acts per-item)
-- [.claude/skills/finalize-step-regenerate-executor/SKILL.md](../finalize-step-regenerate-executor/SKILL.md) — sibling project-local finalize step
 - [.claude/skills/finalize-step-deploy-target/SKILL.md](../finalize-step-deploy-target/SKILL.md) — sibling project-local finalize step
 - [.claude/skills/finalize-step-sync-plugin-cache/SKILL.md](../finalize-step-sync-plugin-cache/SKILL.md) — sibling project-local finalize step
 - `plan-marshall:manage-lessons` — lesson corpus management (list, remove with tombstone)
