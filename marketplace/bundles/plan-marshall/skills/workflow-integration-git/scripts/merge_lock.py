@@ -54,7 +54,6 @@ from typing import Any
 
 from file_ops import (  # type: ignore[import-not-found]
     get_base_dir,
-    get_plan_dir,
 )
 from marketplace_paths import PLAN_DIR_NAME  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
@@ -148,24 +147,50 @@ def _main_checkout_root() -> Path:
 # ---------------------------------------------------------------------------
 
 
+def _main_plan_local_base() -> Path:
+    """Resolve the main checkout's ``.plan/local`` base, cwd-independent.
+
+    Returns the same anchor :func:`_resolve_main_lock_path` uses for the lock
+    file: the ``set_base_dir()`` / ``PLAN_BASE_DIR`` override stand-in under test
+    isolation, else ``<main-root>/.plan/local`` resolved via the git common dir.
+    Both holder-liveness checks below MUST anchor here — never the caller's
+    cwd-relative plan root — so a holder is judged against main + its worktree
+    regardless of which worktree the acquiring caller is pinned to.
+    """
+    if os.environ.get('PLAN_BASE_DIR') or _override_is_set():
+        return get_base_dir()
+    return _main_checkout_root() / PLAN_DIR_NAME / 'local'
+
+
 def _holder_is_dead(holder: str) -> bool:
     """Return True when the recorded holder no longer corresponds to a live plan.
 
-    A holder is "dead" when its plan directory no longer exists on the main
-    checkout — the plan that held the lock has been finalized and moved back (or
-    never existed). This is the minimal reclamation predicate: no PID tracking,
-    no heartbeat, just "does the holder's plan dir still resolve". An empty or
-    malformed holder is treated as dead so a corrupt lock file is reclaimable.
+    Under the move-based model (ADR-002) a live plan's directory resides in
+    EITHER of two places, so the liveness check MUST consult both:
+
+      * the main checkout — ``<main>/.plan/local/plans/{holder}`` — before
+        move-in (phases 1-4) or after move-back (finalize complete); and
+      * the holder's worktree —
+        ``<main>/.plan/local/worktrees/{holder}/.plan/local/plans/{holder}`` —
+        while the plan is executing or mid-finalize (after move-in, before
+        move-back), when the directory does NOT exist on main.
+
+    Checking only the main checkout (the prior behaviour) wrongly declares an
+    actively-executing holder dead — its plan dir has been MOVED into the
+    worktree — letting a concurrent acquirer steal the lock and break finalize
+    serialization. Both paths are anchored at the main checkout
+    (:func:`_main_plan_local_base`, cwd-independent), matching the main-anchored
+    lock resolution. An empty/malformed holder is treated as dead so a corrupt
+    lock file is reclaimable; resolution failures propagate loudly (a real bug,
+    not transient unavailability) rather than being swallowed as "dead".
     """
     holder = holder.strip()
     if not holder:
         return True
-    try:
-        return not get_plan_dir(holder).exists()
-    except (OSError, RuntimeError):
-        # If we cannot resolve the holder's plan dir, treat the lock as dead so
-        # a corrupt/unresolvable holder never wedges the lock permanently.
-        return True
+    base = _main_plan_local_base()
+    main_plan = base / 'plans' / holder
+    worktree_plan = base / 'worktrees' / holder / PLAN_DIR_NAME / 'local' / 'plans' / holder
+    return not (main_plan.exists() or worktree_plan.exists())
 
 
 def _read_holder(lock_path: Path) -> str:
@@ -213,7 +238,11 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     ``status: error`` (TIMEOUT) when the wait budget is exhausted.
     """
     plan_id: str = args.plan_id
-    timeout: float = getattr(args, 'timeout', None) or _DEFAULT_TIMEOUT_SECONDS
+    # Guard against the `0` falsy trap: `--timeout 0` (a non-blocking try) is a
+    # valid explicit value, so fall back to the default ONLY on None, never via
+    # `or` (which would treat 0 as "unset" and block for the full default).
+    timeout_val = getattr(args, 'timeout', None)
+    timeout: float = timeout_val if timeout_val is not None else _DEFAULT_TIMEOUT_SECONDS
 
     try:
         lock_path = _resolve_main_lock_path()

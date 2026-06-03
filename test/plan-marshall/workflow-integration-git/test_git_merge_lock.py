@@ -28,6 +28,7 @@ resolves to ``<PLAN_BASE_DIR>/merge.lock`` and holder plan dirs resolve to
 from __future__ import annotations
 
 import importlib.util
+import time
 from argparse import Namespace
 from pathlib import Path
 
@@ -204,6 +205,38 @@ class TestStaleReclamation:
         # Holder with a live plan dir is alive.
         _make_live_plan(isolated_base['base'], 'alive')
         assert merge_lock._holder_is_dead('alive') is False
+
+    def test_worktree_resident_holder_is_not_reclaimed(self, isolated_base: dict) -> None:
+        """A holder whose plan dir has been MOVED into its worktree (executing or
+        mid-finalize, absent on the main checkout) is LIVE and MUST NOT be
+        reclaimed. Regression for the premature-reclamation bug (PR #556 review,
+        finding a58aaa): checking only the main checkout would steal the lock
+        from an actively-finalizing session and break serialization."""
+        base = isolated_base['base']
+        # plan-wt holds the lock and its plan dir lives ONLY in the worktree.
+        merge_lock.run_acquire(Namespace(plan_id='plan-wt', timeout=5.0))
+        (base / 'worktrees' / 'plan-wt' / '.plan' / 'local' / 'plans' / 'plan-wt').mkdir(parents=True)
+        assert merge_lock._holder_is_dead('plan-wt') is False
+        # A concurrent acquirer must serialize (time out), NOT reclaim.
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.3))
+        assert result['status'] == 'error'
+        assert result.get('error_code') == merge_lock.ErrorCode.TIMEOUT
+        assert result['holder'] == 'plan-wt'
+
+    def test_timeout_zero_is_non_blocking(self, isolated_base: dict) -> None:
+        """``--timeout 0`` is a valid non-blocking try: against a live holder it
+        fails IMMEDIATELY rather than falling back to the default 30s budget.
+        Regression for the `or`-falsy-trap (PR #556 review, finding 8786e0) —
+        the bug would block ~30s here."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        start = time.monotonic()
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0))
+        elapsed = time.monotonic() - start
+        assert result['status'] == 'error'
+        assert result.get('error_code') == merge_lock.ErrorCode.TIMEOUT
+        # Non-blocking: returns far under the default 30s budget the bug imposed.
+        assert elapsed < 5.0
 
 
 # =============================================================================
