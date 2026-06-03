@@ -90,6 +90,24 @@ def _ns_accumulate(
     )
 
 
+def _pin_start_time_to_past(plan_id: str, phase: str) -> None:
+    """Pin a phase's ``start_time`` far in the past so the wall span deterministically
+    exceeds any test's worked window.
+
+    ``cmd_end_phase`` derives ``duration_seconds`` from ``end_time - start_time`` and
+    feeds it to ``_clamp_worked_to_wall``. When start→end fire back-to-back the real
+    wall span is ~0ms locally but can reach ~1000ms on a slow CI runner, which made
+    the forwarded worked window clamp to a machine-dependent value (flaky). Pinning
+    ``start_time`` to a fixed instant well before ``now`` makes the wall span always
+    exceed the worked window, so the clamp is a deterministic no-op and the forwarded /
+    accumulator ``duration_ms`` flows through unchanged. The dedicated
+    ``TestClampWorkedToWall`` unit tests cover the down-clamp branch directly.
+    """
+    data = manage_metrics.read_metrics_raw(plan_id)
+    data['phases'].setdefault(phase, {})['start_time'] = '2020-01-01T00:00:00+00:00'
+    manage_metrics.write_metrics(plan_id, data)
+
+
 # =============================================================================
 # Test: start-phase (Tier 2 - direct import)
 # =============================================================================
@@ -152,6 +170,11 @@ def test_end_phase_computes_duration(plan_context):
 def test_end_phase_with_token_data(plan_context):
     """end-phase stores token data from Task agent notifications."""
     cmd_start_phase(_ns_start_phase('metrics-end-02', '1-init'))
+    # Pin start_time to the past so the wall span deterministically exceeds the
+    # forwarded worked window — _clamp_worked_to_wall is then a no-op and the
+    # forwarded 181681 ms flows through unclamped (the back-to-back wall span is
+    # machine-dependent; see _pin_start_time_to_past).
+    _pin_start_time_to_past('metrics-end-02', '1-init')
     result = cmd_end_phase(
         _ns_end_phase('metrics-end-02', '1-init', total_tokens=25514, duration_ms=181681, tool_uses=23)
     )
@@ -163,9 +186,7 @@ def test_end_phase_with_token_data(plan_context):
     content = metrics_file.read_text()
     assert 'total_tokens: 25514' in content
     assert 'tool_uses: 23' in content
-    # start→end fire back-to-back, so the wall span is ~0 and the forwarded
-    # worked window (181681 ms) is clamped to the wall span by _clamp_worked_to_wall.
-    assert 'agent_duration_ms: 0' in content
+    assert 'agent_duration_ms: 181681' in content
 
 
 def test_end_phase_without_start(plan_context):
@@ -562,6 +583,8 @@ class TestEndPhaseAccumulatorFallback:
         cmd_accumulate_agent_usage(
             _ns_accumulate('ep-fallback', '6-finalize', total_tokens=5000, tool_uses=12, duration_ms=60000)
         )
+        # Pin start_time so the clamp is a deterministic no-op (see _pin_start_time_to_past).
+        _pin_start_time_to_past('ep-fallback', '6-finalize')
 
         result = cmd_end_phase(_ns_end_phase('ep-fallback', '6-finalize'))
 
@@ -572,9 +595,8 @@ class TestEndPhaseAccumulatorFallback:
         metrics = (plan_context.plan_dir_for('ep-fallback') / 'work' / 'metrics.toon').read_text()
         assert 'total_tokens: 5000' in metrics
         assert 'tool_uses: 12' in metrics
-        # start→end fire back-to-back, so the wall span is ~0 and the accumulator's
-        # worked window (60000 ms) is clamped to the wall span by _clamp_worked_to_wall.
-        assert 'agent_duration_ms: 0' in metrics
+        # Accumulator's worked window (60000 ms) flows through unclamped.
+        assert 'agent_duration_ms: 60000' in metrics
 
     def test_explicit_flags_override_accumulator(self, plan_context):
         """Explicitly passed flags always win — accumulator does not double-count."""
@@ -597,6 +619,8 @@ class TestEndPhaseAccumulatorFallback:
         cmd_accumulate_agent_usage(
             _ns_accumulate('ep-partial', '6-finalize', total_tokens=7777, tool_uses=20, duration_ms=4000)
         )
+        # Pin start_time so the clamp is a deterministic no-op (see _pin_start_time_to_past).
+        _pin_start_time_to_past('ep-partial', '6-finalize')
 
         # Pass only --total-tokens; --tool-uses / --duration-ms must come from accumulator.
         result = cmd_end_phase(_ns_end_phase('ep-partial', '6-finalize', total_tokens=10000))
@@ -605,9 +629,8 @@ class TestEndPhaseAccumulatorFallback:
         metrics = (plan_context.plan_dir_for('ep-partial') / 'work' / 'metrics.toon').read_text()
         assert 'total_tokens: 10000' in metrics
         assert 'tool_uses: 20' in metrics
-        # start→end fire back-to-back, so the wall span is ~0 and the accumulator's
-        # worked window (4000 ms) is clamped to the wall span by _clamp_worked_to_wall.
-        assert 'agent_duration_ms: 0' in metrics
+        # Accumulator's worked window (4000 ms) flows through unclamped.
+        assert 'agent_duration_ms: 4000' in metrics
 
     def test_no_accumulator_no_flags_records_timestamps_only(self, plan_context):
         """When neither accumulator nor flags are present, end-phase records timestamps only."""
@@ -620,6 +643,30 @@ class TestEndPhaseAccumulatorFallback:
         # No token data should be present, but end_time should be recorded
         assert 'end_time' in metrics
         assert 'total_tokens' not in metrics
+
+
+class TestClampWorkedToWall:
+    """Direct, timing-independent coverage of _clamp_worked_to_wall.
+
+    The end-phase integration tests pin start_time to the past so the clamp is a
+    no-op (the back-to-back wall span is machine-dependent). These unit tests cover
+    the clamp's three branches deterministically by passing phase_data explicitly.
+    """
+
+    def test_clamps_down_when_wall_span_smaller_than_worked(self):
+        """When the wall span is shorter than the worked window, clamp to the wall span."""
+        clamped = manage_metrics._clamp_worked_to_wall({'duration_seconds': 1.0}, 4000)
+        assert clamped == 1000
+
+    def test_returns_worked_when_wall_span_larger(self):
+        """When the wall span exceeds the worked window, return the worked value unchanged."""
+        clamped = manage_metrics._clamp_worked_to_wall({'duration_seconds': 600.0}, 4000)
+        assert clamped == 4000
+
+    def test_returns_worked_when_duration_seconds_absent(self):
+        """Without a recorded wall span, the clamp never bounds the worked value."""
+        clamped = manage_metrics._clamp_worked_to_wall({}, 4000)
+        assert clamped == 4000
 
 
 # =============================================================================
