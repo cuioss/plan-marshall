@@ -1976,7 +1976,21 @@ def cmd_classify_affected_files(args: argparse.Namespace) -> dict[str, Any] | No
     plan_id = require_valid_plan_id(args)
 
     paths = _read_bundle_change_paths(plan_id)
-    bucket, unclaimed_paths = _classify_paths_via_extensions(paths, plan_id=plan_id)
+    # Evidence-required gate: mirror the same guard applied in cmd_compose.
+    # An empty path list — which occurs when both ``references.json`` and
+    # ``solution_outline.md`` are absent — is the "unknown" case, not the
+    # "all docs" case.  Calling ``_classify_paths_via_extensions`` on an empty
+    # list returns ``documentation_only``, which would incorrectly set
+    # ``is_documentation_only=True`` and cause phase-4-plan Step 7 to skip
+    # holistic verification tasks while cmd_compose leaves them intact —
+    # manifest-vs-task-queue drift.  The conservative default for "unknown" is
+    # to leave the bucket as ``unknown`` so callers treat missing evidence the
+    # same way cmd_compose does.
+    if paths:
+        bucket, unclaimed_paths = _classify_paths_via_extensions(paths, plan_id=plan_id)
+    else:
+        bucket = 'unknown'
+        unclaimed_paths = []
 
     return {
         'status': 'success',

@@ -490,9 +490,9 @@ def test_classify_verb_mixed_union_is_not_documentation_only(plan_context):
     assert result['paths_count'] == 2
 
 
-def test_classify_verb_empty_union_defaults_to_documentation_only(plan_context):
+def test_classify_verb_empty_union_defaults_to_unknown(plan_context):
     """With no references and no outline, the empty-path conservative default
-    yields documentation_only / is_documentation_only == true."""
+    yields unknown / is_documentation_only == false to match cmd_compose."""
     plan_id = 'classify-verb-empty'
     plan_context.plan_dir_for(plan_id)
 
@@ -500,8 +500,8 @@ def test_classify_verb_empty_union_defaults_to_documentation_only(plan_context):
 
     assert result is not None
     assert result['status'] == 'success'
-    assert result['bucket'] == 'documentation_only'
-    assert result['is_documentation_only'] is True
+    assert result['bucket'] == 'unknown'
+    assert result['is_documentation_only'] is False
     assert result['paths_count'] == 0
     assert result['unclaimed_paths'] == []
 
