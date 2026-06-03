@@ -12,6 +12,8 @@ refactor plan.
 """
 
 import importlib.util
+import json
+from argparse import Namespace
 from pathlib import Path
 
 from extension_base import ExtensionBase  # type: ignore[import-not-found]
@@ -42,6 +44,11 @@ def _load_module(name: str, filename: str):
 
 _manifest_mod = _load_module('manage_execution_manifest', 'manage-execution-manifest.py')
 _classify_paths_via_extensions = _manifest_mod._classify_paths_via_extensions
+cmd_classify_affected_files = _manifest_mod.cmd_classify_affected_files
+get_manifest_path = _manifest_mod.get_manifest_path
+
+# Silence the best-effort decision-log subprocess in the verb-exposure tests.
+_manifest_mod._emit_decision_log = lambda *a, **kw: None  # type: ignore[attr-defined]
 
 
 # =============================================================================
@@ -398,3 +405,119 @@ def test_specificity_raising_is_treated_as_zero():
     bucket, _ = _classify_paths_via_extensions([path], extensions=[bad, good])
     # zulu specificity=3 beats bad specificity=0 → documentation_only
     assert bucket == 'documentation_only'
+
+
+# =============================================================================
+# classify-affected-files verb exposure
+#
+# End-to-end tests for ``cmd_classify_affected_files`` — the read-only CLI verb
+# that exposes the docs-only verdict by wrapping ``_read_bundle_change_paths``
+# feeding ``_classify_paths_via_extensions``. Like ``test_compose_docs_only_branch``,
+# these drive the real ``discover_all_extensions`` path so the verdict equals
+# exactly what ``compose()`` consumes (single source of truth).
+# =============================================================================
+
+
+def _seed_references(plan_dir: Path, affected_files: list[str]) -> None:
+    """Write ``references.json`` carrying the supplied ``affected_files`` list."""
+    (plan_dir / 'references.json').write_text(json.dumps({'affected_files': affected_files}, indent=2))
+
+
+def _classify_ns(plan_id: str) -> Namespace:
+    return Namespace(plan_id=plan_id)
+
+
+def test_classify_verb_docs_only_union_is_documentation_only(plan_context):
+    """A union of marketplace skill .md files resolves to documentation_only."""
+    plan_id = 'classify-verb-docs-only'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_references(
+        plan_dir,
+        [
+            'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md',
+            'marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md',
+        ],
+    )
+
+    result = cmd_classify_affected_files(_classify_ns(plan_id))
+
+    assert result is not None
+    assert result['status'] == 'success'
+    assert result['plan_id'] == plan_id
+    assert result['bucket'] == 'documentation_only'
+    assert result['is_documentation_only'] is True
+    assert result['paths_count'] == 2
+    assert result['unclaimed_paths'] == []
+
+
+def test_classify_verb_production_union_is_not_documentation_only(plan_context):
+    """A union including a production .py source resolves to a non-docs bucket."""
+    plan_id = 'classify-verb-production'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_references(
+        plan_dir,
+        [
+            'marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py',
+        ],
+    )
+
+    result = cmd_classify_affected_files(_classify_ns(plan_id))
+
+    assert result is not None
+    assert result['status'] == 'success'
+    assert result['bucket'] != 'documentation_only'
+    assert result['is_documentation_only'] is False
+    assert result['paths_count'] == 1
+
+
+def test_classify_verb_mixed_union_is_not_documentation_only(plan_context):
+    """A mixed code+docs union resolves to mixed_with_docs (non-docs)."""
+    plan_id = 'classify-verb-mixed'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_references(
+        plan_dir,
+        [
+            'marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py',
+            'marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md',
+        ],
+    )
+
+    result = cmd_classify_affected_files(_classify_ns(plan_id))
+
+    assert result is not None
+    assert result['bucket'] == 'mixed_with_docs'
+    assert result['is_documentation_only'] is False
+    assert result['paths_count'] == 2
+
+
+def test_classify_verb_empty_union_defaults_to_unknown(plan_context):
+    """With no references and no outline, the empty-path conservative default
+    yields unknown / is_documentation_only == false to match cmd_compose."""
+    plan_id = 'classify-verb-empty'
+    plan_context.plan_dir_for(plan_id)
+
+    result = cmd_classify_affected_files(_classify_ns(plan_id))
+
+    assert result is not None
+    assert result['status'] == 'success'
+    assert result['bucket'] == 'unknown'
+    assert result['is_documentation_only'] is False
+    assert result['paths_count'] == 0
+    assert result['unclaimed_paths'] == []
+
+
+def test_classify_verb_performs_no_write(plan_context):
+    """The read-only verb MUST NOT create execution.toon nor mutate plan state."""
+    plan_id = 'classify-verb-no-write'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_references(
+        plan_dir,
+        ['marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md'],
+    )
+
+    manifest_path = get_manifest_path(plan_id)
+    assert not manifest_path.exists()
+
+    cmd_classify_affected_files(_classify_ns(plan_id))
+
+    assert not manifest_path.exists(), 'classify-affected-files must not write execution.toon'
