@@ -628,6 +628,25 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 When the fold fires, skip the rest of Step 7 — no holistic-task creation, no `[ARTIFACT]` log lines for absent holistic tasks. Proceed directly to Step 8.
 
+**Docs-only holistic-suppression guard (deterministic)**: This guard runs AFTER the B3 surgical-fold bypass above and BEFORE the **Read verification steps** loop below. It is an additional, independent skip path — the B3 fold is preserved bit-for-bit and is evaluated first; this guard only applies when B3 did NOT fire. Ask the canonical classifier whether the plan-wide affected files resolve to a documentation-only change:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  classify-affected-files --plan-id {plan_id}
+```
+
+When the returned `is_documentation_only` is `true`, do NOT create the built-in holistic `quality_check` / `build_verify` Python verification tasks at all — a documentation-only plan has no buildable Python surface for a whole-repo `quality-gate` / `module-tests` sweep to verify. Log the skip decision once at decision level (mirroring the B3 fold-decision log shape):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-4-plan:holistic-docs-only-skip) skipped holistic quality_check + build_verify — plan-wide affected_files resolved to documentation_only bucket"
+```
+
+Then proceed directly to Step 8 (skip the **Read verification steps** loop's built-in `quality_check` / `build_verify` task creation). **Extension steps are NOT suppressed by this guard** — only the built-in `quality_check` / `build_verify` holistic Python steps are skipped. When the verification-steps list contains colon-bearing extension step IDs (`my-bundle:my-verify-step`), still create their holistic verification tasks via the loop below; the docs-only verdict governs only the two built-in Python sweeps.
+
+Step 7 consumes the single docs-only verdict produced by `manage-execution-manifest classify-affected-files` rather than independently re-deriving it from `marshal.json`'s `phase-5-execute.steps`. The same classifier governs `compose()` at Step 8b (manage-execution-manifest Row 3 + post-matrix docs-only suppression), so the planning-time task set and the composed manifest agree on a single source of truth. For the classifier itself — the file-type bucket vocabulary and the classification procedure — see [`../phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier) and [`../manage-execution-manifest/SKILL.md`](../manage-execution-manifest/SKILL.md); do NOT restate the bucket vocabulary or the classification procedure here.
+
 **Read verification steps** (NOTE: `manage-config plan` is ONLY for phase configs — for architecture queries use `manage-architecture:architecture`):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
