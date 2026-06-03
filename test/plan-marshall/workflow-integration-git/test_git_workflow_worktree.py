@@ -45,6 +45,7 @@ assert _spec is not None and _spec.loader is not None
 git_workflow = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(git_workflow)
 
+cmd_locate_plan_checkout = git_workflow.cmd_locate_plan_checkout
 cmd_worktree_create = git_workflow.cmd_worktree_create
 cmd_worktree_list = git_workflow.cmd_worktree_list
 cmd_worktree_path = git_workflow.cmd_worktree_path
@@ -601,6 +602,169 @@ class TestWorktreeList:
         result = cmd_worktree_list(Namespace())
         assert result['status'] == 'error'
         assert result['error'] == 'plan_resolution_failed'
+
+
+# =============================================================================
+# locate-plan-checkout — three-state checkout-location resolution
+# =============================================================================
+
+
+class TestLocatePlanCheckout:
+    """``cmd_locate_plan_checkout`` reports where a plan's directory currently
+    lives in one of three states — ``current`` / ``worktree`` / ``not_found`` —
+    without raw ``git worktree list --porcelain`` re-parsing.
+
+    The current-checkout probe reuses :func:`_find_plan_root_from_cwd` (the
+    uniform cwd walk-up); the worktree probe reuses
+    :func:`_resolve_worktree_path_for_plan` (the canonical ``manage-status
+    get-worktree-path`` channel). Tests monkeypatch the cwd walk-up and stub
+    ``_manage_status_call`` so both branches are exercised deterministically,
+    materialising a real ``status.json`` on disk where the on-disk probe must
+    succeed.
+    """
+
+    @staticmethod
+    def _seed_plan_status_json(root: Path, plan_id: str) -> Path:
+        """Create ``{root}/.plan/local/plans/{plan_id}/status.json`` on disk."""
+        plan_dir = root / '.plan' / 'local' / 'plans' / plan_id
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        status_json = plan_dir / 'status.json'
+        status_json.write_text(f'{{"plan_id": "{plan_id}"}}\n')
+        return status_json
+
+    def test_returns_worktree_when_plan_dir_moved_into_worktree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When the plan dir was moved into a worktree (phase-5 move-in) and the
+        call is made from main, the verb returns ``location=worktree`` with the
+        resolved ``worktree_path``."""
+        # Main checkout root does NOT hold the plan dir.
+        main_root = tmp_path / 'main'
+        (main_root / '.plan' / 'local').mkdir(parents=True)
+        # The worktree DOES hold the moved-in plan dir.
+        worktree = tmp_path / 'worktrees' / 'moved-plan'
+        self._seed_plan_status_json(worktree, 'moved-plan')
+
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main_root)
+        _stub_manage_status_call(
+            monkeypatch,
+            {
+                ('get-worktree-path', '--plan-id', 'moved-plan'): (
+                    0,
+                    {
+                        'status': 'success',
+                        'plan_id': 'moved-plan',
+                        'use_worktree': True,
+                        'worktree_path': str(worktree),
+                    },
+                    '',
+                )
+            },
+        )
+
+        result = cmd_locate_plan_checkout(Namespace(plan_id='moved-plan'))
+        assert result['status'] == 'success'
+        assert result['plan_id'] == 'moved-plan'
+        assert result['location'] == 'worktree'
+        assert result['worktree_path'] == str(worktree)
+
+    def test_returns_current_when_plan_dir_on_current_checkout(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When the plan dir is on the current checkout (main-checkout plan, or
+        an already-cwd-pinned worktree), the verb returns ``location=current``
+        and never reports a ``worktree_path`` — the idempotent re-entry case."""
+        current_root = tmp_path / 'current'
+        self._seed_plan_status_json(current_root, 'here-plan')
+
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: current_root)
+
+        # No worktree resolution should be needed; stub returns a failure to
+        # prove the current-checkout branch short-circuits before manage-status.
+        _stub_manage_status_call(
+            monkeypatch,
+            {('get-worktree-path', '--plan-id', 'here-plan'): (1, '', 'should not be called')},
+        )
+
+        result = cmd_locate_plan_checkout(Namespace(plan_id='here-plan'))
+        assert result['status'] == 'success'
+        assert result['plan_id'] == 'here-plan'
+        assert result['location'] == 'current'
+        assert 'worktree_path' not in result
+
+    def test_returns_not_found_for_unknown_plan(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When neither the current checkout nor any registered worktree holds
+        the plan dir, the verb returns ``location=not_found``."""
+        current_root = tmp_path / 'current'
+        (current_root / '.plan' / 'local').mkdir(parents=True)
+
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: current_root)
+        _stub_manage_status_call(
+            monkeypatch,
+            {
+                ('get-worktree-path', '--plan-id', 'ghost-plan'): (
+                    0,
+                    {
+                        'status': 'success',
+                        'plan_id': 'ghost-plan',
+                        'use_worktree': False,
+                        'worktree_path': '',
+                    },
+                    '',
+                )
+            },
+        )
+
+        result = cmd_locate_plan_checkout(Namespace(plan_id='ghost-plan'))
+        assert result['status'] == 'success'
+        assert result['plan_id'] == 'ghost-plan'
+        assert result['location'] == 'not_found'
+        assert 'worktree_path' not in result
+
+    def test_returns_not_found_when_worktree_resolves_but_status_json_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A stale worktree registration (path resolves but the moved-in plan
+        dir is not actually on disk) must NOT report ``worktree`` — the on-disk
+        ``status.json`` probe gates the worktree state, so the verb falls
+        through to ``not_found``."""
+        main_root = tmp_path / 'main'
+        (main_root / '.plan' / 'local').mkdir(parents=True)
+        # Worktree path resolves but has NO plans/{plan_id}/status.json.
+        worktree = tmp_path / 'worktrees' / 'stale-plan'
+        worktree.mkdir(parents=True)
+
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main_root)
+        _stub_manage_status_call(
+            monkeypatch,
+            {
+                ('get-worktree-path', '--plan-id', 'stale-plan'): (
+                    0,
+                    {
+                        'status': 'success',
+                        'plan_id': 'stale-plan',
+                        'use_worktree': True,
+                        'worktree_path': str(worktree),
+                    },
+                    '',
+                )
+            },
+        )
+
+        result = cmd_locate_plan_checkout(Namespace(plan_id='stale-plan'))
+        assert result['status'] == 'success'
+        assert result['location'] == 'not_found'
+
+
+class TestLocatePlanCheckoutCli:
+    """CLI argparse: ``locate-plan-checkout`` rejects a missing ``--plan-id``."""
+
+    def test_without_plan_id_rejected(self) -> None:
+        result = run_script(SCRIPT_PATH, 'locate-plan-checkout')
+        assert result.returncode != 0
+        assert '--plan-id' in result.stderr or '--plan-id' in result.stdout
 
 
 # =============================================================================

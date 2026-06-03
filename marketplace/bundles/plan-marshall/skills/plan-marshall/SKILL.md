@@ -93,7 +93,22 @@ Once the action is resolved, load the appropriate workflow document and follow i
 
 ### Auto-Detect from Phase
 
-When `plan` is specified but no `action`, auto-detect from plan phase:
+When `plan` is specified but no `action`, auto-detect from plan phase.
+
+**Cross-session re-entry preflight (re-anchor to worktree).** A fresh session that enters with `plan={plan_id}` from the main checkout may be targeting a phase-5+ plan whose directory was MOVED into its worktree at phase-5 move-in (ADR-002 move-based model). In that state the plan dir is no longer on main, so a `get-routing-context --plan-id {plan_id}` run from main resolves nothing and fails with `plan_not_found`. Before the routing call, resolve where the plan dir currently lives and re-anchor cwd into the worktree when needed:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout \
+  --plan-id {plan_id}
+```
+
+(See [`workflow-integration-git` SKILL.md](../../workflow-integration-git/SKILL.md) Canonical invocations → `locate-plan-checkout` for the verb's argparse surface and the three-state output contract.) Branch on the returned `location`:
+
+- **`location == worktree`** — the plan dir was moved into the worktree carried in `worktree_path`. Log a `[STATUS]` re-anchor decision, then issue a STANDALONE `cd {worktree_path}` Bash call (exactly one command — no `&&`, no chaining), and re-run `get-routing-context` from inside the worktree. After the `cd`, cwd is pinned to the worktree and the single uniform cwd-relative rule resolves every subsequent `.plan/` lookup to the worktree-resident copy.
+- **`location == current`** — the plan dir is on the current checkout (a main-checkout plan, or an already-cwd-pinned worktree). Proceed unchanged to the routing call below; do NOT `cd`.
+- **`location == not_found`** — neither the current checkout nor any registered worktree holds the plan dir. Emit the existing `plan_not_found` error.
+
+The preflight is **idempotent**: a session already cwd-pinned inside the worktree resolves `current` (the verb's on-disk probe finds the plan dir on the current checkout), so there is no double-`cd`. It runs from the main checkout using main's present executor — main's `.plan/execute-script.py` stays present and untouched throughout phase-5+ (per PR-558, the executor is per-tree derived state generated into the worktree at move-in, never removed from main).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context \
