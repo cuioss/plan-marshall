@@ -55,6 +55,7 @@ from _invariants import (  # type: ignore[import-not-found]
     MainCheckoutDirtiedDuringPlan,
     PhaseStepsIncomplete,
     WorktreeMetadataDrift,
+    _capture_pending_findings_blocking_count,
     _main_dirty_drift_diff,
     capture_all,
     is_invariant_blocking_at_phase,
@@ -633,6 +634,83 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         result['informational_count'] = len(informational_diffs)
         result['informational_diffs'] = informational_diffs
     return result
+
+
+def cmd_findings_check(args: Any) -> dict[str, Any]:
+    """Read-only single-invariant gate: evaluate ONLY the blocking-findings invariant.
+
+    Mirrors the non-writing ``verify`` precedent — a distinct handler that
+    reuses an existing capture function in isolation. It runs the
+    worktree-resolution assertion (consistent with ``capture``/``verify``),
+    then invokes :func:`_invariants._capture_pending_findings_blocking_count`
+    directly — NOT ``capture_all`` — so ``phase_steps_complete`` is never
+    evaluated and the gate cannot short-circuit on ``phase_steps_incomplete``
+    at a mid-pipeline checkpoint where the downstream finalize steps have not
+    run yet.
+
+    Writes NO handshake row. On a clean count returns
+    ``{status: success, plan_id, phase, blocking_count: N}``. On a pending
+    blocking finding the underlying invariant raises
+    :class:`BlockingFindingsPresent`, which this handler translates into the
+    SAME ``{status: error, error: blocking_findings_present, ...}`` payload
+    shape ``cmd_capture`` returns, so the two intra-finalize callers branch on
+    an identical envelope.
+
+    **Fails closed on an unevaluable invariant.**
+    :func:`_capture_pending_findings_blocking_count` returns ``None`` when a
+    per-type query could not run (executor unreachable / partial query
+    failure). For a gate verb that is NOT a benign "not applicable" — returning
+    ``status: success`` would let the intra-finalize boundary advance to
+    ``branch-cleanup`` without proof that no blocking findings remain. This
+    handler therefore translates ``None`` into a distinct
+    ``{status: error, error: query_failed, ...}`` envelope so the caller halts
+    rather than failing open. (The composite ``capture`` records ``None`` as an
+    empty column for retrospective analysis; the read-only gate verb cannot
+    afford that latitude because its sole output is the go/no-go verdict.)
+    """
+    plan_id = args.plan_id
+    phase = args.phase
+    metadata = _load_status_metadata(plan_id)
+    worktree_error = _resolve_worktree_assertion(metadata, phase)
+    if worktree_error is not None:
+        payload = dict(worktree_error)
+        payload['plan_id'] = plan_id
+        payload['phase'] = phase
+        return payload
+    try:
+        blocking_count = _capture_pending_findings_blocking_count(plan_id, metadata, phase)
+    except BlockingFindingsPresent as exc:
+        return {
+            'status': 'error',
+            'error': 'blocking_findings_present',
+            'plan_id': plan_id,
+            'phase': phase,
+            'blocking_count': exc.blocking_count,
+            'blocking_types': exc.blocking_types,
+            'per_type': exc.per_type,
+            'message': str(exc),
+        }
+    if blocking_count is None:
+        # Fail closed: a partial query failure means the blocking-findings
+        # invariant could not be evaluated. Returning success here would let the
+        # intra-finalize gate advance without proof that no blocking findings
+        # remain. Surface a distinct query_failed error so the caller halts.
+        return {
+            'status': 'error',
+            'error': 'query_failed',
+            'plan_id': plan_id,
+            'phase': phase,
+            'message': (
+                'pending_findings_blocking_count could not be evaluated for '
+                f"phase '{phase}' (executor unreachable / partial query failure)"
+            ),
+        }
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase,
+        'blocking_count': blocking_count,
+    }
 
 
 def cmd_list(args: Any) -> dict[str, Any]:

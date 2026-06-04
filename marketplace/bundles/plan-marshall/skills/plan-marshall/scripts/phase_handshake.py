@@ -2,13 +2,22 @@
 """Phase handshake: capture and verify cross-phase invariants.
 
 Usage:
-    phase_handshake.py capture --plan-id X --phase P [--override --reason R]
-    phase_handshake.py verify  --plan-id X --phase P [--strict]
-    phase_handshake.py list    --plan-id X
-    phase_handshake.py clear   --plan-id X --phase P
+    phase_handshake.py capture        --plan-id X --phase P [--override --reason R]
+    phase_handshake.py verify         --plan-id X --phase P [--strict]
+    phase_handshake.py findings-check --plan-id X --phase P
+    phase_handshake.py list           --plan-id X
+    phase_handshake.py clear          --plan-id X --phase P
 
 All subcommands emit TOON to stdout. `verify` with ``--strict`` exits 1 on
 ``status: drift`` so callers can gate progress at the CLI level.
+
+``findings-check`` is a read-only single-invariant gate: it evaluates ONLY the
+``pending_findings_blocking_count`` invariant (never ``phase_steps_complete``)
+and writes NO handshake row. It exists for the intra-finalize boundaries where
+the composite ``capture`` would short-circuit on ``phase_steps_incomplete``
+because downstream finalize steps have not run yet. Its exit code follows the
+``capture`` convention — a ``status: error`` payload still exits 0; the verdict
+is carried entirely in the TOON ``status`` field.
 
 Retained-vs-relaxed worktree-state drift map (Option 5' / ADR-002), keyed on
 the boundary phase the handshake verifies (the phase transitioned OUT of):
@@ -49,6 +58,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _handshake_commands import (  # type: ignore[import-not-found]
     cmd_capture,
     cmd_clear,
+    cmd_findings_check,
     cmd_list,
     cmd_verify,
 )
@@ -75,6 +85,14 @@ def _build_parser() -> argparse.ArgumentParser:
     add_phase_arg(verify)
     verify.add_argument('--strict', action='store_true', help='Exit 1 on drift')
 
+    findings_check = subparsers.add_parser(
+        'findings-check',
+        help='Read-only check of the blocking-findings invariant only (no row write)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(findings_check)
+    add_phase_arg(findings_check)
+
     listcmd = subparsers.add_parser('list', help='List all captured phases for a plan', allow_abbrev=False)
     add_plan_id_arg(listcmd)
 
@@ -94,6 +112,8 @@ def main() -> int:
         result = cmd_capture(args)
     elif args.command == 'verify':
         result = cmd_verify(args)
+    elif args.command == 'findings-check':
+        result = cmd_findings_check(args)
     elif args.command == 'list':
         result = cmd_list(args)
     elif args.command == 'clear':

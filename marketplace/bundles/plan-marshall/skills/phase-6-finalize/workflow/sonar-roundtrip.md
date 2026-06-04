@@ -131,18 +131,20 @@ When the triage dispatch returns `status: success` (every finding closed as SUPP
 
 ## Phase Boundary Re-Capture (intra-finalize gate)
 
-Before marking the step complete, re-issue the `phase_handshake capture` against the `6-finalize` phase. The orchestrator's `_BLOCKING_BOUNDARIES` set guards `6-finalize` — re-issuing capture here trips `BlockingFindingsPresent` if any pending blocking-type finding (notably any unresolved `sonar-issue`) remains in the store, which guards the documented `sonar-roundtrip → next` boundary in [`plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md#guarded-boundaries).
+Before marking the step complete, run the read-only `phase_handshake findings-check` against the `6-finalize` phase. `findings-check` evaluates ONLY the `pending_findings_blocking_count` invariant — it trips `blocking_findings_present` if any pending blocking-type finding (notably any unresolved `sonar-issue`) remains in the store, which guards the documented `sonar-roundtrip → next` boundary in [`plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md#guarded-boundaries). Because it is the single-invariant verb it never runs `phase_steps_complete`, so it cannot short-circuit on `phase_steps_incomplete` at this mid-pipeline checkpoint where downstream finalize steps have not run yet — the failure mode that made the composite `capture` gate inoperative here.
 
-Run the capture:
+Run the check:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake findings-check \
   --plan-id {plan_id} --phase 6-finalize
 ```
 
 **On `status: success`** (no pending blocking-type findings): proceed to "Mark Step Complete" below.
 
-**On `status: error` with `error: blocking_findings_present`** (the structured envelope mirrors the TOON shape in [`phase-handshake.md` § Capture-time behavior](../../plan-marshall/references/phase-handshake.md#pending_findings_blocking_count-resolution)):
+**On `status: error` with `error: query_failed`** (the blocking-findings invariant could not be evaluated — a per-type query failed, typically because the executor was unreachable): the gate fails CLOSED. The boundary is NOT satisfied, so do NOT proceed to the next step. This is an environmental failure with no findings to triage — there is nothing to loop back over. Mark the step `failed` (`mark-step-done … --outcome failed --display-detail "findings-check query_failed (gate unevaluable)"`) so the dispatcher halts the pipeline; the operator re-runs finalize once the environment is healthy and the read-only check re-evaluates on re-entry. Do NOT treat `query_failed` as a clean pass — that would reintroduce the fail-open the single-invariant gate exists to prevent.
+
+**On `status: error` with `error: blocking_findings_present`** (the structured envelope is field-for-field identical to the composite `capture` blocking-findings payload — see [`phase-handshake.md` § Capture-time behavior](../../plan-marshall/references/phase-handshake.md#pending_findings_blocking_count-resolution)):
 
 ```toon
 status: error
@@ -158,14 +160,14 @@ per_type{sonar-issue,…}:
 message: "pending_findings_blocking_count failed for phase '6-finalize': …"
 ```
 
-The capture is the structural enforcer of "no unresolved sonar-issue findings at the next finalize boundary". Loop-back guidance:
+The check is the structural enforcer of "no unresolved sonar-issue findings at the next finalize boundary". Loop-back guidance:
 
 1. Read the offending findings via `manage-findings list --type sonar-issue --resolution pending` (or whichever type the `per_type` map names).
 2. For each pending finding, run the per-finding consumer dispatch defined above (load `ext-triage-{domain}`, decide FIX / SUPPRESS / ACCEPT / `AskUserQuestion`, act with the Sonar-specific outcomes — NOSONAR annotation for SUPPRESS, sonar dismiss / comment for ACCEPT — then `manage-findings resolve`). FIX outcomes set `loop_back_needed = true` and re-enter phase-5-execute via the loop-back block in this document; SUPPRESS / ACCEPT / `taken_into_account` resolve in-place without loop-back.
-3. After every pending finding is resolved, **re-issue the same `phase_handshake capture --phase 6-finalize`** call. The boundary is satisfied only when capture returns `status: success`.
+3. After every pending finding is resolved, **re-issue the same `phase_handshake findings-check --phase 6-finalize`** call. The boundary is satisfied only when the check returns `status: success`.
 4. Bound the iterations by the existing `sonar-roundtrip` iteration cap (3); on cap exhaustion mark the step `failed` per the dispatcher contract — the boundary remains gated and downstream finalize steps do not run.
 
-**No `_BLOCKING_BOUNDARIES` change required**: re-issuing capture under the `6-finalize` phase value reuses the existing single-phase guard from [`_invariants.py`](../../plan-marshall/scripts/_invariants.py).
+**Single-invariant verb, not the composite `capture`**: `findings-check` evaluates the blocking-findings invariant in isolation via [`_handshake_commands.cmd_findings_check`](../../plan-marshall/scripts/_handshake_commands.py), reusing the `pending_findings_blocking_count` capture and its `BlockingFindingsPresent` → structured-error translation. It writes no handshake row and never evaluates `phase_steps_complete`, so the mid-pipeline gate works where the composite `capture` would short-circuit on `phase_steps_incomplete`.
 
 ## Mark Step Complete
 
