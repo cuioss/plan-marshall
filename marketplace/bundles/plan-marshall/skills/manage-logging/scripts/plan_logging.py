@@ -147,7 +147,13 @@ def get_log_path(plan_id: str | None, log_type: str = 'script') -> Path:
 
     if plan_id:
         plan_dir = get_plans_dir() / plan_id
-        if plan_dir.exists():
+        # Treat the slot as plan-scoped ONLY when it is an INITIALIZED plan dir:
+        # the directory exists AND carries the status.json sentinel. A bare
+        # existence test would extend a status.json-less orphan slot (e.g. a
+        # metrics-created work/ half that mis-resolved to main while the
+        # authoritative plan dir is worktree-resident). The inline sentinel check
+        # keeps logging non-raising and silent-fallback — it never errors a caller.
+        if (plan_dir / 'status.json').is_file():
             # Plan-scoped logs go in logs/ subdirectory
             return plan_dir / 'logs' / filename
 

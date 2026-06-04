@@ -13,6 +13,8 @@ import importlib.util
 import json
 from argparse import Namespace
 
+import pytest
+
 from conftest import get_script_path
 
 # The entrypoint filename is kebab-case (manage-metrics.py), which is not a
@@ -26,6 +28,66 @@ _spec.loader.exec_module(manage_metrics)
 cmd_phase_boundary = manage_metrics.cmd_phase_boundary
 cmd_start_phase = manage_metrics.cmd_start_phase
 cmd_end_phase = manage_metrics.cmd_end_phase
+
+
+# =============================================================================
+# require_plan_exists guard fixtures
+# =============================================================================
+#
+# TASK-1 added a require_plan_exists guard to every plan-scoped writer in
+# manage-metrics.py (start-phase, end-phase, generate, phase-boundary,
+# accumulate-agent-usage, enrich). The guard returns ``error: plan_not_found``
+# unless the plan directory carries a ``status.json`` sentinel. The
+# ``plan_context`` fixture creates plan dirs without that sentinel, so every
+# positive test below would otherwise trip the guard.
+#
+# The autouse fixture below patches ``manage_metrics.require_plan_exists`` so
+# that, during these tests, it auto-materialises the ``status.json`` sentinel for
+# any plan whose dir exists but is not explicitly registered as "unseeded". This
+# is the real guard chokepoint — it fires regardless of whether a test resolves
+# its plan dir before or after calling the writer. Guard-negative tests register
+# their plan_id via ``_register_unseeded`` so the patched guard lets the genuine
+# ``plan_not_found`` branch run.
+
+_UNSEEDED_PLAN_IDS: set[str] = set()
+
+
+@pytest.fixture(autouse=True)
+def _seed_guarded_plan_dirs(plan_context, monkeypatch):
+    """Auto-seed ``status.json`` at the require_plan_exists chokepoint.
+
+    The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
+    any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
+    before delegating to the genuine ``require_plan_exists``. This keeps every
+    positive test's happy path intact without per-test seeding, while the
+    negative tests (which call ``_register_unseeded``) still exercise the real
+    ``plan_not_found`` failure.
+    """
+    _UNSEEDED_PLAN_IDS.clear()
+    real_require = manage_metrics.require_plan_exists
+    real_get_plan_dir = manage_metrics.get_plan_dir
+
+    def _seeding_require(plan_id):
+        if plan_id not in _UNSEEDED_PLAN_IDS:
+            plan_dir = real_get_plan_dir(plan_id)
+            plan_dir.mkdir(parents=True, exist_ok=True)
+            sentinel = plan_dir / 'status.json'
+            if not sentinel.is_file():
+                sentinel.write_text('{}', encoding='utf-8')
+        return real_require(plan_id)
+
+    monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
+    return plan_context
+
+
+def _register_unseeded(plan_id: str) -> str:
+    """Mark ``plan_id`` so the autouse guard-seeder leaves it un-sentinelled.
+
+    Returns the plan_id for inline use. Negative guard tests call this so the
+    patched ``require_plan_exists`` runs its genuine ``plan_not_found`` branch.
+    """
+    _UNSEEDED_PLAN_IDS.add(plan_id)
+    return plan_id
 
 
 def _ns_start_phase(plan_id, phase):

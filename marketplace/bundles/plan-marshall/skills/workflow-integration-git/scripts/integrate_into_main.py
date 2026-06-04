@@ -41,7 +41,10 @@ canonical ``manage-status get-worktree-path`` channel (mirroring
 main plan dir is resolved via the single sanctioned main-anchored resolver
 ``resolve_main_anchored_path('plans/{plan_id}')`` (ADR-002). Neither resolution
 depends on the process cwd, so the idempotence guard returns ``noop`` ONLY when
-the SOURCE is genuinely absent AND the main DESTINATION is present.
+the SOURCE is genuinely absent AND an AUTHORITATIVE (``status.json``-bearing)
+main DESTINATION is present. A ``status.json``-less orphan slot at the
+destination (``logs/``/``work/`` residue only) is reclaimed by the move-back,
+not treated as a completed integration.
 
 Atomic-with-rollback (solution_outline.md §5): a partial move-back failure rolls
 the plan dir BACK into the worktree so the authoritative copy is never split, and
@@ -206,6 +209,54 @@ def _is_real_resident(path: Path) -> bool:
     return path.exists() and not path.is_symlink()
 
 
+def _is_authoritative_dir(path: Path) -> bool:
+    """Return True when ``path`` is an authoritative plan dir.
+
+    The ``status.json`` sentinel marks a real, initialized plan directory. An
+    authoritative destination must NEVER be clobbered by the move-back.
+    """
+    return (path / 'status.json').is_file()
+
+
+def _is_reclaimable_orphan(path: Path) -> bool:
+    """Return True when ``path`` is a non-authoritative orphan slot.
+
+    A reclaimable orphan is a real (non-symlink) directory that lacks the
+    ``status.json`` sentinel — typically a ``logs/``/``work/``-only residue
+    materialized by a mis-resolved metrics/logging write while the authoritative
+    plan dir was worktree-resident. Such a slot may be safely absorbed and
+    removed before the move-back.
+    """
+    return _is_real_resident(path) and not _is_authoritative_dir(path)
+
+
+def _absorb_orphan_contents(orphan: Path, src: Path) -> None:
+    """Best-effort absorb a reclaimable orphan's residue into ``src``.
+
+    Merges the orphan destination's stale ``logs/`` and ``work/`` contents into
+    the worktree-resident plan dir ``src`` about to be moved in, so no plan-own
+    log/work residue is lost when the orphan slot is reclaimed. Each file is
+    copied only when no same-named file already exists under ``src`` (the
+    worktree-resident copy is authoritative and wins on collision).
+    """
+    for subdir in ('logs', 'work'):
+        orphan_sub = orphan / subdir
+        if not orphan_sub.is_dir():
+            continue
+        dst_sub = src / subdir
+        dst_sub.mkdir(parents=True, exist_ok=True)
+        for entry in sorted(orphan_sub.iterdir()):
+            if not entry.is_file():
+                continue
+            target = dst_sub / entry.name
+            if target.exists():
+                continue
+            try:
+                shutil.copy2(str(entry), str(target))
+            except OSError:
+                pass
+
+
 def _move_back_dir(src: Path, dst: Path) -> None:
     """Move the plan dir ``src`` (worktree-resident) to ``dst`` (main).
 
@@ -213,14 +264,26 @@ def _move_back_dir(src: Path, dst: Path) -> None:
     step left a symlink at main's slot pointing into the worktree; under the
     move model that is reversed at finalize). The destination's parent is created
     on demand.
+
+    A ``status.json``-less orphan at ``dst`` (a ``logs/``/``work/``-only residue,
+    not an authoritative plan dir) is RECLAIMED: its stale residue is absorbed
+    into ``src`` and the emptied slot is removed before the move proceeds. An
+    AUTHORITATIVE destination (``status.json`` present) is refused rather than
+    clobbered.
     """
     if dst.is_symlink():
         dst.unlink()
     elif dst.exists():
-        # A real path already occupies main's slot — refuse rather than clobber.
-        # The idempotence guard short-circuits the already-moved-back case before
-        # reaching here, so a real dst here is an unexpected collision.
-        raise FileExistsError(f'main plan-dir slot already occupied by real path: {dst}')
+        if _is_authoritative_dir(dst):
+            # A real, initialized plan dir already occupies main's slot — refuse
+            # rather than clobber. The idempotence guard short-circuits the
+            # already-moved-back case before reaching here, so an authoritative
+            # dst here is an unexpected collision.
+            raise FileExistsError(f'main plan-dir slot already occupied by real path: {dst}')
+        # Reclaimable orphan: absorb its stale logs/work residue into the
+        # worktree-resident plan dir, then remove the emptied slot.
+        _absorb_orphan_contents(dst, src)
+        shutil.rmtree(str(dst))
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(src), str(dst))
 
@@ -325,11 +388,13 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     wt_global_logs = worktree_path / PLAN_DIR_NAME / 'local' / 'logs'
 
     # --- Idempotence guard -------------------------------------------------
-    # If the plan dir is already a real (non-symlink) path resident on main AND
-    # no real plan dir remains in the worktree, the move-back already ran (a
-    # finalize re-entry). Return a no-op success WITHOUT acquiring the lock —
-    # there is nothing to coordinate.
-    if _is_real_resident(main_plan_dir) and not _is_real_resident(wt_plan_dir):
+    # If an AUTHORITATIVE plan dir (status.json present) is already resident on
+    # main AND no real plan dir remains in the worktree, the move-back already
+    # ran (a finalize re-entry). Return a no-op success WITHOUT acquiring the
+    # lock — there is nothing to coordinate. A status.json-less orphan at main
+    # (logs/work residue only) is NOT a completed integration: it falls through
+    # to the reclaiming move-back below rather than short-circuiting as noop.
+    if _is_authoritative_dir(main_plan_dir) and not _is_real_resident(wt_plan_dir):
         return _assert_cwd_unchanged(
             {
                 'status': 'success',

@@ -107,12 +107,19 @@ def test_format_log_entry_hash_deterministic():
 # =============================================================================
 
 
+def _init_plan_dir(plan_base: Path, plan_id: str) -> Path:
+    """Create an INITIALIZED plan dir (carries the status.json sentinel)."""
+    plan_dir = plan_base / 'plans' / plan_id
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+    return plan_dir
+
+
 def test_get_log_path_plan_scoped_script():
-    """Script log path for existing plan."""
+    """Script log path for an initialized plan (status.json present)."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
-        plan_dir = plan_base / 'plans' / 'my-plan'
-        plan_dir.mkdir(parents=True)
+        plan_dir = _init_plan_dir(plan_base, 'my-plan')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
@@ -123,11 +130,10 @@ def test_get_log_path_plan_scoped_script():
 
 
 def test_get_log_path_plan_scoped_work():
-    """Work log path for existing plan."""
+    """Work log path for an initialized plan (status.json present)."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
-        plan_dir = plan_base / 'plans' / 'my-plan'
-        plan_dir.mkdir(parents=True)
+        plan_dir = _init_plan_dir(plan_base, 'my-plan')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
@@ -138,11 +144,10 @@ def test_get_log_path_plan_scoped_work():
 
 
 def test_get_log_path_plan_scoped_decision():
-    """Decision log path for existing plan."""
+    """Decision log path for an initialized plan (status.json present)."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
-        plan_dir = plan_base / 'plans' / 'my-plan'
-        plan_dir.mkdir(parents=True)
+        plan_dir = _init_plan_dir(plan_base, 'my-plan')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
@@ -163,6 +168,59 @@ def test_get_log_path_global_fallback():
             assert path.parent == plan_base / 'logs'
             assert path.name.startswith('script-execution-')
             assert str(date.today()) in path.name
+        finally:
+            del os.environ['PLAN_BASE_DIR']
+
+
+# =============================================================================
+# TESTS: get_log_path status.json sentinel (orphan-slot hardening)
+# =============================================================================
+
+
+def test_get_log_path_orphan_dir_without_sentinel_falls_back_to_global():
+    """A plan dir that exists but lacks status.json resolves to the global log.
+
+    Regression guard for the orphan-slot fix: a status.json-less plan dir (the
+    orphan shape — only logs/ or work/ materialized while the authoritative dir
+    is worktree-resident) MUST NOT be treated as plan-scoped. get_log_path falls
+    through to the date-suffixed global fallback instead of extending the orphan.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        plan_base = Path(tmp)
+        orphan_dir = plan_base / 'plans' / 'orphan-plan'
+        orphan_dir.mkdir(parents=True)  # exists, but NO status.json sentinel
+
+        os.environ['PLAN_BASE_DIR'] = str(plan_base)
+        try:
+            for log_type, prefix in (
+                ('script', 'script-execution-'),
+                ('work', 'work-'),
+                ('decision', 'decision-'),
+            ):
+                path = module.get_log_path('orphan-plan', log_type)
+                assert path.parent == plan_base / 'logs', (
+                    f'{log_type}: expected global fallback, got {path}'
+                )
+                assert path.name.startswith(prefix), f'{log_type}: unexpected name {path.name}'
+                # The orphan dir must NOT acquire a plan-scoped logs/ subdirectory.
+                assert not (orphan_dir / 'logs').exists(), (
+                    f'{log_type}: orphan plan-scoped logs/ should not be resolved'
+                )
+        finally:
+            del os.environ['PLAN_BASE_DIR']
+
+
+def test_get_log_path_sentinel_present_resolves_plan_scoped():
+    """A plan dir carrying status.json resolves plan-scoped for every log type."""
+    with tempfile.TemporaryDirectory() as tmp:
+        plan_base = Path(tmp)
+        plan_dir = _init_plan_dir(plan_base, 'init-plan')
+
+        os.environ['PLAN_BASE_DIR'] = str(plan_base)
+        try:
+            assert module.get_log_path('init-plan', 'script') == plan_dir / 'logs' / 'script-execution.log'
+            assert module.get_log_path('init-plan', 'work') == plan_dir / 'logs' / 'work.log'
+            assert module.get_log_path('init-plan', 'decision') == plan_dir / 'logs' / 'decision.log'
         finally:
             del os.environ['PLAN_BASE_DIR']
 
@@ -202,8 +260,7 @@ def test_log_script_execution_success():
     """Success entry is written to log file."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
-        plan_dir = plan_base / 'plans' / 'test-plan'
-        plan_dir.mkdir(parents=True)
+        plan_dir = _init_plan_dir(plan_base, 'test-plan')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
@@ -230,8 +287,7 @@ def test_log_script_execution_error_with_details():
     """Error entry includes exit_code, args, stderr."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
-        plan_dir = plan_base / 'plans' / 'test-plan'
-        plan_dir.mkdir(parents=True)
+        plan_dir = _init_plan_dir(plan_base, 'test-plan')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
@@ -309,8 +365,7 @@ def test_log_work_default_category():
     """Log work with default PROGRESS category."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
-        plan_dir = plan_base / 'plans' / 'test-plan'
-        plan_dir.mkdir(parents=True)
+        plan_dir = _init_plan_dir(plan_base, 'test-plan')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
@@ -339,8 +394,7 @@ def test_log_work_all_categories():
 
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
-        plan_dir = plan_base / 'plans' / 'test-plan'
-        plan_dir.mkdir(parents=True)
+        plan_dir = _init_plan_dir(plan_base, 'test-plan')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
@@ -389,8 +443,7 @@ def test_read_work_log_all_entries():
     """Read all work log entries."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
-        plan_dir = plan_base / 'plans' / 'test-plan'
-        plan_dir.mkdir(parents=True)
+        _init_plan_dir(plan_base, 'test-plan')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
@@ -415,8 +468,7 @@ def test_read_work_log_filtered_by_phase():
     """Read work log entries filtered by phase."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
-        plan_dir = plan_base / 'plans' / 'test-plan'
-        plan_dir.mkdir(parents=True)
+        _init_plan_dir(plan_base, 'test-plan')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
@@ -442,8 +494,7 @@ def test_list_recent_work_with_limit():
     """List recent entries respects limit."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
-        plan_dir = plan_base / 'plans' / 'test-plan'
-        plan_dir.mkdir(parents=True)
+        _init_plan_dir(plan_base, 'test-plan')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
@@ -457,6 +508,99 @@ def test_list_recent_work_with_limit():
             assert len(result['entries']) == 3
             # Should be most recent
             assert 'Entry 4' in result['entries'][-1]['message']
+        finally:
+            del os.environ['PLAN_BASE_DIR']
+
+
+# =============================================================================
+# TESTS: orphan-slot logging fallback (writers honor the status.json sentinel)
+# =============================================================================
+
+
+def test_log_work_orphan_dir_writes_global_not_plan_scoped():
+    """log_work against a status.json-less orphan dir writes to the global log.
+
+    The orphan plan dir (logs/work materialized while the authoritative dir is
+    worktree-resident, no status.json) MUST NOT acquire a plan-scoped logs/. The
+    entry lands in the date-suffixed global work log instead.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        plan_base = Path(tmp)
+        orphan_dir = plan_base / 'plans' / 'orphan-plan'
+        orphan_dir.mkdir(parents=True)  # exists, no status.json sentinel
+
+        os.environ['PLAN_BASE_DIR'] = str(plan_base)
+        try:
+            result = module.log_work('orphan-plan', 'PROGRESS', 'orphan entry', 'execute')
+            assert result['status'] == 'success'
+
+            global_work_log = plan_base / 'logs' / f'work-{date.today()}.log'
+            assert global_work_log.exists(), 'Entry should land in the global work log'
+            assert 'orphan entry' in global_work_log.read_text(encoding='utf-8')
+
+            assert not (orphan_dir / 'logs').exists(), 'No plan-scoped logs/ under the orphan dir'
+        finally:
+            del os.environ['PLAN_BASE_DIR']
+
+
+def test_log_decision_orphan_dir_writes_global_not_plan_scoped():
+    """log_decision against a status.json-less orphan dir writes to the global log."""
+    with tempfile.TemporaryDirectory() as tmp:
+        plan_base = Path(tmp)
+        orphan_dir = plan_base / 'plans' / 'orphan-plan'
+        orphan_dir.mkdir(parents=True)  # exists, no status.json sentinel
+
+        os.environ['PLAN_BASE_DIR'] = str(plan_base)
+        try:
+            result = module.log_decision('orphan-plan', 'orphan decision', 'execute')
+            assert result['status'] == 'success'
+
+            global_decision_log = plan_base / 'logs' / f'decision-{date.today()}.log'
+            assert global_decision_log.exists(), 'Entry should land in the global decision log'
+            assert 'orphan decision' in global_decision_log.read_text(encoding='utf-8')
+
+            assert not (orphan_dir / 'logs').exists(), 'No plan-scoped logs/ under the orphan dir'
+        finally:
+            del os.environ['PLAN_BASE_DIR']
+
+
+def test_log_entry_orphan_dir_writes_global_not_plan_scoped():
+    """log_entry against a status.json-less orphan dir writes to the global log."""
+    with tempfile.TemporaryDirectory() as tmp:
+        plan_base = Path(tmp)
+        orphan_dir = plan_base / 'plans' / 'orphan-plan'
+        orphan_dir.mkdir(parents=True)  # exists, no status.json sentinel
+
+        os.environ['PLAN_BASE_DIR'] = str(plan_base)
+        try:
+            module.log_entry('work', 'orphan-plan', 'INFO', 'orphan log_entry message')
+
+            global_work_log = plan_base / 'logs' / f'work-{date.today()}.log'
+            assert global_work_log.exists(), 'Entry should land in the global work log'
+            assert 'orphan log_entry message' in global_work_log.read_text(encoding='utf-8')
+
+            assert not (orphan_dir / 'logs').exists(), 'No plan-scoped logs/ under the orphan dir'
+        finally:
+            del os.environ['PLAN_BASE_DIR']
+
+
+def test_log_work_sentinel_present_writes_plan_scoped():
+    """log_work against an initialized (status.json) plan dir writes plan-scoped."""
+    with tempfile.TemporaryDirectory() as tmp:
+        plan_base = Path(tmp)
+        plan_dir = _init_plan_dir(plan_base, 'init-plan')
+
+        os.environ['PLAN_BASE_DIR'] = str(plan_base)
+        try:
+            result = module.log_work('init-plan', 'PROGRESS', 'init entry', 'execute')
+            assert result['status'] == 'success'
+
+            plan_work_log = plan_dir / 'logs' / 'work.log'
+            assert plan_work_log.exists(), 'Entry should land in the plan-scoped work log'
+            assert 'init entry' in plan_work_log.read_text(encoding='utf-8')
+
+            global_work_log = plan_base / 'logs' / f'work-{date.today()}.log'
+            assert not global_work_log.exists(), 'Initialized plan must not fall back to global'
         finally:
             del os.environ['PLAN_BASE_DIR']
 

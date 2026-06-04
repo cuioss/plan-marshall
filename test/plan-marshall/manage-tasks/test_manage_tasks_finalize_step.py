@@ -11,7 +11,55 @@ lesson 2026-05-08-14-001.
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from _helpers import _finalize_step_ns, add_basic_task, cmd_finalize_step
+
+
+@pytest.fixture(autouse=True)
+def _seed_status_sentinel(plan_context, monkeypatch):
+    """Seed a ``status.json`` sentinel into the plan dirs used by the positive
+    [OUTCOME]-emission tests so the script-level [OUTCOME] line lands in the
+    plan-scoped work log rather than falling back to the global log.
+
+    ``finalize-step``'s [OUTCOME] emission resolves plan-scoped logging only when
+    the plan dir carries a ``status.json`` sentinel (gated by ``get_log_path``).
+    Two seeding paths are needed:
+
+    * Wrap ``plan_context.plan_dir_for`` so any test that resolves its plan dir
+      through it (e.g. ``outcome-default``, which calls ``plan_dir_for`` before
+      its closing finalize) gets the sentinel in time.
+    * Eagerly seed the positive-test plan dirs whose [OUTCOME] write happens
+      BEFORE ``plan_dir_for`` is read (``outcome-overrides`` reads the log only
+      after the emitting finalize call), so the wrap alone would seed too late.
+
+    The negative tests (``outcome-intermediate``, ``outcome-failed``, and the
+    intermediate-step assertion in ``outcome-default``) assert the ABSENCE of an
+    [OUTCOME] line; seeding is harmless for them because the line is absent for a
+    different reason (intermediate step / failed status), not because of log
+    routing.
+    """
+
+    def _seed(plan_dir: Path) -> None:
+        sentinel = plan_dir / 'status.json'
+        if not sentinel.exists():
+            sentinel.write_text('{}', encoding='utf-8')
+
+    _orig = plan_context.plan_dir_for
+
+    def _seeding(plan_id):
+        d = _orig(plan_id)
+        _seed(d)
+        return d
+
+    monkeypatch.setattr(plan_context, 'plan_dir_for', _seeding)
+
+    # Positive [OUTCOME] tests whose emitting finalize call precedes the
+    # plan_dir_for read — seed eagerly so the [OUTCOME] line lands plan-scoped.
+    for plan_id in ('outcome-default', 'outcome-overrides'):
+        d = plan_context.plans_dir / plan_id
+        d.mkdir(parents=True, exist_ok=True)
+        _seed(d)
 
 
 # =============================================================================

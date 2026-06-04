@@ -395,6 +395,130 @@ class TestIntegrateNotFound:
 
 
 # =============================================================================
+# Reclaim a status.json-less orphan destination (this plan, Deliverable 3)
+# =============================================================================
+
+
+class TestIntegrateReclaimOrphan:
+    """Move-back reclaims a ``status.json``-less orphan slot at the destination.
+
+    A mis-resolved metrics/logging write while the authoritative plan dir was
+    worktree-resident can materialize a ``logs/``/``work/``-only residue at main's
+    plan-dir slot. That residue lacks the ``status.json`` sentinel, so it is NOT an
+    authoritative plan dir and NOT a completed integration. The move-back must:
+
+    * decline to short-circuit as ``noop`` (the idempotence guard keys on an
+      AUTHORITATIVE destination, not any directory),
+    * absorb the orphan's stale ``logs/``/``work/`` residue into the
+      worktree-resident plan dir before the move,
+    * remove the emptied orphan slot and move the real plan dir in,
+
+    all WITHOUT error. An AUTHORITATIVE destination (``status.json`` present) is the
+    opposite case — it is refused rather than clobbered (covered separately below).
+
+    The cwd-independence resolution seams are unaffected: the DESTINATION is still
+    resolved by the REAL ``resolve_main_anchored_path`` via ``PLAN_BASE_DIR`` and the
+    SOURCE by the stubbed ``_resolve_worktree_path_for_plan`` — identical to the
+    happy-path fixture — so adding orphan coverage does not perturb those seams.
+    """
+
+    def test_orphan_logs_only_destination_is_reclaimed_not_noop(self, isolated_env: dict) -> None:
+        env = isolated_env
+        # Stage a status.json-less orphan at main's slot: a logs/ residue only.
+        orphan = env['main_plan_dir']
+        (orphan / 'logs').mkdir(parents=True)
+        (orphan / 'logs' / 'stray.log').write_text('[STATUS] stray residue\n')
+        assert not (orphan / 'status.json').exists()
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+
+        # An ACTUAL reclaiming move-back — NOT a false noop short-circuit.
+        assert result['status'] == 'success', result
+        assert result['action'] == 'integrated', result
+
+        # The real (status.json-bearing) plan dir now resides on main...
+        assert env['main_plan_dir'].is_dir()
+        assert not env['main_plan_dir'].is_symlink()
+        assert (env['main_plan_dir'] / 'status.json').is_file()
+        # ...and is GONE from the worktree (moved, not copied).
+        assert not env['wt_plan_dir'].exists()
+
+        # The lock was acquired AND released (the reclaim path is a real move-back).
+        assert env['fake_lock'].acquired == 1
+        assert env['fake_lock'].released == 1
+
+    def test_orphan_residue_is_absorbed_into_moved_plan_dir(self, isolated_env: dict) -> None:
+        env = isolated_env
+        # Orphan carries both a logs/ and a work/ residue file, neither of which
+        # collides with a worktree-resident same-named file.
+        orphan = env['main_plan_dir']
+        (orphan / 'logs').mkdir(parents=True)
+        (orphan / 'logs' / 'stray.log').write_text('[STATUS] orphan log\n')
+        (orphan / 'work').mkdir(parents=True)
+        (orphan / 'work' / 'scratch.toon').write_text('orphan: work\n')
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+        assert result['status'] == 'success', result
+        assert result['action'] == 'integrated', result
+
+        # Both orphan residue files were absorbed into the moved plan dir.
+        absorbed_log = env['main_plan_dir'] / 'logs' / 'stray.log'
+        absorbed_work = env['main_plan_dir'] / 'work' / 'scratch.toon'
+        assert absorbed_log.is_file()
+        assert absorbed_log.read_text() == '[STATUS] orphan log\n'
+        assert absorbed_work.is_file()
+        assert absorbed_work.read_text() == 'orphan: work\n'
+
+    def test_worktree_resident_copy_wins_on_residue_collision(self, isolated_env: dict) -> None:
+        env = isolated_env
+        # The worktree-resident plan dir already has a logs/work.log (from the
+        # global-log fold) — give the orphan a same-named log with DIFFERENT bytes.
+        orphan = env['main_plan_dir']
+        (orphan / 'logs').mkdir(parents=True)
+        (orphan / 'logs' / 'work.log').write_text('[STATUS] ORPHAN copy — must NOT win\n')
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+        assert result['status'] == 'success', result
+        assert result['action'] == 'integrated', result
+
+        # The worktree-resident (authoritative) copy survives the collision: the
+        # folded global log content, not the orphan's bytes.
+        folded = env['main_plan_dir'] / 'logs' / 'work.log'
+        assert folded.is_file()
+        assert folded.read_text() == '[STATUS] hello\n'
+
+    def test_authoritative_destination_is_refused_not_clobbered(self, isolated_env: dict) -> None:
+        """An AUTHORITATIVE (status.json-bearing) destination that survives the
+        idempotence guard (because the worktree copy is STILL resident) must be
+        refused by the move-back rather than clobbered — the rollback path leaves the
+        authoritative copy WHOLLY in the worktree.
+        """
+        env = isolated_env
+        # Stage a REAL (status.json-bearing) plan dir at main's slot AS WELL AS the
+        # worktree-resident one. The idempotence guard only short-circuits when the
+        # worktree copy is ABSENT, so with both present the reclaim/refuse branch of
+        # _move_back_dir runs and must refuse the authoritative destination.
+        authoritative = env['main_plan_dir']
+        authoritative.mkdir(parents=True)
+        (authoritative / 'status.json').write_text('{"sentinel": true}\n')
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+
+        # Refused (not clobbered): an error, rolled back to the worktree.
+        assert result['status'] == 'error', result
+        assert 'rolled back' in result['error']
+
+        # The authoritative main destination is untouched (its sentinel survives)...
+        assert (env['main_plan_dir'] / 'status.json').read_text() == '{"sentinel": true}\n'
+        # ...and the worktree-resident copy is still WHOLLY present (never split).
+        assert env['wt_plan_dir'].is_dir()
+        assert (env['wt_plan_dir'] / 'status.json').is_file()
+
+        # The lock was released even on this refuse/rollback path.
+        assert env['fake_lock'].released == 1
+
+
+# =============================================================================
 # CLI argparse plumbing
 # =============================================================================
 
