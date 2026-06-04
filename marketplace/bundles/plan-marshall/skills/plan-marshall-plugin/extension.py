@@ -103,15 +103,6 @@ class Extension(ExtensionBase):
                 'default_change_type': 'tech_debt',
                 'scope': 'codebase_wide',
             },
-            {
-                'key': 'marshal-json-config-audit',
-                'name': 'marshal.json Configuration Audit',
-                'description': 'Audit and improve .plan/marshal.json across five aspects (default-surfacing, dead-config, docs, naming, units)',
-                'skill': 'plan-marshall:recipe-marshal-json-config-audit',
-                'default_change_type': 'tech_debt',
-                'scope': 'module',
-                'coverage_gathering': 'none',
-            },
         ]
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:

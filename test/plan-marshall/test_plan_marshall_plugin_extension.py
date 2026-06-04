@@ -16,16 +16,6 @@ from conftest import MARKETPLACE_ROOT, get_script_path, run_script
 
 _MANAGE_CONFIG = get_script_path('plan-marshall', 'manage-config', 'manage-config.py')
 
-# Required ext-point-recipe fields every recipe dict must carry.
-REQUIRED_RECIPE_FIELDS = {
-    'key',
-    'name',
-    'description',
-    'skill',
-    'default_change_type',
-    'scope',
-}
-
 
 def _load_extension():
     """Load the plan-marshall bundle extension.py and return an Extension instance."""
@@ -51,25 +41,6 @@ def test_provides_recipes_returns_list():
     assert all(isinstance(r, dict) for r in recipes)
 
 
-def test_provides_recipes_includes_marshal_json_config_audit():
-    """The marshal-json-config-audit recipe is registered with all required fields."""
-    recipes = _load_extension().provides_recipes()
-    recipe = _recipe_by_key(recipes, 'marshal-json-config-audit')
-    assert recipe is not None, 'marshal-json-config-audit recipe must be registered'
-    assert REQUIRED_RECIPE_FIELDS.issubset(recipe.keys())
-
-
-def test_marshal_json_config_audit_field_values():
-    """The marshal-json-config-audit recipe carries the expected field values."""
-    recipes = _load_extension().provides_recipes()
-    recipe = _recipe_by_key(recipes, 'marshal-json-config-audit')
-    assert recipe is not None
-    assert recipe['skill'] == 'plan-marshall:recipe-marshal-json-config-audit'
-    assert recipe['default_change_type'] == 'tech_debt'
-    assert recipe['scope'] == 'module'
-    assert recipe['coverage_gathering'] == 'none'
-
-
 def test_refactor_to_profile_standards_still_registered():
     """The pre-existing recipe is not regressed by the new registration."""
     recipes = _load_extension().provides_recipes()
@@ -79,8 +50,20 @@ def test_refactor_to_profile_standards_still_registered():
 
 
 def test_discoverable_via_list_recipes(plan_context):
-    """The recipe surfaces through the manage-config list-recipes discovery path."""
+    """The recipe surfaces through list-recipes as a project-local recipe.
+
+    After relocation to .claude/skills/, the recipe is no longer a bundle
+    recipe; it is discovered by the project-local scanner. The discovery path
+    parses the relocated SKILL.md's `recipe_domain` row end-to-end, so this
+    test also proves that row is present and not silently skipped. The recipe
+    must surface with the `project:` skill notation and `source: project`
+    (NOT the bundle `plan-marshall:` notation).
+    """
     result = run_script(_MANAGE_CONFIG, 'list-recipes')
     assert result.success, f'list-recipes should succeed: {result.stderr}'
-    assert 'marshal-json-config-audit' in result.stdout
-    assert 'plan-marshall:recipe-marshal-json-config-audit' in result.stdout
+    data = result.toon()
+    recipes = data.get('recipes', [])
+    recipe = _recipe_by_key(recipes, 'marshal-json-config-audit')
+    assert recipe is not None, 'marshal-json-config-audit must be discovered as a project-local recipe'
+    assert recipe['skill'] == 'project:recipe-marshal-json-config-audit'
+    assert recipe['source'] == 'project'

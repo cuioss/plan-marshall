@@ -2,6 +2,7 @@
 name: recipe-marshal-json-config-audit
 description: Domain-invariant recipe that audits and improves .plan/marshal.json across five aspects (default-surfacing, dead-config, docs, naming, units) at a hard-coded T4/module cell
 user-invocable: false
+allowed-tools: Read, Glob, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 
@@ -11,15 +12,17 @@ Generic, domain-invariant recipe skill that drives a plan to **audit and improve
 
 Like `recipe-simplify-codebase` it is an LLM-driven, SKILL.md-only deliverable-collection workflow (no scripts): the phase-3-outline recipe path loads it to produce a config-audit `solution_outline.md`.
 
-Unlike the interactive recipes, this recipe **hard-codes** its `(thoroughness, scope)` cell instead of gathering it from the user. It implements the [coverage-gathering contract](../dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — expand and consume — but **skips the gather step**, supplying a fixed identifier + expanded instruction per the contract's gather → expand → consume model.
+Unlike the interactive recipes, this recipe **hard-codes** its `(thoroughness, scope)` cell instead of gathering it from the user. It implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — expand and consume — but **skips the gather step**, supplying a fixed identifier + expanded instruction per the contract's gather → expand → consume model.
 
-## Input
+## Input Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `plan_id` | string | Yes | Plan identifier |
+| Parameter | Source |
+|-----------|--------|
+| `plan_id` | From phase-3-outline |
+| `recipe_domain` | `plan-marshall-plugin-dev` |
+| `recipe_profile` | `implementation` |
 
-There is no `recipe_scope` / `recipe_thoroughness` input — the cell is fixed (see Step 1). The recipe is plan-bound; it persists the resolved cell to `status.json` metadata.
+There is no `recipe_scope` / `recipe_thoroughness` input — the cell is fixed (see Step 1). The package-source parameter is omitted because the recipe audits a single config file and does not iterate packages. The recipe is plan-bound; it persists the resolved cell to status.json metadata.
 
 ---
 
@@ -39,7 +42,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id {plan_id} --set --field coverage_instruction --value {expanded_instruction}
 ```
 
-The ladders (T1–T5), the grade-to-the-floor rule, and the coupling constraint are defined once in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md), and the cell → instruction expansion table lives in [`dev-agent-behavior-rules/standards/coverage-gathering-contract.md`](../dev-agent-behavior-rules/standards/coverage-gathering-contract.md); do NOT restate either here. `coverage expand` enforces the coupling constraint and emits `error_type: coverage_coupling_violation` for an incoherent cell — the fixed `T4 / module` pair satisfies the constraint by construction, so a violation here is a contract bug, not a re-gather case.
+The ladders (T1–T5), the grade-to-the-floor rule, and the coupling constraint are defined once in [`dev-agent-behavior-rules/standards/thoroughness.md`](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/thoroughness.md), and the cell → instruction expansion table lives in [`dev-agent-behavior-rules/standards/coverage-gathering-contract.md`](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md); do NOT restate either here. `coverage expand` enforces the coupling constraint and emits `error_type: coverage_coupling_violation` for an incoherent cell — the fixed `T4 / module` pair satisfies the constraint by construction, so a violation here is a contract bug, not a re-gather case.
 
 Consume the **expanded instruction** (NOT the raw cell) when collecting the audit deliverables in Step 3.
 
@@ -138,5 +141,5 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 - `plan-marshall:dev-agent-behavior-rules` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (expand → consume; persistence; cell → instruction table). This recipe skips the gather step.
 - `plan-marshall:manage-config` `coverage expand` — the static identifier → instruction expander that enforces the coupling constraint.
 - `plan-marshall:recipe-simplify-codebase` — the sibling SKILL.md-only recipe whose deliverable-collection shape this recipe mirrors.
-- `plan-marshall:extension-api` `standards/ext-point-recipe.md` — the recipe extension point this skill implements; registration lives in `plan-marshall-plugin`'s `provides_recipes()`.
+- `plan-marshall:extension-api` `standards/ext-point-recipe.md` — the recipe extension point this skill implements; project-local recipes are discovered from `.claude/skills/recipe-*` by `manage-config list-recipes`.
 - `plan-marshall:phase-3-outline` Step 2.5 — loads this skill with input parameters.

@@ -68,7 +68,6 @@
     "./skills/plan-marshall-plugin",
     "./skills/plan-retrospective",
     "./skills/recipe-lesson-cleanup",
-    "./skills/recipe-marshal-json-config-audit",
     "./skills/recipe-refactor-to-profile-standards",
     "./skills/recipe-simplify-codebase",
     "./skills/ref-toon-format",
