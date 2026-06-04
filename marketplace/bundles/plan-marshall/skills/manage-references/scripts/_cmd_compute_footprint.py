@@ -17,6 +17,7 @@ Where ``live`` is the union of:
     - parsed paths from ``git -C {worktree_path} status --porcelain``
 """
 
+import subprocess
 from pathlib import Path
 
 from _references_core import (
@@ -63,7 +64,15 @@ def cmd_compute_footprint(args) -> dict:
         }
 
     base_ref = resolve_base_ref(getattr(args, 'base_ref', None), refs)
-    live_set = compute_plan_branch_diff(worktree, base_ref)
+    try:
+        live_set = compute_plan_branch_diff(worktree, base_ref)
+    except subprocess.CalledProcessError as exc:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'git_error',
+            'message': f'Failed to compute plan branch diff: {exc}',
+        }
     files = sorted(live_set)
 
     return {

@@ -75,7 +75,12 @@ def _resolve_declared_footprint(plan_dir: Path) -> set[str]:
     refs_path = plan_dir / 'references.json'
     if not refs_path.exists():
         raise FileNotFoundError(str(refs_path))
-    refs = json.loads(refs_path.read_text())
+    try:
+        refs = json.loads(refs_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        refs = {}
+    if not isinstance(refs, dict):
+        refs = {}
     base_ref = resolve_base_ref(None, refs)
     worktree = _resolve_worktree_root(plan_dir)
     try:
