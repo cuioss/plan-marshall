@@ -360,7 +360,7 @@ def cmd_list(args: argparse.Namespace) -> dict:
                 continue
 
             status = _try_read_status_json(plan_dir)
-            if not status:
+            if not isinstance(status, dict) or not status:
                 continue
 
             try:
@@ -397,12 +397,17 @@ def cmd_list(args: argparse.Namespace) -> dict:
             if not wt_plans_dir.is_dir():
                 continue
 
-            for plan_dir in sorted(wt_plans_dir.iterdir()):
+            try:
+                plan_dirs = sorted(wt_plans_dir.iterdir())
+            except OSError:
+                continue
+
+            for plan_dir in plan_dirs:
                 if not plan_dir.is_dir() or plan_dir.name in seen_ids:
                     continue
 
                 status = _try_read_status_json(plan_dir)
-                if not status:
+                if not isinstance(status, dict) or not status:
                     continue
 
                 try:
