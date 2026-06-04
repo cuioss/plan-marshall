@@ -655,6 +655,18 @@ def cmd_findings_check(args: Any) -> dict[str, Any]:
     SAME ``{status: error, error: blocking_findings_present, ...}`` payload
     shape ``cmd_capture`` returns, so the two intra-finalize callers branch on
     an identical envelope.
+
+    **Fails closed on an unevaluable invariant.**
+    :func:`_capture_pending_findings_blocking_count` returns ``None`` when a
+    per-type query could not run (executor unreachable / partial query
+    failure). For a gate verb that is NOT a benign "not applicable" — returning
+    ``status: success`` would let the intra-finalize boundary advance to
+    ``branch-cleanup`` without proof that no blocking findings remain. This
+    handler therefore translates ``None`` into a distinct
+    ``{status: error, error: query_failed, ...}`` envelope so the caller halts
+    rather than failing open. (The composite ``capture`` records ``None`` as an
+    empty column for retrospective analysis; the read-only gate verb cannot
+    afford that latitude because its sole output is the go/no-go verdict.)
     """
     plan_id = args.plan_id
     phase = args.phase
@@ -677,6 +689,21 @@ def cmd_findings_check(args: Any) -> dict[str, Any]:
             'blocking_types': exc.blocking_types,
             'per_type': exc.per_type,
             'message': str(exc),
+        }
+    if blocking_count is None:
+        # Fail closed: a partial query failure means the blocking-findings
+        # invariant could not be evaluated. Returning success here would let the
+        # intra-finalize gate advance without proof that no blocking findings
+        # remain. Surface a distinct query_failed error so the caller halts.
+        return {
+            'status': 'error',
+            'error': 'query_failed',
+            'plan_id': plan_id,
+            'phase': phase,
+            'message': (
+                'pending_findings_blocking_count could not be evaluated for '
+                f"phase '{phase}' (executor unreachable / partial query failure)"
+            ),
         }
     return {
         'status': 'success',

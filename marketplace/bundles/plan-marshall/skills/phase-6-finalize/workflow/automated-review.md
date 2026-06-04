@@ -190,6 +190,8 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake find
 
 **On `status: success`** (no pending blocking-type findings): proceed to "Mark Step Complete" below.
 
+**On `status: error` with `error: query_failed`** (the blocking-findings invariant could not be evaluated — a per-type query failed, typically because the executor was unreachable): the gate fails CLOSED. The boundary is NOT satisfied, so do NOT proceed to `branch-cleanup`. This is an environmental failure with no findings to triage — there is nothing to loop back over. Mark the step `failed` (`mark-step-done … --outcome failed --display-detail "findings-check query_failed (gate unevaluable)"`) so the dispatcher halts the pipeline; the operator re-runs finalize once the environment is healthy and the read-only check re-evaluates on re-entry. Do NOT treat `query_failed` as a clean pass — that would reintroduce the fail-open the single-invariant gate exists to prevent.
+
 **On `status: error` with `error: blocking_findings_present`** (the structured envelope is field-for-field identical to the composite `capture` blocking-findings payload — see [`phase-handshake.md` § Capture-time behavior](../../plan-marshall/references/phase-handshake.md#pending_findings_blocking_count-resolution)):
 
 ```toon

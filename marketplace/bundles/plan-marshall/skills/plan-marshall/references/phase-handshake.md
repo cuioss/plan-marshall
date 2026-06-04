@@ -84,6 +84,8 @@ blocking_count: 0
 
 On a pending blocking-type finding the verb returns the **same** structured error payload `capture` emits for `blocking_findings_present` (`blocking_count`, `blocking_types`, `per_type`, `message`), so the intra-finalize callers branch on an interchangeable envelope. There is no `--strict` flag — the verdict is carried entirely in the TOON `status` field, and a `status: error` payload still exits 0 (mirroring the `capture` exit convention the callers already handle).
 
+**Fails closed on an unevaluable invariant.** When the underlying blocking-count query cannot run (executor unreachable / partial query failure, surfaced as a `None` count), the verb returns `status: error, error: query_failed` rather than `status: success`. As a gate verb its sole output is the go/no-go verdict, so it cannot fail open: an unevaluable invariant must halt the intra-finalize boundary, not silently advance it to `branch-cleanup`. (The composite `capture` records the same `None` as an empty column for retrospective analysis — acceptable there because `capture`'s gate is the `BlockingFindingsPresent` raise, not the return value.) The callers treat `query_failed` as a halt-and-retry environmental failure (no findings to triage, no loop-back).
+
 ### `list` / `clear`
 
 `list` returns every row in `handshakes.toon` projected to the canonical field set. `clear --phase P` removes exactly the row for `P` (others remain intact).

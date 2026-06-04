@@ -687,3 +687,25 @@ def test_findings_check_refuses_on_unresolved_worktree(
     assert result['error'] == 'worktree_unresolved'
     assert result['plan_id'] == 'fc-wt'
     assert result['phase'] == '6-finalize'
+
+
+def test_findings_check_fails_closed_on_unevaluable_query(
+    plan_context, stub_metadata, stub_blocking_types, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A partial query failure (per-type query returns ``None``) makes the gate
+    fail CLOSED with ``query_failed`` rather than failing open as
+    ``status: success``. The intra-finalize boundary must not advance to
+    branch-cleanup without proof that no blocking findings remain — returning
+    success on an unevaluable invariant would be a fail-open gate."""
+    monkeypatch.setattr(inv, '_query_pending_count_for_type', lambda _p, _t: None)
+    stub_blocking_types['6-finalize'] = ['bug']
+
+    result = cmds.cmd_findings_check(_ns(plan_id='fc-query-fail', phase='6-finalize'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'query_failed'
+    assert result['plan_id'] == 'fc-query-fail'
+    assert result['phase'] == '6-finalize'
+    assert 'message' in result
+    # Read-only: no handshake row is written even on the query-failure path.
+    assert store.get_row('fc-query-fail', '6-finalize') is None
