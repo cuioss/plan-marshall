@@ -29,9 +29,14 @@ in ``marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md`` §
 """
 
 import re
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
+from _references_core import (  # type: ignore[import-not-found]
+    compute_plan_branch_diff,
+    resolve_base_ref,
+)
 from _tasks_core import get_plan_dir  # type: ignore[import-not-found]
 from constants import FILE_REFERENCES, FILE_STATUS  # type: ignore[import-not-found]
 from file_ops import read_json  # type: ignore[import-not-found]
@@ -208,32 +213,36 @@ def _resolve_worktree_root(plan_id: str) -> Path:
     return Path.cwd()
 
 
-def _read_modified_files(plan_id: str) -> list[str]:
-    """Read ``references.modified_files`` for the plan.
+def _resolve_footprint(plan_id: str, worktree_root: Path) -> list[str]:
+    """Derive the live plan footprint as the mtime-candidate scope.
 
-    Reads ``references.json`` directly via ``file_ops.read_json`` rather than
-    dispatching through ``manage-references`` to keep the command inside the
-    manage-tasks sys.path island. Returns an empty list on missing file,
-    parse failure, or missing/non-list field — callers MUST treat an empty
-    list as "fall back to the worktree-root walk".
+    Reads ``references.json`` only to resolve the base ref, then computes the
+    footprint live from the worktree via ``compute_plan_branch_diff``
+    (``{base}...HEAD`` ∪ porcelain). Returns repo-relative paths.
+
+    Returns an empty list on any failure — missing references.json, a worktree
+    that is not a git tree (archived plan), or a git error — so callers fall
+    back to the worktree-root walk exactly as before. Absolute paths and
+    ``.``/``..`` traversal entries are filtered out for safety.
     """
     refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
-    if not refs_path.is_file():
-        return []
+    refs: dict = {}
+    if refs_path.is_file():
+        try:
+            loaded = read_json(refs_path)
+        except Exception:  # noqa: BLE001 — degrade to empty refs on any error
+            loaded = None
+        if isinstance(loaded, dict):
+            refs = loaded
+    base_ref = resolve_base_ref(None, refs)
     try:
-        refs = read_json(refs_path)
-    except Exception:  # noqa: BLE001 — degrade to empty list on any error
-        return []
-    if not isinstance(refs, dict):
-        return []
-    modified = refs.get('modified_files', [])
-    if not isinstance(modified, list):
+        footprint = compute_plan_branch_diff(worktree_root, base_ref)
+    except subprocess.CalledProcessError:
         return []
     return [
         entry
-        for entry in modified
-        if isinstance(entry, str)
-        and entry
+        for entry in footprint
+        if entry
         and not Path(entry).is_absolute()
         and '..' not in Path(entry).parts
         and '.' not in Path(entry).parts
@@ -271,15 +280,16 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
         }
 
     worktree_root = _resolve_worktree_root(plan_id)
-    modified_files = _read_modified_files(plan_id)
+    footprint = _resolve_footprint(plan_id, worktree_root)
 
-    # Resolve mtime candidates: modified_files first (precise scope), then
-    # fall back to a full worktree walk when the list is empty or every
+    # Resolve mtime candidates: the live footprint first (precise scope), then
+    # fall back to a full worktree walk when the footprint is empty or every
     # entry is missing on disk.
     candidate_paths: list[Path] = []
-    for rel in modified_files:
-        # modified_files are repo-relative; resolve against the worktree root
-        # so a plan that runs in an isolated worktree walks the correct tree.
+    for rel in footprint:
+        # Footprint entries are repo-relative; resolve against the worktree
+        # root so a plan that runs in an isolated worktree walks the correct
+        # tree.
         candidate_paths.append(worktree_root / rel)
 
     t_worktree_epoch: float | None = None

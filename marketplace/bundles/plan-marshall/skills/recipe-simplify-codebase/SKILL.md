@@ -9,7 +9,7 @@ implements: plan-marshall:extension-api/standards/ext-point-recipe
 
 Generic, domain-invariant recipe skill for **deliberate wide-scope simplification campaigns** — the missing vehicle for sweeping surplus structure out of a codebase at a chosen `scope × thoroughness` cell. Where `recipe-refactor-to-profile-standards` brings code into compliance with profile standards, this recipe runs the cognitive minimum-viable-code review across a declared radius and deletes surplus structure the static doctors cannot reach.
 
-The per-batch worker is `finalize-step-simplify`'s cognitive engine — **reused, not reinvented** — widened past its `modified_files` change-set cap and fed a dependency-structured batch plan. The scaffold mirrors `recipe-refactor-to-profile-standards`'s module/package iteration. Domain-invariant by construction: the minimum-viable-code anti-pattern set is language-agnostic (as `finalize-step-simplify` proves), so this recipe applies uniformly to Java, Python, JavaScript, documentation, and marketplace changesets alike.
+The per-batch worker is `finalize-step-simplify`'s cognitive engine — **reused, not reinvented** — widened past its live-footprint change-set cap and fed a dependency-structured batch plan. The scaffold mirrors `recipe-refactor-to-profile-standards`'s module/package iteration. Domain-invariant by construction: the minimum-viable-code anti-pattern set is language-agnostic (as `finalize-step-simplify` proves), so this recipe applies uniformly to Java, Python, JavaScript, documentation, and marketplace changesets alike.
 
 ## Input
 
@@ -93,7 +93,7 @@ Collect one deliverable per sweep batch (one batch per radius unit at T1–T3; o
   - `module`: `{module_name}`
 - **Per-deliverable scope × thoroughness declaration**: record the deliverable's `recipe_scope` × `recipe_thoroughness` cell for the floor-graded self-report (the quality signal — there is no blocking gate). The contract's runtime consumer, `finalize-step-simplify`, reads the expanded instruction (from `status.json` metadata `coverage_instruction`) to govern its review depth and breadth per the coverage-gathering contract.
 - **Affected files**: every file in the batch (from architecture data, or via `manage-files discover` when the architecture record reports `file_count: 0`).
-- **Per-batch worker**: the `finalize-step-simplify` cognitive engine, widened past the `modified_files` cap and fed the batch file set (and, at T4+, the relation-graph cluster). Cross-reference [`phase-6-finalize/standards/finalize-step-simplify.md`](../phase-6-finalize/standards/finalize-step-simplify.md) — do NOT re-author the anti-pattern review logic; this recipe only widens its scope and supplies the batch plan.
+- **Per-batch worker**: the `finalize-step-simplify` cognitive engine, widened past the live-footprint cap and fed the batch file set (and, at T4+, the relation-graph cluster). Cross-reference [`phase-6-finalize/standards/finalize-step-simplify.md`](../phase-6-finalize/standards/finalize-step-simplify.md) — do NOT re-author the anti-pattern review logic; this recipe only widens its scope and supplies the batch plan.
 
 The unit's achieved thoroughness grades to the FLOOR across its batches (a campaign where some batches were only sampled is graded at the sampled rung — see the grade-to-the-floor rule in the central standard).
 

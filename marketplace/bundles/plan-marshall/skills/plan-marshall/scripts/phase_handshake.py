@@ -32,8 +32,8 @@ the boundary phase the handshake verifies (the phase transitioned OUT of):
 
 The "worktree-state drift checks" relaxed at phase-5+ are the layer-D
 leak-into-main guard (``main_dirty_files`` / ``_check_main_dirty_drift``) and
-the sideways worktree invariants (``worktree_sha`` / ``worktree_dirty`` /
-``worktree_orphan``). Under the move-based, cwd-pinned hermetic worktree model
+the sideways worktree invariants (``worktree_sha`` / ``worktree_dirty``).
+Under the move-based, cwd-pinned hermetic worktree model
 the worktree is materialized at phase-5 start and the plan dir is MOVED into
 it; from then the orchestrator's cwd IS the worktree and the single
 cwd-unchanged invariant (asserted by ``file_ops.guard_worktree_cwd``) keeps it
@@ -127,19 +127,16 @@ def main() -> int:
     if args.command == 'verify' and getattr(args, 'strict', False):
         if result.get('status') == 'drift':
             return 1
-        # worktree_unresolved (metadata→disk), worktree_metadata_drift
-        # (disk→metadata, the inverse direction) and
+        # worktree_unresolved (metadata→disk) and
         # main_checkout_dirtied_during_plan (layer-D filesystem leak into
-        # the main checkout during a worktree-routed plan) are all
+        # the main checkout during a worktree-routed plan) are both
         # phase-boundary refusals. Under --strict they MUST surface as a
         # non-zero exit so calling tooling that swallows TOON output still
-        # sees the failure (mirrors the drift contract). All three share
-        # the same severity: the operator must repair the disagreement (or
-        # revert the leaked main-checkout changes) before any phase advance
-        # is allowed.
+        # sees the failure (mirrors the drift contract). Both share the same
+        # severity: the operator must repair the disagreement (or revert the
+        # leaked main-checkout changes) before any phase advance is allowed.
         if result.get('error') in (
             'worktree_unresolved',
-            'worktree_metadata_drift',
             'main_checkout_dirtied_during_plan',
         ):
             return 1

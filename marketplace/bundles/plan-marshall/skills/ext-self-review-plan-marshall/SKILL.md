@@ -54,7 +54,7 @@ Surfaces eight candidate lists from the worktree's staged diff against the base 
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `--plan-id PLAN_ID` | Yes | Plan identifier (kebab-case). Used to read `references.modified_files` and (when `--project-dir` is omitted) to auto-resolve the worktree path via `manage-status get-worktree-path`. |
+| `--plan-id PLAN_ID` | Yes | Plan identifier (kebab-case). Used to derive the plan footprint on demand from the worktree (`{base}...HEAD` ∪ porcelain) and (when `--project-dir` is omitted) to auto-resolve the worktree path via `manage-status get-worktree-path`. |
 | `--project-dir PROJECT_DIR` | No | Absolute path to the active git worktree (escape hatch). When omitted, the path is auto-resolved from `--plan-id`. All `git` calls run as `git -C {project_dir} ...`. |
 | `--base-branch BRANCH` | No | Base branch for diff computation. Defaults to `main`. |
 | `--contract-radius N` | No | Directory levels to walk up when collecting schema-bearing markdown files (default: 3). |
@@ -152,7 +152,7 @@ protected_identifiers[N9]:
 
 | Condition | Output |
 |-----------|--------|
-| `references.modified_files` missing or empty | `status: success` with empty candidate lists (no diff scope) |
+| Live footprint empty (no `{base}...HEAD` ∪ porcelain changes) | `status: success` with empty candidate lists (no diff scope) |
 | `git -C {project_dir}` fails | `status: error\nerror: git_unavailable\nmessage: ...` (exit 1) |
 | Base branch not found | `status: error\nerror: base_branch_not_found\nbase_branch: {base}` (exit 1) |
 | Plan not found | `status: error\nerror: plan_not_found` (exit 1) |
@@ -174,7 +174,7 @@ This script is a **worktree-scoped (Bucket B)** script (per `tools-script-execut
 - Symmetric-pair test-presence (`test_present`): `true` when the `test/` tree references the function name, `false` (Tier-2 missing-test signal) when it does not, and word-boundary discipline (no substring false positives, missing `test/` directory → `false`)
 - Flag-guard-pair detection: a guard covering both forms (`both`), a guard covering only the space form (`space`), a guard covering only the equals form (`equals`), the asymmetric-pair case (one `both` guard + one single-form sibling), and the negative case (no flag guard → empty list)
 - Contract-source doc-prose augmentation: an `.md` doc whose added lines reference a sibling script (`execute-script.py {bundle}:{skill}:{script}`) AND a TOON field (`{status}`) surfaces that script's `SKILL.md`; the doc-referenced source is unioned with any directory-structural sources; a dangling notation (no `SKILL.md` on disk) surfaces nothing; a notation without a TOON-field token surfaces nothing; a TOON-field token without a notation surfaces nothing
-- Empty-diff edge case (no `modified_files` → empty candidate lists)
+- Empty-diff edge case (empty live footprint → empty candidate lists)
 - `--project-dir` honoring (script does not discover root from cwd)
 - Keep-identifier marker detection: `keep_protected` when the identifier is still grep-able in the post-image; `keep_violation` when the consolidation removed the token; marker syntax variations (whitespace tolerance, multiple markers per file) all recognized
 

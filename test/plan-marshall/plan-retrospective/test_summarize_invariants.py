@@ -315,41 +315,42 @@ class TestConditionalPhaseStepsExpectation:
         )
 
 
-class TestDeferredMaterializationWindow:
-    """Tests for the deferred-materialization fix in ``expected_invariants``.
+class TestWorktreeInvariantGating:
+    """Pin the B-strip contract for worktree-state invariants in
+    ``expected_invariants``.
 
-    Phase-5-execute is the worktree materialization phase for worktree-bearing
-    plans; phases 1-init through 4-plan declare the worktree intent but the
-    directory itself is not created until phase-5-execute Step 2.5. Before the
-    fix, ``expected_invariants`` consulted only the plan's current metadata
-    and required ``worktree_sha`` / ``worktree_dirty`` for every phase,
-    producing 8 spurious ERROR findings (2 per pre-5-execute phase) for every
-    worktree-bearing plan. The fix makes the predicate row-aware: include
-    worktree invariants only when the captured row carries them OR when the
-    phase is at/after materialization.
+    Under the no-sentinel model the worktree-state invariants
+    (``worktree_sha`` / ``worktree_dirty``) are expected whenever the plan is
+    routed through a worktree — signalled either by a non-empty worktree value
+    on the captured row (Signal 1) or by ``use_worktree`` / ``worktree_path``
+    in the plan's current metadata (Signal 2). There is no deferred-
+    materialization window that exempts the planning-phase boundaries.
     """
 
-    def test_expected_invariants_excludes_worktree_for_deferred_materialization_window(self):
-        """Function-level contract: pre-5-execute phase + empty row values → no worktree invariants."""
+    def test_expected_invariants_includes_worktree_when_metadata_worktree_routed(self):
+        """Signal 2: worktree-routed metadata → worktree invariants at any phase."""
         metadata = {'worktree_path': '/some/worktree'}
-        # The phase ran during the deferred-materialization window — its
-        # captured row carries no worktree values yet.
         phase_values = {'main_sha': 'abc123', 'worktree_sha': None, 'worktree_dirty': ''}
 
         expected = _summarize.expected_invariants(metadata, '3-outline', phase_values)
 
-        assert 'worktree_sha' not in expected, (
-            f'worktree_sha must be excluded for deferred phase, got {expected}'
-        )
-        assert 'worktree_dirty' not in expected, (
-            f'worktree_dirty must be excluded for deferred phase, got {expected}'
-        )
-        # Core invariants must still be present.
+        assert 'worktree_sha' in expected
+        assert 'worktree_dirty' in expected
         assert 'main_sha' in expected
 
+    def test_expected_invariants_includes_worktree_on_use_worktree_flag(self):
+        """Signal 2 fires on ``use_worktree`` alone (no worktree_path yet)."""
+        metadata = {'use_worktree': True}
+        phase_values = {'main_sha': 'abc123'}
+
+        expected = _summarize.expected_invariants(metadata, '2-refine', phase_values)
+
+        assert 'worktree_sha' in expected
+        assert 'worktree_dirty' in expected
+
     def test_expected_invariants_includes_worktree_when_row_carries_value(self):
-        """Function-level contract: row carries worktree_sha → include worktree invariants regardless of phase."""
-        metadata = {'worktree_path': '/some/worktree'}
+        """Signal 1: row carries worktree_sha → include worktree invariants."""
+        metadata: dict[str, object] = {}
         phase_values = {'main_sha': 'abc123', 'worktree_sha': 'def456'}
 
         expected = _summarize.expected_invariants(metadata, '5-execute', phase_values)
@@ -357,62 +358,35 @@ class TestDeferredMaterializationWindow:
         assert 'worktree_sha' in expected
         assert 'worktree_dirty' in expected
 
-    def test_expected_invariants_includes_worktree_for_post_materialization_phase(self):
-        """Function-level contract: 5-execute / 6-finalize phase + worktree metadata → expect worktree invariants."""
-        metadata = {'worktree_path': '/some/worktree'}
-        # Even when the row's worktree values are empty (a real capture gap),
-        # phases at/after materialization MUST expect them.
-        phase_values = {'main_sha': 'abc123', 'worktree_sha': None}
+    def test_expected_invariants_excludes_worktree_for_main_checkout_plan(self):
+        """Neither signal → main-checkout plan, no worktree invariants expected."""
+        metadata: dict[str, object] = {}
+        phase_values = {'main_sha': 'abc123'}
 
-        for materialized_phase in ('5-execute', '6-finalize'):
-            expected = _summarize.expected_invariants(metadata, materialized_phase, phase_values)
-            assert 'worktree_sha' in expected, (
-                f'{materialized_phase} must still expect worktree_sha as a real gap signal'
-            )
+        expected = _summarize.expected_invariants(metadata, '3-outline', phase_values)
 
-    def test_run_emits_no_worktree_findings_in_pre_5_execute_phases_when_unmaterialized(
+        assert 'worktree_sha' not in expected
+        assert 'worktree_dirty' not in expected
+        assert 'main_sha' in expected
+
+    def test_run_includes_worktree_invariants_for_worktree_routed_plan(
         self, tmp_path, monkeypatch
     ):
-        """Integration contract: a worktree-bearing plan's pre-5-execute phases produce zero worktree ERROR findings.
-
-        Reproduces the empirical 8-spurious-findings case from the originating
-        lesson: a worktree-bearing plan captured 1-init through 4-plan during
-        the deferred-materialization window (empty worktree_sha / worktree_dirty)
-        and 5-execute / 6-finalize after materialization.
+        """Integration contract: a worktree-routed plan expects worktree
+        invariants at every captured phase; phases that captured them list
+        them in ``invariants_present``.
         """
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
 
-        # Mark the plan as worktree-bearing in status.
+        # Mark the plan as worktree-routed in status.
         status_path = plan_dir / 'status.json'
         status = json.loads(status_path.read_text())
         status['metadata']['worktree_path'] = '/tmp/some/worktree'
+        status['metadata']['use_worktree'] = True
         status_path.write_text(json.dumps(status))
 
-        # Synthesize a six-phase handshake history with the deferred shape:
-        # phases 1-init..4-plan have empty worktree_* values (pre-materialization),
-        # phases 5-execute and 6-finalize have populated values.
-        deferred_phases = ['1-init', '2-refine', '3-outline', '4-plan']
         materialized_phases = ['5-execute', '6-finalize']
         rows = []
-        for i, phase in enumerate(deferred_phases):
-            rows.append(
-                {
-                    'phase': phase,
-                    'captured_at': f'2026-04-17T1{i}:00:00Z',
-                    'worktree_applicable': False,
-                    'override': False,
-                    'override_reason': '',
-                    'main_sha': 'abc123',
-                    'main_dirty': '0',
-                    'worktree_sha': '',
-                    'worktree_dirty': '',
-                    'task_state_hash': 'hash1',
-                    'qgate_open_count': '0',
-                    'config_hash': 'cfg1',
-                    'unfinished_tasks_count': '0',
-                    'phase_steps_complete': '',
-                }
-            )
         for i, phase in enumerate(materialized_phases):
             rows.append(
                 {
@@ -438,21 +412,8 @@ class TestDeferredMaterializationWindow:
         assert result.success, result.stderr
         data = result.toon()
 
-        findings = data.get('findings', [])
-        worktree_findings_in_deferred_phases = [
-            f
-            for f in findings
-            if f.get('severity') == 'error'
-            and f.get('invariant') in ('worktree_sha', 'worktree_dirty')
-            and f.get('phase') in deferred_phases
-        ]
-        assert worktree_findings_in_deferred_phases == [], (
-            f'Expected zero worktree ERROR findings for pre-5-execute phases in deferred window, '
-            f'got {worktree_findings_in_deferred_phases}'
-        )
-
-        # Sanity check: the materialized phases must still include the worktree
-        # invariants in their expected set (so any real capture gap would be flagged).
+        # Each materialized phase captured the worktree invariants and lists
+        # them in invariants_present.
         materialized_phase_entries = [p for p in data['phases'] if p['phase'] in materialized_phases]
         for entry in materialized_phase_entries:
             present = entry.get('invariants_present', [])

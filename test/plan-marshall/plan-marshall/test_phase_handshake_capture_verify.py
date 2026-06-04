@@ -276,14 +276,12 @@ def test_references_valid_hash_differs_for_non_dict_content(monkeypatch: pytest.
 
 
 def test_references_valid_hash_differs_for_missing_required_field(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Removing a required field from references.json produces a different hash."""
+    """Removing a still-required field (branch / base_branch) produces a different hash."""
     full_toon = _make_refs_toon_success({
         'branch': 'feature/my-plan',
         'base_branch': 'main',
-        'modified_files': [],
     })
     partial_toon = _make_refs_toon_success({
-        'branch': 'feature/my-plan',
         'base_branch': 'main',
     })
 
@@ -296,6 +294,35 @@ def test_references_valid_hash_differs_for_missing_required_field(monkeypatch: p
     assert hash_full is not None
     assert hash_partial is not None
     assert hash_full != hash_partial
+
+
+def test_references_valid_hash_stable_when_modified_files_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``modified_files`` is no longer a required key — its presence or absence must
+    NOT change the hash, so a references.json written before the key was retired
+    still passes ``references_valid`` (the back-compat contract that protects the
+    blocking handshake hash for in-flight plans)."""
+    with_mf_toon = _make_refs_toon_success({
+        'branch': 'feature/my-plan',
+        'base_branch': 'main',
+        'modified_files': [],
+    })
+    without_mf_toon = _make_refs_toon_success({
+        'branch': 'feature/my-plan',
+        'base_branch': 'main',
+    })
+
+    monkeypatch.setattr(inv, '_run_script', lambda _args: with_mf_toon)
+    hash_with = inv._capture_references_valid('any', {}, '2-refine')
+
+    monkeypatch.setattr(inv, '_run_script', lambda _args: without_mf_toon)
+    hash_without = inv._capture_references_valid('any', {}, '2-refine')
+
+    assert hash_with is not None
+    assert hash_without is not None
+    assert hash_with == hash_without, (
+        'modified_files must not affect the references_valid hash: a references.json '
+        f'with the key produced {hash_with!r} but without it produced {hash_without!r}.'
+    )
 
 
 def test_handshake_fields_includes_references_valid() -> None:
@@ -359,10 +386,10 @@ def test_classifier_task_state_hash_blocking_everywhere() -> None:
 def test_classifier_plan_internal_invariants_blocking_everywhere() -> None:
     """Plan-internal invariants remain blocking at every boundary.
 
-    The worktree-state drift invariants (worktree_sha / worktree_dirty /
-    worktree_orphan) are NO LONGER in this set — under the cwd-pinned move
-    model (Option 5' / ADR-002) they are RELAXED at the 5-execute boundary.
-    See ``test_classifier_worktree_state_invariants_relaxed_at_phase_5``.
+    The worktree-state drift invariants (worktree_sha / worktree_dirty)
+    are NO LONGER in this set — under the cwd-pinned move model (Option 5' /
+    ADR-002) they are RELAXED at the 5-execute boundary. See
+    ``test_classifier_worktree_state_invariants_relaxed_at_phase_5``.
     """
     always_blocking = (
         'references_valid',
@@ -383,14 +410,13 @@ def test_classifier_plan_internal_invariants_blocking_everywhere() -> None:
 
 
 def test_classifier_worktree_state_invariants_relaxed_at_phase_5() -> None:
-    """worktree_sha / worktree_dirty / worktree_orphan are RELAXED at 5-execute.
+    """worktree_sha / worktree_dirty are RELAXED at 5-execute.
 
     Under the cwd-pinned move model the sideways worktree-state comparisons
-    are subsumed by main_sha / main_dirty (cwd IS the worktree), and the
-    inverse-direction orphan check is moot post-materialization. They REMAIN
+    are subsumed by main_sha / main_dirty (cwd IS the worktree). They REMAIN
     blocking at the planning-phase boundaries that run on main.
     """
-    for invariant in ('worktree_sha', 'worktree_dirty', 'worktree_orphan'):
+    for invariant in ('worktree_sha', 'worktree_dirty'):
         assert inv.is_invariant_blocking_at_phase(invariant, '5-execute') is False, (
             f'{invariant} must be relaxed (non-blocking) at the 5-execute boundary'
         )

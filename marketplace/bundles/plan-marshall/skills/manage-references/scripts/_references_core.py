@@ -23,7 +23,6 @@ class ReferencesData(TypedDict, total=False):
     base_branch: str
     issue_url: str
     build_system: str
-    modified_files: list[str]
     domains: list[str]
     affected_files: list[str]
     external_docs: dict[str, Any]
@@ -100,9 +99,9 @@ def require_references(plan_id: str) -> dict[Any, Any]:
 #     - parsed paths from ``git -C {worktree} status --porcelain
 #       --untracked-files=all`` (uncommitted working-tree state)
 #
-# This primitive is the single source of truth shared by the read-only
-# ``diff-files`` verb and the write-back ``reconcile-files`` verb, and by the
-# in-process baseline-reconcile call site. Do NOT re-implement it elsewhere.
+# This primitive is the single source of truth for the read-only
+# ``compute-footprint`` verb and every in-process footprint call site.
+# Do NOT re-implement it elsewhere.
 
 
 def _run_git(worktree: Path, args: list[str]) -> subprocess.CompletedProcess:
@@ -164,11 +163,10 @@ def compute_plan_branch_diff(worktree: Path, base_ref: str) -> set[str]:
     """Compute the live plan-branch-only file set.
 
     Returns the union of the three-dot ``{base_ref}...HEAD`` diff name set and
-    the porcelain working-tree state. This is the canonical "live" set that both
-    ``diff-files`` (read-only) and ``reconcile-files`` (write-back) intersect the
-    ledger against. The three-dot form excludes files that arrived on the branch
-    from ``base_ref`` via an absorb merge, which is precisely why the reconcile
-    write-back removes absorbed-upstream pollution from the ledger.
+    the porcelain working-tree state. This is the canonical "live" footprint set
+    that the read-only ``compute-footprint`` verb returns. The three-dot form
+    excludes files that arrived on the branch from ``base_ref`` via an absorb
+    merge, so the footprint reflects only files the plan branch actually touched.
 
     Args:
         worktree: Absolute path to the active git worktree.
@@ -181,9 +179,8 @@ def compute_plan_branch_diff(worktree: Path, base_ref: str) -> set[str]:
         subprocess.CalledProcessError: If either ``git diff`` or ``git status``
             exits non-zero (e.g., invalid ``base_ref``, missing ref in the
             worktree, or transient git error).  A silent failure here would
-            cause :func:`reconcile_modified_files` to intersect the ledger
-            against an empty set and silently wipe out ``modified_files``,
-            so we surface the error loudly to make it immediately actionable.
+            cause the footprint to be computed against an empty set, so we
+            surface the error loudly to make it immediately actionable.
     """
     diff_proc = _run_git(worktree, ['diff', '--name-only', f'{base_ref}...HEAD'])
     if diff_proc.returncode != 0:
@@ -210,68 +207,3 @@ def compute_plan_branch_diff(worktree: Path, base_ref: str) -> set[str]:
     status_paths = _parse_porcelain(status_proc.stdout)
 
     return set(diff_paths) | set(status_paths)
-
-
-def reconcile_modified_files(plan_id: str, worktree: Path, base_ref: str) -> dict:
-    """Recompute and persist ``references.modified_files`` from the plan-branch-only diff.
-
-    Write-back counterpart of the read-only ``diff-files`` query. Computes the
-    live plan-branch-only set via :func:`compute_plan_branch_diff`, reconciles
-    the existing ledger against it (ledger ∩ live, in ledger order, plus any live
-    plan-branch files the diff range proves belong to the plan), replaces
-    ``references.modified_files`` with the reconciled set, and persists it.
-
-    The reconciliation drops ledger entries that are NOT in the live
-    plan-branch-only set — these are the absorbed-upstream files that polluted
-    the ledger after an absorb merge.
-
-    Args:
-        plan_id: Plan identifier (must already be validated).
-        worktree: Absolute path to the active git worktree.
-        base_ref: Base ref for the three-dot diff.
-
-    Returns:
-        A structured result dict. On success::
-
-            {'status': 'success', 'plan_id', 'base_ref', 'before_count',
-             'after_count', 'removed': [paths], 'modified_files': [paths]}
-
-        On failure (references.json missing)::
-
-            {'status': 'error', 'plan_id', 'error': 'references_not_found',
-             'message': ...}
-    """
-    refs = read_references(plan_id)
-    if not refs:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'references_not_found',
-            'message': 'references.json not found',
-        }
-
-    ledger: list[str] = list(refs.get('modified_files', []))
-    live_set = compute_plan_branch_diff(worktree, base_ref)
-    ledger_set = set(ledger)
-
-    # ledger ∩ live, preserving ledger order.
-    reconciled: list[str] = [path for path in ledger if path in live_set]
-    # Plan-branch live files the ledger never recorded (the diff range proves
-    # they belong to the plan), appended in sorted order for determinism.
-    for path in sorted(live_set - ledger_set):
-        reconciled.append(path)
-
-    removed = [path for path in ledger if path not in live_set]
-
-    refs['modified_files'] = reconciled
-    write_references(plan_id, refs)
-
-    return {
-        'status': 'success',
-        'plan_id': plan_id,
-        'base_ref': base_ref,
-        'before_count': len(ledger),
-        'after_count': len(reconciled),
-        'removed': removed,
-        'modified_files': reconciled,
-    }

@@ -8,6 +8,12 @@ worktree?" — and returns one of three statuses (``fresh``, ``stale``,
 ``undecidable``) for the orchestrator to consume as a fail-closed gate. See
 ``marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md`` §
 "Pre-Commit Verify Freshness" for the contract.
+
+The mtime-candidate scope is now the live plan footprint, derived on demand via
+``compute_plan_branch_diff`` rather than a seeded ``references.modified_files``
+ledger. Tests stub ``_resolve_footprint`` to inject the footprint without
+standing up a real git worktree; an empty footprint falls back to the
+worktree-root walk exactly as the empty ledger did before.
 """
 
 from __future__ import annotations
@@ -88,18 +94,6 @@ def _write_build_log(
     return log_path
 
 
-def _write_references(plan_dir: Path, *, modified_files: list[str]) -> Path:
-    """Write a minimal ``references.json`` carrying the modified_files list."""
-    refs = {
-        'branch': 'feature/test',
-        'base_branch': 'main',
-        'modified_files': list(modified_files),
-    }
-    refs_path = plan_dir / 'references.json'
-    refs_path.write_text(json.dumps(refs), encoding='utf-8')
-    return refs_path
-
-
 def _write_status(plan_dir: Path, *, worktree_path: str = '') -> Path:
     """Write a minimal ``status.json`` whose metadata.worktree_path is set.
 
@@ -115,6 +109,13 @@ def _write_status(plan_dir: Path, *, worktree_path: str = '') -> Path:
     return status_path
 
 
+def _stub_footprint(monkeypatch, footprint: list[str]) -> None:
+    """Patch the footprint resolver so no real git worktree is required."""
+    monkeypatch.setattr(
+        _freshness_mod, '_resolve_footprint', lambda plan_id, worktree_root: list(footprint)
+    )
+
+
 def _touch(path: Path, *, mtime: datetime) -> None:
     """Create a file (or update its mtime) at the given UTC timestamp."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -128,7 +129,7 @@ def _touch(path: Path, *, mtime: datetime) -> None:
 # =============================================================================
 
 
-def test_fresh_when_log_entry_post_dates_worktree(plan_context) -> None:
+def test_fresh_when_log_entry_post_dates_worktree(plan_context, monkeypatch) -> None:
     """status: fresh — most recent build entry newer than worktree mtime."""
     plan_dir = plan_context.plan_dir_for('freshness-fresh')
 
@@ -138,7 +139,7 @@ def test_fresh_when_log_entry_post_dates_worktree(plan_context) -> None:
     _touch(worktree_root / 'src.py', mtime=datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC))
 
     _write_status(plan_dir, worktree_path=str(worktree_root))
-    _write_references(plan_dir, modified_files=['src.py'])
+    _stub_footprint(monkeypatch, ['src.py'])
     # Build log entry: 2026-05-02 (after worktree mtime).
     _write_build_log(
         plan_dir,
@@ -156,9 +157,9 @@ def test_fresh_when_log_entry_post_dates_worktree(plan_context) -> None:
     assert result['newest_mtime_path'].endswith('src.py')
 
 
-def test_stale_when_modified_file_post_dates_build_log(plan_context) -> None:
-    """status: stale — modified_files entry newer than the most recent build."""
-    plan_dir = plan_context.plan_dir_for('freshness-stale-modified')
+def test_stale_when_footprint_file_post_dates_build_log(plan_context, monkeypatch) -> None:
+    """status: stale — a footprint entry is newer than the most recent build."""
+    plan_dir = plan_context.plan_dir_for('freshness-stale-footprint')
 
     worktree_root = plan_dir / 'worktree'
     worktree_root.mkdir()
@@ -166,7 +167,7 @@ def test_stale_when_modified_file_post_dates_build_log(plan_context) -> None:
     _touch(worktree_root / 'changed.py', mtime=datetime(2026, 5, 5, 9, 0, 0, tzinfo=UTC))
 
     _write_status(plan_dir, worktree_path=str(worktree_root))
-    _write_references(plan_dir, modified_files=['changed.py'])
+    _stub_footprint(monkeypatch, ['changed.py'])
     _write_build_log(
         plan_dir,
         entries=[
@@ -174,7 +175,7 @@ def test_stale_when_modified_file_post_dates_build_log(plan_context) -> None:
         ],
     )
 
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-stale-modified'))
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-stale-footprint'))
 
     assert result['status'] == 'stale', result
     assert result['t_build_iso'] == '2026-05-04T23:00:00Z'
@@ -182,18 +183,18 @@ def test_stale_when_modified_file_post_dates_build_log(plan_context) -> None:
     assert result['newest_mtime_path'].endswith('changed.py')
 
 
-def test_stale_via_worktree_root_fallback_when_modified_files_empty(plan_context) -> None:
-    """status: stale — modified_files empty; root walk finds a newer file."""
+def test_stale_via_worktree_root_fallback_when_footprint_empty(plan_context, monkeypatch) -> None:
+    """status: stale — footprint empty; root walk finds a newer file."""
     plan_dir = plan_context.plan_dir_for('freshness-stale-fallback')
 
     worktree_root = plan_dir / 'worktree'
     worktree_root.mkdir()
-    # Drop a recent file outside modified_files; the rglob fallback finds it.
+    # Drop a recent file outside the footprint; the rglob fallback finds it.
     _touch(worktree_root / 'unlisted.txt', mtime=datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC))
 
     _write_status(plan_dir, worktree_path=str(worktree_root))
-    # Empty list → triggers the worktree-root walk.
-    _write_references(plan_dir, modified_files=[])
+    # Empty footprint → triggers the worktree-root walk.
+    _stub_footprint(monkeypatch, [])
     _write_build_log(
         plan_dir,
         entries=[
@@ -208,7 +209,7 @@ def test_stale_via_worktree_root_fallback_when_modified_files_empty(plan_context
     assert result['newest_mtime_path'].endswith('unlisted.txt')
 
 
-def test_undecidable_when_no_build_log_entry(plan_context) -> None:
+def test_undecidable_when_no_build_log_entry(plan_context, monkeypatch) -> None:
     """status: undecidable / reason: no_build_log_entry — log has no match."""
     plan_dir = plan_context.plan_dir_for('freshness-undecidable-no-log')
 
@@ -217,7 +218,7 @@ def test_undecidable_when_no_build_log_entry(plan_context) -> None:
     _touch(worktree_root / 'src.py', mtime=datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC))
 
     _write_status(plan_dir, worktree_path=str(worktree_root))
-    _write_references(plan_dir, modified_files=['src.py'])
+    _stub_footprint(monkeypatch, ['src.py'])
     # No build entries — only the noise lines from _write_build_log.
     _write_build_log(plan_dir, entries=None)
 
@@ -228,16 +229,16 @@ def test_undecidable_when_no_build_log_entry(plan_context) -> None:
     assert 'log_path' in result
 
 
-def test_undecidable_when_worktree_mtime_unresolvable(plan_context) -> None:
+def test_undecidable_when_worktree_mtime_unresolvable(plan_context, monkeypatch) -> None:
     """status: undecidable / reason: worktree_mtime_unresolvable — empty tree."""
     plan_dir = plan_context.plan_dir_for('freshness-undecidable-empty-tree')
 
-    # Worktree root exists but is empty (and modified_files is empty too).
+    # Worktree root exists but is empty (and the footprint is empty too).
     worktree_root = plan_dir / 'worktree'
     worktree_root.mkdir()
 
     _write_status(plan_dir, worktree_path=str(worktree_root))
-    _write_references(plan_dir, modified_files=[])
+    _stub_footprint(monkeypatch, [])
     _write_build_log(
         plan_dir,
         entries=[
@@ -254,7 +255,7 @@ def test_undecidable_when_worktree_mtime_unresolvable(plan_context) -> None:
     assert result['t_build_iso'] == '2026-05-02T12:00:00Z'
 
 
-def test_picks_newest_when_multiple_build_entries_present(plan_context) -> None:
+def test_picks_newest_when_multiple_build_entries_present(plan_context, monkeypatch) -> None:
     """Ensures the scanner picks the latest matching INFO entry, not the first."""
     plan_dir = plan_context.plan_dir_for('freshness-newest-wins')
 
@@ -263,7 +264,7 @@ def test_picks_newest_when_multiple_build_entries_present(plan_context) -> None:
     _touch(worktree_root / 'src.py', mtime=datetime(2026, 5, 1, 0, 0, 0, tzinfo=UTC))
 
     _write_status(plan_dir, worktree_path=str(worktree_root))
-    _write_references(plan_dir, modified_files=['src.py'])
+    _stub_footprint(monkeypatch, ['src.py'])
     _write_build_log(
         plan_dir,
         entries=[
@@ -279,7 +280,7 @@ def test_picks_newest_when_multiple_build_entries_present(plan_context) -> None:
     assert result['t_build_iso'] == '2026-05-09T12:00:00Z'
 
 
-def test_no_exception_when_log_file_missing(plan_context) -> None:
+def test_no_exception_when_log_file_missing(plan_context, monkeypatch) -> None:
     """Degenerate case: no log file at all → undecidable, no exception."""
     plan_dir = plan_context.plan_dir_for('freshness-no-log-file')
 
@@ -288,7 +289,7 @@ def test_no_exception_when_log_file_missing(plan_context) -> None:
     _touch(worktree_root / 'src.py', mtime=datetime(2026, 5, 1, 0, 0, 0, tzinfo=UTC))
 
     _write_status(plan_dir, worktree_path=str(worktree_root))
-    _write_references(plan_dir, modified_files=['src.py'])
+    _stub_footprint(monkeypatch, ['src.py'])
     # No script-execution.log file written.
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-log-file'))

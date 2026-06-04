@@ -13,10 +13,6 @@ A. Layer-D ``main_dirty_files`` invariant — capture a clean baseline at
    {N} --strict`` and assert it fails with
    ``main_checkout_dirtied_during_plan``. Reverting and re-running
    yields a clean verify. ``.plan/`` paths are filtered.
-B. Inverse-direction ``worktree_orphan`` invariant — manually create
-   ``.plan/local/worktrees/{plan_id}`` while metadata says
-   ``use_worktree != true`` and assert capture raises the new
-   ``worktree_metadata_drift`` error.
 C. ``sync-plugin-cache`` staleness guard — synthetic ``__pycache__``
    files created with fresh mtimes do NOT trip the guard; touching a
    tracked source file DOES.
@@ -34,7 +30,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
 from conftest import (  # type: ignore[import-not-found]
     get_script_path,
 )
@@ -118,94 +113,6 @@ def test_a_main_dirty_filter_excludes_dot_plan_paths() -> None:
     assert '.plan/temp/build-output/x' not in filtered
     assert 'marketplace/bundles/foo/README.md' in filtered
     assert 'src/main.py' in filtered
-
-
-# =============================================================================
-# B. Inverse-direction worktree_orphan invariant
-# =============================================================================
-#
-# Reproduces the writer-chain drift scenario from plan
-# lesson-2026-05-08-14-001: orphan worktree directory exists on disk
-# while status.metadata says use_worktree != true. The new invariant must
-# raise WorktreeMetadataDrift so cmd_capture surfaces the structured TOON
-# error payload.
-
-
-def test_b_worktree_orphan_raises_when_disk_dir_present_but_metadata_false(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Orphan dir + metadata=false → WorktreeMetadataDrift raised."""
-    plan_id = 'e2e-worktree-orphan-false'
-    fake_repo = tmp_path / 'repo'
-    fake_repo.mkdir()
-    orphan_dir = fake_repo / '.plan' / 'local' / 'worktrees' / plan_id
-    orphan_dir.mkdir(parents=True)
-
-    # Orphan detection resolves the worktree root via get_worktree_root()
-    # (= get_base_dir() / 'worktrees', PLAN_BASE_DIR-aware). Pin PLAN_BASE_DIR
-    # to fake_repo/.plan/local so detection finds the orphan we just created.
-    monkeypatch.setenv('PLAN_BASE_DIR', str(fake_repo / '.plan' / 'local'))
-    monkeypatch.setattr(inv, '_repo_root', lambda: fake_repo)
-
-    with pytest.raises(inv.WorktreeMetadataDrift) as excinfo:
-        inv._capture_worktree_orphan(plan_id, {'use_worktree': False}, '5-execute')
-
-    err = excinfo.value
-    # The user-visible TOON payload keys off this error string; pin it.
-    assert 'worktree_metadata_drift' in str(err).lower()
-    # The offending path must be in the message so operators can act on it.
-    assert plan_id in str(err)
-
-
-def test_b_worktree_orphan_no_op_when_metadata_truthy(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Orphan dir + metadata=true → existing worktree_unresolved handles it.
-
-    The inverse-direction invariant short-circuits when ``use_worktree``
-    is truthy because the existing forward-direction invariant
-    (``worktree_unresolved``) covers that case. This guarantees the two
-    invariants do not double-fire.
-    """
-    plan_id = 'e2e-worktree-orphan-true'
-    fake_repo = tmp_path / 'repo'
-    fake_repo.mkdir()
-    orphan_dir = fake_repo / '.plan' / 'local' / 'worktrees' / plan_id
-    orphan_dir.mkdir(parents=True)
-
-    monkeypatch.setenv('PLAN_BASE_DIR', str(fake_repo / '.plan' / 'local'))
-    monkeypatch.setattr(inv, '_repo_root', lambda: fake_repo)
-
-    # use_worktree=True → returns None (not applicable), no exception.
-    result = inv._capture_worktree_orphan(
-        plan_id,
-        {'use_worktree': True, 'worktree_path': str(orphan_dir)},
-        '5-execute',
-    )
-    assert result is None
-
-
-def test_b_worktree_orphan_no_op_when_no_orphan_dir(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """No orphan dir + metadata=false → returns None, no error.
-
-    The clean main-checkout case (a plan that legitimately runs in the
-    main checkout with use_worktree=false) MUST NOT trip this invariant.
-    """
-    plan_id = 'e2e-worktree-no-orphan'
-    fake_repo = tmp_path / 'repo'
-    fake_repo.mkdir()
-    # No .plan/local/worktrees/{plan_id} created.
-
-    monkeypatch.setenv('PLAN_BASE_DIR', str(fake_repo / '.plan' / 'local'))
-    monkeypatch.setattr(inv, '_repo_root', lambda: fake_repo)
-
-    result = inv._capture_worktree_orphan(plan_id, {'use_worktree': False}, '5-execute')
-    assert result is None
 
 
 # =============================================================================

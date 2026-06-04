@@ -13,11 +13,11 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `affected_files_count` | `references.json::affected_files` length | int (≥0) |
 | `commit_strategy` | `manage-config plan phase-5-execute get --field commit_strategy` | enum: `per_plan|per_deliverable|none` (default: `per_plan`) |
 | `activation_globs` | `marshal.json::plan.phase-6-finalize.pre_push_quality_gate.activation_globs` | list[string] (default: empty) |
-| `modified_files` | `references.json::modified_files` | list[string] (default: empty) |
+| `live_footprint` | derived on demand from the worktree (`{base}...HEAD` ∪ porcelain via `compute_plan_branch_diff`); empty before the worktree is materialized | list[string] (default: empty) |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.steps` | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
 | `affected_files` | `references.json::affected_files` | list[string] (read directly by the composer; empty by default in the current pipeline) |
-| `modified_files` | `references.json::modified_files` | list[string] (read directly by the composer; see "Bundle source detection" below for the union semantics with `affected_files` and the solution-outline fallback) |
+| `modified_files` (legacy back-compat) | `references.json::modified_files` | list[string] (read by Bundle source detection only, as a back-compat fallback for archived plans that still carry the key; see "Bundle source detection" below for the union semantics with `affected_files` and the solution-outline fallback) |
 | `outline_affected_files` | `solution_outline.md` deliverable `**Affected files:**` blocks (flattened across deliverables) | list[string] (read directly by the composer as the canonical pre-execute fallback when references-side fields are empty; see "Bundle source detection" below) |
 
 ## Outputs
@@ -36,7 +36,7 @@ The pre-filters run in this order:
 
 1. **`commit_strategy_none`** — drops `commit-push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur.
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
-3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when `references.modified_files` is empty.
+3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when the live plan footprint is empty.
 4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
 5. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. `automated-review` is dropped ONLY via the explicit `lightweight_track_override` opt-in, never by the implicit scope gate.
 
@@ -68,38 +68,38 @@ When `commit_strategy ∈ {per_plan, per_deliverable}` (or absent — the defaul
 **Condition**: At least one of:
 
 - `marshal.json::plan.phase-6-finalize.pre_push_quality_gate.activation_globs` is missing or empty, OR
-- `references.json::modified_files` is empty, OR
-- No entry in `modified_files` matches any glob in `activation_globs` (using `fnmatch.fnmatch`).
+- the live plan footprint is empty, OR
+- No entry in the live footprint matches any glob in `activation_globs` (using `fnmatch.fnmatch`).
 
 **Effect**: `pre-push-quality-gate` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-push-quality-gate` was already removed by `commit_strategy_none`, this pre-filter is a no-op and emits no log entry.
 
-**Why a pre-filter (not an eighth row)**: Activation is project configuration paired with a glob match against `modified_files`, both orthogonal to the change-type / scope / recipe inputs that the seven-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the seven-row matrix verbatim and adds exactly one independent decision-log line.
+**Why a pre-filter (not an eighth row)**: Activation is project configuration paired with a glob match against the live footprint, both orthogonal to the change-type / scope / recipe inputs that the seven-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the seven-row matrix verbatim and adds exactly one independent decision-log line.
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
 ```
-(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — activation_globs empty or no modified_files match
+(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — activation_globs empty or no footprint match
 ```
 
-When all three activation conditions are satisfied (non-empty globs, non-empty modified_files, at least one glob match), the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the seven-row matrix.
+When all three activation conditions are satisfied (non-empty globs, non-empty footprint, at least one glob match), the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `commit_strategy_none` and *before* every row of the seven-row matrix. The pre-filter is therefore observable independently — Row 7 (default), Row 5 (surgical_bug_fix / surgical_tech_debt), and Row 2 (recipe) all see a Phase 6 candidate list that already has `pre-push-quality-gate` removed if either pre-filter fired.
 
 ### Pre-Filter: `pre_submission_self_review_inactive`
 
-**Condition**: `references.json::modified_files` is empty.
+**Condition**: the live plan footprint is empty.
 
 **Effect**: `pre-submission-self-review` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-submission-self-review` was already removed by `commit_strategy_none`, this pre-filter is a no-op and emits no log entry.
 
-**Why a pre-filter (not an eighth row)**: Activation depends only on `modified_files` being non-empty (the four cognitive checks have no diff to inspect when the plan touched zero files). The condition is orthogonal to the change-type / scope / recipe inputs the seven-row matrix consumes. There is no `activation_globs` config knob — the four structural-defect classes the step targets (symmetric pairs, regex over-fit, wording, duplication) apply to any code or doc change, and gating by file extension would mean missing the very wording/duplication defects the lesson cites for `.md` files.
+**Why a pre-filter (not an eighth row)**: Activation depends only on the live footprint being non-empty (the four cognitive checks have no diff to inspect when the plan touched zero files). The condition is orthogonal to the change-type / scope / recipe inputs the seven-row matrix consumes. There is no `activation_globs` config knob — the four structural-defect classes the step targets (symmetric pairs, regex over-fit, wording, duplication) apply to any code or doc change, and gating by file extension would mean missing the very wording/duplication defects the lesson cites for `.md` files.
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
 ```
-(plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — empty modified_files
+(plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — empty footprint
 ```
 
-When `modified_files` is non-empty, the pre-filter is a no-op and emits no log entry; `pre-submission-self-review` survives into the seven-row matrix.
+When the footprint is non-empty, the pre-filter is a no-op and emits no log entry; `pre-submission-self-review` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_push_quality_gate_inactive` and *before* every row of the seven-row matrix. The pre-filter is observable independently of the row matrix — every row sees a Phase 6 candidate list that has `pre-submission-self-review` removed if any of the prior pre-filters fired.
 
@@ -153,7 +153,7 @@ When `scope_estimate ∈ {none, multi_module, broad}` and `lightweight_track_ove
 
 **Predicate**: `_classify_paths_via_extensions(union_of_affected_files) == "documentation_only"`, where:
 
-- `union_of_affected_files` is the result of `_read_bundle_change_paths(plan_id)` — the union of `references.json::affected_files`, `references.json::modified_files`, and the deliverable-level `**Affected files:**` blocks in `solution_outline.md` (the same fallback chain Row 3's `_looks_docs_only` heuristic does not see, because that heuristic keys on phase-5 candidate roles rather than actual file paths).
+- `union_of_affected_files` is the result of `_read_bundle_change_paths(plan_id)` — the union of `references.json::affected_files`, the legacy `references.json::modified_files` key (read only as a back-compat fallback for older plans that still carry it), and the deliverable-level `**Affected files:**` blocks in `solution_outline.md` (the same fallback chain Row 3's `_looks_docs_only` heuristic does not see, because that heuristic keys on phase-5 candidate roles rather than actual file paths).
 - The six buckets and the per-domain predicates that produce them are documented centrally in `extension-api/standards/extension-contract.md` § classify_paths() — do NOT inline-copy them here.
 
 **Effect**: every entry in `phase_5.verification_steps` whose `role:` frontmatter resolves to `quality-gate`, `module-tests`, or `coverage` is removed. Other entries (e.g., `pre-submission-self-review`, future role types) pass through unchanged. The rule is a no-op when:

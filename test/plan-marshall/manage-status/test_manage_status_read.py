@@ -157,7 +157,13 @@ def test_progress_after_completion(plan_context, monkeypatch):
 
 
 def test_get_worktree_path_resolved_when_use_worktree_true(plan_context):
-    """use_worktree=true → returns absolute worktree_path + branch."""
+    """A materialized plan (worktree_path + branch persisted) → returns both.
+
+    The path and branch are no longer seeded at create — phase-5-execute Step
+    2.5 back-fills them at materialization. This test seeds the materialized
+    metadata shape directly (also the shape a legacy plan carries) and asserts
+    the verb reads it verbatim.
+    """
     plan_id = 'wt-resolve-ok'
     abs_path = '/tmp/worktrees/wt-resolve-ok'
     branch = 'feature/wt-resolve-ok'
@@ -168,10 +174,18 @@ def test_get_worktree_path_resolved_when_use_worktree_true(plan_context):
             phases='1-init,2-refine',
             force=False,
             use_worktree=True,
-            worktree_path=abs_path,
-            worktree_branch=branch,
         )
     )
+    # Simulate phase-5 materialization: back-fill worktree_path + branch.
+    status_path = plan_context.plan_dir_for(plan_id) / 'status.json'
+    status = json.loads(status_path.read_text(encoding='utf-8'))
+    status['metadata'] = {
+        'use_worktree': True,
+        'worktree_path': abs_path,
+        'worktree_branch': branch,
+    }
+    status_path.write_text(json.dumps(status), encoding='utf-8')
+
     result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
     assert result['status'] == 'success'
     assert result['use_worktree'] is True
@@ -202,8 +216,6 @@ def test_get_worktree_path_empty_when_use_worktree_false(plan_context):
             phases='1-init,2-refine',
             force=False,
             use_worktree=False,
-            worktree_path=None,
-            worktree_branch=None,
         )
     )
     result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
@@ -230,17 +242,15 @@ def test_get_worktree_path_pending_when_not_yet_materialized(plan_context):
     erroring out.
     """
     plan_id = 'wt-resolve-pending'
-    # Seed via cmd_create (false), then manually shape the metadata to
-    # the pre-materialization state: use_worktree=true with no path yet.
+    # Seed via cmd_create (true) — create persists only {use_worktree: True},
+    # which IS the pre-materialization shape: use_worktree=true with no path yet.
     cmd_create(
         Namespace(
             plan_id=plan_id,
             title='Resolve Pending',
             phases='1-init,2-refine',
             force=False,
-            use_worktree=False,
-            worktree_path=None,
-            worktree_branch=None,
+            use_worktree=True,
         )
     )
     status_path = plan_context.plan_dir_for(plan_id) / 'status.json'
@@ -293,9 +303,10 @@ class TestGetWorktreePathPreMaterialization:
     def _seed_pre_materialization(plan_dir, plan_id: str, metadata: dict) -> None:
         """Create the plan via cmd_create then overwrite metadata directly.
 
-        cmd_create rejects partial worktree args, so we cannot seed the
-        pre-materialization shape through the normal API. Direct file
-        write is the canonical pattern (see also
+        cmd_create persists only ``{use_worktree}`` and never seeds a
+        worktree_path / worktree_branch, so the specific on-disk shapes under
+        test (and the legacy shapes a read must still tolerate) are written
+        directly. Direct file write is the canonical pattern (see also
         test_get_worktree_path_pending_when_not_yet_materialized).
         """
         cmd_create(
@@ -305,8 +316,6 @@ class TestGetWorktreePathPreMaterialization:
                 phases='1-init,2-refine',
                 force=False,
                 use_worktree=False,
-                worktree_path=None,
-                worktree_branch=None,
             )
         )
         status_path = plan_dir / 'status.json'
@@ -375,13 +384,14 @@ class TestGetWorktreePathPreMaterialization:
         )
 
     def test_pending_includes_worktree_branch_when_metadata_has_branch(self, plan_context):
-        """Pending state surfaces worktree_branch when persisted at init time.
+        """Pending state surfaces worktree_branch when the metadata carries one.
 
-        Phase-1-init records the branch intent in metadata before the
-        worktree is materialized. The tri-state response for the pending
-        case MUST include that branch so downstream consumers (e.g. PR
-        review output that reports branch context pre-materialization)
-        can read it from the same envelope as the materialized case.
+        A legacy plan (or any metadata shape that pairs an empty worktree_path
+        with a worktree_branch) must still be read tolerantly: the tri-state
+        response for the pending case carries the branch through from metadata
+        so downstream consumers read it from the same envelope as the
+        materialized case. The read verb does not assume the no-sentinel writer
+        contract — it reflects whatever metadata is on disk.
 
         Symmetric counterpart to
         test_pending_omits_worktree_branch_when_unset: when the metadata

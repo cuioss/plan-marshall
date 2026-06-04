@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
-"""Read-only diff-files query for manage-references.
+"""Read-only compute-footprint query for manage-references.
 
-Intersects the append-only intent ledger (``references.json:modified_files``)
-with the live git working-tree state so consumers operate on
-"actually-modified-now" paths instead of trusting a potentially stale ledger.
+Derives the plan's actual footprint live from the worktree git state — the
+union of the three-dot ``{base_ref}...HEAD`` diff and the porcelain working-tree
+state — without consulting any persisted ledger. The footprint is computed
+on-demand from the worktree, which is the single source of truth.
 
-This handler is read-only: it never mutates ``references.json``. The write-back
-counterpart is the ``reconcile-files`` verb (``_cmd_reconcile_files.py``); both
-verbs share the three-dot + porcelain-union primitive
-(``compute_plan_branch_diff`` in ``_references_core``).
+This handler is read-only: it never mutates ``references.json``. It reads
+``references.json`` only to resolve ``base_branch`` for the diff range.
 
 Resolution rule:
-    files     = ledger ∩ live, in ledger order
-    dropped[] = ledger entries no longer present in live
-    phantom[] = live entries that were never recorded in the ledger
+    files = sorted live footprint set
 
 Where ``live`` is the union of:
     - ``git -C {worktree_path} diff --name-only {base_ref}...HEAD``
     - parsed paths from ``git -C {worktree_path} status --porcelain``
 """
 
+import subprocess
 from pathlib import Path
 
 from _references_core import (
@@ -31,8 +29,8 @@ from _references_core import (
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
-def cmd_diff_files(args) -> dict:
-    """Return ledger ∩ live working-tree set, with drift accounting.
+def cmd_compute_footprint(args) -> dict:
+    """Return the live plan-branch-only footprint set.
 
     Read-only — never writes references.json.
     """
@@ -66,22 +64,21 @@ def cmd_diff_files(args) -> dict:
         }
 
     base_ref = resolve_base_ref(getattr(args, 'base_ref', None), refs)
-    ledger: list[str] = list(refs.get('modified_files', []))
-
-    live_set = compute_plan_branch_diff(worktree, base_ref)
-    ledger_set = set(ledger)
-
-    files: list[str] = [path for path in ledger if path in live_set]
-    dropped = [{'path': path, 'reason': 'not_in_working_tree'} for path in ledger if path not in live_set]
-    phantom = sorted(live_set - ledger_set)
+    try:
+        live_set = compute_plan_branch_diff(worktree, base_ref)
+    except subprocess.CalledProcessError as exc:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'git_error',
+            'message': f'Failed to compute plan branch diff: {exc}',
+        }
+    files = sorted(live_set)
 
     return {
         'status': 'success',
         'plan_id': args.plan_id,
         'base_ref': base_ref,
         'files': files,
-        'references_count': len(ledger),
-        'live_count': len(live_set),
-        'dropped': dropped,
-        'phantom': phantom,
+        'live_count': len(files),
     }

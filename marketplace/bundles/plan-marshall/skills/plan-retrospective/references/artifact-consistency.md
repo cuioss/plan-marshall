@@ -7,7 +7,8 @@ Cross-checks between plan artifacts to catch drift, missing files, and mismatche
 The script consumes:
 - `status.toon` (phase position, metadata)
 - `solution_outline.md` (deliverables section)
-- `references.json` / `references.toon` (modified_files, domains)
+- `references.json` / `references.toon` (domains; `base_branch` for the footprint diff)
+- the plan's live footprint — derived from the worktree (`{base}...HEAD` ∪ porcelain) when one is on disk, falling back to the legacy `references.modified_files` key only for archived plans created before the ledger was removed
 - `tasks/TASK-*.json` (task step targets)
 - `metrics.md` (when present)
 
@@ -42,7 +43,7 @@ summary:
 - **solution_outline_sections**: required sections are `summary`, `overview`, `deliverables`.
 - **deliverable_count**: extracted from the Deliverables section using heading level 3 (`### `).
 - **task_deliverable_match**: each deliverable index (1..N) MUST have a corresponding task whose `deliverable` field matches.
-- **affected_files_recall**: when `solution_outline.md` declares `Affected files:` bullets per deliverable, references.json `modified_files` SHOULD contain at least 70% of them. < 70% is a fail. When the peer top-level key `affected_files_exact_match` reports `status: warn`, the retrospective synthesizer MUST surface the drift in the report naming `outline_only` and `references_only` verbatim.
+- **affected_files_recall**: when `solution_outline.md` declares `Affected files:` bullets per deliverable, the plan's live footprint SHOULD contain at least 70% of them. < 70% is a fail. When the peer top-level key `affected_files_exact_match` reports `status: warn`, the retrospective synthesizer MUST surface the drift in the report naming `outline_only` and `references_only` verbatim.
 
 ## Manifest-Aware Mode (when `execution.toon` exists)
 

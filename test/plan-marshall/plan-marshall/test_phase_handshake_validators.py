@@ -188,10 +188,10 @@ def test_list_subcommand_canonical_plan_id(tmp_path):
 #
 # Under the cwd-pinned move model the worktree-state drift checks
 # (``main_dirty_files`` layer-D leak guard + the sideways ``worktree_sha`` /
-# ``worktree_dirty`` / ``worktree_orphan`` invariants) are RETAINED for the
-# planning-phase boundaries (1-init / 2-refine / 3-outline / 4-plan) that still
-# run on main, and RELAXED for the ``5-execute → 6-finalize`` boundary the move
-# model makes safe. The single cwd-unchanged invariant — asserted by
+# ``worktree_dirty`` invariants) are RETAINED for the planning-phase
+# boundaries (1-init / 2-refine / 3-outline / 4-plan) that still run on main,
+# and RELAXED for the ``5-execute → 6-finalize`` boundary the move model makes
+# safe. The single cwd-unchanged invariant — asserted by
 # ``file_ops.guard_worktree_cwd`` — is what makes the relaxation sound: cwd
 # stays pinned to the worktree so plan work cannot leak into main. These
 # validators pin both halves of the contract at the function level.
@@ -201,7 +201,6 @@ _RELAXED_WORKTREE_INVARIANTS = (
     'main_dirty_files',
     'worktree_sha',
     'worktree_dirty',
-    'worktree_orphan',
 )
 _PLANNING_PHASES = ('1-init', '2-refine', '3-outline', '4-plan')
 

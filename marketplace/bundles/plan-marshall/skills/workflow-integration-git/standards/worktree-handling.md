@@ -39,59 +39,58 @@ The script returns the absolute path when `metadata.use_worktree == true` and an
 
 ## Worktree Lifecycle
 
-A worktree-enabled plan transitions through four distinct lifecycle states between `phase-1-init` and `phase-6-finalize`. The same plan record is read at every state; what changes is whether the worktree directory exists on disk and whether `worktree_path` is populated. Every other rule in this document — Dispatch Protocol, the `git -C` rule, the never-edit-main-checkout invariant, the cleanup ordering — applies **post-materialization only** (state 4 below). States 1-3 run against the main checkout and DO NOT trigger worktree-binding requirements.
+A worktree-enabled plan transitions through three distinct lifecycle states between `phase-1-init` and `phase-6-finalize`. The same plan record is read at every state; what changes is whether the worktree directory exists on disk and whether `worktree_path` is populated. Every other rule in this document — Dispatch Protocol, the `git -C` rule, the never-edit-main-checkout invariant, the cleanup ordering — applies **post-materialization only** (state 3 below). The pre-materialization phases run against the main checkout and DO NOT trigger worktree-binding requirements.
 
-The lifecycle is a deliberate **deferred-materialization** pattern: the agent records the *intent* to use a worktree at plan-init time so downstream tooling can plan around it, but it does not create the worktree directory until the first phase that needs to mutate source code (phase-5-execute Step 2.5). Phases 2-4 are read-only analysis and produce only `.plan/` artifacts — they have no reason to allocate a working tree, and allocating one early would mean carrying an empty worktree through clarification, outline, and planning iterations that may be aborted before any code is touched.
+`phase-1-init` records only `use_worktree` — it does not seed the feature branch, the worktree path, or any worktree directory. The feature branch (`feature/{plan-id}`) and the worktree directory are created together at the first phase that mutates source code (phase-5-execute Step 2.5). Phases 2-4 are read-only analysis that produce only `.plan/` artifacts — they have no reason to allocate a working tree, and allocating one early would mean carrying an empty worktree through clarification, outline, and planning iterations that may be aborted before any code is touched.
 
 ### Lifecycle States
 
-| State | When | `metadata.use_worktree` | `metadata.worktree_branch` | `metadata.worktree_path` / `references.worktree_path` | Worktree dir on disk | Path-binding rules apply |
-|-------|------|-------------------------|----------------------------|-------------------------------------------------------|----------------------|--------------------------|
-| 1. Intent persisted | end of `phase-1-init` | `true` | populated (e.g. `feature/{plan-id}`) | empty | no | no — main checkout |
-| 2. Pre-materialization | `phase-2-refine` through `phase-4-plan` | `true` | populated | empty | no | no — main checkout |
-| 3. Materialization | `phase-5-execute` Step 2.5 | `true` | populated | populated atomically (references.json + status.metadata) | yes — created | becomes yes during this step |
-| 4. Post-materialization | rest of `phase-5-execute` and all of `phase-6-finalize` | `true` | populated | populated | yes | yes — all rules below apply |
+| State | When | `metadata.use_worktree` | `metadata.worktree_branch` / `worktree_path` | Worktree dir on disk | Path-binding rules apply |
+|-------|------|-------------------------|----------------------------------------------|----------------------|--------------------------|
+| 1. Pre-materialization | `phase-1-init` through `phase-4-plan` | `true` | unset | no | no — main checkout |
+| 2. Materialization | `phase-5-execute` Step 2.5 | `true` | populated atomically (references.json + status.metadata) | yes — created | becomes yes during this step |
+| 3. Post-materialization | rest of `phase-5-execute` and all of `phase-6-finalize` | `true` | populated | yes | yes — all rules below apply |
 
 The post-materialization state ends when the cleanup ordering below removes the worktree directory; from that point the plan is back to the main checkout for the remaining branch / PR operations.
 
 ### Concurrent-Session Visibility
 
-Per ADR-002, the move-based model means a plan's non-git-controlled runtime state — its plan directory (`.plan/local/plans/{plan_id}`) and the executor — MOVES into the worktree at phase-5 materialization (state 3 → state 4) and moves back to main at finalize. While the plan is post-materialization (state 4), there is exactly one authoritative copy of that state and it lives in the worktree; main does not hold it during execution.
+Per ADR-002, the move-based model means a plan's non-git-controlled runtime state — its plan directory (`.plan/local/plans/{plan_id}`) and the executor — MOVES into the worktree at phase-5 materialization (state 1 → state 3) and moves back to main at finalize. While the plan is post-materialization (state 3), there is exactly one authoritative copy of that state and it lives in the worktree; main does not hold it during execution.
 
 The consequence for concurrent sessions: a plan-discovery operation (`manage-status list`) resolves plan directories via the single uniform cwd/worktree-relative rule, so a session operating from the main checkout will NOT see an in-flight plan whose state currently lives in another session's worktree — the plan reappears in the main-checkout listing only after its finalize move-back returns the plan directory to main. A session operating from inside that worktree (the orchestrator running the plan, with cwd pinned to the worktree root) resolves and sees the in-flight plan normally. This is expected behaviour, not a discovery defect: it is the direct corollary of moving (rather than copying) the plan state, which is what removes the reconcile-or-merge problem between a worktree copy and a main copy. The shared corpora (`lessons-learned/`, `archived-plans/`) and the cooperative `merge.lock` stay main-anchored by design and remain visible to every session throughout. The `manage-status list` operation documents the user-facing form of this property — see `manage-status/SKILL.md` § "list" → "Concurrent-session visibility".
 
-### Tri-State Assertion Contract
+### Worktree-Resolution Contract
 
-Every script and skill that consumes `worktree_path` MUST treat it as a **tri-state** signal, not a boolean:
+Every script and skill that consumes `worktree_path` reads it as a boolean disk-presence signal — there is no empty-path sentinel state to carry:
 
 | Observation | Meaning | Required behaviour |
 |-------------|---------|--------------------|
 | `use_worktree == false` | plan opted out of worktree mode entirely | bind to main checkout; never expect `worktree_path` to populate later |
-| `use_worktree == true` AND `worktree_path` empty | states 1-2 — intent recorded but worktree not yet materialized | bind to main checkout for this call; do NOT treat empty path as an error; do NOT auto-create the worktree from outside Step 2.5 |
-| `use_worktree == true` AND `worktree_path` non-empty | state 4 — worktree exists on disk | bind to `worktree_path`; all rules below apply |
+| `use_worktree == true` AND `worktree_path` unset | pre-materialization (phases 1-4) — the worktree does not yet exist | bind to main checkout for this call; do NOT auto-create the worktree from outside Step 2.5 |
+| `use_worktree == true` AND `worktree_path` non-empty | post-materialization — worktree exists on disk | bind to `worktree_path`; all rules below apply |
 
-The middle row is the load-bearing case. `manage-status get-worktree-path --plan-id X` returns an empty string in states 1-2; callers MUST treat that as "main checkout" rather than as a fail-loud condition. Under cwd-pinning the common path never needs to consult this signal — the inherited cwd binds the caller to the correct tree. The `--plan-id` three-state contract documented below covers the residual escape-hatch callers that still resolve explicitly: invoked with `--plan-id`, they resolve internally and fall back to the cwd-relative plan root when the path is empty.
+The phase-handshake worktree assertion (`phase_handshake verify --strict`) is the fail-loud guard, and it fires only at the phase-5+ boundaries it is invoked on. When it fires, an empty `worktree_path` while `use_worktree == true` is ALWAYS `worktree_unresolved` — there is no deferred-window carve-out, because a `use_worktree == true` plan only exists with a real path once phase-5 materializes the worktree. During phases 1-4 the assertion is not invoked, so the pre-materialization rows above run on the main checkout without tripping it. Under cwd-pinning the common path never needs to consult this signal — the inherited cwd binds the caller to the correct tree. The `--plan-id` two-state contract documented below covers the residual escape-hatch callers that still resolve explicitly: invoked with `--plan-id`, they resolve internally and fall back to the cwd-relative plan root when the worktree is not yet materialized.
 
 ### Pre-Materialization Bypass
 
-During states 1-2 (phases 2-4) there is no worktree on disk and the orchestrator's cwd is the main checkout. Subagents inherit that cwd, so `.plan/` and project content resolve to main cwd-relatively (the uniform walk-up; ADR-002). Bucket A `manage-*` scripts are cwd-agnostic regardless of state, and Bucket B scripts resolve against the inherited cwd without any routing flag.
+During phases 1-4 there is no worktree on disk and the orchestrator's cwd is the main checkout. Subagents inherit that cwd, so `.plan/` and project content resolve to main cwd-relatively (the uniform walk-up; ADR-002). Bucket A `manage-*` scripts are cwd-agnostic regardless of state, and Bucket B scripts resolve against the inherited cwd without any routing flag.
 
 The practical consequence: phase-2 / phase-3 / phase-4 agents follow the same dispatch shape they would use for a `use_worktree == false` plan. They never construct a worktree path, never forward `--plan-id`/`--project-dir` for path resolution (the inherited main-checkout cwd binds them), and never embed a Worktree Header into subagent prompts (the header is a phase-5+ reminder and would be misleading before materialization).
 
 ### Materialization in Phase-5 Step 2.5
 
-The transition from state 2 to state 4 is a single atomic step inside `phase-5-execute` (Step 2.5, after task planning is loaded but before the first task dispatch). The step:
+The transition from state 1 to state 3 is a single atomic step inside `phase-5-execute` (Step 2.5, after task planning is loaded but before the first task dispatch). The step:
 
-1. Reads `metadata.use_worktree` and `metadata.worktree_branch` from status.
-2. Creates the worktree directory at `<project_root>/.plan/local/worktrees/{plan-id}/` and checks out `worktree_branch` (creating the branch from the base ref if it does not already exist).
-3. Persists `worktree_path` into `references.json` AND `status.metadata.worktree_path` in a single write batch so that no reader can observe one populated and the other empty.
+1. Reads `metadata.use_worktree` from status and derives the feature branch `feature/{plan-id}` (phase-1-init persisted neither the branch nor a path).
+2. Creates the worktree directory at `<project_root>/.plan/local/worktrees/{plan-id}/` and checks out the feature branch (creating it from the base ref if it does not already exist).
+3. Persists `worktree_branch` and `worktree_path` into `references.json` AND `status.metadata` in a single write batch so that no reader can observe one populated and the other empty.
 4. From this point forward, every Edit/Write/Read tool call and every Bucket B subprocess MUST resolve against `worktree_path` (the rules below take effect).
 
-If Step 2.5 fails (e.g., branch already checked out elsewhere, base ref missing, worktree directory already occupied with conflicting content), the plan halts before any task dispatch and `worktree_path` remains empty — the plan is still in state 2 and the operator must either resolve the materialization failure or downgrade the plan to `use_worktree: false`.
+If Step 2.5 fails (e.g., branch already checked out elsewhere, base ref missing, worktree directory already occupied with conflicting content), the plan halts before any task dispatch and `worktree_path` remains unset — the plan is still pre-materialization and the operator must either resolve the materialization failure or downgrade the plan to `use_worktree: false`.
 
 ## Dispatch Protocol (cwd-Pinned Inheritance)
 
-**Applies in state 4 (post-materialization) only.** During states 1-2 there is no worktree on disk; the orchestrator's cwd is the main checkout and subagents inherit that cwd, so `.plan/` and project content resolve to main automatically via the uniform cwd walk-up. No header and no path forwarding are required pre-materialization.
+**Applies in state 3 (post-materialization) only.** During the pre-materialization phases there is no worktree on disk; the orchestrator's cwd is the main checkout and subagents inherit that cwd, so `.plan/` and project content resolve to main automatically via the uniform cwd walk-up. No header and no path forwarding are required pre-materialization.
 
 Under the move-based, cwd-pinned model (ADR-002), the worktree binding is carried by the **pinned current working directory**, not by per-call parameter forwarding. At phase-5 materialization the orchestrator pins its cwd to the worktree root after `prepare_execute.py` moves the plan directory and the executor in; every subprocess it spawns — and every subagent it dispatches — inherits that cwd. Because `.plan/` resolution is cwd-relative (`file_ops.get_base_dir()` walks up from cwd to the nearest ancestor containing `.plan/local`), a dispatched subagent resolves the worktree-resident state without being told a path. See [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) for the single cwd-unchanged invariant — it is not restated here.
 
@@ -112,7 +111,7 @@ The header is a reminder, not a path-routing mechanism — the binding holds whe
 
 ## The `git -C {path}` Rule (Worktree Application)
 
-**Applies in state 4 (post-materialization) only.** In states 1-2, `{worktree_path}` is empty and the universal rule already governs main-checkout invocations (`git -C {main_checkout} ...`); the worktree-specific application below activates the moment Step 2.5 materializes the worktree directory.
+**Applies in state 3 (post-materialization) only.** Pre-materialization, `{worktree_path}` is unset and the universal rule already governs main-checkout invocations (`git -C {main_checkout} ...`); the worktree-specific application below activates the moment Step 2.5 materializes the worktree directory.
 
 The universal "no `cd <path> && <tool>`" prohibition is established in [`dev-agent-behavior-rules/standards/tool-usage-patterns.md`](../../dev-agent-behavior-rules/standards/tool-usage-patterns.md) — that document defines the rule for every tool with a native cwd flag.
 
@@ -130,7 +129,7 @@ The same `<tool> -C / -f / --prefix / --directory / --rootdir` discipline applie
 
 ## Never-Edit-Main-Checkout Invariant
 
-**Applies in state 4 (post-materialization) only.** During states 1-2 the plan legitimately operates against the main checkout (no worktree exists yet); the invariant takes effect at Step 2.5 materialization and remains in effect until the worktree is removed during cleanup.
+**Applies in state 3 (post-materialization) only.** Pre-materialization the plan legitimately operates against the main checkout (no worktree exists yet); the invariant takes effect at Step 2.5 materialization and remains in effect until the worktree is removed during cleanup.
 
 While a plan is in flight in an isolated worktree, the agent MUST NOT:
 
@@ -229,7 +228,7 @@ This matches the operator's mental model ("only flag what changed") and keeps th
 
 ## Cleanup Ordering: Worktree First, Then Branch
 
-**Applies only when the plan reached state 4 (post-materialization).** A plan that aborts during states 1-2 has no worktree to remove; cleanup degenerates to a branch deletion against the main checkout. The ordering below assumes the worktree directory exists on disk.
+**Applies only when the plan reached state 3 (post-materialization).** A plan that aborts pre-materialization has no worktree to remove; cleanup degenerates to a branch deletion against the main checkout. The ordering below assumes the worktree directory exists on disk.
 
 When a plan completes and the feature branch is ready for deletion, the operations MUST happen in this order:
 
