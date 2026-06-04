@@ -4,8 +4,9 @@
 Split from test_manage_status.py: covers cmd_transition (incl. inline
 strict-verify guard for guarded boundaries, modified_files capture, and
 last-phase symmetry with cmd_archive), cmd_archive (incl. --reason flag),
-cmd_delete_plan (incl. lesson-restoration), cmd_list_orphans, and
-cmd_mark_step_done loop-back target validation.
+cmd_delete_plan (incl. lesson-restoration), cmd_list (incl. worktree
+moved-in plan discovery), cmd_list_orphans, and cmd_mark_step_done
+loop-back target validation.
 """
 
 import json
@@ -29,6 +30,7 @@ _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py'
 cmd_archive = _lifecycle.cmd_archive
 cmd_create = _lifecycle.cmd_create
 cmd_delete_plan = _lifecycle.cmd_delete_plan
+cmd_list = _query.cmd_list
 cmd_list_orphans = _query.cmd_list_orphans
 cmd_set_phase = _query.cmd_set_phase
 cmd_transition = _lifecycle.cmd_transition
@@ -579,6 +581,201 @@ def test_transition_last_phase_sets_complete(plan_context):
         f"Expected phases[-1].status='done', got "
         f'{live_status["phases"][-1]["status"]!r}.'
     )
+
+
+# =============================================================================
+# Regression Tests: cmd_list discovers moved-in worktree plans (ADR-002)
+# =============================================================================
+#
+# Per ADR-002 a plan's runtime state (its plan directory) MOVES into the
+# plan's own worktree at phase-5 entry and back to main at finalize. A plan
+# that is mid-flight in phase-5+ therefore no longer lives under the main
+# checkout's plans_dir — a main-only walk is BLIND to it. cmd_list must scan
+# get_worktree_root()'s child worktrees for moved-in plans and surface them
+# with location='worktree'. These tests pin that discovery so a regression to
+# the old main-only walk fails loudly.
+#
+# Worktree-resident plan layout probed by cmd_list:
+#   {base_dir}/worktrees/{wt}/.plan/local/plans/{plan_id}/status.json
+# Under the plan_context fixture, base_dir == PLAN_BASE_DIR == tmp_path, so
+# the helper materializes that exact path inside the isolated fixture tree.
+
+
+def _seed_worktree_resident_plan(
+    fixture_dir: Path,
+    plan_id: str,
+    *,
+    worktree_name: str | None = None,
+    current_phase: str = '5-execute',
+) -> Path:
+    """Materialize a moved-in worktree plan and return its status.json path.
+
+    Mirrors the ADR-002 phase-5 move-in: the plan directory lives under
+    ``{fixture_dir}/worktrees/{worktree_name}/.plan/local/plans/{plan_id}/``
+    (NOT under the main ``{fixture_dir}/plans/`` tree). ``worktree_name``
+    defaults to ``plan_id`` — the canonical ``worktree-create`` layout where
+    the worktree dir is named for the plan it hosts.
+    """
+    wt = worktree_name or plan_id
+    wt_plan_dir = fixture_dir / 'worktrees' / wt / '.plan' / 'local' / 'plans' / plan_id
+    wt_plan_dir.mkdir(parents=True, exist_ok=True)
+    status_path = wt_plan_dir / 'status.json'
+    status_path.write_text(
+        json.dumps({'current_phase': current_phase, 'title': f'Worktree {plan_id}'}),
+        encoding='utf-8',
+    )
+    return status_path
+
+
+def test_list_discovers_moved_in_worktree_plan(plan_context):
+    """Regression: cmd_list surfaces a plan whose dir moved into a worktree.
+
+    The plan directory lives ONLY under the worktree tree (the ADR-002
+    move-in removed it from the main plans_dir). A main-only walk returns
+    total=0; the fixed cmd_list must discover it via the worktree scan and
+    tag it location='worktree'.
+    """
+    # Remove the fixture's default main-checkout plan so the worktree plan is
+    # the only discoverable plan — total must be exactly 1.
+    shutil.rmtree(plan_context.plan_dir, ignore_errors=True)
+    _seed_worktree_resident_plan(plan_context.fixture_dir, 'moved-in-plan')
+
+    result = cmd_list(Namespace(filter=None))
+
+    assert result['status'] == 'success'
+    assert result['total'] == 1, (
+        f'cmd_list is blind to the moved-in worktree plan: expected total=1, '
+        f"got {result['total']} plans={result['plans']!r}. A regression to the "
+        f'main-only plans_dir walk drops every phase-5+ plan whose directory '
+        f'moved into its worktree (ADR-002).'
+    )
+    entry = result['plans'][0]
+    assert entry['id'] == 'moved-in-plan'
+    assert entry['location'] == 'worktree', (
+        f"Moved-in plan must be tagged location='worktree', got "
+        f"{entry['location']!r}."
+    )
+    assert entry['current_phase'] == '5-execute'
+
+
+def test_list_merges_main_and_worktree_plans_sorted(plan_context):
+    """cmd_list merges main-checkout and worktree plans, sorted by id.
+
+    One legitimate plan on the main checkout (location='current') plus one
+    moved-in worktree plan (location='worktree') → both returned, deduped,
+    and sorted by id.
+    """
+    shutil.rmtree(plan_context.plan_dir, ignore_errors=True)
+    # Main-checkout plan via cmd_create (writes a real status.json under plans_dir).
+    cmd_create(
+        Namespace(
+            plan_id='alpha-on-main',
+            title='Main Plan',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    # Worktree-resident plan whose id sorts AFTER the main plan.
+    _seed_worktree_resident_plan(plan_context.fixture_dir, 'zeta-in-worktree')
+
+    result = cmd_list(Namespace(filter=None))
+
+    assert result['status'] == 'success'
+    assert result['total'] == 2, (
+        f'Expected both the main-checkout and worktree plans, got '
+        f"total={result['total']} plans={result['plans']!r}."
+    )
+    ids = [p['id'] for p in result['plans']]
+    assert ids == ['alpha-on-main', 'zeta-in-worktree'], (
+        f'Merged plans must be sorted by id regardless of source, got {ids}.'
+    )
+    by_id = {p['id']: p for p in result['plans']}
+    assert by_id['alpha-on-main']['location'] == 'current'
+    assert by_id['zeta-in-worktree']['location'] == 'worktree'
+
+
+def test_list_dedupes_plan_present_in_both_main_and_worktree(plan_context):
+    """Defensive dedup: a plan present on main AND in a worktree appears once.
+
+    The transient both-present window (before the move-in fully removes the
+    main copy) must not double-count. The main-checkout entry wins
+    (location='current') because the main scan runs first and records the id.
+    """
+    shutil.rmtree(plan_context.plan_dir, ignore_errors=True)
+    cmd_create(
+        Namespace(
+            plan_id='dual-present',
+            title='Dual Present',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    # Same id also seeded in a worktree (transient both-present window).
+    _seed_worktree_resident_plan(plan_context.fixture_dir, 'dual-present')
+
+    result = cmd_list(Namespace(filter=None))
+
+    assert result['status'] == 'success'
+    assert result['total'] == 1, (
+        f"Plan present in both sources must appear exactly once, got "
+        f"total={result['total']} plans={result['plans']!r}."
+    )
+    entry = result['plans'][0]
+    assert entry['id'] == 'dual-present'
+    assert entry['location'] == 'current', (
+        f"The main-checkout entry must win dedup (main scan runs first), got "
+        f"location={entry['location']!r}."
+    )
+
+
+def test_list_worktree_plan_honours_phase_filter(plan_context):
+    """The --filter phase predicate applies to worktree-resident plans too.
+
+    A worktree plan in phase 5-execute is filtered out by --filter 3-outline
+    and surfaced by --filter 5-execute — the worktree scan honours the same
+    _passes_phase_filter predicate as the main scan.
+    """
+    shutil.rmtree(plan_context.plan_dir, ignore_errors=True)
+    _seed_worktree_resident_plan(
+        plan_context.fixture_dir, 'filtered-worktree', current_phase='5-execute'
+    )
+
+    excluded = cmd_list(Namespace(filter='3-outline'))
+    assert excluded['status'] == 'success'
+    assert excluded['total'] == 0, (
+        f'Worktree plan in 5-execute must be excluded by --filter 3-outline, '
+        f"got {excluded['plans']!r}. The worktree scan must apply the phase "
+        f'filter, not just the main scan.'
+    )
+
+    included = cmd_list(Namespace(filter='5-execute'))
+    assert included['status'] == 'success'
+    assert included['total'] == 1
+    assert included['plans'][0]['id'] == 'filtered-worktree'
+
+
+def test_list_cli_surfaces_worktree_plan(plan_context):
+    """End-to-end CLI: ``manage-status list`` surfaces the moved-in plan.
+
+    Exercises the full script entry point (argparse → cmd_list → TOON), not
+    just the in-process handler, so the subcommand wiring is covered. The
+    fixture's PLAN_BASE_DIR is propagated to the subprocess via run_script's
+    os.environ.copy(), so the child resolves the same worktree tree.
+    """
+    shutil.rmtree(plan_context.plan_dir, ignore_errors=True)
+    _seed_worktree_resident_plan(plan_context.fixture_dir, 'cli-worktree-plan')
+
+    result = run_script(SCRIPT_PATH, 'list')
+
+    assert result.success, (
+        f'list subcommand must be resolvable via the script entry point. '
+        f'stderr: {result.stderr}'
+    )
+    assert 'status: success' in result.stdout
+    assert 'cli-worktree-plan' in result.stdout, (
+        f'CLI list output missing the moved-in worktree plan: {result.stdout!r}'
+    )
+    assert 'worktree' in result.stdout
 
 
 # =============================================================================

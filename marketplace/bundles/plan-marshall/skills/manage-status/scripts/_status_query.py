@@ -16,8 +16,13 @@ from _status_core import (
     require_status,
     write_status,
 )
-from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS  # type: ignore[import-not-found]
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
+from constants import (  # type: ignore[import-not-found]
+    DIR_PLANS,
+    PHASE_STATUS_DONE,
+    PHASE_STATUS_IN_PROGRESS,
+)
+from file_ops import get_plan_dir, get_worktree_root  # type: ignore[import-not-found]
+from marketplace_paths import PLAN_DIR_NAME  # type: ignore[import-not-found]
 
 # Metadata fields that are semantically boolean. The ``metadata --set`` CLI
 # receives every value as a raw string; for these keys the raw string is
@@ -304,35 +309,119 @@ def cmd_get_worktree_path(args: argparse.Namespace) -> dict | None:
     return result
 
 
+def _passes_phase_filter(current_phase: str, filter_arg: str | None) -> bool:
+    """Return whether ``current_phase`` survives the ``--filter`` phase filter.
+
+    ``filter_arg`` is the raw comma-separated ``args.filter`` value (or
+    ``None`` when no filter was supplied, in which case every plan passes).
+    Shared by the main-checkout enumeration and the worktree scan so both
+    paths honour the same filter semantics.
+    """
+    if not filter_arg:
+        return True
+    filter_phases = [p.strip() for p in filter_arg.split(',')]
+    return current_phase in filter_phases
+
+
 def cmd_list(args: argparse.Namespace) -> dict:
-    """Discover all plans."""
+    """Discover all plans across the main checkout AND its worktrees.
+
+    Enumerates two sources and merges them deduped by plan id:
+
+    - **Main checkout** (``get_plans_dir()``): plans whose directory lives on
+      the current checkout. Each is tagged ``location: 'current'``.
+    - **Worktrees** (``get_worktree_root()`` children): a phase-5+ plan whose
+      directory was MOVED into its worktree at execute entry (ADR-002) is no
+      longer present under ``get_plans_dir()``, so a plain main-only walk is
+      blind to it. The worktree scan probes each worktree's
+      ``{wt}/.plan/local/plans`` for plan dirs with a readable ``status.json``
+      and surfaces them tagged ``location: 'worktree'``. The probed layout is
+      the exact ``get_worktree_root() / {id} / .plan/local/plans/{id}`` path
+      that ``worktree-create`` materializes and ``cmd_locate_plan_checkout``
+      probes — single-sourced via ``PLAN_DIR_NAME`` / ``DIR_PLANS``.
+
+    Each entry carries ``{id, current_phase, status, location}``. The merged
+    list is deduped by id (a moved-in plan appears exactly once — main never
+    holds it post-move; dedup is defensive against the transient both-present
+    window) and sorted by id for stable ordering regardless of checkout. The
+    worktree scan is guarded against the outside-git-repo ``RuntimeError`` from
+    ``get_worktree_root()`` — on that error the main-only result is returned.
+    """
+    plans: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    # Source 1: main-checkout plans. Tolerate a missing plans dir so a fresh
+    # main checkout with no plans/ dir but an active worktree still reaches the
+    # worktree scan below.
     plans_dir = get_plans_dir()
-    if not plans_dir.exists():
-        return {'status': 'success', 'total': 0, 'plans': []}
+    if plans_dir.is_dir():
+        for plan_dir in sorted(plans_dir.iterdir()):
+            if not plan_dir.is_dir():
+                continue
 
-    plans = []
-    for plan_dir in sorted(plans_dir.iterdir()):
-        if not plan_dir.is_dir():
-            continue
+            status = _try_read_status_json(plan_dir)
+            if not status:
+                continue
 
-        # Try status.json first (new format)
-        status = _try_read_status_json(plan_dir)
-        if not status:
-            continue
+            try:
+                current_phase = status.get('current_phase', 'unknown')
+                if not _passes_phase_filter(current_phase, args.filter):
+                    continue
+                plans.append(
+                    {
+                        'id': plan_dir.name,
+                        'current_phase': current_phase,
+                        'status': PHASE_STATUS_IN_PROGRESS,
+                        'location': 'current',
+                    }
+                )
+                seen_ids.add(plan_dir.name)
+            except (KeyError, TypeError):
+                # Skip plans with corrupted status
+                continue
 
-        try:
-            current_phase = status.get('current_phase', 'unknown')
+    # Source 2: worktree-resident plans. Outside a git repo get_worktree_root()
+    # raises RuntimeError — skip the scan entirely and return the main-only
+    # result rather than crashing.
+    try:
+        worktree_root = get_worktree_root()
+    except RuntimeError:
+        worktree_root = None
 
-            # Apply filter if provided
-            if args.filter:
-                filter_phases = [p.strip() for p in args.filter.split(',')]
-                if current_phase not in filter_phases:
+    if worktree_root is not None and worktree_root.is_dir():
+        for worktree_dir in sorted(worktree_root.iterdir()):
+            if not worktree_dir.is_dir():
+                continue
+
+            wt_plans_dir = worktree_dir / PLAN_DIR_NAME / 'local' / DIR_PLANS
+            if not wt_plans_dir.is_dir():
+                continue
+
+            for plan_dir in sorted(wt_plans_dir.iterdir()):
+                if not plan_dir.is_dir() or plan_dir.name in seen_ids:
                     continue
 
-            plans.append({'id': plan_dir.name, 'current_phase': current_phase, 'status': PHASE_STATUS_IN_PROGRESS})
-        except (KeyError, TypeError):
-            # Skip plans with corrupted status
-            continue
+                status = _try_read_status_json(plan_dir)
+                if not status:
+                    continue
+
+                try:
+                    current_phase = status.get('current_phase', 'unknown')
+                    if not _passes_phase_filter(current_phase, args.filter):
+                        continue
+                    plans.append(
+                        {
+                            'id': plan_dir.name,
+                            'current_phase': current_phase,
+                            'status': PHASE_STATUS_IN_PROGRESS,
+                            'location': 'worktree',
+                        }
+                    )
+                    seen_ids.add(plan_dir.name)
+                except (KeyError, TypeError):
+                    continue
+
+    plans.sort(key=lambda p: p['id'])
 
     return {'status': 'success', 'total': len(plans), 'plans': plans}
 
