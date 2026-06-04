@@ -251,7 +251,10 @@ def _absorb_orphan_contents(orphan: Path, src: Path) -> None:
             target = dst_sub / entry.name
             if target.exists():
                 continue
-            shutil.copy2(str(entry), str(target))
+            try:
+                shutil.copy2(str(entry), str(target))
+            except OSError:
+                pass
 
 
 def _move_back_dir(src: Path, dst: Path) -> None:
