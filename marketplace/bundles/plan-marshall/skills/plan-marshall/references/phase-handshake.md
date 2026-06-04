@@ -15,10 +15,11 @@ Phase skills occasionally drift between what they *report* they did and what the
 Executor notation: `plan-marshall:plan-marshall:phase_handshake`
 
 ```
-phase_handshake capture --plan-id X --phase P [--override --reason "text"]
-phase_handshake verify  --plan-id X --phase P [--strict]
-phase_handshake list    --plan-id X
-phase_handshake clear   --plan-id X --phase P
+phase_handshake capture        --plan-id X --phase P [--override --reason "text"]
+phase_handshake verify         --plan-id X --phase P [--strict]
+phase_handshake findings-check --plan-id X --phase P
+phase_handshake list           --plan-id X
+phase_handshake clear          --plan-id X --phase P
 ```
 
 All subcommands return TOON.
@@ -67,6 +68,21 @@ diffs[2]{invariant,captured,observed}:
   main_dirty,0,12
   main_sha,3823a0dd,15efe821
 ```
+
+### `findings-check`
+
+Read-only single-invariant gate. Evaluates ONLY the `pending_findings_blocking_count` invariant (via [resolution rule](#pending_findings_blocking_count-resolution)) for `phase` and writes **no** handshake row. Unlike `capture` it never runs `capture_all`, so `phase_steps_complete` is never evaluated — the verb cannot short-circuit on `phase_steps_incomplete`. It exists for the intra-finalize boundaries, where the downstream finalize steps (`branch-cleanup`, `record-metrics`, `archive-plan`) have not run yet so the composite `capture` gate would always fail on `phase_steps_incomplete` before ever evaluating the blocking-findings invariant.
+
+On a clean count:
+
+```toon
+status: success
+plan_id: X
+phase: 6-finalize
+blocking_count: 0
+```
+
+On a pending blocking-type finding the verb returns the **same** structured error payload `capture` emits for `blocking_findings_present` (`blocking_count`, `blocking_types`, `per_type`, `message`), so the intra-finalize callers branch on an interchangeable envelope. There is no `--strict` flag — the verdict is carried entirely in the TOON `status` field, and a `status: error` payload still exits 0 (mirroring the `capture` exit convention the callers already handle).
 
 ### `list` / `clear`
 
@@ -209,11 +225,13 @@ message: "pending_findings_blocking_count failed for phase '6-finalize': ..."
 
 **Guarded boundaries:**
 
-| Boundary | Where the strict-verify check fires |
+| Boundary | Where the blocking-findings check fires |
 |---|---|
 | `5-execute → 6-finalize` | `manage-status transition --completed 5-execute` inlines `phase_handshake verify --phase 5-execute --strict`. On drift the transition returns the drift TOON, refuses to advance state, and exits 1 — mirroring the standalone strict-verify exit semantics. |
-| `automated-review → branch-cleanup` (intra-finalize) | the `phase-6-finalize` orchestrator re-issues `phase_handshake capture --phase 6-finalize` between the two finalize sub-steps |
-| `sonar-roundtrip → next` (intra-finalize) | same — the orchestrator re-issues capture between sub-steps |
+| `automated-review → branch-cleanup` (intra-finalize) | the `phase-6-finalize` orchestrator re-issues `phase_handshake findings-check --phase 6-finalize` between the two finalize sub-steps |
+| `sonar-roundtrip → next` (intra-finalize) | same — the orchestrator re-issues `findings-check` between sub-steps |
+
+The two intra-finalize boundaries use the single-invariant `findings-check` verb rather than the composite `capture`: mid-pipeline, the downstream finalize steps have not run yet, so a composite `capture` would short-circuit on `phase_steps_incomplete` before it ever evaluated the blocking-findings invariant — leaving the gate inoperative. `findings-check` evaluates only `pending_findings_blocking_count`, so it cannot short-circuit and the mid-pipeline gate works as intended. The `5-execute → 6-finalize` boundary keeps the composite verify because at phase completion `phase_steps_complete` is satisfiable.
 
 Every other capture point (phases `1-init` through `5-execute`, plus finalize sub-steps not listed above) reads the row but does **not** raise — captures persist with the integer count for retrospective analysis. The blocking decision is *strictly* opt-in per the boundary set.
 

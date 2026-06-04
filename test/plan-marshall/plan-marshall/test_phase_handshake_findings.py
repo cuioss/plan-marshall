@@ -560,3 +560,130 @@ def test_blocking_type_silent_zero_tripwire_all_types_have_dispatch(
 
     expected_total = len(mapping_keys)
     assert queried_total == expected_total
+
+
+# =============================================================================
+# findings-check: read-only single-invariant verb (cmd_findings_check)
+# =============================================================================
+
+
+@pytest.fixture
+def explode_phase_steps(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``_capture_phase_steps_complete`` raise unconditionally.
+
+    The regression assertion for ``findings-check`` is that it does NOT route
+    through ``capture_all`` — so this exploding stub must NEVER fire through the
+    verb. If a future refactor wires ``cmd_findings_check`` to ``capture_all``,
+    the ``PhaseStepsIncomplete`` raised here would surface and break the test.
+    """
+    def _explode(_pid: str, _md: dict, phase: str):
+        raise inv.PhaseStepsIncomplete(phase, missing=['step-a'], not_done=[])
+
+    monkeypatch.setattr(inv, '_capture_phase_steps_complete', _explode)
+
+
+def test_findings_check_succeeds_when_no_blocking_findings(
+    plan_context, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """(a) Clean count → ``status: success`` with the blocking_count echoed."""
+    stub_query_counts['bug'] = 0
+    stub_blocking_types['6-finalize'] = ['bug']
+
+    result = cmds.cmd_findings_check(_ns(plan_id='fc-clean', phase='6-finalize'))
+
+    assert result['status'] == 'success'
+    assert result['plan_id'] == 'fc-clean'
+    assert result['phase'] == '6-finalize'
+    assert result['blocking_count'] == 0
+    # Read-only: no handshake row is ever written by findings-check.
+    assert store.get_row('fc-clean', '6-finalize') is None
+
+
+def test_findings_check_blocks_when_blocking_finding_pending(
+    plan_context, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """(c) Pending blocking finding → the composite-capture error envelope."""
+    stub_query_counts['pr-comment'] = 2
+    stub_blocking_types['6-finalize'] = ['pr-comment']
+
+    result = cmds.cmd_findings_check(_ns(plan_id='fc-block', phase='6-finalize'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'blocking_findings_present'
+    assert result['plan_id'] == 'fc-block'
+    assert result['phase'] == '6-finalize'
+    assert result['blocking_count'] == 2
+    assert result['blocking_types'] == ['pr-comment']
+    assert result['per_type'] == {'pr-comment': 2}
+    assert 'message' in result
+    # Read-only: the blocking verdict writes no handshake row.
+    assert store.get_row('fc-block', '6-finalize') is None
+
+
+def test_findings_check_does_not_run_phase_steps_complete(
+    plan_context, stub_metadata, stub_query_counts, stub_blocking_types, explode_phase_steps
+) -> None:
+    """(b) Regression: findings-check evaluates ONLY the blocking-findings
+    invariant — never ``phase_steps_complete`` — so a mid-pipeline checkpoint
+    where the required steps are incomplete still produces
+    ``blocking_findings_present`` (NOT ``phase_steps_incomplete``)."""
+    stub_query_counts['sonar-issue'] = 1
+    stub_blocking_types['6-finalize'] = ['sonar-issue']
+
+    result = cmds.cmd_findings_check(_ns(plan_id='fc-no-steps', phase='6-finalize'))
+
+    # The exploding phase_steps stub did NOT fire — the verb skipped capture_all.
+    assert result['status'] == 'error'
+    assert result['error'] == 'blocking_findings_present'
+    assert result['error'] != 'phase_steps_incomplete'
+    assert result['blocking_count'] == 1
+
+
+def test_findings_check_clean_count_ignores_incomplete_phase_steps(
+    plan_context, stub_metadata, stub_query_counts, stub_blocking_types, explode_phase_steps
+) -> None:
+    """Clean blocking count clears even when phase steps are incomplete — the
+    core fix: the gate no longer short-circuits on ``phase_steps_incomplete``."""
+    stub_query_counts['bug'] = 0
+    stub_blocking_types['6-finalize'] = ['bug']
+
+    result = cmds.cmd_findings_check(_ns(plan_id='fc-clean-no-steps', phase='6-finalize'))
+
+    assert result['status'] == 'success'
+    assert result['blocking_count'] == 0
+
+
+def test_findings_check_error_envelope_matches_composite_capture(
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """(c) The blocking-findings error payload field set is identical between
+    ``findings-check`` and the composite ``capture`` so the two intra-finalize
+    callers branch on an interchangeable envelope."""
+    stub_query_counts['pr-comment'] = 3
+    stub_blocking_types['6-finalize'] = ['pr-comment']
+
+    capture_result = cmds.cmd_capture(_ns(plan_id='fc-parity-cap', phase='6-finalize'))
+    check_result = cmds.cmd_findings_check(_ns(plan_id='fc-parity-chk', phase='6-finalize'))
+
+    # Same field set (plan_id differs by construction; keys must match).
+    assert set(capture_result.keys()) == set(check_result.keys())
+    for key in ('status', 'error', 'blocking_count', 'blocking_types', 'per_type'):
+        assert capture_result[key] == check_result[key]
+
+
+def test_findings_check_refuses_on_unresolved_worktree(
+    plan_context, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """The worktree-resolution assertion fires before the findings query, so an
+    unresolved worktree surfaces ``worktree_unresolved`` (consistent with
+    ``capture`` / ``verify``)."""
+    stub_metadata['use_worktree'] = True
+    stub_metadata['worktree_path'] = ''
+    stub_blocking_types['6-finalize'] = ['bug']
+
+    result = cmds.cmd_findings_check(_ns(plan_id='fc-wt', phase='6-finalize'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'worktree_unresolved'
+    assert result['plan_id'] == 'fc-wt'
+    assert result['phase'] == '6-finalize'
