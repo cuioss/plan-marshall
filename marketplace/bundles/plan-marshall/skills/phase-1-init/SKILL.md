@@ -555,7 +555,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **IF `branch_strategy == "direct"`**: Keep current branch — no action needed. `use_worktree` is ignored in direct mode.
 
-**Note — no drift-sync at init time**: Materialization is deferred, so no branch checkout, fetch, or rebase happens here. When phase-5-execute Step 2.5 materializes the worktree and feature branch, it handles drift-sync against `origin/{base_branch}` per the `rebase_on_execute_start` config (default `true`).
+**Note — no drift-sync at init time**: Materialization is deferred, so no branch checkout, fetch, or rebase happens here. Baseline reconciliation against `origin/{base_branch}` happens at refine time (phase-2-refine Step 3d); phase-5-execute Step 3 is a fast-path "still clean?" check that performs no merge or rebase.
 
 ### Step 7: Detect Domain
 

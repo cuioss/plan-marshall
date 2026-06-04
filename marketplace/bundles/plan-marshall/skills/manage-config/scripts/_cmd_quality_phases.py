@@ -21,7 +21,6 @@ from _config_core import (
 from _config_defaults import (
     get_default_config,
     validate_per_deliverable_build,
-    validate_rebase_strategy,
 )
 from constants import PHASES  # type: ignore[import-not-found]
 
@@ -130,11 +129,6 @@ def cmd_phase(args, phase_section: str) -> dict:
         field = args.field
         value = _coerce_value(args.value)
         # Enum fields: reject invalid values before mutating config
-        if phase_section == 'phase-5-execute' and field == 'rebase_strategy':
-            try:
-                validate_rebase_strategy(str(value))
-            except ValueError as e:
-                return error_exit(str(e))
         if phase_section == 'phase-5-execute' and field == 'per_deliverable_build':
             try:
                 validate_per_deliverable_build(str(value))

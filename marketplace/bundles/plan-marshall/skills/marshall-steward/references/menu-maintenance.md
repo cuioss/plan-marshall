@@ -212,7 +212,7 @@ Reconcile git worktrees under `<root>/.plan/local/worktrees/` against active and
 ### Step 1: List managed worktrees
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree list
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-list
 ```
 
 Parse the TOON output. Each worktree entry has `plan_id`, `path`, and `branch`.
@@ -248,7 +248,7 @@ AskUserQuestion:
 On "Yes, remove":
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree remove \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove \
   --plan-id {plan_id}
 ```
 

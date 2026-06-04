@@ -43,7 +43,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 The bulk of project configuration. Canonical schema and field reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
-`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`. Each phase block holds fields specific to that phase. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `confidence_threshold`, `compatibility`, `commit_strategy`, `verification_max_iterations`, `max_iterations`, `review_bot_buffer_seconds`, …) see link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, `system`, and `ci` sections. Each phase block holds fields specific to that phase. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_strategy`, `verification_max_iterations`, `per_deliverable_build`, `per_task_budget_reserve`, `max_iterations`, `review_bot_buffer_seconds`, `pr_merge_strategy`, `auto_merge_after_ci`, `auto_rebase_threshold`, `lightweight_track_override`, `pre_push_quality_gate`, `open_in_ide`, the `system.retention.*` knobs, `ci.checks_wait_timeout_seconds`, the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
 [#effort-and-models]
 === Effort and model selection
@@ -64,6 +64,7 @@ Boolean fields under each phase that decide whether the next-phase transition pa
 | `plan.phase-4-plan.execute_without_asking` | `true` | …from `phase-4-plan` to `phase-5-execute`.
 | `plan.phase-5-execute.finalize_without_asking` | `true` | …from `phase-5-execute` to `phase-6-finalize` (forward direction).
 | `plan.phase-6-finalize.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops.
+| `plan.phase-6-finalize.auto_merge_after_ci` | `true` | …from a green CI run to the `pr merge --delete-branch` step. `true` (default) merges automatically once CI passes, serialised across concurrent plans by the cross-plan merge-lock; `false` prompts the operator before merging.
 |===
 
 Set via `/marshall-steward` → Configuration → Review Gates, or directly:
@@ -113,6 +114,75 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ----
 
 For the conceptual home of per-dispatch context isolation see xref:../concepts/token-management.adoc[Concepts › Token Management]. Canonical schema: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+
+[#commit-and-build-depth]
+=== Commit strategy and per-deliverable build depth
+
+Two `plan.phase-5-execute` knobs govern how often the execute phase commits and how deeply it builds at each deliverable boundary:
+
+[cols="1,1,3", options="header"]
+|===
+| Config key | Default | What it controls
+
+| `plan.phase-5-execute.commit_strategy` | `per_deliverable` | When the execute loop commits. `per_deliverable` commits at each deliverable chain-tail; `per_plan` commits once at end of phase; `none` defers all committing to finalize.
+| `plan.phase-5-execute.per_deliverable_build` | `compile+scoped-test` | Build depth at each per-deliverable chain-tail. `off` skips the focused build (end-of-phase sweep only); `compile-only` type-checks the changed module; `compile+scoped-test` adds the module's scoped tests; `full` runs a whole-tree quality-gate per deliverable (legacy, opt-in).
+|===
+
+Set via `/marshall-steward` → Configuration, or directly:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field per_deliverable_build --value compile-only
+----
+
+[#merge-strategy]
+=== PR merge strategy and auto-rebase
+
+[cols="1,1,3", options="header"]
+|===
+| Config key | Default | What it controls
+
+| `plan.phase-6-finalize.pr_merge_strategy` | `squash` | The merge method the branch-cleanup step passes to `pr merge` — `squash`, `merge`, or `rebase`.
+| `plan.phase-6-finalize.auto_rebase_threshold` | `no_overlap_only` | Gates the pre-merge auto-rebase decision. `no_overlap_only` lets the auto-rebase proceed only when it would touch a disjoint file set; any overlap defers to the operator.
+| `plan.phase-6-finalize.lightweight_track_override` | `false` | Escape hatch for the manifest composer's scope-gating pre-filter. `false` keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans.
+| `plan.phase-6-finalize.pre_push_quality_gate.activation_globs` | `[]` | Glob list that activates the `default:pre-push-quality-gate` finalize step. An empty list (default) leaves the step inactive; a non-empty list activates it when a changed path matches.
+|===
+
+[#open-in-ide]
+=== Open in IDE
+
+`plan.open_in_ide` (default `true`) controls whether Plan Marshall attempts to open the plan/worktree in your IDE on creation. A missing key is treated as `true`. Set to `false` to suppress IDE auto-open.
+
+[#retention-and-ci]
+=== Retention and CI
+
+Top-level `system.retention` and `ci` knobs project authors tune occasionally:
+
+[cols="1,1,3", options="header"]
+|===
+| Config key | Default | What it controls
+
+| `system.retention.logs_days` | `1` | Days to keep execution logs before cleanup.
+| `system.retention.archived_plans_days` | `5` | Days to keep archived plans before cleanup.
+| `system.retention.lessons_superseded_days` | `0` | Days to keep superseded lessons before removal (`0` = remove immediately).
+| `system.retention.temp_on_maintenance` | `true` | Whether the maintenance pass clears `.plan/temp/`.
+| `ci.checks_wait_timeout_seconds` | `600` | Default ceiling (seconds) the CI polling commands wait for run completion. Overridden by an explicit `--timeout` flag when supplied.
+|===
+
+[#project-branch-naming]
+=== Base branch and branch-naming
+
+The top-level `project` section holds the project's base branch and the closed branch-prefix sets:
+
+[cols="1,1,3", options="header"]
+|===
+| Config key | Default | What it controls
+
+| `project.default_base_branch` | `main` | The project's canonical base branch. `phase-1-init` seeds `references.base_branch` from it; per-plan overrides via `manage-references set --field base_branch`.
+| `project.branch_naming.working_prefixes` | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes. `manage-status create` validates `--worktree-branch` against this set.
+| `project.branch_naming.ci_allowlist` | `["main", "feature/*", "fix/*", "chore/*", "dependabot/**"]` | The CI push-trigger allowlist (glob form), pinned by a structural test against `.github/workflows/python-verify.yml`.
+|===
 
 [#build-systems]
 === Build systems and profiles

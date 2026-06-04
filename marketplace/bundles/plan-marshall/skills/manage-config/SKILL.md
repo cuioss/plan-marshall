@@ -161,25 +161,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_strategy --value per_plan
 
-# Toggle the phase-5-execute sync-with-main step (default: true)
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field rebase_on_execute_start --value false
-
-# Select the sync strategy — enum: rebase | merge (default: merge)
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field rebase_strategy --value rebase
-
 # Select the per-deliverable build depth — enum: off | compile-only | compile+scoped-test | full
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field per_deliverable_build --value full
 ```
-
-**phase-5-execute sync-with-main fields:**
-
-| Field | Type | Default | Semantics |
-|-------|------|---------|-----------|
-| `rebase_on_execute_start` | bool | `true` | Whether phase-5-execute runs a sync step against `origin/{base_branch}` at phase start. Fast-path no-op when the branch already contains the remote tip. When `false`, phase-6-finalize's `pr update-branch` remains the only sync point. |
-| `rebase_strategy` | enum(`rebase`\|`merge`) | `merge` | How the sync step updates the branch. `rebase` rewrites history (requires force-push when a PR is open); `merge` does `git merge --no-edit origin/{base}` (no history rewrite, PR-safe). Invalid values are rejected by the config setter. |
 
 **phase-5-execute per-deliverable build field:**
 
@@ -370,8 +355,6 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "phase-5-execute": {
       "commit_strategy": "per_deliverable",
       "verification_max_iterations": 5,
-      "rebase_on_execute_start": true,
-      "rebase_strategy": "merge",
       "per_deliverable_build": "compile+scoped-test",
       "steps": ["quality_check", "build_verify"]
     },
