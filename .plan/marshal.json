@@ -38,8 +38,6 @@
         "default:quality_check",
         "default:build_verify"
       ],
-      "rebase_on_execute_start": true,
-      "rebase_strategy": "merge",
       "per_deliverable_build": "compile+scoped-test",
       "per_task_budget_reserve": 50000
     },
