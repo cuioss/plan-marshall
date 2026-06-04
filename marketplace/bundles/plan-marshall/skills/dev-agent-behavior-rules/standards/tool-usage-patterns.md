@@ -104,8 +104,8 @@ All CI/Git provider operations MUST go through the CI integration abstraction la
 Bash(command="gh pr create --title ...")
 
 # GOOD - CI integration scripts
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --title ...
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id {plan_id} --title {title}
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {n}
 ```
 
 If a needed operation is missing from the CI abstraction, extend the scripts — do not bypass them.

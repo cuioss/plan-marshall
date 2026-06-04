@@ -112,18 +112,11 @@ push: true
 ### Create PR
 **Trigger**: "create PR", "pull request"
 
+PR creation is plan-bound and runs through the CI abstraction. The body is prepared via `pr prepare-body` (writes the structured summary/changes), then `pr create` opens the PR against the plan's branch:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-  --title "{task-title}" \
-  --body "## Summary
-{description}
-
-**Related Issue**: {issue-link}
-
-## Changes
-{key changes}
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+  --plan-id {plan_id} --title "{task-title}"
 ```
 
 ## Plugin Operations

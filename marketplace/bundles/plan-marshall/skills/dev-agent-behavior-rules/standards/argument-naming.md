@@ -171,11 +171,12 @@ The `pr`, `checks`, `issue`, and `branch` subcommand surfaces are common across 
 
 | Operation | Canonical form |
 |---|---|
-| Scan all bundles | `doctor-marketplace scan [--bundles {csv}]` |
-| Scan explicit component paths | `doctor-marketplace scan --paths {path} [{path} ...]` |
+| List components | `doctor-marketplace list-components [--bundles {csv}]` |
+| List explicit component paths | `doctor-marketplace list-components --paths {path} [{path} ...]` |
 | Analyze components | `doctor-marketplace analyze [--bundles {csv}] [--type {csv}] [--name {csv}]` |
 | Apply safe fixes | `doctor-marketplace fix [--bundles {csv}] [--type {csv}] [--name {csv}] [--dry-run]` |
 | Generate report | `doctor-marketplace report [--bundles {csv}] [--output {dir}]` |
+| Run quality gate (scoped) | `doctor-marketplace quality-gate [--paths {path} ...] [--marketplace-root {dir}]` |
 | Validate extension contracts | `doctor-marketplace validate-contracts [--extension-type {kind}] [--skill {bundle:skill}]` |
 
 When adding a new subcommand or argument, choose the spelling consistent with the rules above before authoring the argparse declaration. When in doubt, search this standard's table for an analogous operation and reuse the spelling.

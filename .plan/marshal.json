@@ -60,12 +60,12 @@
       "steps": [
         "default:pre-push-quality-gate",
         "project:finalize-step-pre-submission-self-review",
+        "project:finalize-step-plugin-doctor",
         "default:commit-push",
         "default:create-pr",
         "default:ci-verify",
         "default:automated-review",
         "default:lessons-capture",
-        "project:finalize-step-plugin-doctor",
         "default:branch-cleanup",
         "project:finalize-step-deploy-target",
         "project:finalize-step-sync-plugin-cache",
