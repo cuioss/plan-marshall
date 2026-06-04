@@ -1448,9 +1448,15 @@ def cmd_locate_plan_checkout(args):
     - ``current`` — the plan directory exists on the current checkout's
       ``.plan/local/plans/{plan_id}/status.json`` (covers both main-checkout
       plans and the already-cwd-pinned-in-worktree case; idempotent).
-    - ``worktree`` — a registered worktree resolves for the plan whose
-      ``{worktree}/.plan/local/plans/{plan_id}/status.json`` exists on disk,
-      but the current checkout does NOT hold the plan dir.
+    - ``worktree`` — the plan dir lives in its worktree but NOT on the current
+      checkout. Resolved by two paths, tried in order: (1) the canonical
+      manage-status channel (:func:`_resolve_worktree_path_for_plan`), which
+      still succeeds for a not-yet-moved plan whose ``status.json`` is on main;
+      (2) a structural ``get_worktree_root() / {plan_id}`` filesystem probe that
+      handles the moved-in-from-main case — a phase-5+ plan whose dir was MOVED
+      into its worktree (ADR-002) is invisible to the manage-status channel
+      (its ``status.json`` is no longer on main), so the verb probes the
+      canonical worktree location directly and confirms ``status.json`` on disk.
     - ``not_found`` — neither location holds the plan dir.
 
     Returns TOON ``{status: success, plan_id, location, worktree_path?}`` where
@@ -1469,8 +1475,11 @@ def cmd_locate_plan_checkout(args):
         }
 
     # State (b): a registered worktree holds the plan dir, but the current
-    # checkout does not. Resolve through the canonical manage-status channel
-    # and confirm the plan's status.json exists on disk in the worktree.
+    # checkout does not. Two resolution paths are tried in order.
+    #
+    # Primary: the canonical manage-status channel. This still succeeds for a
+    # not-yet-moved plan whose status.json is on main (the channel reads
+    # metadata.worktree_path from main's status.json).
     worktree_path, error = _resolve_worktree_path_for_plan(plan_id)
     if error is not None:
         # Propagate critical infrastructure failures (executor missing, timeout,
@@ -1489,6 +1498,28 @@ def cmd_locate_plan_checkout(args):
                 'plan_id': plan_id,
                 'location': 'worktree',
                 'worktree_path': str(worktree_path),
+            }
+
+    # Fallback (structural probe): the manage-status channel could not resolve
+    # the worktree path (expected/masked error or None) — the canonical
+    # moved-in-from-main case, where the plan's status.json was MOVED off main
+    # into its worktree at phase-5 entry (ADR-002), so manage-status (reading
+    # main's status.json) no longer finds it. Probe the canonical worktree
+    # location directly — the exact ``get_worktree_root() / {plan_id}`` layout
+    # ``worktree-create`` materializes — and confirm status.json on disk.
+    try:
+        candidate = get_worktree_root() / plan_id
+    except RuntimeError:
+        # Outside a git repo: no worktree root to probe. Fall through to State (c).
+        candidate = None
+    if candidate is not None:
+        status_json = candidate / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
+        if status_json.is_file():
+            return {
+                'status': 'success',
+                'plan_id': plan_id,
+                'location': 'worktree',
+                'worktree_path': str(candidate),
             }
 
     # State (c): neither location holds the plan dir.

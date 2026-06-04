@@ -668,6 +668,60 @@ class TestLocatePlanCheckout:
         assert result['location'] == 'worktree'
         assert result['worktree_path'] == str(worktree)
 
+    def test_returns_worktree_via_structural_probe_when_manage_status_cannot_resolve(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression (State (b) structural fallback): a phase-5+ plan whose dir
+        was MOVED off main into its worktree (ADR-002) is invisible to the
+        canonical manage-status channel — main's ``status.json`` no longer holds
+        the plan, so ``get-worktree-path`` returns an expected ``not found``
+        error and the primary resolution path yields no ``worktree_path``. The
+        verb MUST then probe the canonical ``get_worktree_root() / {plan_id}``
+        location directly and confirm ``status.json`` on disk, returning
+        ``location=worktree``.
+
+        Before the structural-probe fallback this case fell through to
+        ``not_found`` (the bug): the primary manage-status channel could not see
+        the moved-in plan, and there was no second resolution path. This test
+        therefore FAILS without the fix and PASSES with it.
+        """
+        # Main checkout root does NOT hold the plan dir.
+        main_root = tmp_path / 'main'
+        (main_root / '.plan' / 'local').mkdir(parents=True)
+
+        # The worktree at the canonical ``{worktree_root}/{plan_id}`` layout
+        # (exactly what ``worktree-create`` materialises) DOES hold the
+        # moved-in plan dir on disk.
+        worktree_root = tmp_path / 'worktrees'
+        worktree = worktree_root / 'probe-plan'
+        self._seed_plan_status_json(worktree, 'probe-plan')
+
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main_root)
+        # The structural probe resolves ``get_worktree_root() / {plan_id}``.
+        monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: worktree_root)
+
+        # The canonical manage-status channel CANNOT resolve the moved-in plan:
+        # main's status.json no longer holds it, so get-worktree-path returns an
+        # expected "not found" error (masked to not_found, not propagated). This
+        # forces the primary path to yield no worktree_path and exercises the
+        # structural-probe fallback.
+        _stub_manage_status_call(
+            monkeypatch,
+            {
+                ('get-worktree-path', '--plan-id', 'probe-plan'): (
+                    1,
+                    '',
+                    'plan probe-plan not found',
+                )
+            },
+        )
+
+        result = cmd_locate_plan_checkout(Namespace(plan_id='probe-plan'))
+        assert result['status'] == 'success'
+        assert result['plan_id'] == 'probe-plan'
+        assert result['location'] == 'worktree'
+        assert result['worktree_path'] == str(worktree)
+
     def test_returns_current_when_plan_dir_on_current_checkout(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

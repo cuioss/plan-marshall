@@ -176,8 +176,8 @@ pushed: true
 | `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add` plus project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`) |
 | `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
 | `worktree-list` | _(none)_ | List plans whose `status.metadata.use_worktree == true` |
-| `locate-plan-checkout` | `--plan-id` | Report where a plan's directory currently lives (`current` \| `worktree` \| `not_found`). Reuses `_resolve_worktree_path_for_plan` / `get_worktree_root` and the uniform cwd walk-up — no inline `git worktree list --porcelain` re-parsing. Used by the cross-session re-entry preflight at the `/plan-marshall` entry sites. |
-| `baseline-reconcile` | `--plan-id [--base-branch] [--worktree-path] [--skip-fetch] [--no-emit]` | Mechanical baseline reconciliation for phase-2-refine Step 3d. Resolves the worktree path (from `status.metadata.worktree_path`), fetches `origin/{base_branch}`, lists upstream commits since the captured `worktree_sha`, and runs `git merge-tree` to detect potential conflicts — no working-tree mutation. Each conflicted file becomes a Q-Gate finding under `--source qgate` so the phase-2-refine iterate-to-confidence loop addresses the drift. The LLM-judgement classification step (which upstream commit warrants scope adjustment) stays bundled in the existing phase-2-refine dispatch. `--skip-fetch` bypasses the network round-trip for tests / replay scenarios. |
+| `locate-plan-checkout` | `--plan-id` | Report where a plan's directory currently lives (`current` \| `worktree` \| `not_found`). The `worktree` probe resolves by two paths: the canonical `_resolve_worktree_path_for_plan` (manage-status) channel for not-yet-moved plans, then a structural `get_worktree_root() / {plan_id}` filesystem probe for the moved-in-from-main case (phase-5+, ADR-002). Reuses the uniform cwd walk-up for the current-checkout probe — no inline `git worktree list --porcelain` re-parsing. Used by the cross-session re-entry preflight at the `/plan-marshall` entry sites. |
+| `baseline-reconcile` | `--plan-id [--base-branch] [--skip-fetch] [--no-emit]` | Mechanical baseline reconciliation for phase-2-refine Step 3d. Resolves the worktree path (from `status.metadata.worktree_path`), fetches `origin/{base_branch}`, lists upstream commits since the captured `worktree_sha`, and runs `git merge-tree` to detect potential conflicts — no working-tree mutation. Each conflicted file becomes a Q-Gate finding under `--source qgate` so the phase-2-refine iterate-to-confidence loop addresses the drift. The LLM-judgement classification step (which upstream commit warrants scope adjustment) stays bundled in the existing phase-2-refine dispatch. `--skip-fetch` bypasses the network round-trip for tests / replay scenarios. |
 
 **Script**: `plan-marshall:workflow-integration-git:prepare_execute`
 
@@ -511,7 +511,7 @@ worktrees[2]{plan_id,path,branch}:
 
 ### locate-plan-checkout
 
-Report where a plan's directory currently lives, resolving one of three states without raw `git worktree list --porcelain` re-parsing — it reuses the uniform cwd walk-up (`_find_plan_root_from_cwd`) for the current-checkout probe and `_resolve_worktree_path_for_plan` (the canonical `manage-status get-worktree-path` channel) for the worktree probe. The verb is read-only and idempotent: a call made from inside the worktree (already cwd-pinned) returns `location: current`, so the cross-session re-entry preflight never double-`cd`s.
+Report where a plan's directory currently lives, resolving one of three states without raw `git worktree list --porcelain` re-parsing — it reuses the uniform cwd walk-up (`_find_plan_root_from_cwd`) for the current-checkout probe and resolves the worktree probe by two paths in order: the canonical `_resolve_worktree_path_for_plan` (`manage-status get-worktree-path`) channel, then — when that channel cannot resolve the path — a structural `get_worktree_root() / {plan_id}` filesystem probe. The structural fallback handles the moved-in-from-main case: a plan whose dir was MOVED into its worktree at phase-5 entry (ADR-002) is invisible to the manage-status channel (its `status.json` is no longer on main), so the verb probes the canonical worktree location directly and confirms `status.json` on disk, still returning `location: worktree` when the call is made from main. The verb is read-only and idempotent: a call made from inside the worktree (already cwd-pinned) returns `location: current`, so the cross-session re-entry preflight never double-`cd`s.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout \
@@ -523,7 +523,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 **Resolution states**:
 - `current` — the plan directory exists on the current checkout's `.plan/local/plans/{plan_id}/status.json` (covers both main-checkout plans and the already-cwd-pinned-in-worktree case).
-- `worktree` — a registered worktree resolves for the plan whose `{worktree}/.plan/local/plans/{plan_id}/status.json` exists on disk, but the current checkout does NOT hold the plan dir. `worktree_path` is present only in this state.
+- `worktree` — the plan dir lives in its worktree but the current checkout does NOT hold it. Resolved by two paths, tried in order: (1) the canonical `manage-status get-worktree-path` channel, which still succeeds for a not-yet-moved plan whose `status.json` is on main; (2) a structural `get_worktree_root() / {plan_id}` filesystem probe handling the moved-in-from-main case — a phase-5+ plan whose dir was MOVED into its worktree (ADR-002) is invisible to the manage-status channel, so the verb probes `{worktree}/.plan/local/plans/{plan_id}/status.json` directly and confirms it on disk. `worktree_path` is present only in this state.
 - `not_found` — neither location holds the plan dir.
 
 **Output** (TOON, plan dir on the current checkout):
@@ -795,7 +795,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow baseline-reconcile \
   --plan-id PLAN_ID \
-  [--base-branch BRANCH] [--worktree-path ABS_PATH] \
+  [--base-branch BRANCH] \
   [--skip-fetch] [--no-emit]
 ```
 

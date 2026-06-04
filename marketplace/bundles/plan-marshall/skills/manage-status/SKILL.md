@@ -509,12 +509,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list \
 status: success
 total: 2
 
-plans[2]{id,current_phase,status}:
-my-feature,3-outline,in_progress
-bugfix-123,5-execute,in_progress
+plans[2]{id,current_phase,status,location}:
+my-feature,3-outline,in_progress,current
+bugfix-123,5-execute,in_progress,worktree
 ```
 
-**Concurrent-session visibility**: per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), a plan's non-git-controlled runtime state (its plan directory) MOVES into the plan's own worktree at phase-5 entry and moves back to main at finalize. While a plan is executing (phase-5+), its plan directory therefore lives in its worktree, not on main. A `list` invocation resolves plan directories via the single uniform cwd/worktree-relative rule, so a `list` run from the main checkout will NOT show a plan that is mid-flight in another session's worktree — the plan reappears in the main-checkout listing only after its finalize move-back completes. This is expected behaviour, not a discovery bug; a concurrent session operating from inside that worktree resolves and sees the in-flight plan normally. See `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` for the worktree lifecycle that produces this property.
+Each entry carries a `location` field: `current` (the plan directory lives on the cwd checkout) or `worktree` (the plan directory was moved into its worktree at phase-5 entry, ADR-002). The merged list is deduped by plan id (a moved-in plan appears exactly once) and sorted by id.
+
+**Concurrent-session visibility**: per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), a plan's non-git-controlled runtime state (its plan directory) MOVES into the plan's own worktree at phase-5 entry and moves back to main at finalize. While a plan is executing (phase-5+), its plan directory therefore lives in its worktree, not on main. `cmd_list` discovers both sources: it enumerates the main checkout's plans (`location: current`) AND scans `get_worktree_root()`'s child worktrees for moved-in plans (`location: worktree`), so a `list` run from the main checkout DOES surface a plan that is mid-flight in its worktree — the ADR-002 move-in is exactly why the worktree scan is necessary. See `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` for the worktree lifecycle that produces this property.
 
 ### transition
 
@@ -736,7 +738,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target) in `metadata.phase_steps` |
 | `get-context` | `--plan-id` | Get combined status context |
 | `get-worktree-path` | `--plan-id` | Resolve persisted worktree path (returns empty string when `use_worktree==false`) |
-| `list` | `[--filter PHASE]` | Discover all plans, optionally filtered by phase |
+| `list` | `[--filter PHASE]` | Discover all plans across the main checkout and its worktrees (each entry tagged `location: current`/`worktree`), optionally filtered by phase |
 | `transition` | `--plan-id --completed` | Mark phase done, advance to next |
 | `archive` | `--plan-id [--dry-run] [--reason REASON]` | Archive completed plan; `--reason` persists to `status.metadata.archived_reason` (used by `plan-doctor stuck-low-confidence-archive` rule) |
 | `delete-plan` | `--plan-id` | Delete entire plan directory |
