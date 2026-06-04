@@ -11,7 +11,6 @@ Usage:
     python3 manage-references.py read --plan-id EXAMPLE-PLAN
     python3 manage-references.py get --plan-id EXAMPLE-PLAN --field branch
     python3 manage-references.py set --plan-id EXAMPLE-PLAN --field branch --value feature/x
-    python3 manage-references.py add-file --plan-id EXAMPLE-PLAN --file src/Main.java
     python3 manage-references.py add-list --plan-id EXAMPLE-PLAN --field affected_files --values file1.md,file2.md
     python3 manage-references.py set-list --plan-id EXAMPLE-PLAN --field affected_files --values file1.md,file2.md
 """
@@ -54,18 +53,6 @@ def main() -> int:
     add_field_arg(set_parser)
     set_parser.add_argument('--value', required=True, help='Field value')
 
-    # add-file
-    add_file_parser = subparsers.add_parser('add-file', help='Add file to modified_files', allow_abbrev=False)
-    add_plan_id_arg(add_file_parser)
-    add_file_parser.add_argument('--file', required=True, help='File path to add')
-
-    # remove-file
-    remove_file_parser = subparsers.add_parser(
-        'remove-file', help='Remove file from modified_files', allow_abbrev=False
-    )
-    add_plan_id_arg(remove_file_parser)
-    remove_file_parser.add_argument('--file', required=True, help='File path to remove')
-
     # add-list
     add_list_parser = subparsers.add_parser('add-list', help='Add multiple values to a list field', allow_abbrev=False)
     add_plan_id_arg(add_list_parser)
@@ -83,38 +70,20 @@ def main() -> int:
         'get-context', help='Get all references context in one call', allow_abbrev=False
     )
     add_plan_id_arg(get_context_parser)
-    get_context_parser.add_argument('--include-files', action='store_true', help='Include full file lists in output')
 
-    # diff-files
-    diff_files_parser = subparsers.add_parser(
-        'diff-files',
-        help='Intersect modified_files ledger with live git working-tree state (read-only)',
+    # compute-footprint
+    compute_footprint_parser = subparsers.add_parser(
+        'compute-footprint',
+        help='Derive the live plan footprint from the worktree git state (read-only)',
         allow_abbrev=False,
     )
-    add_plan_id_arg(diff_files_parser)
-    diff_files_parser.add_argument(
+    add_plan_id_arg(compute_footprint_parser)
+    compute_footprint_parser.add_argument(
         '--worktree-path',
         required=True,
         help='Absolute path to the active git worktree',
     )
-    diff_files_parser.add_argument(
-        '--base-ref',
-        help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
-    )
-
-    # reconcile-files
-    reconcile_files_parser = subparsers.add_parser(
-        'reconcile-files',
-        help='Recompute and persist modified_files from the plan-branch-only diff (write-back counterpart of diff-files)',
-        allow_abbrev=False,
-    )
-    add_plan_id_arg(reconcile_files_parser)
-    reconcile_files_parser.add_argument(
-        '--worktree-path',
-        required=True,
-        help='Absolute path to the active git worktree',
-    )
-    reconcile_files_parser.add_argument(
+    compute_footprint_parser.add_argument(
         '--base-ref',
         help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
     )
@@ -122,10 +91,9 @@ def main() -> int:
     args = parse_args_with_toon_errors(parser)
 
     # Import command handlers
+    from _cmd_compute_footprint import cmd_compute_footprint
     from _cmd_context import cmd_get_context
-    from _cmd_diff_files import cmd_diff_files
-    from _cmd_list import cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list
-    from _cmd_reconcile_files import cmd_reconcile_files
+    from _cmd_list import cmd_add_list, cmd_set_list
     from _references_crud import cmd_create, cmd_get, cmd_read, cmd_set
 
     # Dispatch to handlers
@@ -134,13 +102,10 @@ def main() -> int:
         'read': cmd_read,
         'get': cmd_get,
         'set': cmd_set,
-        'add-file': cmd_add_file,
-        'remove-file': cmd_remove_file,
         'add-list': cmd_add_list,
         'set-list': cmd_set_list,
         'get-context': cmd_get_context,
-        'diff-files': cmd_diff_files,
-        'reconcile-files': cmd_reconcile_files,
+        'compute-footprint': cmd_compute_footprint,
     }
 
     handler = handlers.get(args.command)

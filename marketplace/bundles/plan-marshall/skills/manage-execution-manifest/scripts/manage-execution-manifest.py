@@ -25,7 +25,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from constants import FILE_REFERENCES  # type: ignore[import-not-found]
+from _references_core import (  # type: ignore[import-not-found]
+    compute_plan_branch_diff,
+    resolve_base_ref,
+)
+from constants import FILE_REFERENCES, FILE_STATUS  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
     get_marshal_path,
@@ -400,11 +404,12 @@ def _read_bundle_change_paths(plan_id: str) -> list[str]:
     """Read the union of bundle change paths from references.json + solution outline.
 
     The composer runs from `phase-4-plan` Step 8b — at outline/plan time, BEFORE
-    Phase 5 has committed any changes. ``modified_files`` is populated by
-    ``manage-status transition`` on Phase 5 completion, so it is empty at compose
-    time for normal plans (a re-compose after Phase 5 would see it populated).
-    ``references.json::affected_files`` is the canonical pre-execute source —
-    when populated by upstream phases.
+    Phase 5 has committed any changes. ``references.json::affected_files`` is the
+    canonical pre-execute source when populated by upstream phases. The legacy
+    ``modified_files`` key is no longer written by current plans (the persisted
+    ledger was removed; the footprint is derived on demand from the worktree);
+    it is unioned in here only as a back-compat fallback for older plans that
+    still carry it.
 
     For plans where ``references.json::affected_files`` is unset (the common
     pre-execute shape produced by current phase-3-outline / phase-4-plan flows),
@@ -418,8 +423,7 @@ def _read_bundle_change_paths(plan_id: str) -> list[str]:
 
     - on the first compose (via ``affected_files`` in references OR the
       solution outline fallback);
-    - on any later re-compose that includes execute-time additions (via
-      ``modified_files``).
+    - on any older plan that still carries the legacy ``modified_files`` key.
 
     Returns an empty list when none of the sources can be read — the rule
     simply does not fire in that case.
@@ -776,7 +780,7 @@ def _log_pre_push_quality_gate_omitted(plan_id: str) -> None:
     """Emit the decision-log entry for the ``pre_push_quality_gate_inactive`` pre-filter."""
     message = (
         '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
-        'activation_globs empty or no modified_files match'
+        'activation_globs empty or no footprint match'
     )
     _emit_decision_log(plan_id, message)
 
@@ -784,7 +788,7 @@ def _log_pre_push_quality_gate_omitted(plan_id: str) -> None:
 def _log_pre_submission_self_review_omitted(plan_id: str) -> None:
     """Emit the decision-log entry for the ``pre_submission_self_review_inactive`` pre-filter."""
     message = (
-        '(plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — empty modified_files'
+        '(plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — empty footprint'
     )
     _emit_decision_log(plan_id, message)
 
@@ -909,22 +913,44 @@ def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     return [s for s in steps if isinstance(s, str) and s]
 
 
-def _read_modified_files(plan_id: str) -> list[str]:
-    """Read ``references.json::modified_files`` for ``plan_id``.
+def _resolve_footprint(plan_id: str) -> list[str]:
+    """Derive the live plan footprint for ``plan_id`` on demand.
 
-    Returns an empty list when the file is missing or the field is absent / not
-    a list. The pre-filter treats absence as "no matches" and removes the step.
+    Reads ``status.metadata.worktree_path`` to locate the worktree, then derives
+    the footprint live via ``compute_plan_branch_diff`` (``{base}...HEAD`` ∪
+    porcelain). Returns an empty list when no worktree is resolvable — which is
+    the normal case during early compose at phase-4-plan, *before* phase-5
+    materialises the worktree. The activation pre-filters treat an empty
+    footprint as "no matches" and omit the gated step, preserving the prior
+    behaviour where an absent/empty ledger omitted the self-review and
+    pre-push-quality-gate steps.
     """
+    status_path = get_plan_dir(plan_id) / FILE_STATUS
+    if not status_path.exists():
+        return []
+    status = read_json(status_path, default={})
+    if not isinstance(status, dict):
+        return []
+    metadata = status.get('metadata', {})
+    if not isinstance(metadata, dict):
+        return []
+    worktree_path = metadata.get('worktree_path', '')
+    if not isinstance(worktree_path, str) or not worktree_path:
+        return []
+    worktree = Path(worktree_path)
+    if not worktree.is_dir():
+        return []
+
     refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
-    if not refs_path.exists():
+    refs = read_json(refs_path, default={})
+    if not isinstance(refs, dict):
+        refs = {}
+    base_ref = resolve_base_ref(None, refs)
+    try:
+        footprint = compute_plan_branch_diff(worktree, base_ref)
+    except subprocess.CalledProcessError:
         return []
-    data = read_json(refs_path, default={})
-    if not isinstance(data, dict):
-        return []
-    files = data.get('modified_files')
-    if not isinstance(files, list):
-        return []
-    return [f for f in files if isinstance(f, str) and f]
+    return sorted(footprint)
 
 
 def _any_glob_matches(paths: list[str], globs: list[str]) -> bool:
@@ -963,8 +989,8 @@ def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id
 
     1. ``plan.phase-6-finalize.pre_push_quality_gate.activation_globs`` in
        ``marshal.json`` is non-empty.
-    2. At least one entry in ``references.json::modified_files`` matches one of
-       the configured globs (using ``fnmatch.fnmatch``).
+    2. At least one entry in the live plan footprint matches one of the
+       configured globs (using ``fnmatch.fnmatch``).
 
     When either condition fails, ``pre-push-quality-gate`` is removed from
     ``phase_6_candidates``. The pre-filter is a no-op when ``pre-push-quality-gate``
@@ -980,11 +1006,11 @@ def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id
     if not globs:
         return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
 
-    modified_files = _read_modified_files(plan_id)
-    if not modified_files:
+    footprint = _resolve_footprint(plan_id)
+    if not footprint:
         return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
 
-    if not _any_glob_matches(modified_files, globs):
+    if not _any_glob_matches(footprint, globs):
         return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
 
     # All activation conditions satisfied — keep the step.
@@ -994,10 +1020,12 @@ def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id
 def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
     """Pre-filter: drop ``pre-submission-self-review`` when activation conditions fail.
 
-    Activation requires ``references.json::modified_files`` to be non-empty.
-    There is no ``activation_globs`` knob — the four cognitive checks the step
-    targets (symmetric pairs, regex over-fit, wording, duplication) apply to
-    any code or doc change.
+    Activation requires the live plan footprint to be non-empty. There is no
+    ``activation_globs`` knob — the four cognitive checks the step targets
+    (symmetric pairs, regex over-fit, wording, duplication) apply to any code or
+    doc change. During early compose (phase-4-plan, before the worktree is
+    materialised) the footprint is empty, so the step is omitted; it is
+    re-evaluated against the live footprint on any later re-compose.
 
     The pre-filter is a no-op when ``pre-submission-self-review`` is already
     absent (e.g., already filtered by ``_apply_commit_strategy_none``).
@@ -1007,8 +1035,8 @@ def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], pl
     if 'pre-submission-self-review' not in phase_6_candidates:
         return phase_6_candidates, False
 
-    modified_files = _read_modified_files(plan_id)
-    if not modified_files:
+    footprint = _resolve_footprint(plan_id)
+    if not footprint:
         return [s for s in phase_6_candidates if s != 'pre-submission-self-review'], True
 
     return phase_6_candidates, False
@@ -1735,9 +1763,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #   1. commit_strategy_none — drop commit-push (and pre-push-quality-gate
     #      and pre-submission-self-review) when no push will occur.
     #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate when
-    #      activation_globs is empty or no modified_files match.
+    #      activation_globs is empty or no live-footprint entry matches.
     #   3. pre_submission_self_review_inactive — drop pre-submission-self-review
-    #      when modified_files is empty.
+    #      when the live footprint is empty.
     #   4. simplify_inactive — drop finalize-step-simplify when
     #      change_type ∉ {feature, bug_fix, tech_debt} OR affected_files_count == 0.
     # Each pre-filter returns (filtered_candidates, fired_flag); we log a

@@ -1222,10 +1222,16 @@ def _write_marshal(
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
 
-def _write_references(plan_dir: Path, modified_files: list[str]) -> None:
-    """Write a references.json containing the given ``modified_files`` list."""
-    refs_path = plan_dir / 'references.json'
-    refs_path.write_text(json.dumps({'modified_files': modified_files}), encoding='utf-8')
+def _stub_footprint(footprint: list[str]) -> None:
+    """Stub ``_resolve_footprint`` so the activation pre-filter sees the given set.
+
+    The compose pre-filters now derive the live plan footprint on demand via
+    ``compute_plan_branch_diff`` instead of reading a seeded
+    ``references.modified_files`` ledger, so the test injects the footprint by
+    replacing the module-level resolver. The ``TestPrePushQualityGatePreFilter``
+    autouse fixture restores the original after each test.
+    """
+    _mem._resolve_footprint = lambda plan_id: list(footprint)
 
 
 def _candidate_phase_6_with_pre_push() -> str:
@@ -1243,11 +1249,20 @@ class TestPrePushQualityGatePreFilter:
     Each test asserts BOTH the resulting ``phase_6.steps`` content AND the
     decision-log line presence/absence. The decision-log emitter is patched on
     ``_mem._emit_decision_log`` and entries are captured into a list per test.
+    The live plan footprint is injected via ``_stub_footprint`` (which replaces
+    ``_mem._resolve_footprint``); the autouse fixture below restores the original
+    resolver after every test so the stub never leaks.
     """
+
+    @pytest.fixture(autouse=True)
+    def _restore_footprint_resolver(self):
+        original = _mem._resolve_footprint
+        yield
+        _mem._resolve_footprint = original
 
     _OMIT_LINE = (
         '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
-        'activation_globs empty or no modified_files match'
+        'activation_globs empty or no footprint match'
     )
 
     @staticmethod
@@ -1275,7 +1290,7 @@ class TestPrePushQualityGatePreFilter:
         plan_id = 'pp-globs-absent'
         # marshal.json exists but lacks the pre_push_quality_gate key entirely.
         _write_marshal(plan_context.fixture_dir, include_pre_push_key=False)
-        _write_references(plan_context.plan_dir_for(plan_id), ['marketplace/bundles/plan-marshall/skills/foo.py'])
+        _stub_footprint(['marketplace/bundles/plan-marshall/skills/foo.py'])
 
         captured, original = self._capture_decision_log()
         try:
@@ -1307,7 +1322,7 @@ class TestPrePushQualityGatePreFilter:
         """activation_globs: [] → same behavior as missing config."""
         plan_id = 'pp-globs-empty'
         _write_marshal(plan_context.fixture_dir, activation_globs=[])
-        _write_references(plan_context.plan_dir_for(plan_id), ['marketplace/bundles/plan-marshall/skills/foo.py'])
+        _stub_footprint(['marketplace/bundles/plan-marshall/skills/foo.py'])
 
         captured, original = self._capture_decision_log()
         try:
@@ -1335,7 +1350,7 @@ class TestPrePushQualityGatePreFilter:
         """Globs configured but references.modified_files empty → step removed."""
         plan_id = 'pp-mod-empty'
         _write_marshal(plan_context.fixture_dir, activation_globs=['marketplace/bundles/**/*.py'])
-        _write_references(plan_context.plan_dir_for(plan_id), [])  # empty list
+        _stub_footprint([])  # empty footprint
 
         captured, original = self._capture_decision_log()
         try:
@@ -1362,7 +1377,7 @@ class TestPrePushQualityGatePreFilter:
         plan_id = 'pp-no-match'
         _write_marshal(plan_context.fixture_dir, activation_globs=['marketplace/bundles/**/*.py'])
         # All paths fall outside marketplace/bundles/.
-        _write_references(plan_context.plan_dir_for(plan_id), ['doc/readme.md', 'CHANGELOG.txt'])
+        _stub_footprint(['doc/readme.md', 'CHANGELOG.txt'])
 
         captured, original = self._capture_decision_log()
         try:
@@ -1388,12 +1403,11 @@ class TestPrePushQualityGatePreFilter:
         """At least one modified_file matches → step retained, no omission line."""
         plan_id = 'pp-match'
         _write_marshal(plan_context.fixture_dir, activation_globs=['marketplace/bundles/**/*.py'])
-        _write_references(
-            plan_context.plan_dir_for(plan_id),
+        _stub_footprint(
             [
                 'doc/readme.md',  # non-match
                 'marketplace/bundles/plan-marshall/skills/foo.py',  # match
-            ],
+            ]
         )
 
         captured, original = self._capture_decision_log()
@@ -1429,7 +1443,7 @@ class TestPrePushQualityGatePreFilter:
         # Configure globs and matching modified_files — the gate WOULD be
         # active, but commit_strategy=none must strip it anyway.
         _write_marshal(plan_context.fixture_dir, activation_globs=['marketplace/bundles/**/*.py'])
-        _write_references(plan_context.plan_dir_for(plan_id), ['marketplace/bundles/plan-marshall/skills/foo.py'])
+        _stub_footprint(['marketplace/bundles/plan-marshall/skills/foo.py'])
 
         captured, original = self._capture_decision_log()
         try:
@@ -1483,7 +1497,7 @@ class TestPrePushQualityGatePreFilter:
         plan_id = 'pp-order'
         # Activation_globs absent → pre-filter fires.
         _write_marshal(plan_context.fixture_dir, include_pre_push_key=False)
-        _write_references(plan_context.plan_dir_for(plan_id), ['marketplace/bundles/plan-marshall/skills/foo.py'])
+        _stub_footprint(['marketplace/bundles/plan-marshall/skills/foo.py'])
 
         captured: list[tuple[str, str]] = []
         original_emit = _mem._emit_decision_log
@@ -1580,7 +1594,7 @@ class TestPrePushQualityGatePreFilter:
             'default:archive-plan',
         ]
         _write_marshal(plan_context.fixture_dir, activation_globs=[])
-        _write_references(plan_context.plan_dir_for(plan_id), ['marketplace/bundles/plan-marshall/skills/foo.py'])
+        _stub_footprint(['marketplace/bundles/plan-marshall/skills/foo.py'])
 
         captured, original = self._capture_decision_log()
         try:
@@ -1621,7 +1635,7 @@ class TestPrePushQualityGatePreFilter:
         assert len(self._omit_entries(captured)) == 1
 
     def test_omit_when_modified_files_empty_with_prefixed_input(self, plan_context):
-        """Regression — empty modified_files drops prefixed pre-push-quality-gate."""
+        """Regression — empty live footprint drops prefixed pre-push-quality-gate."""
         plan_id = 'pp-prefixed-mod-empty'
         prefixed = [
             'default:pre-push-quality-gate',
@@ -1630,7 +1644,7 @@ class TestPrePushQualityGatePreFilter:
             'default:archive-plan',
         ]
         _write_marshal(plan_context.fixture_dir, activation_globs=['marketplace/bundles/**/*.py'])
-        _write_references(plan_context.plan_dir_for(plan_id), [])  # empty list
+        _stub_footprint([])  # empty footprint
 
         captured, original = self._capture_decision_log()
         try:
@@ -1669,7 +1683,7 @@ class TestPrePushQualityGatePreFilter:
         ]
         _write_marshal(plan_context.fixture_dir, activation_globs=['marketplace/bundles/**/*.py'])
         # All paths fall outside the configured glob.
-        _write_references(plan_context.plan_dir_for(plan_id), ['doc/readme.md', 'CHANGELOG.txt'])
+        _stub_footprint(['doc/readme.md', 'CHANGELOG.txt'])
 
         captured, original = self._capture_decision_log()
         try:

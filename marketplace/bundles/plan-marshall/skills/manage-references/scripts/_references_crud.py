@@ -27,7 +27,7 @@ def cmd_create(args) -> dict:
         }
 
     # Build base references
-    refs = {'branch': args.branch, 'base_branch': 'main', 'modified_files': []}
+    refs = {'branch': args.branch, 'base_branch': 'main'}
 
     # Add optional fields
     if args.issue_url:

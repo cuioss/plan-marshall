@@ -1,37 +1,37 @@
 #!/usr/bin/env python3
-"""Write-back reconcile-files verb for manage-references.
+"""Read-only compute-footprint query for manage-references.
 
-Recomputes ``references.modified_files`` from the plan-branch-only diff and
-PERSISTS the reconciled set. This is the write-back counterpart of the
-read-only ``diff-files`` verb: both share the three-dot + porcelain-union
-primitive (``compute_plan_branch_diff`` in ``_references_core``), but
-``reconcile-files`` writes the intersected set back to references.json whereas
-``diff-files`` never mutates state.
+Derives the plan's actual footprint live from the worktree git state — the
+union of the three-dot ``{base_ref}...HEAD`` diff and the porcelain working-tree
+state — without consulting any persisted ledger. The footprint is computed
+on-demand from the worktree, which is the single source of truth.
 
-The reconciliation drops ledger entries that are absent from the live
-plan-branch-only set — these are the absorbed-upstream files that polluted the
-ledger after an absorb merge (phase-5-execute self-absorb or baseline-reconcile
-focused auto-merge). After this verb runs, downstream finalize consumers read a
-clean footprint that contains only files the plan actually touched.
+This handler is read-only: it never mutates ``references.json``. It reads
+``references.json`` only to resolve ``base_branch`` for the diff range.
+
+Resolution rule:
+    files = sorted live footprint set
+
+Where ``live`` is the union of:
+    - ``git -C {worktree_path} diff --name-only {base_ref}...HEAD``
+    - parsed paths from ``git -C {worktree_path} status --porcelain``
 """
 
 from pathlib import Path
 
 from _references_core import (
     _run_git,
+    compute_plan_branch_diff,
     read_references,
-    reconcile_modified_files,
     resolve_base_ref,
 )
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
-def cmd_reconcile_files(args) -> dict:
-    """Recompute and persist modified_files from the plan-branch-only diff.
+def cmd_compute_footprint(args) -> dict:
+    """Return the live plan-branch-only footprint set.
 
-    Write-back counterpart of ``diff-files``. Error contract is identical to
-    ``diff-files`` (``worktree_not_found``, ``references_not_found``,
-    ``not_a_git_worktree``).
+    Read-only — never writes references.json.
     """
     require_valid_plan_id(args)
 
@@ -63,4 +63,13 @@ def cmd_reconcile_files(args) -> dict:
         }
 
     base_ref = resolve_base_ref(getattr(args, 'base_ref', None), refs)
-    return reconcile_modified_files(args.plan_id, worktree, base_ref)
+    live_set = compute_plan_branch_diff(worktree, base_ref)
+    files = sorted(live_set)
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'base_ref': base_ref,
+        'files': files,
+        'live_count': len(files),
+    }

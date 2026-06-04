@@ -747,157 +747,56 @@ def test_capture_qgate_open_count_invokes_script_for_other_phases(
 
 
 # =============================================================================
-# _capture_worktree_orphan: inverse-direction (disk→metadata) drift
+# _worktree_in_use: worktree-state invariants gate on use_worktree truthiness
 # =============================================================================
 #
-# The capture detects orphaned worktree directories on disk while metadata
-# claims no worktree is in use. Companion to ``_resolve_worktree_assertion``
-# in ``_handshake_commands.py`` which handles the metadata→disk direction.
-# Origin: lesson ``2026-05-08-14-001`` writer-chain drift.
+# Under the no-sentinel B-strip model the worktree-state invariants
+# (``worktree_sha`` / ``worktree_dirty``) apply exactly when the plan is
+# routed through a worktree — gated on ``metadata.use_worktree`` truthiness,
+# not on the presence of ``worktree_path``. The inverse-direction orphan
+# invariant (``worktree_orphan`` / ``WorktreeMetadataDrift``) was removed:
+# with no empty-path sentinel persisted pre-phase-5, an on-disk worktree dir
+# while metadata denies it is no longer reachable.
 # =============================================================================
-
-
-def test_worktree_orphan_no_disk_dir_returns_none(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """No worktree dir + metadata.use_worktree=false → None (not applicable)."""
-    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
-    assert inv._capture_worktree_orphan('p', {'use_worktree': False}, '5-execute') is None
-
-
-def test_worktree_orphan_no_git_root_returns_none(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """get_worktree_root() raising RuntimeError (no git root) → None.
-
-    Pins the new resolver path: _worktree_orphan_dir delegates to
-    file_ops.get_worktree_root() and treats a RuntimeError (not inside a
-    git repo) as "no orphan detection applicable".
-    """
-
-    def _raise() -> Path:
-        raise RuntimeError('no git root')
-
-    monkeypatch.setattr(inv, 'get_worktree_root', _raise)
-    assert inv._capture_worktree_orphan('p', {'use_worktree': False}, '5-execute') is None
-
-
-def test_worktree_orphan_metadata_truthy_short_circuits(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Metadata truthy → short-circuits even when orphan dir exists.
-
-    The metadata→disk direction is owned by ``_resolve_worktree_assertion``;
-    this invariant only fires for the inverse case.
-    """
-    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
-    orphan_dir = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-truthy'
-    orphan_dir.mkdir(parents=True)
-    assert (
-        inv._capture_worktree_orphan(
-            'p-truthy',
-            {'use_worktree': True, 'worktree_path': str(orphan_dir)},
-            '5-execute',
-        )
-        is None
-    )
-
-
-def test_worktree_orphan_dir_metadata_false_raises(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Orphan dir + metadata.use_worktree=false → WorktreeMetadataDrift."""
-    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
-    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-false'
-    orphan.mkdir(parents=True)
-    with pytest.raises(inv.WorktreeMetadataDrift) as excinfo:
-        inv._capture_worktree_orphan('p-false', {'use_worktree': False}, '5-execute')
-    err = excinfo.value
-    assert err.plan_id == 'p-false'
-    assert err.worktree_dir == str(orphan)
-    assert err.use_worktree is False
-
-
-def test_worktree_orphan_dir_metadata_missing_raises(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Orphan dir + missing use_worktree key → WorktreeMetadataDrift.
-
-    Mirrors the writer-chain bug: ``manage_status create`` clobbered the
-    worktree trio leaving the disk dir orphaned and metadata silent.
-    """
-    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
-    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-missing'
-    orphan.mkdir(parents=True)
-    with pytest.raises(inv.WorktreeMetadataDrift) as excinfo:
-        inv._capture_worktree_orphan('p-missing', {}, '5-execute')
-    err = excinfo.value
-    assert err.plan_id == 'p-missing'
-    assert err.worktree_dir == str(orphan)
-    assert err.use_worktree is None
-
-
-@pytest.mark.parametrize('falsy_value', [False, 'false', 'False', 0, '', None])
-def test_worktree_orphan_falsy_metadata_variants_all_raise(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, falsy_value
-) -> None:
-    """All TOON-falsy variants of use_worktree trigger orphan drift."""
-    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
-    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-falsy'
-    orphan.mkdir(parents=True)
-    metadata = {'use_worktree': falsy_value} if falsy_value is not None else {}
-    with pytest.raises(inv.WorktreeMetadataDrift):
-        inv._capture_worktree_orphan('p-falsy', metadata, '5-execute')
 
 
 @pytest.mark.parametrize('truthy_value', [True, 'true', 'True', '1', 'yes', 1])
-def test_worktree_orphan_truthy_metadata_variants_all_short_circuit(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, truthy_value
-) -> None:
-    """All TOON-truthy variants of use_worktree short-circuit (no raise)."""
-    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
-    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-truthy'
-    orphan.mkdir(parents=True)
-    result = inv._capture_worktree_orphan(
-        'p-truthy',
-        {'use_worktree': truthy_value, 'worktree_path': str(orphan)},
-        '5-execute',
-    )
-    assert result is None
+def test_worktree_in_use_truthy_variants_apply(truthy_value) -> None:
+    """All TOON-truthy variants of use_worktree make the gate applicable."""
+    assert inv._worktree_in_use('p', {'use_worktree': truthy_value}) is True
 
 
-def test_worktree_orphan_registered_in_invariants() -> None:
-    """The registry must wire ``worktree_orphan`` to the capture function.
+@pytest.mark.parametrize('falsy_value', [False, 'false', 'False', 0, '', None])
+def test_worktree_in_use_falsy_variants_do_not_apply(falsy_value) -> None:
+    """All TOON-falsy variants of use_worktree make the gate inapplicable."""
+    metadata = {'use_worktree': falsy_value} if falsy_value is not None else {}
+    assert inv._worktree_in_use('p', metadata) is False
 
-    Guards against accidental removal of the tuple from ``INVARIANTS`` —
-    without this entry the inverse-direction drift contract is unenforced.
+
+def test_worktree_in_use_missing_key_does_not_apply() -> None:
+    """A missing use_worktree key is treated as not-in-use (no worktree)."""
+    assert inv._worktree_in_use('p', {}) is False
+
+
+def test_worktree_state_invariants_gate_on_use_worktree() -> None:
+    """``worktree_sha`` / ``worktree_dirty`` use the ``_worktree_in_use`` gate.
+
+    Replaces the removed ``worktree_path``-presence gate (`_worktree_applicable`):
+    the worktree-state captures now apply on ``use_worktree`` truthiness.
     """
+    by_name = {name: (applies, capture) for name, applies, capture in inv.INVARIANTS}
+    assert by_name['worktree_sha'][0] is inv._worktree_in_use
+    assert by_name['worktree_dirty'][0] is inv._worktree_in_use
+
+
+def test_worktree_orphan_invariant_removed() -> None:
+    """The orphan invariant and its surface are gone from the registry."""
     names = [name for name, _, _ in inv.INVARIANTS]
-    assert 'worktree_orphan' in names, f'worktree_orphan must be registered, got {names}'
-    entry = next(t for t in inv.INVARIANTS if t[0] == 'worktree_orphan')
-    name, applies_fn, capture_fn = entry
-    assert capture_fn is inv._capture_worktree_orphan
-    # Always-applicable: every phase boundary must check for orphan dirs.
-    assert applies_fn('any-plan', {}) is True
-
-
-def test_worktree_orphan_capture_all_propagates_drift(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """``capture_all`` must propagate WorktreeMetadataDrift from the registry.
-
-    Narrows ``INVARIANTS`` to just the orphan entry so the other invariants
-    (which would shell out to git etc.) don't interfere with the assertion.
-    """
-    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
-    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-cap-all'
-    orphan.mkdir(parents=True)
-
-    narrowed = [('worktree_orphan', inv._always, inv._capture_worktree_orphan)]
-    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
-
-    with pytest.raises(inv.WorktreeMetadataDrift):
-        inv.capture_all('p-cap-all', {'use_worktree': False}, '5-execute')
+    assert 'worktree_orphan' not in names
+    assert not hasattr(inv, '_capture_worktree_orphan')
+    assert not hasattr(inv, '_worktree_orphan_dir')
+    assert not hasattr(inv, 'WorktreeMetadataDrift')
+    assert not hasattr(inv, '_worktree_applicable')
 
 
 # =============================================================================

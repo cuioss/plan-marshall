@@ -86,8 +86,9 @@ DEFAULT_SYSTEM_RETENTION = {
 # existing projects by `sync-defaults` (the deep-merge path that seeds every
 # DEFAULT_PROJECT key non-destructively). The two sub-lists are stored as JSON
 # arrays so they are visible and editable directly in marshal.json:
-#   - working_prefixes: the closed set of allowed working-branch prefixes;
-#     `manage-status create` validates `--worktree-branch` against this set.
+#   - working_prefixes: the closed set of allowed working-branch prefixes
+#     for plan feature branches (e.g. `feature/`), enforced by the
+#     branch-prefix validation in `marshall-steward`.
 #   - ci_allowlist: the full CI push-trigger allowlist (glob form) that a
 #     structural test pins against `.github/workflows/python-verify.yml`.
 # The literals live in constants.py (DEFAULT_BRANCH_PREFIX_WORKING /

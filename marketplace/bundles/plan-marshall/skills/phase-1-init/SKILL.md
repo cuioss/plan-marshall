@@ -48,7 +48,7 @@ Activate when:
 
 ## Phase-Entry Worktree Assertion
 
-Phase 1-init has no preceding phase, so the Phase Entry Protocol's `phase_handshake verify` step is skipped (per [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#q-gate-check-phases-2-6) Q-Gate / handshake checks are scoped to phases 2-6). The worktree-materialization contract is deferred: phase-1-init persists only the *intent* — `metadata.use_worktree` and `metadata.worktree_branch` — into `status.json`. It does NOT create the worktree directory; the resolved `worktree_path` is back-filled by phase-5-execute Step 2.5 on first task execution. The writer-chain detail lives in Step 8's **Writer-chain contract**.
+Phase 1-init has no preceding phase, so the Phase Entry Protocol's `phase_handshake verify` step is skipped (per [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#q-gate-check-phases-2-6) Q-Gate / handshake checks are scoped to phases 2-6). Phase-1-init persists only `metadata.use_worktree` into `status.json`. It does NOT create the worktree directory, and it records neither the feature branch nor a `worktree_path`: phase-5-execute Step 2.5 creates the worktree on first task execution, derives the feature branch `feature/{plan_id}`, and back-fills both `metadata.worktree_branch` and the resolved `metadata.worktree_path` at that point. The writer-chain detail lives in Step 8's **Writer-chain contract**.
 
 ---
 
@@ -511,7 +511,7 @@ Extract `branch_strategy` (default: `feature`) and `use_worktree` (default: `tru
 
 **IF `branch_strategy == "feature"`** (default — covers both `use_worktree == true` and `use_worktree == false`):
 
-Phase-1-init persists only the *intent* to use a worktree / feature branch. It does NOT materialize either: the feature branch is not checked out, the worktree directory is not created, and `references.worktree_path` is not set. Materialization is deferred to phase-5-execute (see phase-5-execute Step 2.5), which performs the actual `git worktree add` + branch checkout on first task execution. Deferred materialization in effect — no on-disk side effects in this phase beyond `status.json` and `references.json` writes.
+Phase-1-init persists only the `use_worktree` flag. It does NOT materialize the worktree or the feature branch: the feature branch is not checked out, the worktree directory is not created, and neither `worktree_branch` nor `worktree_path` is recorded. Phase-5-execute (see phase-5-execute Step 2.5) performs the actual `git worktree add` + branch checkout on first task execution, deriving the feature branch `feature/{plan_id}` and persisting both `worktree_branch` and the resolved `worktree_path` there. No on-disk side effects in this phase beyond `status.json` and `references.json` writes.
 
 1. Update references.json with the intended feature branch name:
 ```bash
@@ -541,7 +541,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --value {project_base_branch}
 ```
 
-2. **Carry `use_worktree` and `worktree_branch` forward to Step 8**: hold the `use_worktree` flag (from marshal.json — `true` or `false`) and the literal feature branch name `feature/{plan_id}` in the orchestrator's local context and pass them as `--use-worktree` / `--no-use-worktree` and `--worktree-branch` flags into Step 8's `manage_status create` invocation. Do NOT pass `--worktree-path` — the path is unknown at this phase and is written by phase-5-execute when it materializes the worktree. Step 8 is the sole writer of `metadata.use_worktree` and `metadata.worktree_branch` in phase-1-init.
+2. **Carry `use_worktree` forward to Step 8**: hold the `use_worktree` flag (from marshal.json — `true` or `false`) in the orchestrator's local context and pass it as `--use-worktree` (or omit for the opt-out) into Step 8's `manage_status create` invocation. The feature branch is NOT recorded here — phase-5-execute derives `feature/{plan_id}` at materialization. Step 8 is the sole writer of `metadata.use_worktree` in phase-1-init.
 
 3. Log the decision:
 ```bash
@@ -582,18 +582,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 8: Create Status
 
-Create status.json with phases (6-phase model). When Step 6 recorded worktree intent (the `branch_strategy == "feature" AND use_worktree == true` branch ran), pass the intent pair as flags so `metadata.use_worktree` and `metadata.worktree_branch` are seeded atomically. `--worktree-path` is omitted — the path is unknown until phase-5-execute Step 2.5 materializes the worktree.
+Create status.json with phases (6-phase model). When Step 6 recorded worktree intent (the `branch_strategy == "feature" AND use_worktree == true` branch ran), pass `--use-worktree` so `metadata.use_worktree: true` is seeded. No branch or path flag is passed — phase-5-execute Step 2.5 derives `feature/{plan_id}` and persists `worktree_branch` / `worktree_path` at materialization.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
   --plan-id {plan_id} \
   --title "{title_from_task_md}" \
   --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize \
-  --use-worktree \
-  --worktree-branch feature/{plan_id}
+  --use-worktree
 ```
 
-When Step 6 did NOT record worktree intent (the `use_worktree == false` opt-out branch, or the `branch_strategy == "direct"` branch), omit the worktree flags so `manage_status create` writes the explicit `metadata.use_worktree=false` marker:
+When Step 6 did NOT record worktree intent (the `use_worktree == false` opt-out branch, or the `branch_strategy == "direct"` branch), omit the `--use-worktree` flag so `manage_status create` writes the explicit `metadata.use_worktree=false` marker:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
@@ -604,7 +603,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create
 
 **Note**: Domain information is stored in `references.json` (as a `domains` list), not in `status.json`. All plans use the standard 6-phase model (verification is integrated into phase-5-execute).
 
-**Writer-chain contract**: `manage_status create` is the sole writer of `metadata.use_worktree` and `metadata.worktree_branch` in phase-1-init, and it also writes the empty-string sentinel `metadata.worktree_path: ''` to mark the deferred-materialization window. Phase-5-execute Step 2.5 is the sole writer of the resolved `metadata.worktree_path` absolute value (it materializes the worktree on first task execution and persists the resolved path then). The inverse-direction `_worktree_orphan` invariant in `_invariants.py` (registered in `INVARIANTS`) tolerates the empty-string `worktree_path` sentinel until phase-5 materialization. See `workflow-integration-git/standards/worktree-handling.md` for the canonical worktree contract.
+**Writer-chain contract**: `manage_status create` is the sole writer of `metadata.use_worktree` in phase-1-init — it writes neither `metadata.worktree_branch` nor `metadata.worktree_path`. Phase-5-execute Step 2.5 is the sole writer of both `metadata.worktree_branch` (derived as `feature/{plan_id}`) and the resolved `metadata.worktree_path` absolute value: it materializes the worktree on first task execution and persists both then. See `workflow-integration-git/standards/worktree-handling.md` for the canonical worktree contract.
 
 ### Step 8a: session_id Early-Warning Check
 
@@ -682,7 +681,6 @@ plan_id: {plan_id}
 domain: {domain}
 next_phase: 2-refine
 use_worktree: {true|false}
-worktree_branch: {feature/{plan_id}|null}
 
 source:
   type: {description|lesson|issue}
@@ -709,7 +707,7 @@ display_detail: "<plan {plan_id} created, domain {domain}>"
 
 `display_detail` shape on success: `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`); ≤80 chars, ASCII, no trailing period. On error, `display_detail` carries the short error label (see § Error Handling for the structured envelope).
 
-All other fields (`plan_id`, `domain`, `next_phase`, `use_worktree`, `worktree_branch`, `source`, `artifacts`) are documented in Step 12 above and form the rest of the return payload.
+All other fields (`plan_id`, `domain`, `next_phase`, `use_worktree`, `source`, `artifacts`) are documented in Step 12 above and form the rest of the return payload.
 
 ---
 

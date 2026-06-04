@@ -373,5 +373,98 @@ class TestAffectedFilesExactMatch:
         assert exact['references_only'] == []
 
 
-# Suppress unused import warning (json kept for possible future use).
-_ = json
+# =============================================================================
+# Unit tests for the three-tier footprint resolver (_resolve_footprint).
+# =============================================================================
+
+import importlib.util  # noqa: E402
+import subprocess  # noqa: E402
+
+
+def _load_check_module():
+    spec = importlib.util.spec_from_file_location('_check_artifact_under_test', SCRIPT_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_check_mod = _load_check_module()
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True, text=True)
+
+
+def _init_repo(repo: Path) -> None:
+    repo.mkdir(parents=True, exist_ok=True)
+    _git(repo, 'init', '-b', 'main')
+    _git(repo, 'config', 'user.email', 'test@example.com')
+    _git(repo, 'config', 'user.name', 'Test')
+
+
+class TestResolveFootprintTiers:
+    """``_resolve_footprint`` resolves live diff, then legacy key, then empty."""
+
+    def test_tier1_live_diff_when_worktree_resolves(self, tmp_path):
+        """A resolvable worktree yields the live ``{base}...HEAD`` ∪ porcelain set."""
+        repo = tmp_path / 'wt'
+        _init_repo(repo)
+        (repo / 'base.txt').write_text('base\n')
+        _git(repo, 'add', '-A')
+        _git(repo, 'commit', '-m', 'base')
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'committed.py').write_text('print("x")\n')
+        _git(repo, 'add', '-A')
+        _git(repo, 'commit', '-m', 'plan change')
+        (repo / 'uncommitted.py').write_text('print("y")\n')
+
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}))
+        (plan_dir / 'status.json').write_text(
+            json.dumps({'metadata': {'worktree_path': str(repo)}})
+        )
+
+        footprint = _check_mod._resolve_footprint(plan_dir)
+        assert 'committed.py' in footprint
+        assert 'uncommitted.py' in footprint
+        assert 'base.txt' not in footprint
+
+    def test_tier2_legacy_key_when_no_worktree(self, tmp_path):
+        """No worktree → fall back to the legacy ``modified_files`` key."""
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['legacy/a.py', 'legacy/b.py']})
+        )
+        # No status.json at all → no worktree path resolvable.
+
+        footprint = _check_mod._resolve_footprint(plan_dir)
+        assert footprint == {'legacy/a.py', 'legacy/b.py'}
+
+    def test_tier3_empty_when_neither_resolves(self, tmp_path):
+        """No worktree and no legacy key → empty footprint."""
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(json.dumps({'domains': []}))
+
+        footprint = _check_mod._resolve_footprint(plan_dir)
+        assert footprint == set()
+
+    def test_tier2_fallback_when_worktree_not_a_git_dir(self, tmp_path):
+        """A worktree_path that is not a git tree falls through to the legacy key."""
+        plain = tmp_path / 'plain'
+        plain.mkdir()
+
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['legacy/a.py']})
+        )
+        (plan_dir / 'status.json').write_text(
+            json.dumps({'metadata': {'worktree_path': str(plain)}})
+        )
+
+        footprint = _check_mod._resolve_footprint(plan_dir)
+        assert footprint == {'legacy/a.py'}

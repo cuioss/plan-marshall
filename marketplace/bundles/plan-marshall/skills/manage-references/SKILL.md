@@ -16,7 +16,7 @@ Manage references.json files with field-level access and list management. Tracks
 **Skill-specific constraints:**
 - Do not mix `add-list` and `set-list` without understanding their semantics (append vs replace)
 - References are plan-scoped; always provide `--plan-id`
-- File paths in modified_files and affected_files are always relative to repository root
+- File paths in affected_files are always relative to repository root
 
 ## Storage Location
 
@@ -38,11 +38,6 @@ JSON format for storage:
   "base_branch": "main",
   "issue_url": "https://github.com/org/repo/issues/123",
   "build_system": "maven",
-  "modified_files": [
-    "src/main/java/Foo.java",
-    "src/main/java/Bar.java",
-    "src/test/java/FooTest.java"
-  ],
   "domains": ["java"],
   "affected_files": [
     "src/main/java/Foo.java"
@@ -58,9 +53,8 @@ JSON format for storage:
 | `base_branch` | string | Base branch for PR (e.g., main) |
 | `issue_url` | string | GitHub issue URL |
 | `build_system` | string | Build system (maven, gradle, npm, none) |
-| `modified_files` | list | Files modified during implementation (collected via git diff on 5-execute completion) |
 | `domains` | list | Plan domains (e.g., java, documentation) |
-| `affected_files` | list | Files identified during outline phase as potentially needing changes (scope tracking, may be superset of modified_files) |
+| `affected_files` | list | Files identified during outline phase as potentially needing changes (scope tracking) |
 | `external_docs` | table | External documentation references |
 
 ---
@@ -95,10 +89,9 @@ status: success
 plan_id: my-feature
 file: references.json
 created: true
-fields[3]:
+fields[2]:
   - branch
   - base_branch
-  - modified_files
 ```
 
 **Note**: Basic fields are created during plan-init. Additional reference fields are added as needed during execution.
@@ -120,7 +113,7 @@ plan_id: my-feature
 references:
   branch: feature/my-feature
   issue_url: https://github.com/org/repo/issues/123
-  modified_files: 3 items
+  affected_files: 3 items
 ```
 
 ### get
@@ -161,44 +154,6 @@ value: feature/new-branch
 previous: feature/my-feature
 ```
 
-### add-file
-
-Add a file to modified_files list.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references add-file \
-  --plan-id {plan_id} \
-  --file src/main/java/NewClass.java
-```
-
-**Output** (TOON):
-```toon
-status: success
-plan_id: my-feature
-section: modified_files
-added: src/main/java/NewClass.java
-total: 4
-```
-
-### remove-file
-
-Remove a file from modified_files list.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references remove-file \
-  --plan-id {plan_id} \
-  --file src/main/java/OldClass.java
-```
-
-**Output** (TOON):
-```toon
-status: success
-plan_id: my-feature
-section: modified_files
-removed: src/main/java/OldClass.java
-total: 2
-```
-
 ### add-list
 
 Add multiple values to a list field.
@@ -212,7 +167,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--field` (required): List field name (e.g., `affected_files`, `modified_files`)
+- `--field` (required): List field name (e.g., `affected_files`)
 - `--values` (required): Comma-separated values to add
 
 **Output** (TOON):
@@ -242,7 +197,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--field` (required): List field name (e.g., `affected_files`, `modified_files`)
+- `--field` (required): List field name (e.g., `affected_files`)
 - `--values` (required): Comma-separated values
 
 **Output** (TOON):
@@ -265,17 +220,15 @@ count: 2
 
 ### get-context
 
-Get all references in one call, with scalar fields at top level and list fields as counts (or full lists with `--include-files`). More efficient than multiple `get` calls when you need the full picture.
+Get the plan's scalar reference fields (branch, base_branch, and any present issue_url / build_system) in one call. More efficient than multiple `get` calls when you need the common scalar context.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get-context \
-  --plan-id {plan_id} \
-  [--include-files]
+  --plan-id {plan_id}
 ```
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--include-files`: Include full file lists in output (default: only counts)
 
 **Output** (TOON):
 ```toon
@@ -283,51 +236,20 @@ status: success
 plan_id: my-feature
 branch: feature/my-feature
 base_branch: main
-modified_files_count: 3
 issue_url: https://github.com/org/repo/issues/123
 build_system: maven
 ```
 
-With `--include-files`:
-```toon
-status: success
-plan_id: my-feature
-branch: feature/my-feature
-base_branch: main
-modified_files_count: 3
-modified_files[3]:
-  - src/main/java/Foo.java
-  - src/main/java/Bar.java
-  - src/main/java/Baz.java
-```
-
 ---
 
-### diff-files
+### compute-footprint
 
-Intersect the append-only `modified_files` ledger with the live git working-tree state, so consumers operate on "actually-modified-now" paths instead of trusting a potentially stale ledger. **Read-only — never mutates `references.json`.** Its write-back counterpart is `reconcile-files`.
+Derive the plan's actual footprint live from the worktree git state — the single source of truth — without consulting any persisted ledger. **Read-only — never mutates `references.json`.** It reads `references.json` only to resolve `base_branch` for the diff range.
 
-The "live" set is the union of the three-dot `{base_ref}...HEAD` diff name set and the porcelain working-tree state (`git status --porcelain --untracked-files=all`). Both verbs share this primitive (`compute_plan_branch_diff` in `_references_core`).
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references diff-files \
-  --plan-id {plan_id} --worktree-path {worktree_path} \
-  [--base-ref {ref}]
-```
-
-**Parameters**:
-- `--plan-id` (required): Plan identifier
-- `--worktree-path` (required): Absolute path to the active git worktree
-- `--base-ref`: Base ref for the diff (defaults to `references.base_branch`, falling back to `main`)
-
-### reconcile-files
-
-Recompute `references.modified_files` from the plan-branch-only diff and **PERSIST** the reconciled set. This is the write-back counterpart of the read-only `diff-files` verb: both share the same three-dot + porcelain-union primitive, but `reconcile-files` writes the intersected set back to `references.json`.
-
-The reconciliation drops ledger entries that are absent from the live plan-branch-only set — these are the absorbed-upstream files that pollute the ledger after an absorb merge (phase-5-execute self-absorb or `workflow-integration-git` baseline-reconcile focused auto-merge). After this verb runs, downstream finalize consumers (plugin-doctor, regenerate-executor, PR-body, pre-submission-self-review) read a clean footprint that contains only files the plan actually touched.
+The footprint is the union of the three-dot `{base_ref}...HEAD` diff name set and the porcelain working-tree state (`git status --porcelain`). The derivation primitive is `compute_plan_branch_diff` in `_references_core`. Consumers that need to know which files the plan touched (self-review surfacing, pre-commit freshness, the finalize-step scope cap, retrospective consistency checks) call this verb on demand rather than reading a stored array.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references reconcile-files \
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references compute-footprint \
   --plan-id {plan_id} --worktree-path {worktree_path} \
   [--base-ref {ref}]
 ```
@@ -342,15 +264,11 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 status: success
 plan_id: my-feature
 base_ref: main
-before_count: 5
-after_count: 3
-removed[2]:
-  - upstream/only/file_a.py
-  - upstream/only/file_b.py
-modified_files[3]:
+files[3]:
   - src/main/java/Foo.java
   - src/main/java/Bar.java
   - src/main/java/Baz.java
+live_count: 3
 ```
 
 ---
@@ -365,13 +283,10 @@ modified_files[3]:
 | `read` | `--plan-id` | Read entire references |
 | `get` | `--plan-id --field` | Get specific field value |
 | `set` | `--plan-id --field --value` | Set specific field value |
-| `add-file` | `--plan-id --file` | Add file to modified_files |
-| `remove-file` | `--plan-id --file` | Remove file from modified_files |
 | `add-list` | `--plan-id --field --values` | Add multiple values to a list field |
 | `set-list` | `--plan-id --field --values` | Set a list field (replaces existing) |
-| `get-context` | `--plan-id [--include-files]` | Get all references context |
-| `diff-files` | `--plan-id --worktree-path [--base-ref]` | Intersect modified_files ledger with live git diff (read-only) |
-| `reconcile-files` | `--plan-id --worktree-path [--base-ref]` | Recompute and persist modified_files from the plan-branch-only diff (write-back) |
+| `get-context` | `--plan-id` | Get the plan's scalar reference context |
+| `compute-footprint` | `--plan-id --worktree-path [--base-ref]` | Derive the live plan footprint from the worktree git state (read-only) |
 
 ---
 
@@ -412,20 +327,6 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id PLAN_ID --field FIELD --value VALUE
 ```
 
-### add-file
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references add-file \
-  --plan-id PLAN_ID --file PATH
-```
-
-### remove-file
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references remove-file \
-  --plan-id PLAN_ID --file PATH
-```
-
 ### add-list
 
 ```bash
@@ -444,20 +345,13 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get-context \
-  --plan-id PLAN_ID [--include-files]
+  --plan-id PLAN_ID
 ```
 
-### diff-files
+### compute-footprint
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references diff-files \
-  --plan-id PLAN_ID --worktree-path ABS_PATH [--base-ref REF]
-```
-
-### reconcile-files
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references reconcile-files \
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references compute-footprint \
   --plan-id PLAN_ID --worktree-path ABS_PATH [--base-ref REF]
 ```
 
@@ -475,11 +369,11 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 | `type_mismatch` | Attempting list operation on non-list field (add-list on a string field) |
 | `file_exists` | references.json already exists on create |
 | `field_not_set` | Field exists but has no value (returns `value: null`, exit 0) |
-| `worktree_not_found` | `--worktree-path` does not exist or is not a directory (diff-files, reconcile-files) |
-| `references_not_found` | references.json not found (diff-files, reconcile-files) |
-| `not_a_git_worktree` | `--worktree-path` is not inside a git worktree (diff-files, reconcile-files) |
+| `worktree_not_found` | `--worktree-path` does not exist or is not a directory (compute-footprint) |
+| `references_not_found` | references.json not found (compute-footprint) |
+| `not_a_git_worktree` | `--worktree-path` is not inside a git worktree (compute-footprint) |
 
-**Default values**: Unset fields return `field_not_found` on `get`. The `create` command initializes `modified_files` and `affected_files` as empty lists and `base_branch` as `main`. All other fields are optional — only present if explicitly set via `--field` arguments.
+**Default values**: Unset fields return `field_not_found` on `get`. The `create` command initializes `branch` and `base_branch` (the latter to `main`). All other fields are optional — only present if explicitly set via `--field` / `set-list` arguments.
 
 ---
 
@@ -491,7 +385,6 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 |--------|-----------|---------|
 | `phase-1-init` | create, set, set-list | Initialize references with branch, domains, build system |
 | `phase-3-outline` | set-list | Set affected_files from solution outline |
-| `manage-status/cmd_transition` | set-list (modified_files) | Collect modified files via git diff on 5-execute completion |
 
 ### Consumers
 
@@ -499,7 +392,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 |--------|-----------|---------|
 | `phase-3-outline` | get, get-context | Read domains and build system for skill routing |
 | `phase-5-execute` | get-context | Read build system for task execution |
-| `phase-6-finalize` | get-context --include-files | Read modified_files for commit scope and PR body |
+| `phase-6-finalize` | compute-footprint | Derive the live plan footprint for commit scope and PR body |
 
 ## Related
 

@@ -35,7 +35,7 @@ change-set ⊂ artifact ⊂ component ⊂ module ⊂ overall
 - **module** — the build/deploy unit (a bundle) the component belongs to.
 - **overall** — the entire codebase.
 
-`finalize-step-simplify` ships the embryo of this ladder via `--scope {changeset|artifact}`, capped to `modified_files`. The full ladder names the rungs above `artifact` that a deliberate wide-scope campaign needs.
+`finalize-step-simplify` ships the embryo of this ladder via `--scope {changeset|artifact}`, capped to the plan's live footprint (derived on demand from the worktree). The full ladder names the rungs above `artifact` that a deliberate wide-scope campaign needs.
 
 ## Grade to the Floor
 

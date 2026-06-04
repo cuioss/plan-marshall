@@ -83,14 +83,7 @@ When `baseline-reconcile` returns `conflict_count == 0`, phase-5-execute perform
 - `worktree_sha` — the current `HEAD` sha of the worktree (the in-flight feature branch tip). Captured via `git -C {worktree_path} rev-parse HEAD`.
 - `main_sha` — the resolved `origin/{base_branch}` sha (the upstream tip that is being absorbed). Captured via `git -C {worktree_path} rev-parse origin/{base_branch}`.
 
-**Reconcile the modified-files ledger** — immediately after the metadata writes above, recompute and persist `references.modified_files` against the freshly recorded baseline so the absorbed upstream content does not pollute the footprint that downstream finalize consumers read:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references reconcile-files \
-  --plan-id {plan_id} --worktree-path {worktree_path}
-```
-
-This rewrites ONLY `references.json` — it recomputes the ledger from the plan-branch-only diff (`{base_branch}...HEAD` three-dot plus the porcelain working-tree state) and drops any absorbed-upstream entries. It is NOT a working-tree mutation: the working tree, HEAD, and index are untouched. The self-absorb path therefore remains metadata-only with respect to git state — only the persisted ledger changes.
+No footprint reconciliation is needed: the plan footprint is derived on demand from the worktree (`{base}...HEAD` ∪ porcelain) whenever a finalize consumer reads it, so an absorbed-upstream commit never pollutes a persisted ledger — there is no ledger to rewrite.
 
 **Decision-log entry** — exactly one `decision` log line, naming the absorbed commits:
 
@@ -104,9 +97,9 @@ This rewrites ONLY `references.json` — it recomputes the ledger from the plan-
 [STATUS] (plan-marshall:phase-5-execute) Self-absorbed zero-overlap drift: {upstream_commit_count} commits, new main_sha={main_sha}
 ```
 
-**Steps explicitly skipped** — self-absorption is metadata-only with respect to git state (the only persisted write beyond `status.metadata` is the `reconcile-files` rewrite of `references.json`, which is a ledger-only write, never a working-tree mutation). None of the following fire:
+**Steps explicitly skipped** — self-absorption is metadata-only with respect to git state (the only persisted write is the `status.metadata` `worktree_sha`/`main_sha` update; nothing else is written). None of the following fire:
 
-- No `git merge`, `git rebase`, `git pull`, or any other working-tree mutation. The `reconcile-files` call above is NOT in this category — it reads the working tree (via the plan-branch-only diff) but writes only `references.json`, never the working tree, HEAD, or index.
+- No `git merge`, `git rebase`, `git pull`, or any other working-tree mutation. The working tree, HEAD, and index are untouched.
 - No dispatch back to the orchestrator. The phase-5-execute envelope continues uninterrupted.
 - No re-entry into phase-2-refine. The request narrative, solution outline, task list, and confidence score remain valid because zero-overlap upstream commits, by definition, touch no files the plan reasons about.
 - No architecture reload — the codebase inventory for the plan's surface is unchanged.

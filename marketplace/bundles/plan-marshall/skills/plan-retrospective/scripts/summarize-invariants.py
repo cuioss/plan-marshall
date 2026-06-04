@@ -169,13 +169,6 @@ def project_rows_to_phase_map(
     return phase_map
 
 
-# Phases for which a worktree-bearing plan has materialized the worktree on
-# disk. Earlier phases (1-init through 4-plan) declare `metadata.use_worktree`
-# but the worktree directory itself is not created until phase-5-execute
-# Step 2.5 — the deferred-materialization window.
-_WORKTREE_MATERIALIZED_PHASES: frozenset[str] = frozenset({'5-execute', '6-finalize'})
-
-
 def expected_invariants(
     metadata: dict[str, Any],
     phase: str | None = None,
@@ -183,29 +176,18 @@ def expected_invariants(
 ) -> tuple[str, ...]:
     """Return the tuple of invariants expected for this plan and phase.
 
-    Worktree-only invariants are included only for phases where the
-    worktree was materialized on disk *at the time the phase ran*. Two
-    signals decide this — the captured row's values come first, the plan's
-    current metadata is the fallback:
+    Worktree-only invariants are included whenever the plan is routed
+    through a worktree. Two signals decide this — the captured row's values
+    come first, the plan's current metadata is the fallback:
 
     1. If ``phase_values`` carries a non-empty ``worktree_sha`` OR
        ``worktree_dirty`` value, the row itself proves the worktree was
        materialized when the phase captured. Include
        ``_WORKTREE_INVARIANTS``.
-    2. Otherwise, if ``phase`` is one of the materialized phases
-       (``5-execute`` / ``6-finalize``) AND the plan's current metadata
-       carries a non-empty ``worktree_path``, the worktree exists now and
-       the row's empty values represent a real capture gap rather than
-       deferred materialization. Include ``_WORKTREE_INVARIANTS``.
-    3. Otherwise (the deferred-materialization window — phases 1-init
-       through 4-plan when materialization happens at phase-5-execute
-       Step 2.5, OR a non-worktree plan), omit them.
-
-    The un-phased fallback path (no ``phase`` / no ``phase_values``) uses
-    the metadata-only check for the no-handshakes-found path; that path is
-    informational only and not a per-phase ERROR producer, so the
-    over-inclusion was the source of the 8 spurious findings the row-aware
-    branch fixes.
+    2. Otherwise, if the plan's current metadata reports ``use_worktree``
+       (a non-empty ``worktree_path`` once phase-5 materializes the
+       worktree), the plan is worktree-routed and an empty captured value
+       represents a real capture gap. Include ``_WORKTREE_INVARIANTS``.
 
     ``phase_steps_complete`` is appended only when ``phase`` is provided
     and ``_phase_steps_complete_applies(phase)`` returns ``True`` — i.e.
@@ -225,19 +207,12 @@ def expected_invariants(
                 break
     if (
         not include_worktree
-        and phase is None
         and isinstance(metadata, dict)
-        and metadata.get('worktree_path')
+        and (metadata.get('worktree_path') or metadata.get('use_worktree'))
     ):
-        # Un-phased fallback: no row context to consult, so we fall back to
-        # the historical metadata-only check (used by the no-handshakes
-        # informational summary path).
+        # Signal 2: the plan is worktree-routed → an empty captured value is
+        # a real capture gap.
         include_worktree = True
-    elif not include_worktree and phase in _WORKTREE_MATERIALIZED_PHASES:
-        # Signal 2: post-materialization phase + current metadata says a
-        # worktree exists → the absence is a real capture gap.
-        if isinstance(metadata, dict) and metadata.get('worktree_path'):
-            include_worktree = True
 
     if include_worktree:
         base = base + _WORKTREE_INVARIANTS

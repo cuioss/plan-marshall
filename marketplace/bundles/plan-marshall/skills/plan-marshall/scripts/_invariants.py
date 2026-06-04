@@ -24,7 +24,7 @@ from typing import Any
 
 from _git_helpers import git_dirty_count, git_dirty_files, git_head  # type: ignore[import-not-found]
 from constants import QGATE_PHASES  # type: ignore[import-not-found]
-from file_ops import get_base_dir, get_worktree_root  # type: ignore[import-not-found]
+from file_ops import get_base_dir  # type: ignore[import-not-found]
 from marketplace_paths import find_marketplace_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
@@ -108,43 +108,6 @@ class BlockingFindingsPresent(Exception):
             f'pending_findings_blocking_count failed for phase {phase!r}: '
             f'blocking_count={blocking_count}, blocking_types={blocking_types}, '
             f'per_type={per_type}'
-        )
-
-
-class WorktreeMetadataDrift(Exception):
-    """Raised when an on-disk worktree directory exists at the canonical
-    location ``.plan/local/worktrees/{plan_id}`` but ``status.metadata``
-    reports ``use_worktree != true`` (or the field is missing entirely).
-
-    This is the inverse of the existing ``worktree_unresolved`` failure
-    in ``_handshake_commands._resolve_worktree_assertion`` — that one
-    fires when metadata claims a worktree exists but the disk path is
-    missing/invalid. ``WorktreeMetadataDrift`` fires in the opposite
-    direction: the disk path IS present but metadata denies it. Both
-    failure modes refuse to advance under ``--strict`` so the writer-
-    chain bug surfaced by lesson ``2026-05-08-14-001`` (where
-    ``phase-1-init`` returned ``use_worktree=true`` and the worktree dir
-    was created but the persisted metadata silently reverted to
-    ``use_worktree=false``) cannot run silently.
-
-    The constructor formats a descriptive message and keeps the
-    structured fields (``plan_id``, ``worktree_dir``, ``use_worktree``)
-    as attributes so callers (``cmd_capture`` / ``cmd_verify``) can
-    surface a TOON error payload and refuse to persist the row.
-    """
-
-    def __init__(
-        self,
-        plan_id: str,
-        worktree_dir: str,
-        use_worktree: Any,
-    ):
-        self.plan_id = plan_id
-        self.worktree_dir = worktree_dir
-        self.use_worktree = use_worktree
-        super().__init__(
-            f'worktree_metadata_drift for plan {plan_id!r}: orphan worktree directory '
-            f'at {worktree_dir!r} but metadata.use_worktree={use_worktree!r}'
         )
 
 
@@ -266,8 +229,19 @@ def _repo_root() -> Path:
     return Path.cwd()
 
 
-def _worktree_applicable(_plan_id: str, metadata: dict[str, Any]) -> bool:
-    return bool(metadata.get('worktree_path'))
+def _worktree_in_use(_plan_id: str, metadata: dict[str, Any]) -> bool:
+    """Gate worktree-state captures on ``metadata.use_worktree`` truthiness.
+
+    The worktree-state invariants (``worktree_sha`` / ``worktree_dirty``)
+    apply exactly when the plan is routed through a worktree. Under the
+    no-sentinel model a ``use_worktree==true`` plan only carries a real
+    ``worktree_path`` once phase-5 materializes the worktree, so gating on
+    ``use_worktree`` (rather than on the presence of ``worktree_path``)
+    expresses the intent directly; the capture functions themselves return
+    ``None`` when ``worktree_path`` is not yet populated, so a pre-phase-5
+    capture simply records an empty column.
+    """
+    return _is_truthy_metadata(metadata.get('use_worktree'))
 
 
 def _always(_plan_id: str, _metadata: dict[str, Any]) -> bool:
@@ -503,86 +477,18 @@ def _is_truthy_metadata(value: Any) -> bool:
     return False
 
 
-def _worktree_orphan_dir(plan_id: str) -> Path | None:
-    """Return the canonical worktree directory if it exists on disk.
-
-    The convention (documented in ``phase-1-init/SKILL.md`` Step 6) is
-    ``<repo_root>/.plan/local/worktrees/{plan_id}``, resolved via
-    ``file_ops.get_worktree_root()`` (worktree-aware, anchored on the git
-    common-dir). Returns ``None`` when the directory is absent or no main
-    checkout root resolves — callers interpret that as "no orphan detection
-    applicable".
-    """
-    try:
-        candidate = get_worktree_root() / plan_id
-    except RuntimeError:
-        return None
-    return candidate if candidate.is_dir() else None
-
-
-# Phases whose entry boundary precedes worktree materialization. Mirrors
-# the constant in ``_handshake_commands._PRE_MATERIALIZATION_PHASES``;
-# kept inline so this module stays self-contained and avoids a cross-module
-# import cycle.
-_PRE_MATERIALIZATION_PHASES: frozenset[str] = frozenset({
-    '1-init',
-    '2-refine',
-    '3-outline',
-    '4-plan',
-})
-
-
-def _capture_worktree_orphan(plan_id: str, metadata: dict[str, Any], phase: str) -> Any:
-    """Inverse-direction worktree invariant: orphan dir + metadata says no worktree.
-
-    Tri-state contract aligned with
-    :func:`_handshake_commands._resolve_worktree_assertion`:
-
-    - ``use_worktree==true`` AND orphan directory is the canonical
-      ``<repo>/.plan/local/worktrees/{plan_id}`` path AND ``phase`` is
-      in the pre-materialization set (``1-init``/``2-refine``/``3-outline``/
-      ``4-plan``) → deferred-but-not-yet-materialized window; capture
-      returns ``None``. The orchestrator routed the plan through a
-      worktree but ``phase-5-execute`` has not yet created the on-disk
-      directory, so the orphan-looking shape is the legitimate
-      transitional state.
-    - ``use_worktree==true`` for any other shape (post-materialization
-      phase or non-canonical orphan path) → return ``None`` because the
-      metadata→disk direction is owned by
-      ``_resolve_worktree_assertion`` (which already refuses to advance
-      post-materialization when the path is missing/stale).
-    - ``use_worktree`` not truthy AND orphan directory exists → writer-
-      chain drift. Raises :class:`WorktreeMetadataDrift` so
-      ``cmd_capture`` surfaces ``error: worktree_metadata_drift`` and
-      refuses to persist the handshake row. Under ``--strict`` the
-      verify path turns this into a non-zero exit.
-
-    Returns ``None`` when the orphan directory is absent (no drift to
-    detect regardless of metadata state).
-    """
-    orphan = _worktree_orphan_dir(plan_id)
-    if orphan is None:
-        return None
-    use_worktree = metadata.get('use_worktree')
-    if _is_truthy_metadata(use_worktree):
-        # Metadata-says-true direction is the full responsibility of
-        # ``_resolve_worktree_assertion`` — both pre- and
-        # post-materialization phases pass here. ``phase`` is unused in
-        # this branch by design; the parameter is kept on the function
-        # signature for symmetry with the disk-says-true direction below.
-        del phase  # explicit acknowledgement that the truthy branch is phase-agnostic
-        return None
-    raise WorktreeMetadataDrift(
-        plan_id=plan_id,
-        worktree_dir=str(orphan),
-        use_worktree=use_worktree,
-    )
-
-
 # Required top-level keys that phase-1-init promises to write into
-# references.json (branch, base_branch, modified_files). The list is sorted
-# so the hash payload is deterministic regardless of insertion order.
-_REFERENCES_REQUIRED_KEYS: tuple[str, ...] = ('base_branch', 'branch', 'modified_files')
+# references.json (branch, base_branch). The list is sorted so the hash
+# payload is deterministic regardless of insertion order.
+#
+# ``modified_files`` was intentionally dropped from this set: it is no longer
+# part of the references-invariant contract. A references.json written before
+# the key was retired still passes ``references_valid`` because the key is
+# absent from the required-keys intersection — the tolerant read path treats a
+# missing ``modified_files`` as valid rather than as drift. This keeps the
+# blocking ``references_valid`` handshake hash stable for in-flight plans whose
+# references.json predates the change.
+_REFERENCES_REQUIRED_KEYS: tuple[str, ...] = ('base_branch', 'branch')
 
 
 def _capture_references_valid(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
@@ -590,9 +496,15 @@ def _capture_references_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
 
     Phase-1-init is the sole writer of ``references.json``; every downstream
     phase depends on the file existing and having the structural fields that
-    phase-1-init promises (``branch``, ``base_branch``, ``modified_files``).
-    Silent deletion, corruption to a non-dict, or a missing required field
-    survives all current invariants and only surfaces at random call sites.
+    phase-1-init promises (``branch``, ``base_branch``). Silent deletion,
+    corruption to a non-dict, or a missing required field survives all current
+    invariants and only surfaces at random call sites.
+
+    ``modified_files`` is no longer a required key (see
+    :data:`_REFERENCES_REQUIRED_KEYS`); a references.json without it — whether
+    written before the key was retired or by a writer that omits it — still
+    produces a stable, passing hash because the key is excluded from the
+    required-field intersection.
 
     This invariant caps that gap by emitting a deterministic hash over:
 
@@ -1441,9 +1353,8 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('main_sha', _always, _capture_main_sha),
     ('main_dirty', _always, _capture_main_dirty),
     ('main_dirty_files', _always, _capture_main_dirty_files),
-    ('worktree_sha', _worktree_applicable, _capture_worktree_sha),
-    ('worktree_dirty', _worktree_applicable, _capture_worktree_dirty),
-    ('worktree_orphan', _always, _capture_worktree_orphan),
+    ('worktree_sha', _worktree_in_use, _capture_worktree_sha),
+    ('worktree_dirty', _worktree_in_use, _capture_worktree_dirty),
     ('references_valid', _always, _capture_references_valid),
     ('task_state_hash', _always, _capture_task_state_hash),
     ('qgate_open_count', _always, _capture_qgate_open_count),
@@ -1500,19 +1411,18 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
 #
 # Retained-vs-relaxed worktree-state drift map (Option 5', ADR-002):
 #
-# - ``main_dirty_files`` (layer-D leak-into-main), ``worktree_sha``,
-#   ``worktree_dirty``, ``worktree_orphan`` are RELAXED for the phase-5+
-#   boundaries the cwd-pinned move model makes safe and RETAINED for the
-#   phases-1-4 boundaries (scope ``_WORKTREE_STATE_DRIFT_BLOCKING_PHASES``).
-#   Once phase-5 materializes the worktree and moves the plan dir in, the
-#   orchestrator's cwd IS the worktree and the single cwd-unchanged invariant
-#   (asserted by ``file_ops.guard_worktree_cwd``) keeps it pinned there, so a
-#   sideways worktree-SHA/dirty comparison and a leak-into-main guard have
-#   nothing to catch. They still matter at the planning-phase boundaries that
-#   run on main, where a leak or an orphan-dir/metadata mismatch can occur.
-#   The layer-D verify check ``_check_main_dirty_drift`` mirrors this gate:
-#   it fires only for the pre-materialization phases. The discriminator is
-#   the boundary phase already known to the handshake — NOT a runtime
+# - ``main_dirty_files`` (layer-D leak-into-main), ``worktree_sha`` and
+#   ``worktree_dirty`` are RELAXED for the phase-5+ boundaries the cwd-pinned
+#   move model makes safe and RETAINED for the phases-1-4 boundaries (scope
+#   ``_WORKTREE_STATE_DRIFT_BLOCKING_PHASES``). Once phase-5 materializes the
+#   worktree and moves the plan dir in, the orchestrator's cwd IS the worktree
+#   and the single cwd-unchanged invariant (asserted by
+#   ``file_ops.guard_worktree_cwd``) keeps it pinned there, so a sideways
+#   worktree-SHA/dirty comparison and a leak-into-main guard have nothing to
+#   catch. They still matter at the planning-phase boundaries that run on main,
+#   where a leak can occur. The layer-D verify check ``_check_main_dirty_drift``
+#   mirrors this gate: it fires only for the planning phases. The discriminator
+#   is the boundary phase already known to the handshake — NOT a runtime
 #   resolver branch — so the handshake never references a removed check at a
 #   boundary that still needs it.
 
@@ -1526,7 +1436,7 @@ BlockingScope = str | frozenset[str]
 # worktree; from that point the orchestrator's cwd IS the worktree and never
 # leaves it (the single cwd-unchanged invariant, asserted by
 # ``file_ops.guard_worktree_cwd``). The sideways worktree-state comparisons
-# (worktree_sha / worktree_dirty / worktree_orphan) and the layer-D
+# (worktree_sha / worktree_dirty) and the layer-D
 # leak-into-main guard (main_dirty_files) are therefore STRUCTURALLY MOOT at
 # the ``5-execute → 6-finalize`` boundary: plan work lands in the worktree by
 # construction, so there is nothing for these checks to catch. They REMAIN
@@ -1550,13 +1460,9 @@ INVARIANT_BLOCKING_SCOPE: dict[str, BlockingScope] = {
     'main_dirty_files': _WORKTREE_STATE_DRIFT_BLOCKING_PHASES,
     # Relaxed for phase-5+: the sideways worktree-SHA / worktree-dirty
     # comparisons are subsumed by main_sha / main_dirty once cwd IS the
-    # worktree. The inverse-direction worktree_orphan writer-chain check is
-    # likewise moot post-materialization (the move-in makes the worktree-
-    # resident plan dir the signal); it stays blocking at the planning-phase
-    # boundaries where an orphan-dir-vs-metadata mismatch can still surface.
+    # worktree. They stay blocking at the planning-phase boundaries.
     'worktree_sha': _WORKTREE_STATE_DRIFT_BLOCKING_PHASES,
     'worktree_dirty': _WORKTREE_STATE_DRIFT_BLOCKING_PHASES,
-    'worktree_orphan': _WORKTREE_STATE_DRIFT_BLOCKING_PHASES,
     'references_valid': 'blocking_at_every_boundary',
     'task_state_hash': 'blocking_at_every_boundary',
     'qgate_open_count': 'blocking_at_every_boundary',

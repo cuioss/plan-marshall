@@ -4,14 +4,11 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 """
 
 import argparse
-import json
 import shutil
-import subprocess
 from typing import Any
 
 from _handshake_commands import cmd_verify  # type: ignore[import-not-found]
 from _invariants import _BLOCKING_BOUNDARIES  # type: ignore[import-not-found]
-from _references_core import read_references, write_references  # type: ignore[import-not-found]
 from _short_description import derive_short_description  # type: ignore[import-not-found]
 from _status_core import (
     _publish_completed_title_body,
@@ -25,12 +22,11 @@ from _status_core import (
     write_status,
 )
 from constants import (  # type: ignore[import-not-found]
-    DEFAULT_BRANCH_PREFIX_WORKING,
     PHASE_STATUS_DONE,
     PHASE_STATUS_IN_PROGRESS,
     PHASE_STATUS_PENDING,
 )
-from file_ops import get_marshal_path, get_plan_dir  # type: ignore[import-not-found]
+from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
 # Result-status values that indicate the strict-verify gate refuses to advance.
 # Mirrors the ``--strict`` exit-1 conditions in ``phase_handshake.py`` main()
@@ -57,63 +53,20 @@ def verify_blocks_transition(verify_result: dict) -> bool:
     return verify_result.get('error') in VERIFY_REFUSAL_ERRORS
 
 
-def _read_working_prefixes() -> tuple[str, ...]:
-    """Resolve the canonical working-branch prefix set, fail-closed.
-
-    The authoritative source is ``.plan/marshal.json`` under
-    ``project.branch_naming.working_prefixes`` (operator-editable, written
-    through ``manage-config``). When marshal.json is absent or unreadable, or
-    the key is missing, this falls back to ``DEFAULT_BRANCH_PREFIX_WORKING``
-    from ``constants`` — the documented fail-closed fallback that keeps
-    ``cmd_create`` from hard-failing on a fresh checkout (before
-    ``/marshall-steward`` has run). The literals live in ``constants.py``
-    exactly once; this reader never duplicates them.
-    """
-    marshal_path = get_marshal_path()
-    try:
-        config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return tuple(DEFAULT_BRANCH_PREFIX_WORKING)
-    # marshal.json is operator-editable, so defend against malformed shapes:
-    # a non-dict root, a null `project`/`branch_naming`, or a non-list
-    # `working_prefixes` all fail closed to the constants fallback rather than
-    # raising AttributeError/TypeError mid-create.
-    if not isinstance(config, dict):
-        return tuple(DEFAULT_BRANCH_PREFIX_WORKING)
-    project = config.get('project') or {}
-    branch_naming = project.get('branch_naming') if isinstance(project, dict) else {}
-    branch_naming = branch_naming or {}
-    prefixes = branch_naming.get('working_prefixes') if isinstance(branch_naming, dict) else None
-    if not isinstance(prefixes, list):
-        return tuple(DEFAULT_BRANCH_PREFIX_WORKING)
-    valid_prefixes = tuple(p for p in prefixes if isinstance(p, str))
-    return valid_prefixes if valid_prefixes else tuple(DEFAULT_BRANCH_PREFIX_WORKING)
-
-
 def cmd_create(args: argparse.Namespace) -> dict:
     """Create status.json for a new plan.
 
-    When the plan runs in an isolated worktree, the caller MUST pass
-    ``--use-worktree`` and ``--worktree-branch`` so the use-worktree
-    intent and the feature branch name are seeded into
-    ``status.metadata`` at creation time. ``--worktree-path`` is
-    OPTIONAL — phase-1-init defers worktree materialization to
-    phase-5-execute Step 2.5, which creates the worktree directory on
-    disk and back-fills ``metadata.worktree_path`` at that point.
-
-    Deferred-materialization shape: passing ``--use-worktree
-    --worktree-branch X`` without ``--worktree-path`` persists
-    ``metadata.use_worktree: true``, ``metadata.worktree_branch: X``,
-    and ``metadata.worktree_path: ''`` (empty-string sentinel). The
-    phase-handshake invariants treat ``use_worktree==true`` +
-    empty ``worktree_path`` as the legitimate deferred-materialization
-    window between phase-1 and phase-5; ``get-worktree-path`` returns
-    the empty string as a separate ``worktree_state: pending`` signal
-    distinct from the disabled state.
+    When the plan runs in an isolated worktree, the caller passes
+    ``--use-worktree`` so the use-worktree intent is recorded in
+    ``status.metadata`` at creation time. Only ``use_worktree`` is
+    persisted at create — the feature branch (``feature/{plan_id}``)
+    and the resolved ``worktree_path`` are derived and back-filled at
+    phase-5-execute Step 2.5, when the worktree directory is created on
+    disk via ``git worktree add``.
 
     When ``--use-worktree`` is omitted (or set to ``false``), no
-    worktree metadata trio is written and the plan is treated as
-    running against the main checkout.
+    worktree metadata is written and the plan is treated as running
+    against the main checkout.
     """
     require_valid_plan_id(args)
 
@@ -136,48 +89,13 @@ def cmd_create(args: argparse.Namespace) -> dict:
             'message': 'At least one phase is required',
         }
 
-    # Worktree metadata seeding — when use-worktree is true,
-    # --worktree-branch is REQUIRED (the feature branch name is
-    # committed downstream consumers cannot back-derive). The
-    # --worktree-path is OPTIONAL: when absent it is persisted as the
-    # empty-string sentinel marking the deferred-materialization
-    # window between phase-1 and phase-5. Refusing partial input on
-    # the branch flag prevents silently-incoherent metadata; the path
-    # flag is intentionally tolerant so phase-1-init can persist intent
-    # before the worktree directory exists on disk.
+    # Worktree intent — at create the only durable fact is whether the plan
+    # runs in an isolated worktree. The feature branch (always
+    # ``feature/{plan_id}``) and the resolved ``worktree_path`` are derived at
+    # phase-5-execute Step 2.5 and back-filled there, so nothing about the
+    # branch is read or validated here: ``feature/`` is unconditionally in the
+    # closed working-prefix set, making a create-time prefix check vacuous.
     use_worktree = bool(getattr(args, 'use_worktree', False))
-    worktree_path_arg = getattr(args, 'worktree_path', None)
-    worktree_branch_arg = getattr(args, 'worktree_branch', None)
-    if use_worktree and not worktree_branch_arg:
-        return {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_worktree_args',
-            'message': '--use-worktree requires --worktree-branch',
-        }
-
-    # Branch-prefix enforcement — a worktree branch is always a working branch
-    # (never `main` or `dependabot/**`), so its prefix MUST be in the closed
-    # working-prefix set. An out-of-set prefix (e.g. `docs/`) silently receives
-    # no CI `verify / verify` check and makes the PR structurally unmergeable
-    # (lesson 2026-05-21-18-002, PR #441). The set is read from marshal.json
-    # (`project.branch_naming.working_prefixes`), fail-closed to the constants
-    # fallback. This guard runs BEFORE any plan directory / status.json is
-    # created so a rejected create leaves no partial state.
-    if use_worktree and worktree_branch_arg:
-        working_prefixes = _read_working_prefixes()
-        if not any(worktree_branch_arg.startswith(prefix) for prefix in working_prefixes):
-            return {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_branch_prefix',
-                'message': (
-                    f'--worktree-branch {worktree_branch_arg!r} must start with one of '
-                    f'{working_prefixes}; out-of-set prefixes (e.g. docs/) make the PR '
-                    'unmergeable — configure project.branch_naming.working_prefixes in '
-                    'marshal.json, see CLAUDE.md Branch Naming'
-                ),
-            }
 
     now = now_utc_iso()
 
@@ -193,16 +111,10 @@ def cmd_create(args: argparse.Namespace) -> dict:
     status['phases'][0]['status'] = PHASE_STATUS_IN_PROGRESS
 
     if use_worktree:
-        # Empty-string sentinel for the deferred-materialization
-        # window: phase-5-execute Step 2.5 back-fills the resolved
-        # absolute path once `git worktree add` runs. The phase-handshake
-        # invariant assertion treats use_worktree==true + empty
-        # worktree_path as the legitimate deferred state.
-        status['metadata'] = {
-            'use_worktree': True,
-            'worktree_path': worktree_path_arg or '',
-            'worktree_branch': worktree_branch_arg,
-        }
+        # Only the use-worktree intent is durable at create. The branch and
+        # the resolved worktree_path are derived and persisted at
+        # phase-5-execute Step 2.5 when `git worktree add` runs.
+        status['metadata'] = {'use_worktree': True}
     else:
         # Explicit false-state seeding: even when no worktree is
         # allocated, downstream consumers benefit from a definite
@@ -227,63 +139,7 @@ def cmd_create(args: argparse.Namespace) -> dict:
         'plan': {'title': args.title, 'current_phase': phases[0]},
         'use_worktree': use_worktree,
     }
-    if use_worktree:
-        result['worktree_path'] = worktree_path_arg or ''
-        result['worktree_branch'] = worktree_branch_arg
     return result
-
-
-def _collect_modified_files(plan_id: str, status: dict, base_branch: str) -> list[str] | None:
-    """Collect modified files via git when completing 5-execute.
-
-    Phase-5-execute completes before ``commit-push`` runs, so feature commits
-    do not yet exist on HEAD.  Two git probes capture the pending work:
-
-    * ``git diff --name-only {base_branch}`` — modifications to tracked files
-      relative to the base branch (includes staged and unstaged edits).
-    * ``git ls-files --others --exclude-standard`` — newly created files that
-      are not yet tracked (new source files, new tests, etc.).
-
-    The union of both probes is the complete set of files modified during
-    the execute phase.  When the plan runs inside a worktree
-    (``metadata.worktree_path`` is set), ``git -C {worktree_path}`` is used so
-    both probes are resolved against the correct working tree.
-
-    Returns:
-        Sorted list of relative file paths, or ``None`` on any error.
-    """
-    metadata = status.get('metadata', {})
-    worktree_path = metadata.get('worktree_path')
-
-    base_cmd: list[str] = ['git']
-    if worktree_path:
-        base_cmd.extend(['-C', worktree_path])
-
-    diff_cmd = [*base_cmd, 'diff', '--name-only', base_branch]
-    untracked_cmd = [*base_cmd, 'ls-files', '--others', '--exclude-standard']
-
-    try:
-        diff_result = subprocess.run(diff_cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
-        untracked_result = subprocess.run(
-            untracked_cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,  # noqa: S603
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-        return None
-
-    collected: set[str] = set()
-    for line in diff_result.stdout.splitlines():
-        entry = line.strip()
-        if entry:
-            collected.add(entry)
-    for line in untracked_result.stdout.splitlines():
-        entry = line.strip()
-        if entry:
-            collected.add(entry)
-    return sorted(collected)
 
 
 def cmd_transition(args: argparse.Namespace) -> dict | None:
@@ -337,26 +193,6 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
 
     # Mark completed phase as done
     phases[completed_idx]['status'] = PHASE_STATUS_DONE
-
-    # Collect modified files when completing 5-execute
-    if args.completed == '5-execute':
-        refs = read_references(args.plan_id)
-        if refs and (base_branch := refs.get('base_branch')):
-            modified = _collect_modified_files(args.plan_id, status, base_branch)
-            if modified is not None:
-                # WHY: An empty git diff at phase-completion can mean the
-                # branch already merged its commits upstream (e.g. squash
-                # merge resets the diff to empty). Overwriting a
-                # previously-populated ``modified_files`` with [] would
-                # destroy the audit trail downstream consumers
-                # (plan-retrospective, finalize) rely on. Preserve the
-                # existing list whenever the new diff is empty AND we have
-                # a prior non-empty value; only replace when the diff has
-                # entries or the prior value is absent/empty.
-                existing = refs.get('modified_files') or []
-                if modified or not existing:
-                    refs['modified_files'] = modified
-                    write_references(args.plan_id, refs)
 
     # Apply the next-phase mutation. ``next_phase`` was resolved earlier so
     # the inline strict-verify guard could decide whether to fire — here we

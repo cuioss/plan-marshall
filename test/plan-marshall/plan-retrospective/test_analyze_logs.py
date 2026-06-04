@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -724,3 +725,80 @@ class TestAnalyzeFoldedGlobalLogs:
         assert 'global_log_signals' in data
         signals = data['global_log_signals']
         assert int(signals['fixture_leak_count']) == 1
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True, text=True)
+
+
+def _init_repo(repo: Path) -> None:
+    repo.mkdir(parents=True, exist_ok=True)
+    _git(repo, 'init', '-b', 'main')
+    _git(repo, 'config', 'user.email', 'test@example.com')
+    _git(repo, 'config', 'user.name', 'Test')
+
+
+class TestResolveFootprintTiers:
+    """``resolve_footprint`` resolves live diff, then the legacy key, then empty."""
+
+    def test_tier1_live_diff_when_worktree_resolves(self, tmp_path):
+        """A resolvable git worktree yields the live ``{base}...HEAD`` ∪ porcelain set."""
+        repo = tmp_path / 'wt'
+        _init_repo(repo)
+        (repo / 'base.txt').write_text('base\n')
+        _git(repo, 'add', '-A')
+        _git(repo, 'commit', '-m', 'base')
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'committed.py').write_text('print("x")\n')
+        _git(repo, 'add', '-A')
+        _git(repo, 'commit', '-m', 'plan change')
+        (repo / 'uncommitted.py').write_text('print("y")\n')
+
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}))
+        (plan_dir / 'status.json').write_text(
+            json.dumps({'metadata': {'worktree_path': str(repo)}})
+        )
+
+        footprint = _analyze_logs.resolve_footprint(plan_dir)
+        assert 'committed.py' in footprint
+        assert 'uncommitted.py' in footprint
+        assert 'base.txt' not in footprint
+
+    def test_tier2_legacy_key_when_no_worktree(self, tmp_path):
+        """No worktree → fall back to the legacy ``modified_files`` key."""
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['legacy/a.py', 'legacy/b.py']})
+        )
+
+        footprint = _analyze_logs.resolve_footprint(plan_dir)
+        assert sorted(footprint) == ['legacy/a.py', 'legacy/b.py']
+
+    def test_tier3_empty_when_neither_resolves(self, tmp_path):
+        """No worktree and no legacy key → empty footprint."""
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(json.dumps({'domains': []}))
+
+        footprint = _analyze_logs.resolve_footprint(plan_dir)
+        assert footprint == []
+
+    def test_tier2_fallback_when_worktree_not_a_git_dir(self, tmp_path):
+        """A worktree_path that is not a git tree falls through to the legacy key."""
+        plain = tmp_path / 'plain'
+        plain.mkdir()
+
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['legacy/a.py']})
+        )
+        (plan_dir / 'status.json').write_text(
+            json.dumps({'metadata': {'worktree_path': str(plain)}})
+        )
+
+        footprint = _analyze_logs.resolve_footprint(plan_dir)
+        assert footprint == ['legacy/a.py']

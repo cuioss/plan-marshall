@@ -6,7 +6,7 @@ order: 5
 
 # Pre-Push Quality Gate
 
-Pure executor for the `pre-push-quality-gate` finalize step. Runs `quality-gate` once per unique bundle derived from `references.modified_files`, immediately before `default:commit-push` (`order: 10`). This is the deterministic last-line guard against type/lint regressions reaching remote CI — converting soft "consider quality-gate" guidance into a hard precondition for push.
+Pure executor for the `pre-push-quality-gate` finalize step. Runs `quality-gate` once per unique bundle derived from the plan's live footprint (the `compute-footprint` query against the worktree), immediately before `default:commit-push` (`order: 10`). This is the deterministic last-line guard against type/lint regressions reaching remote CI — converting soft "consider quality-gate" guidance into a hard precondition for push.
 
 ## Exit-code convention for `manage-*` script calls
 
@@ -19,23 +19,20 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Inputs
 
-- `references.modified_files` — list[string] of repo-relative paths recorded by Phase 5. This is the **append-only intent ledger**: entries accumulate as Phase 5 tasks call `manage-references add-file ...` and are never pruned when a file is `git restore`'d or touched-then-reverted. The ledger is therefore NOT a faithful view of the live working tree.
-- `git working-tree state` — the live diff (`git diff --name-only {base_ref}...HEAD`) plus uncommitted changes (`git status --porcelain`). Combined with the intent ledger via the `manage-references diff-files` query (below) to produce the canonical "what's actually modified now" view.
+- `git working-tree state` — the live footprint, computed on demand from the worktree by the `manage-references compute-footprint` query (below): the union of the three-dot diff (`git diff --name-only {base_ref}...HEAD`) and the porcelain working-tree state (`git status --porcelain`). There is no persisted ledger; the footprint is always derived live from the worktree, which is the single source of truth.
 - `phase-6-finalize.pre_push_quality_gate.activation_globs` — list[string] of fnmatch globs. The manifest composer already gated activation on this list; the executor re-reads it to scope which live-and-intended entries should contribute to bundle derivation (defense-in-depth — only entries that match a configured glob feed bundle derivation).
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All build invocations below MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override). The two flags are mutually exclusive (Bucket B two-state contract). Examples below use the literal `--project-dir {worktree_path}` form; substitute `--plan-id {plan_id}` to use auto-resolution.
 
 ## Execution
 
-### Read live-and-intended files
+### Read the live footprint
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
-  diff-files --plan-id {plan_id} --worktree-path {worktree_path}
+  compute-footprint --plan-id {plan_id} --worktree-path {worktree_path}
 ```
 
-Extract the `files` array from the TOON output. This is the intersection of the intent ledger with the live working tree, in ledger order. It is NEVER the raw `modified_files` ledger — that field is append-only and may contain phantom entries that were touched-then-reverted, which would otherwise force redundant `quality-gate` runs against bundles that no longer have any actual changes.
-
-The query also surfaces `dropped[]` (ledger entries no longer in the working tree) and `phantom[]` (live paths that were never recorded) for diagnostic visibility, but bundle derivation MUST consume only `files`.
+Extract the `files` array from the TOON output. This is the live footprint derived from the worktree — the union of the three-dot `{base_ref}...HEAD` diff and the porcelain working-tree state — so it already reflects only what is actually modified now. A file that was touched then reverted does not appear, so it forces no redundant `quality-gate` run against a bundle with no actual changes.
 
 ### Read activation_globs
 

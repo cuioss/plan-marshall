@@ -6,7 +6,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 Workflow for the `outline` action (3-Outline + 4-Plan phases).
 
-> **cwd for `.plan/execute-script.py` calls**: `manage-*` scripts resolve `.plan/` via the uniform cwd walk-up (ADR-002) — the nearest ancestor of cwd containing `.plan/local`. The orchestrator runs on the main checkout in phases 1-4 (resolving main's `.plan/`) and pins cwd to the worktree in phase-5+ (resolving the moved-in worktree copy); do **NOT** pass routing flags to `manage-*`, and never use `env -C`. Build / CI / Sonar scripts accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
+> **cwd for `.plan/execute-script.py` calls**: `manage-*` scripts resolve `.plan/` via the uniform cwd walk-up (ADR-002) — the nearest ancestor of cwd containing `.plan/local`. The orchestrator runs on the main checkout in phases 1-4 (resolving main's `.plan/`) and pins cwd to the worktree in phase-5+ (resolving the moved-in worktree copy); do **NOT** pass routing flags to `manage-*`, and never use `env -C`. Build / CI / Sonar scripts accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree itself) or `--project-dir {worktree_path}` (escape hatch / explicit override); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
 
 ## Action: outline (3-Outline + 4-Plan Phases)
 
@@ -53,7 +53,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
   --plan-id {plan_id} --phase {prev_phase} --strict
 ```
 
-Compute the dispatch target via the role resolver and resolve the active worktree path so the Worktree Header can be populated explicitly (when `metadata.use_worktree==false`, `get-worktree-path` returns the main checkout, so the same call covers both flows):
+Compute the dispatch target via the role resolver. Phases 2-4 always run on the main checkout (the worktree is not materialized until phase-5 Step 2.5), so the dispatch's `WORKTREE:` header is the static main-checkout marker `.`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -61,13 +61,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```
 
 Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  get-worktree-path --plan-id {plan_id}
-```
-
-Extract the `worktree_path` field from the TOON output. Use that value as `{worktree_path}` in the dispatch's `WORKTREE:` header below.
 
 Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
 
@@ -87,7 +80,7 @@ Task: plan-marshall:{target}
     skills[1]:
     - plan-marshall:phase-3-outline
     workflow: plan-marshall:phase-3-outline/SKILL.md
-    WORKTREE: {worktree_path}
+    WORKTREE: .
 ```
 
 The agent returns the outline summary (`track`, `deliverable_count`, `qgate_pending_count`, `qgate_validation_required`, etc.) in its TOON. The Complex-Track per-deliverable loop (Steps 9c + 10 + 10b) iterates *inside* this envelope; the per-deliverable loop never spawns per-iteration subagents.
@@ -124,7 +117,7 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-architecture
     - plan-marshall:manage-logging
     workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
-    WORKTREE: {worktree_path}
+    WORKTREE: .
 
     activation_context: 3-outline
 ```
@@ -310,7 +303,7 @@ Task: plan-marshall:{target}
     skills[1]:
     - plan-marshall:phase-4-plan
     workflow: plan-marshall:phase-4-plan/SKILL.md
-    WORKTREE: {worktree_path}
+    WORKTREE: .
 ```
 
 The agent returns the task creation summary (`tasks` array with `domain`, `profile`, `skills`) plus `qgate_pending_count` and `qgate_validation_required` in its TOON.
@@ -368,7 +361,7 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-architecture
     - plan-marshall:manage-logging
     workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
-    WORKTREE: {worktree_path}
+    WORKTREE: .
 
     activation_context: 4-plan
     validators: [module-mapping-validator, scope-criterion-validator]

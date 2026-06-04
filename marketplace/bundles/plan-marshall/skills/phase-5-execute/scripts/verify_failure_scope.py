@@ -2,17 +2,18 @@
 """Out-of-scope verify-failure classifier for phase-5-execute Step 11 triage.
 
 Cross-references the file paths that produced a verify failure against the
-plan's declared modified_files (from references.json) and returns a summary
-that the triage step uses to annotate its [BLOCKED] message and AskUserQuestion
-shape.
+plan's live footprint — the on-demand ``compute-footprint`` derivation
+(``{base}...HEAD`` ∪ porcelain) read straight from the worktree — and returns a
+summary that the triage step uses to annotate its [BLOCKED] message and
+AskUserQuestion shape.
 
 Usage:
     verify_failure_scope.py classify --plan-id <id> --error-paths <csv> [...]
     verify_failure_scope.py --help
 
 Subcommands:
-    classify  Classify a comma-separated list of error paths against
-              references.json:modified_files; emit a summary TOON block.
+    classify  Classify a comma-separated list of error paths against the live
+              plan footprint; emit a summary TOON block.
 
 Return TOON shape:
     status: success
@@ -27,19 +28,60 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
+from _references_core import (  # type: ignore[import-not-found]
+    compute_plan_branch_diff,
+    resolve_base_ref,
+)
 from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
 
-def _read_modified_files(plan_dir: Path) -> list[str]:
-    """Return the declared modified_files list, or raise FileNotFoundError."""
+def _resolve_worktree_root(plan_dir: Path) -> Path:
+    """Resolve the worktree root from status.metadata.worktree_path.
+
+    Falls back to the current working directory when no worktree is
+    materialised (main-checkout flow). The status.json is read directly to keep
+    this command self-contained.
+    """
+    status_path = plan_dir / 'status.json'
+    if status_path.exists():
+        try:
+            status = json.loads(status_path.read_text())
+        except (ValueError, OSError):
+            status = {}
+        if isinstance(status, dict):
+            metadata = status.get('metadata', {})
+            if isinstance(metadata, dict):
+                worktree_path = metadata.get('worktree_path', '')
+                if isinstance(worktree_path, str) and worktree_path:
+                    candidate = Path(worktree_path)
+                    if candidate.is_dir():
+                        return candidate
+    return Path.cwd()
+
+
+def _resolve_declared_footprint(plan_dir: Path) -> set[str]:
+    """Return the live plan footprint, or raise FileNotFoundError.
+
+    Reads references.json only to resolve the base ref, then derives the
+    footprint live from the worktree via ``compute_plan_branch_diff``. When the
+    git derivation fails (e.g. an archived plan with no live worktree), the
+    footprint degrades to the empty set so classification still proceeds — every
+    error path is then treated as out-of-scope.
+    """
     refs_path = plan_dir / 'references.json'
     if not refs_path.exists():
         raise FileNotFoundError(str(refs_path))
     refs = json.loads(refs_path.read_text())
-    return list(refs.get('modified_files', []) or [])
+    base_ref = resolve_base_ref(None, refs)
+    worktree = _resolve_worktree_root(plan_dir)
+    try:
+        return compute_plan_branch_diff(worktree, base_ref)
+    except subprocess.CalledProcessError:
+        return set()
 
 
 def classify_failure_scope(
@@ -48,7 +90,7 @@ def classify_failure_scope(
     *,
     plan_dir: Path | None = None,
 ) -> dict:
-    """Classify error_paths against the plan's modified_files.
+    """Classify error_paths against the plan's live footprint.
 
     Args:
         plan_id:      Plan identifier (used to resolve references.json).
@@ -62,7 +104,7 @@ def classify_failure_scope(
     if plan_dir is None:
         plan_dir = get_plan_dir(plan_id)
     try:
-        declared = set(_read_modified_files(plan_dir))
+        declared = _resolve_declared_footprint(plan_dir)
     except FileNotFoundError as exc:
         return {
             'status': 'error',
@@ -131,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
 
     classify_parser = subparsers.add_parser(
         'classify',
-        help='Classify error paths against references.json:modified_files',
+        help='Classify error paths against the live plan footprint',
         allow_abbrev=False,
     )
     classify_parser.add_argument('--plan-id', required=True)

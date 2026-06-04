@@ -51,7 +51,7 @@ findings[*]{severity,message}:
 
 - The ratio `observed / expected_min < 0.5` is a `warning`.
 - Zero `DECISION` entries in phases that made visible choices (outline packaging, plan task ordering) is always a `warning`.
-- Zero `ARTIFACT` entries is an `error` — artifacts were produced but not announced. `phase-5-execute` is expected to emit one `[ARTIFACT]` entry per file operation at task completion, so the canonical check is `counts.artifact_entries > 0` whenever `references.modified_files` is non-empty; this is enforced programmatically by the retrospective pipeline rather than being treated as a known offender.
+- Zero `ARTIFACT` entries is an `error` — artifacts were produced but not announced. `phase-5-execute` is expected to emit one `[ARTIFACT]` entry per file operation at task completion, so the canonical check is `counts.artifact_entries > 0` whenever the plan footprint is non-empty (derived live from the worktree, falling back to the legacy `references.modified_files` key only for older archived plans); this is enforced programmatically by the retrospective pipeline rather than being treated as a known offender.
 - `ERROR` entries are expected to be zero; count them but do not flag count itself — the errors surface via log-analysis / script-failure-analysis.
 
 ### Phase-5 invariants (precondition-guarded)
@@ -86,8 +86,8 @@ deliverable. When the precondition is absent, the rule emits no finding.
   `Re-entering` line skip this rule entirely.
 
 - **ARTIFACT_EMISSION** (category: `ARTIFACT_EMISSION`) — preserves the
-  pre-existing rule (zero `[ARTIFACT]` entries when
-  `references.modified_files` is non-empty is an `error`) and adds a new
+  pre-existing rule (zero `[ARTIFACT]` entries when the plan footprint is
+  non-empty is an `error`) and adds a new
   branch keyed on the OUTCOME_COVERAGE precondition. **Precondition for the
   new branch**: at least one `[OUTCOME] (plan-marshall:phase-5-execute)
   Completed` entry exists. When the precondition holds, every `[OUTCOME]`

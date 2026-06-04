@@ -587,6 +587,10 @@ def test_classification_overlap_no_content_conflict_auto_reconciles(plan_context
     assert result['auto_reconciled'] is True
     assert result.get('merge_commit_sha')
     assert result['findings_emitted'] == 0
+    # The auto-merge path no longer writes back a modified_files ledger (D4):
+    # the reconcile/write-back call site was removed, so the payload must NOT
+    # carry the legacy reconciled_modified_files_count observability field.
+    assert 'reconciled_modified_files_count' not in result
     # The worktree HEAD should now contain both changes.
     head_text = (worktree / 'shared.txt').read_text(encoding='utf-8')
     assert 'A-local' in head_text

@@ -149,8 +149,9 @@ absent or unreadable.
 }
 ```
 
-- `working_prefixes` — the closed set of allowed working-branch prefixes.
-  `manage-status create` validates `--worktree-branch` against this set.
+- `working_prefixes` — the closed set of allowed working-branch prefixes
+  for plan feature branches (e.g. `feature/`), enforced by the branch-prefix
+  validation in `marshall-steward`.
 - `ci_allowlist` — the full CI push-trigger allowlist (glob form), kept in sync
   with `.github/workflows/python-verify.yml` by a structural test (operator-editable;
   the test fails CI on drift between this value and the workflow file).

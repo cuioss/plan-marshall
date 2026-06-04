@@ -7,7 +7,8 @@ sections, symmetric-pair functions, flag-guard pairs, contract sources,
 schema-bearing files, keep-identifier markers) as TOON for the LLM cognitive
 review pass to consume.
 
-Storage: stateless — reads the worktree diff and the plan's references.modified_files.
+Storage: stateless — reads the worktree diff and derives the plan footprint
+live from the worktree (``compute-footprint``: ``{base}...HEAD`` ∪ porcelain).
 Output: TOON to stdout.
 
 Usage:
@@ -17,10 +18,12 @@ Usage:
 import argparse
 import re
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
+from _references_core import (  # type: ignore[import-not-found]
+    compute_plan_branch_diff,
+)
 from file_ops import (  # type: ignore[import-not-found]
     output_toon,
     output_toon_error,
@@ -36,7 +39,6 @@ from resolve_project_dir import (  # type: ignore[import-not-found]
     emit_worktree_error,
     resolve_project_dir,
 )
-from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # =============================================================================
 # Detection regexes
@@ -144,27 +146,20 @@ def _run_git(project_dir: Path, *args: str) -> tuple[int, str, str]:
     return proc.returncode, proc.stdout, proc.stderr
 
 
-def _resolve_modified_files(plan_id: str) -> list[str]:
-    """Read references.modified_files for the plan via parse_toon on manage-references output."""
-    cmd = [
-        sys.executable,
-        '.plan/execute-script.py',
-        'plan-marshall:manage-references:manage-references',
-        'list',
-        'get',
-        '--plan-id',
-        plan_id,
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
-    if proc.returncode != 0:
+def _resolve_footprint(project_dir: Path, base_branch: str) -> list[str]:
+    """Derive the plan footprint live from the worktree.
+
+    Computes the on-demand footprint via ``compute_plan_branch_diff``
+    (``{base}...HEAD`` ∪ porcelain) read straight from ``project_dir``. Returns
+    repo-relative paths, or an empty list on a git error — an empty footprint
+    means "do not filter the surfaced diff", preserving the prior behaviour when
+    no scope was resolvable.
+    """
+    try:
+        footprint = compute_plan_branch_diff(project_dir, base_branch)
+    except subprocess.CalledProcessError:
         return []
-    parsed = parse_toon(proc.stdout)
-    if parsed.get('status') != 'success':
-        return []
-    files = parsed.get('modified_files', [])
-    if isinstance(files, list):
-        return [str(p) for p in files if p]
-    return []
+    return sorted(footprint)
 
 
 def _verify_base_branch(project_dir: Path, base_branch: str) -> bool:
@@ -893,7 +888,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         )
         return 1
 
-    modified_files = _resolve_modified_files(plan_id)
+    modified_files = _resolve_footprint(project_dir, base_branch)
 
     diff_text = _diff_hunks(project_dir, base_branch)
     added = _iter_added_lines(diff_text)

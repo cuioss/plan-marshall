@@ -174,6 +174,19 @@ instances of the boundary invariant fall out structurally and need no independen
 * *Finalize-step discovery against the main-checkout working directory* — cwd-pinning during phase-5+ makes discovery resolve against the tree that holds the feature-branch step, so a step that lives in the worktree is found.
 * *`marshal.json` re-canonicalization drift* — a config save from the pinned worktree resolves to the worktree-resident copy via the uniform cwd rule, so it does not touch shared main-checkout config during execution.
 
+=== The plan footprint is derived on demand, never persisted
+
+The set of files a plan touched — its footprint — is NOT a persisted ledger. There is no
+`references.modified_files` array seeded on main and reconciled later. Because the worktree is
+the single authoritative copy of the plan's branch, the footprint is the worktree branch's own
+`base...HEAD` three-dot diff, unioned with the porcelain working-tree state, computed on demand
+from the worktree whenever a consumer needs it (self-review surfacing, pre-commit freshness, the
+finalize-step scope cap, retrospective consistency checks). The `compute-footprint` verb
+(`manage-references compute-footprint --plan-id {plan_id} --worktree-path {worktree_path}`) is the
+single read-only derivation site; it never writes `references.json`. Deriving the footprint live
+from the worktree means there is nothing to seed early, nothing to reconcile, and no window in
+which a persisted ledger can drift from the actual tree.
+
 === What stays independent
 
 These remain orthogonal to the shared-versus-worktree split and are not addressed by the move

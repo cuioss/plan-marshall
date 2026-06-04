@@ -151,8 +151,9 @@ what the pre-commit gate needs ("has the codebase actually been verified
 against its current on-disk state?"). This verb closes the gap by comparing
 the most recent `plan-marshall:build-pyproject:pyproject_build run` INFO line
 in `script-execution.log` against the most recent file-content mtime in the
-worktree (resolved against `references.modified_files` when populated, falling
-back to a pruned worktree-root walk otherwise — see "Algorithm" below). The
+worktree (scoped to the live plan footprint derived on demand — `{base}...HEAD`
+∪ porcelain — falling back to a pruned worktree-root walk when the footprint is
+empty; see "Algorithm" below). The
 two guards are complementary, not redundant: queue-emptiness and
 verify-freshness must BOTH be true before any pre-commit transition.
 
@@ -209,12 +210,14 @@ programmatically from inside the loop.
    ISO-8601 timestamp for the newest match as `t_build`.
 3. Resolve the worktree root via `status.metadata.worktree_path`; fall back
    to the current working directory when no worktree is materialised.
-4. Read `references.modified_files`. When non-empty, compute `t_worktree` as
-   the maximum mtime over the entries that still exist on disk (resolved
-   relative to the worktree root). When the list is empty or all entries are
-   missing, fall back to a pruned worktree-root walk that skips `.git/`,
-   `.plan/`, `node_modules/`, `__pycache__/`, `.venv/`, `target/`, `build/`,
-   and any other dotted directory.
+4. Derive the live plan footprint on demand from the worktree (`{base}...HEAD`
+   ∪ porcelain, reading `references.json` only to resolve the base ref). When
+   non-empty, compute `t_worktree` as the maximum mtime over the footprint
+   entries that still exist on disk (resolved relative to the worktree root).
+   When the footprint is empty or all entries are missing, fall back to a
+   pruned worktree-root walk that skips `.git/`, `.plan/`, `node_modules/`,
+   `__pycache__/`, `.venv/`, `target/`, `build/`, and any other dotted
+   directory.
 5. Decide: `t_build < t_worktree` → `stale`; otherwise → `fresh`; missing
    either timestamp → `undecidable` with the appropriate `reason`.
 

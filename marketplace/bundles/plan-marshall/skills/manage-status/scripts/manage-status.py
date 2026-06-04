@@ -100,28 +100,9 @@ def main() -> int:
         action='store_true',
         help=(
             'Mark the plan as running in an isolated git worktree. When set, '
-            '--worktree-branch is required and seeded into status.metadata; '
-            '--worktree-path is optional and may be filled in later by '
-            'phase-5-execute Step 2.5 (deferred materialization).'
-        ),
-    )
-    create_parser.add_argument(
-        '--worktree-path',
-        default=None,
-        help=(
-            'Absolute path to the worktree root (optional with --use-worktree). '
-            'When omitted, persisted as the empty-string sentinel marking the '
-            'deferred-materialization window between phase-1 and phase-5; '
-            'phase-5-execute Step 2.5 back-fills the resolved path once '
-            '`git worktree add` runs. Persisted as status.metadata.worktree_path.'
-        ),
-    )
-    create_parser.add_argument(
-        '--worktree-branch',
-        default=None,
-        help=(
-            'Feature branch ref checked out in the worktree (required with '
-            '--use-worktree). Persisted as status.metadata.worktree_branch.'
+            'only status.metadata.use_worktree is persisted at create; the '
+            'feature branch (feature/{plan_id}) and the resolved worktree_path '
+            'are derived and back-filled at phase-5-execute Step 2.5.'
         ),
     )
     create_parser.set_defaults(func=cmd_create)

@@ -2,16 +2,14 @@
 """Tests for manage-status.py transition + archive + delete + orphans + loop-back.
 
 Split from test_manage_status.py: covers cmd_transition (incl. inline
-strict-verify guard for guarded boundaries, modified_files capture, and
-last-phase symmetry with cmd_archive), cmd_archive (incl. --reason flag),
-cmd_delete_plan (incl. lesson-restoration), cmd_list (incl. worktree
-moved-in plan discovery), cmd_list_orphans, and cmd_mark_step_done
-loop-back target validation.
+strict-verify guard for guarded boundaries, and last-phase symmetry with
+cmd_archive), cmd_archive (incl. --reason flag), cmd_delete_plan (incl.
+lesson-restoration), cmd_list (incl. worktree moved-in plan discovery),
+cmd_list_orphans, and cmd_mark_step_done loop-back target validation.
 """
 
 import json
 import shutil
-import subprocess
 import sys as _sys
 from argparse import Namespace
 from pathlib import Path
@@ -167,21 +165,21 @@ def test_cli_transition_not_found_exits_zero(plan_context):
 
 
 # =============================================================================
-# Regression Tests: cmd_transition(completed='5-execute') empty-diff guard
+# Regression Tests: cmd_transition(completed='5-execute') no longer seeds
+# references.modified_files
 # =============================================================================
 #
-# A bug in the earlier lesson allowed cmd_transition to wipe a previously
-# populated ``references.modified_files`` whenever ``git diff`` returned
-# nothing (e.g., after a squash-merge reset the branch diff to empty). The
-# fix added a guard: if the new diff is empty AND the existing list is
-# non-empty, preserve the existing list; only replace when the new diff
-# has entries (or the prior value is absent/empty). These tests pin both
-# halves of that guard so neither branch regresses silently.
+# The worktree-single-source-of-truth plan deleted the modified_files ledger:
+# the 5-execute transition used to run ``_collect_modified_files`` and write
+# the result to ``references.modified_files``. That producer and its
+# write-back are gone — the footprint is now derived on-demand from the live
+# worktree diff (manage-references compute-footprint), never persisted. These
+# tests pin that the transition is now footprint-free.
 
 
-def _seed_execute_phase_plan(plan_dir, plan_id: str, modified_files: list) -> None:
-    """Create a plan with 1-init done, 5-execute in_progress, base_branch set,
-    and refs.modified_files pre-populated. Returns nothing; mutates the
+def _seed_execute_phase_plan(plan_dir, plan_id: str) -> None:
+    """Create a plan with phases 1-4 done, 5-execute in_progress, and a
+    references.json carrying base_branch. Returns nothing; mutates the
     fixture directory directly.
     """
     cmd_create(
@@ -197,141 +195,61 @@ def _seed_execute_phase_plan(plan_dir, plan_id: str, modified_files: list) -> No
         cmd_update_phase(Namespace(plan_id=plan_id, phase=phase, status='done'))
     cmd_set_phase(Namespace(plan_id=plan_id, phase='5-execute'))
 
-    # Write references.json with a base_branch (required by the guard code
-    # path) and the pre-populated modified_files we want to protect.
-    refs = {
-        'base_branch': 'main',
-        'modified_files': list(modified_files),
-    }
+    refs = {'base_branch': 'main', 'branch': f'feature/{plan_id}'}
     refs_path = plan_dir / 'references.json'
     refs_path.write_text(json.dumps(refs), encoding='utf-8')
 
 
-def _read_modified_files(plan_dir, plan_id: str) -> list:
-    """Read ``references.modified_files`` back from disk for assertion."""
+def test_collect_modified_files_helper_is_removed():
+    """The ``_collect_modified_files`` producer no longer exists.
+
+    The footprint ledger was deleted in favour of the on-demand
+    compute-footprint verb; the seeding helper must be gone so no code
+    path can re-introduce a persisted modified_files write at transition.
+    """
+    assert not hasattr(_lifecycle, '_collect_modified_files'), (
+        '_collect_modified_files must be deleted — the 5-execute transition '
+        'no longer seeds references.modified_files (footprint is derived '
+        'on-demand via manage-references compute-footprint).'
+    )
+
+
+def test_transition_5_execute_does_not_write_modified_files(plan_context):
+    """The 5-execute transition must NOT add modified_files to references.json."""
+    plan_dir = plan_context.plan_dir_for('transition-no-seed')
+    _seed_execute_phase_plan(plan_dir, 'transition-no-seed')
+
+    result = cmd_transition(Namespace(plan_id='transition-no-seed', completed='5-execute'))
+
+    assert result['status'] == 'success'
+    refs = json.loads((plan_dir / 'references.json').read_text(encoding='utf-8'))
+    assert 'modified_files' not in refs, (
+        f'5-execute transition seeded modified_files: {refs!r}. The footprint '
+        f'ledger was removed — the transition must never touch references.json '
+        f'for footprint.'
+    )
+
+
+def test_transition_5_execute_preserves_legacy_modified_files_untouched(plan_context):
+    """A references.json that already carries a legacy modified_files key is
+    left untouched by the transition — the transition neither reads nor
+    rewrites the field.
+    """
+    plan_dir = plan_context.plan_dir_for('transition-legacy-untouched')
+    _seed_execute_phase_plan(plan_dir, 'transition-legacy-untouched')
+    # Inject a legacy ledger (as an archived/pre-migration plan might carry).
     refs_path = plan_dir / 'references.json'
-    return json.loads(refs_path.read_text(encoding='utf-8'))['modified_files']
+    legacy = json.loads(refs_path.read_text(encoding='utf-8'))
+    legacy['modified_files'] = ['legacy-a.py', 'legacy-b.py']
+    refs_path.write_text(json.dumps(legacy), encoding='utf-8')
 
+    result = cmd_transition(Namespace(plan_id='transition-legacy-untouched', completed='5-execute'))
 
-def test_transition_5_execute_preserves_modified_files_when_diff_empty(plan_context, monkeypatch):
-    """Regression: empty diff MUST NOT wipe a pre-populated modified_files.
-
-    Stub ``_collect_modified_files`` on the lifecycle module so we can
-    simulate a squash-merge scenario where ``git diff`` returns no
-    entries. The guard in cmd_transition must preserve the existing list.
-    """
-    plan_dir = plan_context.plan_dir_for('transition-guard-preserve')
-    _seed_execute_phase_plan(plan_dir, 'transition-guard-preserve', ['a', 'b', 'c'])
-
-    # Act: stub the git collection to return empty, then transition.
-    monkeypatch.setattr(_lifecycle, '_collect_modified_files', lambda *args, **kwargs: [])
-    result = cmd_transition(Namespace(plan_id='transition-guard-preserve', completed='5-execute'))
-
-    # Assert: transition succeeded AND the modified_files guard preserved
-    # the pre-populated list despite the empty diff.
     assert result['status'] == 'success'
-    preserved = _read_modified_files(plan_dir, 'transition-guard-preserve')
-    assert preserved == ['a', 'b', 'c'], (
-        f'Empty-diff guard failed: expected preserved [a,b,c], got {preserved}. '
-        f'This regression means cmd_transition is wiping modified_files again.'
-    )
-
-
-def test_transition_5_execute_replaces_modified_files_when_diff_nonempty(plan_context, monkeypatch):
-    """Regression sibling: non-empty diff MUST replace the existing list.
-
-    The guard only protects against empty-diff wipes — when git returns
-    real entries, cmd_transition must update refs.modified_files to
-    reflect the current branch state.
-    """
-    plan_dir = plan_context.plan_dir_for('transition-guard-replace')
-    _seed_execute_phase_plan(plan_dir, 'transition-guard-replace', ['a', 'b', 'c'])
-
-    # Act: stub the git collection to return ['x','y'], then transition.
-    monkeypatch.setattr(_lifecycle, '_collect_modified_files', lambda *args, **kwargs: ['x', 'y'])
-    result = cmd_transition(Namespace(plan_id='transition-guard-replace', completed='5-execute'))
-
-    # Assert: transition succeeded AND the modified_files was replaced
-    # with the new diff contents (not appended, not preserved).
-    assert result['status'] == 'success'
-    replaced = _read_modified_files(plan_dir, 'transition-guard-replace')
-    assert replaced == ['x', 'y'], (
-        f'Non-empty diff replacement failed: expected [x,y], got {replaced}. '
-        f'The guard must only preserve on EMPTY diff — real diffs must win.'
-    )
-
-
-# =============================================================================
-# Regression Tests: _collect_modified_files captures working tree at 5-execute
-# =============================================================================
-
-
-def _init_collection_repo(repo: Path) -> None:
-    """Create a git repo on ``main`` with a baseline commit so subsequent
-    working-tree edits show up under ``git diff --name-only main``.
-    """
-    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
-    subprocess.run(['git', '-C', str(repo), 'config', 'user.email', 't@t.test'], check=True)
-    subprocess.run(['git', '-C', str(repo), 'config', 'user.name', 'Test'], check=True)
-    (repo / 'README.md').write_text('baseline\n', encoding='utf-8')
-    subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
-    subprocess.run(['git', '-C', str(repo), 'commit', '-q', '-m', 'init'], check=True)
-
-
-def test_collect_modified_files_two_file_change(tmp_path):
-    """Two uncommitted files → modified_files length 2 with expected paths."""
-    _init_collection_repo(tmp_path)
-    (tmp_path / 'a.py').write_text('print("a")\n', encoding='utf-8')
-    (tmp_path / 'b.py').write_text('print("b")\n', encoding='utf-8')
-
-    status = {'metadata': {'worktree_path': str(tmp_path)}}
-    result = _lifecycle._collect_modified_files('plan-2-files', status, 'main')
-
-    assert result == ['a.py', 'b.py'], (
-        f'Expected [a.py, b.py] from working-tree diff, got {result}. '
-        f'A regression here means _cmd_lifecycle.py:92 reverted to the '
-        f'three-dot {{base_branch}}...HEAD range that always returns []'
-        f' before commit-push runs.'
-    )
-
-
-def test_collect_modified_files_multi_file_change(tmp_path):
-    """Mix of tracked edits and new untracked files → union captured."""
-    _init_collection_repo(tmp_path)
-    # Modify an existing tracked file → exercises ``git diff --name-only``.
-    (tmp_path / 'README.md').write_text('baseline changed\n', encoding='utf-8')
-    # New untracked files (incl. nested) → exercises ``git ls-files --others``.
-    (tmp_path / 'one.py').write_text('1\n', encoding='utf-8')
-    (tmp_path / 'two.py').write_text('2\n', encoding='utf-8')
-    sub = tmp_path / 'pkg'
-    sub.mkdir()
-    (sub / 'four.py').write_text('4\n', encoding='utf-8')
-    (sub / 'five.py').write_text('5\n', encoding='utf-8')
-
-    status = {'metadata': {'worktree_path': str(tmp_path)}}
-    result = _lifecycle._collect_modified_files('plan-multi-files', status, 'main')
-
-    expected = ['README.md', 'one.py', 'pkg/five.py', 'pkg/four.py', 'two.py']
-    assert result == expected, (
-        f'Multi-file working-tree probe failed: expected {expected}, got {result}. '
-        f'modified_files must union tracked modifications (README.md) and new '
-        f'untracked files (one.py, two.py, pkg/*) at 5-execute completion.'
-    )
-
-
-def test_collect_modified_files_no_worktree_path(tmp_path, monkeypatch):
-    """Plan without metadata.worktree_path → diffs the cwd checkout."""
-    _init_collection_repo(tmp_path)
-    (tmp_path / 'changed.py').write_text('x\n', encoding='utf-8')
-    monkeypatch.chdir(tmp_path)
-
-    status = {'metadata': {}}  # No worktree_path — pre-migration plan shape
-    result = _lifecycle._collect_modified_files('plan-no-worktree', status, 'main')
-
-    assert result == ['changed.py'], (
-        f'Pre-worktree plan path failed: expected [changed.py] from cwd diff, '
-        f'got {result}. The function must fall through to ``git diff`` (no -C) '
-        f'when metadata.worktree_path is absent.'
+    refs = json.loads(refs_path.read_text(encoding='utf-8'))
+    assert refs.get('modified_files') == ['legacy-a.py', 'legacy-b.py'], (
+        f'Transition rewrote a legacy modified_files key: {refs!r}. The '
+        f'transition must not read or mutate the field at all.'
     )
 
 

@@ -26,7 +26,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 - `--scope {changeset|artifact}` — review scope (default `changeset`).
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All git commands and edits below MUST target `{worktree_path}`.
 
-The step reads `modified_files` from `references.json` to bound the review to the plan's own change surface — it never reviews files the plan did not touch.
+The step derives the plan's live footprint on demand from the worktree (via `compute-footprint`) to bound the review to the plan's own change surface — it never reviews files the plan did not touch.
 
 **Scope semantics:**
 
@@ -41,11 +41,11 @@ The step reads `modified_files` from `references.json` to bound the review to th
 
 ### Step 1: Resolve the simplicity posture and changeset
 
-Read the `modified_files` list from `references.json`:
+Derive the plan's live footprint from the worktree (the union of the `{base}...HEAD` diff and the porcelain working-tree state); the returned `files` list is the change surface to review:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
-  --plan-id {plan_id} --field modified_files
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references compute-footprint \
+  --plan-id {plan_id} --worktree-path {worktree_path}
 ```
 
 Resolve the active `simplicity` posture description (D3 — the value→description string the plan recorded at refine/outline time):
@@ -99,8 +99,8 @@ Task: plan-marshall:{target}
     instructions: |
       Review the plan's change surface for surplus structure and delete it.
       Scope: {scope} ({changeset} = diff hunks vs base SHA; {artifact} = each
-      modified file in full). The files to review are the modified_files list
-      resolved in Step 1; never touch a file outside that list. Apply the
+      modified file in full). The files to review are the footprint `files`
+      list resolved in Step 1; never touch a file outside that list. Apply the
       "minimum viable code" anti-patterns from dev-general-code-quality
       standards/code-organization.md #minimum-viable-code under the resolved
       simplicity posture "{simplicity_description}": delete unused parameters,
@@ -145,7 +145,7 @@ The `display_detail` string appears in the renderer's per-step `[OK]` row. The `
 
 | Scenario | Action |
 |----------|--------|
-| `modified_files` empty in references.json | Mark `done` with `display_detail "Simplify: no changeset"` — nothing to review |
+| Live footprint empty (`compute-footprint` returns no `files`) | Mark `done` with `display_detail "Simplify: no changeset"` — nothing to review |
 | `simplicity` field absent | Default to the `lean` posture description and proceed |
 | Dispatched agent returns an error TOON | Mark `failed` with the agent's error in `display_detail`; finalize halts per the dispatcher's error handling |
 

@@ -24,7 +24,6 @@ def cmd_get_context(args) -> dict:
         'plan_id': args.plan_id,
         'branch': refs.get('branch', ''),
         'base_branch': refs.get('base_branch', 'main'),
-        'modified_files_count': len(refs.get('modified_files', [])),
     }
 
     # Include optional fields if present
@@ -32,9 +31,5 @@ def cmd_get_context(args) -> dict:
         context['issue_url'] = refs['issue_url']
     if refs.get('build_system'):
         context['build_system'] = refs['build_system']
-
-    # Include file lists if requested
-    if args.include_files:
-        context['modified_files'] = refs.get('modified_files', [])
 
     return context

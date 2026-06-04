@@ -46,7 +46,6 @@ def plan_with_refs(plan_context):
             'src/a.py',
             'src/b.py',
         ],
-        'modified_files': [],
     }
     (plan_dir / 'references.json').write_text(json.dumps(refs))
     task = {

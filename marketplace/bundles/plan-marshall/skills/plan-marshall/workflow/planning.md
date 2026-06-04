@@ -6,7 +6,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 Workflows for plan creation and setup phases: init, refine, outline, and plan.
 
-> **cwd for `.plan/execute-script.py` calls**: `manage-*` scripts resolve `.plan/` via the uniform cwd walk-up (ADR-002) — the nearest ancestor of cwd containing `.plan/local`. The orchestrator runs on the main checkout in phases 1-4 (resolving main's `.plan/`) and pins cwd to the worktree in phase-5+ (resolving the moved-in worktree copy); do **NOT** pass routing flags to `manage-*`, and never use `env -C`. Build / CI / Sonar scripts accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
+> **cwd for `.plan/execute-script.py` calls**: `manage-*` scripts resolve `.plan/` via the uniform cwd walk-up (ADR-002) — the nearest ancestor of cwd containing `.plan/local`. The orchestrator runs on the main checkout in phases 1-4 (resolving main's `.plan/`) and pins cwd to the worktree in phase-5+ (resolving the moved-in worktree copy); do **NOT** pass routing flags to `manage-*`, and never use `env -C`. Build / CI / Sonar scripts accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree itself) or `--project-dir {worktree_path}` (escape hatch / explicit override); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
 
 **CRITICAL CONSTRAINT**: These workflows create and manage **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init through 4-plan phases, check `execute_without_asking` config. If false (default): STOP and wait for execute action. If true: Auto-continue to execute phase.
 
@@ -304,7 +304,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
   --plan-id {plan_id} --phase 1-init --strict
 ```
 
-Compute the dispatch target via the role resolver and resolve the active worktree path so the Worktree Header can be populated explicitly (when `metadata.use_worktree==false`, `get-worktree-path` returns the main checkout, so the same call covers both flows):
+Compute the dispatch target via the role resolver. Phases 2-4 always run on the main checkout (the worktree is not materialized until phase-5 Step 2.5), so the dispatch's `WORKTREE:` header is the static main-checkout marker `.`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -312,13 +312,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```
 
 Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  get-worktree-path --plan-id {plan_id}
-```
-
-Extract the `worktree_path` field from the TOON output. Use that value as `{worktree_path}` in the dispatch's `WORKTREE:` header below.
 
 Emit the standardized pre-dispatch attempt log line and the post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract for the field semantics and placement rule:
 
@@ -344,7 +337,7 @@ Task: plan-marshall:{target}
     skills[1]:
     - plan-marshall:phase-2-refine
     workflow: plan-marshall:phase-2-refine/SKILL.md
-    WORKTREE: {worktree_path}
+    WORKTREE: .
 ```
 
 The agent returns confidence + track + scope_estimate + qgate_pending_count + qgate_validation_required in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope; `AskUserQuestion` in Step 11 propagates to the host UI directly from the subagent (no main-context routing required).
@@ -387,7 +380,7 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-architecture
     - plan-marshall:manage-logging
     workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
-    WORKTREE: {worktree_path}
+    WORKTREE: .
 
     activation_context: 2-refine
     validators: [narrative-vs-code-validator]

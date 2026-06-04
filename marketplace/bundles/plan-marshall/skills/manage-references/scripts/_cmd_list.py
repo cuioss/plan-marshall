@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """List management command handlers for manage-references.
 
-Handles: add-file, remove-file, add-list, set-list
+Handles: add-list, set-list
 """
 
 from _references_core import (
@@ -10,52 +10,6 @@ from _references_core import (
     write_references,
 )
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
-
-
-def cmd_add_file(args) -> dict:
-    """Add a file to modified_files list."""
-    require_valid_plan_id(args)
-
-    refs = read_references(args.plan_id)
-    if 'modified_files' not in refs:
-        refs['modified_files'] = []
-
-    if args.file not in refs['modified_files']:
-        refs['modified_files'].append(args.file)
-        write_references(args.plan_id, refs)
-
-    return {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'section': 'modified_files',
-        'added': args.file,
-        'total': len(refs['modified_files']),
-    }
-
-
-def cmd_remove_file(args) -> dict:
-    """Remove a file from modified_files list."""
-    require_valid_plan_id(args)
-
-    refs = read_references(args.plan_id)
-    if 'modified_files' not in refs or args.file not in refs['modified_files']:
-        return {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'not_found',
-            'message': f"File '{args.file}' not in modified_files",
-        }
-
-    refs['modified_files'].remove(args.file)
-    write_references(args.plan_id, refs)
-
-    return {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'section': 'modified_files',
-        'removed': args.file,
-        'total': len(refs['modified_files']),
-    }
 
 
 def cmd_add_list(args) -> dict:

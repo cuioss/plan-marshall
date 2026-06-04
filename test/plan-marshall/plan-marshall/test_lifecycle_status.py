@@ -5,10 +5,6 @@ Tests plan discovery, transitions, archiving, and routing (formerly manage-lifec
 """
 
 import json
-import os
-import subprocess
-import tempfile
-from pathlib import Path
 
 from conftest import get_script_path, run_script
 
@@ -245,163 +241,84 @@ def test_archive_not_found(plan_context):
 
 
 # =============================================================================
-# Helper: Create Git Repo with Changes
+# Test: 5-execute Transition No Longer Seeds modified_files
 # =============================================================================
+#
+# The worktree-single-source-of-truth plan deleted the modified_files ledger.
+# The 5-execute transition used to run a git-diff collection and write the
+# result to references.modified_files; that producer is gone. The transition
+# must never touch references.json for footprint, for ANY phase — the
+# footprint is now derived on-demand via manage-references compute-footprint.
 
 
-def _create_git_repo_with_changes(repo_dir: Path, base_branch: str = 'main') -> None:
-    """Create a git repo with a base branch and committed changes on a feature branch.
-
-    Structure:
-    - main branch: initial commit with README.md
-    - feature branch (HEAD): adds src/foo.py and src/bar.py
-    """
-    env = {
-        **os.environ,
-        'GIT_AUTHOR_NAME': 'Test',
-        'GIT_AUTHOR_EMAIL': 'test@test.com',
-        'GIT_COMMITTER_NAME': 'Test',
-        'GIT_COMMITTER_EMAIL': 'test@test.com',
-    }
-
-    def run(*cmd):
-        return subprocess.run(cmd, cwd=repo_dir, capture_output=True, text=True, check=True, env=env)
-
-    run('git', 'init', '-b', base_branch)
-    (repo_dir / 'README.md').write_text('# Test')
-    run('git', 'add', '.')
-    run('git', 'commit', '-m', 'initial')
-
-    run('git', 'checkout', '-b', 'feature/test')
-    src_dir = repo_dir / 'src'
-    src_dir.mkdir()
-    (src_dir / 'foo.py').write_text('# foo')
-    (src_dir / 'bar.py').write_text('# bar')
-    run('git', 'add', '.')
-    run('git', 'commit', '-m', 'add source files')
-
-
-# =============================================================================
-# Test: Modified Files Collection on 5-execute Transition
-# =============================================================================
-
-
-def test_transition_5_execute_collects_modified_files(plan_context):
-    """Completing 5-execute populates modified_files in references.json."""
-    plan_dir = plan_context.plan_dir_for('modified-files-plan')
-    # Create plan with phases including 5-execute
+def test_transition_5_execute_does_not_seed_modified_files(plan_context):
+    """Completing 5-execute must NOT add modified_files to references.json."""
+    plan_dir = plan_context.plan_dir_for('no-seed-5exec-plan')
     _create_plan(
-        'modified-files-plan', 'Modified Files Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize'
+        'no-seed-5exec-plan', 'No Seed Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize'
     )
 
-    # Advance to 5-execute
-    run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'modified-files-plan', '--completed', '1-init')
-    run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'modified-files-plan', '--completed', '2-refine')
-    run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'modified-files-plan', '--completed', '3-outline')
-    run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'modified-files-plan', '--completed', '4-plan')
+    # Advance to 5-execute.
+    for completed in ('1-init', '2-refine', '3-outline', '4-plan'):
+        run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'no-seed-5exec-plan', '--completed', completed)
 
-    # Create a git repo with changes
-    git_repo = Path(tempfile.mkdtemp())
-    try:
-        _create_git_repo_with_changes(git_repo, base_branch='main')
-
-        # Create references.json with base_branch
-        refs_path = plan_dir / 'references.json'
-        refs_path.write_text(json.dumps({'base_branch': 'main'}, indent=2))
-
-        # Transition completing 5-execute (cwd=git repo so git diff works)
-        result = run_script(
-            LIFECYCLE_SCRIPT,
-            'transition',
-            '--plan-id',
-            'modified-files-plan',
-            '--completed',
-            '5-execute',
-            cwd=git_repo,
-        )
-        assert result.success, f'Transition failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-
-        # Verify references.json now has modified_files
-        refs = json.loads(refs_path.read_text())
-        assert 'modified_files' in refs, 'modified_files should be set'
-        assert sorted(refs['modified_files']) == ['src/bar.py', 'src/foo.py']
-    finally:
-        import shutil
-
-        shutil.rmtree(git_repo, ignore_errors=True)
-
-
-def test_transition_non_execute_does_not_collect_modified_files(plan_context):
-    """Completing a phase other than 5-execute does NOT populate modified_files."""
-    plan_dir = plan_context.plan_dir_for('no-modified-plan')
-    _create_plan('no-modified-plan', 'No Modified Test', '1-init,2-refine,3-outline')
-
-    # Create references.json with base_branch
+    # references.json with base_branch but no modified_files.
     refs_path = plan_dir / 'references.json'
     refs_path.write_text(json.dumps({'base_branch': 'main'}, indent=2))
 
-    # Create a git repo (so git is available if it were called)
-    git_repo = Path(tempfile.mkdtemp())
-    try:
-        _create_git_repo_with_changes(git_repo, base_branch='main')
+    result = run_script(
+        LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'no-seed-5exec-plan', '--completed', '5-execute'
+    )
+    assert result.success, f'Transition failed: {result.stderr}'
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
 
-        # Transition completing 1-init (not 5-execute)
-        result = run_script(
-            LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'no-modified-plan', '--completed', '1-init', cwd=git_repo
-        )
-        assert result.success, f'Transition failed: {result.stderr}'
-
-        # Verify references.json does NOT have modified_files
-        refs = json.loads(refs_path.read_text())
-        assert 'modified_files' not in refs, 'modified_files should NOT be set for non-5-execute'
-    finally:
-        import shutil
-
-        shutil.rmtree(git_repo, ignore_errors=True)
-
-
-def test_transition_5_execute_uses_worktree_path(plan_context):
-    """Completing 5-execute with worktree_path uses git -C for the diff."""
-    plan_dir = plan_context.plan_dir_for('worktree-modified-plan')
-    _create_plan(
-        'worktree-modified-plan', 'Worktree Modified Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize'
+    refs = json.loads(refs_path.read_text())
+    assert 'modified_files' not in refs, (
+        f'5-execute transition seeded modified_files: {refs!r}. The footprint '
+        f'ledger was removed — the transition must never write the field.'
     )
 
-    # Advance to 5-execute
-    run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'worktree-modified-plan', '--completed', '1-init')
-    run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'worktree-modified-plan', '--completed', '2-refine')
-    run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'worktree-modified-plan', '--completed', '3-outline')
-    run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'worktree-modified-plan', '--completed', '4-plan')
 
-    # Create a git repo at a separate location (simulating a worktree)
-    worktree_repo = Path(tempfile.mkdtemp())
-    try:
-        _create_git_repo_with_changes(worktree_repo, base_branch='main')
+def test_transition_never_touches_modified_files_for_any_phase(plan_context):
+    """The transition leaves references.modified_files untouched for every phase.
 
-        # Set worktree_path in status metadata
-        status_path = plan_dir / 'status.json'
-        status = json.loads(status_path.read_text())
-        status['metadata'] = {'worktree_path': str(worktree_repo)}
-        status_path.write_text(json.dumps(status, indent=2))
+    A references.json carrying a legacy modified_files key must come out
+    byte-identical for that field across a non-5-execute AND a 5-execute
+    transition — the transition neither reads, rewrites, nor deletes it.
+    """
+    plan_dir = plan_context.plan_dir_for('untouched-ledger-plan')
+    _create_plan(
+        'untouched-ledger-plan', 'Untouched Ledger Test',
+        '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+    )
 
-        # Create references.json with base_branch
-        refs_path = plan_dir / 'references.json'
-        refs_path.write_text(json.dumps({'base_branch': 'main'}, indent=2))
+    refs_path = plan_dir / 'references.json'
+    refs_path.write_text(
+        json.dumps({'base_branch': 'main', 'modified_files': ['legacy.py']}, indent=2)
+    )
 
-        # Transition from a cwd that is NOT the git repo
-        # (worktree_path should be used via git -C)
-        result = run_script(
-            LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'worktree-modified-plan', '--completed', '5-execute'
+    # Non-5-execute transition leaves the legacy ledger exactly as-is.
+    result = run_script(
+        LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', '1-init'
+    )
+    assert result.success, f'Transition failed: {result.stderr}'
+    refs = json.loads(refs_path.read_text())
+    assert refs.get('modified_files') == ['legacy.py'], (
+        f'Non-5-execute transition mutated a legacy modified_files key: {refs!r}.'
+    )
+
+    # Advance to 5-execute, then the 5-execute transition is equally hands-off.
+    for completed in ('2-refine', '3-outline', '4-plan'):
+        run_script(
+            LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', completed
         )
-        assert result.success, f'Transition failed: {result.stderr}'
-
-        # Verify references.json has modified_files via worktree path
-        refs = json.loads(refs_path.read_text())
-        assert 'modified_files' in refs, 'modified_files should be set via worktree path'
-        assert sorted(refs['modified_files']) == ['src/bar.py', 'src/foo.py']
-    finally:
-        import shutil
-
-        shutil.rmtree(worktree_repo, ignore_errors=True)
+    result = run_script(
+        LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', '5-execute'
+    )
+    assert result.success, f'Transition failed: {result.stderr}'
+    refs = json.loads(refs_path.read_text())
+    assert refs.get('modified_files') == ['legacy.py'], (
+        f'5-execute transition mutated a legacy modified_files key: {refs!r}. '
+        f'The transition must not read or rewrite the field for any phase.'
+    )

@@ -18,6 +18,7 @@ from self_review import (  # type: ignore[import-not-found]
     _iter_added_lines,
     _load_test_tree_blob,
     _name_in_test_blob,
+    _resolve_footprint,
     _run_git,
     _symmetric_pair_has_test,
     _truncate,
@@ -1011,3 +1012,39 @@ class TestDiffHunksMergeBaseAnchor:
         rc, out, _ = _run_git(repo, 'merge-base', 'main', 'HEAD')
         assert rc == 0
         assert out.strip(), 'merge-base must resolve to a non-empty sha'
+
+
+class TestResolveFootprint:
+    """``_resolve_footprint`` derives the live plan footprint via compute-footprint.
+
+    The footprint replaces the old ``references.modified_files`` ledger read: it
+    is the on-demand ``{base}...HEAD`` ∪ porcelain set read straight from the
+    worktree, used to restrict the surfaced diff to plan-touched files.
+    """
+
+    def test_returns_live_branch_diff_and_porcelain(self, tmp_path):
+        """Footprint = committed plan-branch diff ∪ uncommitted working-tree state."""
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+
+        _git(repo, 'checkout', '-b', 'feature')
+        _commit(repo, 'plan change', {'committed.py': 'print("committed")\n'})
+
+        # An uncommitted working-tree file: must appear via the porcelain union.
+        (repo / 'uncommitted.py').write_text('print("uncommitted")\n')
+
+        footprint = _resolve_footprint(repo, 'main')
+
+        assert 'committed.py' in footprint
+        assert 'uncommitted.py' in footprint
+        assert 'base.txt' not in footprint
+
+    def test_empty_on_git_error(self, tmp_path):
+        """A non-git directory yields an empty footprint (do-not-filter)."""
+        not_a_repo = tmp_path / 'plain'
+        not_a_repo.mkdir()
+
+        footprint = _resolve_footprint(not_a_repo, 'main')
+
+        assert footprint == []

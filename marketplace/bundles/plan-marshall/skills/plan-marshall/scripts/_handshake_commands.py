@@ -1,6 +1,6 @@
 """Command handlers for phase_handshake (capture, verify, list, clear).
 
-This module wires three worktree-related boundary checks on top of the
+This module wires two worktree-related boundary checks on top of the
 generic invariant registry in :mod:`_invariants`:
 
 1. :func:`_resolve_worktree_assertion` — phase-entry assertion in the
@@ -9,13 +9,7 @@ generic invariant registry in :mod:`_invariants`:
    missing or does not resolve to a real git worktree. Surfaces as
    ``error: worktree_unresolved`` (under ``--strict`` exits non-zero).
 
-2. ``_capture_worktree_orphan`` (in :mod:`_invariants`, raises
-   :class:`_invariants.WorktreeMetadataDrift`) — capture-time check in
-   the **inverse** ``disk→metadata`` direction. Refuses to capture when
-   the on-disk worktree directory exists but metadata reports
-   ``use_worktree != true``. Surfaces as ``error: worktree_metadata_drift``.
-
-3. ``_capture_main_dirty_files`` (in :mod:`_invariants`) plus
+2. ``_capture_main_dirty_files`` (in :mod:`_invariants`) plus
    :func:`_check_main_dirty_drift` (verify-time, in this module) — layer-D
    enforcement that detects free-form filesystem leaks into the main
    checkout during a worktree-routed plan. The capture records the
@@ -27,9 +21,9 @@ generic invariant registry in :mod:`_invariants`:
    pre-existing dirty paths (baseline-equal) do not trip the invariant —
    only newly-dirty paths between boundaries count as a leak.
 
-All three checks share a common contract: under ``--strict`` they refuse
-to advance the boundary so prompt-discipline failures and writer-chain
-drift cannot run silently. See
+Both checks share a common contract: under ``--strict`` they refuse
+to advance the boundary so prompt-discipline failures cannot run
+silently. See
 ``workflow-integration-git/standards/worktree-handling.md`` for the
 operator-facing recovery loops and the worktree-routing contract this
 module enforces.
@@ -54,7 +48,6 @@ from _invariants import (  # type: ignore[import-not-found]
     BlockingFindingsPresent,
     MainCheckoutDirtiedDuringPlan,
     PhaseStepsIncomplete,
-    WorktreeMetadataDrift,
     _capture_pending_findings_blocking_count,
     _main_dirty_drift_diff,
     capture_all,
@@ -85,13 +78,13 @@ def _is_truthy_metadata(value: Any) -> bool:
     return False
 
 
-# Phases whose entry boundary precedes worktree materialization. During
-# these phases, ``use_worktree==true`` with an empty ``worktree_path`` is
-# the legitimate deferred-pending state (the orchestrator has decided to
-# route the plan through a worktree, but ``phase-5-execute`` has not yet
-# created the on-disk directory). The tri-state contract treats this as
-# pass-through, not as ``worktree_unresolved``.
-_PRE_MATERIALIZATION_PHASES: frozenset[str] = frozenset({
+# Planning-phase boundaries that run on the main checkout. The on-disk
+# worktree directory and feature branch are materialized at phase-5-execute
+# Step 2.5; phases 1-init through 4-plan run on main. This set gates the
+# layer-D leak-into-main guard (:func:`_check_main_dirty_drift`), which only
+# fires for the planning-phase boundaries where a free-form filesystem write
+# can still land in the main checkout.
+_PLANNING_PHASES_ON_MAIN: frozenset[str] = frozenset({
     '1-init',
     '2-refine',
     '3-outline',
@@ -101,11 +94,8 @@ _PRE_MATERIALIZATION_PHASES: frozenset[str] = frozenset({
 
 def _resolve_worktree_assertion(
     metadata: dict[str, Any],
-    phase: str | None = None,
 ) -> dict[str, Any] | None:
     """Worktree-resolution phase-entry assertion (metadata→disk direction).
-
-    Implements a tri-state contract:
 
     1. ``use_worktree`` is not truthy → assertion passes (return ``None``).
        Plans routed against the main checkout never trip this assertion.
@@ -114,31 +104,17 @@ def _resolve_worktree_assertion(
        ``git rev-parse --show-toplevel`` returns the same canonical
        path) → assertion passes (return ``None``).
     3. ``use_worktree==true`` AND ``worktree_path`` is empty/missing →
-       deferred-pending. When ``phase`` is one of the pre-materialization
-       phases (``1-init`` / ``2-refine`` / ``3-outline`` / ``4-plan``)
-       the assertion passes (return ``None``); the worktree has not been
-       materialized yet and the empty path is the legitimate transitional
-       state. For phases ``5-execute`` / ``6-finalize`` the assertion
-       fails with ``worktree_unresolved`` because the worktree should
-       already exist post-materialization. When ``phase`` is ``None``
-       (legacy single-arg callers) the strict pre-tri-state behaviour
-       is preserved — empty path always fails.
+       ``worktree_unresolved`` at every phase. Phases 1-4 persist only
+       ``use_worktree`` (no empty-path sentinel), and a ``use_worktree==true``
+       plan only exists with a real path once phase-5 materializes the
+       worktree — so an empty path while ``use_worktree==true`` is always a
+       metadata defect, never a legitimate transitional state.
 
-    Failure cases that ignore the tri-state phase gate (always surface
-    as ``worktree_unresolved`` regardless of phase):
+    Other failure cases (always surface as ``worktree_unresolved``):
         - ``worktree_path`` is set but the directory does not exist
         - ``worktree_path`` exists but is not a git worktree
         - ``worktree_path`` exists, is a git worktree, but ``rev-parse
           --show-toplevel`` resolves to a different path (stale link)
-
-    The **inverse direction** (orphan worktree dir on disk while
-    metadata reports ``use_worktree != true``) is handled by the
-    ``_worktree_orphan`` invariant in ``_invariants.py``. That capture
-    raises :class:`_invariants.WorktreeMetadataDrift` which
-    ``cmd_capture`` and ``cmd_verify`` translate into a structured
-    ``error: worktree_metadata_drift`` payload. Both directions refuse
-    to advance under ``--strict`` so the writer-chain drift surfaced by
-    lesson ``2026-05-08-14-001`` cannot run silently.
 
     See ``workflow-integration-git/standards/worktree-handling.md`` for the
     canonical worktree contract this assertion enforces at every phase
@@ -150,12 +126,6 @@ def _resolve_worktree_assertion(
     raw = metadata.get('worktree_path')
     path_str = str(raw).strip() if raw is not None else ''
     if not path_str:
-        # Tri-state: in pre-materialization phases, an empty path while
-        # use_worktree==true is the deferred-pending state. The worktree
-        # has not been created yet and the assertion lets the boundary
-        # advance. Post-materialization phases still fail loud.
-        if phase in _PRE_MATERIALIZATION_PHASES:
-            return None
         return {
             'status': 'error',
             'error': 'worktree_unresolved',
@@ -303,9 +273,9 @@ def _check_main_dirty_drift(
 ) -> None:
     """Layer-D enforcement: raise on proper-superset main-checkout drift.
 
-    Gate 1 (boundary phase): only fires at the pre-materialization
-    (planning-phase) boundaries ``1-init`` / ``2-refine`` / ``3-outline`` /
-    ``4-plan``. Under the move-based, cwd-pinned hermetic worktree model
+    Gate 1 (boundary phase): only fires at the planning-phase boundaries
+    ``1-init`` / ``2-refine`` / ``3-outline`` / ``4-plan`` (which run on the
+    main checkout). Under the move-based, cwd-pinned hermetic worktree model
     (ADR-002 / Option 5'), phase-5 materializes the worktree and MOVES the
     plan dir in; from that point the orchestrator's cwd IS the worktree and
     the single cwd-unchanged invariant keeps it pinned there, so plan work
@@ -341,7 +311,7 @@ def _check_main_dirty_drift(
     """
     # Gate 1 — boundary phase: relaxed for phase-5+ (move model makes the
     # leak-into-main surface structurally closed); retained for phases 1-4.
-    if phase not in _PRE_MATERIALIZATION_PHASES:
+    if phase not in _PLANNING_PHASES_ON_MAIN:
         return
     # Gate 2 — worktree routing: main-checkout plans dirty main freely.
     if not _is_truthy_metadata(metadata.get('use_worktree')):
@@ -392,7 +362,7 @@ def cmd_capture(args: Any) -> dict[str, Any]:
     plan_id = args.plan_id
     phase = args.phase
     metadata = _load_status_metadata(plan_id)
-    worktree_error = _resolve_worktree_assertion(metadata, phase)
+    worktree_error = _resolve_worktree_assertion(metadata)
     if worktree_error is not None:
         payload = dict(worktree_error)
         payload['plan_id'] = plan_id
@@ -420,16 +390,6 @@ def cmd_capture(args: Any) -> dict[str, Any]:
             'blocking_count': exc.blocking_count,
             'blocking_types': exc.blocking_types,
             'per_type': exc.per_type,
-            'message': str(exc),
-        }
-    except WorktreeMetadataDrift as exc:
-        return {
-            'status': 'error',
-            'error': 'worktree_metadata_drift',
-            'plan_id': plan_id,
-            'phase': phase,
-            'worktree_dir': exc.worktree_dir,
-            'use_worktree': exc.use_worktree,
             'message': str(exc),
         }
     row = _row_for_capture(
@@ -514,7 +474,7 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         }
 
     metadata = _load_status_metadata(plan_id)
-    worktree_error = _resolve_worktree_assertion(metadata, phase)
+    worktree_error = _resolve_worktree_assertion(metadata)
     if worktree_error is not None:
         payload = dict(worktree_error)
         payload['plan_id'] = plan_id
@@ -566,20 +526,6 @@ def cmd_verify(args: Any) -> dict[str, Any]:
             'override': captured_row.get('override', False),
             'drift_count': len(diffs),
             'diffs': diffs,
-        }
-    except WorktreeMetadataDrift as exc:
-        # Inverse-direction worktree drift: an orphan worktree directory
-        # exists on disk while metadata claims no worktree is in use.
-        # Surfaced as a hard error (not drift) because there is nothing
-        # for the operator to compare against — the metadata is wrong.
-        return {
-            'status': 'error',
-            'error': 'worktree_metadata_drift',
-            'plan_id': plan_id,
-            'phase': phase,
-            'worktree_dir': exc.worktree_dir,
-            'use_worktree': exc.use_worktree,
-            'message': str(exc),
         }
 
     # Layer-D enforcement (filesystem-state-based): proper-superset drift
@@ -671,7 +617,7 @@ def cmd_findings_check(args: Any) -> dict[str, Any]:
     plan_id = args.plan_id
     phase = args.phase
     metadata = _load_status_metadata(plan_id)
-    worktree_error = _resolve_worktree_assertion(metadata, phase)
+    worktree_error = _resolve_worktree_assertion(metadata)
     if worktree_error is not None:
         payload = dict(worktree_error)
         payload['plan_id'] = plan_id

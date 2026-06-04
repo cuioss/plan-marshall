@@ -392,7 +392,6 @@ def cmd_baseline_reconcile(args) -> dict:
     auto_reconciled = False
     merge_commit_sha: str | None = None
     merge_failure_paths: list[str] = []
-    reconciled_modified_files_count: int | None = None
     if classification == 'overlap_no_content_conflict':
         merge_rc, merge_stdout, merge_stderr = run_git(
             ['-C', worktree_path, 'merge', f'origin/{base_branch}', '--no-edit']
@@ -419,37 +418,6 @@ def cmd_baseline_reconcile(args) -> dict:
                     f'Focused reconcile auto-resolved overlap_no_content_conflict drift '
                     f'(merged origin/{base_branch} into HEAD): {commit_subjects}',
                 )
-
-            # Reconcile references.modified_files against the post-merge
-            # plan-branch-only diff so the absorbed upstream content does not
-            # pollute the ledger. The absorb merge has already succeeded; a
-            # reconcile failure (references missing / not a git worktree) is
-            # logged but MUST NOT abort the reconcile predicate.
-            try:
-                from _references_core import reconcile_modified_files  # type: ignore[import-not-found]
-
-                reconcile_result = reconcile_modified_files(
-                    plan_id, Path(worktree_path), base_branch
-                )
-            except (ImportError, OSError) as exc:
-                reconcile_result = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
-
-            if reconcile_result.get('status') == 'success':
-                reconciled_modified_files_count = reconcile_result.get('after_count')
-            else:
-                try:
-                    from plan_logging import log_entry as _recon_log  # type: ignore[import-not-found]
-                except ImportError:
-                    _recon_log = None  # type: ignore[assignment]
-                if _recon_log is not None:
-                    _recon_log(
-                        'work',
-                        plan_id,
-                        'WARNING',
-                        f'(plan-marshall:workflow-integration-git:baseline-reconcile) '
-                        f'modified_files reconcile after auto-merge did not succeed: '
-                        f'{reconcile_result.get("error", "unknown")} — absorb itself succeeded, continuing',
-                    )
         else:
             # Rare: merge-tree predicted no conflict but the real merge produced
             # one (e.g., overlapping renames). Capture the conflicting file
@@ -532,8 +500,6 @@ def cmd_baseline_reconcile(args) -> dict:
     }
     if merge_commit_sha is not None:
         payload['merge_commit_sha'] = merge_commit_sha
-    if reconciled_modified_files_count is not None:
-        payload['reconciled_modified_files_count'] = reconciled_modified_files_count
     if merge_failure_paths:
         payload['merge_failure_paths'] = merge_failure_paths
     if base_branch_updated and original_base_branch is not None:

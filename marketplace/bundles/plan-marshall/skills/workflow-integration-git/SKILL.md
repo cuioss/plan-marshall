@@ -425,7 +425,7 @@ remote_ref_warning: "remote-tracking ref refs/remotes/origin/feature/EXAMPLE-PLA
 
 ### worktree-path
 
-Resolve the persisted worktree path for a plan via `manage-status get-worktree-path`. Returns the absolute path plus an `exists` flag indicating whether the directory is currently materialized. The path is the value of `status.metadata.worktree_path` — set when the plan was created with `--use-worktree` or by a prior `worktree-create` invocation.
+Resolve the persisted worktree path for a plan via `manage-status get-worktree-path`. Returns the absolute path plus an `exists` flag indicating whether the directory is currently materialized. The path is the value of `status.metadata.worktree_path` — populated at phase-5 materialization by `worktree-create` / `prepare` (phases 1-4 record only `use_worktree`, not the path).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-path \
@@ -821,8 +821,6 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:merge_loc
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:integrate_into_main integrate \
   --plan-id PLAN_ID
 ```
-
-**Post-merge ledger reconciliation**: on the `overlap_no_content_conflict` path, after the focused `git merge origin/{base_branch} --no-edit` succeeds, the verb reconciles `references.modified_files` against the post-merge plan-branch-only diff (the shared `reconcile_modified_files` helper from `manage-references`'s `_references_core`). This recomputes the ledger from the three-dot `{base_branch}...HEAD` diff plus the porcelain working-tree state and persists the clean set, so the absorbed upstream content the merge introduced does NOT pollute the footprint that downstream finalize consumers read. The reconcile fires only on the auto-merge-success path; a reconcile failure (references not found / not a git worktree) is logged but does not abort the already-succeeded absorb. The reconciled count is surfaced in the return payload as `reconciled_modified_files_count` for observability. No reconcile fires on the `no_overlap` or `overlap_with_content_conflict` paths.
 
 ## Error Handling
 

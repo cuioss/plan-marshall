@@ -40,13 +40,13 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `--plan-id` | string | Yes | Plan identifier (kebab-case). Drives both `references.modified_files` lookup and worktree resolution via `manage-status get-worktree-path`. |
+| `--plan-id` | string | Yes | Plan identifier (kebab-case). Drives both the on-demand footprint derivation (`{base}...HEAD` ∪ porcelain, computed live from the worktree) and worktree resolution via `manage-status get-worktree-path`. |
 | `--project-dir` | path | No | Absolute path to the active git worktree (escape hatch). When omitted, the path is auto-resolved from `--plan-id`. |
 | `--base-branch` | string | No | Base branch for diff computation (default: `main`). |
 
 ### Pre-Conditions
 
-- `--plan-id` resolves to an active plan with a `references.json` carrying `modified_files`.
+- `--plan-id` resolves to an active plan whose `references.json` carries `base_branch` (used as the footprint diff anchor).
 - The resolved worktree is a valid git working tree.
 - The base branch ref resolves inside the worktree.
 
@@ -122,7 +122,7 @@ The `ext-self-review-plan-marshall` implementor's detection heuristics are docum
 
 | Condition | Output |
 |-----------|--------|
-| `references.modified_files` missing or empty | `status: success` with empty candidate lists (no diff scope) |
+| Live footprint empty (no `{base}...HEAD` ∪ porcelain changes) | `status: success` with empty candidate lists (no diff scope) |
 | Git unavailable or wrong cwd | `status: error\nerror: git_unavailable\nmessage: ...` (exit 1) |
 | Base branch not found | `status: error\nerror: base_branch_not_found\nbase_branch: {base}` (exit 1) |
 | Plan not found | `status: error\nerror: plan_not_found` (exit 1) |

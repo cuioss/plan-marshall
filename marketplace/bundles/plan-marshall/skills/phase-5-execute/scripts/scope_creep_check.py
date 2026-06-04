@@ -58,11 +58,10 @@ def _read_references(plan_dir: Path) -> dict:
 
 
 def _collect_declared_files(plan_dir: Path) -> set[str]:
-    """Collect the union of affected_files across all TASK-*.json + references.json."""
+    """Collect the union of affected_files and every TASK-*.json step target."""
     declared: set[str] = set()
     refs = _read_references(plan_dir)
     declared.update(refs.get('affected_files', []) or [])
-    declared.update(refs.get('modified_files', []) or [])
     for task_file in sorted(plan_dir.glob('TASK-*.json')):
         try:
             task = json.loads(task_file.read_text())

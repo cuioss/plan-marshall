@@ -42,9 +42,9 @@ QGATE_PHASES = PHASES[1:]  # ('2-refine', '3-outline', '4-plan', '5-execute', '6
 # once and are not duplicated elsewhere.
 #
 # `DEFAULT_BRANCH_PREFIX_WORKING` is the closed set of allowed working-branch
-# prefixes. A worktree branch is always a working branch (never `main` or
-# `dependabot/**`), so `manage-status create` validates `--worktree-branch`
-# against this set.
+# prefixes. A plan feature branch is always a working branch (never `main` or
+# `dependabot/**`); the branch-prefix validation in `marshall-steward`
+# enforces this set.
 #
 # `DEFAULT_CI_BRANCH_ALLOWLIST` is the full CI push-trigger allowlist in glob
 # form, matching `.github/workflows/python-verify.yml`'s `on.push.branches`

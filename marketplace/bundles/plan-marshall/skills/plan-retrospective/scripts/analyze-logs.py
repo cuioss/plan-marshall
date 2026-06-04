@@ -33,11 +33,16 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from _references_core import (  # type: ignore[import-not-found]
+    compute_plan_branch_diff,
+    resolve_base_ref,
+)
 from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import (  # type: ignore[import-not-found]
     add_plan_id_arg,
@@ -128,28 +133,60 @@ def resolve_logs_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
     return resolve_plan_dir(mode, plan_id, archived_plan_path) / 'logs'
 
 
-def read_modified_files(plan_dir: Path) -> list[str]:
-    """Return the ``modified_files`` list from ``references.json``.
+def resolve_footprint(plan_dir: Path) -> list[str]:
+    """Resolve the plan footprint for the ARTIFACT-coverage regression check.
 
-    A missing or unreadable references file is treated as an empty list so the
-    regression check cannot falsely fire for plans that simply never recorded
-    references. This mirrors the defensive reads elsewhere in the
-    retrospective pipeline.
+    Three-tier resolution, in order:
+
+    1. **Live diff** — when ``status.metadata.worktree_path`` resolves to a git
+       worktree on disk, derive the footprint via ``compute_plan_branch_diff``
+       (``{base}...HEAD`` ∪ porcelain).
+    2. **Legacy key** — fall back to ``references.modified_files`` when present
+       (archived plans created before the ledger was removed still carry it).
+    3. **Empty** — when neither resolves, return an empty list so the regression
+       check cannot falsely fire for plans that recorded no footprint.
+
+    A missing or unreadable references file is treated defensively, mirroring the
+    other reads in the retrospective pipeline.
     """
     references_path = plan_dir / 'references.json'
-    if not references_path.exists():
-        return []
-    try:
-        refs = json.loads(references_path.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(
-            f'WARNING: analyze-logs failed to read references.json: {exc}',
-            file=sys.stderr,
-        )
-        return []
+    refs: dict = {}
+    if references_path.exists():
+        try:
+            loaded = json.loads(references_path.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(
+                f'WARNING: analyze-logs failed to read references.json: {exc}',
+                file=sys.stderr,
+            )
+            loaded = None
+        if isinstance(loaded, dict):
+            refs = loaded
+
+    status_path = plan_dir / 'status.json'
+    if status_path.exists():
+        try:
+            status = json.loads(status_path.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError):
+            status = {}
+        if isinstance(status, dict):
+            metadata = status.get('metadata', {})
+            if isinstance(metadata, dict):
+                worktree_path = metadata.get('worktree_path', '')
+                if isinstance(worktree_path, str) and worktree_path:
+                    worktree = Path(worktree_path)
+                    if worktree.is_dir():
+                        base_ref = resolve_base_ref(None, refs)
+                        try:
+                            return sorted(compute_plan_branch_diff(worktree, base_ref))
+                        except subprocess.CalledProcessError:
+                            pass  # fall through to the legacy-key read
+
     raw = refs.get('modified_files', [])
     if isinstance(raw, str):
         raw = [raw]
+    if not isinstance(raw, list):
+        return []
     return [str(p).strip() for p in raw if p]
 
 
@@ -673,13 +710,13 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # Build slowest-scripts list deterministically: sort by duration desc, then notation.
     slowest = sorted(durations, key=lambda x: (-x[1], x[0]))[:3]
 
-    modified_files = read_modified_files(plan_dir)
+    footprint = resolve_footprint(plan_dir)
     findings: list[dict[str, str]] = []
-    if modified_files and artifact_entries == 0:
+    if footprint and artifact_entries == 0:
         findings.append(
             {
                 'severity': 'error',
-                'message': (f'ARTIFACT entries missing: modified_files={len(modified_files)} but artifact_entries=0'),
+                'message': (f'ARTIFACT entries missing: footprint={len(footprint)} but artifact_entries=0'),
             }
         )
 

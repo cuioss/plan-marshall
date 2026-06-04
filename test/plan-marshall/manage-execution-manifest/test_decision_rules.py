@@ -6,6 +6,8 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from conftest import PlanContext
 
 # =============================================================================
@@ -100,14 +102,16 @@ def _seed_marshal(ci_provider: str | None = 'github') -> Path:
     return marshal_path
 
 
-def _seed_references(plan_id: str, modified_files: list[str]) -> None:
-    """Write a minimal references.json with the given modified_files for the plan."""
-    from file_ops import get_plan_dir  # type: ignore[import-not-found]
+def _stub_footprint(footprint: list[str]) -> None:
+    """Stub ``_resolve_footprint`` so the activation pre-filter sees the given set.
 
-    plan_dir = get_plan_dir(plan_id)
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    refs_path = plan_dir / 'references.json'
-    refs_path.write_text(json.dumps({'modified_files': modified_files}, indent=2))
+    The ``pre_submission_self_review_inactive`` pre-filter now derives the live
+    plan footprint on demand via ``compute_plan_branch_diff`` rather than reading
+    a seeded ``references.modified_files`` ledger. Tests inject the footprint by
+    replacing the module-level resolver; the autouse fixture on
+    ``TestPreSubmissionSelfReviewInactive`` restores the original after each test.
+    """
+    _mem._resolve_footprint = lambda plan_id: list(footprint)
 
 
 # =============================================================================
@@ -115,12 +119,25 @@ def _seed_references(plan_id: str, modified_files: list[str]) -> None:
 # =============================================================================
 
 
-class TestPreSubmissionSelfReviewInactive:
-    """Pre-filter drops the step when modified_files is empty; no-op otherwise."""
+@pytest.fixture(autouse=True)
+def _restore_footprint_resolver():
+    """Restore ``_resolve_footprint`` after any test that stubbed it.
 
-    def test_drops_step_when_modified_files_empty(self, plan_context):
+    ``_stub_footprint`` replaces the module-level resolver in-place; this
+    module-scoped autouse fixture snapshots and restores it so a stub installed
+    by one test never leaks into the next.
+    """
+    original = _mem._resolve_footprint
+    yield
+    _mem._resolve_footprint = original
+
+
+class TestPreSubmissionSelfReviewInactive:
+    """Pre-filter drops the step when the live footprint is empty; no-op otherwise."""
+
+    def test_drops_step_when_footprint_empty(self, plan_context):
         _seed_marshal(ci_provider=None)
-        _seed_references('qg-self-review-empty', [])
+        _stub_footprint([])
 
         ns = _compose_ns(plan_id='qg-self-review-empty')
         result = cmd_compose(ns)
@@ -130,9 +147,9 @@ class TestPreSubmissionSelfReviewInactive:
         assert result['pre_submission_self_review_omitted'] is True
         assert 'pre-submission-self-review' not in result_phase_6_steps(result)
 
-    def test_keeps_step_when_modified_files_non_empty(self, plan_context):
+    def test_keeps_step_when_footprint_non_empty(self, plan_context):
         _seed_marshal(ci_provider=None)
-        _seed_references('qg-self-review-active', ['marketplace/bundles/x/skills/y/SKILL.md'])
+        _stub_footprint(['marketplace/bundles/x/skills/y/SKILL.md'])
 
         ns = _compose_ns(plan_id='qg-self-review-active')
         result = cmd_compose(ns)
@@ -144,7 +161,7 @@ class TestPreSubmissionSelfReviewInactive:
 
     def test_commit_strategy_none_strips_self_review(self, plan_context):
         _seed_marshal(ci_provider=None)
-        _seed_references('qg-self-review-no-push', ['some/file.py'])
+        _stub_footprint(['some/file.py'])
 
         ns = _compose_ns(plan_id='qg-self-review-no-push', commit_strategy='none')
         result = cmd_compose(ns)
@@ -177,7 +194,7 @@ class TestBotEnforcementGuard:
 
     def test_remediates_for_github_when_automated_review_missing(self, plan_context):
         _seed_marshal(ci_provider='github')
-        _seed_references('qg-bot-github', ['some/file.py'])
+        _stub_footprint(['some/file.py'])
 
         # Compose a candidate set that EXCLUDES automated-review.
         phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
@@ -193,7 +210,7 @@ class TestBotEnforcementGuard:
 
     def test_remediates_for_gitlab_when_automated_review_missing(self, plan_context):
         _seed_marshal(ci_provider='gitlab')
-        _seed_references('qg-bot-gitlab', ['some/file.py'])
+        _stub_footprint(['some/file.py'])
 
         phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
         ns = _compose_ns(plan_id='qg-bot-gitlab', phase_6_steps=phase_6)
@@ -207,7 +224,7 @@ class TestBotEnforcementGuard:
 
     def test_no_op_when_automated_review_present(self, plan_context):
         _seed_marshal(ci_provider='github')
-        _seed_references('qg-bot-present', ['some/file.py'])
+        _stub_footprint(['some/file.py'])
 
         ns = _compose_ns(plan_id='qg-bot-present')
         result = cmd_compose(ns)
@@ -218,7 +235,7 @@ class TestBotEnforcementGuard:
 
     def test_no_op_for_non_github_non_gitlab(self, plan_context):
         _seed_marshal(ci_provider=None)
-        _seed_references('qg-bot-other', ['some/file.py'])
+        _stub_footprint(['some/file.py'])
 
         phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
         ns = _compose_ns(plan_id='qg-bot-other', phase_6_steps=phase_6)
