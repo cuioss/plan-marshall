@@ -14,6 +14,8 @@ import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from conftest import get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
@@ -37,6 +39,48 @@ _spec.loader.exec_module(_mod)
 handle_read = _mod.handle_read
 handle_write = _mod.handle_write
 handle_separator = _mod.handle_separator
+
+
+@pytest.fixture(autouse=True)
+def _seed_status_sentinel(plan_context, monkeypatch):
+    """Seed a ``status.json`` sentinel into every plan dir these tests touch.
+
+    ``get_log_path`` resolves plan-scoped logging ONLY when the plan dir carries
+    a ``status.json`` sentinel; without it the logging silently falls back to the
+    global log. Every test in this file exercises plan-scoped logging, so the
+    sentinel must exist before each ``handle_write`` / ``handle_read`` call.
+
+    Two seeding paths are needed because plan dirs are resolved two ways:
+
+    * Tests that call ``plan_context.plan_dir_for(plan_id)`` directly — wrap that
+      method so it also writes the sentinel.
+    * Tests that only pass a ``plan_id`` string into ``handle_write`` /
+      ``handle_read`` (the read round-trip tests) — the logging script computes
+      ``get_plans_dir() / plan_id`` itself and never calls ``plan_dir_for``, so
+      pre-create+seed those plan dirs eagerly. ``get_plans_dir()`` resolves to
+      ``plan_context.plans_dir`` under the fixture's ``PLAN_BASE_DIR`` patch.
+    """
+
+    def _seed(plan_dir: Path) -> None:
+        sentinel = plan_dir / 'status.json'
+        if not sentinel.exists():
+            sentinel.write_text('{}', encoding='utf-8')
+
+    _orig = plan_context.plan_dir_for
+
+    def _seeding(plan_id):
+        d = _orig(plan_id)
+        _seed(d)
+        return d
+
+    monkeypatch.setattr(plan_context, 'plan_dir_for', _seeding)
+
+    # Read round-trip tests pass these plan_ids straight into handle_write/
+    # handle_read without ever calling plan_dir_for, so seed them eagerly.
+    for plan_id in ('log-read-work', 'log-read-limit', 'log-read-empty', 'log-read-script'):
+        d = plan_context.plans_dir / plan_id
+        d.mkdir(parents=True, exist_ok=True)
+        _seed(d)
 
 
 def read_log_file(plan_dir: Path, log_type: str) -> str:

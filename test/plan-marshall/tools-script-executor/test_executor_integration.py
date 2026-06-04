@@ -551,10 +551,12 @@ def test_plan_scoped_log_when_plan_exists():
     """Plan-scoped log is used when --plan-id provided and plan exists."""
     env = get_test_env()
 
-    # Create a fake plan directory
+    # Create a fake plan directory with status.json sentinel so
+    # get_log_path() treats it as an initialized plan (not a bare orphan).
     plan_id = 'test-integration-plan'
     plan_dir = env.plan_dir / 'plans' / plan_id
     plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
 
     try:
         env.clear_logs()

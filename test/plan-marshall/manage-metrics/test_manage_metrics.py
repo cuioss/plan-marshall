@@ -109,6 +109,81 @@ def _pin_start_time_to_past(plan_id: str, phase: str) -> None:
 
 
 # =============================================================================
+# require_plan_exists guard fixtures
+# =============================================================================
+#
+# TASK-1 added a require_plan_exists guard to every plan-scoped writer in
+# manage-metrics.py (start-phase, end-phase, generate, phase-boundary,
+# accumulate-agent-usage, enrich). The guard returns ``error: plan_not_found``
+# unless the plan directory carries a ``status.json`` sentinel. The
+# ``plan_context`` fixture creates plan dirs without that sentinel, so every
+# positive test below would otherwise trip the guard.
+#
+# The autouse fixture below patches ``manage_metrics.require_plan_exists`` so
+# that, during these tests, it auto-materialises the ``status.json`` sentinel for
+# any plan whose dir exists but is not explicitly registered as "unseeded". This
+# is the real guard chokepoint — it fires regardless of whether a test resolves
+# its plan dir before or after calling the writer. Guard-negative tests register
+# their plan_id via ``_register_unseeded`` so the patched guard lets the genuine
+# ``plan_not_found`` branch run.
+
+_UNSEEDED_PLAN_IDS: set[str] = set()
+
+
+@pytest.fixture(autouse=True)
+def _seed_guarded_plan_dirs(plan_context, monkeypatch):
+    """Auto-seed ``status.json`` at the require_plan_exists chokepoint.
+
+    The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
+    any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
+    before delegating to the genuine ``require_plan_exists``. This keeps every
+    positive test's happy path intact without per-test seeding, while the
+    negative tests (which call ``_register_unseeded``) still exercise the real
+    ``plan_not_found`` failure.
+    """
+    _UNSEEDED_PLAN_IDS.clear()
+    real_require = manage_metrics.require_plan_exists
+    real_get_plan_dir = manage_metrics.get_plan_dir
+
+    def _seeding_require(plan_id):
+        if plan_id not in _UNSEEDED_PLAN_IDS:
+            plan_dir = real_get_plan_dir(plan_id)
+            plan_dir.mkdir(parents=True, exist_ok=True)
+            sentinel = plan_dir / 'status.json'
+            if not sentinel.is_file():
+                sentinel.write_text('{}', encoding='utf-8')
+        return real_require(plan_id)
+
+    monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
+    return plan_context
+
+
+def _register_unseeded(plan_id: str) -> str:
+    """Mark ``plan_id`` so the autouse guard-seeder leaves it un-sentinelled.
+
+    Returns the plan_id for inline use. Negative guard tests call this so the
+    patched ``require_plan_exists`` runs its genuine ``plan_not_found`` branch.
+    """
+    _UNSEEDED_PLAN_IDS.add(plan_id)
+    return plan_id
+
+
+def _unseeded_plan_dir(plan_context, plan_id: str) -> Path:
+    """Create a plan dir WITHOUT the ``status.json`` sentinel (orphan plan dir).
+
+    Goes straight to ``plans_dir`` (bypassing any seeding helper) so the guard's
+    ``plan_not_found`` branch fires. Asserts the sentinel is absent to keep the
+    negative tests honest if the seeding policy ever changes. The returned path
+    equals ``manage_metrics.get_plan_dir(plan_id)`` under the ``plan_context``
+    ``PLAN_BASE_DIR`` redirect, so it matches the ``plan_dir`` the guard reports.
+    """
+    plan_dir = plan_context.plans_dir / plan_id
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    assert not (plan_dir / 'status.json').exists(), 'negative test requires an unseeded plan dir'
+    return plan_dir
+
+
+# =============================================================================
 # Test: start-phase (Tier 2 - direct import)
 # =============================================================================
 
@@ -473,6 +548,10 @@ def test_cli_start_phase_roundtrip(plan_context):
     """CLI plumbing: start-phase subcommand produces TOON output via subprocess."""
     from toon_parser import parse_toon
 
+    # The subprocess runs the REAL require_plan_exists guard (the autouse
+    # in-process monkeypatch does not reach a child process), so the plan must
+    # carry a status.json sentinel on disk before the call.
+    (plan_context.plan_dir_for('cli-plumb-01') / 'status.json').write_text('{}', encoding='utf-8')
     result = run_script(SCRIPT_PATH, 'start-phase', '--plan-id', 'cli-plumb-01', '--phase', '1-init')
     assert result.success, f'Script failed: {result.stderr}'
     parsed = parse_toon(result.stdout)
@@ -484,6 +563,9 @@ def test_cli_generate_roundtrip(plan_context):
     """CLI plumbing: generate subcommand produces TOON output via subprocess."""
     from toon_parser import parse_toon
 
+    # Seed the status.json sentinel on disk: the subprocess runs the real
+    # require_plan_exists guard (the autouse monkeypatch is in-process only).
+    (plan_context.plan_dir_for('cli-plumb-02') / 'status.json').write_text('{}', encoding='utf-8')
     run_script(SCRIPT_PATH, 'start-phase', '--plan-id', 'cli-plumb-02', '--phase', '1-init')
     run_script(SCRIPT_PATH, 'end-phase', '--plan-id', 'cli-plumb-02', '--phase', '1-init')
     result = run_script(SCRIPT_PATH, 'generate', '--plan-id', 'cli-plumb-02')
@@ -1172,6 +1254,123 @@ class TestRecordDispatchBoundaryLegacyCausesStillPass:
         artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
         assert artifact.exists()
         assert f',{cause},' in artifact.read_text(encoding='utf-8')
+
+
+# =============================================================================
+# Test: require_plan_exists guard on plan-scoped writers (orphan-plan-dir guard)
+# =============================================================================
+
+
+def _ns_phase_boundary(
+    plan_id: str,
+    prev_phase: str,
+    next_phase: str,
+    total_tokens: int | None = None,
+    tool_uses: int | None = None,
+    duration_ms: int | None = None,
+) -> Namespace:
+    """Build Namespace for phase-boundary command."""
+    return Namespace(
+        plan_id=plan_id,
+        prev_phase=prev_phase,
+        next_phase=next_phase,
+        total_tokens=total_tokens,
+        tool_uses=tool_uses,
+        duration_ms=duration_ms,
+        command='phase-boundary',
+        func=manage_metrics.cmd_phase_boundary,
+    )
+
+
+class TestPlanDirGuardOnWriters:
+    """Each plan-scoped writer returns ``plan_not_found`` for an uninitialised plan dir.
+
+    TASK-1 routed every plan-scoped writer through ``_guard_plan_exists``, which
+    calls ``require_plan_exists`` and converts ``PlanNotFoundError`` into a
+    structured ``error: plan_not_found`` envelope instead of silently creating an
+    orphan plan tree. These tests assert the guard fires — and the envelope shape
+    is uniform — for each guarded command when the plan dir exists but carries no
+    ``status.json`` sentinel (the canonical orphan-plan-dir shape).
+
+    The writers all run their argument validation (phase-name / cause checks)
+    BEFORE the guard, so each invocation below uses valid phase names to reach the
+    guard branch.
+    """
+
+    # (label, callable building the result from an unseeded plan_id) for every
+    # writer routed through _guard_plan_exists in manage-metrics.py.
+    _GUARDED_WRITERS = [
+        ('start-phase', lambda pid: cmd_start_phase(_ns_start_phase(pid, '1-init'))),
+        ('end-phase', lambda pid: cmd_end_phase(_ns_end_phase(pid, '1-init'))),
+        ('generate', lambda pid: cmd_generate(_ns_generate(pid))),
+        (
+            'phase-boundary',
+            lambda pid: manage_metrics.cmd_phase_boundary(
+                _ns_phase_boundary(pid, '4-plan', '5-execute')
+            ),
+        ),
+        (
+            'accumulate-agent-usage',
+            lambda pid: cmd_accumulate_agent_usage(
+                _ns_accumulate(pid, '5-execute', total_tokens=10)
+            ),
+        ),
+        ('enrich', lambda pid: cmd_enrich(_ns_enrich(pid, 'any-session'))),
+    ]
+
+    @pytest.mark.parametrize(
+        'label,invoke',
+        _GUARDED_WRITERS,
+        ids=[label for label, _ in _GUARDED_WRITERS],
+    )
+    def test_writer_returns_plan_not_found_for_orphan_plan_dir(
+        self, plan_context, label, invoke
+    ):
+        """An orphan plan dir (exists, no status.json) yields error: plan_not_found."""
+        plan_id = _register_unseeded(f'guard-orphan-{label}')
+        plan_dir = _unseeded_plan_dir(plan_context, plan_id)
+
+        result = invoke(plan_id)
+
+        assert result['status'] == 'error', result
+        assert result['error'] == 'plan_not_found', result
+        assert result['plan_id'] == plan_id
+        # The envelope surfaces the resolved plan dir and a human-readable message.
+        assert str(plan_dir) == result['plan_dir']
+        assert 'status.json' in str(result['message'])
+
+        # The guard must NOT have created any metrics artifact for the orphan plan.
+        assert not (plan_dir / 'work' / 'metrics.toon').exists()
+
+    @pytest.mark.parametrize(
+        'label,invoke',
+        _GUARDED_WRITERS,
+        ids=[label for label, _ in _GUARDED_WRITERS],
+    )
+    def test_writer_returns_plan_not_found_when_plan_dir_absent(
+        self, plan_context, label, invoke
+    ):
+        """A plan_id whose dir was never created also trips the guard."""
+        plan_id = _register_unseeded(f'guard-absent-{label}')
+        # Deliberately do NOT create the directory — the guard must reject it.
+
+        result = invoke(plan_id)
+
+        assert result['status'] == 'error', result
+        assert result['error'] == 'plan_not_found', result
+        assert result['plan_id'] == plan_id
+
+    def test_writer_succeeds_once_status_json_is_seeded(self, plan_context):
+        """Control case: seeding the sentinel flips the same writer back to success.
+
+        Guards the negative tests against a false positive — the failure must come
+        from the missing sentinel, not from an unrelated error in the writer path.
+        """
+        plan_id = 'guard-positive-control'
+        # Seeded via the autouse fixture (plan_id is not registered as unseeded).
+        result = cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
+        assert result['status'] == 'success', result
+        assert result['phase'] == '1-init'
 
 
 def test_script_source_uses_canonical_local_plans_path():

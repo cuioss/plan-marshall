@@ -167,6 +167,33 @@ def _resolve_token_field(arg_value: int | None, accumulator: dict[str, int], key
     return None
 
 
+def _guard_plan_exists(plan_id: str) -> dict | None:
+    """Return a ``plan_not_found`` error dict when the plan dir is uninitialised.
+
+    Plan-scoped writers in this module reach the plan directory through
+    ``get_plan_dir`` and then ``mkdir(parents=True, ...)`` (directly or via
+    ``atomic_write_file``). Without this guard a stray ``--plan-id`` for a plan
+    that phase-1 never initialised silently creates an orphan plan tree just to
+    hold a metrics artifact. Calling ``require_plan_exists`` first turns that
+    silent side effect into a structured error.
+
+    Returns ``None`` when the plan exists (caller proceeds); returns the error
+    dict to be emitted verbatim when it does not. The error shape mirrors
+    ``cmd_record_dispatch_boundary`` so every writer reports the same contract.
+    """
+    try:
+        require_plan_exists(plan_id)
+    except PlanNotFoundError as exc:
+        return {
+            'status': 'error',
+            'error': 'plan_not_found',
+            'message': str(exc),
+            'plan_id': plan_id,
+            'plan_dir': str(exc.plan_dir),
+        }
+    return None
+
+
 def _coerce_numeric(value: object) -> int | float | str:
     """Try to coerce a value to int, then float, falling back to the original value."""
     if not isinstance(value, str):
@@ -269,6 +296,10 @@ def cmd_start_phase(args: argparse.Namespace) -> dict:
             'message': f'Invalid phase: {phase}. Must be one of: {", ".join(PHASE_NAMES)}',
         }
 
+    guard_error = _guard_plan_exists(plan_id)
+    if guard_error is not None:
+        return guard_error
+
     data = read_metrics_raw(plan_id)
     now = now_utc_iso()
 
@@ -312,6 +343,10 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
 
     if phase not in PHASE_NAMES:
         return {'status': 'error', 'error': 'invalid_phase', 'message': f'Invalid phase: {phase}'}
+
+    guard_error = _guard_plan_exists(plan_id)
+    if guard_error is not None:
+        return guard_error
 
     data = read_metrics_raw(plan_id)
     now = now_utc_iso()
@@ -430,6 +465,10 @@ def _worked_ms(phase: dict) -> int:
 
 def cmd_generate(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
+
+    guard_error = _guard_plan_exists(plan_id)
+    if guard_error is not None:
+        return guard_error
 
     data = read_metrics_raw(plan_id)
     phases = data.get('phases', {})
@@ -834,6 +873,10 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
             'message': f'Invalid next_phase: {next_phase}. Must be one of: {", ".join(PHASE_NAMES)}',
         }
 
+    guard_error = _guard_plan_exists(plan_id)
+    if guard_error is not None:
+        return guard_error
+
     # Step 1: end the previous phase (mirrors cmd_end_phase semantics).
     data = read_metrics_raw(plan_id)
     end_now = now_utc_iso()
@@ -945,6 +988,10 @@ def cmd_accumulate_agent_usage(args: argparse.Namespace) -> dict:
             'message': f'Invalid phase: {phase}. Must be one of: {", ".join(PHASE_NAMES)}',
         }
 
+    guard_error = _guard_plan_exists(plan_id)
+    if guard_error is not None:
+        return guard_error
+
     existing = _read_accumulator(plan_id, phase)
     totals = {
         'total_tokens': int(existing.get('total_tokens', 0)),
@@ -1024,16 +1071,9 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     # plan directory does not exist (and was never initialised by phase-1).
     # Without this guard the `path.parent.mkdir(parents=True, ...)` below
     # silently creates an orphan plan tree just to hold the boundaries file.
-    try:
-        require_plan_exists(plan_id)
-    except PlanNotFoundError as exc:
-        return {
-            'status': 'error',
-            'error': 'plan_not_found',
-            'message': str(exc),
-            'plan_id': plan_id,
-            'plan_dir': str(exc.plan_dir),
-        }
+    guard_error = _guard_plan_exists(plan_id)
+    if guard_error is not None:
+        return guard_error
 
     path = _dispatch_boundary_path(plan_id, phase)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1399,6 +1439,10 @@ def cmd_compare_anchor(args: argparse.Namespace) -> dict:
 def cmd_enrich(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
     session_id = args.session_id
+
+    guard_error = _guard_plan_exists(plan_id)
+    if guard_error is not None:
+        return guard_error
 
     # Find JSONL transcript file
     projects_dir = Path.home() / '.claude' / 'projects'
