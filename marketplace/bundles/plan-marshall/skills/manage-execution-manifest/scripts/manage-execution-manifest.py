@@ -32,6 +32,7 @@ from _references_core import (  # type: ignore[import-not-found]
 from constants import FILE_REFERENCES, FILE_STATUS  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
+    get_executor_path,
     get_marshal_path,
     get_plan_dir,
     output_toon,
@@ -400,6 +401,51 @@ def _read_task_queue_active(plan_id: str) -> bool:
     return False
 
 
+def _read_recipe_source(plan_id: str) -> str | None:
+    """Resolve the recipe / lesson provenance surrogate from status metadata.
+
+    ``phase-1-init`` seeds ``status.metadata.plan_source`` with the raw lesson
+    id for lesson-derived plans (Step 5b.5) or the literal string ``"recipe"``
+    for recipe-routed plans (Step 5c, which also sets ``recipe_key``). Either
+    value is the Row 2 recipe signal.
+
+    The composer reads this surrogate directly so recipe / lesson provenance no
+    longer depends on the ``phase-4-plan`` agent remembering to forward
+    ``--recipe-key`` from ``manage-status read`` — the gap the archived-plan
+    audit surfaced as recipe→default drift (lesson/recipe plans composing the
+    ``default`` rule because the flag was omitted). This mirrors the audit's own
+    surrogate (``audit-archived-plan-retrospectives/scripts/audit.py``
+    ``collect_inputs``: a non-empty ``plan_source`` is treated as ``recipe_key``
+    for matrix purposes). An explicit ``--recipe-key`` argument still takes
+    precedence at the call site in :func:`cmd_compose`.
+
+    Returns the trimmed provenance string, or ``None`` when ``status.json`` is
+    absent or its metadata carries no ``plan_source`` / ``recipe_key``.
+    """
+    status_path = get_plan_dir(plan_id) / FILE_STATUS
+    if not status_path.exists():
+        return None
+    # Best-effort: a malformed status.json must degrade to "no provenance"
+    # rather than crash compose. read_json returns its default only for a
+    # missing file, so a corrupt-but-present file raises here — mirror the
+    # OSError / JSONDecodeError guard used by _read_task_queue_active and
+    # _read_ci_provider in this module.
+    try:
+        status = read_json(status_path, default={})
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(status, dict):
+        return None
+    metadata = status.get('metadata', {})
+    if not isinstance(metadata, dict):
+        return None
+    for field in ('plan_source', 'recipe_key'):
+        value = metadata.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _read_bundle_change_paths(plan_id: str) -> list[str]:
     """Read the union of bundle change paths from references.json + solution outline.
 
@@ -671,48 +717,48 @@ def _safe_domain_key(ext: Any) -> str:
 
 
 def _resolve_executor() -> Path | None:
-    """Locate ``.plan/execute-script.py`` by walking up from this script.
+    """Locate ``.plan/execute-script.py`` via the canonical cwd-relative resolver.
 
-    Mirrors the bootstrap pattern in ``file_ops.py``. Returns ``None`` if no
-    executor sibling is found (e.g. running under an exotic test fixture).
+    Delegates to ``file_ops.get_executor_path`` (the ADR-002 uniform cwd rule:
+    the executor lives under the ``.plan`` dir of whichever checkout the working
+    directory is in) instead of walking up from ``__file__``. The composer is
+    dispatched from the plugin cache (``~/.claude/plugins/cache/...``), which
+    lives OUTSIDE the project tree, so a ``__file__`` walk never found the
+    executor — silently breaking the ``execution_tier`` routing that
+    subprocesses ``architecture resolve`` through it. Returns ``None`` when the
+    plan root is unresolvable or the executor file is absent (e.g. an exotic
+    test fixture), which the caller treats as "non-build / unroutable".
     """
-    here = Path(__file__).resolve()
-    for ancestor in here.parents:
-        candidate = ancestor / '.plan' / 'execute-script.py'
-        if candidate.is_file():
-            return candidate
-    return None
+    try:
+        executor = get_executor_path()
+    except RuntimeError:
+        return None
+    return executor if executor.is_file() else None
 
 
 def _emit_decision_log(plan_id: str, message: str) -> None:
-    """Best-effort decision-log emission via the executor.
+    """Best-effort decision-log emission via a direct in-process write.
 
     Logging is non-load-bearing — manifest content is the contract — so any
-    executor lookup miss or subprocess error is swallowed silently.
+    import or write error is swallowed silently.
+
+    The entry is written through ``plan_logging.log_entry`` directly rather than
+    shelling back out to ``.plan/execute-script.py``. The composer is dispatched
+    from the plugin cache (``~/.claude/plugins/cache/...``), which lives outside
+    the project tree, so the former ``_resolve_executor`` walk up from
+    ``__file__`` never resolved the executor and silently dropped every compose
+    decision-log line — the ``unloggable`` regression the archived-plan audit
+    surfaced. The direct write resolves the plan dir via the same
+    ``file_ops.get_base_dir()`` the manifest write uses, so the line always
+    lands in the plan's own ``logs/decision.log`` alongside ``execution.toon``.
+    ``plan_logging`` is on ``PYTHONPATH`` (the executor injects every skill's
+    scripts dir; the test conftest does the same).
     """
-    executor = _resolve_executor()
-    if executor is None:
-        return
     try:
-        subprocess.run(
-            [
-                sys.executable,
-                str(executor),
-                'plan-marshall:manage-logging:manage-logging',
-                'decision',
-                '--plan-id',
-                plan_id,
-                '--level',
-                'INFO',
-                '--message',
-                message,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (subprocess.SubprocessError, OSError):
+        from plan_logging import log_entry  # type: ignore[import-not-found]
+
+        log_entry('decision', plan_id, 'INFO', message)
+    except Exception:
         return
 
 
@@ -1780,7 +1826,11 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     )
 
     affected_files_count = max(0, int(args.affected_files_count or 0))
-    recipe_key = args.recipe_key or None
+    # Recipe / lesson provenance: an explicit --recipe-key wins; otherwise read
+    # status.metadata.plan_source directly so lesson/recipe-derived plans fire
+    # Row 2 even when the phase-4-plan agent omitted the flag. See
+    # _read_recipe_source and standards/decision-rules.md § Row 2.
+    recipe_key = args.recipe_key or _read_recipe_source(plan_id)
     task_queue_active = _read_task_queue_active(plan_id)
 
     # Pre-filter 4 (simplify_inactive) consults change_type + affected_files_count,

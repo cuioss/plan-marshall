@@ -91,7 +91,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--change-type` (required): `analysis|feature|enhancement|bug_fix|tech_debt|verification`
 - `--track` (required): `simple|complex` — outline track from phase-3-outline
 - `--scope-estimate` (required): `none|surgical|single_module|multi_module|broad` — from solution outline metadata (deliverable 2)
-- `--recipe-key` (optional): If the plan was generated via a recipe (e.g., `lesson_cleanup`)
+- `--recipe-key` (optional override): Forces the `recipe` rule. When omitted, the composer reads the provenance itself from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`), so lesson- and recipe-derived plans select the `recipe` rule without the caller forwarding this flag.
 - `--affected-files-count` (optional, default 0): Count of affected files surfaced by the outline; used by the `early_terminate` rule
 - `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs from `marshal.json` (e.g., `quality-gate,module-tests,coverage`). The decision matrix selects a subset. If omitted, defaults to `quality-gate,module-tests`.
 - `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `commit-push,create-pr,automated-review,sonar-roundtrip,lessons-capture,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
@@ -302,7 +302,7 @@ The seven-row decision matrix is documented in [standards/decision-rules.md](sta
 - The subset of `phase_5.verification_steps` chosen from the candidate set
 - The subset of `phase_6.steps` chosen from the candidate set
 
-For each rule fired, `compose` emits one `decision.log` entry via `manage-logging decision` with the canonical prefix `(plan-marshall:manage-execution-manifest:compose)` and the rule name. This satisfies the request example "one entry per decision".
+For each rule fired, `compose` emits one `decision.log` entry — written in-process via `plan_logging.log_entry` (NOT by shelling back out to the executor) — with the canonical prefix `(plan-marshall:manage-execution-manifest:compose)` and the rule name. The in-process write resolves the plan dir the same way the manifest write does, so the line always lands in the plan's own `logs/decision.log`; the prior executor-subprocess path silently dropped every line because the composer runs from the plugin cache, outside the project tree where `.plan/execute-script.py` lives. This satisfies the request example "one entry per decision".
 
 ### Scope-gated phase-6 filtering (`scope_gated_finalize`)
 
