@@ -425,7 +425,15 @@ def _read_recipe_source(plan_id: str) -> str | None:
     status_path = get_plan_dir(plan_id) / FILE_STATUS
     if not status_path.exists():
         return None
-    status = read_json(status_path, default={})
+    # Best-effort: a malformed status.json must degrade to "no provenance"
+    # rather than crash compose. read_json returns its default only for a
+    # missing file, so a corrupt-but-present file raises here — mirror the
+    # OSError / JSONDecodeError guard used by _read_task_queue_active and
+    # _read_ci_provider in this module.
+    try:
+        status = read_json(status_path, default={})
+    except (OSError, json.JSONDecodeError):
+        return None
     if not isinstance(status, dict):
         return None
     metadata = status.get('metadata', {})

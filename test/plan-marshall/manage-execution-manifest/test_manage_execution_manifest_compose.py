@@ -896,6 +896,30 @@ def test_read_recipe_source_unit(plan_context):
     assert read_recipe_source('rrs-blank') is None
 
 
+def test_read_recipe_source_malformed_status_degrades_to_none(plan_context):
+    """A corrupt-but-present status.json degrades to None instead of crashing."""
+    plan_dir = plan_context.plan_dir_for('rrs-malformed')
+    (plan_dir / 'status.json').write_text('{ this is not: valid json', encoding='utf-8')
+    assert _mem._read_recipe_source('rrs-malformed') is None
+
+
+def test_compose_tolerates_malformed_status_json(plan_context):
+    """compose still succeeds (Row 7) when status.json cannot be parsed."""
+    plan_id = 'compose-malformed-status'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'status.json').write_text('not json at all', encoding='utf-8')
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='feature',
+            scope_estimate='multi_module',
+            recipe_key=None,
+            affected_files_count=4,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'default'
+
+
 # =============================================================================
 # Decision-log emission lands in the plan's own logs/decision.log (loggability fix)
 # =============================================================================
