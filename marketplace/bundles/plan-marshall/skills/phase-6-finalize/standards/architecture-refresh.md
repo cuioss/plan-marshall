@@ -207,12 +207,35 @@ With `affected_modules` non-empty and `change_type` not in the shortcut list, di
 
 #### `disabled` — note in PR and exit
 
-The user has chosen to never re-enrich automatically. Append a note to the PR body so a future contributor (or `/marshall-steward` Step 13) knows enrichment is pending:
+The user has chosen to never re-enrich automatically. Record a note in the PR body so a future contributor (or `/marshall-steward` Step 13) knows enrichment is pending. There is no atomic append verb on the `ci` surface — `pr edit` REPLACES the body from a prepared scratch file. The pattern is therefore: allocate a scratch body path with `prepare-body --for edit`, write the combined body (existing body + the re-enrichment note) into that path, then `pr edit` to push it.
+
+`{pr_number}` is the PR number resolved earlier in finalize by the `create-pr` step's outcome record.
+
+First read the current PR body so the note is appended rather than overwriting it (`pr view` is branch-identified — pass `--head {worktree_branch}`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-  pr append-body --project-dir {worktree_path} \
-  --text "Architecture re-enrichment recommended for: {affected_modules_csv}. Run /marshall-steward Step 13 to refresh."
+  pr view --head {worktree_branch}
+```
+
+Allocate the scratch body path (the call returns the `body_path` to write into):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+  pr prepare-body --plan-id {plan_id} --for edit
+```
+
+Write the combined content — the existing body followed by the re-enrichment note — into the returned `body_path` via the Write tool:
+
+```
+Write(file_path="{body_path}", content="{existing_body}\n\nArchitecture re-enrichment recommended for: {affected_modules_csv}. Run /marshall-steward Step 13 to refresh.")
+```
+
+Push the edited body:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+  pr edit --pr-number {pr_number} --plan-id {plan_id}
 ```
 
 `{affected_modules_csv}` is the sorted, comma-separated module-name list (e.g., `oauth-sheriff-core, oauth-sheriff-quarkus`). Log the decision:

@@ -22,11 +22,13 @@ Usage:
     python3 manage-status.py route --phase 1-init
     python3 manage-status.py get-routing-context --plan-id EXAMPLE-PLAN
     python3 manage-status.py mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
+    python3 manage-status.py assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
 """
 
 import argparse
 
 from _cmd_aggregate_confidence import cmd_aggregate_confidence
+from _cmd_assert_step_recorded import cmd_assert_step_recorded
 from _cmd_change_type_heuristic import cmd_change_type_heuristic
 from _cmd_lifecycle import (
     cmd_archive,
@@ -279,6 +281,38 @@ def main() -> int:
         ),
     )
     mark_step_parser.set_defaults(func=cmd_mark_step_done)
+
+    # assert-step-recorded — read-only post-dispatch guard over phase_steps.
+    assert_step_parser = subparsers.add_parser(
+        'assert-step-recorded',
+        help='Assert a phase step has a terminal record in status.metadata.phase_steps (read-only)',
+        description=(
+            'Read-only verdict over status.metadata.phase_steps[phase][step]: '
+            'reports recorded=true iff a dict entry with a terminal outcome in '
+            '{done, skipped, loop_back, failed} exists. The phase-6-finalize '
+            'dispatcher calls this after every dispatched-step return to detect '
+            'the silent gap where a step returns status: success but skips its '
+            'mandated mark-step-done side-effect. With --require-terminal, a '
+            'missing terminal record is escalated to status: error, '
+            'error: step_record_missing so the dispatcher gets a branchable '
+            'verdict. Performs zero writes to status.json.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(assert_step_parser)
+    add_phase_arg(assert_step_parser)
+    assert_step_parser.add_argument('--step', required=True, help='Step identifier within the phase')
+    assert_step_parser.add_argument(
+        '--require-terminal',
+        dest='require_terminal',
+        action='store_true',
+        help=(
+            'Escalate a missing terminal record to status: error, '
+            'error: step_record_missing instead of returning recorded: false.'
+        ),
+    )
+    assert_step_parser.set_defaults(func=cmd_assert_step_recorded)
 
     # change-type-heuristic
     change_type_parser = subparsers.add_parser(
