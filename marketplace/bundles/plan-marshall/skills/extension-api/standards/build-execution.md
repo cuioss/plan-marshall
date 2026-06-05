@@ -286,19 +286,19 @@ Extensions generate complete commands per module during discovery:
 
 ```python
 def _build_commands(module_name: str, profiles: list) -> dict:
-    base = "python3 .plan/execute-script.py plan-marshall:build-maven:maven run"
+    base = "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args"
     pl_arg = f" -pl {module_name}" if module_name != "." else ""
 
     commands = {
-        "clean": f'{base} --command-args "clean{pl_arg}"',
-        "verify": f'{base} --command-args "verify{pl_arg}"',
-        "module-tests": f'{base} --command-args "test{pl_arg}"',
+        "clean": f'{base} "clean{pl_arg}"',
+        "verify": f'{base} "verify{pl_arg}"',
+        "module-tests": f'{base} "test{pl_arg}"',
     }
 
     # Add profile-based commands
     for profile in profiles:
         if profile["canonical"] == "quality-gate":
-            commands["quality-gate"] = f'{base} --command-args "verify -P{profile["id"]}{pl_arg}"'
+            commands["quality-gate"] = f'{base} "verify -P{profile["id"]}{pl_arg}"'
 
     return commands
 ```

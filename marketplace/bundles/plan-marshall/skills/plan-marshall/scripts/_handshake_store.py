@@ -17,7 +17,6 @@ HANDSHAKE_FILE = 'handshakes.toon'
 HANDSHAKE_FIELDS = [
     'phase',
     'captured_at',
-    'worktree_applicable',
     'override',
     'override_reason',
     'main_sha',

@@ -33,7 +33,6 @@ status: success
 plan_id: X
 phase: 5-execute
 override: false
-worktree_applicable: false
 invariants:
   main_sha: 3823a0dd…
   main_dirty: 0
@@ -96,9 +95,9 @@ File: `<base>/plans/{plan_id}/handshakes.toon` (owned exclusively by `phase_hand
 
 ```toon
 plan_id: recipe-plugin-compliance
-handshakes[2]{phase,captured_at,worktree_applicable,override,override_reason,main_sha,main_dirty,main_dirty_files,worktree_sha,worktree_dirty,references_valid,task_state_hash,qgate_open_count,config_hash,unfinished_tasks_count,phase_steps_complete,pending_findings_by_type,pending_findings_blocking_count}:
-  5-execute,2026-04-14T17:42:57Z,false,false,"",3823a0dd…,0,[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,"","build-error=0,test-failure=0,lint-issue=0,sonar-issue=0",0
-  6-finalize,2026-04-14T18:01:12Z,false,false,"",15efe821…,0,[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,e7f8a9…,"build-error=0,test-failure=0,lint-issue=0,sonar-issue=0,pr-comment=0",0
+handshakes[2]{phase,captured_at,override,override_reason,main_sha,main_dirty,main_dirty_files,worktree_sha,worktree_dirty,references_valid,task_state_hash,qgate_open_count,config_hash,unfinished_tasks_count,phase_steps_complete,pending_findings_by_type,pending_findings_blocking_count}:
+  5-execute,2026-04-14T17:42:57Z,false,"",3823a0dd…,0,[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,"","build-error=0,test-failure=0,lint-issue=0,sonar-issue=0",0
+  6-finalize,2026-04-14T18:01:12Z,false,"",15efe821…,0,[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,e7f8a9…,"build-error=0,test-failure=0,lint-issue=0,sonar-issue=0,pr-comment=0",0
 ```
 
 Rationale for flat TOON over nested: simpler parsing, one row per phase, direct diff-ability. Adding a new invariant adds a new column; captures missing a column are treated as "not captured, skip comparison" during verify, so new invariants can roll out without invalidating history.
@@ -111,9 +110,9 @@ Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples. The para
 |---|---|---|---|---|
 | `main_sha` | always | `git rev-parse HEAD` at main checkout root | `blocking_at: {5-execute}` (informational at every other boundary) | any commit change at the integration boundary |
 | `main_dirty` | always | `git status --porcelain` line count at main checkout root | `blocking_at: {5-execute}` (informational at every other boundary) | uncommitted drift at the integration boundary |
-| `main_dirty_files` | always | sorted list of dirty paths (filtered to exclude `.plan/`) | `blocking_at: {5-execute}` (informational at every other boundary) | layer-D leak detection (proper-superset rule in `_check_main_dirty_drift`) |
-| `worktree_sha` | `status.metadata.worktree_path` non-null | `git rev-parse HEAD` inside worktree | `blocking_at_every_boundary` | worktree/main confusion |
-| `worktree_dirty` | same as above | `git status --porcelain` line count inside worktree | `blocking_at_every_boundary` | uncommitted drift inside worktree |
+| `main_dirty_files` | always | sorted list of dirty paths (filtered to exclude `.plan/`) | `blocking_at: {1-init, 2-refine, 3-outline, 4-plan}` (informational at 5-execute and 6-finalize) | layer-D leak detection (proper-superset rule in `_check_main_dirty_drift`) |
+| `worktree_sha` | `_worktree_in_use` (delegates to `_worktree_materialized` with `phase=None` — see [Worktree applicability](#worktree-applicability)) | `git rev-parse HEAD` inside worktree | `blocking_at: {1-init, 2-refine, 3-outline, 4-plan}` (informational at 5-execute and 6-finalize) | worktree/main confusion |
+| `worktree_dirty` | same as above | `git status --porcelain` line count inside worktree | `blocking_at: {1-init, 2-refine, 3-outline, 4-plan}` (informational at 5-execute and 6-finalize) | uncommitted drift inside worktree |
 | `references_valid` | always | SHA256 of `{present, top_level_is_dict, required_field_set}` from `manage-references read` | `blocking_at_every_boundary` | references.json deleted, corrupted to non-dict, or missing a required key (`branch`, `base_branch`) |
 | `task_state_hash` | always | SHA256 of sorted `(number, status, step_outcomes, depends_on)` from `manage-tasks list` | `blocking_at_every_boundary` | tasks silently mutated |
 | `qgate_open_count` | always | `filtered_count` from `manage-findings qgate list --resolution pending --phase P` | `blocking_at_every_boundary` | Q-Gate bypass |
@@ -136,7 +135,9 @@ Each invariant carries a `blocking_scope` value (in `INVARIANT_BLOCKING_SCOPE`) 
 
 **Default for unmapped invariants**: `'blocking_at_every_boundary'`. New invariants added to `INVARIANTS` without a corresponding `INVARIANT_BLOCKING_SCOPE` entry retain the strict semantics until they are explicitly relaxed — `is_invariant_blocking_at_phase()` fails safe to blocking.
 
-**`main_sha` / `main_dirty` / `main_dirty_files` rationale**: these three invariants describe state of the integration target branch (`main`/`master`), which can change between planning-phase boundaries (1→2, 2→3, 3→4, 4→5) for reasons unrelated to the in-flight plan — an unrelated commit lands on main during a long-paused planning phase, the operator's local main pulls in upstream changes, etc. Treating those changes as blocking forces a manual override / re-capture loop with no corresponding correctness gain: the planning artefacts (request, outline, task list) do not depend on the main SHA. At the `5-execute → 6-finalize` boundary, however, `main_sha` change DOES matter — it can invalidate the integration premise the just-built changes were merged on top of — so the three columns remain blocking there.
+**`main_sha` / `main_dirty` rationale**: these two invariants describe state of the integration target branch (`main`/`master`), which can change between planning-phase boundaries (1→2, 2→3, 3→4, 4→5) for reasons unrelated to the in-flight plan — an unrelated commit lands on main during a long-paused planning phase, the operator's local main pulls in upstream changes, etc. Treating those changes as blocking forces a manual override / re-capture loop with no corresponding correctness gain: the planning artefacts (request, outline, task list) do not depend on the main SHA. They are therefore scoped `blocking_at: {5-execute}` — blocking only at the `5-execute → 6-finalize` boundary, where a `main_sha` change DOES matter because it can invalidate the integration premise the just-built changes were merged on top of.
+
+**`main_dirty_files` / `worktree_sha` / `worktree_dirty` rationale**: these three worktree-state drift invariants block at the *planning-phase* boundaries (1→2, 2→3, 3→4, 4→5) — scope `_WORKTREE_STATE_DRIFT_BLOCKING_PHASES` = `{1-init, 2-refine, 3-outline, 4-plan}` — and are informational at the phase-5+ boundaries. The reasoning is the inverse of `main_sha`/`main_dirty`: under the move-based, cwd-pinned hermetic worktree model (ADR-002), the worktree directory is materialized and the plan dir moved in at phase-5 start, after which the orchestrator's cwd IS the worktree and never leaves it. The sideways worktree-SHA/dirty comparison and the layer-D leak-into-main guard (`main_dirty_files`) are therefore structurally moot at the `5-execute → 6-finalize` boundary — plan work lands in the worktree by construction — but remain blocking at the planning-phase boundaries that still run on the main checkout, where a leak could legitimately occur.
 
 **Informational rows are persisted, not dropped**: classification affects *drift-counting*, not *persistence*. The `capture` output and `list` output continue to include every captured invariant column (including informational rows for `main_sha`/`main_dirty`/`main_dirty_files`) so retrospective analysis sees the full state at every boundary. `cmd_verify` returns informational drift in a separate `informational_diffs[]` payload alongside `informational_count` so callers that want to surface it explicitly can; the strict-exit path and the orchestrator's drift-recovery branch only ever read `drift_count` / `diffs[]`.
 
@@ -257,7 +258,9 @@ No changes are required in `_handshake_commands.py`, `phase_handshake.py`, or an
 
 ### Worktree applicability
 
-`worktree_sha` and `worktree_dirty` apply iff `status.metadata.worktree_path` is set. `phase-1-init` writes that field when a plan uses a worktree and omits it otherwise, so per-plan worktree usage is already the single source of truth — the handshake does not look at global config.
+A single materialization predicate (`_worktree_materialized` in `_invariants.py`) decides whether the worktree is in play, and both the invariant-applicability gate (`worktree_sha` / `worktree_dirty`) and the phase-entry worktree assertion (`_resolve_worktree_assertion`) consult it, so the two surfaces can never disagree. The worktree counts as materialized when **either** `status.metadata.worktree_path` is present and non-empty (the worktree directory was created and the path persisted at phase-5 Step 2.5), **or** the active phase is one of the materialization phases (`5-execute`, `6-finalize`) — the phase term covers the transient phase-5 window between phase entry and Step 2.5's path backfill, when the path is still empty but the worktree is conceptually already in play.
+
+The invariant-applicability gate (`_worktree_in_use`) evaluates the predicate with `phase=None`, so it keys purely on the persisted `worktree_path`; the capture functions return `None` for an unpopulated path, so a pre-materialization capture records an empty column. The phase-entry assertion evaluates the predicate with the live phase, so it tolerates the empty-path window on phases 1-4 (per-plan worktree usage remains the single source of truth — the handshake never looks at global config) and fails closed from phase-5 onward.
 
 ### `worktree_metadata_drift` capture-time error
 
@@ -289,7 +292,7 @@ On `drift`: stop the phase, surface `diffs[]` verbatim, do not rationalize. Vali
 
 ## Non-goals
 
-- **No global config lookup** for worktree applicability — `status.metadata.worktree_path` is the single source of truth.
+- **No global config lookup** for worktree applicability — the per-plan `_worktree_materialized` predicate (persisted `status.metadata.worktree_path` OR a materialization phase) is the single source, never global config.
 - **No automatic remediation** on drift. `verify` reports; the caller decides. There is no `--fix` flag.
 - **No backwards-compatibility shim** for rows missing newer invariant columns — missing columns are skipped during comparison.
 - **No cross-plan handshakes** — each plan owns its own `handshakes.toon`.

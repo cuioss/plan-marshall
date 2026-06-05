@@ -32,18 +32,26 @@ def test_capture_first_time_success(plan_context, stubbed_invariants, stub_metad
     result = cmds.cmd_capture(_ns(plan_id='cap-a', phase='5-execute'))
     assert result['status'] == 'success'
     assert result['phase'] == '5-execute'
-    assert result['worktree_applicable'] is False
+    # No worktree_path → worktree-state invariants are absent from the output.
     assert 'main_sha' in result['invariants']
     assert 'worktree_sha' not in result['invariants']
 
 
-def test_capture_worktree_applicable(plan_context, stubbed_invariants, stub_metadata) -> None:
+def test_capture_includes_worktree_invariants_when_path_present(
+    plan_context, stubbed_invariants, stub_metadata
+) -> None:
+    """A populated worktree_path captures the worktree-state invariants.
+
+    Surviving observable contract that replaced the dropped applicability
+    column: when worktree_path is set the worktree-state captures
+    (worktree_sha / worktree_dirty) run and appear in result['invariants'].
+    """
     stub_metadata['worktree_path'] = '/tmp/fake-worktree'
     stubbed_invariants['worktree_sha'] = 'wt-sha'
     stubbed_invariants['worktree_dirty'] = 0
     result = cmds.cmd_capture(_ns(plan_id='cap-b', phase='5-execute'))
-    assert result['worktree_applicable'] is True
     assert result['invariants']['worktree_sha'] == 'wt-sha'
+    assert result['invariants']['worktree_dirty'] in (0, '0')
 
 
 def test_load_status_metadata_uses_resolvable_manage_status_notation() -> None:

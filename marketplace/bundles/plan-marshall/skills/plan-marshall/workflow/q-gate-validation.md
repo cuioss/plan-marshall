@@ -56,7 +56,7 @@ Parse the deliverables from the solution outline. Extract:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
-  query --plan-id {plan_id} --certainty CERTAIN_INCLUDE
+  list --plan-id {plan_id} --certainty CERTAIN_INCLUDE
 ```
 
 Parse to get the list of files that were assessed as CERTAIN_INCLUDE.
@@ -396,7 +396,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 `{kind}` is one of `subcommand`, `flag`. `{token}` is the offending text.
 
-**Positive example**: Outline cites `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate filter --status pending`. Live help shows the subcommand list `{add,list,resolve,...}` — no `filter`. Validator emits one finding for the undeclared subcommand.
+**Positive example**: Outline cites `manage-findings qgate filter --status pending` (invented verb `filter`; correct verb is `list`). Live help shows the subcommand list `{add,list,resolve,...}` — no `filter`. Validator emits one finding for the undeclared subcommand.
 
 **Negative example**: Outline cites `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id X`. Live help shows `list` is a registered subcommand and `--plan-id` is a registered flag. Silent pass — no finding.
 

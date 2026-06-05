@@ -392,7 +392,6 @@ class TestWorktreeInvariantGating:
                 {
                     'phase': phase,
                     'captured_at': f'2026-04-17T2{i}:00:00Z',
-                    'worktree_applicable': True,
                     'override': False,
                     'override_reason': '',
                     'main_sha': 'abc123',
