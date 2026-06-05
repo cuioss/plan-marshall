@@ -763,6 +763,165 @@ def test_recipe_wins_over_docs_only_when_both_match(plan_context):
     assert result is not None and result['rule_fired'] == 'recipe'
 
 
+# =============================================================================
+# Recipe / lesson provenance from status metadata (recipe→default drift fix)
+# =============================================================================
+
+
+def _write_status_metadata(plan_context, plan_id: str, metadata: dict) -> None:
+    """Seed ``{plan_dir}/status.json`` with the given ``metadata`` block."""
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'status.json').write_text(
+        json.dumps({'plan_id': plan_id, 'metadata': metadata}, indent=2),
+        encoding='utf-8',
+    )
+
+
+def test_recipe_detected_from_status_plan_source_lesson_id(plan_context):
+    """Lesson-derived plan (plan_source=lesson_id, no --recipe-key) fires Row 2.
+
+    Reproduces the archived-plan audit's recipe→default drift: phase-1-init seeds
+    ``status.metadata.plan_source`` with a raw lesson id, but the phase-4-plan
+    agent omitted ``--recipe-key``. The composer now reads the provenance itself.
+    """
+    plan_id = 'recipe-from-plan-source'
+    _write_status_metadata(plan_context, plan_id, {'plan_source': '2026-06-01-10-001'})
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='enhancement',
+            scope_estimate='single_module',
+            recipe_key=None,
+            affected_files_count=3,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'recipe'
+
+
+def test_recipe_detected_from_status_recipe_key_fallback(plan_context):
+    """metadata.recipe_key (no plan_source) also fires Row 2 via the fallback."""
+    plan_id = 'recipe-from-recipe-key'
+    _write_status_metadata(plan_context, plan_id, {'recipe_key': 'lesson_cleanup'})
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='feature',
+            scope_estimate='multi_module',
+            recipe_key=None,
+            affected_files_count=4,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'recipe'
+
+
+def test_recipe_literal_plan_source_fires_row_2(plan_context):
+    """plan_source set to the literal 'recipe' string also selects Row 2."""
+    plan_id = 'recipe-literal-source'
+    _write_status_metadata(plan_context, plan_id, {'plan_source': 'recipe'})
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='feature',
+            scope_estimate='multi_module',
+            recipe_key=None,
+            affected_files_count=4,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'recipe'
+
+
+def test_no_plan_source_falls_to_default(plan_context):
+    """Status metadata without provenance keys does NOT spuriously fire Row 2."""
+    plan_id = 'no-provenance-default'
+    _write_status_metadata(plan_context, plan_id, {'change_type': 'feature'})
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='feature',
+            scope_estimate='multi_module',
+            recipe_key=None,
+            affected_files_count=4,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'default'
+
+
+def test_missing_status_json_falls_to_default(plan_context):
+    """A plan with no status.json reads no provenance and falls to Row 7."""
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='no-status-default',
+            change_type='feature',
+            scope_estimate='multi_module',
+            recipe_key=None,
+            affected_files_count=4,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'default'
+
+
+def test_explicit_recipe_key_overrides_absent_status(plan_context):
+    """An explicit --recipe-key still fires Row 2 with no status metadata present."""
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='explicit-recipe-key',
+            change_type='feature',
+            scope_estimate='multi_module',
+            recipe_key='lesson_cleanup',
+            affected_files_count=4,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'recipe'
+
+
+def test_read_recipe_source_unit(plan_context):
+    """Direct unit coverage of the status-metadata provenance surrogate."""
+    read_recipe_source = _mem._read_recipe_source
+
+    # No status.json → None.
+    assert read_recipe_source('rrs-missing') is None
+
+    # plan_source wins over recipe_key; whitespace trimmed.
+    _write_status_metadata(
+        plan_context, 'rrs-both', {'plan_source': '  2026-06-02-08-002  ', 'recipe_key': 'lesson_cleanup'}
+    )
+    assert read_recipe_source('rrs-both') == '2026-06-02-08-002'
+
+    # recipe_key fallback when plan_source absent.
+    _write_status_metadata(plan_context, 'rrs-key', {'recipe_key': 'lesson_cleanup'})
+    assert read_recipe_source('rrs-key') == 'lesson_cleanup'
+
+    # Empty / blank provenance values are treated as absent.
+    _write_status_metadata(plan_context, 'rrs-blank', {'plan_source': '   ', 'recipe_key': ''})
+    assert read_recipe_source('rrs-blank') is None
+
+
+# =============================================================================
+# Decision-log emission lands in the plan's own logs/decision.log (loggability fix)
+# =============================================================================
+
+
+def test_emit_decision_log_writes_in_process(plan_context):
+    """``_emit_decision_log`` writes directly to the plan's decision.log.
+
+    Regression guard for the ``unloggable`` defect: the composer runs from the
+    plugin cache (outside the project tree), so the former
+    executor-subprocess emission silently dropped every line. The in-process
+    write via ``plan_logging.log_entry`` must land the entry in
+    ``{plan_dir}/logs/decision.log``. status.json must exist for the log path
+    to resolve plan-scoped rather than to the global fallback.
+    """
+    plan_id = 'decision-log-in-process'
+    _write_status_metadata(plan_context, plan_id, {'change_type': 'feature'})
+    message = '(plan-marshall:manage-execution-manifest:compose) Rule default fired — sentinel'
+
+    _mem._emit_decision_log(plan_id, message)
+
+    decision_log = plan_context.plan_dir_for(plan_id) / 'logs' / 'decision.log'
+    assert decision_log.is_file(), 'decision.log was not written in-process'
+    assert message in decision_log.read_text(encoding='utf-8')
+
+
 def test_surgical_enhancement_with_code_candidates_falls_to_default(plan_context):
     """Row 5 only matches bug_fix/tech_debt; surgical+enhancement+code → default.
 

@@ -9,7 +9,7 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `change_type` | `solution_outline.md` deliverable metadata | enum: `analysis|feature|enhancement|bug_fix|tech_debt|verification` |
 | `track` | `phase-3-outline` | enum: `simple|complex` |
 | `scope_estimate` | `solution_outline.md` solution-level metadata (deliverable 2) | enum: `none|surgical|single_module|multi_module|broad` |
-| `recipe_key` | `status.json` `plan_source` metadata when sourced via a recipe | string or absent |
+| `recipe_key` | `--recipe-key` argument when supplied, else read by the composer from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) | string or absent |
 | `affected_files_count` | `references.json::affected_files` length | int (≥0) |
 | `commit_strategy` | `manage-config plan phase-5-execute get --field commit_strategy` | enum: `per_plan|per_deliverable|none` (default: `per_plan`) |
 | `activation_globs` | `marshal.json::plan.phase-6-finalize.pre_push_quality_gate.activation_globs` | list[string] (default: empty) |
@@ -290,7 +290,7 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 
 ### Row 2 — `recipe`
 
-**Condition**: `recipe_key` is present (non-empty).
+**Condition**: `recipe_key` is present (non-empty). The composer resolves `recipe_key` from the explicit `--recipe-key` argument when supplied, and otherwise reads it directly from `status.json::metadata.plan_source` (the raw lesson id for lesson-derived plans, or the literal `"recipe"` for recipe-routed plans), falling back to `metadata.recipe_key`. Reading the provenance from status metadata — rather than depending solely on the caller forwarding the flag — is what keeps lesson- and recipe-derived plans on this row; the prior flag-only path silently dropped them to Row 7 (`default`) whenever the planner omitted `--recipe-key`. The composer's surrogate matches the `audit-archived-plan-retrospectives` re-derivation, so a fresh recipe/lesson plan reports `actual_rule = recipe` against its `expected_rule`.
 
 **Outcome**:
 - `phase_5.early_terminate = false`

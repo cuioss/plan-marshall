@@ -694,7 +694,7 @@ This step runs after Step 8 (execution order) and before Step 9 (Q-Gate). It MUS
 - `change_type` — read from solution outline metadata (use the first deliverable's `change_type` when the outline has more than one; the plan-level summary in `solution_outline.md` Summary block also surfaces it).
 - `track` — read from `manage-references get --field track` (`simple` or `complex`).
 - `scope_estimate` — read from `manage-references get --field scope_estimate` (deliverables 2 / 3 wire this in earlier in the plan lifecycle).
-- `recipe_key` — read from `manage-status read` `plan_source` metadata (when sourced from a recipe).
+- `recipe_key` — OPTIONAL override only. The composer reads `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) on its own, so lesson- and recipe-derived plans select the `recipe` rule even when this flag is omitted. Pass `--recipe-key` only to force a recipe rule that status metadata does not already imply.
 - `affected_files_count` — `manage-references get --field affected_files`, count entries.
 - `phase-5-steps` candidate — `manage-config plan phase-5-execute get --field steps` value, comma-joined.
 - `phase-6-steps` candidate — `manage-config plan phase-6-finalize get --field steps` value, comma-joined.
