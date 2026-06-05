@@ -2,7 +2,7 @@
 name: recipe-generalization-sweep
 description: Project-local audit recipe that sweeps the plan-marshall bundle for meta-project-specific leaks and emits remediation deliverables grouped by disposition
 user-invocable: false
-allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
+allowed-tools: Read, Write, Glob, Grep, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 
@@ -22,7 +22,7 @@ Like the sibling project-local recipes it is LLM-driven (no backing script for a
 | `recipe_domain` | `plan-marshall-plugin-dev` |
 | `recipe_profile` | `implementation` |
 
-The backticked recipe-domain row above is **MANDATORY** — `manage-config list-recipes` scans `.claude/skills/recipe-*/SKILL.md` for that backticked row, and **silently skips** any recipe whose Input-Parameters table lacks it. This was the exact defect that hid `recipe-marshal-json-config-audit`. Keep the backticked `` `recipe_domain` `` token confined to the table row only — the discovery scanner matches the last line bearing that literal, so repeating it in prose would shadow the table value.
+The backticked recipe-domain row above is **MANDATORY** — `manage-config list-recipes` scans `.claude/skills/recipe-*/SKILL.md` for that backticked row, and **silently skips** any recipe whose Input-Parameters table lacks it. This was the exact defect that hid `recipe-marshal-json-config-audit`. Keep the backticked recipe_domain token confined to the table row only — the discovery scanner matches the last line bearing that literal, so repeating it in prose would shadow the table value.
 
 There is no `recipe_scope` / `recipe_thoroughness` input — the cell is pinned (Step 0). The package-source parameter is omitted because the sweep audits a bundle surface rather than iterating packages. The recipe is plan-bound; it persists the resolved cell to `status.json` metadata.
 
