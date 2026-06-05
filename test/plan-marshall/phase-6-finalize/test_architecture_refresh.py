@@ -637,7 +637,10 @@ class TestNarrativeContract:
 
     def test_documents_pr_note_branch(self, standard_text: str):
         assert 'Architecture re-enrichment recommended for' in standard_text
-        assert 'append-body' in standard_text
+        # There is no atomic `append-body` verb on the ci surface; the PR-note
+        # branch documents the `prepare-body --for edit` + `pr edit` pattern
+        # (write the combined body to the scratch path, then replace via edit).
+        assert 'prepare-body --for edit' in standard_text
 
     def test_documents_enrich_call_in_auto_branch(self, standard_text: str):
         """The `auto` branch enriches per-module, not via a batch invocation.

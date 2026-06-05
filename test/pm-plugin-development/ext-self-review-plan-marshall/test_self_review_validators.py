@@ -25,7 +25,7 @@ from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
 
 from conftest import get_script_path, run_script  # type: ignore[import-not-found]
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'ext-self-review-plan-marshall', 'self_review.py')
+SCRIPT_PATH = get_script_path('pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py')
 
 
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['plan_id'])

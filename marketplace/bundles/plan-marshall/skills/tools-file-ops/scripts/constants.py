@@ -56,6 +56,21 @@ QGATE_PHASES = PHASES[1:]  # ('2-refine', '3-outline', '4-plan', '5-execute', '6
 DEFAULT_BRANCH_PREFIX_WORKING = ('feature/', 'fix/', 'chore/')
 DEFAULT_CI_BRANCH_ALLOWLIST = ('main', 'feature/*', 'fix/*', 'chore/*', 'dependabot/**')
 
+# `DEFAULT_SANCTIONED_CONFTEST` is the closed set of `conftest.py` paths that are
+# permitted in this project's test tree. Every OTHER `conftest.py` under a skill
+# or script test directory (any path matching `test/**/`) is a defect: pytest
+# auto-discovers `conftest.py` and evaluates it as a fixture-collection module
+# for the whole bundle, so a stray sibling silently shadows the top-level
+# `test/conftest.py` and disables shared fixtures. The sanctioned set is
+# project data, NOT a hard-coded marketplace literal: it is materialised into
+# `DEFAULT_PROJECT['sanctioned_conftest']` and operators override it via
+# `manage-config project set --field sanctioned_conftest`. The generic rule
+# ("do not name a new test helper conftest.py — use `_fixtures.py`") is
+# project-invariant and stays in the shipped skill prose; only this concrete
+# allow-list is config-driven. The literal lives here exactly once as the
+# fail-closed fallback seed.
+DEFAULT_SANCTIONED_CONFTEST = ('test/conftest.py', 'test/adapters/conftest.py')
+
 # ---------------------------------------------------------------------------
 # Phase statuses
 # ---------------------------------------------------------------------------

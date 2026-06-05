@@ -275,7 +275,7 @@ From this point on, every standards document loaded by the finalize pipeline inh
 
 #### Return-to-main ordering
 
-Per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), the orchestrator enters finalize still cwd-pinned to the worktree (the pin established at phase-5 entry by `prepare_execute.py` — see `plan-marshall/workflow/execution.md` § "Orchestrator cwd-pinning (phase-5+)"). The finalize phase ends that pin, but the move-back and the worktree removal are SEQUENCED, not simultaneous:
+Per ADR-002, the orchestrator enters finalize still cwd-pinned to the worktree (the pin established at phase-5 entry by `prepare_execute.py` — see `plan-marshall/workflow/execution.md` § "Orchestrator cwd-pinning (phase-5+)"). The finalize phase ends that pin, but the move-back and the worktree removal are SEQUENCED, not simultaneous:
 
 1. **Move-back while the worktree is still present.** The atomic move-back script (deliverable 5) folds the plan's own global logs into the plan directory, moves the plan directory back to main, and runs under the merge lock — all while the worktree still exists:
 

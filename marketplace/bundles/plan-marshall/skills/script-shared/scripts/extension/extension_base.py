@@ -252,6 +252,38 @@ class ExtensionBase(ABC):
         """
         return []
 
+    def provides_retrospective_aspects(self) -> list[dict]:
+        """Return domain-specific retrospective aspects for plan-retrospective.
+
+        Each aspect declares a deterministic, script-backed analysis fragment
+        that plan-retrospective merges into its aspect dispatch (Step 3) when
+        the audited plan belongs to the aspect's declared domain. Domain-
+        invariant aspects ship with the generic retrospective; this hook lets a
+        domain bundle attach checks that are only meaningful for plans authored
+        against its domain.
+
+        Returns:
+            List of aspect dicts, each containing:
+            - aspect: str — Short aspect name used as the fragment key and the
+              --aspect value passed to collect-fragments add (e.g.,
+              'wrapper-tangle').
+            - domain: str — Domain key gating the aspect. The retrospective
+              merges the aspect only when the audited plan's domain matches
+              (e.g., 'plan-marshall-plugin-dev').
+            - script: str — Fully-qualified executor notation for the aspect's
+              deterministic fragment producer.
+            - reference: str — Skill-relative reference doc path documenting the
+              aspect's detection contract and finding schema.
+            - description: str — Human-readable description for report context.
+            - order: int — Relative sort key used when merging domain aspects
+              into the aspect table. Not enforced at runtime.
+
+        See extension-api/standards/ext-point-retrospective.md for the full
+        contract. Default implementation returns empty list (no domain-specific
+        retrospective aspects).
+        """
+        return []
+
     def provides_finalize_steps(self) -> list[dict]:
         """Return domain-specific finalize steps for phase-6-finalize.
 

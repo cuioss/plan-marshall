@@ -112,7 +112,7 @@ Cross-group feedback (TASK-N references) requires sequential action between grou
   ```bash
   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
     --project-dir {WORKTREE} pr prepare-comment \
-    --plan-id {plan_id}
+    --plan-id {plan_id} --for thread-reply --slot triage-{finding.hash_id}
   ```
 
   Write `Will be addressed by TASK-{N}; see follow-up commit on this branch` to the returned scratch path, then:

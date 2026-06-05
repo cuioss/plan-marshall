@@ -116,12 +116,6 @@ Read standards/recovery.md
 ```
 Contains: First-line response to mid-plan `origin/main` advances — stash + merge + pop, with works/does-not-work conditions and rationale vs rebase.
 
-### Test Scaffolding Patterns
-```
-Read standards/test-scaffolding.md
-```
-Contains: Canonical `# ruff: noqa: I001, E402` + `sys.path.insert(0, ...)` prologue for tests that import underscore-prefixed sibling modules from `marketplace/bundles/.../scripts/`. Citation: `test/plan-marshall/plan-marshall/test_phase_handshake.py` lines 2 and 20-29.
-
 ### Coverage Contract (per-task scope × thoroughness)
 ```
 Read ../dev-agent-behavior-rules/standards/thoroughness.md

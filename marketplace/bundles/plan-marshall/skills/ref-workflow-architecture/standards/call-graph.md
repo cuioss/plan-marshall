@@ -9,8 +9,6 @@ Holistic view of every dispatch path in the plan-marshall bundle: orchestrator e
 
 This doc is the **graph** view; the others are the **contract**, **examples**, and **heuristics** views of the same surface.
 
-![Call graph of plan-marshall dispatches — the orchestrator fans out to six phase envelopes, three of which dispatch shared workflow bodies (q-gate-validation, verification-feedback, enrich-module) under specified per-call-site conditions.](../../../../../../doc/resources/diagrams/call-graph.svg)
-
 > **Note on the dispatch target name.** Every dispatch in the graphs below is written as `execution-context` for clarity. The actual `Task:` target on the wire is `execution-context-{level}` where `{level}` ∈ `{low, medium, high, xhigh, xxhigh, max, inherit}` is resolved at dispatch time via `manage-config effort resolve-target --phase <caller-phase> [--role <subkey>]`. The level is a runtime detail (chosen by the role-key registry), not a structural one — so the graphs hide it.
 
 Legend (used in every diagram below):
@@ -200,7 +198,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │    LLM judgement loop, per deliverable                                        │
 │    ─────────────────────────────────                                          │
 │    • Step 5: create tasks from profiles (1:N, optional-skill LLM matching)    │
-│    • Step 6: anchoring, breaking-refactor split, self-modifying check         │
+│    • Step 6: anchoring, breaking-refactor split                               │
 │                ?AskUserQuestion? when split decision is ambiguous             │
 │    • Step 7: holistic verification tasks                                      │
 │                                                                               │
@@ -317,16 +315,6 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │   │   /record-metrics/               (inline — script)                 │     │
 │   │   /archive-plan/                 (inline — script; MUST be last)   │     │
 │   │   /finalize-step-print-phase-breakdown/   (inline — renderer)      │     │
-│   │                                                                    │     │
-│   │  PROJECT STEPS (meta-project only):                                │     │
-│   │   /project:finalize-step-deploy-target/        (inline)            │     │
-│   │   /project:finalize-step-sync-plugin-cache/    (inline)            │     │
-│   │   /project:finalize-step-regenerate-executor/  (inline)            │     │
-│   │    project:finalize-step-plugin-doctor                             │     │
-│   │       ╵┄═►  [verification-feedback (producer=plugin-doctor)]                                  │     │
-│   │    project:finalize-step-pre-submission-self-review                │     │
-│   │       ══►  execution-context  role=phase-6-finalize.pre-submission-         │     │
-│   │            self-review                                             │     │
 │   │                                                                    │     │
 │   │  OPT-IN STEPS (not in default 17-step set):                        │     │
 │   │    ══►  execution-context  --phase phase-6-finalize --role post-run-review              │     │
@@ -470,12 +458,10 @@ The granularity heuristics live in `../../extension-api/standards/dispatch-granu
 | phase-6-finalize automated-review orchestration | Inline scripts + `phase-6-finalize.verification-feedback` (producer=pr-comment) | Producer + enumeration inline; triage shared envelope. |
 | phase-6-finalize sonar-roundtrip orchestration | Inline scripts + `phase-6-finalize.verification-feedback` (producer=sonar) | Same shape. |
 | phase-6-finalize lessons-capture | `phase-6-finalize.post-run-review` | Lesson extraction is LLM work (shares level with retrospective). |
-| phase-6-finalize pre-submission-self-review | `--phase phase-6-finalize` (tracks phase default) | Structural review (meta-project only). |
 | phase-6-finalize retrospective | `phase-6-finalize.post-run-review` | 8 LLM aspects iterate in-context (shares level with lessons-capture). |
 | /workflow-pr-doctor slash command | `phase-6-finalize.verification-feedback` (producer=pr-state) | Diagnose + report + internal triage via verification-feedback. |
 | phase-6-finalize architecture-refresh Tier 0 | Inline scripts | Deterministic discover + diff. |
 | phase-6-finalize architecture-refresh Tier 1 | `--phase phase-6-finalize` (enrich-module tracks phase default) × N parallel | The only per-iteration parallel dispatch. |
-| phase-6-finalize project:finalize-step-plugin-doctor | `phase-6-finalize.verification-feedback` (producer=plugin-doctor) | Meta-project only. |
 
 ---
 

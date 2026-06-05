@@ -29,15 +29,20 @@ Load: `standards/python-implementation.md`
 ### 2. Testing Standards
 Load: `standards/testing-standards.md`
 
-### 3. Output Contract
+### 3. Test Scaffolding Patterns
+Load: `standards/test-scaffolding.md`
+
+Contains: Canonical `# ruff: noqa: I001, E402` + `sys.path.insert(0, ...)` prologue for tests that import underscore-prefixed sibling modules from `marketplace/bundles/.../scripts/`. Citation: `test/plan-marshall/plan-marshall/test_phase_handshake.py` lines 2 and 20-29.
+
+### 4. Output Contract
 Load: `standards/output-contract.md`
 
-### 4. Cross-Skill Integration
+### 5. Cross-Skill Integration
 Load: `standards/cross-skill-integration.md`
 
 **CRITICAL**: Scripts run via the executor must follow cross-skill integration patterns for imports, logging, and error handling.
 
-### 5. Script Invocation in Documentation
+### 6. Script Invocation in Documentation
 See: `standards/cross-skill-integration.md` § "Script invocation in documentation"
 
 The explicit-call-or-xref authoring rule for documented script invocations plus the `## Canonical invocations` section contract. Every documented `python3 .plan/execute-script.py {notation} …` call must be the exact-correct inline call or an xref to the owning skill's Canonical-invocations section, and every script-bearing skill publishes that section. Enforced at edit time by the `manage-invocation-invalid` and `missing-canonical-block` plugin-doctor rules.

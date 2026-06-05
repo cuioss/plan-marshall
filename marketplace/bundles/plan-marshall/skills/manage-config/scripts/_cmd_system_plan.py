@@ -26,7 +26,7 @@ from _config_defaults import DEFAULT_PROJECT
 # `manage-config project set` command line. _coerce_value only handles scalar
 # coercion (bool/int/str), so these fields take a json.loads path instead so a
 # list/dict value round-trips through get.
-_PROJECT_JSON_FIELDS = ('branch_naming',)
+_PROJECT_JSON_FIELDS = ('branch_naming', 'sanctioned_conftest')
 
 
 def read_branch_naming(config: dict) -> dict:
@@ -115,9 +115,9 @@ def cmd_project(args) -> dict:
 
     elif args.verb == 'set':
         field = args.field
-        # Nested JSON fields (e.g. branch_naming) take a json.loads path so a
-        # list/dict value persists and round-trips through get; scalar fields
-        # use the bool/int/str coercion.
+        # Nested JSON fields (e.g. branch_naming, sanctioned_conftest) take a
+        # json.loads path so a list/dict value persists and round-trips through
+        # get; scalar fields use the bool/int/str coercion.
         if field in _PROJECT_JSON_FIELDS:
             try:
                 value = json.loads(args.value)
@@ -126,19 +126,32 @@ def cmd_project(args) -> dict:
                     f"Field '{field}' expects a JSON value: {e}",
                     error_type='invalid_json',
                 )
-            # Validate the parsed shape at this system boundary: branch_naming
-            # must be a JSON object whose working_prefixes / ci_allowlist sub-keys
-            # (when present) are lists. A non-dict value or a non-list sub-key
-            # would persist silently and crash downstream readers.
-            if not isinstance(value, dict):
-                return error_exit(
-                    f"Field '{field}' expects a JSON object (dictionary), got {type(value).__name__}",
-                    error_type='invalid_type',
-                )
-            for sub_key in ('working_prefixes', 'ci_allowlist'):
-                if sub_key in value and not isinstance(value[sub_key], list):
+            # Validate the parsed shape at this system boundary. A wrong-typed
+            # value would persist silently and crash downstream readers.
+            if field == 'branch_naming':
+                # branch_naming must be a JSON object whose working_prefixes /
+                # ci_allowlist sub-keys (when present) are lists.
+                if not isinstance(value, dict):
                     return error_exit(
-                        f"Sub-key '{sub_key}' in '{field}' must be a list",
+                        f"Field '{field}' expects a JSON object (dictionary), got {type(value).__name__}",
+                        error_type='invalid_type',
+                    )
+                for sub_key in ('working_prefixes', 'ci_allowlist'):
+                    if sub_key in value and not isinstance(value[sub_key], list):
+                        return error_exit(
+                            f"Sub-key '{sub_key}' in '{field}' must be a list",
+                            error_type='invalid_type',
+                        )
+            elif field == 'sanctioned_conftest':
+                # sanctioned_conftest is a flat JSON array of path strings.
+                if not isinstance(value, list):
+                    return error_exit(
+                        f"Field '{field}' expects a JSON array, got {type(value).__name__}",
+                        error_type='invalid_type',
+                    )
+                if not all(isinstance(item, str) for item in value):
+                    return error_exit(
+                        f"Field '{field}' must be a JSON array of strings",
                         error_type='invalid_type',
                     )
         else:

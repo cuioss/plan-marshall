@@ -418,6 +418,94 @@ def test_read_branch_naming_falls_back_to_default():
     assert result == _EXPECTED_BRANCH_NAMING
 
 
+_EXPECTED_SANCTIONED_CONFTEST = ['test/conftest.py', 'test/adapters/conftest.py']
+
+
+def test_default_project_includes_sanctioned_conftest_block():
+    """DEFAULT_PROJECT must declare sanctioned_conftest with the canonical allow-list."""
+    # Arrange
+    project_defaults = _config_defaults_mod.DEFAULT_PROJECT
+
+    # Act / Assert
+    assert 'sanctioned_conftest' in project_defaults
+    assert project_defaults['sanctioned_conftest'] == _EXPECTED_SANCTIONED_CONFTEST
+
+
+def test_get_default_config_includes_sanctioned_conftest():
+    """get_default_config() must surface project.sanctioned_conftest with the allow-list."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    assert config['project'].get('sanctioned_conftest') == _EXPECTED_SANCTIONED_CONFTEST
+
+
+def test_project_get_sanctioned_conftest_returns_default_when_key_absent(plan_context):
+    """A fresh marshal.json lacking sanctioned_conftest returns the default allow-list."""
+    # Arrange — init then strip sanctioned_conftest to emulate a legacy marshal.json
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config.get('project', {}).pop('sanctioned_conftest', None)
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    # Act
+    args = Namespace(verb='get', field='sanctioned_conftest')
+    result = _cmd_system_plan_mod.cmd_project(args)
+
+    # Assert — implicit-default fallback to DEFAULT_PROJECT['sanctioned_conftest']
+    assert result['status'] == 'success'
+    assert result['value'] == _EXPECTED_SANCTIONED_CONFTEST
+
+
+def test_project_set_then_get_roundtrip_sanctioned_conftest(plan_context):
+    """`project set --field sanctioned_conftest --value <json>` round-trips via get as a list."""
+    # Arrange
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    custom = ['test/conftest.py', 'test/adapters/conftest.py', 'test/special/conftest.py']
+
+    # Act — set (JSON array value)
+    set_args = Namespace(verb='set', field='sanctioned_conftest', value=json.dumps(custom))
+    set_result = _cmd_system_plan_mod.cmd_project(set_args)
+    assert set_result['status'] == 'success'
+
+    # Act — get
+    get_args = Namespace(verb='get', field='sanctioned_conftest')
+    get_result = _cmd_system_plan_mod.cmd_project(get_args)
+
+    # Assert — the list round-trips, not a bare JSON string
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == custom
+
+
+def test_project_set_sanctioned_conftest_rejects_non_array(plan_context):
+    """`project set --field sanctioned_conftest` with a JSON object errors out as invalid_type."""
+    # Arrange
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # Act — a valid-JSON-but-wrong-shape value (object, not array)
+    set_args = Namespace(verb='set', field='sanctioned_conftest', value='{"a": 1}')
+    result = _cmd_system_plan_mod.cmd_project(set_args)
+
+    # Assert
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_type'
+
+
+def test_project_set_sanctioned_conftest_rejects_non_string_items(plan_context):
+    """`project set --field sanctioned_conftest` with non-string array items errors out."""
+    # Arrange
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # Act — array with a non-string item
+    set_args = Namespace(verb='set', field='sanctioned_conftest', value='["test/conftest.py", 42]')
+    result = _cmd_system_plan_mod.cmd_project(set_args)
+
+    # Assert
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_type'
+
+
 def test_default_plan_refine_includes_simplicity_lean():
     """DEFAULT_PLAN_REFINE must declare simplicity with default 'lean'.
 

@@ -24,7 +24,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Domain-Aware Candidate Surfacing
 
-The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the eight candidate sub-lists below as TOON. The plan-marshall-domain implementor is the renamed skill `ext-self-review-plan-marshall`; its script notation is `plan-marshall:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
+The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the eight candidate sub-lists below as TOON. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
 
 ## Inputs (inline step — Step 1)
 
@@ -79,10 +79,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains get-extensions --domain {plan_domain}
 ```
 
-Read the `extensions.self-review` field from the TOON output to get the implementor skill notation (e.g., `plan-marshall:ext-self-review-plan-marshall`). The plan-marshall-domain default — recorded under `skill_domains.plan-marshall-plugin-dev.workflow_skill_extensions.self-review` — is `plan-marshall:ext-self-review-plan-marshall`. Then invoke the surface helper, forwarding `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
+Read the `extensions.self-review` field from the TOON output to get the implementor skill notation (e.g., `pm-plugin-development:ext-self-review-plan-marshall`). The plan-marshall-domain default — recorded under `skill_domains.plan-marshall-plugin-dev.workflow_skill_extensions.self-review` — is `pm-plugin-development:ext-self-review-plan-marshall`. Then invoke the surface helper, forwarding `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:ext-self-review-plan-marshall:self_review \
+python3 .plan/execute-script.py pm-plugin-development:ext-self-review-plan-marshall:self_review \
   surface --plan-id {plan_id} --contract-radius {N}
 ```
 
@@ -229,7 +229,7 @@ For every entry in the returned `findings[N]{file,line,defect_class,rationale}` 
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
   --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
   --title "{defect_class}" --detail "{rationale}" --file-path "{file}" \
-  --component plan-marshall:ext-self-review-plan-marshall --severity warning
+  --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
 ```
 
 Then record the failed outcome:

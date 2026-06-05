@@ -1,37 +1,64 @@
-"""Tests for ``direct-gh-glab-usage.py``.
+"""Tests for the generic ``direct-gh-glab-usage.py`` aspect (Surfaces A+B) and
+the retrospective-aspect extension point that homes the former Surface C.
 
-Covers the five detection scenarios required by the aspect:
+Covers the domain-invariant detection scenarios for the generic aspect:
 
 (a) Fixture log files containing ``gh``/``glab`` invocations (positive
     detection) — surface ``log_leak``.
 (b) Fixture diff with added ``gh``/``glab`` lines (positive detection)
     — surface ``diff_leak``.
-(c) Fixture wrapper scripts with an abstraction-leak pattern — a
-    ``subprocess`` args list containing both the CLI name AND a local
-    git mutation token (``checkout``, ``branch -d``, ``--delete-branch``,
-    ...) — surface ``wrapper_tangle``.
 (d) Fixture where ``gh`` appears only in a comment — negative, must NOT
-    trip the diff or wrapper scanners.
-(e) Fixture with a pure remote-API ``gh api repos/...`` call and no
-    local-git mutation tokens — negative for the wrapper-tangle
-    heuristic (class-a remote only).
+    trip the diff scanner.
+
+Plus the Surface C split contract, scoped to this file per the deliverable:
+
+* Surfaces A+B remain in the generic, domain-invariant ``direct-gh-glab-usage``
+  aspect; ``wrapper_tangle`` is no longer emitted there.
+* Surface C moved to the ``plan-marshall-plugin-dev`` domain aspect
+  ``pm-plugin-development:plan-marshall-plugin:wrapper-tangle-scan``,
+  contributed via the ``provides_retrospective_aspects()`` extension point.
+* ``extension_discovery.py`` discovers the hook and surfaces it through the
+  ``list-retrospective-aspects`` CLI (the deterministic backing for
+  plan-retrospective Step 3's domain-aspect merge).
+* ``pm-plugin-development``'s ``extension.py`` contributes the aspect gated by
+  the ``plan-marshall-plugin-dev`` domain only; ``ExtensionBase`` returns ``[]``
+  by default.
+* plan-retrospective Step 3 merges domain aspects per domain — modelled here as
+  the deterministic ``filter list-retrospective-aspects by plan domain``
+  predicate the workflow step relies on.
+
+The wrapper-tangle DETECTION behaviour itself lives in
+``test/pm-plugin-development/plan-marshall-plugin/test_wrapper_tangle_scan.py``.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _plan_retrospective_fixtures import setup_broken_plan, setup_live_plan  # noqa: E402
+from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
 
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'direct-gh-glab-usage.py'
 )
+
+EXT_DISCOVERY_PATH = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts' / 'extension_discovery.py'
+)
+
+_PLUGIN_DEV_EXT_PATH = (
+    MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
+)
+
+# Domain key gating the wrapper-tangle aspect. A plan of any other domain must
+# not pick it up.
+_PLUGIN_DEV_DOMAIN = 'plan-marshall-plugin-dev'
 
 
 # ---------------------------------------------------------------------------
@@ -102,13 +129,13 @@ def _commit_file(repo_dir: Path, rel_path: str, content: str) -> None:
     )
 
 
-def _write_wrapper(project_root: Path, rel_path: str, content: str) -> None:
-    """Write a wrapper-scope Python file whose path matches one of the three
-    directories ``direct-gh-glab-usage.py`` scans (surface C).
-    """
-    target = project_root / rel_path
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding='utf-8')
+def _load_extension_module(ext_path: Path, module_name: str):
+    """Load an ``extension.py`` and return its ``Extension`` instance."""
+    spec = importlib.util.spec_from_file_location(module_name, ext_path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.Extension()
 
 
 # ---------------------------------------------------------------------------
@@ -288,282 +315,20 @@ class TestDiffLeaks:
 
 
 # ---------------------------------------------------------------------------
-# Surface C: wrapper-tangle
-# ---------------------------------------------------------------------------
-
-
-class TestWrapperTangle:
-    """Surface C — subprocess args lists that mix a CLI invocation with a
-    local-git mutation token (``checkout``, ``branch -d`` / ``-D``,
-    ``--delete-branch``, ``--remove-source-branch``).
-    """
-
-    def test_positive_gh_plus_delete_branch_flag(self, tmp_path, monkeypatch):
-        """Case (c): ``subprocess.run(['gh', 'pr', 'merge', '--delete-branch'])``
-        is a wrapper tangle — CLI name and mutation token appear in the same
-        multi-line args window, so the wrapper scanner flags it.
-        """
-        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-tangle')
-        # Build a project-root layout that matches one of the three dirs the
-        # scanner walks. We choose the github wrapper directory.
-        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/leaky_wrapper.py'
-        _write_wrapper(
-            tmp_path,
-            wrapper_rel,
-            '"""Leaky wrapper fixture."""\n'
-            'import subprocess\n'
-            'def merge(pr_number: str) -> None:\n'
-            '    subprocess.run([\n'
-            "        'gh', 'pr', 'merge', pr_number, '--delete-branch',\n"
-            '    ], check=True)\n',
-        )
-
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--project-root',
-            str(tmp_path),
-        )
-        assert result.success, result.stderr
-        data = result.toon()
-        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
-        assert len(tangles) >= 1, (
-            f'Expected wrapper_tangle finding for gh+--delete-branch call; '
-            f'got {tangles}. Full findings: {data["findings"]}'
-        )
-        assert any('leaky_wrapper.py' in f['file'] for f in tangles)
-
-    def test_positive_glab_plus_checkout(self, tmp_path, monkeypatch):
-        """Case (c, glab variant): ``checkout`` is a mutation token too."""
-        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-glab-tangle')
-        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-gitlab/scripts/leaky_glab.py'
-        _write_wrapper(
-            tmp_path,
-            wrapper_rel,
-            '"""Leaky glab wrapper fixture."""\n'
-            'import subprocess\n'
-            'def checkout_branch(ref: str) -> None:\n'
-            "    subprocess.run(['glab', 'mr', 'checkout', ref], check=True)\n",
-        )
-
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--project-root',
-            str(tmp_path),
-        )
-        assert result.success, result.stderr
-        data = result.toon()
-        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
-        assert any('leaky_glab.py' in f['file'] for f in tangles), (
-            f'Expected wrapper_tangle finding for glab+checkout call; got {tangles}'
-        )
-
-    def test_positive_gh_plus_list_style_branch_dash_d(self, tmp_path, monkeypatch):
-        """Regression: PR #256 (gemini-code-assist, thread PRRT_kwDOQ3xasM58Bftr).
-
-        ``subprocess.run(['gh', 'auth', '...'], check=...)`` followed by a
-        downstream ``['git', 'branch', '-d', branch]`` call inside the same
-        wrapper window must be flagged. The old substring heuristic
-        (``'branch -d' in line``) only matched when the args were stringified
-        with spaces and missed list-style invocations entirely. Token-aware
-        matching handles both shapes.
-        """
-        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-listdash')
-        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/list_dash_leak.py'
-        _write_wrapper(
-            tmp_path,
-            wrapper_rel,
-            '"""List-style branch -d fixture."""\n'
-            'import subprocess\n'
-            'def cleanup(branch: str) -> None:\n'
-            "    subprocess.run(['gh', 'pr', 'merge', branch], check=True)\n"
-            "    subprocess.run(['git', 'branch', '-d', branch], check=True)\n",
-        )
-
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--project-root',
-            str(tmp_path),
-        )
-        assert result.success, result.stderr
-        data = result.toon()
-        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
-        assert any('list_dash_leak.py' in f['file'] for f in tangles), (
-            f'Expected wrapper_tangle finding for gh + list-style branch -d call; got {tangles}'
-        )
-
-    def test_positive_run_gh_wrapper_plus_delete_branch(self, tmp_path, monkeypatch):
-        """Regression: PR #256 (gemini-code-assist, thread PRRT_kwDOQ3xasM58Bfts).
-
-        The CI abstraction routes calls through ``run_gh(`` / ``run_glab(``
-        wrappers, not raw ``subprocess.run``. A wrapper-only call site
-        (``run_gh(['pr', 'merge', '--delete-branch'])``) must therefore
-        anchor Surface C just like a ``subprocess.`` call site does;
-        otherwise the leak hides behind the wrapper and the heuristic
-        misses its primary target.
-        """
-        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-rungh')
-        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/run_gh_leak.py'
-        _write_wrapper(
-            tmp_path,
-            wrapper_rel,
-            '"""run_gh wrapper fixture."""\n'
-            'def run_gh(args, *, capture_json=False, timeout=60):\n'
-            '    return 0, "", ""\n'
-            'def merge(pr_number: str) -> None:\n'
-            "    run_gh(['pr', 'merge', pr_number, '--delete-branch'])\n",
-        )
-
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--project-root',
-            str(tmp_path),
-        )
-        assert result.success, result.stderr
-        data = result.toon()
-        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
-        assert any('run_gh_leak.py' in f['file'] for f in tangles), (
-            f'Expected wrapper_tangle finding for run_gh + --delete-branch call; got {tangles}'
-        )
-
-    def test_positive_run_glab_wrapper_plus_remove_source_branch(self, tmp_path, monkeypatch):
-        """Symmetric coverage for the GitLab wrapper:
-        ``run_glab(['mr', 'merge', '--remove-source-branch'])`` must surface
-        as a wrapper tangle even though no ``subprocess.`` literal appears
-        in the call site.
-        """
-        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-runglab')
-        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-gitlab/scripts/run_glab_leak.py'
-        _write_wrapper(
-            tmp_path,
-            wrapper_rel,
-            '"""run_glab wrapper fixture."""\n'
-            'def run_glab(args, *, capture_json=False, timeout=60):\n'
-            '    return 0, "", ""\n'
-            'def merge(mr_number: str) -> None:\n'
-            "    run_glab(['mr', 'merge', mr_number, '--remove-source-branch'])\n",
-        )
-
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--project-root',
-            str(tmp_path),
-        )
-        assert result.success, result.stderr
-        data = result.toon()
-        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
-        assert any('run_glab_leak.py' in f['file'] for f in tangles), (
-            f'Expected wrapper_tangle finding for run_glab + --remove-source-branch call; got {tangles}'
-        )
-
-    def test_negative_branch_delete_identifier_not_flagged(self, tmp_path, monkeypatch):
-        """Prefix-collision guard: an identifier like ``branch_delete`` (used
-        as a function/command name in the project) must NOT be misread as the
-        ``branch -d`` mutation token. Anchored matching prevents the false
-        positive that motivated the gemini-code-assist review comment.
-        """
-        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-branchid')
-        wrapper_rel = (
-            'marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/branch_delete_caller.py'
-        )
-        _write_wrapper(
-            tmp_path,
-            wrapper_rel,
-            '"""Identifier-only fixture — no real local-git mutation."""\n'
-            'import subprocess\n'
-            'def call_remote_branch_delete(branch: str) -> None:\n'
-            "    subprocess.run(['gh', 'api', '-X', 'DELETE', "
-            "f'repos/o/r/git/refs/heads/{branch}'], check=True)\n",
-        )
-
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--project-root',
-            str(tmp_path),
-        )
-        assert result.success, result.stderr
-        data = result.toon()
-        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
-        assert tangles == [], (
-            f'Identifier ``branch_delete`` must not match the branch -d/-D '
-            f'mutation token; got unexpected tangles: {tangles}'
-        )
-
-    def test_negative_pure_remote_gh_api_not_flagged(self, tmp_path, monkeypatch):
-        """Case (e): ``gh api repos/...`` with no local-git mutation token
-        is a class-A remote-only call — the wrapper-tangle heuristic MUST NOT
-        trip. Documents the intentional scope of the abstraction-leak check.
-        """
-        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-remote-only')
-        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/remote_only.py'
-        _write_wrapper(
-            tmp_path,
-            wrapper_rel,
-            '"""Pure remote-API wrapper — no local-git side effects."""\n'
-            'import subprocess\n'
-            'def list_issues(repo: str) -> None:\n'
-            "    subprocess.run(['gh', 'api', f'repos/{repo}/issues'], check=True)\n",
-        )
-
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--project-root',
-            str(tmp_path),
-        )
-        assert result.success, result.stderr
-        data = result.toon()
-        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
-        assert tangles == [], (
-            f'Pure remote-only gh api call must NOT be flagged as a wrapper '
-            f'tangle; the heuristic is scoped to CLI+local-git-mutation '
-            f'combinations. Got unexpected tangles: {tangles}'
-        )
-
-
-# ---------------------------------------------------------------------------
-# Top-level aggregate contract
+# Top-level aggregate contract (generic aspect, Surfaces A+B only)
 # ---------------------------------------------------------------------------
 
 
 class TestAggregateContract:
-    """The script's output shape must remain stable even when findings exist."""
+    """The script's output shape must remain stable even when findings exist.
+
+    After the Surface C split, the generic aspect emits only ``log_leak`` and
+    ``diff_leak`` surfaces — a ``wrapper_tangle`` key must NOT appear in the
+    by-surface counts.
+    """
 
     def test_counts_by_surface_reflect_findings(self, tmp_path, monkeypatch):
-        """All three counters must appear and equal the findings actually emitted."""
+        """Both surviving counters must appear and equal the findings emitted."""
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-aggregate')
         # One log leak.
         work_log = plan_dir / 'logs' / 'work.log'
@@ -572,17 +337,6 @@ class TestAggregateContract:
             encoding='utf-8',
         )
         (plan_dir / 'logs' / 'script-execution.log').write_text('', encoding='utf-8')
-
-        # One wrapper tangle.
-        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/aggregate_leak.py'
-        _write_wrapper(
-            tmp_path,
-            wrapper_rel,
-            '"""Aggregate fixture."""\n'
-            'import subprocess\n'
-            'def merge() -> None:\n'
-            "    subprocess.run(['gh', 'pr', 'merge', '--delete-branch'], check=True)\n",
-        )
 
         result = run_script(
             SCRIPT_PATH,
@@ -600,12 +354,172 @@ class TestAggregateContract:
         findings = data['findings']
 
         log_n = sum(1 for f in findings if f['surface'] == 'log_leak')
-        tangle_n = sum(1 for f in findings if f['surface'] == 'wrapper_tangle')
         diff_n = sum(1 for f in findings if f['surface'] == 'diff_leak')
 
         assert int(counts['log_leak']) == log_n
-        assert int(counts['wrapper_tangle']) == tangle_n
         assert int(counts['diff_leak']) == diff_n
-        assert int(data['counts']['total']) == log_n + tangle_n + diff_n
+        assert int(data['counts']['total']) == log_n + diff_n
         assert log_n >= 1
-        assert tangle_n >= 1
+        # Surface C moved out — the generic aspect must not emit a wrapper_tangle
+        # surface or counter any more.
+        assert 'wrapper_tangle' not in counts, (
+            f'Surface C (wrapper_tangle) must no longer be emitted by the generic '
+            f'aspect; got by_surface counts: {counts}'
+        )
+        assert all(f['surface'] != 'wrapper_tangle' for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# Surface C split — extension-point declaration (extension.py)
+# ---------------------------------------------------------------------------
+
+
+class TestSurfaceCDomainContribution:
+    """``pm-plugin-development``'s extension contributes Surface C (wrapper-tangle)
+    via ``provides_retrospective_aspects()``, gated by the
+    ``plan-marshall-plugin-dev`` domain. ``ExtensionBase`` returns ``[]``.
+    """
+
+    def test_plugin_dev_extension_declares_wrapper_tangle(self):
+        """The pm-plugin-development extension declares exactly the wrapper-tangle
+        aspect through the retrospective-aspect hook.
+        """
+        ext = _load_extension_module(_PLUGIN_DEV_EXT_PATH, 'pm_plugin_dev_ext_retro')
+        aspects = ext.provides_retrospective_aspects()
+        assert isinstance(aspects, list)
+        names = {a['aspect'] for a in aspects}
+        assert 'wrapper-tangle' in names, f'Expected wrapper-tangle aspect; got {names}'
+
+    def test_wrapper_tangle_aspect_gated_by_plugin_dev_domain(self):
+        """The contributed aspect carries the plugin-dev domain gate and the
+        correct fragment-producer notation — so plan-retrospective only merges
+        it for plan-marshall-plugin-dev plans.
+        """
+        ext = _load_extension_module(_PLUGIN_DEV_EXT_PATH, 'pm_plugin_dev_ext_gate')
+        aspect = next(a for a in ext.provides_retrospective_aspects() if a['aspect'] == 'wrapper-tangle')
+        assert aspect['domain'] == _PLUGIN_DEV_DOMAIN
+        assert aspect['script'] == 'pm-plugin-development:plan-marshall-plugin:wrapper-tangle-scan'
+        assert aspect['reference']
+        assert aspect['description']
+        assert isinstance(aspect['order'], int)
+
+    def test_extension_base_returns_empty_by_default(self):
+        """A domain extension that does not override the hook contributes no
+        retrospective aspects — the default keeps the generic retrospective
+        domain-invariant.
+        """
+        from extension_base import ExtensionBase  # type: ignore[import-not-found]
+
+        class _Bare(ExtensionBase):
+            def get_skill_domains(self) -> list[dict]:
+                return []
+
+            def applies_to_module(self, module_data, active_profiles=None) -> dict:  # type: ignore[override]
+                return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None,
+                        'skills_by_profile': {}}
+
+            def discover_modules(self, project_root: str) -> list:
+                return []
+
+        assert _Bare().provides_retrospective_aspects() == []
+
+
+# ---------------------------------------------------------------------------
+# Surface C split — extension_discovery.py hook + list-retrospective-aspects CLI
+# ---------------------------------------------------------------------------
+
+
+class TestRetrospectiveAspectDiscovery:
+    """``extension_discovery.py`` discovers ``provides_retrospective_aspects()``
+    across all extensions and exposes them via the ``list-retrospective-aspects``
+    CLI — the deterministic backing for plan-retrospective Step 3.
+    """
+
+    @staticmethod
+    def _load_discovery():
+        spec = importlib.util.spec_from_file_location('extension_discovery_retro', EXT_DISCOVERY_PATH)
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_get_retrospective_aspects_attributes_bundle(self):
+        """The discovery helper returns every declared aspect across all
+        extensions and stamps each with its contributing ``bundle``.
+        """
+        mod = self._load_discovery()
+        extensions = mod.discover_all_extensions()
+        aspects = mod.get_retrospective_aspects_from_extensions(extensions)
+
+        wrapper = [a for a in aspects if a.get('aspect') == 'wrapper-tangle']
+        assert len(wrapper) == 1, f'Expected exactly one wrapper-tangle aspect across all extensions; got {aspects}'
+        assert wrapper[0]['domain'] == _PLUGIN_DEV_DOMAIN
+        assert wrapper[0]['bundle'] == 'pm-plugin-development'
+
+    def test_helper_skips_extensions_without_module(self):
+        """A discovery entry whose ``module`` is None contributes nothing — the
+        helper must not raise on extensions that failed to load.
+        """
+        mod = self._load_discovery()
+        aspects = mod.get_retrospective_aspects_from_extensions([{'bundle': 'broken', 'module': None}])
+        assert aspects == []
+
+    def test_cli_lists_wrapper_tangle_row(self):
+        """The ``list-retrospective-aspects`` CLI emits one row per declared
+        aspect with the documented field set.
+        """
+        result = run_script(EXT_DISCOVERY_PATH, 'list-retrospective-aspects')
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+
+        rows = data['aspects']
+        if isinstance(rows, dict):  # single-row TOON tables parse to a dict
+            rows = [rows]
+        wrapper = [r for r in rows if r['aspect'] == 'wrapper-tangle']
+        assert len(wrapper) == 1, f'Expected one wrapper-tangle row; got {rows}'
+        row = wrapper[0]
+        assert row['domain'] == _PLUGIN_DEV_DOMAIN
+        assert row['script'] == 'pm-plugin-development:plan-marshall-plugin:wrapper-tangle-scan'
+        assert row['bundle'] == 'pm-plugin-development'
+        assert row['reference']
+        assert row['description']
+
+
+# ---------------------------------------------------------------------------
+# plan-retrospective Step 3 — domain-gated merge predicate
+# ---------------------------------------------------------------------------
+
+
+class TestStep3DomainMerge:
+    """plan-retrospective Step 3 merges domain aspects per the audited plan's
+    domain. The workflow step is LLM-driven prose, but the merge it performs is
+    the deterministic predicate ``keep rows whose domain == plan_domain`` over
+    the ``list-retrospective-aspects`` output. These tests lock that predicate.
+    """
+
+    @staticmethod
+    def _list_aspect_rows():
+        result = run_script(EXT_DISCOVERY_PATH, 'list-retrospective-aspects')
+        assert result.success, result.stderr
+        rows = result.toon()['aspects']
+        return [rows] if isinstance(rows, dict) else rows
+
+    @staticmethod
+    def _merge_for_domain(rows, plan_domain):
+        """Mirror Step 3's filter: keep only aspects gated by ``plan_domain``."""
+        return [r for r in rows if r['domain'] == plan_domain]
+
+    def test_plugin_dev_plan_picks_up_wrapper_tangle(self):
+        """A plan-marshall-plugin-dev plan merges the wrapper-tangle aspect."""
+        rows = self._list_aspect_rows()
+        merged = self._merge_for_domain(rows, _PLUGIN_DEV_DOMAIN)
+        assert {r['aspect'] for r in merged} == {'wrapper-tangle'}
+
+    def test_other_domain_plan_skips_wrapper_tangle(self):
+        """A plan of any non-matching domain merges no domain aspects — the
+        wrapper-tangle scan is skipped because its gate does not match.
+        """
+        rows = self._list_aspect_rows()
+        merged = self._merge_for_domain(rows, 'pm-dev-java')
+        assert merged == [], f'Non-plugin-dev plan must not merge wrapper-tangle; got {merged}'

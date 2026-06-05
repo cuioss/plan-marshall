@@ -44,7 +44,7 @@ Every `manage-*` script call in this document carries the following exit-code co
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-  checks status --pr-number {pr_number}
+  --plan-id {plan_id} checks status --pr-number {pr_number}
 ```
 
 The returned envelope carries `checks[]` (the full per-job array),
