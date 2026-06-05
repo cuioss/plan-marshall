@@ -30,16 +30,16 @@
       "commit_strategy": "per_plan",
       "finalize_without_asking": true,
       "verification_max_iterations": 5,
-      "effort": {
-        "default": "xhigh",
-        "verification-feedback": "high"
-      },
+      "per_deliverable_build": "compile+scoped-test",
+      "per_task_budget_reserve_tokens": "50K",
       "steps": [
         "default:quality_check",
         "default:build_verify"
       ],
-      "per_deliverable_build": "compile+scoped-test",
-      "per_task_budget_reserve": 50000
+      "effort": {
+        "default": "xhigh",
+        "verification-feedback": "high"
+      }
     },
     "phase-6-finalize": {
       "max_iterations": 3,

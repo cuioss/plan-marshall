@@ -180,7 +180,7 @@ The execute-loop's continue-vs-yield decision is governed by exactly one determi
 
 > **If `remaining_budget > N`: continue to the next task. Else: yield.**
 
-Where `N` is the per-task budget reserve read from `marshal.json`'s `plan.phase-5-execute.per_task_budget_reserve` slot via `manage-config plan phase-5-execute get --field per_task_budget_reserve --audit-plan-id {plan_id}`. The clause runs once after each task completes — between the closing `manage-tasks finalize-step` call (which fires the canonical `[OUTCOME]`) and the next `manage-tasks next` call. There is no intermediate decision point.
+Where `N` is the per-task budget reserve read from `marshal.json`'s `plan.phase-5-execute.per_task_budget_reserve_tokens` slot via `manage-config plan phase-5-execute get --field per_task_budget_reserve_tokens`. The read returns the human-friendly value (e.g. `"50K"`); parse it to the integer `N` via `sensible_number.parse_sensible_int`. The clause runs once after each task completes — between the closing `manage-tasks finalize-step` call (which fires the canonical `[OUTCOME]`) and the next `manage-tasks next` call. There is no intermediate decision point.
 
 **Budget items consumed per task** (the sentinel's accounting model):
 

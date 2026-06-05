@@ -37,6 +37,35 @@ def _load_module(name: str, filename: str):
     return mod
 
 
+def _load_sensible_number():
+    """Load the script-shared sensible_number module by explicit path.
+
+    Mirrors the per-file importlib loading used for the manage-config scripts so
+    the test does not depend on conftest PYTHONPATH discovery order. The module
+    lives under the shared ``script-shared/scripts`` surface.
+    """
+    shared_dir = (
+        Path(__file__).parent.parent.parent.parent
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'script-shared'
+        / 'scripts'
+    )
+    spec = importlib.util.spec_from_file_location(
+        '_sensible_number_for_config_defaults_test', shared_dir / 'sensible_number.py'
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules['_sensible_number_for_config_defaults_test'] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_sensible_number_mod = _load_sensible_number()
+parse_sensible_int = _sensible_number_mod.parse_sensible_int
+
+
 _config_defaults_mod = _load_module(
     '_config_defaults_for_split_gate_test', '_config_defaults.py'
 )
@@ -94,28 +123,32 @@ def test_get_default_config_includes_auto_rebase_threshold():
     assert finalize['auto_rebase_threshold'] == 'no_overlap_only'
 
 
-def test_default_plan_execute_includes_per_task_budget_reserve():
-    """DEFAULT_PLAN_EXECUTE must declare per_task_budget_reserve with default 50000."""
+def test_default_plan_execute_includes_per_task_budget_reserve_tokens():
+    """DEFAULT_PLAN_EXECUTE must declare per_task_budget_reserve_tokens with default "50K"."""
     # Arrange
     execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
 
     # Act / Assert
-    assert 'per_task_budget_reserve' in execute_defaults, (
-        'per_task_budget_reserve must be schema-registered in DEFAULT_PLAN_EXECUTE'
+    assert 'per_task_budget_reserve_tokens' in execute_defaults, (
+        'per_task_budget_reserve_tokens must be schema-registered in DEFAULT_PLAN_EXECUTE'
     )
-    assert execute_defaults['per_task_budget_reserve'] == 50000, (
-        'per_task_budget_reserve default must be 50000 (phase-5-execute sentinel reserve)'
+    assert execute_defaults['per_task_budget_reserve_tokens'] == '50K', (
+        'per_task_budget_reserve_tokens default must be the human-friendly "50K" '
+        '(phase-5-execute sentinel reserve)'
     )
+    # The human-friendly string round-trips to the documented int via the shared parser.
+    assert parse_sensible_int(execute_defaults['per_task_budget_reserve_tokens']) == 50000
 
 
-def test_get_default_config_includes_per_task_budget_reserve():
-    """get_default_config() must surface plan.phase-5-execute.per_task_budget_reserve == 50000."""
+def test_get_default_config_includes_per_task_budget_reserve_tokens():
+    """get_default_config() must surface plan.phase-5-execute.per_task_budget_reserve_tokens == "50K"."""
     # Arrange / Act
     config = _config_defaults_mod.get_default_config()
 
     # Assert
     execute = config['plan']['phase-5-execute']
-    assert execute.get('per_task_budget_reserve') == 50000
+    assert execute.get('per_task_budget_reserve_tokens') == '50K'
+    assert parse_sensible_int(execute['per_task_budget_reserve_tokens']) == 50000
 
 
 def test_default_plan_execute_includes_per_deliverable_build():

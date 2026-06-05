@@ -64,7 +64,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-d
 ```toon
 status: success
 added[3]:
-  - plan.phase-5-execute.per_task_budget_reserve
+  - plan.phase-5-execute.per_task_budget_reserve_tokens
   - plan.phase-6-finalize.auto_rebase_threshold
   - project.default_base_branch
 added_count: 3

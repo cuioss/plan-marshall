@@ -200,12 +200,15 @@ DEFAULT_PLAN_EXECUTE = {
     # changed module and runs compile + scoped module-tests, keeping mid-execute
     # builds focused; the whole-tree quality sweep stays once at end-of-phase.
     'per_deliverable_build': 'compile+scoped-test',
-    # Per-task budget reserve (tokens) gating the phase-5-execute continue-vs-yield
-    # sentinel. phase-5-execute reads this via
-    # `manage-config plan phase-5-execute get --field per_task_budget_reserve`;
+    # Per-task budget reserve gating the phase-5-execute continue-vs-yield
+    # sentinel. The `_tokens` suffix names the unit (tokens); the value is the
+    # human-friendly magnitude string "50K", parsed back to the int 50000 by the
+    # phase-5-execute consumer via `sensible_number.parse_sensible_int`.
+    # phase-5-execute reads this via
+    # `manage-config plan phase-5-execute get --field per_task_budget_reserve_tokens`;
     # the workflow's documented fallback when the knob is absent is 50000.
     # Registering it here makes the reserve operator-visible in marshal.json.
-    'per_task_budget_reserve': 50000,
+    'per_task_budget_reserve_tokens': '50K',
     'steps': list(BUILT_IN_VERIFY_STEPS),
 }
 

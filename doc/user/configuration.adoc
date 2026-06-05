@@ -43,7 +43,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 The bulk of project configuration. Canonical schema and field reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
-`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, `system`, and `ci` sections. Each phase block holds fields specific to that phase. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_strategy`, `verification_max_iterations`, `per_deliverable_build`, `per_task_budget_reserve`, `max_iterations`, `review_bot_buffer_seconds`, `pr_merge_strategy`, `auto_merge_after_ci`, `auto_rebase_threshold`, `lightweight_track_override`, `pre_push_quality_gate`, `open_in_ide`, the `system.retention.*` knobs, `ci.checks_wait_timeout_seconds`, the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, `system`, and `ci` sections. Each phase block holds fields specific to that phase. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_strategy`, `verification_max_iterations`, `per_deliverable_build`, `per_task_budget_reserve_tokens`, `max_iterations`, `review_bot_buffer_seconds`, `pr_merge_strategy`, `auto_merge_after_ci`, `auto_rebase_threshold`, `lightweight_track_override`, `pre_push_quality_gate`, `open_in_ide`, the `system.retention.*` knobs, `ci.checks_wait_timeout_seconds`, the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
 [#effort-and-models]
 === Effort and model selection
@@ -101,7 +101,7 @@ Reference: `data-model.md` §§ phase-5-execute / phase-6-finalize; link:../../m
 [#per-task-budget-reserve]
 === Per-task budget reserve
 
-`plan.phase-5-execute.per_task_budget_reserve` (default `50000`) is the per-task budget **reserve** — the minimum context-window margin that must remain free before the `phase-5-execute` task loop is allowed to start another task. It governs the loop's continue-vs-yield sentinel.
+`plan.phase-5-execute.per_task_budget_reserve_tokens` (default `"50K"`) is the per-task budget **reserve** — the minimum context-window margin that must remain free before the `phase-5-execute` task loop is allowed to start another task. It governs the loop's continue-vs-yield sentinel. The `_tokens` suffix names the unit; the human-friendly value form (`"50K"`) is parsed to the integer `50000` by the consumer via `sensible_number.parse_sensible_int`.
 
 The dispatch model is **budget-bounded**, neither per-task nor per-deliverable. One `execution-context` envelope runs as many tasks as the reserve permits — so it bundles several small deliverables into one envelope and may span a single large deliverable across several envelopes — then yields, and the orchestrator re-dispatches a fresh envelope to resume the loop. The reserve is the operator-tunable knob for that granularity: raise it to make each envelope yield earlier (smaller dispatches), lower it to pack more tasks into each envelope.
 
@@ -110,7 +110,7 @@ Set via:
 [source,bash]
 ----
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field per_task_budget_reserve --value 50000
+  plan phase-5-execute set --field per_task_budget_reserve_tokens --value 50K
 ----
 
 For the conceptual home of per-dispatch context isolation see xref:../concepts/token-management.adoc[Concepts › Token Management]. Canonical schema: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
