@@ -142,7 +142,11 @@ def test_assertion_passes_for_valid_worktree(git_worktree: Path) -> None:
 
 
 def test_assertion_fails_when_worktree_path_missing() -> None:
-    """``use_worktree=true`` + missing ``worktree_path`` → unresolved."""
+    """``use_worktree=true`` + missing ``worktree_path`` → unresolved.
+
+    Default ``phase=None`` is the fail-closed path: with no boundary phase to
+    confirm a pre-materialization planning phase, an empty path refuses.
+    """
     err = cmds._resolve_worktree_assertion({'use_worktree': True})
     assert err is not None
     assert err['status'] == 'error'
@@ -151,8 +155,26 @@ def test_assertion_fails_when_worktree_path_missing() -> None:
 
 
 def test_assertion_fails_when_worktree_path_empty() -> None:
-    """Empty-string ``worktree_path`` is the same refusal as missing."""
+    """Empty-string ``worktree_path`` is the same refusal as missing (phase=None)."""
     err = cmds._resolve_worktree_assertion({'use_worktree': True, 'worktree_path': '   '})
+    assert err is not None
+    assert err['error'] == 'worktree_unresolved'
+    assert err['reason'] == 'worktree_path_missing'
+
+
+@pytest.mark.parametrize('phase', ['1-init', '2-refine', '3-outline', '4-plan'])
+def test_assertion_passes_when_path_empty_at_planning_phase(phase: str) -> None:
+    """Regression (PR #580): empty path is the legitimate pre-materialization
+    state for the on-main planning phases; the assertion must pass there so a
+    worktree-routed plan can capture handshake invariants before phase-5."""
+    assert cmds._resolve_worktree_assertion({'use_worktree': True}, phase) is None
+    assert cmds._resolve_worktree_assertion({'use_worktree': True, 'worktree_path': ''}, phase) is None
+
+
+@pytest.mark.parametrize('phase', ['5-execute', '6-finalize'])
+def test_assertion_fails_when_path_empty_post_materialization(phase: str) -> None:
+    """Phase-5 onward the worktree MUST be materialized: empty path → unresolved."""
+    err = cmds._resolve_worktree_assertion({'use_worktree': True}, phase)
     assert err is not None
     assert err['error'] == 'worktree_unresolved'
     assert err['reason'] == 'worktree_path_missing'
@@ -254,6 +276,25 @@ def test_cmd_verify_refuses_on_filesystem_missing_worktree(
     assert result['reason'] == 'worktree_path_not_found'
     assert result['plan_id'] == 'ver-wt-missing'
     assert result['phase'] == '5-execute'
+
+
+def test_cmd_capture_succeeds_at_planning_phase_before_materialization(
+    stubbed_invariants, stub_metadata, plan_context
+) -> None:
+    """Regression (PR #580): a worktree-routed plan captures the 1-init handshake
+    while ``worktree_path`` is still empty (worktree materializes at phase-5).
+
+    Before the phase-gating fix ``cmd_capture`` refused here with
+    ``worktree_unresolved`` / ``worktree_path_missing``, blocking the planning
+    drift gate for every worktree plan in phases 1-4.
+    """
+    stub_metadata['use_worktree'] = True
+    # No worktree_path key — exactly the metadata phase-1-init persists.
+    plan_context.plan_dir_for('cap-wt-pending')
+    result = cmds.cmd_capture(_ns(plan_id='cap-wt-pending', phase='1-init'))
+    assert result['status'] == 'success'
+    assert result['phase'] == '1-init'
+    assert result['worktree_applicable'] is False
 
 
 def test_cmd_capture_succeeds_on_main_checkout(stubbed_invariants, stub_metadata, plan_context) -> None:

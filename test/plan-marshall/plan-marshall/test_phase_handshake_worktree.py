@@ -6,11 +6,15 @@ Split from test_phase_handshake.py: covers the metadata→disk direction
 (``_resolve_worktree_assertion``) and the phase-keyed relaxation of the
 worktree-state drift invariants.
 
-Under the no-sentinel B-strip model an empty ``worktree_path`` while
-``use_worktree==true`` is ALWAYS ``worktree_unresolved`` (no deferred-window
-carve-out): phases 1-4 persist only ``use_worktree``, and a
-``use_worktree==true`` plan carries a real path once phase-5 materializes the
-worktree. The inverse-direction orphan invariant was removed entirely.
+Under the no-sentinel B-strip model phases 1-4 persist only ``use_worktree``
+and the worktree (with its ``worktree_path``) is materialized at phase-5
+Step 2.5. An empty ``worktree_path`` while ``use_worktree==true`` is therefore
+the legitimate pre-materialization state for the on-main planning phases
+(1-init / 2-refine / 3-outline / 4-plan) and the assertion passes there; from
+phase-5 onward — and whenever the boundary phase is unknown — an empty path is
+``worktree_unresolved`` (fail-closed). A *set-but-broken* path (missing dir,
+non-worktree, stale toplevel) is ``worktree_unresolved`` at every phase. The
+inverse-direction orphan invariant was removed entirely.
 """
 
 from __future__ import annotations
@@ -28,18 +32,40 @@ _ALL_PHASES_FOR_TEST = _PLANNING_PHASES_FOR_TEST + _POST_MATERIALIZATION_PHASES_
 class TestWorktreeAssertion:
     """Pin the contract of ``_resolve_worktree_assertion`` (metadata→disk)."""
 
-    def test_empty_path_with_use_worktree_true_always_unresolved(self) -> None:
-        """use_worktree=true + worktree_path='' → worktree_unresolved (no carve-out)."""
+    @pytest.mark.parametrize('phase', _PLANNING_PHASES_FOR_TEST)
+    def test_empty_path_passes_at_planning_phases(self, phase: str) -> None:
+        """use_worktree=true + worktree_path='' → None at phases 1-4 (pre-materialization)."""
         metadata = {'use_worktree': True, 'worktree_path': ''}
-        result = cmds._resolve_worktree_assertion(metadata)
+        assert cmds._resolve_worktree_assertion(metadata, phase) is None
+
+    @pytest.mark.parametrize('phase', _PLANNING_PHASES_FOR_TEST)
+    def test_missing_path_passes_at_planning_phases(self, phase: str) -> None:
+        """use_worktree=true + no worktree_path key → None at phases 1-4."""
+        metadata = {'use_worktree': True}
+        assert cmds._resolve_worktree_assertion(metadata, phase) is None
+
+    @pytest.mark.parametrize('phase', _POST_MATERIALIZATION_PHASES_FOR_TEST)
+    def test_empty_path_unresolved_post_materialization(self, phase: str) -> None:
+        """use_worktree=true + worktree_path='' → worktree_unresolved at phases 5-6."""
+        metadata = {'use_worktree': True, 'worktree_path': ''}
+        result = cmds._resolve_worktree_assertion(metadata, phase)
         assert result is not None
         assert result['status'] == 'error'
         assert result['error'] == 'worktree_unresolved'
         assert result['reason'] == 'worktree_path_missing'
 
-    def test_missing_path_with_use_worktree_true_unresolved(self) -> None:
-        """use_worktree=true + no worktree_path key → worktree_unresolved."""
+    @pytest.mark.parametrize('phase', _POST_MATERIALIZATION_PHASES_FOR_TEST)
+    def test_missing_path_unresolved_post_materialization(self, phase: str) -> None:
+        """use_worktree=true + no worktree_path key → worktree_unresolved at phases 5-6."""
         metadata = {'use_worktree': True}
+        result = cmds._resolve_worktree_assertion(metadata, phase)
+        assert result is not None
+        assert result['error'] == 'worktree_unresolved'
+        assert result['reason'] == 'worktree_path_missing'
+
+    def test_empty_path_unresolved_when_phase_unknown(self) -> None:
+        """Default phase=None is fail-closed: empty path → worktree_unresolved."""
+        metadata = {'use_worktree': True, 'worktree_path': ''}
         result = cmds._resolve_worktree_assertion(metadata)
         assert result is not None
         assert result['error'] == 'worktree_unresolved'
