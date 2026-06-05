@@ -94,6 +94,7 @@ _PLANNING_PHASES_ON_MAIN: frozenset[str] = frozenset({
 
 def _resolve_worktree_assertion(
     metadata: dict[str, Any],
+    phase: str | None = None,
 ) -> dict[str, Any] | None:
     """Worktree-resolution phase-entry assertion (metadata→disk direction).
 
@@ -104,13 +105,18 @@ def _resolve_worktree_assertion(
        ``git rev-parse --show-toplevel`` returns the same canonical
        path) → assertion passes (return ``None``).
     3. ``use_worktree==true`` AND ``worktree_path`` is empty/missing →
-       ``worktree_unresolved`` at every phase. Phases 1-4 persist only
-       ``use_worktree`` (no empty-path sentinel), and a ``use_worktree==true``
-       plan only exists with a real path once phase-5 materializes the
-       worktree — so an empty path while ``use_worktree==true`` is always a
-       metadata defect, never a legitimate transitional state.
+       phase-dependent. The worktree (and therefore ``worktree_path``) is
+       materialized at phase-5-execute Step 2.5; phases 1-4 persist only the
+       ``use_worktree`` intent (``_cmd_lifecycle`` writes ``{'use_worktree':
+       True}`` at create with no path). An empty path while
+       ``use_worktree==true`` is therefore the *legitimate* pre-materialization
+       state for the on-main planning phases (``_PLANNING_PHASES_ON_MAIN``) and
+       the assertion passes there. From phase-5 onward — and whenever ``phase``
+       is unknown — the path MUST be present, so an empty path still surfaces
+       ``worktree_unresolved`` (fail-closed default).
 
-    Other failure cases (always surface as ``worktree_unresolved``):
+    Other failure cases (always surface as ``worktree_unresolved`` at every
+    phase, because a *set-but-broken* path is never a transitional state):
         - ``worktree_path`` is set but the directory does not exist
         - ``worktree_path`` exists but is not a git worktree
         - ``worktree_path`` exists, is a git worktree, but ``rev-parse
@@ -126,6 +132,12 @@ def _resolve_worktree_assertion(
     raw = metadata.get('worktree_path')
     path_str = str(raw).strip() if raw is not None else ''
     if not path_str:
+        # Phases 1-4 run on the main checkout and persist only the
+        # use_worktree intent; the path is materialized at phase-5 Step 2.5.
+        # An empty path there is the expected pre-materialization state, not a
+        # defect. From phase-5 onward (or when phase is unknown) fail closed.
+        if phase in _PLANNING_PHASES_ON_MAIN:
+            return None
         return {
             'status': 'error',
             'error': 'worktree_unresolved',
@@ -362,7 +374,7 @@ def cmd_capture(args: Any) -> dict[str, Any]:
     plan_id = args.plan_id
     phase = args.phase
     metadata = _load_status_metadata(plan_id)
-    worktree_error = _resolve_worktree_assertion(metadata)
+    worktree_error = _resolve_worktree_assertion(metadata, phase)
     if worktree_error is not None:
         payload = dict(worktree_error)
         payload['plan_id'] = plan_id
@@ -474,7 +486,7 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         }
 
     metadata = _load_status_metadata(plan_id)
-    worktree_error = _resolve_worktree_assertion(metadata)
+    worktree_error = _resolve_worktree_assertion(metadata, phase)
     if worktree_error is not None:
         payload = dict(worktree_error)
         payload['plan_id'] = plan_id
@@ -617,7 +629,7 @@ def cmd_findings_check(args: Any) -> dict[str, Any]:
     plan_id = args.plan_id
     phase = args.phase
     metadata = _load_status_metadata(plan_id)
-    worktree_error = _resolve_worktree_assertion(metadata)
+    worktree_error = _resolve_worktree_assertion(metadata, phase)
     if worktree_error is not None:
         payload = dict(worktree_error)
         payload['plan_id'] = plan_id
