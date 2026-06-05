@@ -15,7 +15,7 @@ phase.6-finalize.total_tokens: ~170–260 K
 enriched.total_tokens (manage-architecture enrichment cycle): ~485 K
 ```
 
-`phase-5-execute/SKILL.md` already treats ~50 000 tokens as the working unit of one dispatch (`per_task_budget_reserve` default). The `execution-context-{level}` dispatch layer also adds a small fixed cost per dispatch — skill load, Worktree Header echo, prompt envelope.
+`phase-5-execute/SKILL.md` already treats ~50 000 tokens as the working unit of one dispatch (`per_task_budget_reserve_tokens` default `"50K"`). The `execution-context-{level}` dispatch layer also adds a small fixed cost per dispatch — skill load, Worktree Header echo, prompt envelope.
 
 ### 1.1 What the envelope contains
 

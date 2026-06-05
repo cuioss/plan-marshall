@@ -78,15 +78,19 @@ For every key present in `marshal.json`, trace every codebase usage and verify t
 
 Verify that every config key in `marshal.json` is surfaced in `doc/user/configuration.adoc`. Flag undocumented keys. The deliverable adds the missing documentation rows.
 
-### Aspect 4 — Naming-scheme consistency (`change_type: analysis`)
+### Aspect 4 — Naming-scheme consistency (`change_type: tech_debt`)
 
-Assess whether the keys follow a uniform, conflict-free naming scheme. Report inconsistencies and conflicts (e.g. mixed separators, divergent prefixes, two keys that mean the same thing). This aspect is report-only — renames are breaking and are surfaced for a deliberate decision, not auto-applied.
+Assess whether the keys follow a uniform, conflict-free naming scheme. Identify inconsistencies and conflicts (e.g. mixed separators, divergent prefixes, two keys that mean the same thing), and propose the renames that resolve them.
 
-### Aspect 5 — Unit sanity (`change_type: analysis`)
+**User-confirmation gate (mandatory)**: this deliverable's audit step PROPOSES the rename list; **renames happen ONLY after explicit user confirmation**. Renames are breaking, so the running task MUST raise an `AskUserQuestion` presenting the proposed renames and MUST NOT apply any rename until the user confirms. On confirmation, the deliverable applies the renames in `marshal.json` (and the config-reading code that consumes each renamed key, within the module/T4 scope cell). The audit proposes; the user confirms; the recipe applies on agreement.
 
-Assess whether each value's unit is sensible (e.g. a raw `50000` token budget vs `50` thousands or `"50K"`). Report values whose units read poorly.
+### Aspect 5 — Unit sanity (`change_type: tech_debt`)
 
-**Follow-up-plan escape hatch**: a broad units rework touches many call sites and may belong in a SEPARATE follow-up plan rather than being forced into the audit plan. When the assessment finds that fixing units would cascade beyond the config file, the deliverable records the finding and recommends a follow-up plan instead of widening this one.
+Assess whether each value's unit is sensible (e.g. a raw `50000` token budget vs `50` thousands or `"50K"`), and propose the value changes that make units read well.
+
+**User-confirmation gate (mandatory)**: this deliverable's audit step PROPOSES the unit-corrected values; **value changes happen ONLY after explicit user confirmation**. The running task MUST raise an `AskUserQuestion` presenting the proposed value changes and MUST NOT apply any change until the user confirms. On confirmation, the deliverable applies the corrected values in `marshal.json`. The audit proposes; the user confirms; the recipe applies on agreement.
+
+**Follow-up-plan escape hatch (scope-bounded)**: retain the follow-up-plan path ONLY for changes whose blast radius genuinely exceeds the audit's module/T4 scope cell. When the assessment finds that fixing units would cascade beyond the `plan-marshall` module — touching call sites across other modules — the deliverable records the finding and recommends a SEPARATE follow-up plan instead of widening this one. Unit changes that stay within the module/T4 cell are applied here on confirmation rather than deferred.
 
 ---
 
@@ -107,9 +111,9 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 **4c. Write the solution outline** using the Write tool to `{resolved_path}`. The document MUST include, in order:
 - `# Solution: marshal.json Configuration Audit` header with `plan_id`, `created`, `compatibility` metadata.
-- `## Summary` — the audit cell (`module × T4`), the config file under audit (`.plan/marshal.json`), and the five aspects.
+- `## Summary` — the audit cell (`module × T4`), the config file under audit (`.plan/marshal.json`), and the five aspects. State that aspects 2, 4, and 5 fix on agreement (propose-then-apply-on-confirm), not assess-only.
 - `## Overview` — the audit radius (the `plan-marshall` module) and the relation model the T4 cell builds.
-- `## Deliverables` — one deliverable per audit aspect (Aspects 1–5 above), each carrying its `T4 × module` cell declaration, the aspect-2 user-confirmation gate, and the aspect-5 follow-up-plan note.
+- `## Deliverables` — one deliverable per audit aspect (Aspects 1–5 above), each carrying its `T4 × module` cell declaration, the user-confirmation gates for aspects 2, 4, and 5 (propose-then-apply-on-confirm), and the scope-bounded aspect-5 follow-up-plan escape hatch.
 
 **4d. Validate** the written outline:
 
@@ -125,15 +129,15 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 **Execution mode**: Deliverable-collection recipe — declare the hard-coded cell, resolve the radius, collect the five audit deliverables, write the solution outline. Loaded by phase-3-outline's recipe path; not user-invocable.
 
 **Prohibited actions:**
-- Never raise an `AskUserQuestion` for the coverage cell — the cell is hard-coded `T4 / module` (Step 1). The only `AskUserQuestion` this recipe drives is the aspect-2 deletion-confirmation gate in the running plan.
+- Never raise an `AskUserQuestion` for the coverage cell — the cell is hard-coded `T4 / module` (Step 1). The only `AskUserQuestion`s this recipe drives are the per-aspect confirmation gates (aspect-2 deletion, aspect-4 rename, aspect-5 value change) in the running plan.
 - Never restate the thoroughness ladders, the grade-to-the-floor rule, the coupling constraint, or the cell → instruction expansion table — cross-reference `dev-agent-behavior-rules/standards/thoroughness.md` and `coverage-gathering-contract.md`.
-- Never delete an orphaned config key without explicit user confirmation (aspect-2 gate).
+- Never apply a confirmed-only change without explicit user confirmation: never delete an orphaned config key (aspect 2), never apply a rename (aspect 4), and never apply a unit/value change (aspect 5) until the user confirms the proposed list via `AskUserQuestion`.
 - Never access `.plan/` files directly — all access goes through `python3 .plan/execute-script.py` manage-* scripts.
 
 **Constraints:**
 - The persisted cell is `coverage_thoroughness=T4`, `coverage_scope=module`, plus the `coverage expand`-produced `coverage_instruction`, written to `status.json` metadata.
 - Each collected deliverable declares `module: plan-marshall` and its `T4 × module` cell for the floor-graded self-report.
-- A broad units rework (aspect 5) is recommended as a separate follow-up plan rather than widening the audit plan.
+- A units rework (aspect 5) whose blast radius genuinely exceeds the module/T4 scope cell is recommended as a separate follow-up plan rather than widening the audit plan; unit changes that stay within the cell are applied on confirmation.
 
 ## Related
 

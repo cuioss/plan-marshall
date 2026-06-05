@@ -60,7 +60,7 @@ JSON structure and field definitions for project configuration.
       "finalize_without_asking": true,
       "verification_max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
-      "per_task_budget_reserve": 50000,
+      "per_task_budget_reserve_tokens": "50K",
       "steps": [
         "default:quality_check",
         "default:build_verify",
@@ -292,7 +292,7 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
       "finalize_without_asking": true,
       "verification_max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
-      "per_task_budget_reserve": 50000,
+      "per_task_budget_reserve_tokens": "50K",
       "steps": [
         "default:quality_check",
         "default:build_verify",
@@ -309,7 +309,7 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
 | `finalize_without_asking` | bool | true | Auto-continue to finalize phase after execute completes |
 | `verification_max_iterations` | int | 5 | Maximum verify-execute-verify loops |
 | `per_deliverable_build` | string | "compile+scoped-test" | off, compile-only, compile+scoped-test, full — build depth at each per-deliverable chain-tail point (Step 10). `off` skips the focused build; `compile-only` type-checks the changed module; `compile+scoped-test` adds the module's scoped tests; `full` runs a whole-tree quality-gate per deliverable (legacy, opt-in). |
-| `per_task_budget_reserve` | int | 50000 | Per-task budget **reserve** (tokens) — the minimum context-window margin that must remain free before the budget-bounded task loop starts another task. Governs the continue-vs-yield sentinel. The workflow's documented fallback when the key is absent is `50000`. |
+| `per_task_budget_reserve_tokens` | string | "50K" | Per-task budget **reserve** — the minimum context-window margin that must remain free before the budget-bounded task loop starts another task. Governs the continue-vs-yield sentinel. The `_tokens` suffix names the unit; the human-friendly value form (`"50K"`) is parsed to an int by `sensible_number.parse_sensible_int` in the phase-5-execute consumer. The workflow's documented fallback when the key is absent is `50000`. |
 
 #### Verification Steps
 
