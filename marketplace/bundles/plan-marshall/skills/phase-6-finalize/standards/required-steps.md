@@ -29,7 +29,6 @@ otherwise a manifest pruning would deadlock the phase transition.
 
 ## Steps
 
-- project:finalize-step-pre-submission-self-review
 - finalize-step-simplify
 - commit-push
 - create-pr

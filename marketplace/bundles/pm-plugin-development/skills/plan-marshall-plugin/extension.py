@@ -141,6 +141,32 @@ class Extension(ExtensionBase):
             return match[1]
         return 0
 
+    def provides_retrospective_aspects(self) -> list[dict]:
+        """Return the plan-marshall-plugin-dev retrospective aspects.
+
+        Contributes the ``wrapper-tangle`` aspect — the former Surface C of the
+        generic ``plan-marshall:plan-retrospective:direct-gh-glab-usage`` aspect.
+        It scans plan-marshall's own CI-abstraction sources
+        (``tools-integration-ci``, ``workflow-integration-{github,gitlab}``) for
+        subprocess / ``run_gh`` / ``run_glab`` args that tangle a ``gh``/``glab``
+        CLI invocation with a local-git mutation. The scan is only meaningful for
+        plans authored against the plan-marshall-plugin-dev domain, so it is
+        gated by that domain and merged into plan-retrospective only when the
+        audited plan matches.
+
+        See extension-api/standards/ext-point-retrospective.md for the contract.
+        """
+        return [
+            {
+                'aspect': 'wrapper-tangle',
+                'domain': 'plan-marshall-plugin-dev',
+                'script': 'pm-plugin-development:plan-marshall-plugin:wrapper-tangle-scan',
+                'reference': 'pm-plugin-development:plan-marshall-plugin/references/wrapper-tangle.md',
+                'description': 'Scan plan-marshall CI-wrapper sources for tangled gh/glab + local-git mutations',
+                'order': 500,
+            }
+        ]
+
     def provides_outline_skill(self) -> str | None:
         """Return domain-specific outline skill for plugin development.
 

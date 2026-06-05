@@ -31,6 +31,19 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `plan.phase-6-finalize.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.max_iterations` | User config | phase-6-finalize (loop-back ceiling) | - |
 
+## Project Configuration (marshal.json)
+
+Project-level settings under the `project.*` block — persist across plans, seeded by `init`, back-filled into existing projects by `sync-defaults`.
+
+| Path | Set By | Used By | Extension Point Doc |
+|------|--------|---------|---------------------|
+| `project.default_base_branch` | User config (`marshall-steward`) | phase-1-init (references.base_branch seed) | - |
+| `project.branch_naming.working_prefixes` | User config | marshall-steward (branch-prefix validation) | - |
+| `project.branch_naming.ci_allowlist` | User config | structural CI-allowlist test | - |
+| `project.sanctioned_conftest` | User config | phase-3-outline, phase-4-plan, execute-task (test-helper-naming allow-list) | - |
+
+`project.sanctioned_conftest` is the project's allow-list of permitted `conftest.py` paths (a JSON array of path strings). The three runtime sites read it instead of restating a literal list in shipped skill prose; the generic rule (do not name a new test helper `conftest.py`) stays in the skill prose and is project-invariant. Fail-closed default: `["test/conftest.py", "test/adapters/conftest.py"]` (from `DEFAULT_SANCTIONED_CONFTEST` in `constants.py`).
+
 ## Build Configuration (run-configuration.json)
 
 | Path | Set By | Used By | Extension Point Doc |

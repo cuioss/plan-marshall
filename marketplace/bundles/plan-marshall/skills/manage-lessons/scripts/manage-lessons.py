@@ -51,7 +51,11 @@ from input_validation import (  # type: ignore[import-not-found]
     parse_args_with_toon_errors,
     validate_lesson_id,
 )
-from marketplace_paths import resolve_main_anchored_path  # type: ignore[import-not-found]
+from marketplace_paths import (  # type: ignore[import-not-found]
+    MARKETPLACE_BUNDLES_PATH,
+    find_marketplace_path,
+    resolve_main_anchored_path,
+)
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 VALID_CATEGORIES = LESSON_CATEGORIES
@@ -878,6 +882,16 @@ SIGNAL_PRIORITY: tuple[str, ...] = (
 def _derive_standards_dir(component: str) -> str:
     """Derive the standards directory path from a ``{bundle}:{skill}`` component.
 
+    The bundles root is resolved through the cache-aware bundle resolver in
+    script-shared (:func:`marketplace_paths.find_marketplace_path`) rather than
+    a hard-coded ``marketplace/bundles`` literal, so the derivation tracks the
+    actually-resolved bundles location (explicit ``PM_MARKETPLACE_ROOT`` anchor,
+    plugin-cache install, or cwd walk-up) instead of assuming the meta-project
+    source layout. When the resolver finds no bundles tree (e.g. an environment
+    with neither a source checkout nor a configured anchor), the derivation
+    falls back to the relative ``marketplace/bundles`` segment so the value
+    still serves as a deterministic per-component grouping key.
+
     Returns the empty string when the component value is not parseable as
     ``bundle:skill`` (e.g., bare strings, multi-colon values from custom
     components). Multi-colon values are intentionally ignored — the doc
@@ -888,7 +902,9 @@ def _derive_standards_dir(component: str) -> str:
     bundle, skill = component.split(':', 1)
     if not bundle or not skill:
         return ''
-    return f'marketplace/bundles/{bundle}/skills/{skill}/standards/'
+    bundles_root = find_marketplace_path()
+    base = str(bundles_root) if bundles_root is not None else MARKETPLACE_BUNDLES_PATH
+    return f'{base}/{bundle}/skills/{skill}/standards/'
 
 
 def _derive_workflow_boundary(component: str) -> str:

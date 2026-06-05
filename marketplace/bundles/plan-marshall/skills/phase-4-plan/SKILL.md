@@ -89,13 +89,18 @@ See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standar
 
 ### Test Helper File Naming
 
-When a task step target lives under a skill test directory (any path matching `test/**/`) and represents a test helper (shared fixtures, sys.path shims, or other non-test Python module), the filename MUST NOT be `conftest.py`. Rename the target to `_fixtures.py` (or another descriptive `_*.py` name that is clearly not a pytest collection file) during task creation — before composing the JSON array passed to `manage-tasks batch-add`. Only the two repository-wide `conftest.py` files listed in the allow-list below are permitted; any additional `conftest.py` under `test/{bundle}/{skill}/` changes pytest's global collection semantics for that bundle and causes hidden coupling or spurious collection failures.
+When a task step target lives under a skill test directory (any path matching `test/**/`) and represents a test helper (shared fixtures, sys.path shims, or other non-test Python module), the filename MUST NOT be `conftest.py`. Rename the target to `_fixtures.py` (or another descriptive `_*.py` name that is clearly not a pytest collection file) during task creation — before composing the JSON array passed to `manage-tasks batch-add`. Only the `conftest.py` files in the project's configured allow-list are permitted; any additional `conftest.py` under `test/{bundle}/{skill}/` changes pytest's global collection semantics for that bundle and causes hidden coupling or spurious collection failures.
 
-**Allow-list** (MUST NOT be duplicated or added to by task steps):
-- `test/conftest.py`
-- `test/adapters/conftest.py`
+**Allow-list** (config-driven — read from `project.sanctioned_conftest` in marshal.json; see [`manage-config` Canonical invocations → `project get`](../manage-config/SKILL.md#project-get)):
 
-If a deliverable's `Affected files` list names a disallowed `conftest.py`, phase-4-plan MUST rewrite the target to `_fixtures.py` (preserving the parent directory) before persisting the step. Cross-reference: phase-3-outline owns the outline-time rule and rationale in [outline-workflow-detail.md §10d "Test Helper File Naming"](../phase-3-outline/standards/outline-workflow-detail.md#10d-test-helper-file-naming); this subsection enforces the same constraint at task-creation time so that any late-surviving `conftest.py` target is corrected before tasks reach phase-5-execute.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  project get --field sanctioned_conftest
+```
+
+Parse `value` (a JSON array of path strings); these are the only `conftest.py` paths that MAY appear in a task step. When the key is absent the script falls back to the `DEFAULT_PROJECT` default (`["test/conftest.py", "test/adapters/conftest.py"]`). The allow-list MUST NOT be duplicated or added to by task steps.
+
+If a deliverable's `Affected files` list names a `conftest.py` not in the configured allow-list, phase-4-plan MUST rewrite the target to `_fixtures.py` (preserving the parent directory) before persisting the step. Cross-reference: phase-3-outline owns the outline-time rule and rationale in [outline-workflow-detail.md §10d "Test Helper File Naming"](../phase-3-outline/standards/outline-workflow-detail.md#10d-test-helper-file-naming); this subsection enforces the same constraint at task-creation time so that any late-surviving `conftest.py` target is corrected before tasks reach phase-5-execute.
 
 ### Basename Collision Pre-check
 
@@ -446,13 +451,6 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level WARNING \
   --message "(plan-marshall:phase-4-plan) Value-change missing-profile guard fired for deliverable {N} ({title}): enumerated existing tests but module_testing absent from profiles[], Q-Gate finding emitted. Test files: {test_files}."
 ```
-
-**Self-modifying phasing enforcement**: When a deliverable's `Affected files:` list matches the path heuristic in [`ref-workflow-architecture/standards/self-modifying-classification.md`](../ref-workflow-architecture/standards/self-modifying-classification.md) AND the plan declares `compatibility: breaking` AND the deliverable describes a deletion/rename/hard-cutover, refuse to create tasks for the deliverable until ONE of the following holds:
-
-1. **Inline phasing rationale present**: The deliverable contains a `**Phasing Rationale:**` block addressing all three points from the standard's Phasing-Rationale Contract (cache-sync ordering safe; verification gate runs against worktree post-final-edit; central narrative carries no transition hedges). When present, proceed with task creation as usual — the inline rationale satisfies the contract.
-2. **Peer plan exists for the deletion phase**: A separate plan (lesson-derived or otherwise) carries the deletion scope per the PLAN A / PLAN B split pattern, AND the current plan's deliverables are restricted to the additive surface. Verify by scanning the deliverable narrative for an explicit follow-up plan id (e.g., a "Follow-up plan: `<plan-id>`" line, or a similar inline reference). The `status.metadata.plan_source` field records plan ORIGIN (`recipe` / `lesson` / fresh) — see `phase-1-init` Step 6 — and is NOT a peer-plan reference; do not consult it for this check. The deliverable narrative is the only authoritative source for peer-plan linkage. When the inline reference is present, proceed.
-
-When NEITHER holds, escalate via `AskUserQuestion` (mirroring phase-3-outline Step 10b's options — split / inline rationale / switch to additive). On user resolution, log to `decision.log` and proceed with the chosen path. This enforcement complements (does not replace) the breaking-refactor task split above: the breaking-refactor split allocates the test-rewrite task pair when the runtime contract changes, while self-modifying phasing enforcement ensures the breaking-deletion task itself has a valid phasing rationale before tasks are emitted at all.
 
 ### Description Anchoring Contract
 
@@ -952,12 +950,9 @@ A 1-2-sentence inline summary is permitted for skim-readability — but the **no
 
 When all three conditions hold, the task narrative MUST carry a sentence of the form: *"Reference the central standard via `see {central-standard-path} §{section}` — do not inline-copy the path heuristic / keyword list / decision table / regex; enforcement-critical content lives in the central standard only."*
 
-**Failure-mode rationale**: this constraint was hardened in response to two recurring drift patterns:
+**Failure-mode rationale**: this constraint was hardened in response to a recurring drift pattern — an integration site (a `SKILL.md`, a validator prompt, or a workflow doc) inlines a copy of an *enforcement-critical* rule body (a path heuristic, a keyword list, a decision table, or a regex) instead of xref-ing the central standard that owns it. A subsequent extension of the rule body lands only in the central standard; the integration site silently keeps the stale copy and drifts out of lockstep until a manual audit catches the divergence.
 
-1. **PR #348 path-heuristic copy-paste** — `phase-3-outline/standards/outline-workflow-detail.md` Step 10b inlined the self-modifying-plan path list instead of xref-ing `ref-workflow-architecture/standards/self-modifying-classification.md` § Path Heuristic. A subsequent extension of the path heuristic landed only in the central standard; the integration site silently kept the old list and missed two new path classes (`marketplace/targets/**`, `.../skills/sync-plugin-cache/**`).
-2. **q-gate-validator §2.16 keyword-list drift** — the validator's hard-cutover keyword list was duplicated in the q-gate-validation workflow doc §2.16. An extension of the keyword list landed only in the central standard; the validator workflow continued matching the stale list until a manual audit caught the divergence.
-
-Both failures share the same shape: a copy-pasted *enforcement-critical* rule body that drifted because the integration site was not declared as a downstream consumer of the central standard. The constraint converts that latent contract ("everyone keep your copy in sync") into an explicit one ("xref the central standard; never inline-copy"). The q-gate validator §2.16 architecture-mismatch finding reinforces the same boundary at the outline phase, so the constraint is enforced at both planning time and validation time.
+The failure shape is always the same: a copy-pasted *enforcement-critical* rule body that drifted because the integration site was not declared as a downstream consumer of the central standard. The constraint converts that latent contract ("everyone keep your copy in sync") into an explicit one ("xref the central standard; never inline-copy"). The q-gate validator §2.17 architecture-mismatch finding reinforces the same boundary at the outline phase, so the constraint is enforced at both planning time and validation time.
 
 **Counter-indication (when inline copy is allowed)**: the integration deliverable extends a *closed-form, version-pinned reference value* that the central standard explicitly designates as a stable embedding target (e.g., a SemVer constant, a fixed enum). Inline embedding of such values is acceptable because they are not enforcement-critical rule bodies — drift is detected by the central standard's release/version contract, not by xref reachability.
 

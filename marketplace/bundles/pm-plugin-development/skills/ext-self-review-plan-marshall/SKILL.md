@@ -7,11 +7,11 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 # Self-Review Candidate Surfacing — plan-marshall domain
 
-**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../extension-api/standards/ext-point-self-review-surfacing.md`](../extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../phase-6-finalize/workflow/pre-submission-self-review.md`](../phase-6-finalize/workflow/pre-submission-self-review.md) can apply the five structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift) against a bounded surface, not an unbounded read of the whole diff.
+**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the five structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift) against a bounded surface, not an unbounded read of the whole diff.
 
 ## Enforcement
 
-**Execution mode**: Library script; invoked via the standard 3-part executor notation by `phase-6-finalize/workflow/pre-submission-self-review.md` Step 1.
+**Execution mode**: Library script; invoked via the standard 3-part executor notation by `plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md` Step 1.
 
 **Prohibited actions:**
 - Do not modify any source files; the helper is read-only against the worktree
@@ -25,7 +25,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 ## When to Use
 
-Invoked exclusively by `default:pre-submission-self-review` (see `phase-6-finalize/workflow/pre-submission-self-review.md` Step 1). No other caller is supported. The script is registered as `plan-marshall:ext-self-review-plan-marshall:self_review` and is NOT user-invocable from a slash command — `user-invocable: false` per the script-only registration convention; this skill is intentionally absent from `plan-marshall/.claude-plugin/plugin.json`.
+Invoked exclusively by `default:pre-submission-self-review` (see `plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md` Step 1). No other caller is supported. The script is registered as `pm-plugin-development:ext-self-review-plan-marshall:self_review` and is NOT user-invocable from a slash command — `user-invocable: false` per the script-only registration convention; this skill is intentionally absent from `pm-plugin-development/.claude-plugin/plugin.json`.
 
 ## Keep-Identifier Markers
 
@@ -134,7 +134,7 @@ protected_identifiers[N9]:
    - Emit one entry per heading whose line falls within an added/edited diff hunk
    - The `siblings` field is a semicolon-joined list of sibling heading texts (peer headings under the same parent), excluding the entry's own heading
 
-4. **Symmetric-pair candidates** — added lines in `.py` files matching `^def\s+(\w+)`. The captured function name is split on `_` and inspected for any of the 6 pair tokens: `save/load`, `init/restore`, `push/pop`, `acquire/release`, `open/close`, `start/stop`. When a match is found, the `partner` field is the same function name with the matched token swapped to its pair (e.g., `save_state` → `load_state`). Each entry also carries a deterministic `test_present` flag (Tier-2 missing-test heuristic): the `test/` tree under `--project-dir` is searched for a word-boundary occurrence of the function name (same `(?<![a-zA-Z0-9_-])` / `(?![a-zA-Z0-9_-])` lookaround discipline used for keep-identifier markers). `test_present=false` is the Tier-2 missing-test signal — a newly added symmetric function with no test surface. The LLM half of the check (deciding whether the missing coverage is a real defect) lives in the consumer's Step 3 check 1; see [`../phase-6-finalize/workflow/pre-submission-self-review.md`](../phase-6-finalize/workflow/pre-submission-self-review.md).
+4. **Symmetric-pair candidates** — added lines in `.py` files matching `^def\s+(\w+)`. The captured function name is split on `_` and inspected for any of the 6 pair tokens: `save/load`, `init/restore`, `push/pop`, `acquire/release`, `open/close`, `start/stop`. When a match is found, the `partner` field is the same function name with the matched token swapped to its pair (e.g., `save_state` → `load_state`). Each entry also carries a deterministic `test_present` flag (Tier-2 missing-test heuristic): the `test/` tree under `--project-dir` is searched for a word-boundary occurrence of the function name (same `(?<![a-zA-Z0-9_-])` / `(?![a-zA-Z0-9_-])` lookaround discipline used for keep-identifier markers). `test_present=false` is the Tier-2 missing-test signal — a newly added symmetric function with no test surface. The LLM half of the check (deciding whether the missing coverage is a real defect) lives in the consumer's Step 3 check 1; see [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md).
 
 5. **Flag-guard pairs** — added lines in `.py` files containing an argument-presence guard over a `--flag` token. Two guard shapes are recognized: membership/substring tests where a quoted `--flag` literal is the left operand of an `in` test (e.g., `'--project-dir' in args`, `'--plan-id=' in argv`) and `startswith` checks over a quoted `--flag` literal (e.g., `arg.startswith('--project-dir')`). For each guarded flag the detector classifies which flag *forms* the guard covers: the bare `--flag` token guards the **space-separated** form (`--flag value`), and the `--flag=` prefix guards the **equals** form (`--flag=value`). Coverage is aggregated per `(file, flag)` across all guards in the file — `space` when only the bare token appears, `equals` when only the `--flag=` prefix appears, and `both` when both appear. The `line` field records the first guard occurrence for the flag in the file. The list anchors the cognitive review's flag-form-coverage comparison: when one guard in a symmetric pair covers `both` forms while its sibling covers only one, the uncovered form is a defect (e.g., a `--project-dir` guard covering only the space form risks double-injection that violates the mutually-exclusive-arguments contract).
 
@@ -180,12 +180,12 @@ This script is a **worktree-scoped (Bucket B)** script (per `tools-script-execut
 
 ## Canonical invocations
 
-The canonical argparse surface for `self_review.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `self_review.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### surface
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:ext-self-review-plan-marshall:self_review surface \
+python3 .plan/execute-script.py pm-plugin-development:ext-self-review-plan-marshall:self_review surface \
   --plan-id PLAN_ID [--project-dir PROJECT_DIR] [--base-branch BASE_BRANCH] [--contract-radius CONTRACT_RADIUS]
 ```
 
@@ -193,7 +193,7 @@ python3 .plan/execute-script.py plan-marshall:ext-self-review-plan-marshall:self
 
 ## Related
 
-- [`../extension-api/standards/ext-point-self-review-surfacing.md`](../extension-api/standards/ext-point-self-review-surfacing.md) — extension-point contract this skill implements
-- [`../phase-6-finalize/workflow/pre-submission-self-review.md`](../phase-6-finalize/workflow/pre-submission-self-review.md) — sole consumer of this script's output
-- [`../manage-execution-manifest/standards/decision-rules.md`](../manage-execution-manifest/standards/decision-rules.md) — `pre_submission_self_review_inactive` pre-filter that gates dispatch of the consumer step
-- [`../tools-script-executor/standards/cwd-policy.md`](../tools-script-executor/standards/cwd-policy.md) — Bucket B cwd contract this script obeys
+- [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md) — extension-point contract this skill implements
+- [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) — sole consumer of this script's output
+- [`../../../plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md`](../../../plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md) — `pre_submission_self_review_inactive` pre-filter that gates dispatch of the consumer step
+- [`../../../plan-marshall/skills/tools-script-executor/standards/cwd-policy.md`](../../../plan-marshall/skills/tools-script-executor/standards/cwd-policy.md) — Bucket B cwd contract this script obeys

@@ -122,7 +122,7 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 7 | Logging gap analysis | (LLM on references + logs) | `references/logging-gap-analysis.md` |
 | 8 | Script failure analysis | `script-failure-analysis` | `references/script-failure-analysis.md` |
 | 9 | Permission prompt analysis | (LLM on description or session) | `references/permission-prompt-analysis.md` |
-| 10 | Direct gh/glab usage | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
+| 10 | Direct gh/glab usage (Surfaces A+B: plan logs + plan diff) | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
 | 11 | Execution-context dispatch audit (both directions: spawns rode the envelope AND DISPATCHED steps were dispatched) | (LLM on logs + dispatch decisions + phase_steps) | `standards/execution-context-dispatch-audit.md` |
 | 12 | Manifest decisions (conditional) | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
 | 13 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
@@ -137,6 +137,32 @@ The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-
 **Aspect 13** is skipped when `--session-id` is absent.
 
 > **Achieved thoroughness**: there is no mechanical achieved-thoroughness measurement. The *achieved* side of coverage is the floor-graded self-report defined in [`../dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md) § Floor-Graded Self-Report; the Artifact-consistency aspect (aspect 1, above) supplies the deterministic declared-vs-actual footprint (derived live from the worktree, or the legacy `references.modified_files` key for older archived plans) that the self-report grades against.
+
+**Domain-contributed aspects (merged after the fixed table, gated by plan domain)**:
+
+The fixed aspect table above is domain-invariant — it runs for every plan. Domain bundles may contribute ADDITIONAL deterministic, script-backed aspects via the `provides_retrospective_aspects()` extension point (see [`../extension-api/standards/ext-point-retrospective.md`](../extension-api/standards/ext-point-retrospective.md)). Merge them after the fixed table and before compiling the report:
+
+1. **Resolve the audited plan's domain.** Read the plan's domain from its task metadata — the `domain` field on the plan's tasks (e.g., `plan-marshall-plugin-dev`). In live mode, read a representative task via `manage-tasks`; in archived mode, read the domain from the archived `status.metadata` / task files. When the plan has no resolvable domain, skip the merge entirely (no domain aspects apply).
+
+2. **List domain-contributed aspects** across all extensions:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery \
+     list-retrospective-aspects
+   ```
+
+   Parse the `aspects[]` rows from the TOON output. Each row carries `aspect`, `domain`, `script`, `reference`, `description`, and `order`.
+
+3. **Filter by the audited plan's domain.** Keep only rows whose `domain` matches the plan's domain. Skip every aspect from a non-matching domain. The remaining aspects are deterministic script-backed fragments — run each exactly like the built-in script-backed aspects (1-3, 8, 10): invoke its `script` notation with `run --mode {live|archived}` plus the resolution flags, pipe stdout to `work/fragment-{aspect}.toon`, then register it via `collect-fragments add --aspect {aspect}`.
+
+   ```bash
+   python3 .plan/execute-script.py {script} \
+     run --plan-id {plan_id} --mode {live|archived} > work/fragment-{aspect}.toon
+   python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
+     add --plan-id {plan_id} --aspect {aspect} --fragment-file work/fragment-{aspect}.toon
+   ```
+
+   For example, a `plan-marshall-plugin-dev` plan picks up the `wrapper-tangle` aspect (`pm-plugin-development:plan-marshall-plugin:wrapper-tangle-scan`) — the former Surface C of the generic `direct-gh-glab-usage` aspect, now homed in pm-plugin-development. Plans of other domains skip it.
 
 **Per-aspect capture pattern**:
 

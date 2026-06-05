@@ -11,6 +11,7 @@ project initialization and detection.
 from constants import (  # type: ignore[import-not-found]
     DEFAULT_BRANCH_PREFIX_WORKING,
     DEFAULT_CI_BRANCH_ALLOWLIST,
+    DEFAULT_SANCTIONED_CONFTEST,
 )
 
 # Reserved keys in nested domain config (not profile names)
@@ -94,12 +95,23 @@ DEFAULT_SYSTEM_RETENTION = {
 # The literals live in constants.py (DEFAULT_BRANCH_PREFIX_WORKING /
 # DEFAULT_CI_BRANCH_ALLOWLIST) as the fail-closed fallback; this block is the
 # only place that materialises them into the default marshal.json config.
+#
+# `sanctioned_conftest` is the project's allow-list of permitted `conftest.py`
+# paths — the concrete set every test-helper-naming rule (phase-3-outline,
+# phase-4-plan, execute-task) reads instead of restating a literal two-file
+# list in shipped skill prose. It is a JSON array so it is visible and editable
+# directly in marshal.json and round-trips through `project get/set`. The
+# literal lives in constants.py (DEFAULT_SANCTIONED_CONFTEST) as the fail-closed
+# fallback; this block materialises it into the default config. The generic rule
+# ("do not name a new test helper conftest.py") stays in the skill prose and is
+# project-invariant — only this concrete allow-list is config-driven.
 DEFAULT_PROJECT = {
     'default_base_branch': 'main',
     'branch_naming': {
         'working_prefixes': list(DEFAULT_BRANCH_PREFIX_WORKING),
         'ci_allowlist': list(DEFAULT_CI_BRANCH_ALLOWLIST),
     },
+    'sanctioned_conftest': list(DEFAULT_SANCTIONED_CONFTEST),
 }
 
 # open-in-ide gate default (`plan.open_in_ide` in marshal.json — flat bool).

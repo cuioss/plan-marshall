@@ -265,6 +265,49 @@ def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) ->
     return workflow_extensions
 
 
+def get_retrospective_aspects_from_extensions(extensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Get domain-contributed retrospective aspects from extensions.
+
+    Each extension's provides_retrospective_aspects() returns a list of
+    aspect dicts. plan-retrospective merges only the aspects whose ``domain``
+    matches the audited plan's domain; this helper returns every declared
+    aspect across all extensions so the caller can apply the domain filter.
+
+    Args:
+        extensions: List of extension info dicts
+
+    Returns:
+        List of aspect dicts: {aspect, domain, script, reference, description,
+        order, bundle}. The ``bundle`` field is added so callers can attribute
+        each aspect to its contributing bundle.
+    """
+    aspects: list[dict[str, Any]] = []
+
+    for ext in extensions:
+        module = ext.get('module')
+        if not module:
+            continue
+
+        try:
+            declared = module.provides_retrospective_aspects()
+        except Exception as e:
+            log_entry(
+                'script',
+                'global',
+                'WARNING',
+                f'[EXTENSION] provides_retrospective_aspects() failed for {ext.get("bundle", "unknown")}: {e}',
+            )
+            continue
+
+        for aspect_info in declared:
+            if aspect_info and aspect_info.get('aspect'):
+                entry = dict(aspect_info)
+                entry['bundle'] = ext['bundle']
+                aspects.append(entry)
+
+    return aspects
+
+
 def apply_config_defaults(project_root: Path, pre_discovered: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Apply config_defaults() callback for applicable extensions only.
 
@@ -379,6 +422,34 @@ def cmd_apply_config_defaults(args) -> int:
     return 0 if not results['errors'] else 1
 
 
+def cmd_list_retrospective_aspects(args) -> int:
+    """CLI handler for list-retrospective-aspects command.
+
+    Emits one TOON row per domain-contributed retrospective aspect across all
+    discovered extensions. plan-retrospective consumes this list and filters by
+    the audited plan's domain before merging aspects into its dispatch.
+    """
+    del args  # No arguments — discovery is global across all extensions.
+    extensions = discover_all_extensions()
+    aspects = get_retrospective_aspects_from_extensions(extensions)
+
+    rows: list[dict[str, Any]] = [
+        {
+            'aspect': a.get('aspect', ''),
+            'domain': a.get('domain', ''),
+            'script': a.get('script', ''),
+            'reference': a.get('reference', ''),
+            'description': a.get('description', ''),
+            'order': a.get('order', 0),
+            'bundle': a.get('bundle', ''),
+        }
+        for a in aspects
+    ]
+
+    print(serialize_toon({'status': 'success', 'count': len(rows), 'aspects': rows}))
+    return 0
+
+
 def main() -> int:
     """CLI entry point for extension discovery operations."""
     import argparse
@@ -400,20 +471,37 @@ def main() -> int:
     _routing.add_plan_id_arg(defaults_parser)
     defaults_parser.set_defaults(func=cmd_apply_config_defaults)
 
+    # list-retrospective-aspects subcommand
+    aspects_parser = subparsers.add_parser(
+        'list-retrospective-aspects',
+        help='List domain-contributed retrospective aspects (all extensions)',
+        allow_abbrev=False,
+    )
+    aspects_parser.set_defaults(func=cmd_list_retrospective_aspects)
+
     args = parser.parse_args()
 
-    # Two-state routing: --plan-id auto-resolves; --project-dir is the
-    # explicit override; both together is a hard error.
-    try:
-        args.project_dir = _routing.resolve_project_dir(
-            getattr(args, 'plan_id', None), args.project_dir, default='.'
-        )
-    except _routing.MutuallyExclusiveArgsError:
-        print(serialize_toon(_routing.emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir)))
-        return 2
-    except _routing.WorktreeResolutionError as exc:
-        print(serialize_toon(_routing.emit_worktree_error(args.plan_id, exc)))
-        return 2
+    # Two-state routing applies only to subcommands that declare --project-dir
+    # (apply-config-defaults). Global-discovery subcommands such as
+    # list-retrospective-aspects scan every bundle from the marketplace tree and
+    # take no project-dir / plan-id routing.
+    if hasattr(args, 'project_dir'):
+        # Two-state routing: --plan-id auto-resolves; --project-dir is the
+        # explicit override; both together is a hard error.
+        try:
+            args.project_dir = _routing.resolve_project_dir(
+                getattr(args, 'plan_id', None), args.project_dir, default='.'
+            )
+        except _routing.MutuallyExclusiveArgsError:
+            print(
+                serialize_toon(
+                    _routing.emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir)
+                )
+            )
+            return 2
+        except _routing.WorktreeResolutionError as exc:
+            print(serialize_toon(_routing.emit_worktree_error(args.plan_id, exc)))
+            return 2
 
     result: int = args.func(args)
     return result

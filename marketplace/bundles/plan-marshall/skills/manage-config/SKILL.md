@@ -297,7 +297,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `resolve-execute-task-skill` | `--profile` (resolve execute-task skill for profile) |
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
-| `project` | `get/set` (`default_base_branch`, `branch_naming`) |
+| `project` | `get/set` (`default_base_branch`, `branch_naming`, `sanctioned_conftest`) |
 | `plan` | `{phase} get/set`, set-steps, add-step, remove-step, set-max-iterations |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `init` | Initialize marshal.json (with optional `--force`) |
@@ -594,6 +594,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config projec
 (`working_prefixes`, `ci_allowlist`), falling back to the
 `DEFAULT_PROJECT` default when the key is absent from marshal.json.
 
+`--field sanctioned_conftest` returns the project's allow-list of permitted
+`conftest.py` paths (a flat JSON array of path strings), falling back to the
+`DEFAULT_PROJECT` default (`["test/conftest.py", "test/adapters/conftest.py"]`)
+when the key is absent. This is the concrete allow-list the test-helper-naming
+rules in `phase-3-outline`, `phase-4-plan`, and `execute-task` read instead of
+restating a literal list in shipped skill prose. The generic rule (do not name a
+new test helper `conftest.py`) stays in the skill prose and is project-invariant.
+
 ### project set
 
 ```bash
@@ -602,7 +610,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config projec
 ```
 
 Scalar fields (e.g. `default_base_branch`) take a plain value; `branch_naming`
-takes a JSON object value that round-trips through `get`.
+takes a JSON object value that round-trips through `get`; `sanctioned_conftest`
+takes a JSON array of path strings that round-trips through `get`. A non-array
+value (or an array containing a non-string item) for `sanctioned_conftest` is
+rejected with `error_type: invalid_type`.
 
 ### plan {phase} get
 

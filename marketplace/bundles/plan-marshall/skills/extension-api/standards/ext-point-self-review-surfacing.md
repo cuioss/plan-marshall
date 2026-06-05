@@ -6,7 +6,7 @@
 
 Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying seven candidate sub-lists for the LLM cognitive review pass to consume.
 
-The plan-marshall-domain implementor is the in-repo skill `ext-self-review-plan-marshall`; its script notation is `plan-marshall:ext-self-review-plan-marshall:self_review`. Consumer projects (Java, frontend, application code) MAY contribute their own implementor by following the contract below.
+The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Consumer projects (Java, frontend, application code) MAY contribute their own implementor by following the contract below.
 
 This document is a unifying reference; the consumer-side dispatch lives in [`../../phase-6-finalize/workflow/pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) Step 1.
 
@@ -116,7 +116,7 @@ Each entry MUST carry `file` (repo-relative path) AND `line` (1-based line numbe
 
 ### Detection Rules (Plan-Marshall Domain Reference)
 
-The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../ext-self-review-plan-marshall/SKILL.md`](../../ext-self-review-plan-marshall/SKILL.md) (seven numbered detection rules covering regex literals, user-facing strings, markdown headings, symmetric-pair function names, contract-source skills, schema-bearing markdown files, and `<!-- self-review: keep <id> -->` markers). Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
+The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) (seven numbered detection rules covering regex literals, user-facing strings, markdown headings, symmetric-pair function names, contract-source skills, schema-bearing markdown files, and `<!-- self-review: keep <id> -->` markers). Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
 
 ## Failure Mode Contract
 

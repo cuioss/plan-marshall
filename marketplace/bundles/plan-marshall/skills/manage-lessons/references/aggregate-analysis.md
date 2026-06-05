@@ -23,7 +23,7 @@ Extracted once per active lesson before grouping:
 
 - **cross_refs**: the set of lesson ids that appear verbatim in the lesson body, matched by the regex `\b\d{4}-\d{2}-\d{2}-\d{2}-\d{3}\b`. The lesson's own id is excluded from its cross_refs set.
 - **component**: the `component` value from frontmatter (e.g., `plan-marshall:phase-5-execute`).
-- **standards_dir**: the directory holding the component's `standards/`. Derived from `component` by mapping `{bundle}:{skill}` → `marketplace/bundles/{bundle}/skills/{skill}/standards/`.
+- **standards_dir**: the directory holding the component's `standards/`. Derived from `component` by resolving the bundles root through the cache-aware bundle resolver in `script-shared` (`marketplace_paths.find_marketplace_path`) and appending `{bundle}/skills/{skill}/standards/`. The resolver tracks the actually-resolved bundles location (explicit `PM_MARKETPLACE_ROOT` anchor, plugin-cache install, or cwd walk-up); when no bundles tree resolves it falls back to the relative `marketplace/bundles` segment so the value still serves as a deterministic per-component grouping key.
 - **workflow_boundary**: a coarse grouping label inferred from the component prefix. Use the `{bundle}:{skill}` pair stripped of any task-number suffix; lessons whose components share this label are workflow-adjacent even when their components differ in detail.
 
 ## Signal priority (strongest wins)

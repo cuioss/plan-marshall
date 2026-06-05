@@ -93,5 +93,4 @@ The key distinction: **if the target decided not to act because the environment 
 ## Cross-References
 
 - `standards/contract.md` — per-operation TOON schemas listing which statuses each operation can return
-- `doc/refactor/principles.md` — Principle 3: No-Op Policy (non-negotiable constraint for all clusters)
 - `SKILL.md` — No-Op Behavior section

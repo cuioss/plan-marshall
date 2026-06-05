@@ -49,7 +49,7 @@ options:
   - label: "Accept with rationale"
     description: "Record the deviation as a deliberate scope reduction. A written rationale is mandatory and will be persisted to decision.log AND surfaced in the PR body. The plan may proceed with the softened scope."
   - label: "Split into follow-up plan"
-    description: "Stop the current plan at the additive boundary; the deletion / strict-mode portion ships as a separate follow-up plan (see self-modifying-classification.md PLAN A / PLAN B pattern). Current plan continues with only the additive work."
+    description: "Stop the current plan at the additive boundary; the deletion / strict-mode portion ships as a separate follow-up plan. Follow-up-split pattern: the current plan (PLAN A) ships only the additive surface and lands on main; a successor plan (PLAN B) removes the old surface against the already-merged additive base, so PLAN B's verification gates run against PLAN A's landed code rather than in-flight worktree edits. Current plan continues with only the additive work."
 multiSelect: false
 ```
 
@@ -86,5 +86,4 @@ Two callers reference this standard. When the deviation taxonomy or the AskUserQ
 
 ## Related
 
-- `plan-marshall:ref-workflow-architecture/standards/self-modifying-classification.md` — outline-time/plan-time classification for plans whose edits touch their own runtime infrastructure; covers the structural half of the failure mode that motivates this escalation rule.
 - Rationale: Plans have silently descoped hard requirements by deferring them to `work.log` entries without an `AskUserQuestion` — this standard makes the escalation contract explicit so silent softening is structurally prevented.

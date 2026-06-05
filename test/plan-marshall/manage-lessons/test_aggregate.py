@@ -48,6 +48,8 @@ _spec.loader.exec_module(_mod)
 
 cmd_aggregate = _mod.cmd_aggregate
 AGGREGATE_PREVIEW_CHARS = _mod.AGGREGATE_PREVIEW_CHARS
+_derive_standards_dir = _mod._derive_standards_dir
+MARKETPLACE_BUNDLES_PATH = _mod.MARKETPLACE_BUNDLES_PATH
 
 
 # =============================================================================
@@ -183,38 +185,20 @@ class TestGroupByStandardsDir:
     shared-standards-dir group when no stronger tier links them — case (b).
 
     The standards_dir is derived from ``component`` as
-    ``marketplace/bundles/{bundle}/skills/{skill}/standards/``. Two lessons
-    with the SAME component would already group at the shared-component tier
-    (case a). To exercise the standards-dir tier in isolation we need lessons
-    with the same ``{bundle}:{skill}`` prefix but a numeric task-suffix that
-    distinguishes their component values, so shared-component fails to match
-    while the prefix-derived standards_dir still does.
+    ``{bundles_root}/{bundle}/skills/{skill}/standards/`` where ``bundles_root``
+    is resolved through the cache-aware ``find_marketplace_path`` resolver (see
+    ``TestDeriveStandardsDirResolverPath`` below for the direct resolver-path
+    coverage). Two lessons with the SAME component already group at the
+    shared-component tier (case a), and ``_derive_standards_dir`` returns the
+    empty string for any component value that is not exactly ``{bundle}:{skill}``.
+    Lessons that share a standards_dir therefore share a component, so the
+    shared-standards-dir tier is unreachable for the bare component shape; it is
+    structurally exercised by the workflow-boundary test below, which relies on
+    the same fall-through machinery.
 
-    However ``_derive_standards_dir`` returns the empty string for any
-    component value that is not exactly ``{bundle}:{skill}``. So instead we
-    seed two lessons whose component values differ but share the same
-    derived standards_dir — which only happens when the components are
-    bare ``{bundle}:{skill}`` and equal. The realistic shared-standards-dir
-    case is therefore: two lessons whose components differ only in trailing
-    suffix that the standards_dir derivation strips. Since the production
-    rule rejects multi-colon components, we exercise this tier by seeding
-    one lesson whose component empties out at the shared-component tier
-    (e.g. blank component) and ... see the actual implementation rule.
-
-    In practice, with the production helper, the only way to land in the
-    shared-standards-dir tier without first matching shared-component is
-    when the per-lesson signals collide on standards_dir but differ on
-    component. The current ``_derive_standards_dir`` rejects multi-colon
-    values and only accepts ``bundle:skill``; therefore lessons that share
-    standards_dir must share component, and the shared-standards-dir tier
-    is unreachable for the bare component shape.
-
-    We therefore validate the tier indirectly: with no cross-refs and
-    distinct components that map to distinct standards-dirs, the result
-    is a singleton (dropped). With shared component, the result is a
-    shared-component group (case a). The shared-standards-dir tier is
-    structurally exercised by the workflow-boundary test below — both
-    rely on the same fall-through machinery.
+    This test validates the tier-fall-through does not spuriously cluster
+    unrelated lessons: distinct components that map to distinct standards-dirs
+    yield no groups.
     """
 
     def test_distinct_components_distinct_standards_dirs_yields_no_groups(self, tmp_path):
@@ -242,6 +226,94 @@ class TestGroupByStandardsDir:
 
         assert result['status'] == 'success'
         assert result['groups'] == []
+
+
+class TestDeriveStandardsDirResolverPath:
+    """``_derive_standards_dir`` resolves the bundles root through the
+    cache-aware ``find_marketplace_path`` resolver in script-shared rather than
+    a hard-coded ``marketplace/bundles`` literal — the generalization landed in
+    the implementation half of this deliverable.
+
+    These tests pin the derivation directly (not through the aggregate verb) so
+    they assert the resolver-path invocation and the no-literal-meta-path
+    contract precisely:
+
+    - the resolver IS called for a parseable ``{bundle}:{skill}`` component;
+    - when the resolver returns a path, the derived dir is anchored on THAT
+      path (no hard-coded source-layout assumption);
+    - when the resolver returns ``None`` (no bundles tree found), the
+      derivation falls back to the relative ``MARKETPLACE_BUNDLES_PATH``
+      segment so the value still serves as a deterministic grouping key;
+    - unparseable component shapes short-circuit to the empty string WITHOUT
+      consulting the resolver.
+    """
+
+    def test_resolver_invoked_for_parseable_component(self):
+        """A bare ``{bundle}:{skill}`` component triggers exactly one resolver
+        call — the derivation no longer hard-codes the bundles root.
+        """
+        resolved = Path('/anchored/checkout/marketplace/bundles')
+        with patch.object(_mod, 'find_marketplace_path', return_value=resolved) as mock_resolver:
+            result = _derive_standards_dir('plan-marshall:phase-5-execute')
+
+        mock_resolver.assert_called_once_with()
+        assert result == (
+            '/anchored/checkout/marketplace/bundles'
+            '/plan-marshall/skills/phase-5-execute/standards/'
+        )
+
+    def test_derived_dir_anchored_on_resolved_path(self):
+        """The derived standards dir is built from the resolver's returned path
+        verbatim — a non-source-layout anchor (e.g. a plugin-cache install)
+        flows straight through.
+        """
+        resolved = Path('/home/u/.claude/plugins/cache/pm/marketplace/bundles')
+        with patch.object(_mod, 'find_marketplace_path', return_value=resolved):
+            result = _derive_standards_dir('pm-dev-java:java-core')
+
+        assert result == (
+            '/home/u/.claude/plugins/cache/pm/marketplace/bundles'
+            '/pm-dev-java/skills/java-core/standards/'
+        )
+        # No bare literal meta path is exercised when the resolver returns a path.
+        assert not result.startswith(f'{MARKETPLACE_BUNDLES_PATH}/')
+
+    def test_falls_back_to_relative_segment_when_resolver_returns_none(self):
+        """When the resolver finds no bundles tree, the derivation falls back to
+        the relative ``MARKETPLACE_BUNDLES_PATH`` segment — the value remains a
+        deterministic per-component grouping key.
+        """
+        with patch.object(_mod, 'find_marketplace_path', return_value=None):
+            result = _derive_standards_dir('plan-marshall:phase-1-init')
+
+        assert result == (
+            f'{MARKETPLACE_BUNDLES_PATH}/plan-marshall/skills/phase-1-init/standards/'
+        )
+
+    def test_unparseable_component_skips_resolver(self):
+        """Component values that are not exactly ``{bundle}:{skill}`` return the
+        empty string and MUST NOT consult the resolver (no wasted resolution).
+        """
+        with patch.object(_mod, 'find_marketplace_path') as mock_resolver:
+            assert _derive_standards_dir('') == ''
+            assert _derive_standards_dir('bare-no-colon') == ''
+            assert _derive_standards_dir('plan-marshall:phase-5-execute:5') == ''
+            assert _derive_standards_dir(':skill') == ''
+            assert _derive_standards_dir('bundle:') == ''
+
+        mock_resolver.assert_not_called()
+
+    def test_no_literal_meta_path_when_resolver_diverges(self):
+        """Confirms no literal meta path remains exercised: when the resolver
+        points at a checkout that is NOT the meta-project source layout, the
+        derived dir tracks the resolved location, never a baked-in literal.
+        """
+        divergent = Path('/some/other/worktree/marketplace/bundles')
+        with patch.object(_mod, 'find_marketplace_path', return_value=divergent):
+            result = _derive_standards_dir('plan-marshall:manage-lessons')
+
+        assert result.startswith('/some/other/worktree/marketplace/bundles/')
+        assert '/plan-marshall/skills/manage-lessons/standards/' in result
 
 
 class TestGroupByWorkflowBoundary:

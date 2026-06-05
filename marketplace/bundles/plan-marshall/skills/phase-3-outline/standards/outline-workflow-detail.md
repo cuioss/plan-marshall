@@ -706,11 +706,14 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 **Why**: pytest auto-discovers `conftest.py` and evaluates it as a fixture-collection module for every test run. Adding a `conftest.py` under `test/{bundle}/{skill}/` changes pytest collection semantics globally for that bundle's tests, causing hidden coupling, duplicate-fixture warnings, and in the worst case test collection failures unrelated to the plan's intent. Using `_fixtures.py` (imported explicitly by the tests that need it) keeps the helper local, scoped, and reviewable as plain Python.
 
-**Allow-list**: Only two `conftest.py` files are permitted in this repository and MUST NOT be added to or duplicated by deliverables:
-- `test/conftest.py` — top-level pytest configuration for the whole suite
-- `test/adapters/conftest.py` — sys.path shim required by the adapters package
+**Allow-list**: The set of `conftest.py` files permitted in this project is config-driven — read it from `project.sanctioned_conftest` in marshal.json (see [`manage-config` Canonical invocations → `project get`](../../manage-config/SKILL.md#project-get)):
 
-Any other `conftest.py` in an `**Affected files:**` list is a defect. Replace with `_fixtures.py` (or a similarly scoped helper name) and update any `Change per file:` text to describe explicit imports from the tests that consume it.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  project get --field sanctioned_conftest
+```
+
+Parse `value` (a JSON array of path strings); these are the only `conftest.py` paths that MAY appear in a deliverable's `**Affected files:**` list. When the key is absent the script falls back to the `DEFAULT_PROJECT` default (`["test/conftest.py", "test/adapters/conftest.py"]`). Any other `conftest.py` in an `**Affected files:**` list is a defect. Replace with `_fixtures.py` (or a similarly scoped helper name) and update any `Change per file:` text to describe explicit imports from the tests that consume it. The generic rule is project-invariant: do not name a new test helper `conftest.py`.
 
 **Cross-references**:
 - `plan-marshall:dev-general-module-testing` — testing methodology (AAA pattern, coverage, test organization) this rule supports
@@ -725,78 +728,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **If workflow fails**: HALT and return error. Do NOT fall back to grep/search.
 
-### Step 10b: Self-Modifying Classification
-
-**Purpose**: Classify each deliverable along two orthogonal dimensions before Q-Gate locks the outline — (a) **self-modifying + breaking** (touches plan-marshall runtime infrastructure with a hard cutover), and (b) **human-gated harness-config** (touches the harness-configuration surface that requires a human action to activate) — and surface the phasing / split decision for each. The classification rules, path heuristic, phasing-rationale contract, and the human-gated harness-config dimension all live in [`../../ref-workflow-architecture/standards/self-modifying-classification.md`](../../ref-workflow-architecture/standards/self-modifying-classification.md) — this step wires that standard into outline workflow.
-
-**Activation**: Runs after Step 10 (Execute Change-Type Workflow and Write Solution) and BEFORE Step 11 (Q-Gate Verification). Applies to every deliverable in `solution_outline.md`, regardless of track (Simple or Complex) or change type.
-
-#### Detection
-
-For each deliverable, scan its `**Affected files:**` block for paths matching the path heuristic. The path list is the single source of truth in [`../../ref-workflow-architecture/standards/self-modifying-classification.md` § Path Heuristic](../../ref-workflow-architecture/standards/self-modifying-classification.md#path-heuristic) — do not duplicate the list inline; read it from the standard. Treat the standard as authoritative for both the path patterns and the per-pattern rationale.
-
-A deliverable is **self-modifying + breaking** when ALL three predicates hold:
-
-1. At least one affected path matches the heuristic from the standard, AND
-2. The plan declares `compatibility: breaking` (read once for the whole plan from the solution outline header), AND
-3. The deliverable's `Change per file:` or surrounding narrative contains hard-cutover language. The full keyword list is owned by the q-gate validator — see [plan-marshall/workflow/q-gate-validation.md § 2.16 Self-Modifying Phased-Rollout Validator](../../../agents/plan-marshall/workflow/q-gate-validation.md) Detection Logic step 2 for the canonical phrasing list (`remove ... entirely`, `delete the ...`, `drop the ...`, `retire the ...`, `no escape hatch`, `no transition window`, `zero-hit grep`, `zero hits`, `returns zero`, or equivalent applied to a public surface). Both the validator and this step consume the same list to keep outline-time and q-gate-time detection in lockstep.
-
-#### Author Prompt (when all three hold)
-
-When the predicate fires AND the deliverable does NOT already contain a `**Phasing Rationale:**` block, prompt the author via `AskUserQuestion`:
-
-```yaml
-question: |
-  Deliverable {N} ({title}) is self-modifying and declares a breaking deletion/cutover.
-
-  **Affected runtime path(s):** {matched paths}
-  **Compatibility:** breaking
-  **Hard-cutover signal:** {one-line — what the deliverable removes}
-
-  Without a phasing strategy this combination historically descopes silently. How should the plan proceed?
-
-header: "Self-Modifying"
-options:
-  - label: "Split into PLAN A + PLAN B"
-    description: "Recommended. PLAN A ships only the additive surface; PLAN B (a follow-up plan) ships the deletion against the already-merged additive base. The current plan retains only additive deliverables; the deletion seeds a successor lesson via manage-lessons add."
-  - label: "Document phasing rationale inline"
-    description: "Single-plan path. Add a `**Phasing Rationale:**` block to deliverable {N} addressing all three points from self-modifying-classification.md (cache-sync ordering, verification-gate target, narrative consistency). Q-Gate validator §2.16 verifies the block content."
-  - label: "Switch compatibility to additive"
-    description: "Change the plan-level `compatibility:` from `breaking` to `deprecation`. The deliverable retains both surfaces with explicit deprecation markers; the hard-cutover language is dropped from the narrative."
-multiSelect: false
-```
-
-#### Resolution Handling
-
-| Option | Side Effect |
-|--------|-------------|
-| **Split into PLAN A + PLAN B** | Remove the deletion-bearing portion of the deliverable from `solution_outline.md` (or remove the entire deliverable when it is purely deletion). Capture the removed scope as a successor lesson via `manage-lessons add`. Re-emit the outline with only the additive scope. |
-| **Document phasing rationale inline** | Insert a `**Phasing Rationale:**` block into the deliverable. The block MUST address the three points from `self-modifying-classification.md` § Phasing-Rationale Contract. Re-write the outline with the new block in place. |
-| **Switch compatibility to additive** | Edit the solution outline header to set `compatibility: deprecation — Add deprecation markers to old code, provide migration path`. Strip hard-cutover language from the affected deliverable's narrative. The classification predicate no longer fires (compatibility is no longer `breaking`); Step 11 proceeds normally. |
-
-Log the resolution to `decision.log`:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-3-outline) Self-modifying classification fired for deliverable {N} ({title}); resolution: {chosen_option}"
-```
-
-When the predicate does NOT fire (deliverable is additive or matches the heuristic but is not breaking), no prompt is raised — proceed directly to Step 11.
-
-#### Human-Gated Harness-Config Dimension
-
-In addition to the self-modifying + breaking check above, Step 10b evaluates the **human-gated harness-config dimension** — a second, orthogonal classification defined in [`../../ref-workflow-architecture/standards/self-modifying-classification.md` § Human-Gated Harness-Config Surface](../../ref-workflow-architecture/standards/self-modifying-classification.md#human-gated-harness-config-surface). The two dimensions are evaluated independently: a deliverable can be self-modifying + breaking, human-gated, both, or neither.
-
-**Detection**: scan each deliverable's `**Affected files:**` (and its narrative's described writes) against the harness-config surface predicate (settings files, lifecycle-hook installs, permission allow-list edits). The canonical surface list and the per-surface rationale are owned by the standard's § Predicate — read the predicate from there; do NOT restate the surface list here.
-
-**Required action when the predicate fires**: split the deliverable — the unattended portion authors the marketplace source that *defines* the hook / config / permission shape, and a separate, explicitly human-gated activation step performs the harness write — OR annotate the single deliverable with a `**Human-gated activation:**` note. The exact split-vs-annotate contract and the failure mode it prevents (an unattended phase-5-execute task hitting a permission wall and loop-backing) are documented in the standard's § Required Action — consume them by reference; do NOT duplicate the predicate or the required action here.
-
-When the harness-config predicate does NOT fire (no harness-config surface in the deliverable's affected files), this dimension raises nothing — proceed to Step 11.
-
 ### Special-deliverable-class recognition rules (detail)
 
-These two recognition triggers are track-agnostic siblings to the Step 9c (design-intent) and Step 10b (self-modifying) procedures above: they fire at deliverable-authoring time on **both** the Simple Track (Step 7) and the Complex Track (Step 10). Each rule is a thin trigger predicate plus the required authoring action and a pointer to the dev-general-* home where the substance lives. The mitigation menu and the enumeration procedure are NOT restated here — only the trigger and the cross-reference.
+These two recognition triggers are track-agnostic siblings to the Step 9c (design-intent) procedure above: they fire at deliverable-authoring time on **both** the Simple Track (Step 7) and the Complex Track (Step 10). Each rule is a thin trigger predicate plus the required authoring action and a pointer to the dev-general-* home where the substance lives. The mitigation menu and the enumeration procedure are NOT restated here — only the trigger and the cross-reference.
 
 #### Cooperative-lock deliverable class
 
@@ -873,7 +807,7 @@ Here three scripts are surveyed for legacy logging calls, but the deliverable ex
 
 #### `survey_vs_mutation_scope_declared` outline check (LLM-driven)
 
-This is an LLM-driven outline check — prose the outline agent applies in-context during Step 7 / Step 10 deliverable authoring, in the same family as the design-intent and self-modifying checks. It is NOT a Python script: the agent reads the rule and the positive/negative examples below and applies the judgement directly.
+This is an LLM-driven outline check — prose the outline agent applies in-context during Step 7 / Step 10 deliverable authoring, in the same family as the design-intent check. It is NOT a Python script: the agent reads the rule and the positive/negative examples below and applies the judgement directly.
 
 **Check logic**: for every deliverable whose title or description matches the trigger keyword set (`survey` / `discover` / `classify` / `case-by-case`), assert that the deliverable declares BOTH `**Files to survey:**` AND `**Files expected to mutate:**`. Flag the deliverable when either field is absent (a survey-style deliverable carrying only a flat `**Affected files:**` list, or only one of the two fields).
 
@@ -1014,7 +948,6 @@ The agent applies the following mechanical validators automatically when invoked
 | Consumer Sweep Completeness (§ 2.9) | `solution_outline.md`, worktree grep results | `qgate` (unscoped source) |
 | Argparse Validator (§ 2.10) | `solution_outline.md` (every embedded `python3 .plan/execute-script.py ...` invocation), live `--help` output of each cited script | `qgate-argparse` |
 | Tier-Delta Validator (§ 2.13) | `solution_outline.md` (tiered/variant section pairs and their delta tables) | `qgate-tier-delta` |
-| Self-Modifying Phased-Rollout Validator (§ 2.16) | `solution_outline.md` (each deliverable's Affected files + compatibility header + narrative), `self-modifying-classification.md` heuristic | `qgate-self-modifying-rollout` |
 
 The remaining validators (`module-mapping`, `scope-criterion`, `narrative-vs-code`) are scoped to other phases (4-plan or 2-refine) and do NOT activate when the agent is invoked from phase-3-outline. See `plan-marshall/workflow/q-gate-validation.md` for their canonical activation conditions.
 

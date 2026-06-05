@@ -8,6 +8,8 @@ All change types require loading the plugin architecture skill:
 Skill: pm-plugin-development:plugin-architecture
 ```
 
+**Track-agnostic classification (applies to every change type below):** When building deliverables, classify each deliverable's `Affected files` against the [Human-Gated Harness-Config Classification](../SKILL.md#human-gated-harness-config-classification) predicate. A deliverable that touches the Claude Code harness-configuration surface (`.claude/settings.json`, `.claude/settings.local.json`, a `hooks` block, a `.claude/hooks/**` script, or a `permissions.allow`/`permissions.deny` array) is human-gated and MUST split the unattended authoring from the human-gated activation step (or carry a `**Human-gated activation:**` note). This fires regardless of change type or track — do NOT restate the predicate or required action here; apply the SKILL.md section.
+
 ---
 
 ## Bug Fix

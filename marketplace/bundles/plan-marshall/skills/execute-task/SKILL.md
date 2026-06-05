@@ -67,14 +67,18 @@ If `exists: true`, the rename mapping has already been applied to task step targ
 
 ### Step: Rewrite shadow-risk conftest targets
 
-After resolving stale targets and BEFORE loading the task context, inspect every pending `step.target` on the incoming task. If a target matches the regex `test/.+/conftest\.py$` (a sibling `conftest.py` nested under a skill test directory) AND the full path is NOT in the allow-list below, rewrite the target in-place to the sibling `_fixtures.py` before execution.
+After resolving stale targets and BEFORE loading the task context, read the project's sanctioned-conftest allow-list from config, then inspect every pending `step.target` on the incoming task. If a target matches the regex `test/.+/conftest\.py$` (a sibling `conftest.py` nested under a skill test directory) AND the full path is NOT in the configured allow-list, rewrite the target in-place to the sibling `_fixtures.py` before execution.
 
-**Allow-list** (these paths are the canonical top-level conftests and MUST NOT be rewritten):
+**Read the allow-list** (the configured set of `conftest.py` paths that MUST NOT be rewritten):
 
-- `test/conftest.py`
-- `test/adapters/conftest.py`
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  project get --field sanctioned_conftest
+```
 
-**Rewrite rule**: Replace the trailing `conftest.py` segment with `_fixtures.py`, keeping the parent directory unchanged. For example, `test/plan-marshall/execute-task/conftest.py` becomes `test/plan-marshall/execute-task/_fixtures.py`.
+Parse `value` (a JSON array of path strings) from the returned TOON; this is the allow-list. When the key is absent the script falls back to the `DEFAULT_PROJECT` default (`["test/conftest.py", "test/adapters/conftest.py"]`). The allow-list is project data — operators override it via `project set --field sanctioned_conftest`. See [`manage-config` Canonical invocations → `project get`](../manage-config/SKILL.md#project-get).
+
+**Rewrite rule**: Replace the trailing `conftest.py` segment with `_fixtures.py`, keeping the parent directory unchanged. For example, `test/plan-marshall/execute-task/conftest.py` becomes `test/plan-marshall/execute-task/_fixtures.py`. The generic rule is project-invariant: do not name a new test helper `conftest.py` — use `_fixtures.py`.
 
 **Decision log requirement**: For each rewrite, emit a decision.log entry via `plan-marshall:manage-logging:manage-logging` using the exact command below:
 

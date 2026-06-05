@@ -463,7 +463,10 @@ if len(affected) == 0:            # tier_0 enabled but empty diff
 
 switch tier_1:
     case "disabled":
-        ci pr append-body --text "Architecture re-enrichment recommended for: {csv}. Run /marshall-steward Step 13 to refresh."
+        existing := ci pr view --head {worktree_branch}
+        body_path := ci pr prepare-body --plan-id {plan_id} --for edit
+        write "{existing}\n\nArchitecture re-enrichment recommended for: {csv}. Run /marshall-steward Step 13 to refresh." to body_path
+        ci pr edit --pr-number {pr_number} --plan-id {plan_id}
         mark-step-done detail="refreshed; re-enrichment deferred to PR note"
 
     case "auto":
