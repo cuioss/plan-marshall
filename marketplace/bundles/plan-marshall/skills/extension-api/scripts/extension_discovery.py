@@ -302,7 +302,7 @@ def get_retrospective_aspects_from_extensions(extensions: list[dict[str, Any]]) 
         for aspect_info in declared:
             if aspect_info and aspect_info.get('aspect'):
                 entry = dict(aspect_info)
-                entry['bundle'] = ext['bundle']
+                entry['bundle'] = ext.get('bundle', 'unknown')
                 aspects.append(entry)
 
     return aspects

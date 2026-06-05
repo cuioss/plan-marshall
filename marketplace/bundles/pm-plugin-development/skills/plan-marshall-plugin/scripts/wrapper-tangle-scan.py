@@ -122,7 +122,10 @@ def _iter_python_files(roots: tuple[str, ...], project_root: Path) -> list[Path]
         scan_dir = project_root / rel
         if not scan_dir.exists():
             continue
-        files.extend(sorted(p for p in scan_dir.rglob('*.py') if p.is_file()))
+        try:
+            files.extend(sorted(p for p in scan_dir.rglob('*.py') if p.is_file()))
+        except OSError:
+            pass
     return files
 
 
@@ -162,6 +165,33 @@ def _line_is_in_docstring(lines: list[str], index: int) -> bool:
                     in_block = True
                     token = candidate
     return in_block
+
+
+def _get_docstring_lines(lines: list[str]) -> set[int]:
+    """Return a set of line indices that are inside triple-quoted strings.
+
+    Precomputes docstring membership in O(N) by walking the file once,
+    avoiding the O(N^2) cost of calling ``_line_is_in_docstring`` per line.
+    """
+    docstring_lines: set[int] = set()
+    in_block = False
+    token: str | None = None
+    double = '"' * 3
+    single = "'" * 3
+    for idx, raw in enumerate(lines):
+        if in_block:
+            docstring_lines.add(idx)
+        for candidate in (double, single):
+            if token == candidate:
+                if candidate in raw and raw.count(candidate) % 2 == 1:
+                    in_block = False
+                    token = None
+                continue
+            if token is None and candidate in raw:
+                if raw.count(candidate) % 2 == 1:
+                    in_block = True
+                    token = candidate
+    return docstring_lines
 
 
 def _line_tangles_git(line: str) -> bool:
@@ -212,11 +242,12 @@ def _scan_wrappers_for_tangle(project_root: Path) -> list[dict[str, Any]]:
         except OSError:
             continue
         lines = text.splitlines()
+        docstring_lines = _get_docstring_lines(lines)
         rel = str(py_path.relative_to(project_root))
         for idx, line in enumerate(lines):
             if is_comment_or_blank(line):
                 continue
-            if _line_is_in_docstring(lines, idx):
+            if idx in docstring_lines:
                 continue
             is_subprocess_site = bool(subprocess_call_re.search(line))
             is_wrapper_site = bool(wrapper_call_re.search(line))
@@ -235,7 +266,11 @@ def _scan_wrappers_for_tangle(project_root: Path) -> list[dict[str, Any]]:
             has_cli = is_wrapper_site or bool(_SOURCE_INVOKE_RE.search(window_text))
             if not has_cli:
                 continue
-            if not any(_line_tangles_git(w) for w in window):
+            if not any(
+                _line_tangles_git(w)
+                for w_idx, w in enumerate(window, start=idx)
+                if not is_comment_or_blank(w) and w_idx not in docstring_lines
+            ):
                 continue
             findings.append(
                 {
