@@ -851,6 +851,31 @@ FOR each step_id in manifest.phase_6.steps:
 
       The accumulating artifact at `work/metrics-dispatch-boundaries-6-finalize.toon` is the per-step audit trail that `plan-retrospective` correlates with finalize-step `[STEP]` log coverage; the same shape as the phase-5-execute boundary artifact, generalised to per-phase keying.
 
+  5d. Post-dispatch completion guard (only when the dispatched step ran as a Task agent and did NOT time out):
+      Apply the SAME gate as 5b/5c — fire ONLY when the step ran as a Task agent and did NOT time out. Inline-only steps (commit-push, architecture-refresh, branch-cleanup, record-metrics, archive-plan, project:finalize-step-deploy-target, project:finalize-step-sync-plugin-cache) and timed-out steps SKIP this guard uniformly: inline steps record their own mark synchronously in the main context, and the timeout path at item 5 already recorded `outcome=failed` before continuing. See the "Post-dispatch completion guard" subsection below for the placement contract.
+
+      Assert that the just-returned step actually recorded a terminal outcome on `status.metadata.phase_steps["6-finalize"][step_id]`. A dispatched step is contractually required to terminate with a `manage-status mark-step-done` call; an agent that returns `status: success` but omits that side-effect leaves NO record, which silently deadlocks the `phase_steps_complete` handshake at the phase transition with no per-step attribution. The guard converts that silent gap into an attributed failure at per-step granularity.
+
+      Call the read-only verb with `--require-terminal` so a missing terminal record is escalated to a branchable error:
+
+         python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded \
+           --plan-id {plan_id} --phase 6-finalize --step {step_id} --require-terminal
+
+      Branch on the returned TOON:
+
+      - `status: success` (`recorded: true`) — the dispatched step recorded a terminal outcome (`done` / `skipped` / `loop_back` / `failed`). Continue normally to item 6/7.
+      - `status: error, error: step_record_missing` (`recorded: false`) — the agent returned but left no terminal record: a contract violation. The dispatcher records the violation itself (the leaf cannot, having already returned), logs an attributed `[ERROR]` line, and halts the pipeline. Do NOT abort silently and do NOT advance to the next step — the resumable re-entry check (item 1) retries the `failed` step on the next finalize entry.
+
+        a. Record the violation as a `failed` outcome attributed to the offending step:
+           python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+             --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
+             --display-detail "step-record-missing: agent returned no outcome"
+        b. Log the attributed error:
+           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+             work --plan-id {plan_id} --level ERROR \
+             --message "[ERROR] (plan-marshall:phase-6-finalize) Step {step_ref} returned without recording a terminal outcome — post-dispatch guard recorded failed and halted; resumable re-entry will retry the step"
+        c. HALT the FOR loop (return control to the orchestrator). Do NOT proceed to item 6/7 for this step.
+
   6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 4 (Render Final Output Template).
 
@@ -942,6 +967,18 @@ END FOR
 | `false` | `true` | Effectively `false`/`false` from the user's perspective: forward halts and prompts before phase-6-finalize ever runs, so the loop-back hook is unreachable in the same orchestration cycle. |
 
 The conservative default (`loop_back_without_asking=false`) ships an interactive shape so existing plans behave the same as before this knob was added. Projects that want full unattended execution must opt into both knobs.
+
+#### Post-dispatch completion guard
+
+Item 5d above is the deterministic post-dispatch completion guard. It calls the read-only `plan-marshall:manage-status:manage-status assert-step-recorded` verb with `--require-terminal` after every dispatched-step return and converts a missing terminal record into an attributed `failed` outcome plus a pipeline halt. Three placement facts govern its interaction with the rest of Step 3:
+
+- **Placement relative to resumable re-entry**: the guard fires at the END of a FOR-loop iteration (after the dispatch and the metrics items 5b/5c), whereas the resumable re-entry check (item 1) runs at the START of each iteration. The `failed` record the guard writes is therefore retried by the start-of-iteration resumability check on the next finalize entry — the guard does not re-fire the step itself; it records the violation and halts, and the existing `failed`→retry path picks it up. This reuses the existing control flow with zero new branches.
+
+- **Interaction with the HEAD-dependent table**: the guard is orthogonal to the HEAD-dependent re-fire table (the `head_at_completion` comparison in item 1 and § HEAD-dependent steps), which is consulted at iteration start to decide SKIP vs RE-FIRE for `HEAD_DEPENDENT_STEPS`. The guard only asserts that *some* terminal record exists; it does not read or compare `head_at_completion`. A `loop_back` record counts as terminal for guard purposes, so a loop-back-emitting step satisfies the guard and proceeds to item 7b unchanged.
+
+- **Relationship to the `phase_steps_complete` handshake**: the guard is the earlier, attributed sibling of the existing `phase_steps_complete` handshake invariant (see [standards/required-steps.md](standards/required-steps.md)). The handshake catches a missing step record at the phase transition, but with no per-step attribution — it only reports that the phase is incomplete. The guard catches the same omission immediately after the offending step returns, names the step, and halts, so the violation surfaces at per-step granularity in the work-log and the Step 4 output template rather than as an opaque transition deadlock.
+
+The guard is scoped to dispatched (Task-agent) steps only — inline steps record their mark synchronously in the main context, and the item-5 timeout path already records `outcome=failed`, so both are exempt under the same gate as items 5b/5c.
 
 #### Pre-Archive Snapshot Hook
 

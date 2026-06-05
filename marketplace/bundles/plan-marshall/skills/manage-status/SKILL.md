@@ -395,6 +395,58 @@ dirty: true
 message: Step 'automated-review' in phase '6-finalize' may mutate the worktree, but the working tree is dirty — refusing to mark it done. Re-issue with --outcome loop_back --loop-back-target 6-finalize to replay the step inline (commit-push the change), or --outcome loop_back --loop-back-target 5-execute to roll the change into a fix task.
 ```
 
+### assert-step-recorded
+
+Read-only verdict over `status.metadata.phase_steps[{phase}][{step}]`: does a terminal step record exist? The phase-6-finalize dispatcher calls this after every dispatched (Task-agent) step returns, to detect the silent gap where a step returns `status: success` but skips its mandated `mark-step-done` side-effect — the omission that otherwise stays invisible until the `phase_steps_complete` handshake deadlocks the phase transition with no per-step attribution. The verb performs **zero writes** to `status.json`.
+
+A record counts as *recorded* iff a dict entry with a terminal `outcome` in `{done, skipped, loop_back, failed}` is present (a `loop_back` record counts as terminal for guard purposes — the dispatcher re-fires it via the resumable re-entry check). Bare-string legacy entries and missing entries both report `recorded: false`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded \
+  --plan-id {plan_id} \
+  --phase {phase_name} \
+  --step {step_id} \
+  [--require-terminal]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--phase` (required): Phase name (e.g., `6-finalize`)
+- `--step` (required): Step identifier within the phase
+- `--require-terminal` (optional): Escalate a missing terminal record to `status: error, error: step_record_missing` instead of returning `recorded: false`. The post-dispatch guard passes this flag so a missing record is a branchable failure verdict rather than a soft boolean.
+
+**Output — recorded** (TOON):
+```toon
+status: success
+plan_id: my-feature
+phase: 6-finalize
+step: ci-verify
+recorded: true
+outcome: done
+```
+
+**Output — not recorded (no `--require-terminal`)** (TOON):
+```toon
+status: success
+plan_id: my-feature
+phase: 6-finalize
+step: ci-verify
+recorded: false
+outcome: null
+```
+
+**Output — missing record under `--require-terminal`** (TOON):
+```toon
+status: error
+plan_id: my-feature
+error: step_record_missing
+phase: 6-finalize
+step: ci-verify
+recorded: false
+outcome: null
+message: No terminal record for step 'ci-verify' in phase '6-finalize': the dispatched step returned without recording a mark-step-done outcome (expected one of ['done', 'skipped', 'loop_back', 'failed']).
+```
+
 ### get-context
 
 Get combined status context (phase, progress, metadata) in one call.
@@ -713,6 +765,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `progress` | `--plan-id` | Calculate progress percentage |
 | `metadata` | `--plan-id --get/--set --field [--value]` | Get/set metadata fields |
 | `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target) in `metadata.phase_steps` |
+| `assert-step-recorded` | `--plan-id --phase --step [--require-terminal]` | Read-only verdict: reports `recorded: true` iff a terminal `metadata.phase_steps[phase][step]` outcome exists. The phase-6-finalize post-dispatch guard. With `--require-terminal`, a missing record returns `error: step_record_missing`. Zero writes. |
 | `get-context` | `--plan-id` | Get combined status context |
 | `get-worktree-path` | `--plan-id` | Resolve persisted worktree path (returns empty string when `use_worktree==false`) |
 | `list` | `[--filter PHASE]` | Discover all plans across the main checkout and its worktrees (each entry tagged `location: current`/`worktree`), optionally filtered by phase |
@@ -848,6 +901,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   [--force] [--display-detail TEXT] [--head-at-completion SHA]
 ```
 
+### assert-step-recorded
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded \
+  --plan-id PLAN_ID --phase PHASE --step STEP_ID \
+  [--require-terminal]
+```
+
 ### change-type-heuristic
 
 ```bash
@@ -908,6 +969,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `invalid_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` value not in `5-execute`/`6-finalize`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
 | `unexpected_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` supplied alongside an outcome other than `loop_back`. The flag is FORBIDDEN on `done`/`skipped`/`failed` outcomes. |
 | `dirty_worktree_done_refused` | 1 | `mark-step-done`: `--outcome=done` for a step in `MAY_MUTATE_WORKTREE_STEPS` (`automated-review`/`sonar-roundtrip`/`finalize-step-simplify`) while the resolved worktree is dirty (`git status --porcelain` non-empty). Re-issue as `--outcome loop_back --loop-back-target 6-finalize` (inline replay) or `--loop-back-target 5-execute` (fix-task rollback). |
+| `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists for the named phase step (the dispatched step returned without recording a `mark-step-done` outcome). Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |
 
 ---

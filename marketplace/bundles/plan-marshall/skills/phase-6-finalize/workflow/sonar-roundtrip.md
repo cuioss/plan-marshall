@@ -34,7 +34,7 @@ There is no internal soft-timeout, polling cap, or partial-progress checkpoint i
 
 ## Inputs
 
-- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `sonar`, `ci`, and build script invocations below MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override) for Bucket B notations; the two flags are mutually exclusive. Bucket A `manage-*` scripts (including `manage-findings`) remain cwd-agnostic and do NOT take routing flags. Examples below use the literal `--project-dir {worktree_path}` form; substitute `--plan-id {plan_id}` to use auto-resolution.
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `sonar`, `ci`, and build script invocations below MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override) for Bucket B notations; the two flags are mutually exclusive. Bucket A `manage-*` scripts (including `manage-findings`) remain cwd-agnostic and do NOT take routing flags. The `sonar fetch-and-store` producer below takes only `--plan-id {plan_id}` (it does not accept `--project-dir`); examples use the `--plan-id {plan_id}` auto-resolution form throughout.
 
 ## Execution
 
@@ -44,8 +44,10 @@ Call the producer-side fetch-and-store subcommand once. It pulls Sonar issues fo
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar \
-  --project-dir {worktree_path} fetch-and-store --plan-id {plan_id}
+  fetch-and-store --plan-id {plan_id} --project {sonar_project_key}
 ```
+
+`--project {sonar_project_key}` is required by the `fetch-and-store` argparse surface — it is the SonarQube/SonarCloud project key (e.g. `com.example:project`). Resolve `{sonar_project_key}` from the Sonar provider configuration via the `workflow-integration-sonar` skill (the project key stored alongside the Sonar credentials/host for this repository). The `sonar` notation auto-resolves the worktree via `--plan-id {plan_id}` and does NOT accept a `--project-dir` routing flag; `{plan_id}` is the only worktree-binding flag this producer takes.
 
 The producer is the ONLY surface that fetches and stores `sonar-issue` findings. This document does not classify, decide, or act on issues inline — every consumer-side action below reads from the findings store via `manage-findings list`.
 
