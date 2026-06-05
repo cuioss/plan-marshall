@@ -15,7 +15,7 @@ Like `recipe-marshal-json-config-audit` it is an LLM-driven, SKILL.md-only deliv
 This recipe has **two orthogonal, independent dials** at its runtime:
 
 - A **hard-coded COVERAGE CELL** (`thoroughness=T5`, `scope=overall`) — the depth and breadth of the audit. It is NOT gathered from the user. The recipe implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — expand and consume — but **skips the gather step** for the cell, supplying the fixed identifier + expanded instruction per the contract's gather → expand → consume model.
-- A **gathered CORPUS ROOT** — the tree the audit is rooted at. It IS gathered, via `AskUserQuestion` (Step 1a). The cell governs HOW DEEPLY/BROADLY the audit runs; the corpus root governs WHAT TREE it runs over. The two are distinct and never conflated: the no-gather prohibition applies to the CELL ONLY, never to the target.
+- A **gathered CORPUS ROOT** — the tree the audit is rooted at. It IS gathered, via `AskUserQuestion` (Step 1). The cell governs HOW DEEPLY/BROADLY the audit runs; the corpus root governs WHAT TREE it runs over. The two are distinct and never conflated: the no-gather prohibition applies to the CELL ONLY, never to the target.
 
 Both the resolved cell and the resolved target root are persisted to `status.json` metadata.
 
@@ -27,15 +27,15 @@ Both the resolved cell and the resolved target root are persisted to `status.jso
 | `recipe_domain` | `plan-marshall-plugin-dev` |
 | `recipe_profile` | `implementation` |
 
-There is no `recipe_scope` / `recipe_thoroughness` input — the COVERAGE CELL is fixed (see Step 1b). The CORPUS ROOT is NOT a static input either — it is gathered at Step 1a via `AskUserQuestion`. The recipe is plan-bound; it persists BOTH the resolved cell AND the resolved target root to `status.json` metadata.
+There is no `recipe_scope` / `recipe_thoroughness` input — the COVERAGE CELL is fixed (see Step 1). The CORPUS ROOT is NOT a static input either — it is gathered at Step 1 via `AskUserQuestion`. The recipe is plan-bound; it persists BOTH the resolved cell AND the resolved target root to `status.json` metadata.
 
 ---
 
 ## Step 1: Gather the target corpus root + declare the hard-coded coverage cell
 
-This step does TWO distinct things — gather the corpus root (1a), then declare/expand/persist the fixed coverage cell (1b).
+This step does TWO distinct things — gather the corpus root, then declare/expand/persist the fixed coverage cell.
 
-### 1a. Gather the CORPUS ROOT (via `AskUserQuestion`)
+### Gather the CORPUS ROOT (via `AskUserQuestion`)
 
 Raise an `AskUserQuestion` to resolve the tree the audit is rooted at. Offer:
 
@@ -51,7 +51,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 This is the ONE gather the recipe drives, and it is the CORPUS ROOT — never the coverage cell.
 
-### 1b. Declare + expand + persist the hard-coded COVERAGE CELL (NO gather)
+### Declare + expand + persist the hard-coded COVERAGE CELL (NO gather)
 
 Hard-code `thoroughness=T5, scope=overall`:
 
@@ -75,7 +75,7 @@ Consume the **expanded instruction** (NOT the raw cell) when collecting the audi
 
 ## Step 2: Enumerate the audit corpus rooted at `{target_root}`
 
-Recursively beneath the `{target_root}` resolved in Step 1a, enumerate every skill directory and, within each, every `SKILL.md` plus every `.md` file under `standards/`, `references/`, and `workflow/` (recursively). When `{target_root}` is itself a single skill dir (the VARIANT case), the corpus is that one skill's `SKILL.md` plus its sub-documents.
+Recursively beneath the `{target_root}` resolved in Step 1, enumerate every skill directory and, within each, every `SKILL.md` plus every `.md` file under `standards/`, `references/`, and `workflow/` (recursively). When `{target_root}` is itself a single skill dir (the VARIANT case), the corpus is that one skill's `SKILL.md` plus its sub-documents.
 
 Use `Glob` rooted at `{target_root}` for the sub-document enumeration — this is the documented fallback for sub-module markdown discovery, since `architecture files --module` stops at component granularity and does not reach the markdown files inside a component:
 
@@ -94,27 +94,27 @@ The recipe reads each enumerated document in full — the T5 thoroughness floor 
 
 For EACH enumerated document (the top-level `SKILL.md` AND every sub-document, recursively), the running plan applies three checks.
 
-### 3a. Modularization opportunity
+### Modularization opportunity
 
-Detect long step / numbered sequences that should be extracted into referenced sub-documents loaded on demand. A sequence is an extraction candidate when it is long enough that the document carries more procedural detail than belongs inline — the two-digit-sequence-number signal in 3b is the primary trip-wire, and over-length per the plugin-doctor subdoc bloat thresholds (3c) is the secondary. The remediation is to extract the sequence into a `standards/` or `workflow/` sub-document and replace it inline with a thin reference plus a cross-link.
+Detect long step / numbered sequences that should be extracted into referenced sub-documents loaded on demand. A sequence is an extraction candidate when it is long enough that the document carries more procedural detail than belongs inline — the two-digit-sequence-number signal in the "Numbering compliance" check is the primary trip-wire, and over-length per the plugin-doctor subdoc bloat thresholds ("No-bloat") is the secondary. The remediation is to extract the sequence into a `standards/` or `workflow/` sub-document and replace it inline with a thin reference plus a cross-link.
 
-### 3b. Numbering compliance
+### Numbering compliance
 
 Enforced across BOTH ordered-list items (`1.`, `2.`, … `10.`) AND numbered step / section headings (`### Step 1`, `## 10. Foo`):
 
-- **single-digit-only** — any sequence that reaches a two-digit number (`10`, `11`, …) is a modularization signal: the sequence is too long and must be split into sub-documents (couples back to 3a).
+- **single-digit-only** — any sequence that reaches a two-digit number (`10`, `11`, …) is a modularization signal: the sequence is too long and must be split into sub-documents (couples back to the "Modularization opportunity" check).
 - **flat numbering** — no sub-numbering such as `2b`, `5.a.4`, `3.2`; all numbering is flat.
 - **start-at-1** — numbering starts at `1` everywhere, never `0`.
 
-### 3c. No-bloat (plugin-doctor)
+### No-bloat (plugin-doctor)
 
-Every resulting document (top-level plus any extracted sub-documents) must pass `pm-plugin-development:plugin-doctor`'s bloat classification. Cross-reference the subdoc thresholds owned by plugin-doctor — see [`pm-plugin-development:plugin-doctor` `doctor-skills.md`](../../../marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-skills.md) (sub-documents LARGE / BLOATED / CRITICAL line thresholds); do NOT restate the thresholds — delegate the gate to the doctor rule set. A `subdoc-bloat` BLOATED/CRITICAL finding is itself a modularization signal feeding back into 3a.
+Every resulting document (top-level plus any extracted sub-documents) must pass `pm-plugin-development:plugin-doctor`'s bloat classification. Cross-reference the subdoc thresholds owned by plugin-doctor — see [`pm-plugin-development:plugin-doctor` `doctor-skills.md`](../../../marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-skills.md) (sub-documents LARGE / BLOATED / CRITICAL line thresholds); do NOT restate the thresholds — delegate the gate to the doctor rule set. A `subdoc-bloat` BLOATED/CRITICAL finding is itself a modularization signal feeding back into the "Modularization opportunity" check.
 
 ---
 
 ## Step 4: Collect deliverables (one per skill with findings)
 
-Collect **one deliverable per skill** in the corpus (rooted at `{target_root}`) that has at least one 3a / 3b / 3c finding. Each deliverable carries:
+Collect **one deliverable per skill** in the corpus (rooted at `{target_root}`) that has at least one finding from the three audit checks in Step 3. Each deliverable carries:
 
 - a title (`Modularize: {skill}`),
 - `change_type: tech_debt`,
@@ -132,27 +132,27 @@ The recipe is deliverable-collection only — it writes `solution_outline.md`; i
 
 ## Step 5: Outline writing
 
-**5a. Read the deliverable template**:
+**Read the deliverable template**:
 
 ```
 Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/templates/deliverable-template.md
 ```
 
-**5b. Resolve the target path**:
+**Resolve the target path**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
   resolve-path --plan-id {plan_id}
 ```
 
-**5c. Write the solution outline** using the Write tool to `{resolved_path}`. The document MUST include, in order:
+**Write the solution outline** using the Write tool to `{resolved_path}`. The document MUST include, in order:
 
 - `# Solution: Modularization Audit for plan-marshall Skills` header with `plan_id`, `created`, `compatibility` metadata.
 - `## Summary` — the audit cell (`overall × T5`), the resolved corpus root (`{target_root}`), and the three per-document audit rules.
 - `## Overview` — the audit radius (the corpus rooted at `{target_root}`) and the cross-document relation model the T5 cell builds.
 - `## Deliverables` — one deliverable per offending skill (Step 4 above), each carrying its `T5 × overall` cell declaration and its resolved plugin-doctor verification command.
 
-**5d. Validate** the written outline:
+**Validate** the written outline:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
@@ -166,13 +166,13 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 **Execution mode**: Deliverable-collection recipe — gather the corpus root, declare the hard-coded cell, enumerate the corpus rooted at the resolved target, apply the three per-document audit rules, collect one deliverable per offending skill, write the solution outline. Loaded by phase-3-outline's recipe path; not user-invocable.
 
 **Prohibited actions:**
-- Never gather the COVERAGE CELL via `AskUserQuestion` — the cell is hard-coded `T5 / overall` (Step 1b). The no-gather prohibition applies to the CELL ONLY, NOT the target — the target IS gathered (Step 1a). The only `AskUserQuestion` this recipe drives is the corpus-root gather.
+- Never gather the COVERAGE CELL via `AskUserQuestion` — the cell is hard-coded `T5 / overall` (Step 1, "Declare + expand + persist the hard-coded COVERAGE CELL"). The no-gather prohibition applies to the CELL ONLY, NOT the target — the target IS gathered (Step 1, "Gather the CORPUS ROOT"). The only `AskUserQuestion` this recipe drives is the corpus-root gather.
 - Never mutate any audited skill during the recipe — the recipe collects deliverables only.
 - Never restate the thoroughness ladders, the grade-to-the-floor rule, the coupling constraint, the cell → instruction expansion table, or the plugin-doctor bloat thresholds — cross-reference `dev-agent-behavior-rules/standards/thoroughness.md`, `coverage-gathering-contract.md`, and `plugin-doctor/standards/doctor-skills.md`.
 - Never access `.plan/` files directly — all access goes through `python3 .plan/execute-script.py` manage-* scripts.
 
 **Constraints:**
-- The ONE `AskUserQuestion` this recipe drives is the corpus-root gather in Step 1a.
+- The ONE `AskUserQuestion` this recipe drives is the corpus-root gather in Step 1.
 - The persisted metadata is `audit_target_root={resolved root}`, `coverage_thoroughness=T5`, `coverage_scope=overall`, plus the `coverage expand`-produced `coverage_instruction`, written to `status.json` metadata.
 - Each collected deliverable declares `module: plan-marshall` and its `T5 × overall` cell for the floor-graded self-report.
 
