@@ -35,7 +35,6 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa
 _HANDSHAKE_FIELDS = [
     'phase',
     'captured_at',
-    'worktree_applicable',
     'override',
     'override_reason',
     'main_sha',
@@ -69,7 +68,6 @@ _HAPPY_HANDSHAKE_ROWS = [
     {
         'phase': '1-init',
         'captured_at': '2026-04-17T10:00:00Z',
-        'worktree_applicable': False,
         'override': False,
         'override_reason': '',
         'main_sha': 'abc123',
@@ -83,7 +81,6 @@ _HAPPY_HANDSHAKE_ROWS = [
     {
         'phase': '6-finalize',
         'captured_at': '2026-04-17T11:00:00Z',
-        'worktree_applicable': False,
         'override': False,
         'override_reason': '',
         'main_sha': 'abc123',

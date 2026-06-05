@@ -747,42 +747,114 @@ def test_capture_qgate_open_count_invokes_script_for_other_phases(
 
 
 # =============================================================================
-# _worktree_in_use: worktree-state invariants gate on use_worktree truthiness
+# _worktree_materialized / _worktree_in_use: the unified materialization
+# predicate gates the worktree-state invariants
 # =============================================================================
 #
-# Under the no-sentinel B-strip model the worktree-state invariants
-# (``worktree_sha`` / ``worktree_dirty``) apply exactly when the plan is
-# routed through a worktree — gated on ``metadata.use_worktree`` truthiness,
-# not on the presence of ``worktree_path``. The inverse-direction orphan
-# invariant (``worktree_orphan`` / ``WorktreeMetadataDrift``) was removed:
-# with no empty-path sentinel persisted pre-phase-5, an on-disk worktree dir
-# while metadata denies it is no longer reachable.
+# TASK-1 unified the worktree-applicability gate onto a single predicate,
+# ``_worktree_materialized(metadata, phase)``: True when ``worktree_path`` is
+# present and non-empty OR when ``phase`` is one of the materialization phases
+# (``5-execute`` / ``6-finalize``), which covers the transient phase-5 window
+# between phase entry and Step 2.5's path backfill.
+#
+# ``_worktree_in_use`` (the registry gate for ``worktree_sha`` /
+# ``worktree_dirty``) now delegates to ``_worktree_materialized(metadata,
+# None)`` — keyed on the persisted ``worktree_path`` alone (with ``phase=None``
+# the materialization-phase branch can never match). The old ``use_worktree``
+# truthiness gate is gone: the capture functions themselves return ``None``
+# when ``worktree_path`` is unpopulated, so a pre-materialization capture
+# simply records an empty column. The inverse-direction orphan invariant
+# (``worktree_orphan`` / ``WorktreeMetadataDrift``) and the old private
+# ``_worktree_applicable`` predicate were both removed.
 # =============================================================================
 
 
-@pytest.mark.parametrize('truthy_value', [True, 'true', 'True', '1', 'yes', 1])
-def test_worktree_in_use_truthy_variants_apply(truthy_value) -> None:
-    """All TOON-truthy variants of use_worktree make the gate applicable."""
-    assert inv._worktree_in_use('p', {'use_worktree': truthy_value}) is True
+def test_worktree_materialized_empty_path_planning_phase_is_false() -> None:
+    """Empty ``worktree_path`` at a planning phase → not yet materialized.
+
+    Phases 1-4 run on the main checkout and persist only the ``use_worktree``
+    intent; the path is materialized at phase-5 Step 2.5. An empty path while a
+    planning phase is active is the legitimate pre-materialization state.
+    """
+    for phase in ('1-init', '2-refine', '3-outline', '4-plan'):
+        assert inv._worktree_materialized({'worktree_path': ''}, phase) is False, (
+            f'empty path at planning phase {phase} must be not-materialized'
+        )
+    # A missing key behaves the same as an empty path.
+    assert inv._worktree_materialized({}, '3-outline') is False
 
 
-@pytest.mark.parametrize('falsy_value', [False, 'false', 'False', 0, '', None])
-def test_worktree_in_use_falsy_variants_do_not_apply(falsy_value) -> None:
-    """All TOON-falsy variants of use_worktree make the gate inapplicable."""
-    metadata = {'use_worktree': falsy_value} if falsy_value is not None else {}
+@pytest.mark.parametrize('phase', ['5-execute', '6-finalize'])
+def test_worktree_materialized_empty_path_materialization_phase_is_true(phase: str) -> None:
+    """Empty ``worktree_path`` at a materialization phase → True (transient window).
+
+    The phase-5 entry-to-Step-2.5 window has ``use_worktree`` intent but no path
+    yet; the materialization-phase membership covers it so the predicate reports
+    the worktree as in play.
+    """
+    assert inv._worktree_materialized({'worktree_path': ''}, phase) is True
+    assert inv._worktree_materialized({}, phase) is True
+
+
+@pytest.mark.parametrize('phase', ['1-init', '4-plan', '5-execute', '6-finalize', None])
+def test_worktree_materialized_non_empty_path_is_true_at_any_phase(phase) -> None:
+    """A populated ``worktree_path`` → True regardless of phase (even ``None``)."""
+    assert inv._worktree_materialized({'worktree_path': '/tmp/wt'}, phase) is True
+
+
+def test_worktree_materialized_empty_path_phase_none_is_false() -> None:
+    """``phase=None`` with an empty path → False (the registry-gate keying).
+
+    ``_worktree_in_use`` calls ``_worktree_materialized(metadata, None)``, so the
+    materialization-phase branch can never match; the result is keyed on the
+    persisted ``worktree_path`` alone.
+    """
+    assert inv._worktree_materialized({'worktree_path': ''}, None) is False
+    assert inv._worktree_materialized({}, None) is False
+
+
+@pytest.mark.parametrize('worktree_path', ['/tmp/wt', 'relative/wt', '  /tmp/wt  '])
+def test_worktree_in_use_applies_when_path_populated(worktree_path: str) -> None:
+    """The gate applies when ``worktree_path`` is present and non-empty.
+
+    ``_worktree_in_use`` is keyed on the materialization predicate with
+    ``phase=None``, so a populated path makes it applicable. Whitespace-only
+    padding around a real path is still a real path.
+    """
+    assert inv._worktree_in_use('p', {'worktree_path': worktree_path}) is True
+
+
+@pytest.mark.parametrize('empty_value', ['', '   ', None])
+def test_worktree_in_use_does_not_apply_when_path_empty(empty_value) -> None:
+    """An empty / whitespace-only / missing ``worktree_path`` → inapplicable."""
+    metadata = {'worktree_path': empty_value} if empty_value is not None else {}
     assert inv._worktree_in_use('p', metadata) is False
 
 
 def test_worktree_in_use_missing_key_does_not_apply() -> None:
-    """A missing use_worktree key is treated as not-in-use (no worktree)."""
+    """A missing ``worktree_path`` key is treated as not-materialized."""
     assert inv._worktree_in_use('p', {}) is False
 
 
-def test_worktree_state_invariants_gate_on_use_worktree() -> None:
-    """``worktree_sha`` / ``worktree_dirty`` use the ``_worktree_in_use`` gate.
+def test_worktree_in_use_ignores_use_worktree_without_path() -> None:
+    """``use_worktree`` truthiness alone no longer makes the gate apply.
 
-    Replaces the removed ``worktree_path``-presence gate (`_worktree_applicable`):
-    the worktree-state captures now apply on ``use_worktree`` truthiness.
+    Regression guard for the TASK-1 unification: the gate is keyed on the
+    persisted ``worktree_path``, not on ``use_worktree``. A planning-phase
+    metadata that declares the intent but has no path yet must NOT apply.
+    """
+    assert inv._worktree_in_use('p', {'use_worktree': True}) is False
+    assert inv._worktree_in_use('p', {'use_worktree': True, 'worktree_path': ''}) is False
+    # With the path populated it applies regardless of use_worktree's value.
+    assert inv._worktree_in_use('p', {'use_worktree': False, 'worktree_path': '/tmp/wt'}) is True
+
+
+def test_worktree_state_invariants_gate_on_materialization_predicate() -> None:
+    """``worktree_sha`` / ``worktree_dirty`` use the unified ``_worktree_in_use`` gate.
+
+    The gate now keys on the unified materialization predicate
+    (``worktree_path`` presence) rather than the removed ``use_worktree``
+    truthiness gate or the removed ``_worktree_applicable`` predicate.
     """
     by_name = {name: (applies, capture) for name, applies, capture in inv.INVARIANTS}
     assert by_name['worktree_sha'][0] is inv._worktree_in_use
@@ -790,7 +862,13 @@ def test_worktree_state_invariants_gate_on_use_worktree() -> None:
 
 
 def test_worktree_orphan_invariant_removed() -> None:
-    """The orphan invariant and its surface are gone from the registry."""
+    """The orphan invariant and the removed predicate surfaces are gone.
+
+    ``_worktree_applicable`` (the inert ``worktree_path``-presence predicate
+    TASK-1 unified away) and the orphan invariant surface must not exist on the
+    module — this guard pins their absence so a regression that re-introduces
+    the split predicate fails loudly.
+    """
     names = [name for name, _, _ in inv.INVARIANTS]
     assert 'worktree_orphan' not in names
     assert not hasattr(inv, '_capture_worktree_orphan')

@@ -229,19 +229,50 @@ def _repo_root() -> Path:
     return Path.cwd()
 
 
+# Phases at and after which the worktree is materialized on disk (phase-5
+# Step 2.5 creates the worktree directory and feature branch; phase-6 inherits
+# it). The single source of truth for "is the worktree materialized?" — an
+# empty ``worktree_path`` while one of these phases is active is the transient
+# window between phase entry and Step 2.5's backfill, so these phases are
+# treated as materialized regardless of the path value.
+_WORKTREE_MATERIALIZED_PHASES: frozenset[str] = frozenset({
+    '5-execute',
+    '6-finalize',
+})
+
+
+def _worktree_materialized(metadata: dict[str, Any], phase: str | None) -> bool:
+    """Unified worktree-applicability predicate.
+
+    Returns ``True`` when the plan's worktree is materialized — either because
+    ``metadata.worktree_path`` is present and non-empty (the worktree directory
+    has been created and the path persisted) OR because ``phase`` is one of the
+    materialization phases (:data:`_WORKTREE_MATERIALIZED_PHASES`), which covers
+    the transient phase-5 window between phase entry and Step 2.5's path
+    backfill.
+
+    This is the single predicate both the invariant-applicability gate
+    (:func:`_worktree_in_use`) and the phase-entry assertion
+    (``_handshake_commands._resolve_worktree_assertion``) consult, so the two
+    surfaces can never disagree on whether the worktree is in play.
+    """
+    raw = metadata.get('worktree_path')
+    if raw is not None and str(raw).strip():
+        return True
+    return phase in _WORKTREE_MATERIALIZED_PHASES
+
+
 def _worktree_in_use(_plan_id: str, metadata: dict[str, Any]) -> bool:
-    """Gate worktree-state captures on ``metadata.use_worktree`` truthiness.
+    """Gate worktree-state captures on the unified materialization predicate.
 
     The worktree-state invariants (``worktree_sha`` / ``worktree_dirty``)
-    apply exactly when the plan is routed through a worktree. Under the
-    no-sentinel model a ``use_worktree==true`` plan only carries a real
-    ``worktree_path`` once phase-5 materializes the worktree, so gating on
-    ``use_worktree`` (rather than on the presence of ``worktree_path``)
-    expresses the intent directly; the capture functions themselves return
-    ``None`` when ``worktree_path`` is not yet populated, so a pre-phase-5
-    capture simply records an empty column.
+    apply exactly when the plan's worktree is materialized. Delegates to
+    :func:`_worktree_materialized` with ``phase=None`` so the gate is keyed on
+    the persisted ``worktree_path`` alone — the capture functions themselves
+    return ``None`` when ``worktree_path`` is not yet populated, so a
+    pre-materialization capture simply records an empty column.
     """
-    return _is_truthy_metadata(metadata.get('use_worktree'))
+    return _worktree_materialized(metadata, None)
 
 
 def _always(_plan_id: str, _metadata: dict[str, Any]) -> bool:

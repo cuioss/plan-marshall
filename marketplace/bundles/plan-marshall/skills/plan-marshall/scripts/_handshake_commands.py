@@ -50,6 +50,7 @@ from _invariants import (  # type: ignore[import-not-found]
     PhaseStepsIncomplete,
     _capture_pending_findings_blocking_count,
     _main_dirty_drift_diff,
+    _worktree_materialized,
     capture_all,
     is_invariant_blocking_at_phase,
 )
@@ -135,8 +136,14 @@ def _resolve_worktree_assertion(
         # Phases 1-4 run on the main checkout and persist only the
         # use_worktree intent; the path is materialized at phase-5 Step 2.5.
         # An empty path there is the expected pre-materialization state, not a
-        # defect. From phase-5 onward (or when phase is unknown) fail closed.
-        if phase in _PLANNING_PHASES_ON_MAIN:
+        # defect. Consult the unified materialization predicate: when the
+        # worktree is NOT yet materialized (``_worktree_materialized`` returns
+        # False for phases 1-4 and for unknown phases) AND the phase is a
+        # recognized pre-materialization planning phase, the empty path is
+        # legitimate and the assertion passes. From phase-5 onward — where
+        # ``_worktree_materialized`` returns True for an empty path — and for
+        # any unknown phase, the path MUST be present, so fail closed.
+        if not _worktree_materialized(metadata, phase) and phase in _PLANNING_PHASES_ON_MAIN:
             return None
         return {
             'status': 'error',
@@ -343,10 +350,10 @@ def _check_main_dirty_drift(
 
 
 def _row_for_capture(
-    plan_id: str,
+    _plan_id: str,
     phase: str,
     captured: dict[str, Any],
-    metadata: dict[str, Any],
+    _metadata: dict[str, Any],
     *,
     override: bool,
     override_reason: str,
@@ -354,7 +361,6 @@ def _row_for_capture(
     row: dict[str, Any] = {
         'phase': phase,
         'captured_at': _now_iso(),
-        'worktree_applicable': bool(metadata.get('worktree_path')),
         'override': override,
         'override_reason': override_reason,
     }
@@ -420,7 +426,6 @@ def cmd_capture(args: Any) -> dict[str, Any]:
         'plan_id': plan_id,
         'phase': phase,
         'override': row['override'],
-        'worktree_applicable': row['worktree_applicable'],
         'invariants': invariants_out,
     }
 

@@ -294,7 +294,11 @@ def test_cmd_capture_succeeds_at_planning_phase_before_materialization(
     result = cmds.cmd_capture(_ns(plan_id='cap-wt-pending', phase='1-init'))
     assert result['status'] == 'success'
     assert result['phase'] == '1-init'
-    assert result['worktree_applicable'] is False
+    # Pre-materialization: worktree_path is empty, so the worktree-state
+    # invariants are not captured. This is the observable contract that the
+    # unified materialization predicate exposes in place of the dropped
+    # applicability column.
+    assert 'worktree_sha' not in result['invariants']
 
 
 def test_cmd_capture_succeeds_on_main_checkout(stubbed_invariants, stub_metadata, plan_context) -> None:
@@ -304,7 +308,9 @@ def test_cmd_capture_succeeds_on_main_checkout(stubbed_invariants, stub_metadata
     result = cmds.cmd_capture(_ns(plan_id='cap-main', phase='5-execute'))
     assert result['status'] == 'success'
     assert result['phase'] == '5-execute'
-    assert result['worktree_applicable'] is False
+    # Main-checkout plan: no worktree_path, so the worktree-state invariants
+    # are absent from the captured output.
+    assert 'worktree_sha' not in result['invariants']
 
 
 def test_cmd_capture_succeeds_on_resolved_worktree(
@@ -318,7 +324,10 @@ def test_cmd_capture_succeeds_on_resolved_worktree(
     plan_context.plan_dir_for('cap-wt-ok')
     result = cmds.cmd_capture(_ns(plan_id='cap-wt-ok', phase='5-execute'))
     assert result['status'] == 'success'
-    assert result['worktree_applicable'] is True
+    # Resolved worktree: the worktree-state invariants ARE captured and appear
+    # in the output. This is the observable contract the unified materialization
+    # predicate exposes in place of the dropped applicability column.
+    assert result['invariants']['worktree_sha'] == 'wt-sha'
 
 
 # =============================================================================
@@ -349,7 +358,6 @@ def _capture_row_for_strict_test(plan_id: str) -> None:
             'unfinished_tasks_count': 0,
             'override': False,
             'override_reason': '',
-            'worktree_applicable': False,
             'captured_at': '2026-05-07T00:00:00Z',
         },
     )

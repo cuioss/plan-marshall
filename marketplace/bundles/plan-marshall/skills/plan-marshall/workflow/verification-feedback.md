@@ -107,7 +107,7 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-     --project-dir {worktree} ci wait --pr-number {pr_number}
+     --project-dir {worktree} checks wait --pr-number {pr_number}
    ```
 
    Bash tool timeout: 1800000 ms (30 min). On timeout, `AskUserQuestion` (continue / skip / abort).
@@ -116,7 +116,7 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-     --project-dir {worktree} ci status --pr-number {pr_number}
+     --project-dir {worktree} checks status --pr-number {pr_number}
    ```
 
    For each failed check in the output, emit a `verification-failure` finding to the store with `rule-id` set to the failing step name and `detail` set to the message + `details_url`.
@@ -134,7 +134,7 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar \
-     fetch-and-store --plan-id {plan_id}
+     fetch-and-store --plan-id {plan_id} --project {project_key}
    ```
 
    The producer writes one `sonar-issue` finding per surviving issue to the store. If Sonar MCP is unavailable, log "Sonar skipped — MCP not connected" and continue.

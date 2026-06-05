@@ -60,7 +60,6 @@ _NON_INVARIANT_COLUMNS = frozenset(
     {
         'phase',
         'captured_at',
-        'worktree_applicable',
         'override',
         'override_reason',
     }
