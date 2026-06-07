@@ -14,7 +14,9 @@ Coverage:
   13-002), unresolvable roles, and the empty-phase_5 no-op.
 - D1 — precision/severity: genuine signals counted, informational rows excluded
   from the genuine-signal total.
-- D4 — ``dormate_plan`` path-traversal hardening: ``../``, absolute, and embedded
+- D2 — ``dormate_plans`` batch dormation: multi-id and ``--dormate-all`` success,
+  inert-without-confirmed, all-or-nothing refuse-on-clash, and silent dedup.
+- D4 — ``dormate_plans`` path-traversal hardening: ``../``, absolute, and embedded
   path-separator ``plan_id`` values are refused before any move.
 - D8 — retrospective-token exclusion across the three metrics-related checks.
 """
@@ -195,54 +197,193 @@ class TestManifestSeverityPrecision:
 
 
 # =============================================================================
-# D4 — dormate_plan path-traversal hardening
+# D2/D4 — dormate_plans batch dormation + path-traversal hardening
 # =============================================================================
+#
+# The single-id ``dormate_plan`` was subsumed by the batch ``dormate_plans``
+# (clean break — old single-id-only assertions are replaced, not duplicated).
+# The path-traversal guard coverage is preserved by driving the same hostile
+# ids through the batch function as one-element lists, and the new
+# ``TestDormatePlans`` class covers the batch-specific behaviours: multi-id
+# success, ``--dormate-all`` via ``dormate_all_plans``, inert-without-confirmed,
+# all-or-nothing refuse-on-clash, and silent dedup.
+
+
+def _archived_plan_dir(repo_root: Path, plan_id: str) -> Path:
+    """Create and return an archived-plan source dir with a marker file."""
+    plan_dir = repo_root / '.plan' / 'local' / 'archived-plans' / plan_id
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+    return plan_dir
+
+
+def _dormated_plan_dir(repo_root: Path, plan_id: str) -> Path:
+    """Path to the dormation destination for a single plan id."""
+    return repo_root / '.plan' / 'temp' / 'dormated-plans' / plan_id
 
 
 class TestDormatePlanIdHardening:
+    """The path-traversal guard fires identically under the batch function:
+    each hostile id is driven through ``dormate_plans`` as a one-element list.
+    """
+
     def test_parent_traversal_plan_id_refused(self, tmp_path: Path):
         # Act
-        result = audit.dormate_plan(tmp_path, '../escape', confirmed=True)
+        result = audit.dormate_plans(tmp_path, ['../escape'], confirmed=True)
 
         # Assert — refused on grammar before any move
         assert result['status'] == 'refused'
         assert 'invalid plan_id' in result['reason']
+        assert result['moved'] == []
 
     def test_absolute_path_plan_id_refused(self, tmp_path: Path):
         # Act
-        result = audit.dormate_plan(tmp_path, '/etc/passwd', confirmed=True)
+        result = audit.dormate_plans(tmp_path, ['/etc/passwd'], confirmed=True)
 
         # Assert
         assert result['status'] == 'refused'
         assert 'invalid plan_id' in result['reason']
+        assert result['moved'] == []
 
     def test_embedded_separator_plan_id_refused(self, tmp_path: Path):
         # Act
-        result = audit.dormate_plan(tmp_path, 'a/b', confirmed=True)
+        result = audit.dormate_plans(tmp_path, ['a/b'], confirmed=True)
 
         # Assert
         assert result['status'] == 'refused'
         assert 'invalid plan_id' in result['reason']
+        assert result['moved'] == []
 
     def test_well_formed_plan_id_passes_grammar_then_source_not_found(self, tmp_path: Path):
         # Arrange — a canonical kebab/date plan_id with no archived dir on disk
         plan_id = '2026-05-29-some-valid-plan'
 
         # Act
-        result = audit.dormate_plan(tmp_path, plan_id, confirmed=True)
+        result = audit.dormate_plans(tmp_path, [plan_id], confirmed=True)
 
         # Assert — passes grammar (NOT the grammar refusal); fails source-not-found
         assert result['status'] == 'error'
         assert 'source not found' in result['reason']
         assert 'invalid plan_id' not in result['reason']
+        assert result['moved'] == []
 
     def test_inert_without_confirmed(self, tmp_path: Path):
         # Act
-        result = audit.dormate_plan(tmp_path, '../escape', confirmed=False)
+        result = audit.dormate_plans(tmp_path, ['../escape'], confirmed=False)
 
         # Assert — the inert path fires before grammar validation
         assert result['status'] == 'refused'
         assert 'requires --confirmed' in result['reason']
+        assert result['moved'] == []
+
+
+class TestDormatePlans:
+    """Batch-specific behaviours of ``dormate_plans`` / ``dormate_all_plans``."""
+
+    def test_multi_id_success_relocates_every_plan(self, tmp_path: Path):
+        # Arrange — two valid archived plans on disk
+        _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
+        _archived_plan_dir(tmp_path, '2026-06-02-plan-b')
+
+        # Act
+        result = audit.dormate_plans(
+            tmp_path, ['2026-06-01-plan-a', '2026-06-02-plan-b'], confirmed=True
+        )
+
+        # Assert — both moved, sources gone, destinations present
+        assert result['status'] == 'success'
+        assert result['moved'] == ['2026-06-01-plan-a', '2026-06-02-plan-b']
+        archived = tmp_path / '.plan' / 'local' / 'archived-plans'
+        assert not (archived / '2026-06-01-plan-a').exists()
+        assert not (archived / '2026-06-02-plan-b').exists()
+        assert _dormated_plan_dir(tmp_path, '2026-06-01-plan-a').is_dir()
+        assert _dormated_plan_dir(tmp_path, '2026-06-02-plan-b').is_dir()
+
+    def test_dormate_all_relocates_every_archived_plan(self, tmp_path: Path):
+        # Arrange — three archived plans; dormate_all_plans enumerates them all
+        _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
+        _archived_plan_dir(tmp_path, '2026-06-02-plan-b')
+        _archived_plan_dir(tmp_path, '2026-06-03-plan-c')
+
+        # Act
+        result = audit.dormate_all_plans(tmp_path, confirmed=True)
+
+        # Assert — all three relocated (sorted) via the dormate_plans delegate
+        assert result['status'] == 'success'
+        assert result['moved'] == [
+            '2026-06-01-plan-a',
+            '2026-06-02-plan-b',
+            '2026-06-03-plan-c',
+        ]
+        archived = tmp_path / '.plan' / 'local' / 'archived-plans'
+        assert list(archived.iterdir()) == []
+        assert _dormated_plan_dir(tmp_path, '2026-06-01-plan-a').is_dir()
+        assert _dormated_plan_dir(tmp_path, '2026-06-02-plan-b').is_dir()
+        assert _dormated_plan_dir(tmp_path, '2026-06-03-plan-c').is_dir()
+
+    def test_dormate_all_absent_archive_dir_is_noop_success(self, tmp_path: Path):
+        # Act — no archived-plans directory exists at all
+        result = audit.dormate_all_plans(tmp_path, confirmed=True)
+
+        # Assert — empty no-op success
+        assert result['status'] == 'success'
+        assert result['moved'] == []
+
+    def test_inert_without_confirmed_leaves_sources_untouched(self, tmp_path: Path):
+        # Arrange — a valid archived plan that must NOT move
+        _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
+
+        # Act
+        result = audit.dormate_plans(
+            tmp_path, ['2026-06-01-plan-a'], confirmed=False
+        )
+
+        # Assert — refused, nothing moved, source still on disk
+        assert result['status'] == 'refused'
+        assert result['moved'] == []
+        archived = tmp_path / '.plan' / 'local' / 'archived-plans'
+        assert (archived / '2026-06-01-plan-a').is_dir()
+        assert not _dormated_plan_dir(tmp_path, '2026-06-01-plan-a').exists()
+
+    def test_all_or_nothing_refuse_on_clash_moves_nothing(self, tmp_path: Path):
+        # Arrange — two valid sources, but a pre-existing destination for the
+        # SECOND plan. The all-or-nothing pre-check must refuse the WHOLE batch
+        # before relocating the first (clean) plan.
+        _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
+        _archived_plan_dir(tmp_path, '2026-06-02-plan-b')
+        clash = _dormated_plan_dir(tmp_path, '2026-06-02-plan-b')
+        clash.mkdir(parents=True, exist_ok=True)
+
+        # Act
+        result = audit.dormate_plans(
+            tmp_path, ['2026-06-01-plan-a', '2026-06-02-plan-b'], confirmed=True
+        )
+
+        # Assert — error, nothing moved, BOTH sources still present
+        assert result['status'] == 'error'
+        assert result['moved'] == []
+        assert 'already exists' in result['reason']
+        archived = tmp_path / '.plan' / 'local' / 'archived-plans'
+        assert (archived / '2026-06-01-plan-a').is_dir()
+        assert (archived / '2026-06-02-plan-b').is_dir()
+        # The first (clean) plan was NOT relocated despite being clash-free.
+        assert not _dormated_plan_dir(tmp_path, '2026-06-01-plan-a').exists()
+
+    def test_silent_dedup_collapses_duplicate_ids(self, tmp_path: Path):
+        # Arrange — one archived plan, supplied id listed three times
+        _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
+
+        # Act — duplicates must collapse silently (no double-move error)
+        result = audit.dormate_plans(
+            tmp_path,
+            ['2026-06-01-plan-a', '2026-06-01-plan-a', '2026-06-01-plan-a'],
+            confirmed=True,
+        )
+
+        # Assert — moved exactly once, no error
+        assert result['status'] == 'success'
+        assert result['moved'] == ['2026-06-01-plan-a']
+        assert _dormated_plan_dir(tmp_path, '2026-06-01-plan-a').is_dir()
 
 
 # =============================================================================
@@ -4064,10 +4205,10 @@ class TestCrossCheckSynthesisEmitBlock:
         # Assert — header counts + the rows[] column set ends in severity
         assert 'check: cross-check-synthesis' in block
         assert 'status: success' in block
-        assert 'couplings_evaluated: 5' in block
+        assert 'couplings_evaluated: 6' in block
         assert 'couplings_fired: 1' in block
         assert 'genuine_signal_count: 1' in block
-        assert 'rows[5]{coupling,fired,caveat,detail,severity}:' in block
+        assert 'rows[6]{coupling,fired,caveat,detail,severity}:' in block
 
     def test_fired_coupling_renders_genuine_cell(self):
         # Arrange — coupling (a) fires
@@ -4109,15 +4250,15 @@ class TestCrossCheckSynthesisEmitBlock:
         assert 'couplings_fired: 0' in block
         assert 'genuine_signal_count: 0' in block
 
-    def test_empty_results_evaluate_all_five_couplings(self):
+    def test_empty_results_evaluate_all_couplings(self):
         # Arrange / Act — no upstream results at all (best-effort degradation)
         result = audit.cross_check_synthesis({})
         block = audit.emit_cross_check_synthesis_block(result)
 
         # Assert — every coupling still evaluated, none fired
-        assert result['couplings_evaluated'] == 5
+        assert result['couplings_evaluated'] == 6
         assert result['couplings_fired'] == 0
-        assert 'couplings_evaluated: 5' in block
+        assert 'couplings_evaluated: 6' in block
 
 
 # =============================================================================
@@ -5061,3 +5202,335 @@ class TestTokenTrendCore:
         # Assert — only the two metric-bearing plans land in the series
         assert result['plans_in_series'] == 2
         assert all(r['plan_id'].endswith('-has') for r in result['rows'])
+
+
+# =============================================================================
+# D3/D5 — task-graph-redundancy check
+# =============================================================================
+#
+# ``check_task_graph_redundancy`` reconstructs a plan's task graph from
+# ``tasks/TASK-*.json`` as adjacency over step targets + verification verbs and
+# flags five redundancy signals. ``_finalize_deliverable_fanout`` stamps the
+# per-run ``deliverable_fanout`` cell from the corpus median (max(3, median*2)).
+
+
+_HEAVY_BUILD_CMD = (
+    'python3 .plan/execute-script.py '
+    'plan-marshall:build-pyproject:pyproject_build run '
+    '--command-args "module-tests plan-marshall"'
+)
+_LIGHT_CMD = (
+    'python3 .plan/execute-script.py '
+    'plan-marshall:manage-tasks:manage-tasks list --plan-id p'
+)
+
+
+def _write_task_graph_plan(
+    repo_root: Path,
+    plan_id: str,
+    tasks: list[dict[str, Any]],
+) -> Any:
+    """Materialise a plan dir with ``tasks/TASK-NNN.json`` and return PlanInputs.
+
+    Each entry in ``tasks`` is a task dict (``number`` / ``profile`` /
+    ``deliverable`` / ``steps`` / ``verification`` keys as the test needs). The
+    files are written under ``{repo_root}/.plan/temp/tgr-corpus/{plan_id}/tasks``
+    (never the live ``.plan/local`` tree). ``check_task_graph_redundancy`` reads
+    only ``plan_dir`` from disk, so the returned instance is constructed directly.
+    """
+    import json as _json
+
+    plan_dir = repo_root / '.plan' / 'temp' / 'tgr-corpus' / plan_id
+    tasks_dir = plan_dir / 'tasks'
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    for t in tasks:
+        number = int(t['number'])
+        (tasks_dir / f'TASK-{number:03d}.json').write_text(
+            _json.dumps(t), encoding='utf-8'
+        )
+    return audit.PlanInputs(plan_id=plan_id, plan_dir=plan_dir)
+
+
+def _step(target: str, intent: str = 'write-replace') -> dict[str, Any]:
+    return {'target': target, 'intent': intent}
+
+
+def _task(
+    number: int,
+    *,
+    profile: str = 'implementation',
+    deliverable: int = 1,
+    targets: list[str] | None = None,
+    steps: list[dict[str, Any]] | None = None,
+    commands: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build a minimal TASK dict for the task-graph fixture."""
+    if steps is None:
+        steps = [_step(tgt) for tgt in (targets or [])]
+    return {
+        'number': number,
+        'profile': profile,
+        'deliverable': deliverable,
+        'steps': steps,
+        'verification': {'commands': commands or []},
+    }
+
+
+class TestTaskGraphRedundancy:
+    """The five redundancy signals over a reconstructed task graph."""
+
+    def test_duplicate_task_and_in_task_build_both_genuine(self, tmp_path: Path):
+        # Arrange — two tasks edit the SAME file (multi_task_file) and one bakes a
+        # HEAVY build into its verification (in_task_build).
+        inputs = _write_task_graph_plan(
+            tmp_path,
+            'p-dup-build',
+            [
+                _task(1, targets=['src/foo.py']),
+                _task(
+                    2,
+                    targets=['src/foo.py'],
+                    commands=[_HEAVY_BUILD_CMD],
+                ),
+            ],
+        )
+
+        # Act
+        row = audit.check_task_graph_redundancy(inputs)
+
+        # Assert — both signals populated, and the row is genuine
+        assert row['multi_task_file'] == 'src/foo.py'
+        assert 'T2:module-tests plan-marshall' in row['in_task_build']
+        assert audit._task_graph_redundancy_genuine(row) is True
+
+    def test_clean_plan_flags_none_and_is_informational(self, tmp_path: Path):
+        # Arrange — distinct targets, a single light verification, balanced fanout
+        inputs = _write_task_graph_plan(
+            tmp_path,
+            'p-clean',
+            [
+                _task(1, deliverable=1, targets=['src/a.py'], commands=[_LIGHT_CMD]),
+                _task(2, deliverable=2, targets=['src/b.py']),
+            ],
+        )
+
+        # Act
+        rows = [audit.check_task_graph_redundancy(inputs)]
+        # deliverable_fanout needs the corpus median stamped
+        audit._finalize_deliverable_fanout(rows)
+        row = rows[0]
+
+        # Assert — every signal empty; informational
+        assert row['multi_task_file'] == ''
+        assert row['dup_substep'] == ''
+        assert row['in_task_build'] == ''
+        assert row['verif_task_fanout'] == ''
+        assert row['deliverable_fanout'] == ''
+        assert audit._task_graph_redundancy_genuine(row) is False
+
+    def test_dup_substep_same_target_intent_in_two_tasks(self, tmp_path: Path):
+        # Arrange — the SAME (target, intent) baked into two tasks
+        inputs = _write_task_graph_plan(
+            tmp_path,
+            'p-dupstep',
+            [
+                _task(1, steps=[_step('src/x.py', 'refactor')]),
+                _task(2, steps=[_step('src/x.py', 'refactor')]),
+            ],
+        )
+
+        # Act
+        row = audit.check_task_graph_redundancy(inputs)
+
+        # Assert — the (target, intent) pair is surfaced
+        assert 'src/x.py [refactor]' in row['dup_substep']
+        assert audit._task_graph_redundancy_genuine(row) is True
+
+    def test_verif_task_fanout_more_than_one_test_task(self, tmp_path: Path):
+        # Arrange — two test/verification tasks (a collapse candidate)
+        inputs = _write_task_graph_plan(
+            tmp_path,
+            'p-fanout',
+            [
+                _task(1, profile='implementation', targets=['src/a.py']),
+                _task(2, profile='module_testing', targets=['test/a.py']),
+                _task(3, profile='verification', targets=['test/b.py']),
+            ],
+        )
+
+        # Act
+        row = audit.check_task_graph_redundancy(inputs)
+
+        # Assert — both test/verification task numbers listed
+        assert row['verif_task_fanout'] == '2;3'
+        assert audit._task_graph_redundancy_genuine(row) is True
+
+    def test_deliverable_fanout_against_per_run_median(self, tmp_path: Path):
+        # Arrange — a corpus where one plan's per-deliverable task count is a high
+        # outlier relative to the per-run median. The lean plans set a low median
+        # (1 task/deliverable) so the threshold is max(3, 1*2)=3; the busy plan's
+        # single deliverable carries 4 tasks (>=3 → flagged).
+        lean_a = audit.check_task_graph_redundancy(
+            _write_task_graph_plan(
+                tmp_path, 'lean-a', [_task(1, deliverable=1, targets=['a.py'])]
+            )
+        )
+        lean_b = audit.check_task_graph_redundancy(
+            _write_task_graph_plan(
+                tmp_path, 'lean-b', [_task(1, deliverable=1, targets=['b.py'])]
+            )
+        )
+        busy = audit.check_task_graph_redundancy(
+            _write_task_graph_plan(
+                tmp_path,
+                'busy',
+                [
+                    _task(1, deliverable=1, targets=['c1.py']),
+                    _task(2, deliverable=1, targets=['c2.py']),
+                    _task(3, deliverable=1, targets=['c3.py']),
+                    _task(4, deliverable=1, targets=['c4.py']),
+                ],
+            )
+        )
+        rows = [lean_a, lean_b, busy]
+
+        # Act
+        threshold = audit._finalize_deliverable_fanout(rows)
+
+        # Assert — threshold is the corpus floor; only the busy plan is flagged
+        assert threshold == 3
+        assert lean_a['deliverable_fanout'] == ''
+        assert lean_b['deliverable_fanout'] == ''
+        assert busy['deliverable_fanout'] != ''
+        assert audit._task_graph_redundancy_genuine(busy) is True
+
+    def test_is_heavy_build_cmd_distinguishes_heavy_from_light(self):
+        # Heavy: a build runner + a HEAVY token
+        assert audit.is_heavy_build_cmd(_HEAVY_BUILD_CMD) is True
+        # Heavy: full-suite verify verb
+        assert audit.is_heavy_build_cmd(
+            'pyproject_build run --command-args "verify plan-marshall"'
+        ) is True
+        # Light: a manage-* call is never a heavy build
+        assert audit.is_heavy_build_cmd(_LIGHT_CMD) is False
+
+    def test_check_registered_in_check_names_only(self):
+        # Per-plan check: in CHECK_NAMES, NOT in CROSS_PLAN_CHECKS
+        assert 'task-graph-redundancy' in audit.CHECK_NAMES
+        assert 'task-graph-redundancy' not in audit.CROSS_PLAN_CHECKS
+
+    def test_emit_block_shape_and_severity_column(self, tmp_path: Path):
+        # Arrange — one genuine plan (multi_task_file) + one clean plan
+        genuine = audit.check_task_graph_redundancy(
+            _write_task_graph_plan(
+                tmp_path,
+                'g',
+                [
+                    _task(1, targets=['src/dup.py']),
+                    _task(2, targets=['src/dup.py']),
+                ],
+            )
+        )
+        clean = audit.check_task_graph_redundancy(
+            _write_task_graph_plan(
+                tmp_path, 'c', [_task(1, deliverable=1, targets=['src/solo.py'])]
+            )
+        )
+        rows = [genuine, clean]
+        threshold = audit._finalize_deliverable_fanout(rows)
+
+        # Act
+        block = audit.emit_task_graph_redundancy_block(rows, threshold)
+
+        # Assert — header, corpus totals, column header, and severity cells
+        assert 'check: task-graph-redundancy' in block
+        assert 'status: success' in block
+        assert 'plans_scanned: 2' in block
+        assert 'multi_task_file_plans: 1' in block
+        assert f'deliverable_fanout_threshold: {threshold}' in block
+        assert 'genuine_signal_count: 1' in block
+        assert (
+            'rows[2]{plan_id,tasks,multi_task_file,dup_substep,in_task_build,'
+            'verif_task_fanout,deliverable_fanout,severity}' in block
+        )
+        # the genuine plan's row ends in ,genuine; the clean one in ,informational
+        assert ',genuine' in block
+        assert ',informational' in block
+
+
+class TestCrossCheckSynthesisCouplingF:
+    """Coupling (f) redundant_build_churn: a plan whose task graph carries an
+    in_task_build AND whose sequence was flagged build_churn / phase_reentry."""
+
+    def test_fires_on_in_task_build_plus_build_churn(self):
+        # Arrange — same plan flagged in_task_build AND build_churn
+        all_results = {
+            'task-graph-redundancy': [
+                {'plan_id': 'p-x', 'in_task_build': 'T2:module-tests'},
+            ],
+            'sequence-and-build-minimality': _flag_result(
+                [{'plan_id': 'p-x', 'flags': ['build_churn:3']}]
+            ),
+        }
+
+        # Act
+        result = audit.cross_check_synthesis(all_results)
+        row = _coupling_row(result, 'redundant_build_churn')
+
+        # Assert — fired, naming the plan
+        assert row['fired'] is True
+        assert 'p-x' in row['detail']
+
+    def test_fires_on_in_task_build_plus_phase_reentry(self):
+        # Arrange — in_task_build AND phase_reentry on the same plan
+        all_results = {
+            'task-graph-redundancy': [
+                {'plan_id': 'p-y', 'in_task_build': 'T1:quality-gate'},
+            ],
+            'sequence-and-build-minimality': _flag_result(
+                [{'plan_id': 'p-y', 'flags': ['phase_reentry:5-execute']}]
+            ),
+        }
+
+        # Act
+        result = audit.cross_check_synthesis(all_results)
+        row = _coupling_row(result, 'redundant_build_churn')
+
+        # Assert — fired
+        assert row['fired'] is True
+
+    def test_does_not_fire_when_signals_disjoint(self):
+        # Arrange — in_task_build on one plan, churn on a DIFFERENT plan
+        all_results = {
+            'task-graph-redundancy': [
+                {'plan_id': 'p-a', 'in_task_build': 'T2:module-tests'},
+            ],
+            'sequence-and-build-minimality': _flag_result(
+                [{'plan_id': 'p-b', 'flags': ['build_churn:3']}]
+            ),
+        }
+
+        # Act
+        result = audit.cross_check_synthesis(all_results)
+        row = _coupling_row(result, 'redundant_build_churn')
+
+        # Assert — not fired (no plan carries both)
+        assert row['fired'] is False
+
+    def test_does_not_fire_without_in_task_build(self):
+        # Arrange — churn present but no in_task_build anywhere
+        all_results = {
+            'task-graph-redundancy': [
+                {'plan_id': 'p-c', 'in_task_build': ''},
+            ],
+            'sequence-and-build-minimality': _flag_result(
+                [{'plan_id': 'p-c', 'flags': ['build_churn:3']}]
+            ),
+        }
+
+        # Act
+        result = audit.cross_check_synthesis(all_results)
+        row = _coupling_row(result, 'redundant_build_churn')
+
+        # Assert — not fired
+        assert row['fired'] is False
