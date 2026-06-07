@@ -16,6 +16,7 @@ promote_finding = _findings_core.promote_finding
 query_findings = _findings_core.query_findings
 query_qgate_findings = _findings_core.query_qgate_findings
 resolve_finding = _findings_core.resolve_finding
+resolve_findings_by_type = _findings_core.resolve_findings_by_type
 resolve_qgate_finding = _findings_core.resolve_qgate_finding
 
 # =============================================================================
@@ -154,6 +155,116 @@ def test_resolve_finding_not_found(plan_context):
     result = resolve_finding('store-resolve-nf', 'nonexistent', 'fixed')
     assert result['status'] == 'error'
     assert 'not found' in result['message']
+
+
+# =============================================================================
+# Test: resolve_findings_by_type (bulk resolve)
+# =============================================================================
+
+
+def test_resolve_findings_by_type_bulk_count(plan_context):
+    """Bulk-resolving all pending findings of a type returns the correct count."""
+    add_finding('store-bulk-count', 'bug', 'Bug 1', 'Detail')
+    add_finding('store-bulk-count', 'bug', 'Bug 2', 'Detail')
+    add_finding('store-bulk-count', 'bug', 'Bug 3', 'Detail')
+
+    result = resolve_findings_by_type('store-bulk-count', ('bug',), 'fixed')
+    assert result['status'] == 'success'
+    assert result['resolved_count'] == 3
+    assert len(result['hash_ids']) == 3
+
+    # All bugs are now resolved; none remain pending.
+    pending = query_findings('store-bulk-count', finding_type='bug', resolution='pending')
+    assert pending['filtered_count'] == 0
+    resolved = query_findings('store-bulk-count', finding_type='bug', resolution='fixed')
+    assert resolved['filtered_count'] == 3
+
+
+def test_resolve_findings_by_type_leaves_other_types(plan_context):
+    """Findings not matching the type predicate are left unresolved."""
+    add_finding('store-bulk-other', 'bug', 'Bug 1', 'Detail')
+    add_finding('store-bulk-other', 'bug', 'Bug 2', 'Detail')
+    add_finding('store-bulk-other', 'improvement', 'Improve 1', 'Detail')
+
+    result = resolve_findings_by_type('store-bulk-other', ('bug',), 'fixed')
+    assert result['status'] == 'success'
+    assert result['resolved_count'] == 2
+
+    # The improvement finding must remain pending.
+    pending_improve = query_findings(
+        'store-bulk-other', finding_type='improvement', resolution='pending'
+    )
+    assert pending_improve['filtered_count'] == 1
+
+
+def test_resolve_findings_by_type_skips_already_resolved(plan_context):
+    """An already-resolved finding is not double-counted on a subsequent bulk resolve."""
+    r1 = add_finding('store-bulk-dup', 'bug', 'Bug 1', 'Detail')
+    add_finding('store-bulk-dup', 'bug', 'Bug 2', 'Detail')
+
+    # Resolve one finding ahead of the bulk call.
+    resolve_finding('store-bulk-dup', r1['hash_id'], 'fixed')
+
+    # Bulk resolve should only pick up the one still-pending finding.
+    result = resolve_findings_by_type('store-bulk-dup', ('bug',), 'fixed')
+    assert result['status'] == 'success'
+    assert result['resolved_count'] == 1
+    assert r1['hash_id'] not in result['hash_ids']
+
+
+def test_resolve_findings_by_type_empty_when_no_match(plan_context):
+    """Bulk resolve returns a zero count when no findings match the type predicate."""
+    add_finding('store-bulk-empty', 'improvement', 'Improve 1', 'Detail')
+
+    result = resolve_findings_by_type('store-bulk-empty', ('bug',), 'fixed')
+    assert result['status'] == 'success'
+    assert result['resolved_count'] == 0
+    assert result['hash_ids'] == []
+
+
+def test_resolve_findings_by_type_multiple_types(plan_context):
+    """Bulk resolve spans multiple finding types in a single call."""
+    add_finding('store-bulk-multi', 'bug', 'Bug 1', 'Detail')
+    add_finding('store-bulk-multi', 'improvement', 'Improve 1', 'Detail')
+    add_finding('store-bulk-multi', 'tip', 'Tip 1', 'Detail')
+
+    result = resolve_findings_by_type('store-bulk-multi', ('bug', 'improvement'), 'fixed')
+    assert result['status'] == 'success'
+    assert result['resolved_count'] == 2
+
+    # The tip finding is outside the type set and remains pending.
+    pending_tip = query_findings('store-bulk-multi', finding_type='tip', resolution='pending')
+    assert pending_tip['filtered_count'] == 1
+
+
+def test_resolve_findings_by_type_invalid_resolution(plan_context):
+    """An invalid target resolution returns the canonical error shape without mutating state."""
+    add_finding('store-bulk-badres', 'bug', 'Bug 1', 'Detail')
+
+    result = resolve_findings_by_type('store-bulk-badres', ('bug',), 'not-a-resolution')
+    assert result['status'] == 'error'
+    assert 'Invalid resolution' in result['message']
+
+    # No finding was mutated.
+    pending = query_findings('store-bulk-badres', finding_type='bug', resolution='pending')
+    assert pending['filtered_count'] == 1
+
+
+def test_resolve_findings_by_type_custom_from_resolution(plan_context):
+    """Bulk resolve can re-resolve findings matching a non-default from_resolution."""
+    r1 = add_finding('store-bulk-from', 'bug', 'Bug 1', 'Detail')
+    add_finding('store-bulk-from', 'bug', 'Bug 2', 'Detail')
+
+    # Move one finding to 'accepted'; the other stays pending.
+    resolve_finding('store-bulk-from', r1['hash_id'], 'accepted')
+
+    # Bulk re-resolve only the 'accepted' finding to 'fixed'.
+    result = resolve_findings_by_type(
+        'store-bulk-from', ('bug',), 'fixed', from_resolution='accepted'
+    )
+    assert result['status'] == 'success'
+    assert result['resolved_count'] == 1
+    assert result['hash_ids'] == [r1['hash_id']]
 
 
 # =============================================================================
