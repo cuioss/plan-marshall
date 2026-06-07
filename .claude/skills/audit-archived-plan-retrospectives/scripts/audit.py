@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit archived plans across fourteen retrospective checks.
+"""Audit archived plans across fifteen retrospective checks.
 
 Walks `.plan/local/archived-plans/{plan_id}/` directories and, per plan, runs a
 suite of deterministic checks:
@@ -70,6 +70,19 @@ suite of deterministic checks:
   cross-check obligation: EVERY other check MUST consume this verdict and annotate
   rows derived from a `metrics_blind` plan as "floor, not truth" — a check may not
   claim "all healthy" over blind-input plans.
+- `task-graph-redundancy` (per-plan) — reconstructs each plan's task graph from
+  `tasks/TASK-*.json` as adjacency over step targets and flags five redundancy
+  signals: `multi_task_file` (a file edited by ≥2 tasks — the primary
+  duplicate-task signal, computed from a `file_owners` adjacency map rather than a
+  pairwise count), `dup_substep` (the same `(target, intent)` baked into >1 task),
+  `in_task_build` (a HEAVY build/verify command — `module-tests` / `quality-gate`
+  / `coverage` or full-suite `verify` — baked into a task's
+  `verification.commands` that phase-5/6 already runs, inferred from the verb
+  alone with no `execution.toon` join), `verif_task_fanout` (>1
+  module_testing/verification task), and `deliverable_fanout` (a deliverable whose
+  task count exceeds the per-run corpus outlier threshold `max(3, median*2)`,
+  recomputed fresh from the loaded corpus each run). A per-plan row carries
+  `severity: genuine` whenever any of the five signals is populated.
 - `cross-check-synthesis` (cross-plan, runs LAST) — the facet-completeness
   critic. It consumes the OTHER checks' retained structured results (not their
   emitted strings) and reports the cross-check couplings that single-check rows
@@ -80,10 +93,12 @@ suite of deterministic checks:
   `no_qgate6`/`auto_review_only` correlating with sequence `ci_rerun` and
   token-economics `finalize_heavy`; (d) recurring-pattern argparse signatures
   correlating with global-log ERROR/argparse-rejection counts and
-  quality-verification unfiled signatures (collapsed to ONE candidate); and (e)
-  scope-estimate under-estimation correlating with task-count and token-per-file.
-  Each coupling carries its qualifying caveat and the D1 severity column. The
-  block operationalizes the SKILL.md Step-4b completeness critic.
+  quality-verification unfiled signatures (collapsed to ONE candidate); (e)
+  scope-estimate under-estimation correlating with task-count and token-per-file;
+  and (f) task-graph-redundancy `in_task_build` correlating with sequence
+  `build_churn`/`phase_reentry` (one wasted heavy run seen statically and at
+  runtime). Each coupling carries its qualifying caveat and the D1 severity
+  column. The block operationalizes the SKILL.md Step-4b completeness critic.
 
 Each check emits one bespoke-TOON block. Intended consumer:
 `/audit-archived-plan-retrospectives`.
@@ -129,6 +144,7 @@ CHECK_NAMES = [
     "quality-chain",
     "sequence-and-build-minimality",
     "input-integrity",
+    "task-graph-redundancy",
     # cross-check-synthesis is the facet-completeness critic; it consumes the
     # other checks' computed results, so it MUST be last in this list (run_checks
     # dispatches in CHECK_NAMES order and synthesis reads the retained results).
@@ -2691,6 +2707,240 @@ def emit_input_integrity_block(rows: list[dict[str, Any]]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Check: task-graph-redundancy
+# ---------------------------------------------------------------------------
+#
+# Per-plan adjacency check over `tasks/TASK-*.json`. A plan's task graph is
+# reconstructed as adjacency over step targets (a `file_owners: target → owning
+# task numbers` map) and verification-command verbs, surfacing five redundancy
+# signals. The duplicate-task signal is the `multi_task_file` adjacency map (a
+# file edited by ≥2 tasks), not a pairwise count. Heavy in-task builds are
+# inferred from the verification command verbs alone — no `execution.toon` join.
+# The deliverable→task fan-out outlier threshold is the per-run corpus median,
+# computed in `run_checks` across the loaded corpus (not per-row, not persisted).
+
+# `TASK-NNN.json` filename grammar — the three-digit zero-padded task id.
+_TASK_FILE_RE = re.compile(r"^TASK-(\d{3})\.json$")
+
+# Heavy build/verify verbs: a per-task verification carrying one of these runs a
+# full suite that phase-5 execute / phase-6 finalize already run — duplicated
+# compute. Distinct from a scoped/light single-file or `--plan-id`-scoped check.
+HEAVY_BUILD_TOKENS = ("module-tests", "quality-gate", "coverage")
+
+# Build-runner notation tokens. A verification command is only a heavy build when
+# it both invokes a build runner AND carries a HEAVY_BUILD_TOKENS verb (or the
+# full-suite `verify` verb) — a bare `manage-*` call is never a heavy build.
+BUILD_RUNNERS = ("pyproject_build", "build-maven", "build-gradle", "build-npm")
+
+
+def _load_plan_tasks(plan_dir: Path) -> list[dict[str, Any]]:
+    """Read every well-formed `tasks/TASK-NNN.json` under a plan dir."""
+    tasks_dir = plan_dir / "tasks"
+    if not tasks_dir.is_dir():
+        return []
+    tasks: list[dict[str, Any]] = []
+    for tf in sorted(tasks_dir.glob("TASK-*.json")):
+        if not _TASK_FILE_RE.match(tf.name):
+            continue
+        obj = read_json(tf)
+        if obj is not None:
+            tasks.append(obj)
+    return tasks
+
+
+def _task_targets(task: dict[str, Any]) -> set[str]:
+    """Return the set of non-empty step targets a task edits."""
+    return {
+        s["target"]
+        for s in task.get("steps", []) or []
+        if isinstance(s, dict) and s.get("target")
+    }
+
+
+def is_heavy_build_cmd(cmd: str) -> bool:
+    """True when a verification command runs a HEAVY build/verify suite.
+
+    Verb-only inference (Decision 3): the command must invoke a build runner AND
+    carry a `HEAVY_BUILD_TOKENS` verb or the full-suite `verify` verb. A scoped /
+    light check (single file, `--plan-id`-scoped) does not match.
+    """
+    if not any(runner in cmd for runner in BUILD_RUNNERS):
+        return False
+    if any(token in cmd for token in HEAVY_BUILD_TOKENS):
+        return True
+    # `... run --command-args "verify ..."` is the full-suite verify verb.
+    return bool(re.search(r'command-args\s+"?\s*verify\b', cmd)) or '"verify' in cmd
+
+
+def check_task_graph_redundancy(inputs: PlanInputs) -> dict[str, Any]:
+    """Reconstruct one plan's task graph and flag five redundancy signals.
+
+    Adjacency over step targets and verification verbs (Decision 2): a
+    `file_owners` map yields `multi_task_file` directly (a file edited by ≥2
+    tasks — the primary duplicate-task signal, REPLACING a pairwise count); a
+    `(target, intent)` map yields `dup_substep`; heavy in-task builds are inferred
+    from the verification verbs via `is_heavy_build_cmd`; `verif_task_fanout`
+    counts module_testing/verification tasks; and `deliv_counts` /
+    `max_tasks_per_deliverable` are returned for the per-run `deliverable_fanout`
+    threshold finalized in `run_checks`. The `deliverable_fanout` cell is stamped
+    there (it needs the corpus median); this function leaves it absent.
+    """
+    tasks = _load_plan_tasks(inputs.plan_dir)
+
+    # (a) multi_task_file — adjacency map target → owning task numbers.
+    file_owners: dict[str, set[int]] = {}
+    for t in tasks:
+        number = int(t.get("number", 0) or 0)
+        for target in _task_targets(t):
+            file_owners.setdefault(target, set()).add(number)
+    multi_task_files = sorted(
+        tgt for tgt, owners in file_owners.items() if len(owners) > 1
+    )
+
+    # (b) dup_substep — the same (target, intent) baked into >1 task.
+    substep_owners: dict[tuple[str, str], set[int]] = {}
+    for t in tasks:
+        number = int(t.get("number", 0) or 0)
+        for s in t.get("steps", []) or []:
+            if not isinstance(s, dict) or not s.get("target"):
+                continue
+            key = (s["target"], str(s.get("intent", "")))
+            substep_owners.setdefault(key, set()).add(number)
+    dup_substeps = sorted(
+        f"{tgt} [{intent}]"
+        for (tgt, intent), owners in substep_owners.items()
+        if len(owners) > 1
+    )
+
+    # (c) in_task_build — a heavy build/verify command in a task's verification.
+    in_task_builds: list[str] = []
+    for t in tasks:
+        number = int(t.get("number", 0) or 0)
+        commands = (t.get("verification") or {}).get("commands", []) or []
+        for cmd in commands:
+            if isinstance(cmd, str) and is_heavy_build_cmd(cmd):
+                m = re.search(r'command-args\s+"?([^"]+)', cmd)
+                verb = m.group(1).strip() if m else "build"
+                in_task_builds.append(f"T{number}:{verb}")
+
+    # (d) verif_task_fanout — >1 module_testing/verification task.
+    verif_tasks = sorted(
+        int(t.get("number", 0) or 0)
+        for t in tasks
+        if t.get("profile") in ("module_testing", "verification")
+    )
+
+    # (e) deliverable fan-out raw counts — the per-run threshold is applied in
+    # run_checks where the corpus median is known.
+    deliv_counts: dict[int, int] = {}
+    for t in tasks:
+        d = int(t.get("deliverable", 0) or 0)
+        if d > 0:
+            deliv_counts[d] = deliv_counts.get(d, 0) + 1
+
+    return {
+        "plan_id": inputs.plan_id,
+        "tasks": len(tasks),
+        "multi_task_file": ";".join(multi_task_files),
+        "dup_substep": ";".join(dup_substeps),
+        "in_task_build": ";".join(in_task_builds),
+        "verif_task_fanout": ";".join(str(n) for n in verif_tasks)
+        if len(verif_tasks) > 1
+        else "",
+        # Stamped in run_checks once the per-run median threshold is known.
+        "deliverable_fanout": "",
+        "deliv_counts": deliv_counts,
+        "max_tasks_per_deliverable": max(deliv_counts.values(), default=0),
+    }
+
+
+def _finalize_deliverable_fanout(rows: list[dict[str, Any]]) -> int:
+    """Stamp `deliverable_fanout` on each row from the per-run corpus median.
+
+    The outlier threshold is `max(3, median*2)` over the per-deliverable task
+    counts across the loaded corpus (Decision 4), recomputed fresh each run. A
+    row whose `max_tasks_per_deliverable` reaches the threshold gets a non-empty
+    `deliverable_fanout` cell naming the offending count. Returns the threshold.
+    """
+    all_counts = [
+        float(c) for r in rows for c in r["deliv_counts"].values()
+    ]
+    median_tpd = median(all_counts)
+    threshold = max(3.0, median_tpd * 2.0)
+    for r in rows:
+        max_tpd = r["max_tasks_per_deliverable"]
+        r["deliverable_fanout"] = (
+            f"max={max_tpd}>=thr={threshold:.0f}" if max_tpd >= threshold else ""
+        )
+    return int(threshold)
+
+
+def _task_graph_redundancy_genuine(row: dict[str, Any]) -> bool:
+    """Genuine when any of the five redundancy signals is populated (Decision 5).
+
+    All five sub-checks emit `genuine`; there is no informational-only sub-check.
+    An empty row (clean plan: distinct targets, no heavy in-task build, balanced
+    fan-out) is `informational`.
+    """
+    return bool(
+        row["multi_task_file"]
+        or row["dup_substep"]
+        or row["in_task_build"]
+        or row["verif_task_fanout"]
+        or row["deliverable_fanout"]
+    )
+
+
+def emit_task_graph_redundancy_block(
+    rows: list[dict[str, Any]], threshold: int
+) -> str:
+    """Emit the per-plan task-graph-redundancy block + corpus totals.
+
+    Each per-plan row carries the five signal cells plus the uniform D1
+    `severity` column (`genuine` when any signal populated). The block leads with
+    the corpus totals (plans flagged per signal and the per-run deliverable-fanout
+    `threshold`) so the systemic redundancy footprint is visible at a glance.
+    """
+    rows, genuine_signal_count = _severity_summary(
+        rows, _task_graph_redundancy_genuine
+    )
+    out = [
+        "check: task-graph-redundancy",
+        "status: success",
+        f"plans_scanned: {len(rows)}",
+        f"multi_task_file_plans: {sum(1 for r in rows if r['multi_task_file'])}",
+        f"dup_substep_plans: {sum(1 for r in rows if r['dup_substep'])}",
+        f"in_task_build_plans: {sum(1 for r in rows if r['in_task_build'])}",
+        f"verif_task_fanout_plans: {sum(1 for r in rows if r['verif_task_fanout'])}",
+        f"deliverable_fanout_plans: {sum(1 for r in rows if r['deliverable_fanout'])}",
+        f"deliverable_fanout_threshold: {threshold}",
+        f"genuine_signal_count: {genuine_signal_count}",
+        (
+            f"rows[{len(rows)}]{{plan_id,tasks,multi_task_file,dup_substep,"
+            "in_task_build,verif_task_fanout,deliverable_fanout,severity}:"
+        ),
+    ]
+    for r in rows:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    r["plan_id"],
+                    r["tasks"],
+                    r["multi_task_file"],
+                    r["dup_substep"],
+                    r["in_task_build"],
+                    r["verif_task_fanout"],
+                    r["deliverable_fanout"],
+                    r["severity"],
+                ]
+            )
+        )
+    return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Dormation move (the only mutating operation)
 # ---------------------------------------------------------------------------
 
@@ -2721,55 +2971,113 @@ def _validate_plan_id(plan_id: str) -> str | None:
     return None
 
 
-def dormate_plan(repo_root: Path, plan_id: str, confirmed: bool) -> dict[str, Any]:
-    """Relocate an archived plan to `.plan/temp/dormated-plans/{plan_id}`.
+def dormate_plans(
+    repo_root: Path, plan_ids: list[str], confirmed: bool
+) -> dict[str, Any]:
+    """Relocate one or more archived plans to `.plan/temp/dormated-plans/{plan_id}`.
 
-    Inert unless `confirmed` is True — the interactive confirmation itself is
-    owned by the SKILL.md LLM body via AskUserQuestion; this function performs
-    only the confirmed move.
+    Mirrors `dormate_global_logs` posture exactly: inert unless `confirmed` is True
+    (the interactive confirmation is owned by the SKILL.md LLM body via
+    AskUserQuestion; this function performs only the confirmed move). The supplied
+    `plan_ids` are deduplicated silently (order-preserving) and each is validated
+    against the canonical grammar via `_validate_plan_id` before any destination is
+    constructed. Source and destination resolutions are bracketed by
+    `is_relative_to` containment guards. An all-or-nothing refuse-on-clash pre-check
+    (invalid grammar, missing source, or an already-existing destination) refuses
+    the WHOLE operation (`status` `refused`/`error`) before relocating any plan, so
+    a mid-batch clash never leaves a partially-moved batch on disk.
     """
     if not confirmed:
         return {
             "status": "refused",
-            "plan_id": plan_id,
             "reason": "dormation requires --confirmed; the move function is inert without it",
+            "moved": [],
         }
-    grammar_error = _validate_plan_id(plan_id)
-    if grammar_error is not None:
-        return {
-            "status": "refused",
-            "plan_id": plan_id,
-            "reason": grammar_error,
-        }
+
+    # Dedup silently, preserving first-seen order.
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for plan_id in plan_ids:
+        if plan_id not in seen:
+            seen.add(plan_id)
+            deduped.append(plan_id)
+
     src_parent = (repo_root / ".plan/local/archived-plans").resolve()
-    src = (src_parent / plan_id).resolve()
-    if not src.is_relative_to(src_parent) or not src.is_dir():
-        return {
-            "status": "error",
-            "plan_id": plan_id,
-            "reason": f"source not found or invalid: {src}",
-        }
     dest_parent = (repo_root / ".plan/temp/dormated-plans").resolve()
-    dest = (dest_parent / plan_id).resolve()
-    if not dest.is_relative_to(dest_parent):
-        return {
-            "status": "error",
-            "plan_id": plan_id,
-            "reason": f"invalid destination: {dest}",
-        }
+
+    # All-or-nothing pre-check: validate grammar, resolve + contain source and
+    # destination, and refuse-on-exists across EVERY plan before moving anything.
+    resolved: list[tuple[str, Path, Path]] = []
+    for plan_id in deduped:
+        grammar_error = _validate_plan_id(plan_id)
+        if grammar_error is not None:
+            return {
+                "status": "refused",
+                "plan_id": plan_id,
+                "reason": grammar_error,
+                "moved": [],
+            }
+        src = (src_parent / plan_id).resolve()
+        if not src.is_relative_to(src_parent) or not src.is_dir():
+            return {
+                "status": "error",
+                "plan_id": plan_id,
+                "reason": f"source not found or invalid: {src}",
+                "moved": [],
+            }
+        dest = (dest_parent / plan_id).resolve()
+        if not dest.is_relative_to(dest_parent):
+            return {
+                "status": "error",
+                "plan_id": plan_id,
+                "reason": f"invalid destination: {dest}",
+                "moved": [],
+            }
+        if dest.exists():
+            return {
+                "status": "error",
+                "plan_id": plan_id,
+                "reason": f"destination already exists: {dest}",
+                "moved": [],
+            }
+        resolved.append((plan_id, src, dest))
+
     dest_parent.mkdir(parents=True, exist_ok=True)
-    if dest.exists():
-        return {
-            "status": "error",
-            "plan_id": plan_id,
-            "reason": f"destination already exists: {dest}",
-        }
-    shutil.move(str(src), str(dest))
+    moved: list[str] = []
+    for plan_id, src, dest in resolved:
+        shutil.move(str(src), str(dest))
+        moved.append(plan_id)
     return {
         "status": "success",
-        "plan_id": plan_id,
-        "moved_to": str(dest),
+        "moved": sorted(moved),
+        "moved_to": str(dest_parent) if moved else "",
     }
+
+
+def dormate_all_plans(repo_root: Path, confirmed: bool) -> dict[str, Any]:
+    """Dormate every archived plan under `.plan/local/archived-plans/`.
+
+    Enumerates the per-plan subdirectories of `.plan/local/archived-plans/` and
+    delegates to `dormate_plans` with the full set, inheriting its inert-unless-
+    confirmed posture, per-plan grammar validation, containment guards, and
+    all-or-nothing refuse-on-clash pre-check. An absent archive directory yields
+    an empty (no-op) success.
+    """
+    if not confirmed:
+        return {
+            "status": "refused",
+            "reason": "dormation requires --confirmed; the move function is inert without it",
+            "moved": [],
+        }
+    src_parent = (repo_root / ".plan/local/archived-plans").resolve()
+    if not src_parent.is_dir():
+        return {
+            "status": "success",
+            "moved": [],
+            "moved_to": "",
+        }
+    plan_ids = sorted(p.name for p in src_parent.iterdir() if p.is_dir())
+    return dormate_plans(repo_root, plan_ids, confirmed)
 
 
 # Global log filename grammar: any `{prefix}-YYYY-MM-DD.log`, where the trailing
@@ -3604,7 +3912,7 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
 # (e.g. an empty token-trend regression is only untrustworthy when input-integrity
 # reports blind execute phases; it is not itself a finding).
 #
-# THE FIVE COUPLINGS:
+# THE SIX COUPLINGS:
 #   (a) trend_empty_untrustworthy   — token-efficiency-trend regression is EMPTY
 #       while input-integrity reports >=1 blind execute. Caveat: an empty
 #       regression over blind-execute plans is "floor, not truth" — the trend
@@ -3631,6 +3939,11 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
 #       under-estimation that ALSO sits in the high tokens-per-file / high
 #       task-count tail. Caveat: an under-estimated scope predicts the over-spend;
 #       the coupling names the predicted-vs-actual gap, not a fresh finding.
+#   (f) redundant_build_churn       — a plan whose task graph bakes a HEAVY build
+#       into a task's verification (task-graph-redundancy in_task_build) AND whose
+#       runtime sequence was flagged build_churn / phase_reentry. Caveat: the
+#       static in_task_build redundancy and the observed runtime churn corroborate
+#       one wasted heavy run — confirm they co-occur before filing.
 
 # argparse-rejection signatures the recurring-pattern detector surfaces — the
 # wording the global-log FAIL markers and the per-plan script-failure analysis
@@ -3671,6 +3984,17 @@ def _syn_metrics_disproportionate_plans(metrics_rows: Any) -> set[str]:
     return out
 
 
+def _syn_in_task_build_plans(tgr_rows: Any) -> set[str]:
+    """Return plan ids whose task-graph-redundancy row carries an in_task_build."""
+    out: set[str] = set()
+    if not isinstance(tgr_rows, list):
+        return out
+    for row in tgr_rows:
+        if isinstance(row, dict) and row.get("in_task_build"):
+            out.add(str(row.get("plan_id")))
+    return out
+
+
 def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
     """Compute the five cross-check couplings from the retained check results.
 
@@ -3693,6 +4017,7 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
     quality_verification = all_results.get("quality-verification-report")
     scope = all_results.get("scope-estimate-accuracy")
     task_count = all_results.get("task-count-efficiency")
+    task_graph = all_results.get("task-graph-redundancy")
 
     rows: list[dict[str, Any]] = []
 
@@ -3857,6 +4182,37 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
             "caveat": (
                 "an under-estimated scope predicts the over-spend — the coupling "
                 "names the predicted-vs-actual gap, not a fresh finding"
+            ),
+        }
+    )
+
+    # (f) redundant_build_churn — a plan whose task graph bakes a HEAVY build
+    # into a task's verification (`in_task_build`) AND whose runtime sequence was
+    # flagged `build_churn` / `phase_reentry`. The static redundancy (a build the
+    # task list duplicated) and the observed runtime churn are two views of the
+    # same wasted compute.
+    in_task_build_plans = _syn_in_task_build_plans(task_graph)
+    churn_reentry_plans = _syn_flagged_plans(
+        sequence,
+        lambda f: f.startswith("build_churn") or f.startswith("phase_reentry"),
+    )
+    f_plans = sorted(in_task_build_plans & churn_reentry_plans)
+    f_fired = bool(f_plans)
+    rows.append(
+        {
+            "coupling": "redundant_build_churn",
+            "fired": f_fired,
+            "detail": (
+                f"{len(f_plans)} plan(s) with an in_task_build AND "
+                f"build_churn/phase_reentry: {';'.join(f_plans)}"
+                if f_fired
+                else f"in_task_build_plans={len(in_task_build_plans)};"
+                f"churn_reentry_plans={len(churn_reentry_plans)}"
+            ),
+            "caveat": (
+                "a heavy build baked into a task's verification is a STATIC "
+                "redundancy; confirm it co-occurs with the observed build_churn "
+                "runtime signal before filing — the two corroborate one waste"
             ),
         }
     )
@@ -4120,6 +4476,18 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
                 1 for r in ii_rows if _input_integrity_genuine(r)
             )
 
+    if "task-graph-redundancy" in selected or synth_needed:
+        tgr_rows = [check_task_graph_redundancy(i) for i in all_inputs]
+        # The per-run deliverable-fanout threshold needs the whole corpus, so it
+        # is finalized here (not per-row) before retention/emit.
+        tgr_threshold = _finalize_deliverable_fanout(tgr_rows)
+        all_results["task-graph-redundancy"] = tgr_rows
+        if "task-graph-redundancy" in selected:
+            blocks.append(emit_task_graph_redundancy_block(tgr_rows, tgr_threshold))
+            summary_metrics["task-graph-redundancy_genuine"] = sum(
+                1 for r in tgr_rows if _task_graph_redundancy_genuine(r)
+            )
+
     # cross-check-synthesis MUST run LAST — it reads every upstream result the
     # blocks above retained into `all_results`.
     if synth_needed:
@@ -4138,7 +4506,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Audit archived plans across fourteen retrospective checks."
+        description="Audit archived plans across fifteen retrospective checks."
     )
     parser.add_argument(
         "--plan-dir",
@@ -4161,8 +4529,14 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument(
         "--dormate",
+        nargs="+",
         metavar="PLAN_ID",
-        help="Relocate an archived plan to `.plan/temp/dormated-plans/`. Inert (refused, exit 0) unless --confirmed is also passed.",
+        help="Relocate one or more archived plans to `.plan/temp/dormated-plans/`. Duplicate ids are deduplicated silently; the whole batch is moved all-or-nothing. Inert (refused, exit 0) unless --confirmed is also passed.",
+    )
+    parser.add_argument(
+        "--dormate-all",
+        action="store_true",
+        help="Relocate EVERY archived plan under `.plan/local/archived-plans/` to `.plan/temp/dormated-plans/`. Same all-or-nothing posture as --dormate. Inert (refused, exit 0) unless --confirmed is also passed.",
     )
     parser.add_argument(
         "--dormate-global-logs",
@@ -4172,19 +4546,30 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--confirmed",
         action="store_true",
-        help="Confirm the destructive dormation move (no-op without --dormate / --dormate-global-logs).",
+        help="Confirm the destructive dormation move (no-op without --dormate / --dormate-all / --dormate-global-logs).",
     )
     args = parser.parse_args(argv)
 
     repo_root = Path.cwd()
 
-    if args.dormate:
-        result = dormate_plan(repo_root, args.dormate, args.confirmed)
-        out = ["operation: dormate", f"status: {result['status']}", f"plan_id: {result['plan_id']}"]
-        if "moved_to" in result:
+    if args.dormate or args.dormate_all:
+        if args.dormate_all:
+            result = dormate_all_plans(repo_root, args.confirmed)
+            operation = "dormate-all"
+        else:
+            result = dormate_plans(repo_root, args.dormate, args.confirmed)
+            operation = "dormate"
+        moved = result.get("moved", [])
+        out = [f"operation: {operation}", f"status: {result['status']}"]
+        if "plan_id" in result:
+            out.append(f"plan_id: {result['plan_id']}")
+        if result.get("moved_to"):
             out.append(f"moved_to: {result['moved_to']}")
         if "reason" in result:
             out.append(f'reason: "{result["reason"]}"')
+        out.append(f"moved[{len(moved)}]{{plan_id}}:")
+        for name in moved:
+            out.append(f"  {name}")
         sys.stdout.write("\n".join(out) + "\n")
         return 0 if result["status"] in {"success", "refused"} else 1
 
