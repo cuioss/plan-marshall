@@ -68,7 +68,7 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
         except Exception as e:
             from plan_logging import log_entry  # type: ignore[import-not-found]
 
-            log_entry('script', 'global', 'WARNING', f'[SUGGEST] get_skill_domains() failed for extension: {e}')
+            log_entry('script', None, 'WARNING', f'[SUGGEST] get_skill_domains() failed for extension: {e}')
             continue
 
         domain_keys = [
@@ -86,7 +86,7 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
         except Exception as e:
             from plan_logging import log_entry  # type: ignore[import-not-found]
 
-            log_entry('script', 'global', 'WARNING', f'[SUGGEST] applies_to_module() failed for extension: {e}')
+            log_entry('script', None, 'WARNING', f'[SUGGEST] applies_to_module() failed for extension: {e}')
             continue
 
         if result.get('applicable'):

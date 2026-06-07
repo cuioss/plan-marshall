@@ -177,13 +177,13 @@ VALID_TYPES = VALID_LOG_TYPES
 VALID_LEVELS = VALID_LOG_LEVELS
 
 
-def log_entry(log_type: str, plan_id: str, level: str, message: str) -> None:
+def log_entry(log_type: str, plan_id: str | None, level: str, message: str) -> None:
     """
     Write log entry to appropriate log file.
 
     Args:
         log_type: 'script' or 'work'
-        plan_id: Plan identifier
+        plan_id: Plan identifier, or None for no plan context (global fallback)
         level: INFO, WARNING, ERROR
         message: Log message
     """
