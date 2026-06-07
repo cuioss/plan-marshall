@@ -312,6 +312,97 @@ def test_log_script_execution_error_with_details():
 
 
 # =============================================================================
+# TESTS: log_script_execution producer-tier routing (--plan-id presence)
+# =============================================================================
+#
+# Regression guard for the orchestrator-context build-call bug (deliverable 1):
+# the pre-push-quality-gate build MUST forward --plan-id so its log line lands in
+# the plan-scoped script-execution.log tier — the exact log that
+# pre-commit-verify-freshness reads. The old --project-dir-only shape carried no
+# --plan-id, so log_script_execution's extract_plan_id() returned None and the
+# build line was misrouted to the global date-suffixed tier, false-negativing the
+# plan-scoped freshness gate. These tests pin both halves: the FIXED shape routes
+# plan-scoped, the legacy shape routes global.
+
+_PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
+
+
+def test_log_script_execution_plan_id_routes_plan_scoped():
+    """FIXED orchestrator-context build shape (--plan-id present) -> plan-scoped tier.
+
+    Mirrors the post-fix call: pyproject_build run with the quality-gate command-args
+    AND --plan-id. extract_plan_id resolves the plan, get_log_path hits the
+    status.json sentinel branch, and the [INFO] build line lands in the plan-scoped
+    logs/script-execution.log — ABSENT from the global day-log.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        plan_base = Path(tmp)
+        plan_dir = _init_plan_dir(plan_base, 'fixed-plan')
+
+        os.environ['PLAN_BASE_DIR'] = str(plan_base)
+        try:
+            module.log_script_execution(
+                notation=_PYPROJECT_NOTATION,
+                subcommand='run',
+                args=['run', '--command-args', 'quality-gate plan-marshall', '--plan-id', 'fixed-plan'],
+                exit_code=0,
+                duration=12.5,
+            )
+
+            plan_log = plan_dir / 'logs' / 'script-execution.log'
+            assert plan_log.exists(), 'Build line should land in the plan-scoped script log'
+            plan_content = plan_log.read_text(encoding='utf-8')
+            assert '[INFO]' in plan_content
+            assert f'{_PYPROJECT_NOTATION} run' in plan_content, (
+                'Plan-scoped log must carry the pyproject_build run line'
+            )
+
+            global_log = plan_base / 'logs' / f'script-execution-{date.today()}.log'
+            if global_log.exists():
+                assert _PYPROJECT_NOTATION not in global_log.read_text(encoding='utf-8'), (
+                    'Build line must NOT leak into the global tier when --plan-id is present'
+                )
+        finally:
+            del os.environ['PLAN_BASE_DIR']
+
+
+def test_log_script_execution_no_plan_id_routes_global():
+    """Legacy --project-dir-only build shape (NO --plan-id) -> global tier (the bug).
+
+    Companion proving the bug the fix closes: the same pyproject_build run call WITHOUT
+    --plan-id (the old --project-dir-only shape) carries no plan id, so extract_plan_id
+    returns None and the build line is misrouted to the global date-suffixed tier — the
+    plan-scoped script log the freshness gate reads is left without the build line.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        plan_base = Path(tmp)
+        plan_dir = _init_plan_dir(plan_base, 'legacy-plan')
+
+        os.environ['PLAN_BASE_DIR'] = str(plan_base)
+        try:
+            module.log_script_execution(
+                notation=_PYPROJECT_NOTATION,
+                subcommand='run',
+                args=['run', '--command-args', 'quality-gate plan-marshall', '--project-dir', str(plan_base)],
+                exit_code=0,
+                duration=12.5,
+            )
+
+            global_log = plan_base / 'logs' / f'script-execution-{date.today()}.log'
+            assert global_log.exists(), 'No-plan-id build line should land in the global tier'
+            assert f'{_PYPROJECT_NOTATION} run' in global_log.read_text(encoding='utf-8'), (
+                'Global tier must carry the build line for the --project-dir/no---plan-id shape'
+            )
+
+            plan_log = plan_dir / 'logs' / 'script-execution.log'
+            assert not plan_log.exists(), (
+                'Plan-scoped freshness-gate log must be left WITHOUT the build line — this is the bug'
+            )
+        finally:
+            del os.environ['PLAN_BASE_DIR']
+
+
+# =============================================================================
 # TESTS: cleanup_old_script_logs
 # =============================================================================
 

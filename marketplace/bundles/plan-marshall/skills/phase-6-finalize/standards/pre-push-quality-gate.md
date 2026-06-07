@@ -21,7 +21,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 - `git working-tree state` — the live footprint, computed on demand from the worktree by the `manage-references compute-footprint` query (below): the union of the three-dot diff (`git diff --name-only {base_ref}...HEAD`) and the porcelain working-tree state (`git status --porcelain`). There is no persisted ledger; the footprint is always derived live from the worktree, which is the single source of truth.
 - `phase-6-finalize.pre_push_quality_gate.activation_globs` — list[string] of fnmatch globs. The manifest composer already gated activation on this list; the executor re-reads it to scope which live-and-intended entries should contribute to bundle derivation (defense-in-depth — only entries that match a configured glob feed bundle derivation).
-- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All build invocations below MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override). The two flags are mutually exclusive (Bucket B two-state contract). Examples below use the literal `--project-dir {worktree_path}` form; substitute `--plan-id {plan_id}` to use auto-resolution.
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). The `quality-gate` build invocation below MUST identify the worktree via `--plan-id {plan_id}` (which auto-resolves through `manage-status get-worktree-path`) — **not** the `--project-dir {worktree_path}` escape hatch. This is a hard requirement, not a stylistic preference: the freshness-relevant build-log line that `pyproject_build run` emits must land in the **plan-scoped** execution-log tier (`.plan/local/plans/{plan_id}/logs/script-execution.log`), because the immediately-following `default:commit-push` (`order: 10`) step runs the `pre-commit-verify-freshness` gate, which reads exactly that plan-scoped log to confirm the worktree was verified after its last source mutation. The `--project-dir` escape hatch routes the executor's two-tier audit-log entry to the **global** tier instead, where the freshness gate cannot see it — producing a false-negative `stale`/`undecidable` verdict and a refused push even though the gate just ran. The two flags are mutually exclusive (Bucket B two-state contract); for this freshness-relevant call site, `--plan-id` is the only correct choice. See `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness" for the gate that consumes the plan-scoped log line.
 
 ## Execution
 
@@ -61,7 +61,7 @@ For each `bundle` in `bundles` (in sorted order):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
-  run --command-args "quality-gate {bundle}" --project-dir {worktree_path}
+  run --command-args "quality-gate {bundle}" --plan-id {plan_id}
 ```
 
 Inspect the TOON output. On `status: error`, halt: stop iterating, record the failing bundle, and proceed to **Mark Step Complete (Failure)** below. The underlying `pyproject_build` TOON output already carries `errors[N]{file,line,message,category}` — surface the offending file/line via the standard finalize TOON.
