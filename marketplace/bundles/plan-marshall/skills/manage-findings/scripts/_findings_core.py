@@ -293,7 +293,8 @@ def resolve_findings_by_type(
     resolved_hash_ids: list[str] = []
     for record in matched:
         hash_id = record['hash_id']
-        if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
+        path = get_findings_path(plan_id, record['type'])
+        if update_jsonl(path, hash_id, updates):
             resolved_hash_ids.append(hash_id)
 
     return {'status': 'success', 'resolved_count': len(resolved_hash_ids), 'hash_ids': resolved_hash_ids}

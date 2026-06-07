@@ -481,7 +481,10 @@ def cmd_run_common(
         # the build is now green, so build-error / test-failure / lint-issue
         # findings are stale and must be bulk-resolved before returning.
         if plan_id:
-            _reconcile_pending_build_findings(plan_id=plan_id, command_str=command_str)
+            try:
+                _reconcile_pending_build_findings(plan_id=plan_id, command_str=command_str)
+            except Exception as e:
+                print(f"[WARNING] Failed to reconcile pending build findings: {e}", file=sys.stderr)
 
         success_output = success_result(
             duration_seconds=result['duration_seconds'],
