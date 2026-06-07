@@ -222,3 +222,144 @@ class TestCmdRunCommonPlanIdGuard:
         mock_store.assert_called_once()
         # No mismatch (1 seen / 1 stored) → qgate not called.
         mock_qgate.assert_not_called()
+
+
+class TestReconcilePendingBuildFindings:
+    """A green build run terminalizes every pending build finding from a
+    prior failing run."""
+
+    def _seed_pending_build_findings(self, plan_id):
+        from _findings_core import add_finding  # type: ignore[import-not-found]
+
+        add_finding(
+            plan_id=plan_id,
+            finding_type='build-error',
+            title='Build error: compile failed',
+            detail='boom',
+        )
+        add_finding(
+            plan_id=plan_id,
+            finding_type='test-failure',
+            title='Test failure: assertion',
+            detail='AssertionError',
+        )
+        add_finding(
+            plan_id=plan_id,
+            finding_type='lint-issue',
+            title='Lint issue: line too long',
+            detail='E501',
+        )
+
+    def test_reconcile_resolves_all_pending_build_findings(self, plan_context):
+        from _build_shared import _reconcile_pending_build_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        self._seed_pending_build_findings(plan_context.plan_id)
+
+        resolved = _reconcile_pending_build_findings(
+            plan_id=plan_context.plan_id,
+            command_str='verify plan-marshall',
+        )
+
+        assert resolved == 3
+        for ftype in ('build-error', 'test-failure', 'lint-issue'):
+            q = query_findings(plan_context.plan_id, finding_type=ftype)
+            for record in q['findings']:
+                assert record['resolution'] == 'fixed'
+                assert 'auto-resolved by green build' in (record.get('resolution_detail') or '')
+
+    def test_reconcile_with_no_pending_findings_returns_zero(self, plan_context):
+        from _build_shared import _reconcile_pending_build_findings  # type: ignore[import-not-found]
+
+        resolved = _reconcile_pending_build_findings(
+            plan_id=plan_context.plan_id,
+            command_str='verify',
+        )
+        assert resolved == 0
+
+
+class TestCmdRunCommonGreenBuildReconciliation:
+    """cmd_run_common's green-build path bulk-resolves pending build findings
+    when plan_id is provided, and skips reconciliation otherwise."""
+
+    def _make_success_result(self, log_file_path):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 0.1,
+            'log_file': str(log_file_path),
+            'command': 'verify',
+        }
+
+    def _fake_parser(self, _log_file):
+        return [], None, 'success'
+
+    def test_green_build_with_plan_id_invokes_reconciliation(self, plan_context):
+        from _build_shared import cmd_run_common  # type: ignore[import-not-found]
+
+        log_file = plan_context.fixture_dir / 'green.log'
+        log_file.write_text('BUILD SUCCESS\n')
+
+        with patch('_build_shared._reconcile_pending_build_findings') as mock_reconcile:
+            mock_reconcile.return_value = 2
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = cmd_run_common(
+                    result=self._make_success_result(log_file),
+                    parser_fn=self._fake_parser,
+                    tool_name='python',
+                    plan_id=plan_context.plan_id,
+                )
+
+        assert rc == 0
+        mock_reconcile.assert_called_once_with(
+            plan_id=plan_context.plan_id,
+            command_str='verify',
+        )
+
+    def test_green_build_without_plan_id_skips_reconciliation(self, plan_context):
+        from _build_shared import cmd_run_common  # type: ignore[import-not-found]
+
+        log_file = plan_context.fixture_dir / 'green.log'
+        log_file.write_text('BUILD SUCCESS\n')
+
+        with patch('_build_shared._reconcile_pending_build_findings') as mock_reconcile:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = cmd_run_common(
+                    result=self._make_success_result(log_file),
+                    parser_fn=self._fake_parser,
+                    tool_name='python',
+                    plan_id=None,
+                )
+
+        assert rc == 0
+        mock_reconcile.assert_not_called()
+
+    def test_green_build_with_plan_id_resolves_seeded_findings_end_to_end(self, plan_context):
+        from _build_shared import cmd_run_common  # type: ignore[import-not-found]
+        from _findings_core import add_finding, query_findings  # type: ignore[import-not-found]
+
+        add_finding(
+            plan_id=plan_context.plan_id,
+            finding_type='build-error',
+            title='Build error: stale failure',
+            detail='from a prior red run',
+        )
+
+        log_file = plan_context.fixture_dir / 'green.log'
+        log_file.write_text('BUILD SUCCESS\n')
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = cmd_run_common(
+                result=self._make_success_result(log_file),
+                parser_fn=self._fake_parser,
+                tool_name='python',
+                plan_id=plan_context.plan_id,
+            )
+
+        assert rc == 0
+        q = query_findings(plan_context.plan_id, finding_type='build-error')
+        assert q['filtered_count'] == 1
+        assert q['findings'][0]['resolution'] == 'fixed'

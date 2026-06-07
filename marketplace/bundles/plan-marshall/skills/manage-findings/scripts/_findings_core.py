@@ -261,6 +261,44 @@ def resolve_finding(
     return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
 
+def resolve_findings_by_type(
+    plan_id: str,
+    finding_types: tuple[str, ...] | list[str],
+    to_resolution: str,
+    detail: str | None = None,
+    from_resolution: str = 'pending',
+) -> dict[str, Any]:
+    """Bulk-resolve all findings of the given types in a single call.
+
+    Selects every plan-scoped finding whose ``type`` is in ``finding_types`` AND
+    whose current ``resolution`` equals ``from_resolution``, then resolves each to
+    ``to_resolution`` (optionally stamping ``resolution_detail`` with ``detail``).
+    This is the typed bulk counterpart of the hash-id-scoped ``resolve_finding``.
+
+    Returns ``{'status': 'success', 'resolved_count': N, 'hash_ids': [...]}`` on
+    success, or the canonical ``{'status': 'error', 'message': ...}`` shape when
+    ``to_resolution`` is not a valid resolution value.
+    """
+    if to_resolution not in RESOLUTIONS:
+        return {'status': 'error', 'message': f'Invalid resolution: {to_resolution}. Must be one of {RESOLUTIONS}'}
+
+    type_set = set(finding_types)
+    records = query_findings(plan_id)['findings']
+    matched = [
+        r for r in records
+        if r.get('type') in type_set and r.get('resolution') == from_resolution
+    ]
+
+    updates: dict[str, Any] = {'resolution': to_resolution, 'resolution_detail': detail}
+    resolved_hash_ids: list[str] = []
+    for record in matched:
+        hash_id = record['hash_id']
+        if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
+            resolved_hash_ids.append(hash_id)
+
+    return {'status': 'success', 'resolved_count': len(resolved_hash_ids), 'hash_ids': resolved_hash_ids}
+
+
 def promote_finding(
     plan_id: str,
     hash_id: str,

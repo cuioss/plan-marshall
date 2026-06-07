@@ -242,6 +242,11 @@ def cmd_discover_common(args, discover_fn: Callable) -> int:
 # Issue → finding-type routing (used by the --plan-id auto-store path)
 # ---------------------------------------------------------------------------
 
+# The three per-type finding stores a build run writes to. A green build run
+# terminalizes every pending finding of these types via the reconciliation
+# path below — see ``_reconcile_pending_build_findings``.
+BUILD_FINDING_TYPES: tuple[str, ...] = ('build-error', 'test-failure', 'lint-issue')
+
 
 def _classify_issue_finding_type(issue: Issue) -> str:
     """Map a parsed build Issue to one of three finding-store types.
@@ -378,6 +383,32 @@ def _record_producer_mismatch(
     )
 
 
+def _reconcile_pending_build_findings(plan_id: str, command_str: str) -> int:
+    """Terminalize every pending build finding when the build run is green.
+
+    A prior failing run appends ``build-error`` / ``test-failure`` /
+    ``lint-issue`` findings to the per-type store. When the build subsequently
+    succeeds, those findings are stale — the failure they recorded has been
+    fixed — yet nothing resolves them, leaving the Q-Gate store dirty. This
+    helper bulk-resolves every pending finding of the three build types to
+    ``fixed`` in a single call, stamping the resolution detail with the
+    green command that cleared them.
+
+    Returns the count of findings resolved (0 when none were pending).
+    """
+    from _findings_core import resolve_findings_by_type  # type: ignore[import-not-found]
+
+    reconcile_result = resolve_findings_by_type(
+        plan_id=plan_id,
+        finding_types=BUILD_FINDING_TYPES,
+        to_resolution='fixed',
+        detail=f'auto-resolved by green build: {command_str}',
+    )
+    if reconcile_result.get('status') == 'success':
+        return int(reconcile_result.get('resolved_count', 0))
+    return 0
+
+
 def cmd_run_common(
     result: DirectCommandResult,
     parser_fn: ParserFn,
@@ -446,6 +477,12 @@ def cmd_run_common(
 
     # Success case
     if result['status'] == 'success':
+        # Terminalize any pending build findings from a prior failing run:
+        # the build is now green, so build-error / test-failure / lint-issue
+        # findings are stale and must be bulk-resolved before returning.
+        if plan_id:
+            _reconcile_pending_build_findings(plan_id=plan_id, command_str=command_str)
+
         success_output = success_result(
             duration_seconds=result['duration_seconds'],
             log_file=log_file,

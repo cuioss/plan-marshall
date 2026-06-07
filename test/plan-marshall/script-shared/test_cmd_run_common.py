@@ -7,6 +7,7 @@ across Maven, Gradle, npm, and Python build skills.
 # Tier 2 direct imports via importlib for uniform import style
 import importlib.util  # noqa: E402
 from pathlib import Path
+from unittest.mock import patch
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
@@ -256,3 +257,71 @@ class TestCmdRunCommonModeFiltering:
         # Errors should be present, warnings should not
         assert 'cannot find symbol' in stdout
         assert 'deprecated API' not in stdout
+
+
+# =============================================================================
+# Tests: Green-build reconciliation of pending build findings
+# =============================================================================
+
+
+class TestCmdRunCommonGreenBuildReconciliation:
+    """A green build run terminalizes any pending build findings from a prior
+    failing run.
+
+    ``cmd_run_common`` delegates the bulk-resolve to
+    ``_reconcile_pending_build_findings`` (which itself calls
+    ``resolve_findings_by_type``). These tests pin the routing contract at the
+    ``cmd_run_common`` boundary: reconciliation fires on the green path when a
+    ``plan_id`` is supplied, never fires on a failing build, and is a clean
+    no-op when nothing is pending. The reconciler's internals (the actual
+    ``resolve_findings_by_type`` integration) are covered end-to-end against the
+    real findings store in ``test_build_findings_store.py``.
+    """
+
+    def test_green_build_with_plan_id_terminalizes_pending_findings(self):
+        """Build succeeds + pending findings present → reconciliation runs and
+        bulk-resolves the pending findings (mocked reconciler reports a non-zero
+        resolved count)."""
+        result = _make_result(status='success', command='./pw verify')
+
+        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
+            mock_reconcile.return_value = 3  # three stale findings terminalized
+            rc = cmd_run_common(result, _noop_parser, 'python', plan_id='my-plan')
+
+        assert rc == 0
+        mock_reconcile.assert_called_once_with(plan_id='my-plan', command_str='./pw verify')
+
+    def test_failing_build_does_not_terminalize_findings(self):
+        """Build fails → pending findings are NOT terminalized (the failure they
+        recorded is still live)."""
+        result = _make_result(status='error', exit_code=1, error='Build failed')
+
+        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
+            rc = cmd_run_common(result, _error_parser, 'python', plan_id='my-plan')
+
+        assert rc == 0
+        mock_reconcile.assert_not_called()
+
+    def test_green_build_with_no_pending_findings_is_noop(self):
+        """Build succeeds + nothing pending → reconciliation is invoked but
+        resolves zero findings (no-op), and cmd_run_common still returns 0
+        cleanly."""
+        result = _make_result(status='success', command='./pw verify')
+
+        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
+            mock_reconcile.return_value = 0  # nothing was pending
+            rc = cmd_run_common(result, _noop_parser, 'python', plan_id='my-plan')
+
+        assert rc == 0
+        mock_reconcile.assert_called_once_with(plan_id='my-plan', command_str='./pw verify')
+
+    def test_green_build_without_plan_id_skips_reconciliation(self):
+        """No plan_id supplied → reconciliation is skipped entirely (preserves
+        the historical non-plan silent behaviour on the green path)."""
+        result = _make_result(status='success', command='./pw verify')
+
+        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
+            rc = cmd_run_common(result, _noop_parser, 'python', plan_id=None)
+
+        assert rc == 0
+        mock_reconcile.assert_not_called()
