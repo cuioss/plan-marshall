@@ -71,3 +71,73 @@ def test_production_does_not_include_test_files():
     """A .spec.js file must NOT be classified as production."""
     result = _ext.classify_paths(['src/foo.spec.js'])
     assert 'src/foo.spec.js' not in result['production']
+
+
+# =============================================================================
+# build_class per claimed role
+# =============================================================================
+
+_BUILD_CLASSES = frozenset({'prod-compile', 'test-run', 'docs-validate', 'build-config-full', 'none'})
+
+
+def test_production_path_build_class_is_prod_compile():
+    assert _ext.classify_build_class('src/foo.js', 'production') == 'prod-compile'
+
+
+def test_test_path_build_class_is_test_run():
+    assert _ext.classify_build_class('src/foo.spec.js', 'test') == 'test-run'
+
+
+def test_config_path_build_class_is_build_config_full():
+    assert _ext.classify_build_class('package.json', 'config') == 'build-config-full'
+
+
+def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
+    """Each path this domain claims resolves to a member of the closed 5-value enum."""
+    paths = [
+        'src/foo.js',
+        'src/foo.spec.js',
+        'src/foo.test.ts',
+        'package.json',
+        'tsconfig.json',
+    ]
+    claims = _ext.classify_paths(paths)
+    for role, claimed in claims.items():
+        for path in claimed:
+            assert _ext.classify_build_class(path, role) in _BUILD_CLASSES
+
+
+# =============================================================================
+# classify_globs() inventory (build_map seed source)
+# =============================================================================
+
+
+def test_classify_globs_synthesizes_explicit_glob_inventory():
+    """Hand-rolled extension: classify_globs returns explicit globs from the rules.
+
+    The inventory mirrors _match_classify: config filenames + the eslint.config.*
+    prefix family, test patterns (*.spec.* / *.test.* paired with each JS/TS
+    suffix), and production source (each JS/TS suffix).
+    """
+    inventory = _ext.classify_globs()
+    assert ('package.json', 'config') in inventory
+    assert ('tsconfig.json', 'config') in inventory
+    assert ('eslint.config.*', 'config') in inventory
+    assert ('*.spec.*.js', 'test') in inventory
+    assert ('*.test.*.ts', 'test') in inventory
+    assert ('*.js', 'production') in inventory
+    assert ('*.tsx', 'production') in inventory
+
+
+def test_classify_globs_roles_resolve_to_build_classes():
+    """Every (glob, role) in the inventory derives a build_class in the closed set."""
+    inventory = _ext.classify_globs()
+    assert inventory
+    for glob, role in inventory:
+        assert _ext.classify_build_class(glob, role) in _BUILD_CLASSES
+
+
+def test_classify_globs_covers_production_test_config_roles():
+    """The frontend glob inventory claims production, test, and config roles."""
+    roles = {role for _, role in _ext.classify_globs()}
+    assert roles == {'production', 'test', 'config'}

@@ -455,7 +455,7 @@ architecture.py resolve --command COMMAND [--module MODULE]
 ```toon
 module: oauth-sheriff-core
 command: module-tests
-executable: python3 .plan/execute-script.py plan-marshall:build-maven:maven run --module oauth-sheriff-core --targets test
+executable: python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl oauth-sheriff-core"
 ```
 
 **Hybrid module example** (both Maven and npm):
@@ -464,8 +464,8 @@ module: nifi-cuioss-ui
 command: module-tests
 
 executables[2]{build_system,command}:
-maven,python3 .plan/execute-script.py plan-marshall:build-maven:maven run --module nifi-cuioss-ui --targets test
-npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --package nifi-cuioss-ui --targets test
+maven,python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl nifi-cuioss-ui"
+npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-args "--prefix nifi-cuioss-ui test"
 ```
 
 ---

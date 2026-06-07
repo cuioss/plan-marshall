@@ -165,6 +165,19 @@ def main() -> int:
     resolve_parser.add_argument('--command', required=True, dest='resolve_command', help='Command name to resolve')
     add_module_arg(resolve_parser, required=False)
 
+    # derive-verification - Derive the verification command set for a changed-artifact list
+    derive_parser = subparsers.add_parser(
+        'derive-verification',
+        help='Derive the deterministic verification command set for a changed-artifact list (build_map consumer)',
+        allow_abbrev=False,
+    )
+    derive_parser.add_argument(
+        '--changed-artifacts',
+        dest='changed_artifacts',
+        required=True,
+        help='Comma-separated list of changed-artifact paths to derive verification for',
+    )
+
     # siblings - Find sibling virtual modules
     siblings_parser = subparsers.add_parser(
         'siblings', help='Find sibling virtual modules for a given module', allow_abbrev=False
@@ -376,6 +389,7 @@ def main() -> int:
     # Import command handlers
     from _cmd_client import (
         cmd_commands,
+        cmd_derive_verification,
         cmd_diff_modules,
         cmd_files,
         cmd_find,
@@ -428,6 +442,7 @@ def main() -> int:
         'overview': cmd_overview,
         'commands': cmd_commands,
         'resolve': cmd_resolve,
+        'derive-verification': cmd_derive_verification,
         'profiles': cmd_profiles,
         'siblings': cmd_siblings,
         'suggest-domains': cmd_suggest_domains,

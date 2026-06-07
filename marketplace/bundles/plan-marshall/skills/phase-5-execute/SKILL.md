@@ -694,7 +694,7 @@ The mid-execute per-deliverable build is **focused** by design: it resolves the 
      --message "(plan-marshall:phase-5-execute) per_deliverable_build=off — skipping focused build for deliverable {deliverable}; end-of-phase sweep is the only build"
    ```
 
-3. **Buildable-stuff guard** — classify the deliverable's changed paths against the canonical six-bucket file-type classifier before running any Python build. The classifier vocabulary, predicates, and overlap-resolution policy are the normative source of truth at [`../phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier) — do NOT restate the bucket vocabulary here. When the deliverable's changed paths resolve to `documentation_only` (no `.py` touched — typical workflow-doc edit), the deliverable has no buildable Python stuff: skip `compile` / `module-tests` and run only the documentation gate. The doc-gate form depends on which docs changed: when any changed path is a marketplace skill `.md` body (`marketplace/bundles/**/skills/**/*.md`), the doc gate MUST use the rule-complete, scoped `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root {worktree_path}/marketplace` form — NOT the rule-less `list-components`, because `list-components` runs zero rules (enumeration only) and omits the `analyze_lesson_id_in_skill_prose` (and other quality-gate) rules that CI's `verify / verify` stage runs, so a `list-components` pass is not a CI-equivalent gate; for non-marketplace docs, markdown validation is the gate. Never run the Python build for a `documentation_only` deliverable. This extends the plan-wide docs-only guard (manage-execution-manifest composer) down to the per-deliverable execute loop. Log the skip and proceed to Step 11:
+3. **Buildable-stuff guard** — classify the deliverable's changed paths against the canonical six-bucket file-type classifier before running any Python build. The classifier vocabulary, predicates, and overlap-resolution policy are the normative source of truth at [`../phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier) — do NOT restate the bucket vocabulary here. When the deliverable's changed paths resolve to `documentation_only` (no `.py` touched — typical workflow-doc edit), the deliverable has no buildable Python stuff: skip `compile` / `module-tests` and run only the documentation gate. The doc-gate form depends on which docs changed: when any changed path is a marketplace skill `.md` body (`marketplace/bundles/**/skills/**/*.md`), the doc gate MUST use the rule-complete, scoped `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root {worktree_path}/marketplace` form — NOT the rule-less `list-components`, because `list-components` runs zero rules (enumeration only) and omits the `analyze_lesson_id_in_skill_prose` (and other quality-gate) rules that CI's `verify / verify` stage runs, so a `list-components` pass is not a CI-equivalent gate; for non-marketplace docs, markdown validation is the gate. Never run the Python build for a `documentation_only` deliverable. The deliverable's pre-stamped derived ladder already reflects this — the deriver stamps zero Python commands on a `documentation_only` deliverable; this guard is the per-deliverable enforcement of that same classification at execute time. Log the skip and proceed to Step 11:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -869,6 +869,42 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
    ```
 
 This step is the single source of "did the phase end clean?" — it appends the canonical `quality-gate` once after all task-level verification has settled, providing a stable end-of-phase quality signal. Only the manifest's `verification_steps` list controls whether it fires; per-doc skip logic in `quality_check.md` / `build_verify.md` / `coverage_check.md` has been removed in favor of this manifest-driven gate.
+
+### Step 11c: Execute-Exit Verify Gate (One `verify` per Affected Bundle)
+
+Per-task verification runs each task's pre-stamped `verification.commands` — the derived ladder the deriver wrote at compose time (per-class `compile` / `test-compile` / `module-tests`, scoped to the deliverable's changed module). That ladder is the per-deliverable gate. The **execute-exit verify gate** is the single end-of-phase whole-bundle `verify` that fires exactly **once per affected bundle** at the FINAL state of execute, after every deliverable has settled — replacing both the per-task full suites and the retired holistic verification tasks. Running it once at the queue tail, rather than once per task, is the asymmetric-cost collapse: a whole-bundle `verify` re-runs the same suite no matter how many deliverables touched the bundle, so one run at the final state covers them all.
+
+This gate runs after Step 11b's quality sweep and before Step 12.
+
+1. **Resolve the affected bundle set** from the live plan footprint. Derive the footprint (`{base}...HEAD` ∪ porcelain) and map each path to its owning module:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+     which-module --path {changed_path}
+   ```
+
+   Collect the distinct module values into the affected-bundle set. The build-class classification and the derived-command mapping are owned centrally by the deriver — see [`../manage-architecture/SKILL.md`](../manage-architecture/SKILL.md) (`derive-verification` subcommand) and [`../manage-architecture/standards/resolve-command.md`](../manage-architecture/standards/resolve-command.md) for the build_map consumer API. Do NOT inline-copy the path heuristics or the build_class → command table here; the central standards are the single source of truth.
+
+2. **Run exactly one `verify` per affected bundle** — for each distinct `{bundle}` in the affected set, resolve and execute the whole-bundle `verify`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+     resolve --command verify --module {bundle} --audit-plan-id {plan_id}
+   ```
+
+   Execute the returned `executable`. Honor the architecture-resolved `bash_timeout_seconds` / `execution_tier` envelope: for `execution_tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `execution_tier=orchestrator` return control to the orchestrator to run the long build (do NOT background it). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code.
+
+3. **On non-zero exit** — route the failure through the **same leaf-returns-signal path** as Step 11b: persist each failing finding to the Q-Gate store (`manage-findings qgate add --type quality-gate-failure …`) and return the `triage_required` signal to the orchestrator with `producer=build-runner` and `finding_type=quality-gate-failure`. The leaf does NOT dispatch `verification-feedback` itself. The gate runs at most once per phase entry.
+
+4. Log the outcome per affected bundle:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level INFO \
+     --message "[STATUS] (plan-marshall:phase-5-execute) Execute-exit verify for {bundle}: {pass|fail}"
+   ```
+
+**Skip rule**: when the affected-bundle set is empty (no buildable footprint — e.g., a documentation-only plan whose changed paths resolve to no module), skip the gate entirely. The deriver already stamped zero Python commands on each such deliverable's per-task ladder, so there is no whole-bundle `verify` to run.
 
 ### Step 12: Next Task or Phase
 

@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 
+from _cmd_build_map import cmd_build_map
 from _cmd_coverage import cmd_coverage_expand, cmd_coverage_read, cmd_coverage_resolve
 from _cmd_domain_detect import cmd_domain_detect
 from _cmd_effort import cmd_effort, cmd_effort_apply_preset, cmd_effort_resolve_target
@@ -255,6 +256,24 @@ def main() -> int:
 
     ext_remove = ext_sub.add_parser('remove', help='Remove extension default', allow_abbrev=False)
     ext_remove.add_argument('--key', required=True, help='Key to remove')
+
+    # --- build-map ---
+    p_bm = subparsers.add_parser(
+        'build-map',
+        help='Seed/read the file-to-build contract (build_map block)',
+        allow_abbrev=False,
+    )
+    bm_sub = p_bm.add_subparsers(dest='verb', required=True, help='Operation')
+    bm_sub.add_parser(
+        'seed',
+        help='Re-seed build_map from extensions, preserving existing seed + overrides (write-once)',
+        allow_abbrev=False,
+    )
+    bm_sub.add_parser(
+        'read',
+        help='Return the merged effective build map (seed ∪ overrides, overrides win by glob)',
+        allow_abbrev=False,
+    )
 
     # --- init ---
     p_init = subparsers.add_parser('init', help='Initialize marshal.json', allow_abbrev=False)
@@ -586,6 +605,11 @@ def main() -> int:
             p_ext.print_help()
             return 2
         result = cmd_ext_defaults(args)
+    elif args.noun == 'build-map':
+        if not args.verb:
+            p_bm.print_help()
+            return 2
+        result = cmd_build_map(args)
     elif args.noun == 'init':
         result = cmd_init(args)
     elif args.noun == 'sync-defaults':

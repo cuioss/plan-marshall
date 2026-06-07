@@ -44,6 +44,37 @@ ALL_CANONICAL_COMMANDS = [
 
 
 # =============================================================================
+# Build-Class Vocabulary
+# =============================================================================
+#
+# The build_class is the deterministic per-(path, role) build classification a
+# domain extension attaches to each path it claims via classify_paths(). It is
+# the second leg of the file-to-build contract: classify_paths() maps a path to
+# a file role; classify_build_class() maps the (path, role) pair to one of the
+# closed values below. Downstream consumers (manage-execution-manifest,
+# phase-4-plan) read the build_class to derive the verification command set for
+# a changed-artifact list without re-deriving the file type.
+
+BUILD_CLASS_PROD_COMPILE = 'prod-compile'
+BUILD_CLASS_TEST_RUN = 'test-run'
+BUILD_CLASS_DOCS_VALIDATE = 'docs-validate'
+BUILD_CLASS_BUILD_CONFIG_FULL = 'build-config-full'
+BUILD_CLASS_NONE = 'none'
+
+BUILD_CLASSES = frozenset(
+    {
+        BUILD_CLASS_PROD_COMPILE,
+        BUILD_CLASS_TEST_RUN,
+        BUILD_CLASS_DOCS_VALIDATE,
+        BUILD_CLASS_BUILD_CONFIG_FULL,
+        BUILD_CLASS_NONE,
+    }
+)
+"""Closed set of build_class values. The single source of truth shared by
+ExtensionBase.classify_build_class(), domain extensions, and their tests."""
+
+
+# =============================================================================
 # Canonical Command Metadata
 # =============================================================================
 

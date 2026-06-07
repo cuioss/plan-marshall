@@ -202,6 +202,40 @@ Canonical contracts: link:../../marketplace/bundles/plan-marshall/skills/manage-
 
 Tune via `/marshall-steward` → Configuration → Skill Domains.
 
+[#build-map]
+=== Build map
+
+`marshal.json` carries a top-level `build_map` block — the file-to-build contract. It maps every changed path to the build action that path requires, so when a plan runs only the relevant build fires: a docs-only change runs the documentation gate (never the test suite), a production-code change compiles, a test change runs the tests.
+
+The `build_map` is seeded automatically. Each domain bundle declares which path globs it owns and what build action each glob needs; the wizard aggregates those declarations into `build_map`. Seeding is write-once — a re-seed never clobbers an existing block — so a correction you make survives.
+
+Each entry classifies a glob into a closed build-class vocabulary:
+
+* `prod-compile` — production code; compiles the changed module.
+* `test-run` — test code; compiles and runs the changed module's tests.
+* `docs-validate` — documentation; runs the doc gate (marketplace skill validation or AsciiDoc validation).
+* `build-config-full` — build configuration; runs the full verify pipeline for the module.
+* `none` — no build at all (the path is changed but needs no build action).
+
+==== Overriding a wrong mapping
+
+When the seeded mapping is wrong for your project, correct it with a `build_map_overrides` entry — a top-level array applied last at read time. An override survives re-seeding and wins by glob, so your correction is never lost.
+
+The common case is a generated source file that the seed treats as production code but that should never trigger a build. Override its glob to `build_class: none`:
+
+[source,json]
+----
+{
+  "build_map_overrides": [
+    { "glob": "marketplace/bundles/**/scripts/generated_*.py", "role": "production", "build_class": "none" }
+  ]
+}
+----
+
+Each override entry needs a `glob`; `role` and `build_class` are optional and replace only the fields you set. An override whose glob matches a seeded entry replaces that entry's mapping wherever the glob appears; an override whose glob matches no seed entry is still applied, so it is never silently dropped.
+
+The canonical schema (field tables for both blocks, the build-class enum source of truth, the longest-glob-wins precedence) lives in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] § Section: build_map.
+
 [#worktrees]
 === Branch strategy and worktrees
 

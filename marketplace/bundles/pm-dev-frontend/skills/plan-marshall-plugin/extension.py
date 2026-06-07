@@ -148,3 +148,34 @@ class Extension(ExtensionBase):
         if match is not None and match[0] == role:
             return match[1]
         return 0
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        """Return an explicit (glob, role) inventory synthesized from the rules.
+
+        Hand-rolled extension (no _CLASSIFY_PATTERNS tuple): _match_classify uses
+        filename / suffix / token checks, so there is no tuple to derive from.
+        The globs below mirror that body exactly — config files (exact names +
+        eslint.config.* prefix), test files (*.spec.* / *.test.* paired with each
+        JS/TS suffix), then production source (each JS/TS suffix). See the base
+        classify_globs() contract.
+        """
+        globs: list[tuple[str, str]] = []
+        # Config — exact filenames and the eslint.config.* prefix family.
+        for name in self._CONFIG_FILES:
+            globs.append((name, 'config'))
+        for prefix in self._CONFIG_PREFIXES:
+            globs.append((f'{prefix}*', 'config'))
+        # Test — *.spec.* / *.test.* paired with each JS/TS suffix.
+        for token in self._TEST_TOKENS:
+            for ext in self._SOURCE_SUFFIXES:
+                globs.append((f'*{token}*{ext}', 'test'))
+        # Production source — each JS/TS suffix not matched as a test/config file.
+        for ext in self._SOURCE_SUFFIXES:
+            globs.append((f'*{ext}', 'production'))
+        return globs
+
+    # build_class: this extension claims the ``production`` / ``test`` /
+    # ``config`` roles, for which the ExtensionBase defaults
+    # (``production → prod-compile``, ``test → test-run``,
+    # ``config → build-config-full``) are correct. No classify_build_class
+    # override is required — the inherited base default is the contract.

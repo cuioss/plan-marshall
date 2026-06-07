@@ -37,6 +37,7 @@ scope: hybrid
 | `enrich *` | [manage-api](standards/manage-api.md) | Write enrichment data |
 | `suggest-domains` | — | Suggest applicable skill domains for a module |
 | `info`, `module`, `modules`, `commands`, `resolve` | [client-api](standards/client-api.md) | Consumer queries |
+| `derive-verification` | [resolve-command](standards/resolve-command.md) | Derive the deterministic verification command set for a changed-artifact list (single build_map consumer) |
 | `files`, `which-module`, `find` | [client-api](standards/client-api.md) | Files-inventory readers (categorised paths, reverse lookup, glob search) |
 | `graph`, `path`, `neighbors`, `impact` | [client-api](standards/client-api.md) | Dependency graph queries (full graph, shortest path, n-hop neighborhood, reverse-dep closure) |
 | `overview` | [client-api](standards/client-api.md) | Token-bounded markdown summary of the project architecture |
@@ -401,6 +402,15 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture c
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve \
   --command COMMAND [--module MODULE]
 ```
+
+### derive-verification
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture derive-verification \
+  --changed-artifacts PATH1,PATH2,...
+```
+
+Derives the deterministic verification command set for a comma-separated changed-artifact list. Each path is classified to a `build_class` via the merged `build_map` (longest-glob-wins), grouped by class, and resolved to the architecture-command set per the build_class → command table. A docs-only changed set derives zero Python builds. See [resolve-command.md](standards/resolve-command.md) § "Build-class → verification command" for the canonical mapping and Output example.
 
 ### graph
 

@@ -53,16 +53,16 @@ Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., 
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-4-plan`** (resolves through `phase-4-plan.default`). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4-plan` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON (unconditionally after every successful phase-4-plan invocation — both `module-mapping-validator` and `scope-criterion-validator` apply to every plan regardless of `plan_source`); the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the orchestrator-dispatched LLM run is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
+This phase dispatches under one role key: **`phase-4-plan`** (resolves through `phase-4-plan.default`). The bundled task-creation activity (Steps 5+6 — per-deliverable task creation, anchoring/breaking-refactor split, deriver-stamped verification) iterates *inside* one `phase-4-plan` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 7 topological sort, Step 7b execution manifest composition, and Step 8 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 8b LLM Q-Gate activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON (unconditionally after every successful phase-4-plan invocation — both `module-mapping-validator` and `scope-criterion-validator` apply to every plan regardless of `plan_source`); the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the orchestrator-dispatched LLM run is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
 
 ### Loop-invariant inputs (cached at phase entry)
 
-The task-creation loop (Steps 5 + 6 + 7) iterates per deliverable — but the *inputs* feeding the per-deliverable task creation are loop-invariant: they are read once during phase entry / Step 3 deliverable load and Step 4 dependency-graph construction, and are not mutated by the loop body. The dispatched agent MUST read each of the following inputs ONCE at phase entry and reference the cached values throughout every per-deliverable iteration:
+The task-creation loop (Steps 5 + 6) iterates per deliverable — but the *inputs* feeding the per-deliverable task creation are loop-invariant: they are read once during phase entry / Step 3 deliverable load and Step 4 dependency-graph construction, and are not mutated by the loop body. The dispatched agent MUST read each of the following inputs ONCE at phase entry and reference the cached values throughout every per-deliverable iteration:
 
 - The deliverable set (read via Step 3 deliverable-load from `solution_outline.md`).
 - The architecture topology (read via `manage-architecture topology` at phase entry).
 - The per-deliverable skill resolutions (resolved via `architecture module --module {D.module}` for each distinct module before the per-deliverable iteration begins — one query per unique module, cached; not re-queried per deliverable or per profile).
-- The execution manifest composition inputs (the manifest is composed once at Step 8b — not per-deliverable).
+- The execution manifest composition inputs (the manifest is composed once at Step 7b — not per-deliverable).
 
 **Prohibited actions:**
 - Never re-read loop-invariant inputs inside the task-creation loop body — re-reading inside the loop is envelope-cost waste; all invariant inputs must be resolved before the loop begins.
@@ -180,7 +180,7 @@ message: {error message if status=error}
 |----------|---------|
 | [Task Creation Flow](references/task-creation-flow.md) | Visual overview of the 1:N task creation flow and output structure |
 | [Breaking-Refactor Task Split](standards/breaking-refactor-task-split.md) | Task-split contract for `tech_debt` / `feature_breaking` deliverables that intentionally invalidate existing test contracts (allocates `implementation` + `module_testing` task pair with `depends_on` linkage); paired with the phase-5-execute planned-failure exception |
-| [Dispatch Granularity](../extension-api/standards/dispatch-granularity.md) | The 10K rule, script-over-dispatch, bundle-over-iterate, per-iteration only when models differ or parallel — explains why Steps 5+6+7 bundle into one `phase-4-plan` dispatch and why Step 9's mechanical Q-Gate checks live in `manage-tasks:qgate-mechanical-checks` rather than a dispatch |
+| [Dispatch Granularity](../extension-api/standards/dispatch-granularity.md) | The 10K rule, script-over-dispatch, bundle-over-iterate, per-iteration only when models differ or parallel — explains why Steps 5+6 bundle into one `phase-4-plan` dispatch and why Step 8's mechanical Q-Gate checks live in `manage-tasks:qgate-mechanical-checks` rather than a dispatch |
 
 ## Workflow
 
@@ -254,54 +254,6 @@ Parse `depends` field for each deliverable:
 ### Step 5: Create Tasks from Profiles (1:N Mapping)
 
 For each deliverable, create one task per profile in its `profiles` list:
-
-**Documentation-only contract-violation guard (NORMATIVE)**: Before iterating profiles, fire this guard for every deliverable. The guard refuses to translate a misclassified `module_testing` profile into a paired pytest task; instead it emits a Q-Gate finding back to phase-3-outline so the misclassification is corrected at its source. The predicate, classifier vocabulary, and bucket-naming rules live in the central standard — do NOT inline-copy them here:
-
-**Reference standard**: see [`marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier). The six buckets (`production_only` / `test_only` / `documentation_only` / `mixed_code` / `mixed_with_docs` / `unknown`), the per-domain extension predicates that produce them, and the per-bucket profile assignments are normative in that standard (with `manage-execution-manifest/standards/decision-rules.md` § "Overlap resolution policy" and § "Unclaimed paths" carrying the aggregator contract). The guard below restates only the predicate needed for enforcement — it does NOT redefine the bucket vocabulary or the bucket-comment recording rules.
-
-**Predicate**: the guard fires for a deliverable `D` when BOTH of the following hold:
-
-1. `module_testing ∈ D.profiles[]`, AND
-2. The `<!-- bucket: ... -->` comment on `D`'s `**Profiles:**` line names `documentation_only` (i.e., the per-domain extension aggregator resolved every claimed path under the `documentation` role per the central standard's predicate evaluation rules).
-
-**Action on match**:
-
-1. Do NOT create the paired `module_testing` task for deliverable `D`. Skip the `module_testing` profile entry entirely — the implementation task (when `implementation ∈ D.profiles[]`) is still created normally.
-2. Emit a Q-Gate finding of the canonical shape below via `manage-findings qgate add`. The finding is routed back to phase-3-outline through the existing Q-Gate auto-loop so the outline corrects the misclassification at its source (re-evaluates the deliverable against the File-type classifier and drops the `module_testing` profile from the `**Profiles:**` block).
-3. Log a decision-log entry naming the deliverable index, title, and matched paths so the run record shows the violation was caught.
-
-**Canonical Q-Gate finding TOON shape**:
-
-```toon
-type: triage
-severity: error
-title: "phase-3-outline contract violation: module_testing profile on documentation_only deliverable"
-component: "plan-marshall:phase-3-outline"
-detail: "Deliverable {N} ({title}) lists `module_testing` in profiles[] but its bucket comment names `documentation_only` (paths checked: {affected_files}). Documentation-only deliverables must use `implementation` only with `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root marketplace` verification. See lesson 2026-05-28-10-001 and marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md § File-type classifier."
-```
-
-**Emit via `manage-findings`**:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
-  --type triage --severity error \
-  --title "phase-3-outline contract violation: module_testing profile on documentation_only deliverable" \
-  --component "plan-marshall:phase-3-outline" \
-  --detail "Deliverable {N} ({title}) lists module_testing in profiles[] but its bucket comment names documentation_only (paths checked: {affected_files}). Documentation-only deliverables must use implementation only with pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths verification. See lesson 2026-05-28-10-001."
-```
-
-**Decision-log entry**:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level WARNING \
-  --message "(plan-marshall:phase-4-plan) Documentation-only contract-violation guard fired for deliverable {N} ({title}): module_testing profile dropped, Q-Gate finding emitted (lesson 2026-05-28-10-001). Affected files: {affected_files}."
-```
-
-**Bucket-comment example**: `**Profiles:** <!-- bucket: documentation_only -->` is the canonical shape this guard reads. The same comment carries any of the six bucket values; the guard fires only when the value is `documentation_only`.
-
-**Rationale**: documentation-only deliverables (markdown skill bodies — `SKILL.md`, `workflow/*.md`, `references/*.md`, `standards/*.md`) are LLM-orchestrator instructions, not executable Python. A pytest test of such a file can only assert "the markdown contains these section headers" — which is doc-lint dressed as a unit test. The correct verification surface for `documentation_only` deliverables depends on which docs the deliverable touches: when any claimed path is a marketplace skill `.md` body (`marketplace/bundles/**/skills/**/*.md`), the verification surface is the rule-complete, scoped `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root {worktree_path}/marketplace` form — NOT the rule-less `list-components`, because `list-components` runs zero rules (it only enumerates) and omits the `analyze_lesson_id_in_skill_prose` (and other quality-gate) rules that CI's `verify / verify` stage runs; for non-marketplace docs (outside the marketplace tree, where the rule set does not apply), markdown validation plus a manual end-to-end run is the surface. Both are captured by the `implementation` profile. The verification surface per bucket is normative in [`../phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier) — consult it rather than restating the bucket vocabulary. The Q-Gate finding routes the violation back to phase-3-outline (the misclassification's source) rather than amplifying it into an empty-target pytest task at this layer. This guard is orthogonal to all plan-level discriminators (`scope_estimate`, `change_type`, `plan_source`) — the discriminating information is the bucket comment on each individual deliverable, which only this per-deliverable predicate can read.
 
 **Verification-Only Guard**: Before iterating profiles, check if the deliverable is verification-only (`change_type: verification` or empty `affected_files`). If so, override `D.profiles` to `[verification]` — **except** when `D.profiles` explicitly contains `implementation`. The explicit `Profiles` list declared on the deliverable is authoritative over `change_type`: if the outline says the deliverable involves `implementation`, the guard is a no-op and the declared profile set flows through unchanged. Log a warning when the override fires and the original profiles differed:
 
@@ -588,87 +540,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 - `skills`: Domain skills only (system skills loaded by agent). Empty for `verification` profile.
 - `steps`: File paths from `Affected files` (NOT descriptive text). For `verification` profile: verification commands as steps instead of file paths.
 
-**Verification**: Copy the deliverable's Verification block verbatim into the task:
-
-- `verification.commands` = deliverable's `Verification: Command` value(s)
-- `verification.criteria` = deliverable's `Verification: Criteria` value
-
-The outline phase is the single source of truth for verification commands — this phase performs ZERO resolution. If a deliverable arrives without a Verification Command, this is an outline defect. Record a Q-Gate finding in Step 9 instead of resolving it here:
+**Verification**: Stamp each task's `verification.commands` from the deterministic deriver at plan time. Call `architecture derive-verification` with the task's changed-artifact list (the `steps[].target` paths, comma-joined) and stamp the returned command set into `verification.commands` so the task is self-describing:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
-  --type triage --title "Missing verification: deliverable {N} has no Verification Command" \
-  --detail "Outline must provide Verification Command and Criteria for every deliverable"
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  derive-verification --changed-artifacts {comma_joined_step_targets} \
+  --audit-plan-id {plan_id}
 ```
 
-### Step 7: Create Holistic Verification Tasks
+Parse the returned `commands[]` rows and write each row's `executable` into the task's `verification.commands` list (preserving order; one list entry per derived command). The deriver classifies each changed artifact via the merged `build_map` and emits the architecture-resolved verification command set per the build_class → command mapping. A changed set whose only role yields `none` (or whose paths are all documentation) derives no Python build — the deriver structurally cannot stamp a test command onto a docs-only task. The TOON-quoting rule for `verification.commands` (below) still governs how the derived commands are written. For the derive API contract and the build_class → command mapping, see [`manage-architecture` SKILL.md](../manage-architecture/SKILL.md) and [`manage-architecture/standards/resolve-command.md` § "Build-class → verification command"](../manage-architecture/standards/resolve-command.md#build-class--verification-command) — do NOT inline-copy the mapping table here.
 
-After creating per-deliverable tasks, create plan-level verification tasks that depend on ALL previously created tasks.
-
-**Per-deliverable build is an execute-loop concern, not a planning-time task**: the focused per-deliverable build (resolve the changed module, run a depth-gated `compile` + scoped `module-tests`, buildable-stuff guard) is governed entirely by [phase-5-execute Step 10 (per-deliverable build step)](../phase-5-execute/SKILL.md) and the `per_deliverable_build` config knob — phase-4-plan does NOT create a per-deliverable build task. The same docs-only / buildable-stuff classifier that phase-4-plan already applies (refusing a paired `*-Test` task for a `documentation_only` deliverable) and that the plan-wide composer applies (manage-execution-manifest Row 3 + post-matrix classifier, holistic-task suppression) is ALSO applied per-deliverable inside the execute loop. The canonical classifier is [`../phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier) — do NOT restate the bucket vocabulary, the knob enum, or the module-resolution procedure here; enforcement-critical content lives in those central standards. Holistic-task planning below is unchanged by this note.
-
-**Module resolution for holistic tasks**: Holistic tasks are plan-level, not deliverable-level. Omit `--module` from `architecture resolve` to use the root module, which runs commands across all modules. Do NOT try to list or enumerate modules — the root module default handles cross-module verification.
-
-**B3 — Surgical holistic-verification-fold bypass (deterministic)**: Before creating any standalone holistic verification task, evaluate the surgical-scope bypass predicate:
-
-> `scope_estimate == surgical AND affected_files_count <= 2`
-
-where `affected_files_count` is the cardinality of the deduplicated union of every deliverable's `Affected files:` list (read from `solution_outline.md`). When the predicate holds, fold the resolved `build_verify` and `quality_check` commands into the existing implementation task's `steps[]` array as trailing entries (verbatim — the resolved executable strings become the new `steps[].target` values) instead of creating standalone holistic `TASK-N+1` / `TASK-N+2` tasks. The fold preserves the exact verification commands; only the dispatch shape changes (one task with extra steps vs. one task + two holistic tasks). When `affected_files_count == 2`, the predicate IS satisfied (the boundary is inclusive); `affected_files_count == 3` falls back to the standalone-holistic path. When the predicate does NOT hold (non-surgical scope, or 3+ affected files), create standalone holistic tasks as documented below — current behaviour is preserved bit-for-bit.
-
-Log the fold decision once at decision level:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-4-plan:holistic-fold) folded build_verify + quality_check into implementation task — scope_estimate=surgical, affected_files={N}"
-```
-
-When the fold fires, skip the rest of Step 7 — no holistic-task creation, no `[ARTIFACT]` log lines for absent holistic tasks. Proceed directly to Step 8.
-
-**Docs-only holistic-suppression guard (deterministic)**: This guard runs AFTER the B3 surgical-fold bypass above and BEFORE the **Read verification steps** loop below. It is an additional, independent skip path — the B3 fold is preserved bit-for-bit and is evaluated first; this guard only applies when B3 did NOT fire. Ask the canonical classifier whether the plan-wide affected files resolve to a documentation-only change:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
-  classify-affected-files --plan-id {plan_id}
-```
-
-When the returned `is_documentation_only` is `true`, do NOT create the built-in holistic `quality_check` / `build_verify` Python verification tasks at all — a documentation-only plan has no buildable Python surface for a whole-repo `quality-gate` / `module-tests` sweep to verify. Log the skip decision once at decision level (mirroring the B3 fold-decision log shape):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-4-plan:holistic-docs-only-skip) skipped holistic quality_check + build_verify — plan-wide affected_files resolved to documentation_only bucket"
-```
-
-Then proceed directly to Step 8 (skip the **Read verification steps** loop's built-in `quality_check` / `build_verify` task creation). **Extension steps are NOT suppressed by this guard** — only the built-in `quality_check` / `build_verify` holistic Python steps are skipped. When the verification-steps list contains colon-bearing extension step IDs (`my-bundle:my-verify-step`), still create their holistic verification tasks via the loop below; the docs-only verdict governs only the two built-in Python sweeps.
-
-Step 7 consumes the single docs-only verdict produced by `manage-execution-manifest classify-affected-files` rather than independently re-deriving it from `marshal.json`'s `phase-5-execute.steps`. The same classifier governs `compose()` at Step 8b (manage-execution-manifest Row 3 + post-matrix docs-only suppression), so the planning-time task set and the composed manifest agree on a single source of truth. For the classifier itself — the file-type bucket vocabulary and the classification procedure — see [`../phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier) and [`../manage-execution-manifest/SKILL.md`](../manage-execution-manifest/SKILL.md); do NOT restate the bucket vocabulary or the classification procedure here.
-
-**Read verification steps** (NOTE: `manage-config plan` is ONLY for phase configs — for architecture queries use `manage-architecture:architecture`):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --field steps --audit-plan-id {plan_id}
-```
-
-Iterate over the `steps` list. For each step, create a holistic verification task based on the step type:
-
-**Built-in steps** (no colon in name):
-- `quality_check` → Resolve via `architecture resolve --command quality-gate` (no `--module` — uses root module for cross-module check)
-- `build_verify` → Resolve via `architecture resolve --command module-tests` (no `--module` — uses root module for cross-module check)
-
-**Extension steps** (contain colon, e.g., `my-bundle:my-verify-step`):
-- Use the step name directly as the step target (do NOT resolve via architecture)
-
-All holistic verification tasks share: `profile: verification`, `deliverable: 0`, `origin: holistic`, `depends_on: [ALL non-holistic tasks]`
-
-**Log each holistic task creation**:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-4-plan) Created holistic verification TASK-{N}: {title}"
-```
-
-### Step 8: Determine Execution Order
+### Step 7: Determine Execution Order
 
 Compute parallel execution groups:
 
@@ -684,11 +566,11 @@ execution_order:
 - Tasks depending on same prior tasks can run in parallel
 - Sequential dependencies remain sequential
 
-### Step 8b: Compose Execution Manifest
+### Step 7b: Compose Execution Manifest
 
 **Purpose**: Emit the per-plan execution manifest so that Phase 5 and Phase 6 can dispatch their steps as dumb manifest executors. The manifest is the single source of truth for which Phase 5 verification steps and Phase 6 finalize steps fire for this plan — per-doc skip logic in their standards is removed in favor of this single artifact.
 
-This step runs after Step 8 (execution order) and before Step 9 (Q-Gate). It MUST run on every successful plan-phase invocation; the manifest is required by phase-5-execute on entry.
+This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUST run on every successful plan-phase invocation; the manifest is required by phase-5-execute on entry.
 
 **Inputs**:
 - `change_type` — read from solution outline metadata (use the first deliverable's `change_type` when the outline has more than one; the plan-level summary in `solution_outline.md` Summary block also surfaces it).
@@ -734,7 +616,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[ARTIFACT] (plan-marshall:phase-4-plan) Composed execution manifest at .plan/local/plans/{plan_id}/execution.toon (rule={rule_fired})"
 ```
 
-**Error path**: If `validate` returns `status: error` (`error: invalid_manifest`), the phase MUST fail loudly — do NOT proceed to Q-Gate or Step 11 transition. Surface the error message in the phase return TOON and abort:
+**Error path**: If `validate` returns `status: error` (`error: invalid_manifest`), the phase MUST fail loudly — do NOT proceed to Q-Gate or Step 10 transition. Surface the error message in the phase return TOON and abort:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -746,7 +628,7 @@ The composer's `decision.log` entry (one per applied rule) provides the audit tr
 
 **Per-task verification routing (data-driven)**: After the seven-row matrix runs, the composer performs an `execution_tier` routing pass over every `TASK-*.json` in the plan. For each `verification.commands` entry, the composer subprocesses `architecture resolve` to obtain the four-field augmented TOON (`bash_timeout_seconds`, `exceeds_bash_ceiling`, `execution_tier`, `hint`) and branches: `orchestrator` commands are mapped to their canonical phase-5 step ID (`quality-gate → default:quality_check`, `verify`/`module-tests → default:build_verify`, `coverage → default:coverage_check`), appended to `phase_5.verification_steps` (de-duped), and removed from the task's verification list; `per_task` commands stay per-task and the task's `verification.bash_timeout_seconds` field is set to the maximum measured timeout across surviving commands. Non-build / unresolvable executables pass through unchanged. The routing is data-driven — no hardcoded "long-running" command list — and the authoritative source is `architecture resolve` per the "Structured queries first" hard rule. See `manage-execution-manifest/standards/decision-rules.md § execution_tier Routing` for the full contract and `manage-architecture/standards/resolve-command.md` for the failure mode that motivated the routing.
 
-### Step 9: Q-Gate Verification Checks
+### Step 8: Q-Gate Verification Checks
 
 **Purpose**: Verify created tasks meet quality standards.
 
@@ -773,10 +655,10 @@ The six checks correspond to:
 6. **Structural-token-drift**: `TASK-NNN` numbering monotonic, starting at `TASK-001`, no gaps.
 
 Parse the return TOON: `total_failed` is the aggregate finding count for the
-inline checks (added to `qgate_pending_count` returned in Step 11), and
+inline checks (added to `qgate_pending_count` returned in Step 10), and
 `ambiguous` is `true` when `solution_outline.md` was missing or unparseable —
 in that case the orchestrator-dispatched q-gate-validation (signaled by
-Step 9b via `qgate_validation_required: true`) is the only authoritative pass
+Step 8b via `qgate_validation_required: true`) is the only authoritative pass
 and the orchestrator MUST still fire it.
 
 ### Log Q-Gate Result
@@ -812,17 +694,17 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4-plan gate.
 
-### Step 9b: Dispatch q-gate-validation for mechanical validators
+### Step 8b: Dispatch q-gate-validation for mechanical validators
 
 **Purpose**: Run the `module-mapping-validator` and `scope-criterion-validator` from `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (§§ 2.11, 2.12) over the just-created tasks and the parent deliverables. Both validators reconcile LLM-authored task/deliverable shape against live ground truth (architecture which-module, architecture find/marketplace grep) and emit findings that the orchestrator's existing 3-iteration auto-loop consumes.
 
 **Activation guard**: Runs after every successful phase-4-plan invocation, regardless of `plan_source`, EXCEPT when the surgical-scope bypass predicate (B2) below fires. Both validators apply to every plan (lesson-derived, issue-derived, recipe-derived, free-form). The phase sets `qgate_validation_required: true` in its return TOON on every successful completion; the orchestrator's existing `verification_max_iterations` budget gates re-entry on its side. Skipping the signal is reserved for the unrecoverable error path (the phase has aborted with `status: error` before reaching the return-results step) AND the B2 surgical-scope bypass below.
 
-**B2 — Surgical q-gate-validation bypass (deterministic)**: Before signalling `qgate_validation_required: true`, evaluate the same surgical-scope predicate used by Step 7 § B3:
+**B2 — Surgical q-gate-validation bypass (deterministic)**: Before signalling `qgate_validation_required: true`, evaluate the surgical-scope predicate:
 
 > `scope_estimate == surgical AND affected_files_count <= 2`
 
-where `affected_files_count` is the cardinality of the deduplicated union of every deliverable's `Affected files:` list. When the predicate holds, override `qgate_validation_required` to `false` in the Step 11 return TOON instead of the unconditional `true` — the orchestrator's q-gate-validation dispatch site reads the flag and skips the validator envelope when it is `false`. When the predicate is false (non-surgical, or 3+ affected files), the unconditional `true` value documented above is preserved.
+where `affected_files_count` is the cardinality of the deduplicated union of every deliverable's `Affected files:` list. When the predicate holds, override `qgate_validation_required` to `false` in the Step 10 return TOON instead of the unconditional `true` — the orchestrator's q-gate-validation dispatch site reads the flag and skips the validator envelope when it is `false`. When the predicate is false (non-surgical, or 3+ affected files), the unconditional `true` value documented above is preserved.
 
 Log the bypass decision once at decision level:
 
@@ -840,11 +722,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[STATUS] (plan-marshall:phase-4-plan) qgate_validation_required=false — surgical-scope bypass active (scope_estimate=surgical, affected_files={N})"
 ```
 
-**Cross-reference (lesson-ID validation)**: Lesson-ID validation is intentionally NOT signaled here. PR #323 ships lesson-ID validation at **write time** in `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_crud.py` (via `tools-input-validation/scripts/input_validation.py`). Every `TASK-*.json` write hits the validator before disk and **hard-fails** with `validation_error: lesson_id_not_found` when a phantom ID is cited — distinct from this Step 9b's orchestrator-side q-gate auto-loop placement. Future maintainers extending phase-4-plan validation should preserve the placement split: write-time hard-fail for lesson-ID lookup against `manage-lessons list`; orchestrator-dispatched q-gate auto-loop for structural cross-checks (module mapping, scope criterion).
+**Cross-reference (lesson-ID validation)**: Lesson-ID validation is intentionally NOT signaled here. PR #323 ships lesson-ID validation at **write time** in `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_crud.py` (via `tools-input-validation/scripts/input_validation.py`). Every `TASK-*.json` write hits the validator before disk and **hard-fails** with `validation_error: lesson_id_not_found` when a phantom ID is cited — distinct from this Step 8b's orchestrator-side q-gate auto-loop placement. Future maintainers extending phase-4-plan validation should preserve the placement split: write-time hard-fail for lesson-ID lookup against `manage-lessons list`; orchestrator-dispatched q-gate auto-loop for structural cross-checks (module mapping, scope criterion).
 
 **Signal the validator requirement**.
 
-When phase-4-plan completes successfully, the phase records the requirement by setting `qgate_validation_required: true` in the return TOON (see Step 11 § Output below). The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag after the phase returns and dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level `Task: plan-marshall:{target}` invocation — the phase body cannot dispatch it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The orchestrator-dispatched validator agent reads `solution_outline.md` (for the deliverables and their `success_criterion`/`affected_files` blocks) and the just-written `TASK-*.json` files (for `module_testing` task targets), runs the `module-mapping-validator` and `scope-criterion-validator` detection logic, and emits findings using `--source qgate-module-mapping` / `--source qgate-scope-criterion`. Aggregation of the validator's `qgate_pending_count` into the phase aggregate also moves to the orchestrator; this step only signals intent. See `plan-marshall/workflow/q-gate-validation.md` for the canonical detection logic and finding emission templates.
+When phase-4-plan completes successfully, the phase records the requirement by setting `qgate_validation_required: true` in the return TOON (see Step 10 § Output below). The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag after the phase returns and dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level `Task: plan-marshall:{target}` invocation — the phase body cannot dispatch it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The orchestrator-dispatched validator agent reads `solution_outline.md` (for the deliverables and their `success_criterion`/`affected_files` blocks) and the just-written `TASK-*.json` files (for `module_testing` task targets), runs the `module-mapping-validator` and `scope-criterion-validator` detection logic, and emits findings using `--source qgate-module-mapping` / `--source qgate-scope-criterion`. Aggregation of the validator's `qgate_pending_count` into the phase aggregate also moves to the orchestrator; this step only signals intent. See `plan-marshall/workflow/q-gate-validation.md` for the canonical detection logic and finding emission templates.
 
 Log the intent so the run record shows the activation:
 
@@ -854,9 +736,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[STATUS] (plan-marshall:phase-4-plan) qgate_validation_required=true — orchestrator will dispatch q-gate-validation (module-mapping + scope-criterion validators) after phase return"
 ```
 
-This signaling step runs AFTER the inline Q-Gate checks of Step 9 and BEFORE Step 10 (Record Issues as Lessons) / Step 11 (Transition Phase and Return Results). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the phase return; the orchestrator-side validator dispatch ensures architecture-anchored findings can re-enter phase-4-plan alongside the inline ones via the existing auto-loop predicate.
+This signaling step runs AFTER the inline Q-Gate checks of Step 8 and BEFORE Step 9 (Record Issues as Lessons) / Step 10 (Transition Phase and Return Results). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the phase return; the orchestrator-side validator dispatch ensures architecture-anchored findings can re-enter phase-4-plan alongside the inline ones via the existing auto-loop predicate.
 
-### Step 10: Record Issues as Lessons
+### Step 9: Record Issues as Lessons
 
 On ambiguous deliverable or planning issues, first run the canonical three-gate lesson-creation policy in [`../manage-lessons/standards/lesson-creation-policy.md`](../manage-lessons/standards/lesson-creation-policy.md) — Gate 1 (dedup), Gate 2 (active-plan check), Gate 3 (create). The two-step path-allocate flow below is Gate 3, reached only when Gates 1 and 2 both clear; when Gate 1 returns `merge_into` / `already_closed` or Gate 2 finds a covering active plan, extend the existing lesson or fold into the plan instead of allocating a new one. Do not restate the gate mechanics — follow the standard.
 
@@ -875,7 +757,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 
-### Step 11: Transition Phase and Return Results
+### Step 10: Transition Phase and Return Results
 
 **Transition phase**:
 
@@ -926,7 +808,7 @@ qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
 ```
 
-`qgate_validation_required` is `true` on every successful phase-4-plan completion (Step 9b signals unconditionally — both module-mapping and scope-criterion validators apply to every plan) and `false` only on the unrecoverable error path. The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads this flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level Task when it is `true`.
+`qgate_validation_required` is `true` on every successful phase-4-plan completion (Step 8b signals unconditionally — both module-mapping and scope-criterion validators apply to every plan) and `false` only on the unrecoverable error path. The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads this flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level Task when it is `true`.
 
 ## Integration Deliverable Narrative Constraint
 
@@ -1047,11 +929,11 @@ If deliverable metadata incomplete:
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
 - `plan-marshall:manage-architecture:architecture` - Query module skills (module --module {module}) and resolve commands (resolve --command {cmd} --module {module}). Uses `--audit-plan-id`, NOT `--plan-id`.
-- `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add --tasks-file PATH` (preferred for multi-task creation in this phase, where `PATH` is staged via `manage-files write` to `.plan/local/plans/{plan_id}/work/tasks-batch.json`). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`). Step 9 invokes `qgate-mechanical-checks` for the deterministic Q-Gate sweep.
+- `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add --tasks-file PATH` (preferred for multi-task creation in this phase, where `PATH` is staged via `manage-files write` to `.plan/local/plans/{plan_id}/work/tasks-batch.json`). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`). Step 8 invokes `qgate-mechanical-checks` for the deterministic Q-Gate sweep.
 - `plan-marshall:manage-files:manage-files` - Stage the batch JSON array (via `write --file work/tasks-batch.json`) so the payload never crosses the shell argument boundary.
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lessons` - Record lessons on issues (add)
-- `plan-marshall:manage-execution-manifest:manage-execution-manifest` - Compose / validate the per-plan execution manifest in Step 8b (compose, validate)
+- `plan-marshall:manage-execution-manifest:manage-execution-manifest` - Compose / validate the per-plan execution manifest in Step 7b (compose, validate)
 
 **Consumed By**:
 - `plan-marshall:phase-5-execute` skill - Reads tasks and executes them

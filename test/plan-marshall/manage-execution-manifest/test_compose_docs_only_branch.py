@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""End-to-end tests for the docs-only post-matrix rule in ``cmd_compose``.
+"""Regression tests asserting the compose docs-only post-matrix branch is removed.
 
-The rule inspects the plan-wide union of every deliverable's
-``affected_files`` and, when the union resolves to the ``documentation_only``
-bucket via the per-domain extension aggregator, suppresses holistic Python
-verification steps (``quality-gate``, ``module-tests``, ``coverage``) from
-``phase_5.verification_steps``. The rule layers ON TOP of the seven-row
-matrix: Row 3 (``docs_only``) keys on the role heuristic and catches plans
-where the candidate set itself signals docs-only; this rule catches plans
-where the candidate set looks code-shaped but the actual affected files
-are all docs.
+The advisory docs-only post-matrix rule in ``cmd_compose`` — which inspected the
+plan-wide union of every deliverable's ``affected_files`` and suppressed holistic
+Python verification steps when the union resolved to ``documentation_only`` — has
+been deleted. The single deterministic build_map consumer (the deriver) now drives
+per-deliverable verification and the single execute-exit verify; compose no longer
+suppresses or derives docs-only advisorily.
 
-The aggregator is exercised end-to-end via the real
-``discover_all_extensions`` path — every registered domain extension's
-``classify_paths`` override participates in the classification. The
-six-bucket plan-wide vocabulary is the post-refactor source of truth.
+These tests pin the removal: the ``docs_only_classifier_fired`` / ``plan_wide_bucket``
+return fields and the ``_log_docs_only_classifier_fired`` helper no longer exist, the
+``cmd_classify_affected_files`` handler and ``classify-affected-files`` subcommand are
+gone, and a docs-only-pathed plan now retains exactly the matrix-derived verification
+steps (no advisory suppression). The seed-source aggregator
+``_classify_paths_via_extensions`` is retained and exercised in
+``test_classify_paths_via_extensions.py``.
 """
 
 import importlib.util
@@ -58,7 +58,6 @@ _mem._log_commit_push_omitted = lambda *a, **kw: None  # type: ignore[attr-defin
 _mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_pre_submission_self_review_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_bot_enforcement_guard_remediated = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_docs_only_classifier_fired = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._emit_decision_log = lambda *a, **kw: None  # type: ignore[attr-defined]
 
 
@@ -98,21 +97,76 @@ def _seed_references(plan_dir: Path, affected_files: list[str]) -> None:
 
 
 # =============================================================================
-# Tests — six-bucket vocabulary
+# Removal of the docs-only post-matrix branch
 # =============================================================================
 
 
-def test_docs_only_plan_suppresses_holistic_python_verification_steps(plan_context):
-    """End-to-end: documentation_only affected_files → quality-gate + module-tests suppressed.
+def test_log_docs_only_classifier_fired_helper_removed():
+    """The ``_log_docs_only_classifier_fired`` helper no longer exists."""
+    assert not hasattr(_mem, '_log_docs_only_classifier_fired')
 
-    A ``feature`` plan with multi_module scope normally hits Row 7 (default)
-    and emits both quality-gate and module-tests under
-    ``phase_5.verification_steps``. When the plan-wide affected_files
-    resolve to ``documentation_only`` (all marketplace skill .md files
-    claimed by pm-plugin-development), the post-matrix rule strips both
-    steps so the manifest carries an empty ``verification_steps`` list.
+
+def test_cmd_classify_affected_files_handler_removed():
+    """The ``cmd_classify_affected_files`` handler no longer exists."""
+    assert not hasattr(_mem, 'cmd_classify_affected_files')
+
+
+def test_classify_affected_files_subcommand_removed():
+    """The ``classify-affected-files`` subcommand is no longer registered."""
+    parser = _mem._build_parser()
+    subparsers_action = next(
+        action for action in parser._actions if hasattr(action, 'choices') and action.choices
+    )
+    assert 'classify-affected-files' not in subparsers_action.choices
+
+
+def test_classify_paths_via_extensions_aggregator_retained():
+    """The seed-source aggregator ``_classify_paths_via_extensions`` is retained."""
+    assert hasattr(_mem, '_classify_paths_via_extensions')
+
+
+# =============================================================================
+# Compose no longer suppresses docs-only advisorily
+# =============================================================================
+
+
+def test_compose_omits_docs_only_classifier_fields_from_result(plan_context):
+    """The compose result no longer carries ``docs_only_classifier_fired`` / ``plan_wide_bucket``."""
+    plan_id = 'compose-no-docs-only-fields'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_references(
+        plan_dir,
+        [
+            'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md',
+            'marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md',
+        ],
+    )
+
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=2,
+        )
+    )
+
+    assert result is not None and result['status'] == 'success'
+    assert 'docs_only_classifier_fired' not in result
+    assert 'plan_wide_bucket' not in result
+
+
+def test_docs_only_pathed_plan_retains_matrix_verification_steps(plan_context):
+    """A docs-only-pathed feature plan retains its matrix-derived verification steps.
+
+    Before the removal, a ``feature`` plan whose affected files were all docs hit
+    Row 7 (default), then the advisory post-matrix rule stripped the holistic
+    steps down to an empty ``verification_steps`` list. With the branch deleted,
+    compose emits exactly the matrix output — Row 7 keeps both candidate steps —
+    regardless of whether the affected files happen to be docs. The deriver, not
+    compose, decides per-deliverable build scope downstream.
     """
-    plan_id = 'docs-only-feature-plan'
+    plan_id = 'docs-pathed-feature-retains-steps'
     plan_dir = plan_context.plan_dir_for(plan_id)
     _seed_references(
         plan_dir,
@@ -133,86 +187,23 @@ def test_docs_only_plan_suppresses_holistic_python_verification_steps(plan_conte
     )
 
     assert result is not None and result['status'] == 'success'
-    assert result['docs_only_classifier_fired'] is True
-    assert result['plan_wide_bucket'] == 'documentation_only'
-    assert result['phase_5']['verification_steps_count'] == 0
+    # Row 7 (default) passes both candidates through; no advisory suppression.
+    assert result['phase_5']['verification_steps_count'] == 2
     manifest = read_manifest(plan_id)
     assert manifest is not None
-    assert manifest['phase_5']['verification_steps'] == []
+    assert manifest['phase_5']['verification_steps'] == list(DEFAULT_PHASE_5_STEPS)
 
 
-def test_mixed_with_docs_plan_retains_holistic_python_verification_steps(plan_context):
-    """End-to-end: mixed_with_docs affected_files → holistic steps retained.
+def test_matrix_row_3_docs_only_still_empties_phase_5(plan_context):
+    """The seven-row matrix's Row 3 (``docs_only``) is unchanged and still empties phase 5.
 
-    When the plan-wide affected_files include both production .py and
-    documentation .md paths, the bucket resolves to ``mixed_with_docs``
-    and the post-matrix rule does NOT fire.
+    Removing the post-matrix advisory branch does NOT touch the matrix itself —
+    Row 3 keys on the candidate role heuristic (no module-tests/coverage roles)
+    and legitimately empties ``phase_5.verification_steps`` for a docs-shaped
+    candidate set. This test pins that the row-level docs-only handling survives
+    the post-matrix branch removal.
     """
-    plan_id = 'mixed-with-docs-plan'
-    plan_dir = plan_context.plan_dir_for(plan_id)
-    _seed_references(
-        plan_dir,
-        [
-            'marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py',
-            'marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md',
-        ],
-    )
-
-    result = cmd_compose(
-        _compose_ns(
-            plan_id=plan_id,
-            change_type='feature',
-            scope_estimate='multi_module',
-            affected_files_count=2,
-        )
-    )
-
-    assert result is not None and result['status'] == 'success'
-    assert result['docs_only_classifier_fired'] is False
-    assert result['plan_wide_bucket'] == 'mixed_with_docs'
-    assert result['phase_5']['verification_steps_count'] == 2
-
-
-def test_production_only_plan_retains_holistic_python_verification_steps(plan_context):
-    """End-to-end: production_only affected_files → holistic steps retained.
-
-    A plan whose affected files are all production Python sources resolves
-    to the ``production_only`` bucket — the post-matrix rule does not fire.
-    """
-    plan_id = 'production-only-plan'
-    plan_dir = plan_context.plan_dir_for(plan_id)
-    _seed_references(
-        plan_dir,
-        [
-            'marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py',
-        ],
-    )
-
-    result = cmd_compose(
-        _compose_ns(
-            plan_id=plan_id,
-            change_type='feature',
-            scope_estimate='multi_module',
-            affected_files_count=1,
-        )
-    )
-
-    assert result is not None and result['status'] == 'success'
-    assert result['docs_only_classifier_fired'] is False
-    assert result['plan_wide_bucket'] == 'production_only'
-    assert result['phase_5']['verification_steps_count'] == 2
-
-
-def test_docs_only_classifier_is_noop_when_matrix_already_emptied_phase_5(plan_context):
-    """Row 3 (matrix docs_only) empties phase_5 first; post-matrix rule is a no-op.
-
-    When the matrix's Row 3 fires (candidate set has no module-tests/coverage
-    roles AND change_type/scope match), ``phase_5.verification_steps`` is
-    already empty. The post-matrix rule runs but suppresses nothing —
-    ``docs_only_classifier_fired`` remains False because no steps were
-    removed.
-    """
-    plan_id = 'matrix-row-3-then-post-matrix-noop'
+    plan_id = 'matrix-row-3-docs-only-survives'
     plan_dir = plan_context.plan_dir_for(plan_id)
     _seed_references(
         plan_dir,
@@ -232,32 +223,3 @@ def test_docs_only_classifier_is_noop_when_matrix_already_emptied_phase_5(plan_c
     assert result is not None and result['status'] == 'success'
     assert result['rule_fired'] == 'docs_only'
     assert result['phase_5']['verification_steps_count'] == 0
-    assert result['plan_wide_bucket'] == 'documentation_only'
-    assert result['docs_only_classifier_fired'] is False
-
-
-def test_docs_only_plan_with_no_references_is_unknown_and_no_op(plan_context):
-    """When references.json is absent and no outline either, the rule is a no-op.
-
-    The evidence-required gate treats an empty bundle change paths list
-    as ``"unknown"`` (not ``"documentation_only"``) so existing test
-    fixtures and ad-hoc compose calls without a plan workspace continue
-    to behave normally. The matrix's normal output (Row 7 default for a
-    feature plan with affected_files_count > 0) is preserved unchanged.
-    """
-    plan_id = 'no-references-no-outline'
-    plan_context.plan_dir_for(plan_id)
-
-    result = cmd_compose(
-        _compose_ns(
-            plan_id=plan_id,
-            change_type='feature',
-            scope_estimate='multi_module',
-            affected_files_count=5,
-        )
-    )
-
-    assert result is not None and result['status'] == 'success'
-    assert result['plan_wide_bucket'] == 'unknown'
-    assert result['docs_only_classifier_fired'] is False
-    assert result['phase_5']['verification_steps_count'] == 2

@@ -143,6 +143,21 @@ class Extension(ExtensionBase):
             return match[1]
         return 0
 
+    def classify_globs(self) -> list[tuple[str, str]]:
+        """Return an explicit (glob, role) inventory synthesized from the rules.
+
+        Hand-rolled extension (no _CLASSIFY_PATTERNS tuple): _match_classify uses
+        suffix checks, so there is no tuple to derive from. Each documentation
+        suffix becomes a ``*{suffix}`` glob claiming the documentation role. See
+        the base classify_globs() contract.
+        """
+        return [(f'*{suffix}', 'documentation') for suffix in self._DOC_SUFFIXES]
+
+    # build_class: this extension claims only the ``documentation`` role
+    # (*.md / *.adoc / *.asciidoc), for which the ExtensionBase default
+    # ``documentation → docs-validate`` is correct. No classify_build_class
+    # override is required — the inherited base default is the contract.
+
     def provides_recipes(self) -> list[dict]:
         """Return documentation recipes."""
         return [

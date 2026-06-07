@@ -58,3 +58,67 @@ def test_unrelated_yml_is_unclaimed():
     for role in ('production', 'test', 'documentation', 'config'):
         assert 'foo.yml' not in result[role]
         assert 'ci.yml' not in result[role]
+
+
+# =============================================================================
+# build_class per claimed role
+# =============================================================================
+
+_BUILD_CLASSES = frozenset({'prod-compile', 'test-run', 'docs-validate', 'build-config-full', 'none'})
+
+
+def test_dockerfile_build_class_is_prod_compile():
+    assert _ext.classify_build_class('Dockerfile', 'production') == 'prod-compile'
+
+
+def test_compose_build_class_is_build_config_full():
+    assert _ext.classify_build_class('compose.yml', 'config') == 'build-config-full'
+
+
+def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
+    """Each path this domain claims resolves to a member of the closed 5-value enum."""
+    paths = [
+        'Dockerfile',
+        'Containerfile',
+        '.dockerignore',
+        'compose.yml',
+        'docker-compose.yml',
+    ]
+    claims = _ext.classify_paths(paths)
+    for role, claimed in claims.items():
+        for path in claimed:
+            assert _ext.classify_build_class(path, role) in _BUILD_CLASSES
+
+
+# =============================================================================
+# classify_globs() inventory (build_map seed source)
+# =============================================================================
+
+
+def test_classify_globs_synthesizes_explicit_glob_inventory():
+    """Hand-rolled extension: classify_globs returns explicit globs from the rules.
+
+    The inventory mirrors _match_classify: exact-name production files
+    (.dockerignore), the Dockerfile/Containerfile prefix family as production,
+    and the compose config filenames.
+    """
+    inventory = _ext.classify_globs()
+    assert ('.dockerignore', 'production') in inventory
+    assert ('Dockerfile*', 'production') in inventory
+    assert ('Containerfile*', 'production') in inventory
+    assert ('compose.yml', 'config') in inventory
+    assert ('docker-compose.yml', 'config') in inventory
+
+
+def test_classify_globs_roles_resolve_to_build_classes():
+    """Every (glob, role) in the inventory derives a build_class in the closed set."""
+    inventory = _ext.classify_globs()
+    assert inventory
+    for glob, role in inventory:
+        assert _ext.classify_build_class(glob, role) in _BUILD_CLASSES
+
+
+def test_classify_globs_covers_production_and_config_roles():
+    """The oci glob inventory claims production and config roles."""
+    roles = {role for _, role in _ext.classify_globs()}
+    assert roles == {'production', 'config'}

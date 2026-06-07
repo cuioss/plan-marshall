@@ -68,7 +68,15 @@ def save_config(config: dict) -> None:
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     # Canonical key order for marshal.json
-    key_order = ['extension_defaults', 'plan', 'providers', 'skill_domains', 'system']
+    key_order = [
+        'build_map',
+        'build_map_overrides',
+        'extension_defaults',
+        'plan',
+        'providers',
+        'skill_domains',
+        'system',
+    ]
 
     # Build ordered dict: known keys first in order, then any remaining keys
     ordered = {}
@@ -302,3 +310,142 @@ def ext_defaults_list(project_dir: str = '.') -> dict:
     config: dict = json.loads(marshal_path.read_text(encoding='utf-8'))
     result: dict = get_extension_defaults(config)
     return result
+
+
+# =============================================================================
+# Build Map API
+# =============================================================================
+#
+# The build_map block in marshal.json is the file-to-build contract: a
+# per-domain inventory of {glob, role, build_class} entries seeded from every
+# registered extension's classify_globs() + classify_build_class(). It is the
+# user-adaptable persistence layer for what each domain's predicates compute in
+# Python. The user-override layer (build_map_overrides, a top-level array of
+# {glob, role, build_class}) survives re-seeding and wins by glob at read time.
+
+
+def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
+    """Walk every registered extension and aggregate its (glob, role, build_class).
+
+    For each discovered extension, calls ``classify_globs()`` to learn the
+    domain's (glob, role) inventory and ``classify_build_class(glob, role)`` per
+    entry to derive the build_class. Extensions with no classify override
+    contribute an empty list (the base ``classify_globs()`` default), so they are
+    skipped — the resulting map only carries domains that own file types.
+
+    Returns:
+        A dict keyed by domain-key with a list of ``{glob, role, build_class}``
+        dicts as values. Domains contributing no globs are omitted entirely.
+    """
+    from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
+
+    aggregated: dict[str, list[dict[str, str]]] = {}
+    for entry in discover_all_extensions():
+        ext = entry.get('module')
+        if ext is None:
+            continue
+        try:
+            inventory = ext.classify_globs()
+        except Exception:
+            continue
+        if not inventory:
+            continue
+        domain_key = _safe_domain_key(ext)
+        if not domain_key:
+            continue
+        domain_entries: list[dict[str, str]] = []
+        for glob, role in inventory:
+            try:
+                build_class = ext.classify_build_class(glob, role)
+            except Exception:
+                continue
+            domain_entries.append({'glob': glob, 'role': role, 'build_class': build_class})
+        if domain_entries:
+            aggregated[domain_key] = domain_entries
+    return aggregated
+
+
+def _safe_domain_key(ext: object) -> str:
+    """Return the extension's first domain key, or empty string on failure.
+
+    Mirrors the manage-execution-manifest aggregator's tie-break helper: an
+    extension whose ``get_skill_domains()`` cannot be resolved is skipped rather
+    than crashing the seed.
+    """
+    try:
+        domains = ext.get_skill_domains()  # type: ignore[attr-defined]
+        if domains:
+            return str(domains[0].get('domain', {}).get('key', '') or '')
+    except Exception:
+        pass
+    return ''
+
+
+def seed_build_map_into(config: dict) -> dict:
+    """Seed the top-level ``build_map`` block into ``config`` (write-once).
+
+    Aggregates the per-domain build map from every registered extension and
+    writes it into ``config['build_map']`` using write-once semantics: an
+    existing ``build_map`` is NEVER clobbered, so a re-seed preserves any user
+    correction made directly to the seeded block. The ``build_map_overrides``
+    array is independent and is left untouched here. The caller is responsible
+    for persisting ``config`` (e.g. via :func:`save_config`).
+
+    Args:
+        config: The loaded marshal.json config dict (mutated in place when seeded).
+
+    Returns:
+        A result dict with ``action`` (``seeded`` | ``preserved``), the
+        ``build_map`` that is now in ``config``, and its ``domain_count``.
+    """
+    if 'build_map' in config:
+        existing: dict = config['build_map']
+        return {'action': 'preserved', 'build_map': existing, 'domain_count': len(existing)}
+
+    aggregated = aggregate_build_map()
+    config['build_map'] = aggregated
+    return {'action': 'seeded', 'build_map': aggregated, 'domain_count': len(aggregated)}
+
+
+def merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
+    """Return the merged effective build map (seed ∪ overrides, overrides win).
+
+    Reads the seeded ``build_map`` block and applies the top-level
+    ``build_map_overrides`` array last: each override ``{glob, role,
+    build_class}`` replaces the entry with the same ``glob`` wherever it appears
+    in the seed (overrides win by glob), and a glob not present in any domain's
+    seed is appended under a synthetic ``_overrides`` domain so the override is
+    never silently dropped.
+
+    Args:
+        config: The loaded marshal.json config dict (read-only — never mutated).
+
+    Returns:
+        The merged ``{domain: [{glob, role, build_class}]}`` dict. Returns an
+        empty dict when the config carries no build_map.
+    """
+    seed: dict[str, list[dict[str, str]]] = config.get('build_map', {})
+    overrides: list[dict[str, str]] = config.get('build_map_overrides', [])
+
+    # Deep-copy the seed so the merge never mutates the persisted block.
+    merged: dict[str, list[dict[str, str]]] = {
+        domain: [dict(entry) for entry in entries] for domain, entries in seed.items()
+    }
+
+    for override in overrides:
+        glob = override.get('glob')
+        if glob is None:
+            continue
+        applied = False
+        for entries in merged.values():
+            for entry in entries:
+                if entry.get('glob') == glob:
+                    if 'role' in override:
+                        entry['role'] = override['role']
+                    if 'build_class' in override:
+                        entry['build_class'] = override['build_class']
+                    applied = True
+        if not applied:
+            merged.setdefault('_overrides', []).append(dict(override))
+
+    return merged

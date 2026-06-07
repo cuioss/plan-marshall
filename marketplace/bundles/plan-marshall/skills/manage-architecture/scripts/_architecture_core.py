@@ -22,6 +22,7 @@ forced interruption mid-write leaves either the old layout or the new layout
 intact, never half-written state.
 """
 
+import fnmatch
 import json
 import os
 import shutil
@@ -468,6 +469,151 @@ def merge_module_data(module_name: str, project_dir: str = '.') -> dict[str, Any
         if value:
             merged[key] = value
     return merged
+
+
+# =============================================================================
+# Build-Map Derivation (derive-verification)
+# =============================================================================
+#
+# The deriver is the SINGLE deterministic consumer of the build_map contract.
+# It reads the merged build_map from marshal.json (seed ∪ user overrides),
+# classifies each changed-artifact path to a build_class (longest-glob-wins),
+# resolves the owning module per path, and lets the CLI handler emit the
+# architecture-resolved verification command set per the build_class →
+# command table. This core carries the pure, project_dir-honoring half:
+# build_map loading, glob classification, and module resolution. Command
+# resolution + execution-tier augmentation live in the ``_cmd_client`` handler
+# (it already owns ``resolve_command`` and the tier helpers).
+
+
+def load_merged_build_map(project_dir: str = '.') -> dict[str, list[dict[str, str]]]:
+    """Return the merged effective build_map (seed ∪ overrides) for ``project_dir``.
+
+    Reads ``{project_dir}/.plan/marshal.json`` directly (project_dir-honoring,
+    mirroring the ``ext_defaults_*`` accessors) and applies the
+    ``manage-config`` merge so the deriver consumes the exact same effective
+    map the user sees via ``manage-config build-map read`` — seed entries with
+    any ``build_map_overrides`` applied last (overrides win by glob).
+
+    Args:
+        project_dir: Project directory containing ``.plan/marshal.json``.
+
+    Returns:
+        The merged ``{domain: [{glob, role, build_class}]}`` dict. An empty
+        dict when the marshal.json is absent or carries no ``build_map``.
+    """
+    marshal_path = Path(project_dir) / '.plan' / 'marshal.json'
+    if not marshal_path.exists():
+        return {}
+    try:
+        config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return _merge_build_map(config)
+
+
+def _merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
+    """Delegate to ``manage-config`` ``merge_build_map`` (single source of merge logic).
+
+    The merge logic (seed ∪ overrides, overrides win by glob) is owned by
+    ``manage-config``'s ``_config_core.merge_build_map``. Importing it keeps one
+    implementation of the override-precedence rule rather than re-deriving it
+    here. The ``manage-config`` scripts dir is added to ``sys.path`` lazily so
+    the manage-architecture skill still imports cleanly when loaded in isolation
+    (the import failure degrades to "no build_map", not a crash).
+    """
+    import sys
+
+    from marketplace_bundles import (  # type: ignore[import-not-found]
+        resolve_bundle_path,
+        resolve_bundles_root,
+    )
+
+    bundles_root = resolve_bundles_root(Path(__file__))
+    config_scripts_dir = str(resolve_bundle_path(bundles_root, 'plan-marshall', 'skills/manage-config/scripts'))
+    if config_scripts_dir not in sys.path:
+        sys.path.insert(0, config_scripts_dir)
+    try:
+        from _config_core import merge_build_map  # type: ignore[import-not-found]
+    except ImportError:
+        return {}
+    return merge_build_map(config)
+
+
+def classify_changed_path(path: str, merged_build_map: dict[str, list[dict[str, str]]]) -> str | None:
+    """Classify a single changed-artifact path to a build_class (longest-glob-wins).
+
+    Matches ``path`` against every ``{glob, role, build_class}`` entry across
+    all domains of ``merged_build_map`` using ``fnmatch`` — the same matcher the
+    aggregator uses. When more than one glob matches, the longest glob wins
+    (the deterministic "longest-glob-wins" precedence, with the glob string
+    itself as the alphabetical tie-break). The build_map does not persist the
+    per-entry integer specificity, so glob length is the specificity proxy.
+
+    Args:
+        path: A changed-artifact path (full repo-relative path).
+        merged_build_map: The merged map from :func:`load_merged_build_map`.
+
+    Returns:
+        The winning ``build_class`` string, or ``None`` when no glob matches
+        (the path is unclaimed — it derives no build).
+    """
+    matches: list[tuple[int, str, str]] = []  # (glob length, glob, build_class)
+    for entries in merged_build_map.values():
+        for entry in entries:
+            glob = entry.get('glob')
+            build_class = entry.get('build_class')
+            if not glob or not build_class:
+                continue
+            if fnmatch.fnmatch(path, glob):
+                matches.append((len(glob), glob, build_class))
+    if not matches:
+        return None
+    # Longest glob wins; alphabetical glob tie-break (stable, deterministic).
+    matches.sort(key=lambda item: (-item[0], item[1]))
+    return matches[0][2]
+
+
+def resolve_module_for_path(path: str, project_dir: str = '.') -> str | None:
+    """Resolve the owning module for a changed path by longest ``paths.module`` prefix.
+
+    Unlike the ``which-module`` reader (which requires the path to appear in a
+    module's files inventory), this resolver matches the changed path against
+    every module's ``paths.module`` prefix and returns the longest match. This
+    tolerates changed artifacts that are newly-created files not yet in the
+    crawled inventory — the deriver runs at plan time over a task's declared
+    ``steps[].target`` list, which may include files that do not yet exist.
+
+    Args:
+        path: A changed-artifact path (full repo-relative path).
+        project_dir: Project directory path.
+
+    Returns:
+        The owning module name (longest ``paths.module`` prefix), or ``None``
+        when no module's path is a prefix of ``path``.
+    """
+    try:
+        module_names = iter_modules(project_dir)
+    except DataNotFoundError:
+        return None
+
+    best: tuple[int, str] | None = None  # (prefix length, module name)
+    for name in module_names:
+        try:
+            derived = load_module_derived(name, project_dir)
+        except DataNotFoundError:
+            continue
+        module_path = (derived.get('paths') or {}).get('module') or ''
+        if module_path in ('.', ''):
+            # Root module: matches anything as the shortest prefix (length 0).
+            candidate = (0, name)
+        elif path == module_path or path.startswith(module_path.rstrip('/') + '/'):
+            candidate = (len(module_path), name)
+        else:
+            continue
+        if best is None or candidate[0] > best[0] or (candidate[0] == best[0] and candidate[1] < best[1]):
+            best = candidate
+    return best[1] if best else None
 
 
 # =============================================================================

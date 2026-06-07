@@ -468,6 +468,54 @@ Initialize marshal.json.
 manage-config init [--force]
 ```
 
+---
+
+## Noun: build-map
+
+Seed and read the file-to-build contract (`build_map` block in marshal.json). The block is a domain-keyed inventory of `{glob, role, build_class}` entries seeded from the registered domain extensions; it is never clobbered on re-seed (write-once). The `build_map_overrides` array is the user-override layer and is left untouched by both operations. See [data-model.md § build_map](data-model.md) for the complete schema, the closed `build_class` enum, and override semantics.
+
+| Verb | Parameters | Description |
+|------|-----------|-------------|
+| `seed` | -- | Re-seed `build_map` from extensions with write-once semantics. Returns `action: seeded` when written; `action: preserved` when an existing block is left untouched. |
+| `read` | -- | Return the merged effective build map (`seed ∪ overrides`, overrides winning by glob). The `_overrides` synthetic domain holds any override entry whose glob matched no seeded domain. |
+
+### Example: seed
+
+```bash
+manage-config build-map seed
+```
+
+Success payload:
+
+```toon
+status: success
+action: seeded
+domain_count: 2
+build_map:
+  python: [...]
+  documentation: [...]
+```
+
+`action` is `seeded` when the block was written, or `preserved` when an existing block was left untouched.
+
+### Example: read
+
+```bash
+manage-config build-map read
+```
+
+Success payload:
+
+```toon
+status: success
+build_map:
+  python: [...]
+  documentation: [...]
+domain_count: 2
+```
+
+`_overrides` domain is appended when one or more `build_map_overrides` entries have no matching glob in any seeded domain.
+
 ## Error Responses
 
 All errors follow this pattern:

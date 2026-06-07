@@ -7,6 +7,8 @@ Provides:
     - ExtensionBase: Abstract base class for extensions
     - Canonical command constants (re-exported from _extension_constants):
       CMD_*, CANONICAL_COMMANDS, PROFILE_PATTERNS, APPLICABLE_PROFILES
+    - Build-class vocabulary (re-exported from _extension_constants):
+      BUILD_CLASSES, BUILD_CLASS_*
 
 Module discovery utilities (discover_descriptors, build_module_base, find_readme,
 count_source_files, discover_packages, discover_js_sources, discover_sources,
@@ -18,6 +20,12 @@ from abc import ABC, abstractmethod
 # Re-export build vocabulary constants from private implementation.
 from _extension_constants import (  # noqa: F401 — re-exported for backward compat
     ALL_CANONICAL_COMMANDS,
+    BUILD_CLASS_BUILD_CONFIG_FULL,
+    BUILD_CLASS_DOCS_VALIDATE,
+    BUILD_CLASS_NONE,
+    BUILD_CLASS_PROD_COMPILE,
+    BUILD_CLASS_TEST_RUN,
+    BUILD_CLASSES,
     CANONICAL_COMMANDS,
     CMD_BENCHMARK,
     CMD_CLEAN,
@@ -410,6 +418,90 @@ class ExtensionBase(ABC):
                 return 0
         """
         return 0
+
+    def classify_build_class(self, path: str, role: str) -> str:
+        """Return the deterministic build_class for a (path, role) pair.
+
+        The second leg of the file-to-build contract. Where ``classify_paths()``
+        maps a path to a file role, this method maps the resulting (path, role)
+        pair to a build_class — the deterministic classification a downstream
+        consumer (``manage-execution-manifest``, ``phase-4-plan``) reads to derive
+        the verification command set for a changed-artifact list without
+        re-deriving the file type. This method is exactly parallel to
+        ``classify_path_specificity`` (a separate per-(path, role) lookup, NOT a
+        change to the four-role ``classify_paths()`` return shape).
+
+        Args:
+            path: The path this extension claimed (in any role). Supplied so a
+                domain may discriminate the build_class on the path itself when
+                the role default is wrong for that domain; the default
+                implementation ignores it.
+            role: The role under which this extension claimed the path — one of
+                ``production`` / ``test`` / ``documentation`` / ``config``.
+
+        Returns:
+            A member of the closed 5-value enum ``BUILD_CLASSES``:
+
+            - ``prod-compile``: production source — derives a ``compile``.
+            - ``test-run``: test source — derives ``test-compile`` + ``module-tests``.
+            - ``docs-validate``: documentation — derives a doc validation gate.
+            - ``build-config-full``: build/lint/packaging config — derives a full
+              reactor ``verify`` for the affected module.
+            - ``none``: no build derives from this (path, role) pair.
+
+            The default maps roles deterministically:
+            ``production → prod-compile``, ``test → test-run``,
+            ``documentation → docs-validate``, ``config → build-config-full``,
+            and any unmatched role → ``none``. Domains that override
+            ``classify_paths()`` inherit this default and override
+            ``classify_build_class`` ONLY where the role→build_class default is
+            wrong for the domain (e.g. a generated file whose path should derive
+            ``none`` despite a ``production`` role).
+
+        See ``extension-api/standards/extension-contract.md`` § classify_paths()
+        for the complete contract documentation.
+        """
+        default_by_role = {
+            'production': BUILD_CLASS_PROD_COMPILE,
+            'test': BUILD_CLASS_TEST_RUN,
+            'documentation': BUILD_CLASS_DOCS_VALIDATE,
+            'config': BUILD_CLASS_BUILD_CONFIG_FULL,
+        }
+        return default_by_role.get(role, BUILD_CLASS_NONE)
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        """Return this extension's ``(glob, role)`` classification inventory.
+
+        The build_map seed aggregator (``manage-config build-map seed``) walks
+        every registered extension and calls this method to learn each domain's
+        glob → role inventory WITHOUT having to know the extension's internal
+        classify shape. The aggregator then derives the build_class per entry
+        via ``classify_build_class(glob, role)`` and writes the aggregated
+        ``{domain: [{glob, role, build_class}]}`` structure into
+        ``marshal.json::build_map``.
+
+        Returns:
+            A list of ``(glob, role)`` tuples — one per glob pattern this
+            extension claims, paired with the file role it assigns. ``role`` is
+            one of ``production`` / ``test`` / ``documentation`` / ``config``
+            (the four-role contract of ``classify_paths()``). The default
+            implementation returns an empty list: extensions that do not own any
+            file types (no ``classify_paths()`` override) contribute nothing to
+            the seed. Extensions that DO override ``classify_paths()`` override
+            this method as well, returning the glob inventory their classifier
+            recognises — either derived from a ``_CLASSIFY_PATTERNS`` tuple
+            (tuple-shape extensions) or synthesized as an explicit small glob
+            list from the extension's suffix / token / config-file rules
+            (hand-rolled extensions).
+
+        This accessor is exactly parallel to ``classify_build_class`` and
+        ``classify_path_specificity``: a per-extension lookup the aggregator
+        consumes, NOT a change to the ``classify_paths()`` return shape.
+
+        See ``extension-api/standards/extension-contract.md`` § classify_paths()
+        for the complete contract documentation.
+        """
+        return []
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if this domain applies to a specific module and return resolved skills.

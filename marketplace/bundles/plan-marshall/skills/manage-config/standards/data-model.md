@@ -102,6 +102,18 @@ JSON structure and field definitions for project configuration.
       }
     }
   },
+  "build_map": {
+    "python": [
+      { "glob": "marketplace/bundles/**/scripts/*.py", "role": "production", "build_class": "prod-compile" },
+      { "glob": "test/**/test_*.py", "role": "test", "build_class": "test-run" }
+    ],
+    "documentation": [
+      { "glob": "marketplace/bundles/**/skills/**/*.md", "role": "documentation", "build_class": "docs-validate" }
+    ]
+  },
+  "build_map_overrides": [
+    { "glob": "marketplace/bundles/**/scripts/generated_*.py", "role": "production", "build_class": "none" }
+  ],
   "system": {
     "retention": {
       "logs_days": 1,
@@ -163,6 +175,85 @@ Key structural summary:
 - **System domain**: Contains `defaults`, `optionals`, and `execute_task_skills`
 - **Technical domains**: Reference a `bundle` and declare `workflow_skill_extensions` (outline, triage)
 - **Profiles**: Loaded at runtime from `extension.py`, not stored in marshal.json
+
+## Section: build_map
+
+The file-to-build contract: a top-level, domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. `build_map` is the persisted, user-adaptable layer of the contract; the deterministic deriver (`architecture derive-verification`) reads the merged effective map to emit a task's verification command set.
+
+### Source and write-once semantics
+
+`build_map` is **seeded from the domain extensions**, not hand-authored. Each registered extension's `classify_globs()` supplies its `(glob, role)` inventory, and `classify_build_class(glob, role)` maps each entry to its `build_class`; the aggregator collects these into the `{domain: [{glob, role, build_class}]}` structure. The predicates stay in extension Python — they are **not** migrated into config; `build_map` is the seeded snapshot of their output.
+
+Seeding is **write-once**: an existing `build_map` block is never clobbered by a re-seed, so a correction made directly to the seeded block survives. Re-seed (preserving the existing seed and overrides) via `build-map seed`; read the merged effective map via `build-map read`.
+
+### Structure
+
+```json
+{
+  "build_map": {
+    "python": [
+      { "glob": "marketplace/bundles/**/scripts/*.py", "role": "production", "build_class": "prod-compile" },
+      { "glob": "test/**/test_*.py", "role": "test", "build_class": "test-run" }
+    ],
+    "documentation": [
+      { "glob": "marketplace/bundles/**/skills/**/*.md", "role": "documentation", "build_class": "docs-validate" }
+    ]
+  }
+}
+```
+
+### Fields (per entry)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `glob` | string | Yes | The path glob the entry classifies. Precedence is **longest-glob-wins** (the existing aggregator specificity): when two entries match a path, the more specific glob claims it. |
+| `role` | string | Yes | File role — one of `production`, `test`, `documentation`, `config`. |
+| `build_class` | string | Yes | The deterministic build action for the `(glob, role)` pair — one of the closed five-value enum below. |
+
+### build_class enum
+
+Closed five-value set. The single source of truth is `BUILD_CLASSES` in `script-shared`'s extension constants, shared by `ExtensionBase.classify_build_class()`, the domain extensions, and their tests.
+
+| `build_class` | Role it attaches to | Derived verification |
+|---------------|---------------------|----------------------|
+| `prod-compile` | production | `compile` for the changed module |
+| `test-run` | test | `test-compile` + `module-tests` for the changed module |
+| `docs-validate` | documentation | `doctor-marketplace quality-gate` (marketplace skill `.md`) / asciidoc validate (other docs) |
+| `build-config-full` | config | `verify` (full reactor for the changed module) |
+| `none` | any | No command — a changed set whose only role yields `none` derives no build |
+
+## Section: build_map_overrides
+
+A top-level array that is the **user-override layer** over the seeded `build_map`. Each entry corrects a wrong mapping by glob. Overrides survive re-seeding (the seed is write-once and the overrides array is left untouched) and are applied last at read time, so a user correction always wins.
+
+### Override semantics
+
+`build-map read` returns the merged effective map (`seed ∪ overrides`, overrides winning). For each override `{glob, role, build_class}`:
+
+- Every seed entry with the same `glob` has its `role` and/or `build_class` replaced — overrides **win by glob** wherever the glob appears across all domains.
+- A glob not present in any domain's seed is appended under a synthetic `_overrides` domain, so an override is never silently dropped.
+
+### Structure
+
+```json
+{
+  "build_map_overrides": [
+    { "glob": "marketplace/bundles/**/scripts/generated_*.py", "role": "production", "build_class": "none" }
+  ]
+}
+```
+
+### Fields (per array entry)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `glob` | string | Yes | The glob whose seeded mapping this override corrects. |
+| `role` | string | No | Replacement file role applied to matching seed entries (`production`, `test`, `documentation`, `config`). Omit to leave the seeded role unchanged. |
+| `build_class` | string | No | Replacement `build_class` (closed five-value enum above) applied to matching seed entries. Omit to leave the seeded build_class unchanged. The canonical correction for a generated file that should not build is `build_class: none`. |
+
+Managed via:
+- `build-map seed` (re-seed `build_map` from extensions, preserving existing seed + overrides — write-once)
+- `build-map read` (return the merged effective map = seed ∪ overrides, overrides winning by glob)
 
 ## Section: system
 

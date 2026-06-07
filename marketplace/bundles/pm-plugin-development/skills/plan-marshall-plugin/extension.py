@@ -141,6 +141,21 @@ class Extension(ExtensionBase):
             return match[1]
         return 0
 
+    def classify_globs(self) -> list[tuple[str, str]]:
+        """Return the (glob, role) inventory derived from _CLASSIFY_PATTERNS.
+
+        Tuple-shape extension: the (glob, role) pairs are the first two elements
+        of each _CLASSIFY_PATTERNS entry (the third element is specificity, which
+        the build_map seed does not need). All entries claim the documentation
+        role (marketplace skill markdown). See the base classify_globs() contract.
+        """
+        return [(glob, role) for glob, role, _ in self._CLASSIFY_PATTERNS]
+
+    # build_class: this extension claims only the ``documentation`` role
+    # (marketplace skill markdown), for which the ExtensionBase default
+    # ``documentation → docs-validate`` is correct. No classify_build_class
+    # override is required — the inherited base default is the contract.
+
     def provides_retrospective_aspects(self) -> list[dict]:
         """Return the plan-marshall-plugin-dev retrospective aspects.
 
