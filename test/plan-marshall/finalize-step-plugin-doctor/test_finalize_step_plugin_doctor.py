@@ -21,13 +21,11 @@ _PROJECT_LOCAL_PATTERN = re.compile(r'\.claude/skills/[^/]+')
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _WRAPPER_SKILL_MD = _REPO_ROOT / '.claude' / 'skills' / 'finalize-step-plugin-doctor' / 'SKILL.md'
 
-# The four planning-workflow docs whose documentation_only Verification citations
-# were repointed from the rule-less `scan --paths` to the scopeable
-# `quality-gate --paths ... --marketplace-root`.
+# The planning-workflow docs whose documentation_only Verification citations
+# use the scopeable `quality-gate --paths ... --marketplace-root` gate.
 _PLANNING_DOCS = (
     _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md',
     _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md',
-    _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md',
     _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md',
 )
 
@@ -213,7 +211,7 @@ class TestGateOrderingBeforeCommitPush:
 
 
 class TestPlanningDocCitations:
-    """The four planning-workflow docs cite the scopeable rule-running gate, not bare scan."""
+    """The planning-workflow docs cite the scopeable rule-running gate, not bare scan."""
 
     def test_no_bare_scan_paths_documentation_verification_citation(self):
         """No planning doc cites `doctor-marketplace scan --paths` as a verification gate."""

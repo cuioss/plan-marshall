@@ -70,3 +70,63 @@ def test_java_outside_src_is_unclaimed():
 
 def test_specificity_for_main_java_higher_than_zero():
     assert _ext.classify_path_specificity('src/main/java/Foo.java', 'production') > 0
+
+
+# =============================================================================
+# build_class per claimed role
+# =============================================================================
+
+_BUILD_CLASSES = frozenset({'prod-compile', 'test-run', 'docs-validate', 'build-config-full', 'none'})
+
+
+def test_production_path_build_class_is_prod_compile():
+    assert _ext.classify_build_class('src/main/java/Foo.java', 'production') == 'prod-compile'
+
+
+def test_test_path_build_class_is_test_run():
+    assert _ext.classify_build_class('src/test/java/FooTest.java', 'test') == 'test-run'
+
+
+def test_config_path_build_class_is_build_config_full():
+    assert _ext.classify_build_class('pom.xml', 'config') == 'build-config-full'
+    assert _ext.classify_build_class('build.gradle', 'config') == 'build-config-full'
+
+
+def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
+    """Each path this domain claims resolves to a member of the closed 5-value enum."""
+    paths = [
+        'src/main/java/com/example/Foo.java',
+        'src/test/java/com/example/FooTest.java',
+        'pom.xml',
+        'build.gradle',
+        'settings.gradle.kts',
+    ]
+    claims = _ext.classify_paths(paths)
+    for role, claimed in claims.items():
+        for path in claimed:
+            assert _ext.classify_build_class(path, role) in _BUILD_CLASSES
+
+
+# =============================================================================
+# classify_globs() inventory (build_map seed source)
+# =============================================================================
+
+
+def test_classify_globs_derives_glob_role_pairs_from_patterns():
+    """Tuple-shape extension: classify_globs derives (glob, role) from _CLASSIFY_PATTERNS."""
+    expected = [(glob, role) for glob, role, _ in _ext._CLASSIFY_PATTERNS]
+    assert _ext.classify_globs() == expected
+
+
+def test_classify_globs_roles_resolve_to_build_classes():
+    """Every (glob, role) in the inventory derives a build_class in the closed set."""
+    inventory = _ext.classify_globs()
+    assert inventory  # the java domain claims file types
+    for glob, role in inventory:
+        assert _ext.classify_build_class(glob, role) in _BUILD_CLASSES
+
+
+def test_classify_globs_covers_production_test_config_roles():
+    """The java glob inventory claims production, test, and config roles."""
+    roles = {role for _, role in _ext.classify_globs()}
+    assert roles == {'production', 'test', 'config'}

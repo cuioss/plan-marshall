@@ -238,3 +238,18 @@ class Extension(ExtensionBase):
         if match is not None and match[0] == role:
             return match[1]
         return 0
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        """Return the (glob, role) inventory derived from _CLASSIFY_PATTERNS.
+
+        Tuple-shape extension: the (glob, role) pairs are the first two elements
+        of each _CLASSIFY_PATTERNS entry (the third element is specificity, which
+        the build_map seed does not need). See the base classify_globs() contract.
+        """
+        return [(glob, role) for glob, role, _ in self._CLASSIFY_PATTERNS]
+
+    # build_class: this extension claims the ``production`` / ``test`` /
+    # ``config`` roles, for which the ExtensionBase defaults
+    # (``production → prod-compile``, ``test → test-run``,
+    # ``config → build-config-full``) are correct. No classify_build_class
+    # override is required — the inherited base default is the contract.

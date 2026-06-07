@@ -259,6 +259,58 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ---
 
+## Workflow: Build Map
+
+**Pattern**: Script Automation
+
+The `build_map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. It is seeded from the registered domain extensions with write-once semantics — an existing seed survives a re-seed so user corrections are preserved. The user-override layer (`build_map_overrides`) is left untouched by both operations.
+
+### Seed the Build Map
+
+Re-seeds `build_map` from every registered extension's `classify_globs()` + `classify_build_class()` predicates. Write-once: an existing `build_map` block is never clobbered — only a missing or empty block is populated. Typically run once after `/marshall-steward` configures domains, and again whenever a domain extension is added or updated.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed
+```
+
+**Output** (TOON):
+
+```toon
+status: success
+action: seeded
+domain_count: 2
+build_map:
+  python: [...]
+  documentation: [...]
+```
+
+`action` is `seeded` when the block was written, or `preserved` when an existing block was left untouched. `domain_count` is the number of domains in the resulting block.
+
+### Read the Effective Build Map
+
+Returns the merged effective build map (`seed ∪ overrides`, overrides winning by glob). This is the map the `architecture derive-verification` command reads to emit a task's verification command set.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map read
+```
+
+**Output** (TOON):
+
+```toon
+status: success
+build_map:
+  python: [...]
+  documentation: [...]
+  _overrides: [...]
+domain_count: 3
+```
+
+`_overrides` appears only when one or more `build_map_overrides` entries have no matching glob in any seeded domain. `domain_count` is the total number of keys in the returned `build_map` (including `_overrides` when present).
+
+> **Schema and semantics**: See [standards/data-model.md § build_map](standards/data-model.md) for the `{glob, role, build_class}` entry schema, the closed `build_class` enum, and the `build_map_overrides` override contract.
+
+---
+
 ## Workflow: CI Operations
 
 CI operations use the provider-agnostic `ci` router. The router resolves the active provider by scanning `providers[]` in marshal.json for the entry with `category == "ci"` and deriving the key from its `skill_name` (e.g., `plan-marshall:workflow-integration-github` -> `github`), then delegates to the matching provider script.
@@ -300,6 +352,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `project` | `get/set` (`default_base_branch`, `branch_naming`, `sanctioned_conftest`) |
 | `plan` | `{phase} get/set`, set-steps, add-step, remove-step, set-max-iterations |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
+| `build-map` | `seed` (re-seed from extensions, write-once), `read` (merged effective map = seed ∪ overrides) |
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
 
@@ -809,6 +862,18 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-v
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-detect \
   --plan-id PLAN_ID [--domain-override DOMAIN]
+```
+
+### build-map seed
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed
+```
+
+### build-map read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map read
 ```
 
 ---

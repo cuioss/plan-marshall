@@ -27,16 +27,19 @@ from _architecture_core import (
     DATA_DIR,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
+    classify_changed_path,
     crawl_all_modules,
     error_result_command_not_found,
     error_result_module_not_found,
     get_root_module,
     iter_modules,
+    load_merged_build_map,
     load_module_derived,
     load_module_enriched_or_empty,
     load_project_meta,
     merge_module_data,
     require_project_meta_result,
+    resolve_module_for_path,
 )
 from constants import (  # type: ignore[import-not-found]
     DIR_PER_MODULE_DERIVED,
@@ -114,6 +117,29 @@ _BASH_CEILING_SECONDS: int = 600
 # ``bash_timeout_seconds``; the hint is a recognition token, not human prose.
 _HINT_PER_TASK_TEMPLATE: str = 'Bash timeout={ms}ms'
 _HINT_ORCHESTRATOR: str = 'Exceeds Bash ceiling; orchestrator-tier only'
+
+# =============================================================================
+# Build-class → command derivation (derive-verification)
+# =============================================================================
+#
+# The build_class → architecture-resolvable command map. Each value is the
+# ordered list of ``architecture resolve --command`` verbs the deriver runs
+# per affected module for that build_class. ``docs-validate`` and ``none`` are
+# NOT architecture-resolved (a docs validation gate is a fixed plugin-doctor /
+# asciidoc notation, and ``none`` derives nothing), so they are absent from
+# this map and handled explicitly in the deriver. The single source of truth
+# for this table is ``manage-architecture/standards/resolve-command.md`` §
+# "Build-class → verification command".
+_BUILD_CLASS_RESOLVE_COMMANDS: dict[str, list[str]] = {
+    'prod-compile': ['compile'],
+    'test-run': ['test-compile', 'module-tests'],
+    'build-config-full': ['verify'],
+}
+
+# Marketplace skill markdown bodies validate through the scoped plugin-doctor
+# quality-gate (rule-complete, CI-equivalent). Other documentation validates
+# through asciidoc. The deriver picks the gate per the changed path.
+_DOCS_MARKETPLACE_GLOB = 'marketplace/bundles/*/skills/*'
 
 # Marketplace bundle root, used to locate each build skill's ``_*_execute.py``
 # module for ``_CONFIG`` import. Resolved via the validated bundles-root
@@ -1261,17 +1287,9 @@ def cmd_resolve(args) -> dict:
     """
     try:
         result = resolve_command(args.resolve_command, args.module, args.project_dir)
-        augmented = {'status': 'success', **result}
-
         # Augment with adaptive-timeout / execution-tier fields when the
         # executable is a Bucket B build notation.
-        classification = _classify_build_executable(result.get('executable', ''))
-        if classification is not None:
-            tool_name, command_args = classification
-            bash_timeout = _lookup_bash_timeout(tool_name, command_args, args.project_dir)
-            if bash_timeout is not None:
-                augmented.update(_compute_execution_tier_fields(bash_timeout))
-
+        augmented = {'status': 'success', **_augment_resolved(result, args.project_dir)}
         return augmented
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
@@ -1296,6 +1314,136 @@ def cmd_resolve(args) -> dict:
         return error_result_command_not_found(resolved_module, args.resolve_command, commands)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
+
+
+def _augment_resolved(executable_result: dict, project_dir: str) -> dict:
+    """Apply the Bucket B execution-tier augmentation to a resolved command dict.
+
+    Shared by ``cmd_resolve`` and the deriver: when the resolved ``executable``
+    is a Bucket B build notation, attach the ``bash_timeout_seconds`` /
+    ``exceeds_bash_ceiling`` / ``execution_tier`` / ``hint`` quartet so the
+    per-task timeout routing keeps working for derived commands exactly as it
+    does for a direct ``resolve`` call.
+    """
+    augmented = dict(executable_result)
+    classification = _classify_build_executable(executable_result.get('executable', ''))
+    if classification is not None:
+        tool_name, command_args = classification
+        bash_timeout = _lookup_bash_timeout(tool_name, command_args, project_dir)
+        if bash_timeout is not None:
+            augmented.update(_compute_execution_tier_fields(bash_timeout))
+    return augmented
+
+
+def _derive_docs_command(path: str) -> dict[str, str]:
+    """Return the documentation validation command for a docs-validate path.
+
+    Marketplace skill markdown bodies derive the scoped, rule-complete
+    plugin-doctor quality-gate (the CI-equivalent gate). All other docs derive
+    asciidoc validation. The returned dict mirrors the ``resolve`` shape
+    (``command`` + ``executable``) so derived docs commands stream into the
+    same output structure as architecture-resolved commands.
+    """
+    if fnmatch.fnmatch(path, _DOCS_MARKETPLACE_GLOB) or fnmatch.fnmatch(path, _DOCS_MARKETPLACE_GLOB + '/*'):
+        # Scope the doctor gate to the skill directory owning the changed file.
+        skill_dir = _marketplace_skill_dir(path)
+        executable = (
+            'python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace '
+            f'quality-gate --paths {skill_dir} --marketplace-root marketplace'
+        )
+        return {'command': 'docs-validate', 'executable': executable}
+    executable = f'python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc validate --path {path}'
+    return {'command': 'docs-validate', 'executable': executable}
+
+
+def _marketplace_skill_dir(path: str) -> str:
+    """Return the ``marketplace/bundles/<bundle>/skills/<skill>`` dir for a path.
+
+    Falls back to the full path's parent chain when the path is shorter than
+    the skill-directory depth (defensive — the caller only invokes this for
+    paths already matched against the marketplace-skill glob).
+    """
+    parts = Path(path).parts
+    # marketplace / bundles / <bundle> / skills / <skill> / ...
+    if len(parts) >= 5 and parts[0] == 'marketplace' and parts[1] == 'bundles' and parts[3] == 'skills':
+        return str(Path(*parts[:5]))
+    return str(Path(path).parent)
+
+
+def cmd_derive_verification(args) -> dict:
+    """CLI handler for ``derive-verification`` — the single deterministic deriver.
+
+    Reads the merged ``build_map`` from marshal.json, classifies each changed
+    artifact's role+build_class (longest-glob-wins), groups by build_class, and
+    emits the architecture-resolved verification command set per the
+    build_class → command table. The deriver is pure and deterministic: the
+    same (changed artifacts, build_map, architecture) always yields the same
+    command list. A docs-only changed set derives ZERO Python builds — this is
+    what structurally ends the docs-only build recurrence.
+
+    See ``manage-architecture/standards/resolve-command.md`` §
+    "Build-class → verification command" for the canonical mapping.
+    """
+    raw = args.changed_artifacts or ''
+    paths = [p.strip() for p in raw.split(',') if p.strip()]
+    project_dir = args.project_dir
+
+    merged = load_merged_build_map(project_dir)
+
+    classified: list[dict[str, str]] = []
+    unclaimed: list[str] = []
+    for path in paths:
+        build_class = classify_changed_path(path, merged)
+        if build_class is None:
+            unclaimed.append(path)
+            continue
+        classified.append({'path': path, 'build_class': build_class})
+
+    # De-duplicate derived commands by their executable string so a changed set
+    # touching N production files in one module derives ONE compile, not N.
+    commands: list[dict[str, str]] = []
+    seen_executables: set[str] = set()
+
+    for item in classified:
+        path = item['path']
+        build_class = item['build_class']
+
+        if build_class == 'none':
+            continue
+
+        if build_class == 'docs-validate':
+            docs_cmd = _derive_docs_command(path)
+            if docs_cmd['executable'] not in seen_executables:
+                seen_executables.add(docs_cmd['executable'])
+                commands.append({'build_class': build_class, 'path': path, **docs_cmd})
+            continue
+
+        resolve_verbs = _BUILD_CLASS_RESOLVE_COMMANDS.get(build_class)
+        if not resolve_verbs:
+            # Unknown build_class (should never happen — closed enum). Skip
+            # rather than crash; the unclaimed/unknown surface below records it.
+            unclaimed.append(path)
+            continue
+
+        module_name = resolve_module_for_path(path, project_dir)
+        for verb in resolve_verbs:
+            try:
+                resolved = resolve_command(verb, module_name, project_dir)
+            except (ValueError, ModuleNotFoundInProjectError, DataNotFoundError):
+                continue
+            augmented = _augment_resolved(resolved, project_dir)
+            if augmented.get('executable') and augmented['executable'] not in seen_executables:
+                seen_executables.add(augmented['executable'])
+                commands.append({'build_class': build_class, 'path': path, **augmented})
+
+    return {
+        'status': 'success',
+        'changed_count': len(paths),
+        'classified_count': len(classified),
+        'command_count': len(commands),
+        'unclaimed': sorted(set(unclaimed)),
+        'commands': commands,
+    }
 
 
 def cmd_profiles(args) -> dict:

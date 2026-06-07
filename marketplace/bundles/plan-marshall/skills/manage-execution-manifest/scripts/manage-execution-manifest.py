@@ -603,8 +603,7 @@ def _classify_paths_via_extensions(
 
     The aggregator returns ``documentation_only`` for an empty path list as
     the conservative default (no affected files means no holistic Python
-    verification is needed). This preserves the prior behaviour of the
-    legacy ``_classify_affected_files()`` helper.
+    verification is needed).
 
     See ``manage-execution-manifest/standards/decision-rules.md`` §
     "Overlap resolution policy" and § "Unclaimed paths" for the full
@@ -785,27 +784,6 @@ def _log_decision(plan_id: str, rule: str, body: dict[str, Any]) -> None:
 def _log_commit_push_omitted(plan_id: str) -> None:
     """Emit the decision-log entry for the ``commit_strategy_none`` pre-filter."""
     message = '(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_strategy=none'
-    _emit_decision_log(plan_id, message)
-
-
-def _log_docs_only_classifier_fired(plan_id: str, paths_count: int) -> None:
-    """Emit the decision-log entry for the docs-only classifier post-matrix rule.
-
-    Logged whenever the plan-wide ``_classify_paths_via_extensions()``
-    returns ``"documentation_only"`` AND the seven-row matrix output's
-    ``phase_5.verification_steps`` carried holistic ``quality-gate`` or
-    ``module-tests`` entries that the rule suppressed. The entry names the
-    affected-files count so the audit trail is reconstructable. See
-    sibling lessons ``2026-05-28-10-001`` (per-deliverable classifier at
-    phase-3-outline) and ``2026-05-27-19-002`` (composer-layer docs-only
-    branch — implemented here).
-    """
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) docs-only classifier fired — '
-        f'plan-wide affected_files ({paths_count} paths) resolved to documentation_only bucket; '
-        'holistic quality-gate + module-tests steps suppressed from phase_5.verification_steps. '
-        'See lesson 2026-05-28-10-001.'
-    )
     _emit_decision_log(plan_id, message)
 
 
@@ -1865,50 +1843,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         task_queue_active=task_queue_active,
     )
 
-    # Docs-only classifier (post-matrix rule). Sibling lessons
-    # ``2026-05-28-10-001`` (per-deliverable classifier at phase-3-outline) and
-    # ``2026-05-27-19-002`` (composer-layer docs-only branch — implemented
-    # here) converge on the same four-bucket file-type classifier. When the
-    # plan-wide union of every deliverable's ``affected_files`` resolves to
-    # the ``doc-only`` bucket, suppress holistic Python verification steps
-    # (``quality-gate``, ``module-tests``) from ``phase_5.verification_steps``.
-    # The rule is layered AFTER the seven-row matrix so the matrix's existing
-    # docs-only Row 3 (which keys on the role heuristic) is preserved, and
-    # this rule catches the cases Row 3 misses (e.g., a feature plan whose
-    # affected files happen to be all docs). The rule is a no-op when the
-    # matrix already emptied ``verification_steps`` (Row 3, Row 1) or when
-    # the plan-wide affected_files bucket is not ``doc-only``.
-    #
-    # Evidence-required gate: the rule only fires when we have CONCRETE
-    # evidence of affected files (a non-empty bundle change paths list).
-    # An empty list — which occurs when ``references.json`` is absent AND
-    # ``solution_outline.md`` is absent — is the "unknown" case, not the
-    # "all docs" case. The conservative default for "unknown" is to leave
-    # the matrix output untouched so existing test fixtures and ad-hoc
-    # compose calls without a plan workspace continue to behave normally.
-    docs_only_classifier_fired = False
-    bundle_change_paths = _read_bundle_change_paths(plan_id)
-    if bundle_change_paths:
-        plan_wide_bucket, _unclaimed_paths = _classify_paths_via_extensions(
-            bundle_change_paths, plan_id=plan_id
-        )
-    else:
-        plan_wide_bucket = 'unknown'
-    if plan_wide_bucket == 'documentation_only':
-        # Reuse the per-compose role cache shape from _decide (built fresh
-        # here because _decide's cache is scoped to that call). Filter out
-        # any verification step whose role is quality-gate, module-tests,
-        # or coverage — these are the holistic Python verification steps
-        # that have no meaningful target on a doc-only plan.
-        post_role_cache: dict[str, str | None] = {}
-        suppressed_roles = {'quality-gate', 'module-tests', 'coverage'}
-        current_steps = body['phase_5']['verification_steps']
-        filtered_steps = [s for s in current_steps if _role_of(s, post_role_cache) not in suppressed_roles]
-        if filtered_steps != current_steps:
-            body['phase_5']['verification_steps'] = filtered_steps
-            docs_only_classifier_fired = True
-
-    # execution_tier routing runs AFTER the docs-only classifier and BEFORE
+    # execution_tier routing runs AFTER the seven-row matrix and BEFORE
     # the bot-enforcement guard. It walks plan tasks, classifies each
     # ``verification.commands`` entry via ``architecture resolve``, and
     # branches on ``execution_tier``:
@@ -1985,8 +1920,6 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_simplify_omitted(plan_id, args.change_type, affected_files_count)
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
-    if docs_only_classifier_fired:
-        _log_docs_only_classifier_fired(plan_id, len(bundle_change_paths))
     _log_decision(plan_id, rule, body)
 
     return {
@@ -2010,8 +1943,6 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'simplify_omitted': simplify_omitted,
         'scope_gated_finalize_dropped': scope_gated_dropped,
         'lightweight_track_override': lightweight_track_override,
-        'docs_only_classifier_fired': docs_only_classifier_fired,
-        'plan_wide_bucket': plan_wide_bucket,
     }
 
 
@@ -2032,51 +1963,6 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any] | None:
         'status': 'success',
         'plan_id': plan_id,
         **manifest,
-    }
-
-
-def cmd_classify_affected_files(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Expose the docs-only verdict as a read-only CLI verb.
-
-    Wraps the existing internal classification pipeline —
-    ``_read_bundle_change_paths(plan_id)`` feeding
-    ``_classify_paths_via_extensions(paths, plan_id=plan_id)`` — and returns
-    the plan-wide bucket so callers (notably ``phase-4-plan`` Step 7) can read
-    the verdict without re-implementing the classification. The verb is the
-    single source of truth: its bucket equals exactly what ``compose()``
-    consumes via the same two helpers.
-
-    The verb is strictly read-only. It does NOT write ``execution.toon`` nor
-    mutate any plan artifact. The underlying classifier may emit a best-effort
-    ``[STATUS]`` decision-log warning when paths are unclaimed, which is
-    observability only — no plan state changes.
-    """
-    plan_id = require_valid_plan_id(args)
-
-    paths = _read_bundle_change_paths(plan_id)
-    # Evidence-required gate: mirror the same guard applied in cmd_compose.
-    # An empty path list — which occurs when both ``references.json`` and
-    # ``solution_outline.md`` are absent — is the "unknown" case, not the
-    # "all docs" case.  Calling ``_classify_paths_via_extensions`` on an empty
-    # list returns ``documentation_only``, which would incorrectly set
-    # ``is_documentation_only=True`` and cause phase-4-plan Step 7 to skip
-    # holistic verification tasks while cmd_compose leaves them intact —
-    # manifest-vs-task-queue drift.  The conservative default for "unknown" is
-    # to leave the bucket as ``unknown`` so callers treat missing evidence the
-    # same way cmd_compose does.
-    if paths:
-        bucket, unclaimed_paths = _classify_paths_via_extensions(paths, plan_id=plan_id)
-    else:
-        bucket = 'unknown'
-        unclaimed_paths = []
-
-    return {
-        'status': 'success',
-        'plan_id': plan_id,
-        'bucket': bucket,
-        'paths_count': len(paths),
-        'unclaimed_paths': unclaimed_paths,
-        'is_documentation_only': bucket == 'documentation_only',
     }
 
 
@@ -2535,13 +2421,6 @@ def _build_parser() -> argparse.ArgumentParser:
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)
     add_plan_id_arg(read_parser)
 
-    classify_parser = subparsers.add_parser(
-        'classify-affected-files',
-        help='Classify the plan-wide affected-files union into a docs-only verdict (read-only)',
-        allow_abbrev=False,
-    )
-    add_plan_id_arg(classify_parser)
-
     validate_parser = subparsers.add_parser('validate', help='Validate execution.toon', allow_abbrev=False)
     add_plan_id_arg(validate_parser)
     validate_parser.add_argument('--phase-5-steps', default=None, help='Comma-separated allowed Phase 5 step IDs')
@@ -2585,7 +2464,6 @@ def main() -> int:
     handlers = {
         'compose': cmd_compose,
         'read': cmd_read,
-        'classify-affected-files': cmd_classify_affected_files,
         'validate': cmd_validate,
         'validate-loadable': cmd_validate_loadable,
     }

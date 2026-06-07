@@ -101,6 +101,32 @@ class Extension(ExtensionBase):
             return match[1]
         return 0
 
+    def classify_globs(self) -> list[tuple[str, str]]:
+        """Return an explicit (glob, role) inventory synthesized from the rules.
+
+        Hand-rolled extension (no _CLASSIFY_PATTERNS tuple): _match_classify uses
+        filename checks, so there is no tuple to derive from. The globs below
+        mirror that body exactly — exact-name production files (.dockerignore),
+        the Dockerfile/Containerfile prefix family as production, and the compose
+        config filenames. See the base classify_globs() contract.
+        """
+        globs: list[tuple[str, str]] = []
+        # Production — exact .dockerignore and the Dockerfile/Containerfile prefix family.
+        for name in self._PRODUCTION_FILENAMES:
+            globs.append((name, 'production'))
+        for prefix in self._PRODUCTION_FILENAME_PREFIXES:
+            globs.append((f'{prefix}*', 'production'))
+        # Config — compose / docker-compose filenames.
+        for name in self._CONFIG_FILENAMES:
+            globs.append((name, 'config'))
+        return globs
+
+    # build_class: this extension claims the ``production`` / ``config`` roles
+    # (Dockerfile/Containerfile production; compose config), for which the
+    # ExtensionBase defaults (``production → prod-compile``,
+    # ``config → build-config-full``) are correct. No classify_build_class
+    # override is required — the inherited base default is the contract.
+
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
         return [
