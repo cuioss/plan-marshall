@@ -3076,7 +3076,14 @@ def dormate_all_plans(repo_root: Path, confirmed: bool) -> dict[str, Any]:
             "moved": [],
             "moved_to": "",
         }
-    plan_ids = sorted(p.name for p in src_parent.iterdir() if p.is_dir())
+    try:
+        plan_ids = sorted(p.name for p in src_parent.iterdir() if p.is_dir())
+    except OSError as e:
+        return {
+            "status": "error",
+            "reason": f"failed to read archive directory: {e}",
+            "moved": [],
+        }
     return dormate_plans(repo_root, plan_ids, confirmed)
 
 
