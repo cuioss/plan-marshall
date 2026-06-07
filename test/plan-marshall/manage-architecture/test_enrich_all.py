@@ -354,10 +354,7 @@ def _snapshot_real_global_log_lines() -> list[str]:
         return []
     lines: list[str] = []
     for log_file in sorted(_REAL_GLOBAL_LOG_DIR.glob('script-execution-*.log')):
-        try:
-            lines.extend(log_file.read_text(encoding='utf-8').splitlines())
-        except OSError:
-            continue
+        lines.extend(log_file.read_text(encoding='utf-8').splitlines())
     return lines
 
 
@@ -466,10 +463,7 @@ def _snapshot_real_global_log_sizes() -> dict[str, int]:
     for path in sorted(_REAL_GLOBAL_LOG_DIR.rglob('*')):
         if not path.is_file():
             continue
-        try:
-            sizes[str(path.relative_to(_REAL_GLOBAL_LOG_DIR))] = path.stat().st_size
-        except OSError:
-            continue
+        sizes[str(path.relative_to(_REAL_GLOBAL_LOG_DIR))] = path.stat().st_size
     return sizes
 
 
