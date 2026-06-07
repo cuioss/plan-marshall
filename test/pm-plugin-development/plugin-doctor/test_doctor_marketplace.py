@@ -1325,6 +1325,214 @@ def test_scoped_manage_invocation_derives_per_referenced_notation(tmp_path, monk
 
 
 # =============================================================================
+# Quality-gate manage-invocation build-failing regression (deliverable D2)
+# =============================================================================
+#
+# cmd_quality_gate already aggregates scan_manage_invocation findings into
+# all_issues and returns status: fail (→ main() exit 1) when any finding is
+# present, but the gate test layer only pins this for scan_argparse_safety.
+# These cases pin that a manage-invocation doc-drift finding *specifically*
+# flows through to a build-failing gate verdict — so a refactor that dropped
+# scan_manage_invocation from the gate's rule list (or stopped counting its
+# findings toward status: fail) would fail loudly instead of passing CI
+# silently (the no-op-gate class of lessons 2026-06-04-00-001 /
+# 2026-06-04-00-002).
+#
+# The fixture mirrors the synthetic-executor model used by
+# test_analyze_manage_invocation.py: a real .plan/execute-script.py shim maps a
+# {notation} to an on-disk argparse script and forwards --help, so the gate's
+# subprocess run derives the script's true surface and a documented invocation
+# citing an unregistered sub-verb produces a manage-invocation-invalid finding.
+
+# In-process executor shim — maps {notation} → script path via notation_map.json
+# and dispatches the resolved script's argparse (forwarding --help). Mirrors the
+# real .plan/execute-script.py executor that _resolve_executor discovers.
+_MANAGE_INVOCATION_EXECUTOR_SHIM = """#!/usr/bin/env python3
+import contextlib
+import io
+import json
+import runpy
+import sys
+from pathlib import Path
+
+_MAP = json.loads((Path(__file__).parent / 'notation_map.json').read_text())
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(2)
+    notation = sys.argv[1]
+    target = _MAP.get(notation)
+    if target is None:
+        sys.stderr.write(f'Unknown notation: {notation}\\n')
+        sys.exit(2)
+
+    out_buf = io.StringIO()
+    err_buf = io.StringIO()
+    rc = 0
+    saved_argv = sys.argv
+    sys.argv = [target, *sys.argv[2:]]
+    try:
+        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+            runpy.run_path(target, run_name='__main__')
+    except SystemExit as exc:
+        code = exc.code
+        if code is None:
+            rc = 0
+        elif isinstance(code, int):
+            rc = code
+        else:
+            err_buf.write(f'{code}\\n')
+            rc = 1
+    finally:
+        sys.argv = saved_argv
+
+    sys.stdout.write(out_buf.getvalue())
+    sys.stderr.write(err_buf.getvalue())
+    sys.stdout.flush()
+    sys.stderr.flush()
+    sys.exit(rc)
+
+
+if __name__ == '__main__':
+    main()
+"""
+
+# A minimal argparse surface: a single ``qgate`` subcommand declaring its own
+# ``add`` / ``list`` sub-verbs. ``qgate banana`` is therefore an unregistered
+# sub-verb the manage-invocation rule flags as ``sub_verb_unknown``.
+_MANAGE_INVOCATION_SCRIPT_SOURCE = (
+    'import argparse\n'
+    '\n'
+    'def main():\n'
+    '    parser = argparse.ArgumentParser()\n'
+    "    subparsers = parser.add_subparsers(dest='cmd')\n"
+    "    qgate = subparsers.add_parser('qgate')\n"
+    "    qgate_subs = qgate.add_subparsers(dest='sub')\n"
+    "    add_p = qgate_subs.add_parser('add')\n"
+    "    add_p.add_argument('--plan-id', required=True)\n"
+    "    list_p = qgate_subs.add_parser('list')\n"
+    "    list_p.add_argument('--plan-id', required=True)\n"
+    '    parser.parse_args()\n'
+    '\n'
+    "if __name__ == '__main__':\n"
+    '    main()\n'
+)
+
+# The in-scope notation the fixture publishes (bundle:skill:script triple keyed
+# off the script file stem). ``manage-syn`` is not in _EXCLUDED_SKILLS.
+_MI_NOTATION = 'plan-marshall:manage-syn:manage-syn'
+
+
+def _build_manage_invocation_drift_fixture(temp_root: Path) -> Path:
+    """Build a fixture marketplace with a documented manage-invocation doc-drift.
+
+    The skill owns an argparse script (so it is in-scope) and a SKILL.md whose
+    body cites an unregistered sub-verb (``qgate banana``) for that script's
+    notation — a ``manage-invocation-invalid`` (``sub_verb_unknown``) finding.
+    A ``## Canonical invocations`` section is included so the only finding the
+    gate surfaces is the doc-drift one (no stray ``missing-canonical-block``).
+    A wired ``.plan/execute-script.py`` shim lets the gate's subprocess run
+    derive the script's live ``--help`` surface.
+    """
+    bundles_dir = temp_root / 'marketplace' / 'bundles'
+    skill_dir = bundles_dir / 'plan-marshall' / 'skills' / 'manage-syn'
+    scripts_dir = skill_dir / 'scripts'
+    scripts_dir.mkdir(parents=True)
+
+    plugin_dir = bundles_dir / 'plan-marshall' / '.claude-plugin'
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / 'plugin.json').write_text(json.dumps({'name': 'plan-marshall', 'version': '1.0.0'}))
+
+    (scripts_dir / 'manage-syn.py').write_text(_MANAGE_INVOCATION_SCRIPT_SOURCE)
+
+    # SKILL.md: a valid canonical block (so no missing-canonical-block finding)
+    # plus a body line citing the unregistered ``qgate banana`` sub-verb.
+    (skill_dir / 'SKILL.md').write_text(
+        '---\n'
+        'name: manage-syn\n'
+        'description: A synthetic in-scope script-bearing skill\n'
+        'user-invocable: false\n'
+        '---\n'
+        '\n'
+        '# Manage Syn\n'
+        '\n'
+        'Run the bogus sub-verb:\n'
+        '\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {_MI_NOTATION} qgate banana --plan-id p1\n'
+        '```\n'
+        '\n'
+        '## Canonical invocations\n'
+        '\n'
+        '### qgate\n'
+        '\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {_MI_NOTATION} qgate add --plan-id p1\n'
+        '```\n'
+    )
+
+    # Wire the synthetic executor + notation map so build_script_index can
+    # derive the surface via --help. _resolve_executor(marketplace_root.parent)
+    # probes {marketplace}/.plan/execute-script.py first.
+    plan_dir = temp_root / 'marketplace' / '.plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'execute-script.py').write_text(_MANAGE_INVOCATION_EXECUTOR_SHIM)
+    (plan_dir / 'notation_map.json').write_text(json.dumps({_MI_NOTATION: str(scripts_dir / 'manage-syn.py')}))
+
+    return temp_root
+
+
+def test_quality_gate_manage_invocation_drift_fails(tmp_path):
+    """quality-gate exits build-failing on a manage-invocation doc-drift finding.
+
+    Mirrors test_quality_gate_argparse_violation_fails for the
+    scan_manage_invocation rule: a documented invocation citing an unregistered
+    sub-verb makes cmd_quality_gate return status: fail (exit 1), the
+    scan_manage_invocation rule_summary reports a non-zero findings count, and
+    the corresponding manage-invocation-invalid finding appears in issues.
+    """
+    temp_root = _build_manage_invocation_drift_fixture(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        'quality-gate',
+        env_overrides={
+            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
+            'PLAN_BASE_DIR': str(temp_root / '.plan'),
+            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
+        },
+    )
+    assert result.returncode == 1, (
+        f'Expected exit 1 on manage-invocation doc-drift fixture, got {result.returncode}: {result.stderr}'
+    )
+
+    data = parse_output(result)
+    assert data['status'] == 'fail', f'Expected status: fail on doc-drift fixture, got: {data}'
+    assert data['total_issues'] >= 1, 'Should report at least one finding'
+
+    # The scan_manage_invocation rule_summary must report the non-zero count —
+    # proves the rule ran and contributed to the build-failing verdict.
+    summaries = {entry['rule']: entry['findings'] for entry in data['rules_run']}
+    assert 'scan_manage_invocation' in summaries, (
+        f'scan_manage_invocation must appear in rules_run, got: {data["rules_run"]}'
+    )
+    assert summaries['scan_manage_invocation'] >= 1, (
+        f'scan_manage_invocation should report a non-zero findings count, got: {summaries["scan_manage_invocation"]}'
+    )
+
+    # The manage-invocation-invalid (sub_verb_unknown) finding must be present
+    # in issues — the gate carried it through to the verdict, not merely counted.
+    mi_findings = [i for i in data['issues'] if i.get('type') == 'manage-invocation-invalid']
+    assert len(mi_findings) >= 1, (
+        f'manage-invocation-invalid finding must appear in issues, got types: {[i.get("type") for i in data["issues"]]}'
+    )
+    reasons = {i.get('details', {}).get('reason') for i in mi_findings}
+    assert 'sub_verb_unknown' in reasons, (
+        f'The bogus ``qgate banana`` sub-verb should surface as sub_verb_unknown, got reasons: {reasons}'
+    )
+
+
+# =============================================================================
 # --rules opt-in flag tests (replaces PM_ARGUMENT_NAMING_ENABLED env-var gate)
 # =============================================================================
 #

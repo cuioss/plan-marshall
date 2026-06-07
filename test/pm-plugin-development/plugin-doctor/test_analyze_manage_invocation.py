@@ -864,6 +864,11 @@ class TestUnknownSubVerb:
         assert f['details']['subcommand'] == 'qgate'
         assert f['details']['sub_verb'] == 'banana'
         assert set(f['details']['known_sub_verbs']) == {'add', 'query'}
+        # Lock down the documented severity and the canonical_hint payload on
+        # the sub-verb path, matching the sibling unknown-subcommand test.
+        assert f['severity'] == 'error'
+        assert 'canonical_hint' in f['details']
+        assert f['details']['canonical_hint']
 
     def test_missing_sub_verb_is_flagged(self, nested_index: dict) -> None:
         """``qgate`` without a sub-verb still produces a sub_verb_unknown finding."""
