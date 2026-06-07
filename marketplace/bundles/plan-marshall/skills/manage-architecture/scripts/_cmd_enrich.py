@@ -201,7 +201,7 @@ def _resolve_active_profiles(domain_key: str, project_dir: str, explicit: set[st
     except Exception as e:
         from plan_logging import log_entry  # type: ignore[import-not-found]
 
-        log_entry('script', 'global', 'WARNING', f'[ENRICH] Failed to parse marshal.json: {e}')
+        log_entry('script', None, 'WARNING', f'[ENRICH] Failed to parse marshal.json: {e}')
         return None
 
     sd = config.get('skill_domains', {})
@@ -252,7 +252,7 @@ def enrich_add_domain(
         except Exception as e:
             from plan_logging import log_entry  # type: ignore[import-not-found]
 
-            log_entry('script', 'global', 'WARNING', f'[ENRICH] get_skill_domains() failed for extension: {e}')
+            log_entry('script', None, 'WARNING', f'[ENRICH] get_skill_domains() failed for extension: {e}')
             continue
 
     if target_ext is None:
