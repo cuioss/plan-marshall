@@ -596,7 +596,7 @@ def cmd_discover(args: argparse.Namespace) -> dict:
 
     Pure pathlib implementation — never spawns subprocess or invokes shell. Consumer
     skills should call this rather than instructing the LLM to use the Glob tool, so
-    discovery becomes deterministic and auditable. See lesson 2026-04-27-18-005.
+    discovery becomes deterministic and auditable.
     """
     root_path = Path(args.root)
 

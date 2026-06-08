@@ -126,7 +126,7 @@ def _scan_unresolved_lesson_ids(title: str, description: str) -> list[str]:
     Re-raises ``LessonInventoryUnavailable`` and ``LessonRegexAnchoringError``
     from the underlying scanner. The caller MUST surface those as hard
     errors — silently degrading to "all present" would defeat the entire
-    purpose of the reference check (per lesson 2026-05-03-21-002).
+    purpose of the reference check.
     """
     haystack = f'{title or ""} {description or ""}'
     tokens = scan_lesson_id_tokens(haystack)
@@ -191,8 +191,8 @@ def cmd_commit_add(args) -> dict:
         return output_error(str(e))
 
     # Lesson-ID reference validation (atomic — runs BEFORE any file write).
-    # See lesson 2026-05-03-21-002: tasks that cite lesson IDs MUST resolve
-    # against the live manage-lessons inventory at write time. A miss aborts
+    # Tasks that cite lesson IDs MUST resolve against the live manage-lessons
+    # inventory at write time. A miss aborts
     # the entire write — no TASK-NNN.json is created and the scratch file
     # is preserved so the caller can correct the description and retry.
     try:
@@ -497,9 +497,9 @@ def cmd_batch_add(args) -> dict:
             return output_error(str(e))
 
     # Lesson-ID reference validation across the whole batch (atomic — runs
-    # BEFORE any file write). See lesson 2026-05-03-21-002: tasks that cite
-    # lesson IDs MUST resolve against the live manage-lessons inventory at
-    # write time. The first task with an unresolved ID aborts the ENTIRE
+    # BEFORE any file write). Tasks that cite lesson IDs MUST resolve against
+    # the live manage-lessons inventory at write time. The first task with an
+    # unresolved ID aborts the ENTIRE
     # batch — no TASK-NNN.json is created and the on-disk state is untouched.
     # The error payload includes ``task_index`` so the caller can correct the
     # offending entry without re-running the rest of the validation manually.

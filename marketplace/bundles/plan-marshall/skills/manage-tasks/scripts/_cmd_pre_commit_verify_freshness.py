@@ -22,9 +22,9 @@ Three possible outcomes:
                      because no positive freshness proof exists.
 
 The full failure-mode contract — including the ``--force`` orchestrator
-escape, the cross-references to phase-5-execute Step 12a and phase-6-finalize
-``commit-push``, and the seed lesson ``2026-05-24-22-001`` — is documented
-in ``marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md`` §
+escape and the cross-references to phase-5-execute Step 12a and
+phase-6-finalize ``commit-push`` — is documented in
+``marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md`` §
 "Pre-Commit Verify Freshness".
 """
 

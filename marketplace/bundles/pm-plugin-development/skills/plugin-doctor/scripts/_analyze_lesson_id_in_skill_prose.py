@@ -2,17 +2,25 @@
 """Lesson-ID scanner for the ``no-lesson-id-in-skill-prose`` rule.
 
 This module implements a deterministic regex-based static analyzer that
-detects narrative lesson-ID citations inside markdown files under
-``marketplace/bundles/*/{skills,agents,commands}/**/*.md``. Such citations
-add no durable value to the rule/decision content and should be stripped
-in favour of bare prose that names the rule itself.
+detects narrative lesson-ID citations across three file classes:
+
+1. Markdown (``*.md``) under
+   ``marketplace/bundles/*/{skills,agents,commands}/**``.
+2. Python (``*.py``) under
+   ``marketplace/bundles/*/{skills,agents,commands}/**`` — citations in
+   comments, docstrings, and string literals.
+3. Both markdown and Python under the project-local ``.claude/skills/**``
+   tree (resolved relative to the marketplace bundles root).
+
+Such citations add no durable value to the rule/decision content and should
+be stripped in favour of bare prose that names the codified rule itself.
 
 Pattern alignment
 -----------------
 The analyzer mirrors ``_analyze_shell_substitution_in_skills.py``:
 
 - pure static analysis (no subprocess execution, no imports of target scripts)
-- regex-driven extraction from markdown source
+- regex-driven extraction from source
 - stdlib-only dependencies
 - no mutation of any file
 
@@ -20,8 +28,8 @@ Detection
 ---------
 Two lesson-ID format families are recognised:
 
-1. ``YYYY-MM-DD-NNN`` (e.g., ``2026-04-17-012``)
-2. ``YYYY-MM-DD-HH-NNN`` (e.g., ``2026-04-29-23-002``)
+1. ``YYYY-MM-DD-NNN`` (a date plus a 3-digit index)
+2. ``YYYY-MM-DD-HH-NNN`` (a date plus an hour plus a 3-digit index)
 
 Prose-prefixed forms ``lesson XXX`` and ``lesson-XXX`` are also recognised,
 including the backtick-wrapped form ``lesson `YYYY-...``` where "lesson" is
@@ -29,7 +37,10 @@ prose context but the ID itself sits inside an inline-code span. That form is
 a narrative citation — the reader is pointed at an ephemeral lesson file for
 context — and must be stripped exactly like the non-backtick form.
 
-Five structurally-defined documentary contexts are exempt:
+Exempt contexts depend on the file class.
+
+For **markdown** sources, five structurally-defined documentary contexts are
+exempt:
 
 1. **Allowlisted skill path** — files under canonical lesson-handling skills
    (manage-lessons/**, phase-6-finalize/workflow/lessons-*.md,
@@ -47,10 +58,21 @@ Five structurally-defined documentary contexts are exempt:
    NOT exempt: "lesson" is prose context and signals a narrative citation
    regardless of whether the ID token itself is backtick-wrapped.
 
-In addition, an inline suppression marker
+For **Python** sources, the markdown-only structural exemptions (frontmatter,
+fenced code block, Source: line, inline-code span) do NOT apply — the entire
+point of scanning ``.py`` is to catch lesson IDs in comments, docstrings, and
+string literals, so those contexts are deliberately in scope. Only two
+exemptions apply to Python: the path-allowlist and the inline suppression
+marker.
+
+In addition, for both file classes an inline suppression marker
 ``<!-- doctor-ignore: lesson-id-prose -->`` placed on the same line as a
 match, or on the immediately preceding line, suppresses the finding on the
 marked line only.
+
+The path-allowlist (``_is_allowlisted``) is authoritative for both file
+classes inside ``marketplace/bundles/``. The project-local ``.claude/skills/**``
+tree has no allowlisted members — it is scanned in full.
 
 Findings have the shape::
 
@@ -58,7 +80,7 @@ Findings have the shape::
         'rule_id': 'no-lesson-id-in-skill-prose',
         'type': 'lesson_id_in_skill_prose',
         'rule': 'analyze_lesson_id_in_skill_prose',
-        'file': '<absolute markdown path>',
+        'file': '<absolute source path>',
         'line': <int, 1-based>,
         'severity': 'warning',
         'fixable': False,
@@ -68,9 +90,10 @@ Findings have the shape::
 
 Public API
 ----------
-- ``analyze_lesson_id_in_skill_prose(marketplace_root)``: entry point —
-  scans every ``*.md`` under
-  ``marketplace_root/*/{skills,agents,commands}/**``.
+- ``analyze_lesson_id_in_skill_prose(marketplace_root)``: entry point — scans
+  every ``*.md`` and ``*.py`` under
+  ``marketplace_root/*/{skills,agents,commands}/**`` PLUS every ``*.md`` and
+  ``*.py`` under the sibling project-local ``.claude/skills/**`` tree.
 """
 
 from __future__ import annotations
@@ -212,15 +235,21 @@ def _line_has_suppress_marker(line: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
-    """Scan a single markdown file and return all findings.
+def _scan_file(path: Path, rel_to_bundles: str | None, kind: str = 'markdown') -> list[dict]:
+    """Scan a single source file and return all findings.
 
-    ``rel_to_bundles`` is the file path relative to
-    ``marketplace/bundles/`` (e.g.,
-    ``plan-marshall/skills/phase-4-plan/SKILL.md``) — used for allowlist
-    matching.
+    ``rel_to_bundles`` is the file path relative to ``marketplace/bundles/``
+    (e.g., ``plan-marshall/skills/phase-4-plan/SKILL.md``) — used for
+    allowlist matching. For files OUTSIDE the bundles tree (the project-local
+    ``.claude/skills/**`` tree) this is ``None`` and no allowlist applies.
+
+    ``kind`` is ``'markdown'`` or ``'python'`` and selects which structural
+    exemptions apply. For ``'python'`` the markdown-only exemptions
+    (frontmatter, fenced code block, Source: line, inline-code span) are
+    deliberately disabled so that citations in comments, docstrings, and
+    string literals are caught.
     """
-    if _is_allowlisted(rel_to_bundles):
+    if rel_to_bundles is not None and _is_allowlisted(rel_to_bundles):
         return []
 
     try:
@@ -240,22 +269,26 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
             }
         ]
 
+    is_markdown = kind == 'markdown'
     lines = text.splitlines()
-    fence_map = _build_fence_map(lines)
-    frontmatter = _build_frontmatter_set(lines)
+    # Markdown-only structural maps. For Python sources these stay empty so
+    # comments / docstrings / string literals remain fully in scope.
+    fence_map = _build_fence_map(lines) if is_markdown else {}
+    frontmatter = _build_frontmatter_set(lines) if is_markdown else set()
 
     findings: list[dict] = []
 
     for idx, line in enumerate(lines):
-        # Skip lines inside YAML frontmatter or fenced code blocks (any
-        # info-string) outright.
-        if idx in frontmatter:
-            continue
-        if idx in fence_map:
-            continue
-        # Skip Source: provenance lines.
-        if _SOURCE_LINE_RE.match(line):
-            continue
+        if is_markdown:
+            # Skip lines inside YAML frontmatter or fenced code blocks (any
+            # info-string) outright.
+            if idx in frontmatter:
+                continue
+            if idx in fence_map:
+                continue
+            # Skip Source: provenance lines.
+            if _SOURCE_LINE_RE.match(line):
+                continue
         # Quick pre-check: does this line contain any candidate?
         has_bare = bool(_LESSON_ID_RE.search(line))
         has_backtick_prefix = bool(_LESSON_BACKTICK_ID_RE.search(line))
@@ -280,7 +313,10 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
         if suppressed:
             continue
 
-        spans = _inline_code_spans(line)
+        # Inline-code spans are a markdown construct only. In Python a
+        # backtick has no special meaning, so do not treat backtick-wrapped
+        # IDs as exempt code-token references.
+        spans = _inline_code_spans(line) if is_markdown else []
 
         # Pass 1: bare prose form (non-backtick IDs, or bare IDs not inside
         # inline-code spans).
@@ -288,6 +324,7 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
             offset = m.start()
             # Skip matches inside inline-code spans ONLY when there is no
             # "lesson" prose prefix on the match (bare code-token reference).
+            # For Python sources ``spans`` is empty so this never skips.
             if _offset_in_inline_code(offset, spans):
                 # The lesson prefix (if any) starts the match; if the prefix
                 # is absent the entire match is a bare date token inside
@@ -315,7 +352,12 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
 
         # Pass 2: backtick-prefixed form — ``lesson `YYYY-...` ``.
         # "lesson" is outside the backtick; the ID is inside.
-        # This is a narrative citation regardless of the backtick.
+        # This is a narrative citation regardless of the backtick. Markdown
+        # only — in Python the bare ID inside the backticks was already
+        # flagged by Pass 1 (``spans`` is empty there), so running Pass 2 on
+        # Python sources would double-count.
+        if not is_markdown:
+            continue
         for m in _LESSON_BACKTICK_ID_RE.finditer(line):
             findings.append(
                 {
@@ -343,14 +385,23 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _skill_markdown_targets(marketplace_root: Path) -> list[tuple[Path, str]]:
-    """Return ``(absolute_path, rel_to_bundles)`` for every in-scope ``*.md``.
+# File-class glob → scan-kind mapping. Both classes are scanned under every
+# in-scope tree.
+_KIND_BY_GLOB = (('*.md', 'markdown'), ('*.py', 'python'))
 
-    Scope: ``marketplace_root/*/{skills,agents,commands}/**/*.md``.
+
+def _skill_source_targets(marketplace_root: Path) -> list[tuple[Path, str | None, str]]:
+    """Return ``(absolute_path, rel_to_bundles, kind)`` for every in-scope file.
+
+    Scope: ``marketplace_root/*/{skills,agents,commands}/**`` — both ``*.md``
+    (kind ``'markdown'``) and ``*.py`` (kind ``'python'``). The
+    ``rel_to_bundles`` slot is always a string here (these files live inside
+    the bundles tree); the type is widened to ``str | None`` only to unify
+    with the project-local enumerator at the shared call site.
     """
     if not marketplace_root.is_dir():
         return []
-    results: list[tuple[Path, str]] = []
+    results: list[tuple[Path, str | None, str]] = []
     for bundle_dir in sorted(marketplace_root.iterdir()):
         if not bundle_dir.is_dir():
             continue
@@ -358,21 +409,57 @@ def _skill_markdown_targets(marketplace_root: Path) -> list[tuple[Path, str]]:
             sub_dir = bundle_dir / sub
             if not sub_dir.is_dir():
                 continue
-            for md in sorted(sub_dir.rglob('*.md')):
-                if md.is_file():
-                    rel = str(md.relative_to(marketplace_root))
-                    results.append((md, rel))
+            for glob, kind in _KIND_BY_GLOB:
+                for src in sorted(sub_dir.rglob(glob)):
+                    if src.is_file():
+                        rel = str(src.relative_to(marketplace_root))
+                        results.append((src, rel, kind))
+    return results
+
+
+def _claude_skills_root(marketplace_root: Path) -> Path:
+    """Resolve the project-local ``.claude/skills`` tree from ``marketplace_root``.
+
+    ``marketplace_root`` is ``<repo>/marketplace/bundles``; the project-local
+    skills tree is ``<repo>/.claude/skills`` — two levels up, then
+    ``.claude/skills``.
+    """
+    return marketplace_root.parent.parent / '.claude' / 'skills'
+
+
+def _claude_skill_source_targets(marketplace_root: Path) -> list[tuple[Path, str | None, str]]:
+    """Return ``(absolute_path, None, kind)`` for every ``.claude/skills/**`` file.
+
+    Scope: ``<repo>/.claude/skills/**`` — both ``*.md`` (kind ``'markdown'``)
+    and ``*.py`` (kind ``'python'``). The ``rel_to_bundles`` slot is ``None``
+    because these files live outside ``marketplace/bundles/`` and have no
+    allowlisted members — the project-local tree is scanned in full.
+    """
+    skills_root = _claude_skills_root(marketplace_root)
+    if not skills_root.is_dir():
+        return []
+    results: list[tuple[Path, str | None, str]] = []
+    for glob, kind in _KIND_BY_GLOB:
+        for src in sorted(skills_root.rglob(glob)):
+            if src.is_file():
+                results.append((src, None, kind))
     return results
 
 
 def analyze_lesson_id_in_skill_prose(marketplace_root: Path) -> list[dict]:
-    """Scan skill markdown for narrative lesson-ID citations.
+    """Scan skill sources for narrative lesson-ID citations.
 
-    Walks ``marketplace_root/*/{skills,agents,commands}/**/*.md`` and reports
-    every lesson-ID occurrence outside the documented exempt contexts
-    (allowlisted skill path, YAML frontmatter, fenced code block,
-    ``Source:`` provenance line, inline-code span, or
-    ``<!-- doctor-ignore: lesson-id-prose -->`` suppression marker).
+    Walks three trees and reports every lesson-ID occurrence outside the
+    documented exempt contexts:
+
+    - ``marketplace_root/*/{skills,agents,commands}/**/*.md`` (markdown
+      exemptions: allowlisted skill path, YAML frontmatter, fenced code block,
+      ``Source:`` provenance line, inline-code span, suppression marker).
+    - ``marketplace_root/*/{skills,agents,commands}/**/*.py`` (Python
+      exemptions: allowlisted skill path, suppression marker — markdown-only
+      structural exemptions do not apply).
+    - ``<repo>/.claude/skills/**`` for both ``*.md`` and ``*.py`` (no
+      allowlisted members; the project-local tree is scanned in full).
 
     Parameters
     ----------
@@ -387,6 +474,8 @@ def analyze_lesson_id_in_skill_prose(marketplace_root: Path) -> list[dict]:
         List of finding dicts (empty for a clean tree).
     """
     findings: list[dict] = []
-    for md_path, rel in _skill_markdown_targets(marketplace_root):
-        findings.extend(_scan_file(md_path, rel))
+    for path, rel, kind in _skill_source_targets(marketplace_root):
+        findings.extend(_scan_file(path, rel, kind))
+    for path, rel, kind in _claude_skill_source_targets(marketplace_root):
+        findings.extend(_scan_file(path, rel, kind))
     return findings

@@ -65,8 +65,8 @@ file is created. The error response carries
 <list> / task_index: <N>`` so the caller can correct the plan before
 re-attempting. The lesson inventory is the single source of truth — neither
 write path auto-rewrites descriptions nor downgrades the failure to a
-warning. See lesson 2026-05-03-21-002 for the rationale (plan-author was
-emitting tasks that named lesson IDs that did not exist in the inventory).
+warning. The rationale: plan-authoring once emitted tasks that named lesson
+IDs which did not exist in the inventory.
 """
 
 import argparse
@@ -255,7 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Optional overrides for the script-level [OUTCOME] emission. The defaults
     # cover the common phase-5-execute path; non-default values let other
     # orchestrators (or tests) shape the emitted line. See _cmd_step.py
-    # (cmd_finalize_step) and lesson 2026-05-08-14-001 for the contract.
+    # (cmd_finalize_step) for the contract.
     p_finalize.add_argument(
         '--outcome-task-title',
         dest='outcome_task_title',

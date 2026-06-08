@@ -92,9 +92,8 @@ SCRIPT_DIR = Path(__file__).parent
 # Absence of any opt-in keeps the rule silent (no findings, no warnings) —
 # matching the prior env-var-off default and avoiding noise on every run.
 #
-# This replaces the prior env-var gate (removed per lesson
-# ``2026-05-08-19-003``) which violated the ``dev-agent-behavior-rules`` hard
-# rule against ``VAR=val cmd`` invocations.
+# This replaces the prior env-var gate, which violated the
+# ``dev-agent-behavior-rules`` hard rule against ``VAR=val cmd`` invocations.
 
 _OPTIN_RULE_NAMES = frozenset({'argument_naming', 'verb_chain', 'script_call_drift'})
 
@@ -406,7 +405,11 @@ def cmd_analyze(args) -> dict:
     # Marketplace-wide no-lesson-id-in-skill-prose rule. Unconditionally
     # active — strips narrative lesson-ID citations from skill prose while
     # exempting structural-provenance contexts and the lesson-domain
-    # allowlist. Analyzer is regex-cheap.
+    # allowlist. Scans *.md AND *.py under each bundle's
+    # {skills,agents,commands} tree PLUS the project-local .claude/skills/**
+    # tree (the analyzer derives the .claude/skills path internally from
+    # marketplace_root, so this call site needs only the bundles root).
+    # Analyzer is regex-cheap.
     lesson_id_issues = analyze_lesson_id_in_skill_prose(marketplace_root)
     all_issues.extend(lesson_id_issues)
     total_issues += len(lesson_id_issues)
@@ -672,10 +675,8 @@ def cmd_quality_gate(args) -> dict:
                                       test_contract_validation_real_marketplace)
       - analyze_argument_naming    (notation/subcommand/flag/canonical-forms
                                     cluster — unconditionally active in
-                                    quality-gate per lesson
-                                    ``2026-04-29-23-002``; ``--rules``
-                                    opt-in only applies to the ``analyze``
-                                    subcommand)
+                                    quality-gate; ``--rules`` opt-in only
+                                    applies to the ``analyze`` subcommand)
       - analyze_shell_substitution_in_skills (forbidden ``$(`` patterns in
                                     plan-marshall skill markdown — enforces
                                     the dev-agent-behavior-rules "no shell
@@ -772,6 +773,10 @@ def cmd_quality_gate(args) -> dict:
     # rules could enforce.  Invoke via ``analyze`` for explicit drift sweeps;
     # new code written after this plan is checked by the analyze path.
 
+    # Scans *.md and *.py under each bundle's {skills,agents,commands} tree
+    # PLUS the project-local .claude/skills/** tree (derived internally from
+    # marketplace_root). Findings carry absolute file paths, so _scoped's
+    # path filter applies uniformly to both trees under --paths.
     lesson_id_findings = _scoped(analyze_lesson_id_in_skill_prose(marketplace_root))
     all_issues.extend(lesson_id_findings)
     rule_summaries.append(

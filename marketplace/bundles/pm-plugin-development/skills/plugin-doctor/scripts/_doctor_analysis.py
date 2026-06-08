@@ -44,8 +44,7 @@ SUBDOC_DIRS = ['references', 'standards', 'workflow', 'templates']
 _ACK_TAG_RE = re.compile(r'^ack-[a-z0-9_-]+$')
 
 # Constructors whose calls must include allow_abbrev=False to prevent prefix
-# matching of retired flags. See rule-catalog.md (argparse_safety) and
-# lesson 2026-04-17-012.
+# matching of retired flags. See rule-catalog.md (argparse_safety).
 _ARGPARSE_SAFETY_CONSTRUCTORS = ('ArgumentParser', 'add_parser')
 
 
@@ -148,7 +147,7 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
 
                 # agent-glob-resolver-workaround: agents that declare Glob in
                 # tools without `forwards_tool_capabilities: true` in their
-                # YAML frontmatter. Driving lesson 2026-04-27-18-005.
+                # YAML frontmatter.
                 if component_type == 'agent':
                     try:
                         agent_content = file_path.read_text(encoding='utf-8', errors='replace')
@@ -255,8 +254,8 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
         # plugin-doctor on a non-refine skill produces no findings because
         # the analyzer's _is_refine_workflow_file predicate excludes them.
         # Unconditionally active (not gated on active_rules) — the rule
-        # enforces a hard contract from lesson 2026-05-16-14-001 that must
-        # surface on every plugin-doctor run.
+        # enforces a hard refine-contract requirement that must surface on
+        # every plugin-doctor run.
         issues.extend(
             extract_issues_from_refine_contract_analysis(
                 analyze_phase2_refine_contract([skill_dir])
@@ -269,8 +268,9 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
         # entrypoint script silently changes its public notation, so callers
         # that still use the old form resolve to `Unknown notation`.
         # Unconditionally active (not gated on active_rules) — the rule
-        # enforces a hard breakage from lesson 2026-05-22-12-002 that must
-        # surface on every plugin-doctor run.
+        # guards against a half-done entrypoint rename (which silently breaks
+        # the script's public notation) that must surface on every
+        # plugin-doctor run.
         issues.extend(
             extract_issues_from_notation_staleness_analysis(
                 analyze_notation_staleness([skill_dir])
@@ -1041,8 +1041,8 @@ def scan_argparse_safety(marketplace_root: Path) -> list[dict]:
     ``line``, ``severity=error``, ``fixable=False``, ``description``, and
     ``call`` (``ArgumentParser`` or ``add_parser``).
 
-    See rule-catalog.md (argparse_safety) and lesson 2026-04-17-012 for
-    rationale. The check is a lightweight AST walk — no parser is executed.
+    See rule-catalog.md (argparse_safety) for the rationale. The check is a
+    lightweight AST walk — no parser is executed.
     """
     findings: list[dict] = []
     for target in _iter_argparse_safety_targets(marketplace_root):

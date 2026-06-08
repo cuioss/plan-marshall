@@ -14,7 +14,7 @@ its filename. When an entrypoint script is renamed (e.g.
 the rename silently changes the script's public notation: callers that
 still reference the old third segment resolve to ``Unknown notation``. This
 analyzer catches that drift at lint time so a half-done rename can never
-reach ``main`` again. See lesson ``2026-05-22-12-002``.
+reach ``main`` again.
 
 Scope
 -----

@@ -35,9 +35,8 @@ Outcome semantics:
   still-running checks at the deadline). No cache entry is written
   (re-entry will re-poll). The ``failing_checks`` and ``wait_outcome``
   fields are forwarded from the underlying ``ci wait`` envelope so
-  downstream consumers (see lesson-2026-05-18-16-001 deliverables 5 and 6)
-  can route the precondition decision into the correct triage producer
-  string without re-fetching the CI run.
+  downstream consumers can route the precondition decision into the correct
+  triage producer string without re-fetching the CI run.
 
 The script is invoked via the marketplace executor notation
 ``plan-marshall:phase-6-finalize:ci_complete_precondition`` from the
@@ -71,7 +70,7 @@ The executor injects ``PYTHONPATH`` for ``toon_parser`` and
 ``marketplace_paths``, so no in-script ``sys.path`` manipulation is
 required (the previous underscore-prefixed sibling-traversal pattern broke
 when the script was invoked from outside the source tree, e.g., from
-``target/claude/`` or a relocated checkout — see lesson 2026-05-18-11-001).
+``target/claude/`` or a relocated checkout).
 """
 
 from __future__ import annotations

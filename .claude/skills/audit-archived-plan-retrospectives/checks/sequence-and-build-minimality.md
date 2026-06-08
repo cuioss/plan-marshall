@@ -95,7 +95,7 @@ value so a flagged row is self-describing:
 |------|-----------|---------|
 | `build_churn` | a build starts within `build_clustering_minutes` (10m) of the previous build | a re-run loop rather than one focused build per change. |
 | `non_minimal_build` | ≥1 heavy (`> build_heavy_seconds`) build ran | a whole-tree verify where a scoped module run sufficed. |
-| `docs_only_build` | the plan touched no `.py` file (or `change_type == documentation`) yet ran a build | buildable-stuff violation (lesson `2026-05-31-21-001` axis). |
+| `docs_only_build` | the plan touched no `.py` file (or `change_type == documentation`) yet ran a build | buildable-stuff violation (the docs-only-build axis). |
 | `ci_rerun` | more than one CI run directory under `artifacts/ci-runs/` | the PR round-trip ran CI more than once. |
 | `phase_reentry` | a `phase-N` role was dispatched more than once | a loop-back re-entered a phase — redundant phase work. |
 | `arch_over_resolution` | `arch_calls ≥ 5 × builds` while builds exist | resolution overhead dwarfing the work it resolves. |
@@ -214,32 +214,34 @@ to the build-minimality lesson axes:
 This check is the repeatable, corpus-wide form of the build-minimality analysis
 captured across the build-minimality lesson cluster:
 
-1. **`docs_only_build` is COVERED by `2026-05-31-21-001` on a Gate-1 dedup basis.**
+1. **`docs_only_build` is COVERED by the docs-only-build lesson on a Gate-1 dedup basis.**
    That lesson names the docs-only-build defect (phase-4-plan Step 7 creates
    holistic `quality-gate` / `module-tests` tasks for docs-only plans even when the
    manifest composer correctly suppressed them) and carries the corpus-wide
    build-minimality evidence (whole-tree `>400s` builds dominating; the `compile`
    verb never used). A `docs_only_build` flag here is therefore COVERED — name
-   `2026-05-31-21-001` as the covering reference and do NOT re-file. The
+   that covering lesson as the reference and do NOT re-file. The
    file-worthy signal is a *drift*: a fresh docs-only-build recurrence on a plan
-   created AFTER the Step-7 docs-only guard ships, which extends `2026-05-31-21-001`
+   created AFTER the Step-7 docs-only guard ships, which extends that lesson
    via Gate-1 `merge_into`.
 2. **`non_minimal_build` is the per-deliverable build-minimality axis.** The
    complementary "make the per-deliverable execute-loop build focused (buildable
    stuff only, scoped to the changed module, configurable cadence)" direction is
-   the focused-per-deliverable-build axis referenced from `2026-05-31-21-001`'s
-   "Additional empirical proof" section. A new `non_minimal_build` recurrence after
-   a focused-build remediation ships is the drift worth extending that lesson with;
-   the flag itself, pre-remediation, is COVERED by the same lesson cluster.
+   the focused-per-deliverable-build axis referenced from the docs-only-build
+   lesson's "Additional empirical proof" section. A new `non_minimal_build`
+   recurrence after a focused-build remediation ships is the drift worth extending
+   that lesson with; the flag itself, pre-remediation, is COVERED by the same
+   lesson cluster.
 3. **`build_churn` (`module-tests` serial runtime / scope-to-changed-modules) is
    the build-pyproject "make the run cheaper" axis** — the complementary
-   `2026-05-31-20-002` axis cited from `2026-05-31-21-001`'s References as the
-   "different component, different fix" lever. A churn flag is read against that
-   axis: the fix is to make each run cheaper and scoped, not to suppress it.
+   build-pyproject cost-reduction lesson cited from the docs-only-build lesson's
+   References as the "different component, different fix" lever. A churn flag is
+   read against that axis: the fix is to make each run cheaper and scoped, not to
+   suppress it.
 
 Per the general lesson-filing rule, any "already covered" drop MUST name the
-matching lesson ID (here `2026-05-31-21-001` and the build-minimality cluster it
-cross-references) — assumption is not verification.
+matching lesson ID (here the docs-only-build lesson and the build-minimality
+cluster it cross-references) — assumption is not verification.
 
 ## Critical rules
 

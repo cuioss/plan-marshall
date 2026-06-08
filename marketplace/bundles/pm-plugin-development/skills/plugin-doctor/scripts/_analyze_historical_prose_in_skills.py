@@ -28,7 +28,7 @@ Seven pattern families are recognized (all case-insensitive):
 
 1. **Driving-lesson prefix** — ``Driving lesson:`` used as a bullet or
    inline annotation that cites the originating lesson.
-   Example: ``- Driving lesson: `2026-04-30-23-001` (description)``
+   Example: ``- Driving lesson: `YYYY-MM-DD-HH-NNN` (description)``
 
 2. **Back-reference prefix** — ``Back-reference:`` used to cite the
    originating plan/lesson/PR that established a rule.

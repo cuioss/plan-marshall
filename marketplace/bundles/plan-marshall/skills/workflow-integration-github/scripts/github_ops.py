@@ -1059,8 +1059,7 @@ def cmd_pr_edit(args: argparse.Namespace) -> dict:
 # ACTION_REQUIRED | STALE | STARTUP_FAILURE | IN_PROGRESS | QUEUED | PENDING |
 # null``. The three partitions below carry the canonical conclusion → outcome
 # mapping for ``cmd_ci_status``, ``cmd_ci_wait``, and
-# ``_fetch_pr_overall_ci_status``; see lesson-2026-05-18-16-001 deliverable 1
-# for the table.
+# ``_fetch_pr_overall_ci_status``.
 _CONCLUSION_NON_FAILING: frozenset[str] = frozenset({'SUCCESS', 'SKIPPED', 'NEUTRAL'})
 _CONCLUSION_FAILING: frozenset[str] = frozenset(
     {'FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STALE', 'STARTUP_FAILURE'}
@@ -1151,8 +1150,8 @@ def _classify_check_buckets(
     """Partition GitHub check rows into ``(failing, wait, non_failing)``.
 
     The partition uses the raw ``state`` (conclusion) field per the canonical
-    table documented in lesson-2026-05-18-16-001 deliverable 1. Conclusions
-    not present in any partition table are treated as failing (defense in
+    conclusion → outcome table. Conclusions not present in any partition table
+    are treated as failing (defense in
     depth — an unknown conclusion is never silently accepted as success).
     """
 

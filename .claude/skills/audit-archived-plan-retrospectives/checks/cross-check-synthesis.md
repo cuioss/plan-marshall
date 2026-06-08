@@ -97,8 +97,8 @@ completeness critic:
   Step 4's source-keyed argparse-rejection rule.
 - **`scope_underestimate_cost`** — the under-estimated scope predicted the
   over-spend. The file-worthy signal is the scope-estimation gap recurring across
-  plans, not each plan's individual over-spend (which token-economics already
-  covers under lesson `2026-06-01-12-001`).
+  plans, not each plan's individual over-spend (which the token-economics check
+  already covers under its canonical lesson).
 
 Per the SKILL.md Step-3 contract, EVERY emitted row is adjudicated with a stated
 verdict and cited evidence; an `informational` (non-fired) coupling is dismissed

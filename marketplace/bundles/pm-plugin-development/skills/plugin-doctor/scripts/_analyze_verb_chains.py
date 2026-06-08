@@ -329,9 +329,8 @@ def _collect_parser_statements(tree: ast.AST) -> list[ast.Assign | ast.Expr]:
     ``parser = ArgumentParser(...)``, ``subparsers = parser.add_subparsers(...)``,
     ``p_verb = subparsers.add_parser('verb', ...)``) AND bare ``ast.Expr``
     nodes whose value is a ``.add_parser('verb', ...)`` ``ast.Call`` whose
-    result is discarded (lesson 2026-05-02-10-001 — bare-call form is
-    functionally equivalent to the assigned form when the parser needs no
-    further configuration).
+    result is discarded — the bare-call form is functionally equivalent to
+    the assigned form when the parser needs no further configuration.
 
     Sorted by ``(lineno, col_offset)`` so a bare ``add_parser`` call that
     appears between two assignments is processed in source order, ensuring
@@ -374,9 +373,9 @@ def build_subparser_tree(script_path: Path) -> dict:
     - ``<subparsers_handle>.add_parser('name', ...)`` → registers child
       verb ``name`` under ``<var>``. Both the assigned form
       (``p_name = subparsers.add_parser('name', ...)``) and the bare
-      form (``subparsers.add_parser('name', ...)``) are recognised —
-      see lesson 2026-05-02-10-001; the bare form is functionally
-      equivalent when the returned parser needs no further configuration.
+      form (``subparsers.add_parser('name', ...)``) are recognised; the
+      bare form is functionally equivalent when the returned parser needs
+      no further configuration.
 
     Returns an empty dict for unreadable or unparseable files, or for
     scripts that do not use argparse subparsers.
@@ -399,9 +398,9 @@ def build_subparser_tree(script_path: Path) -> dict:
     subparsers_handles: dict[str, str] = {}
 
     for stmt in _collect_parser_statements(tree):
-        # Bare-Expr ``.add_parser('verb', ...)`` whose result is discarded
-        # — lesson 2026-05-02-10-001. Functionally equivalent to the
-        # assigned form for parsers that take no further configuration.
+        # Bare-Expr ``.add_parser('verb', ...)`` whose result is discarded.
+        # Functionally equivalent to the assigned form for parsers that take
+        # no further configuration.
         if isinstance(stmt, ast.Expr):
             call = stmt.value
             assert isinstance(call, ast.Call)  # guaranteed by collector

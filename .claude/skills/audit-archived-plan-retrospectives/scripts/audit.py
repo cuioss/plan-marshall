@@ -33,7 +33,7 @@ suite of deterministic checks:
   `status.json::metadata` (change_type), computes per-plan token shares and
   efficiency ratios, derives corpus-relative anti-pattern thresholds (median /
   percentile over the live corpus, never hard-coded), and flags the
-  token-economics anti-patterns catalogued in lesson 2026-06-01-12-001
+  token-economics anti-patterns catalogued in the canonical token-economics lesson
   (fixed-overhead floor, planning≫execute, phase-heavy outline/refine/finalize,
   big-spend-tiny-footprint, long sessions, and execute-metrics blindness).
 - `quality-chain` (cross-plan) — classifies every `artifacts/findings/*.jsonl`
@@ -734,8 +734,9 @@ def _lessons_corpus_signatures(repo_root: Path) -> list[str]:
 def _lessons_corpus_titles(repo_root: Path) -> list[str]:
     """Read the corpus as `lesson_id\\ttitle` entries for `_dedup_pretag`.
 
-    The lesson id is the corpus filename stem (e.g. `lesson-2026-06-01-12-001`),
-    so the dedup pre-tag can name the covering lesson. Pairs with the bare-title
+    The lesson id is the corpus filename stem (the `lesson-<id>` basename without
+    its `.md` suffix), so the dedup pre-tag can name the covering lesson. Pairs
+    with the bare-title
     `_lessons_corpus_signatures` used by the quality-verification filed
     cross-check, which does not need the id.
     """
@@ -1396,8 +1397,8 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
 # Cross-plan: token-economics
 # ---------------------------------------------------------------------------
 #
-# Operationalizes the one-off deep-dive captured in lesson 2026-06-01-12-001 as a
-# repeatable check. Joins each plan's per-phase `metrics.toon` token spend to its
+# Operationalizes the one-off deep-dive captured in the canonical token-economics
+# lesson as a repeatable check. Joins each plan's per-phase `metrics.toon` token spend to its
 # `references.json` footprint (scope_estimate, affected/modified file count) and
 # `status.json::metadata` change_type, then computes per-plan token shares and
 # efficiency ratios and a corpus-relative anti-pattern flag set.
@@ -1506,7 +1507,7 @@ def _derive_token_economics_thresholds(rows: list[_TokenEconomicsRow]) -> dict[s
     plan also annotates the cut-point it was measured against. An empty corpus
     yields all-zero thresholds (no plan can then be flagged).
 
-    Cut-point rationale (each mirrors an anti-pattern in lesson 2026-06-01-12-001):
+    Cut-point rationale (each mirrors an anti-pattern in the canonical token-economics lesson):
     - `floor_band` — 10th-percentile of plan totals: the non-amortizing overhead
       floor the cheapest plans sit on (anti-pattern A).
     - `median_total` — median plan total: the "big spend" reference for
@@ -2121,7 +2122,7 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
 #                          a whole-tree verify where a scoped module run sufficed.
 #   docs_only_build      — the plan touched no `.py` file (or change_type ==
 #                          documentation) yet ran a build — buildable-stuff
-#                          violation (lesson 2026-05-31-21-001 axis).
+#                          violation (the docs-only-build axis).
 #   ci_rerun             — more than one CI run directory under artifacts/ci-runs/
 #                          (the PR round-trip ran CI more than once).
 #   phase_reentry        — a phase-N role was dispatched more than once (a loop-back
@@ -2958,8 +2959,8 @@ def _validate_plan_id(plan_id: str) -> str | None:
     """Return a refusal reason when `plan_id` violates the canonical grammar.
 
     Returns `None` when the value is a well-formed plan ID. A non-`None` return
-    is the fail-fast front line of the belt-and-braces path-traversal defense
-    (`lesson-2026-05-29-13-001.md`): it fires before any move destination is
+    is the fail-fast front line of the belt-and-braces path-traversal defense:
+    it fires before any move destination is
     constructed, complementing the resolved-path containment guards below.
     """
     if not plan_id or not _PLAN_ID_RE.match(plan_id):

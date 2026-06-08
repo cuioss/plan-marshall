@@ -769,14 +769,14 @@ def parse_markdown_metadata(content: str) -> dict[str, str]:
         Dictionary of metadata key-value pairs
 
     Example:
-        >>> content = '''id=2025-11-28-001
+        >>> content = '''id=example-001
         ... component.type=command
         ... applied=false
         ...
         ... # Title
         ... Content here...'''
         >>> parse_markdown_metadata(content)
-        {'id': '2025-11-28-001', 'component.type': 'command', 'applied': 'false'}
+        {'id': 'example-001', 'component.type': 'command', 'applied': 'false'}
     """
     metadata = {}
     lines = content.split('\n')
@@ -806,9 +806,9 @@ def generate_markdown_metadata(data: dict[str, str]) -> str:
         Formatted metadata block string
 
     Example:
-        >>> data = {'id': '2025-11-28-001', 'component.type': 'command'}
+        >>> data = {'id': 'example-001', 'component.type': 'command'}
         >>> print(generate_markdown_metadata(data))
-        id=2025-11-28-001
+        id=example-001
         component.type=command
     """
     lines = []

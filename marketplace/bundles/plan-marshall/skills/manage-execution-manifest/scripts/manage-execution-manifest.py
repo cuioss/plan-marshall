@@ -253,8 +253,7 @@ def _decide(
     iterates the queue normally. Without this guard, an analysis-only plan
     that produces zero affected files but still queues at least one
     deliverable task would short-circuit before TASK-001 runs and skip the
-    Step 2.5 worktree materialization as a cascade. See lesson
-    ``2026-05-24-17-001``.
+    Step 2.5 worktree materialization as a cascade.
     """
 
     # Per-compose role-lookup cache: avoid re-reading a candidate's source file
@@ -391,9 +390,9 @@ def _read_task_queue_active(plan_id: str) -> bool:
     noise. Returns ``False`` when the tasks directory is missing (no plan
     structure yet) or contains no parseable task files; the composer treats
     that as "no work queued, the analysis-only short-circuit is safe to
-    fire". Lesson ``2026-05-24-17-001``: this predicate is the gate that
-    keeps Rule 1 from short-circuiting plans where deliverables exist but
-    affected_files happens to be empty at compose time.
+    fire". This predicate is the gate that keeps Rule 1 from short-circuiting
+    plans where deliverables exist but affected_files happens to be empty at
+    compose time.
     """
     tasks_dir = get_plan_dir(plan_id) / 'tasks'
     if not tasks_dir.is_dir():
@@ -471,10 +470,9 @@ def _read_bundle_change_paths(plan_id: str) -> list[str]:
     For plans where ``references.json::affected_files`` is unset (the common
     pre-execute shape produced by current phase-3-outline / phase-4-plan flows),
     the composer falls back to the deliverable-level ``Affected files:`` blocks
-    in ``solution_outline.md``. This closes the empirical gap reproduced in
-    plan ``lesson-2026-04-28-06-001``: the deliverable listed bundle source
-    paths but ``references.json`` did not surface them, so the predicate had
-    nothing to match against.
+    in ``solution_outline.md``. This closes the empirical gap where a
+    deliverable listed bundle source paths but ``references.json`` did not
+    surface them, so the predicate had nothing to match against.
 
     Reading all three sources and unioning their entries means the rule fires:
 
@@ -868,7 +866,7 @@ def _log_bot_enforcement_guard_remediated(plan_id: str, provider: str) -> None:
 
     Logged whenever the guard appends ``automated-review`` back into
     ``phase_6.steps`` so the manifest's reconstruction-from-rules-alone
-    remains auditable. See lesson ``2026-04-28-10-001``.
+    remains auditable.
     """
     message = (
         '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard remediated — '
@@ -1348,8 +1346,8 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # forces it out.
 #
 # The transform NEVER touches `automated-review`: the bot-review invariant
-# (lesson 2026-04-27-18-003, enforced by `_apply_bot_enforcement_guard`) is
-# orthogonal and is preserved verbatim — the three ceremony gates are the only
+# (enforced by `_apply_bot_enforcement_guard`) is orthogonal and is preserved
+# verbatim — the three ceremony gates are the only
 # finalize steps this transform may add or drop. Run-at-all values are validated
 # at set time by `manage-config`'s `validate_ceremony_policy`; the composer
 # defensively treats any non-`{always,never}` value (including `auto` and a
@@ -1611,16 +1609,15 @@ def _read_ci_provider() -> str | None:
 def _apply_bot_enforcement_guard(phase_6_steps: list[str], plan_id: str) -> str | None:
     """Composition-time defense-in-depth: keep ``automated-review`` on GitHub/GitLab plans.
 
-    Lesson ``2026-04-27-18-003`` requires PR-review bots to be effectively
-    mandatory whenever the plan finalizes through GitHub or GitLab. If the
-    seven-row matrix or any pre-filter has dropped ``automated-review`` AND
-    the project's CI provider is GitHub or GitLab, this guard remediates by
-    appending ``automated-review`` back into ``phase_6_steps`` (in-place) and
-    emits a decision-log entry so the manifest's reconstruction-from-rules-
-    alone remains auditable. Lesson ``2026-04-28-10-001`` documents why the
-    guard is remediation rather than assertion: Row 5 of the seven-row matrix
+    PR-review bots are effectively mandatory whenever the plan finalizes
+    through GitHub or GitLab. If the seven-row matrix or any pre-filter has
+    dropped ``automated-review`` AND the project's CI provider is GitHub or
+    GitLab, this guard remediates by appending ``automated-review`` back into
+    ``phase_6_steps`` (in-place) and emits a decision-log entry so the
+    manifest's reconstruction-from-rules-alone remains auditable. The guard is
+    remediation rather than assertion because Row 5 of the seven-row matrix
     legitimately drops ``automated-review`` for ``surgical+{bug_fix,
-    tech_debt}`` plans, and the original assertion-style guard deadlocked
+    tech_debt}`` plans, and an assertion-style guard would deadlock
     every such plan that finalizes through GitHub or GitLab.
 
     The guard is retained after the deadlock fix as defense-in-depth: any
@@ -2108,9 +2105,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # helpers, the bundle-self-modification matcher, and the bot-enforcement
     # guard all compare against bare names. Normalize once at the boundary so
     # every downstream site can use plain `s in {...}` / `s == 'foo'` checks
-    # without per-site `_strip_default_prefix` calls. Lessons:
-    # ``2026-04-27-23-004`` (this lesson — peer-site audit closing the gap left
-    # by ``2026-04-27-18-006`` which only normalized cascade-rule sites).
+    # without per-site `_strip_default_prefix` calls. Normalizing at the
+    # boundary covers every comparison site, not just the cascade-rule sites.
     # External step prefixes (``project:``, ``bundle:skill``) are preserved
     # verbatim so the dispatcher can route them as PROJECT / SKILL steps.
     phase_5_candidates = [_strip_default_prefix(s) for s in phase_5_candidates]
@@ -2243,8 +2239,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # from `phase_6.steps`, the guard remediates in-place (appends the step and
     # emits a decision-log line) and returns None. The error branch below is
     # retained as a safety net for any future logic that detects a non-
-    # remediable violation; in current code it is unreachable. See lesson
-    # ``2026-04-28-10-001`` (deadlock fix) and ``2026-04-27-18-003`` (origin).
+    # remediable violation; in current code it is unreachable.
     final_phase_6_steps = body['phase_6']['steps']
     bot_guard_fired_provider = _apply_bot_enforcement_guard(final_phase_6_steps, plan_id)
     if bot_guard_fired_provider is not None:
@@ -2260,9 +2255,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'ci_provider': bot_guard_fired_provider,
         }
 
-    # Compose-time placement validator (defense-in-depth, lesson
-    # ``2026-04-28-13-002``): even when ``automated-review`` is present,
-    # reject the manifest if it sits at an index later than any plan-mutating
+    # Compose-time placement validator (defense-in-depth): even when
+    # ``automated-review`` is present, reject the manifest if it sits at an
+    # index later than any plan-mutating
     # step (``archive-plan``, ``record-metrics``, ``branch-cleanup``,
     # ``plan-marshall:plan-retrospective``). Such a layout would dispatch the
     # PR-review bot only after the plan directory has been moved or the

@@ -95,7 +95,6 @@ def cmd_finalize_step(args) -> dict:
     # boundary so the line cannot be lost when an orchestrator skill
     # re-dispatches a phase-5-execute agent and the original agent's working
     # context is discarded before its own [OUTCOME] emission would fire.
-    # See lesson 2026-05-08-14-001 for the gap analysis.
     if args.outcome == 'done' and all_terminal and not has_failed:
         caller = getattr(args, 'outcome_caller', None) or 'plan-marshall:phase-5-execute'
         title = getattr(args, 'outcome_task_title', None) or task.get('title', '')

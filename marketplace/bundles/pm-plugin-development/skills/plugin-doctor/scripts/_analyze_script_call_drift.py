@@ -10,8 +10,7 @@ Replaces the runtime SUBCOMMANDS pre-flight validator (removed in plan
 ``fix-generate-executor-ast-subcommands``). The runtime executor is now a
 dumb dispatcher; this rule catches the same drift class at dev time by
 parsing argparse's ``--help`` output, which is argparse's published
-interface. Lessons ``2026-04-29-23-002``, ``2026-05-25-21-001``, and
-``2026-05-26-09-001`` document the recurring failure modes this rule
+interface. It guards against the recurring failure modes this rule
 replaces (invented subcommands, stale SUBCOMMANDS allowlist, flattened
 nested subparsers).
 

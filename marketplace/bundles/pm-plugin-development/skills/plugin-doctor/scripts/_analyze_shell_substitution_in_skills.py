@@ -195,8 +195,7 @@ def _scan_file(path: Path) -> list[dict]:
                     'description': (
                         'Shell command substitution `$(...)` in plan-marshall skill markdown '
                         "violates the dev-agent-behavior-rules 'no shell constructs' hard rule. "
-                        'Replace with the documented two-call + text-substitution pattern '
-                        '(see request lesson-2026-05-15-13-001 Implement section).'
+                        'Replace with the documented two-call + text-substitution pattern.'
                     ),
                 }
             )
