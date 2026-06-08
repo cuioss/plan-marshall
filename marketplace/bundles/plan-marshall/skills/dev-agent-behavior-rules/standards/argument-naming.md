@@ -149,7 +149,7 @@ The `pr`, `checks`, `issue`, and `branch` subcommand surfaces are common across 
 | List pull requests | `ci pr list [--head {branch}] [--state open|closed|all]` |
 | Reply to a PR | `ci pr reply --pr-number {n} --plan-id {id} [--slot {slot}]` (body via prior `ci pr prepare-comment --for reply`) |
 | Resolve a review thread | `ci pr resolve-thread --thread-id {id}` |
-| Reply within a thread | `ci pr thread-reply --pr-number {n} --thread-id {id} --plan-id {id} [--slot {slot}]` (body via prior `ci pr prepare-comment --for thread-reply`) |
+| Reply within a thread | `ci pr thread-reply --pr-number {n} --thread-id {thread_id} --plan-id {id} [--slot {slot}]` (body via prior `ci pr prepare-comment --for thread-reply`) |
 | Get PR reviews | `ci pr reviews --pr-number {n}` |
 | Get PR inline comments | `ci pr comments --pr-number {n} [--unresolved-only]` |
 | Wait for new bot comments | `ci pr wait-for-comments --pr-number {n} [--timeout {s}] [--interval {s}]` |
