@@ -43,7 +43,8 @@ JSON structure and field definitions for project configuration.
     "finalize": {
       "self_review": "auto",
       "qgate": "auto",
-      "plugin_doctor": "auto"
+      "plugin_doctor": "auto",
+      "simplify": "auto"
     },
     "automation": {
       "finalize_without_asking": true,
@@ -486,7 +487,8 @@ A top-level block (sibling to `plan` / `ci` / `project`) carrying lifecycle-wide
     "finalize": {
       "self_review": "auto",
       "qgate": "auto",
-      "plugin_doctor": "auto"
+      "plugin_doctor": "auto",
+      "simplify": "auto"
     },
     "automation": {
       "finalize_without_asking": true,
@@ -498,7 +500,7 @@ A top-level block (sibling to `plan` / `ci` / `project`) carrying lifecycle-wide
 }
 ```
 
-**Axis 1 — run-at-all (`auto|always|never` per gate).** Whether the gate executes at all. `auto` defers to the existing decision machinery (lane router / manifest composer); `always` forces the gate in; `never` skips it (and, for the footgun gates, emits a set-time `[WARNING]`). Planning gates: `deep_lane`, `revalidation`, `escalation`, `qgate`. Finalize gates: `self_review`, `qgate`, `plugin_doctor`. Every gate defaults to `auto`; the enum is validated by `validate_ceremony_policy`.
+**Axis 1 — run-at-all (`auto|always|never` per gate).** Whether the gate executes at all. `auto` defers to the existing decision machinery (lane router / manifest composer); `always` forces the gate in; `never` skips it (and, for the footgun gates, emits a set-time `[WARNING]`). Planning gates: `deep_lane`, `revalidation`, `escalation`, `qgate`. Finalize gates: `self_review`, `qgate`, `plugin_doctor`, `simplify`. Every gate defaults to `auto`; the enum is validated by `validate_ceremony_policy`.
 
 | Field | Type | Default | Footgun? | Description |
 |-------|------|---------|----------|-------------|
@@ -509,8 +511,9 @@ A top-level block (sibling to `plan` / `ci` / `project`) carrying lifecycle-wide
 | `finalize.self_review` | enum | auto | yes | Whether the pre-submission structural + cognitive self-review (`finalize-step-pre-submission-self-review`) is selected into the execution manifest. `always` overrides the manifest composer's `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose` (the `ceremony_finalize_selection` post-matrix transform). |
 | `finalize.qgate` | enum | auto | **hard** | Whether the finalize blocking-findings re-capture (`pre-push-quality-gate`) is selected. The highest-risk footgun: `never` can mask real build/test failures and push a red tree — the set-time `[WARNING]` names the masking risk explicitly. |
 | `finalize.plugin_doctor` | enum | auto | yes | Whether the structural marketplace lint before push (`finalize-step-plugin-doctor`) is selected. `always` overrides the `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. |
+| `finalize.simplify` | enum | auto | no | Whether the holistic post-implementation simplification sweep (`finalize-step-simplify`) is selected. `always` forces the step in even when the composer's `simplify_inactive` pre-filter would drop it; `never` removes it; `auto` (the default) defers to that pre-filter. Not a footgun — `never` skips a quality-improvement sweep, not a safety net, so it is absent from the footgun catalogue. Consumed by `manage-execution-manifest compose`. |
 
-The three `finalize.*` gates map one-to-one to finalize steps and are consumed by the manifest composer's `ceremony_finalize_selection` post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "ceremony_policy.finalize Selection" for the gate→step map and the `automated-review` carve-out. The four `planning.*` gates are consumed by the phase-1-init lane router and the planning-time Q-Gate dispatch.
+The four `finalize.*` gates map one-to-one to finalize steps and are consumed by the manifest composer's `ceremony_finalize_selection` post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "ceremony_policy.finalize Selection" for the gate→step map and the `automated-review` carve-out. The four `planning.*` gates are consumed by the phase-1-init lane router and the planning-time Q-Gate dispatch.
 
 **Axis 2 — automation (`bool`).** Once a gate has run, proceed without asking? The three knobs live only here; defaults preserve the historical values.
 

@@ -2,10 +2,11 @@
 """Deterministic candidate surfacing for the pre-submission-self-review finalize step.
 
 Reads the worktree's diff against the base branch, scans added lines in modified
-files, and emits eight candidate lists (regexes, user-facing strings, markdown
+files, and emits twelve candidate lists (regexes, user-facing strings, markdown
 sections, symmetric-pair functions, flag-guard pairs, contract sources,
-schema-bearing files, keep-identifier markers) as TOON for the LLM cognitive
-review pass to consume.
+schema-bearing files, keep-identifier markers, producer-consumer pairs,
+source-of-truth duplicates, same-document normative directives, description-vs-body
+frontmatter) as TOON for the LLM cognitive review pass to consume.
 
 Storage: stateless — reads the worktree diff and derives the plan footprint
 live from the worktree (``compute-footprint``: ``{base}...HEAD`` ∪ porcelain).
@@ -125,6 +126,48 @@ _EXECUTE_SCRIPT_NOTATION = re.compile(
 # ``{error}``) where ``field`` is a bare identifier. This is the content signal
 # that the doc prose is talking about a sibling script's output-contract field.
 _TOON_FIELD_TOKEN = re.compile(r'\{[A-Za-z_][A-Za-z0-9_]*\}')
+
+# Producer-consumer detection.
+# A producer assigns a value into a dict-keyed slot of the script's output —
+# the dominant shape is ``output['key'] = ...`` / ``output["key"] = ...`` (a
+# subscript assignment whose value is later expected to be consumed by a
+# downstream branch). Group 1 captures the produced key.
+_PRODUCER_SUBSCRIPT_ASSIGN = re.compile(
+    r"""^\s*\w+\[(['"])([A-Za-z_][A-Za-z0-9_]*)\1\]\s*="""
+)
+# A consumer reads a value back out of a dict-keyed slot — either via a
+# subscript read (``something['key']`` not on the LHS of an assignment) or via
+# ``.get('key'...)``. Both shapes name the consumed key in group 2.
+_CONSUMER_SUBSCRIPT_READ = re.compile(
+    r"""\[(['"])([A-Za-z_][A-Za-z0-9_]*)\1\]"""
+)
+_CONSUMER_GET_READ = re.compile(
+    r"""\.get\s*\(\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1"""
+)
+
+# Source-of-truth-consistency detection.
+# A module-level (or simply assigned) constant binding of the shape
+# ``NAME = <literal>`` where NAME is an UPPER_SNAKE_CASE identifier. Group 1
+# captures the constant name; group 2 the literal RHS (trimmed). The same
+# constant assigned a *different* literal in two diff files is a SoT drift.
+_CONSTANT_ASSIGN = re.compile(
+    r"""^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.+?)\s*$"""
+)
+
+# Same-document-consistency detection.
+# A normative directive line in a ``.md`` body — a line carrying one of the
+# RFC-2119-style normative keywords. Group 1 captures the keyword that fired so
+# the cognitive review can group competing directives.
+_NORMATIVE_DIRECTIVE = re.compile(
+    r'\b(MUST NOT|MUST|SHALL NOT|SHALL|NEVER|ALWAYS|REQUIRED|FORBIDDEN)\b'
+)
+
+# Description-vs-body-consistency detection.
+# A frontmatter ``description:`` (or ``summary:``) key at the head of a ``.md``
+# document. Group 1 names the key that fired; group 2 captures the value text.
+_FRONTMATTER_DESCRIPTION = re.compile(
+    r'^(description|summary)\s*:\s*(.+?)\s*$'
+)
 
 
 # =============================================================================
@@ -839,6 +882,216 @@ def _detect_flag_guard_pairs(added: list[tuple[str, int, str]]) -> list[dict[str
     return out
 
 
+def _detect_producer_consumer(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
+    """Detect produced output keys that have no consumer in the same diff.
+
+    A *producer* is a subscript assignment into an output dict
+    (``output['key'] = ...``) in an added ``.py`` line. A *consumer* is any
+    added ``.py`` line that READS that key back — a subscript read
+    (``foo['key']`` that is NOT itself a producer assignment) or a
+    ``.get('key')`` call. For each produced key with no consumer anywhere in
+    the added lines the detector emits a candidate so the cognitive review can
+    decide whether the dangling producer is a real defect (a value emitted but
+    never read by any downstream branch).
+
+    Each entry carries ``file``, ``line`` (the producer line), ``key``, and
+    ``consumed`` (always ``false`` for an emitted candidate — only unconsumed
+    producers are surfaced). The ``consumed`` field keeps the entry shape
+    self-describing for the LLM consumer.
+    """
+    # Collect every produced key (first producer line wins) and every consumed
+    # key across the whole added-line set. A key produced in one file and
+    # consumed in another still counts as consumed — the producer-consumer
+    # relation is diff-global, not per-file.
+    produced: dict[str, tuple[str, int]] = {}
+    for path, lineno, content in added:
+        if not path.endswith('.py'):
+            continue
+        m = _PRODUCER_SUBSCRIPT_ASSIGN.match(content)
+        if m is not None:
+            key = m.group(2)
+            produced.setdefault(key, (path, lineno))
+
+    consumed: set[str] = set()
+    for path, _lineno, content in added:
+        if not path.endswith('.py'):
+            continue
+        # A producer line is not its own consumer: the LHS subscript on a
+        # producer line (``output['k'] = ...``) must not register ``k`` as
+        # consumed. Resolve the producer's own key once, then skip exactly that
+        # key on the producer line — any OTHER key read on the same line still
+        # counts as a consumption.
+        producer_match = _PRODUCER_SUBSCRIPT_ASSIGN.match(content)
+        producer_key = producer_match.group(2) if producer_match is not None else None
+        for m in _CONSUMER_SUBSCRIPT_READ.finditer(content):
+            read_key = m.group(2)
+            if read_key == producer_key:
+                continue
+            consumed.add(read_key)
+        for m in _CONSUMER_GET_READ.finditer(content):
+            consumed.add(m.group(2))
+
+    out: list[dict[str, Any]] = []
+    for key in sorted(produced):
+        if key in consumed:
+            continue
+        path, lineno = produced[key]
+        out.append({'file': path, 'line': lineno, 'key': key, 'consumed': False})
+    return out
+
+
+def _detect_source_of_truth(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
+    """Detect a constant duplicated across two diff files with divergent values.
+
+    Scans added ``.py`` lines for ``NAME = <literal>`` bindings where ``NAME``
+    is an UPPER_SNAKE_CASE identifier (the conventional source-of-truth
+    constant shape). When the SAME constant name is assigned in two or more
+    distinct files within the diff AND the assigned literals are NOT all
+    identical, the duplicate is a source-of-truth drift candidate — the diff
+    changed the value in one declared SoT location but not the other.
+
+    Each entry carries ``name`` (the constant), ``files`` (a ``; ``-joined,
+    sorted list of the files declaring it), and ``values`` (a ``; ``-joined,
+    sorted list of the distinct literal RHS values). Only constants with a
+    cross-file value divergence are surfaced; a constant assigned the same
+    value in two files, or a constant in a single file, is not a defect.
+    """
+    # Per constant name: map file -> set of literal RHS values declared there.
+    by_name: dict[str, dict[str, set[str]]] = {}
+    for path, _lineno, content in added:
+        if not path.endswith('.py'):
+            continue
+        m = _CONSTANT_ASSIGN.match(content)
+        if m is None:
+            continue
+        name = m.group(1)
+        value = m.group(2)
+        by_name.setdefault(name, {}).setdefault(path, set()).add(value)
+
+    out: list[dict[str, Any]] = []
+    for name in sorted(by_name):
+        files = by_name[name]
+        if len(files) < 2:
+            continue
+        all_values: set[str] = set()
+        for value_set in files.values():
+            all_values.update(value_set)
+        if len(all_values) < 2:
+            continue
+        out.append(
+            {
+                'name': name,
+                'files': '; '.join(sorted(files)),
+                'values': '; '.join(_truncate(v, 80) for v in sorted(all_values)),
+            }
+        )
+    return out
+
+
+def _detect_same_document_consistency(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
+    """Detect added normative directives in a ``.md`` body for contradiction review.
+
+    Scans added ``.md`` lines for RFC-2119-style normative keywords (``MUST``,
+    ``MUST NOT``, ``SHALL``, ``SHALL NOT``, ``NEVER``, ``ALWAYS``, ``REQUIRED``,
+    ``FORBIDDEN``). Each added normative directive is surfaced so the cognitive
+    review can compare it against sibling directives ALREADY in the same
+    document — a new normative rule that contradicts an existing one in the
+    same file is the same-document-consistency defect (Mode 2: the surface MUST
+    carry a candidate, never an empty surface, when a normative line is added).
+
+    Each entry carries ``file``, ``line``, ``keyword`` (the normative keyword
+    that fired), and ``text`` (the directive line, truncated).
+    """
+    out: list[dict[str, Any]] = []
+    for path, lineno, content in added:
+        if not path.endswith('.md'):
+            continue
+        m = _NORMATIVE_DIRECTIVE.search(content)
+        if m is None:
+            continue
+        out.append(
+            {
+                'file': path,
+                'line': lineno,
+                'keyword': m.group(1),
+                'text': _truncate(content.strip(), 200),
+            }
+        )
+    return out
+
+
+def _detect_description_vs_body(
+    added: list[tuple[str, int, str]], project_dir: Path
+) -> list[dict[str, Any]]:
+    """Detect a ``.md`` whose frontmatter description and body both changed.
+
+    A frontmatter ``description:`` (or ``summary:``) line summarizes the
+    document's model; the body implements it. When the diff touches a ``.md``
+    file's body AND that file carries a frontmatter ``description``/``summary``
+    key in its post-image, the description may now describe a model the body no
+    longer implements (Mode 1 recurrence — the phase-3 frontmatter case where a
+    deleted machinery left a stale description behind).
+
+    The detector surfaces one candidate per modified ``.md`` file that (a) has
+    at least one added body line (any added line below the closing frontmatter
+    delimiter) AND (b) carries a frontmatter ``description``/``summary`` key in
+    its post-image. The entry carries ``file``, ``line`` (the frontmatter
+    description line in the post-image), ``key`` (``description`` or
+    ``summary``), and ``description`` (the description value, truncated) so the
+    cognitive review can read the description against the changed body.
+    """
+    # Group added lines per .md file.
+    md_added_files: dict[str, list[int]] = {}
+    for path, lineno, _content in added:
+        if path.endswith('.md'):
+            md_added_files.setdefault(path, []).append(lineno)
+
+    out: list[dict[str, Any]] = []
+    for md_path in sorted(md_added_files):
+        post_image = _read_post_image(project_dir, md_path)
+        if not post_image:
+            continue
+        # Resolve the frontmatter block: it opens with a ``---`` on line 1 and
+        # closes at the next ``---``. The description key must live inside it.
+        if not post_image or post_image[0].strip() != '---':
+            continue
+        fm_close = None
+        for idx in range(1, len(post_image)):
+            if post_image[idx].strip() == '---':
+                fm_close = idx
+                break
+        if fm_close is None:
+            continue
+        desc_line_no: int | None = None
+        desc_key: str | None = None
+        desc_value: str | None = None
+        for idx in range(1, fm_close):
+            m = _FRONTMATTER_DESCRIPTION.match(post_image[idx])
+            if m is not None:
+                desc_line_no = idx + 1  # 1-based
+                desc_key = m.group(1)
+                desc_value = m.group(2)
+                break
+        if desc_line_no is None or desc_key is None or desc_value is None:
+            continue
+        # Require at least one added line in the document body (below the
+        # closing frontmatter delimiter) — a pure frontmatter-only edit does
+        # not surface a body-vs-description candidate.
+        body_close_line = fm_close + 1  # 1-based line number of the closing ---
+        has_body_edit = any(ln > body_close_line for ln in md_added_files[md_path])
+        if not has_body_edit:
+            continue
+        out.append(
+            {
+                'file': md_path,
+                'line': desc_line_no,
+                'key': desc_key,
+                'description': _truncate(desc_value, 200),
+            }
+        )
+    return out
+
+
 # =============================================================================
 # Subcommand: surface
 # =============================================================================
@@ -906,6 +1159,10 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         modified_files, project_dir, args.contract_radius, added
     )
     keep_markers, protected_identifiers = _detect_keep_markers(added, project_dir)
+    producer_consumer = _detect_producer_consumer(added)
+    source_of_truth = _detect_source_of_truth(added)
+    same_document = _detect_same_document_consistency(added)
+    description_vs_body = _detect_description_vs_body(added, project_dir)
 
     output = {
         'status': 'success',
@@ -922,6 +1179,10 @@ def _cmd_surface(args: argparse.Namespace) -> int:
             'schema_bearing_files': len(schema_bearing),
             'keep_markers': len(keep_markers),
             'protected_identifiers': len(protected_identifiers),
+            'producer_consumer': len(producer_consumer),
+            'source_of_truth': len(source_of_truth),
+            'same_document_consistency': len(same_document),
+            'description_vs_body': len(description_vs_body),
             'total': (
                 len(regexes)
                 + len(user_facing)
@@ -929,6 +1190,10 @@ def _cmd_surface(args: argparse.Namespace) -> int:
                 + len(sym_pairs)
                 + len(flag_guard_pairs)
                 + len(keep_markers)
+                + len(producer_consumer)
+                + len(source_of_truth)
+                + len(same_document)
+                + len(description_vs_body)
             ),
         },
         'regexes': regexes,
@@ -940,6 +1205,10 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'schema_bearing_files': schema_bearing,
         'keep_markers': keep_markers,
         'protected_identifiers': protected_identifiers,
+        'producer_consumer': producer_consumer,
+        'source_of_truth': source_of_truth,
+        'same_document_consistency': same_document,
+        'description_vs_body': description_vs_body,
     }
     output_toon(output)
     return 0
@@ -959,7 +1228,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_surface = sub.add_parser(
         'surface',
-        help='Emit candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers) from the worktree diff as TOON.',
+        help='Emit twelve candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter) from the worktree diff as TOON.',
         allow_abbrev=False,
     )
     add_plan_id_arg(p_surface)

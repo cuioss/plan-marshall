@@ -1,15 +1,15 @@
 ---
 name: phase-3-outline
-description: Two-track solution outline creation - Simple Track for localized changes, Complex Track for codebase-wide discovery
+description: Two-lane solution outline creation - light lane for bounded localized changes, deep lane for codebase-wide discovery
 user-invocable: false
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Phase Outline Skill
 
-**Role**: Two-track workflow skill for creating solution outlines. Routes based on track selection from phase-2-refine.
+**Role**: Two-lane workflow skill for creating solution outlines. Routes on the planning lane resolved by the phase-1-init lane router (`status.metadata.planning_lane`).
 
-**Prerequisite**: Request must be refined (phase-2-refine completed) with track field set.
+**Prerequisite**: Request must be refined (phase-2-refine completed); the planning lane (light/deep) is set by the phase-1-init lane router.
 
 ## Foundational Practices
 
@@ -27,7 +27,7 @@ Skill: plan-marshall:dev-agent-behavior-rules
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
-- Never fall back to simple track if complex track fails — return error
+- Never fall back to the light-lane (Simple-Track) authoring procedure when the deep-lane (Complex-Track) flow fails — return error
 - **Never mutate source files outside `.plan/local/plans/{plan_id}/`** during outline. The outline phase is strictly analytical: it discovers, classifies, and writes solution documents into the plan workspace. Edits to any path under `marketplace/`, `target/`, `.claude/`, `test/`, `doc/`, or any other repository directory are categorically forbidden — those mutations are the responsibility of phase-5-execute. If a recipe or domain workflow proposes a fix, capture it as a deliverable in `solution_outline.md` rather than applying it directly.
 - **Never invoke any `*-doctor` tool (e.g., `plugin-doctor`, `plan-doctor`) carrying `fix`, `apply`, `--apply`, or `--fix`** during outline. Doctor tools may only be invoked in their read-only modes (`verify`, `check`, no flags) to surface findings. The `apply`/`fix`/`--fix`/`--apply` surfaces mutate source files and bypass the per-plan workspace boundary above — they are reserved for phase-5-execute task bodies that the planner explicitly authorized via a deliverable. This applies equally to `Bash`, `Skill:`, and `SlashCommand:` invocation shapes.
 
@@ -282,9 +282,7 @@ For localized changes where targets are already known from module_mapping. The l
 
 ### File-type classifier (normative)
 
-Before assigning `profiles[]` to any deliverable, every author MUST classify the deliverable's `**Affected files:**` list against the six-bucket file-type classifier. The buckets, predicates, profile assignments, and verification commands are documented in [`standards/outline-workflow-detail.md` § File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The rule is normative — assigning `module_testing` to a `documentation_only` deliverable is a contract violation that phase-4-plan refuses to translate into a paired pytest task and instead emits a Q-Gate finding back to this phase. The aggregator that produces the bucket lives in `manage-execution-manifest._classify_paths_via_extensions`; per-domain predicates are owned by each bundle's `ExtensionBase.classify_paths()` override.
-
-The canonical doctor invocation cited in all `documentation_only` deliverable Verification fields is `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root marketplace` (NOT the stale `:plugin-doctor:plugin-doctor`, and NOT the rule-less `scan`/`list-components` enumerate verbs).
+Before assigning `profiles[]` to any deliverable, every author MUST classify the deliverable's `**Affected files:**` list against the six-bucket file-type classifier. The buckets, predicates, and profile assignments are documented in [`standards/outline-workflow-detail.md` § File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The rule is normative — a `documentation_only` deliverable MUST carry the `implementation` profile only and never `module_testing`. The aggregator that produces the bucket lives in `manage-execution-manifest._classify_paths_via_extensions`; per-domain predicates are owned by each bundle's `ExtensionBase.classify_paths()` override.
 
 ### Value-change test-sweep rule (normative)
 
@@ -428,12 +426,12 @@ Each deliverable in solution_outline.md MUST follow this field order. The author
 
 `**Intent gloss:**` is copied verbatim by phase-4-plan into every derived task.description, so the sentence must stand alone without relying on the surrounding deliverable context.
 
-The `<!-- bucket: ... -->` comment on the `**Profiles:**` line is REQUIRED and records the resolved file-type bucket from the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The bucket determines which profiles are valid for the deliverable:
+The `<!-- bucket: ... -->` comment on the `**Profiles:**` line is REQUIRED as the profile audit trail and records the resolved file-type bucket from the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The bucket determines which profiles are valid for the deliverable:
 
-- `documentation_only` → `implementation` only; never paired with `module_testing`. Verification cites `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root marketplace`.
-- `production_only` → `implementation` + `module_testing`. Verification cites the resolved `quality-gate` and `module-tests` commands.
-- `test_only` → `module_testing` only (test-only deliverable). Verification cites the resolved `module-tests` command.
-- `mixed_code` → `implementation` + `module_testing` (production + test paths, no documentation). Verification cites the resolved `quality-gate` and `module-tests` commands.
+- `documentation_only` → `implementation` only; never paired with `module_testing`. When the changed paths include marketplace skill `.md` bodies (`marketplace/bundles/**/skills/**/*.md`), the Verification command MUST use the rule-complete scoped form: `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root {worktree_path}/marketplace` — NOT the rule-less `list-components` or bare `scan --paths`, because those enumerate without running quality-gate rules and are not CI-equivalent gates. See [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md) for the complete verification procedure.
+- `production_only` → `implementation` + `module_testing`.
+- `test_only` → `module_testing` only (test-only deliverable).
+- `mixed_code` → `implementation` + `module_testing` (production + test paths, no documentation).
 - `mixed_with_docs` → `implementation` + `module_testing`, with `module_testing` scope narrowed to the production/test paths only (declare the narrowed scope in a `**Module_testing scope:**` block above `**Affected files:**`).
 - `unknown` → BLOCKS the deliverable. Phase-4-plan emits a Q-Gate finding requiring the user to add a domain-extension claim for the unclaimed path(s) or correct the affected-files list. Never silently route to `documentation_only`.
 

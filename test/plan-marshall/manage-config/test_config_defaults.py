@@ -104,6 +104,75 @@ def test_ceremony_automation_includes_auto_merge_after_ci():
     )
 
 
+def test_default_ceremony_policy_finalize_simplify_defaults_to_auto():
+    """ceremony_policy.finalize must declare the simplify gate with default 'auto'.
+
+    `simplify` is the symmetric peer of the other three finalize gates
+    (self_review / qgate / plugin_doctor): `auto` defers to the manifest
+    composer's `simplify_inactive` pre-filter, while always/never force the
+    finalize-step-simplify step in/out.
+    """
+    # Arrange
+    finalize = _config_defaults_mod.DEFAULT_CEREMONY_POLICY['finalize']
+
+    # Act / Assert
+    assert 'simplify' in finalize, (
+        'simplify must be schema-registered in ceremony_policy.finalize'
+    )
+    assert finalize['simplify'] == 'auto', (
+        "ceremony_policy.finalize.simplify default must be 'auto' "
+        '(defer to the simplify_inactive pre-filter)'
+    )
+
+
+def test_get_default_config_includes_ceremony_finalize_simplify():
+    """get_default_config() must surface ceremony_policy.finalize.simplify == 'auto'."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    finalize = config['ceremony_policy']['finalize']
+    assert finalize.get('simplify') == 'auto'
+
+
+def test_ceremony_finalize_gates_includes_simplify_as_peer():
+    """CEREMONY_FINALIZE_GATES must enumerate simplify alongside the other three gates."""
+    # Arrange / Act
+    gates = _config_defaults_mod.CEREMONY_FINALIZE_GATES
+
+    # Assert — the symmetric-peer ladder: simplify joins the existing three gates
+    assert gates == ('self_review', 'qgate', 'plugin_doctor', 'simplify')
+    assert 'simplify' in gates
+
+
+def test_validate_ceremony_policy_accepts_simplify_run_at_all_values():
+    """validate_ceremony_policy must accept every auto|always|never value for finalize.simplify."""
+    # Arrange / Act / Assert — no exception for any allowed run-at-all value
+    for value in _config_defaults_mod.VALID_CEREMONY_RUN_AT_ALL:
+        _config_defaults_mod.validate_ceremony_policy({'finalize': {'simplify': value}})
+
+
+def test_validate_ceremony_policy_rejects_invalid_simplify_value():
+    """validate_ceremony_policy must raise ValueError for a simplify value outside the enum."""
+    # Arrange / Act / Assert
+    import pytest
+
+    with pytest.raises(ValueError, match=r'ceremony_policy\.finalize\.simplify'):
+        _config_defaults_mod.validate_ceremony_policy({'finalize': {'simplify': 'sometimes'}})
+
+
+def test_ceremony_finalize_simplify_is_not_a_footgun():
+    """finalize.simplify must NOT appear in the footgun catalogues.
+
+    `never` for simplify skips a quality-improvement sweep, not a safety net, so
+    it MUST NOT emit a set-time footgun [WARNING]. It is absent from both the
+    soft (CEREMONY_FOOTGUNS) and hard (CEREMONY_HARD_FOOTGUNS) catalogues.
+    """
+    # Arrange / Act / Assert
+    assert 'finalize.simplify' not in _config_defaults_mod.CEREMONY_FOOTGUNS
+    assert 'finalize.simplify' not in _config_defaults_mod.CEREMONY_HARD_FOOTGUNS
+
+
 def test_default_plan_finalize_includes_auto_rebase_threshold():
     """DEFAULT_PLAN_FINALIZE must declare auto_rebase_threshold with default 'no_overlap_only'."""
     # Arrange
@@ -591,7 +660,8 @@ def test_built_in_finalize_steps_includes_finalize_step_simplify_at_order_8_posi
     """default:finalize-step-simplify occupies the order-8 ordinal slot in BUILT_IN_FINALIZE_STEPS.
 
     The slot is index 1: after default:pre-push-quality-gate (order 5, index 0)
-    and before default:commit-push (order 10, index 2).
+    and before default:finalize-step-whole-tree-gate (order 9, index 2) and
+    default:commit-push (order 10, index 3).
     """
     # Arrange
     steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
@@ -602,7 +672,8 @@ def test_built_in_finalize_steps_includes_finalize_step_simplify_at_order_8_posi
     )
     assert steps[0] == 'default:pre-push-quality-gate'
     assert steps[1] == 'default:finalize-step-simplify'
-    assert steps[2] == 'default:commit-push'
+    assert steps[2] == 'default:finalize-step-whole-tree-gate'
+    assert steps[3] == 'default:commit-push'
 
 
 def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
@@ -621,6 +692,54 @@ def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
     assert descriptions['default:finalize-step-simplify'], (
         'default:finalize-step-simplify description must be non-empty'
     )
+
+
+def test_built_in_finalize_steps_includes_whole_tree_gate_before_commit_push():
+    """default:finalize-step-whole-tree-gate must sit before default:commit-push.
+
+    The gate must run pre-commit so a surviving deleted-symbol reference BLOCKS
+    the push — mirroring the pre-push-quality-gate ordering rationale. The new
+    step is inserted after default:finalize-step-simplify (index 1) and before
+    default:commit-push.
+    """
+    # Arrange
+    steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
+
+    # Act / Assert — presence and pre-commit ordinal placement
+    assert 'default:finalize-step-whole-tree-gate' in steps, (
+        'default:finalize-step-whole-tree-gate must be seeded into BUILT_IN_FINALIZE_STEPS'
+    )
+    gate_index = steps.index('default:finalize-step-whole-tree-gate')
+    commit_index = steps.index('default:commit-push')
+    simplify_index = steps.index('default:finalize-step-simplify')
+    assert simplify_index < gate_index < commit_index, (
+        'finalize-step-whole-tree-gate must run after finalize-step-simplify and '
+        'before commit-push (pre-commit gate)'
+    )
+
+
+def test_built_in_finalize_step_descriptions_includes_whole_tree_gate():
+    """default:finalize-step-whole-tree-gate must carry a non-empty description entry."""
+    # Arrange
+    descriptions = _config_defaults_mod.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+
+    # Act / Assert
+    assert 'default:finalize-step-whole-tree-gate' in descriptions, (
+        'default:finalize-step-whole-tree-gate must have a BUILT_IN_FINALIZE_STEP_DESCRIPTIONS entry'
+    )
+    assert descriptions['default:finalize-step-whole-tree-gate'], (
+        'default:finalize-step-whole-tree-gate description must be non-empty'
+    )
+
+
+def test_get_default_config_seeds_whole_tree_gate_in_finalize_steps():
+    """get_default_config() must surface finalize-step-whole-tree-gate in the default candidate set."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert 'default:finalize-step-whole-tree-gate' in steps
 
 
 def test_default_plan_coverage_is_inherit_inherit():

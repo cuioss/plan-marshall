@@ -79,7 +79,7 @@ High-level documentation of auth mechanisms covering supported methods, usage gu
 **Change per file:** Create new AsciiDoc page documenting supported auth methods (JWT, OAuth2, Basic), guidance on when to use each method, and security considerations.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify -pl docs`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -pl docs"`
 - Criteria: Antora site builds without errors
 
 **Success Criteria:**
@@ -109,7 +109,7 @@ Visual flow documentation for the main authentication sequences.
 **Change per file:** Create PlantUML sequence diagrams: JWT token validation flow, OAuth2 authorization code flow, and token refresh sequence.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify -pl docs`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -pl docs"`
 - Criteria: PlantUML diagrams render without errors in the Antora build
 
 **Success Criteria:**
@@ -136,7 +136,7 @@ Step-by-step setup instructions with required properties, optional tuning, and e
 **Change per file:** Create AsciiDoc configuration guide with sections for required properties, optional tuning parameters, environment-specific settings, and example configurations.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify -pl docs`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -pl docs"`
 - Criteria: Antora site builds without errors
 
 **Success Criteria:**
@@ -164,7 +164,7 @@ Common issues and solutions for auth failures.
 **Change per file:** Create AsciiDoc troubleshooting guide covering token validation failures, clock skew issues, key configuration problems, and debug logging setup.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify -pl docs`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -pl docs"`
 - Criteria: Antora site builds without errors
 
 **Success Criteria:**
@@ -192,7 +192,7 @@ Endpoint documentation for all authentication endpoints.
 **Change per file:** Create AsciiDoc API reference documenting POST /auth/token, POST /auth/refresh, POST /auth/revoke, and GET /auth/userinfo with request/response schemas and examples.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify -pl docs`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -pl docs"`
 - Criteria: Antora site builds without errors
 
 **Success Criteria:**

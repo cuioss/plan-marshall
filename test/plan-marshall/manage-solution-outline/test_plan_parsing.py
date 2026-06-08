@@ -32,6 +32,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from _plan_parsing import (  # noqa: E402
     _extract_affected_files,
+    _extract_profiles,
     _slugify_section_name,
     parse_document_sections,
 )
@@ -273,4 +274,114 @@ class TestExtractAffectedFilesIntent:
 
     def test_no_affected_files_section_returns_empty(self):
         result = _extract_affected_files('No affected files here.')
+        assert result == []
+
+
+# =============================================================================
+# _extract_profiles() — inline bucket-comment tolerance (P3b regex drift)
+# =============================================================================
+
+
+class TestExtractProfilesBucketComment:
+    """Verify `_extract_profiles` parses the documented inline bucket form.
+
+    The canonical documented form records the file-type bucket as a trailing
+    same-line HTML comment on the ``**Profiles:**`` line:
+    ``**Profiles:** <!-- bucket: documentation_only -->`` followed by the
+    ``- `` bullet list. The widened validator regex MUST parse this form while
+    still extracting profiles only from the bullets — the comment text must
+    never be mis-read as a profile.
+    """
+
+    def test_inline_bucket_comment_form_parses_profiles(self):
+        content = (
+            '**Profiles:** <!-- bucket: documentation_only -->\n'
+            '- implementation\n'
+            '- module_testing\n'
+        )
+        result = _extract_profiles(content)
+        assert result == ['implementation', 'module_testing']
+
+    @pytest.mark.parametrize(
+        'bucket',
+        [
+            'production_only',
+            'test_only',
+            'documentation_only',
+            'mixed_code',
+            'mixed_with_docs',
+            'unknown',
+        ],
+    )
+    def test_inline_bucket_comment_parses_for_every_documented_bucket(self, bucket):
+        # Arrange — the widened `[^\n]*` lead-in must tolerate ANY documented
+        # bucket value on the `**Profiles:**` line, not just the one literal
+        # ('documentation_only') the happy-path test uses. The six bucket names
+        # are the canonical vocabulary from
+        # phase-3-outline/standards/outline-workflow-detail.md § File-type classifier.
+        content = f'**Profiles:** <!-- bucket: {bucket} -->\n- implementation\n'
+
+        # Act
+        result = _extract_profiles(content)
+
+        # Assert — profiles come only from the bullet; the bucket token never leaks.
+        assert result == ['implementation'], (
+            f'Widened regex must parse the inline bucket form for bucket {bucket!r}; '
+            f'got {result!r}'
+        )
+        assert bucket not in result
+
+    def test_inline_arbitrary_trailing_text_parses_profiles(self):
+        # Arrange — the widening is `[^\n]*` (any non-newline run), not a regex
+        # that hard-codes the `<!-- bucket: ... -->` shape. Arbitrary trailing
+        # prose on the `**Profiles:**` line must still let the bullets parse.
+        content = '**Profiles:**   trailing notes — see deliverable 6\n- implementation\n'
+
+        # Act
+        result = _extract_profiles(content)
+
+        # Assert
+        assert result == ['implementation']
+
+    def test_inline_bucket_comment_not_mis_parsed_as_profile(self):
+        # Negative case: the bucket token ("documentation_only") and the comment
+        # markers must not leak into the returned profile list.
+        content = '**Profiles:** <!-- bucket: documentation_only -->\n- implementation\n'
+        result = _extract_profiles(content)
+        assert result == ['implementation']
+        assert 'documentation_only' not in result
+        assert all('bucket' not in profile for profile in result)
+
+    def test_plain_form_without_comment_still_parses(self):
+        # Regression guard: the widened regex must not break the comment-free form.
+        content = '**Profiles:**\n- implementation\n- verification\n'
+        result = _extract_profiles(content)
+        assert result == ['implementation', 'verification']
+
+    def test_indented_first_bullet_after_inline_comment_parses(self):
+        # Arrange — the `\s*` segment after the line break tolerates leading
+        # whitespace before the first bullet. Pair it with the inline comment
+        # to exercise both widening segments together.
+        content = '**Profiles:** <!-- bucket: documentation_only -->\n  - implementation\n'
+
+        # Act
+        result = _extract_profiles(content)
+
+        # Assert
+        assert result == ['implementation']
+
+    def test_inline_comment_form_is_case_insensitive(self):
+        # Arrange — `_extract_profiles` compiles its search with re.IGNORECASE,
+        # so a lower-cased `**profiles:**` heading still parses. Guard the flag
+        # against accidental removal during a future regex edit.
+        content = '**profiles:** <!-- bucket: documentation_only -->\n- implementation\n'
+
+        # Act
+        result = _extract_profiles(content)
+
+        # Assert
+        assert result == ['implementation']
+
+    def test_no_profiles_section_returns_empty(self):
+        result = _extract_profiles('No profiles section here.')
         assert result == []

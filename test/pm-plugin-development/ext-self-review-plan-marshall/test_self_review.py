@@ -7,10 +7,14 @@ from pathlib import Path
 import pytest
 from self_review import (  # type: ignore[import-not-found]
     _detect_contract_sources,
+    _detect_description_vs_body,
     _detect_flag_guard_pairs,
     _detect_keep_markers,
     _detect_markdown_sections,
+    _detect_producer_consumer,
     _detect_regexes,
+    _detect_same_document_consistency,
+    _detect_source_of_truth,
     _detect_symmetric_pairs,
     _detect_user_facing_strings,
     _diff_hunks,
@@ -506,6 +510,10 @@ class TestEmptyDiff:
         assert _detect_markdown_sections([], tmp_path) == []
         assert _detect_symmetric_pairs([], tmp_path) == []
         assert _detect_flag_guard_pairs([]) == []
+        assert _detect_producer_consumer([]) == []
+        assert _detect_source_of_truth([]) == []
+        assert _detect_same_document_consistency([]) == []
+        assert _detect_description_vs_body([], tmp_path) == []
 
 
 # =============================================================================
@@ -1048,3 +1056,246 @@ class TestResolveFootprint:
         footprint = _resolve_footprint(not_a_repo, 'main')
 
         assert footprint == []
+
+
+# =============================================================================
+# Test: _detect_producer_consumer
+# =============================================================================
+
+
+class TestDetectProducerConsumer:
+    def test_producer_without_consumer_surfaces_candidate(self):
+        # An output['key'] = ... producer with no consumer anywhere -> candidate.
+        added = [('mod.py', 5, "    output['dangling'] = compute()")]
+        out = _detect_producer_consumer(added)
+        assert len(out) == 1
+        entry = out[0]
+        assert entry['file'] == 'mod.py'
+        assert entry['line'] == 5
+        assert entry['key'] == 'dangling'
+        assert entry['consumed'] is False
+
+    def test_double_quoted_producer_is_detected(self):
+        added = [('mod.py', 2, '    output["only"] = value')]
+        out = _detect_producer_consumer(added)
+        assert len(out) == 1
+        assert out[0]['key'] == 'only'
+
+    def test_subscript_read_consumes_producer(self):
+        # The same key read back via subscript -> not surfaced.
+        added = [
+            ('mod.py', 5, "    output['used'] = compute()"),
+            ('mod.py', 9, "    if output['used']:"),
+        ]
+        out = _detect_producer_consumer(added)
+        assert out == []
+
+    def test_get_read_consumes_producer(self):
+        # A .get('key') read suppresses the candidate.
+        added = [
+            ('mod.py', 5, "    output['fetched'] = compute()"),
+            ('mod.py', 9, "    val = output.get('fetched')"),
+        ]
+        out = _detect_producer_consumer(added)
+        assert out == []
+
+    def test_cross_file_consumption_suppresses_candidate(self):
+        # Produced in one file, consumed in another -> not a dangling producer.
+        added = [
+            ('producer.py', 5, "    output['shared'] = compute()"),
+            ('consumer.py', 3, "    use(state['shared'])"),
+        ]
+        out = _detect_producer_consumer(added)
+        assert out == []
+
+    def test_producer_line_own_key_does_not_self_consume(self):
+        # The LHS subscript on the producer line must not register the key as
+        # consumed (otherwise no producer would ever surface).
+        added = [('mod.py', 5, "    output['k'] = compute()")]
+        out = _detect_producer_consumer(added)
+        assert len(out) == 1
+        assert out[0]['key'] == 'k'
+
+    def test_skips_non_python_files(self):
+        added = [('doc.md', 1, "output['x'] = 1")]
+        out = _detect_producer_consumer(added)
+        assert out == []
+
+
+# =============================================================================
+# Test: _detect_source_of_truth
+# =============================================================================
+
+
+class TestDetectSourceOfTruth:
+    def test_divergent_constant_across_two_files_surfaces_candidate(self):
+        added = [
+            ('a.py', 3, 'MAX_RETRIES = 5'),
+            ('b.py', 7, 'MAX_RETRIES = 3'),
+        ]
+        out = _detect_source_of_truth(added)
+        assert len(out) == 1
+        entry = out[0]
+        assert entry['name'] == 'MAX_RETRIES'
+        assert 'a.py' in entry['files']
+        assert 'b.py' in entry['files']
+        assert '5' in entry['values']
+        assert '3' in entry['values']
+
+    def test_identical_constant_across_two_files_surfaces_nothing(self):
+        # Same value in two files is not a drift.
+        added = [
+            ('a.py', 3, 'MAX_RETRIES = 5'),
+            ('b.py', 7, 'MAX_RETRIES = 5'),
+        ]
+        out = _detect_source_of_truth(added)
+        assert out == []
+
+    def test_constant_in_single_file_surfaces_nothing(self):
+        added = [('a.py', 3, 'MAX_RETRIES = 5')]
+        out = _detect_source_of_truth(added)
+        assert out == []
+
+    def test_lowercase_name_is_not_a_constant(self):
+        # Only UPPER_SNAKE_CASE bindings are treated as SoT constants.
+        added = [
+            ('a.py', 3, 'max_retries = 5'),
+            ('b.py', 7, 'max_retries = 3'),
+        ]
+        out = _detect_source_of_truth(added)
+        assert out == []
+
+    def test_skips_non_python_files(self):
+        added = [
+            ('a.md', 1, 'MAX_RETRIES = 5'),
+            ('b.md', 1, 'MAX_RETRIES = 3'),
+        ]
+        out = _detect_source_of_truth(added)
+        assert out == []
+
+
+# =============================================================================
+# Test: _detect_same_document_consistency
+# =============================================================================
+
+
+class TestDetectSameDocumentConsistency:
+    @pytest.mark.parametrize(
+        'keyword_line',
+        [
+            'The runner MUST flush before exit.',
+            'Agents MUST NOT edit the main checkout.',
+            'The gate SHALL reject empty input.',
+            'NEVER call git without -C.',
+            'The cwd ALWAYS stays pinned.',
+            'A --phase argument is REQUIRED.',
+            'Direct gh access is FORBIDDEN.',
+        ],
+    )
+    def test_normative_directive_surfaces_candidate(self, keyword_line: str):
+        added = [('rule.md', 4, keyword_line)]
+        out = _detect_same_document_consistency(added)
+        assert len(out) == 1
+        entry = out[0]
+        assert entry['file'] == 'rule.md'
+        assert entry['line'] == 4
+        assert entry['keyword'] in keyword_line
+        assert entry['text'] == keyword_line
+
+    def test_non_normative_line_surfaces_nothing(self):
+        added = [('rule.md', 4, 'This is plain descriptive prose.')]
+        out = _detect_same_document_consistency(added)
+        assert out == []
+
+    def test_skips_non_markdown_files(self):
+        added = [('mod.py', 1, '# The runner MUST flush before exit.')]
+        out = _detect_same_document_consistency(added)
+        assert out == []
+
+
+# =============================================================================
+# Test: _detect_description_vs_body
+# =============================================================================
+
+
+class TestDetectDescriptionVsBody:
+    @staticmethod
+    def _write_doc(root: Path, rel: str, content: str) -> None:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding='utf-8')
+
+    def test_frontmatter_description_with_body_edit_surfaces_candidate(self, tmp_path: Path):
+        rel = 'skill/SKILL.md'
+        self._write_doc(
+            tmp_path,
+            rel,
+            '---\n'
+            'name: skill\n'
+            'description: Surfaces two-track classification model.\n'
+            '---\n'
+            '# Skill\n'
+            'The body now implements a single-track model only.\n',
+        )
+        # An added body line (line 6, below the closing --- on line 4).
+        added = [(rel, 6, 'The body now implements a single-track model only.')]
+        out = _detect_description_vs_body(added, tmp_path)
+        assert len(out) == 1
+        entry = out[0]
+        assert entry['file'] == rel
+        assert entry['line'] == 3
+        assert entry['key'] == 'description'
+        assert 'two-track' in entry['description']
+
+    def test_summary_key_is_also_recognized(self, tmp_path: Path):
+        rel = 'skill/DOC.md'
+        self._write_doc(
+            tmp_path,
+            rel,
+            '---\n'
+            'summary: Old model summary.\n'
+            '---\n'
+            '# Doc\n'
+            'New body content.\n',
+        )
+        added = [(rel, 5, 'New body content.')]
+        out = _detect_description_vs_body(added, tmp_path)
+        assert len(out) == 1
+        assert out[0]['key'] == 'summary'
+
+    def test_frontmatter_only_edit_surfaces_nothing(self, tmp_path: Path):
+        # Only the description line itself changed; no body edit -> no candidate.
+        rel = 'skill/SKILL.md'
+        self._write_doc(
+            tmp_path,
+            rel,
+            '---\n'
+            'name: skill\n'
+            'description: A description.\n'
+            '---\n'
+            '# Skill\n'
+            'Unchanged body.\n',
+        )
+        added = [(rel, 3, 'description: A description.')]
+        out = _detect_description_vs_body(added, tmp_path)
+        assert out == []
+
+    def test_no_frontmatter_description_surfaces_nothing(self, tmp_path: Path):
+        rel = 'skill/SKILL.md'
+        self._write_doc(
+            tmp_path,
+            rel,
+            '---\n'
+            'name: skill\n'
+            '---\n'
+            '# Skill\n'
+            'Body content here.\n',
+        )
+        added = [(rel, 5, 'Body content here.')]
+        out = _detect_description_vs_body(added, tmp_path)
+        assert out == []
+
+    def test_skips_non_markdown_files(self, tmp_path: Path):
+        added = [('mod.py', 5, 'some code')]
+        out = _detect_description_vs_body(added, tmp_path)
+        assert out == []

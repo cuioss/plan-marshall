@@ -1,6 +1,6 @@
 ---
 name: default:pre-submission-self-review
-description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift) before commit-push
+description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift) before commit-push
 order: 7
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
@@ -18,13 +18,13 @@ Every `manage-*` script call in this document carries the following exit-code co
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
-The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below). Step 1 (deterministic surface) and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the five LLM cognitive checks) run in the dispatched envelope under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). On any finding the LLM returns, the step hard-fails and halts the phase, mirroring the gating-step convention established by `pre-push-quality-gate`.
+The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below). Step 1 (deterministic surface) and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the nine LLM cognitive checks) run in the dispatched envelope under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). On any finding the LLM returns, the step hard-fails and halts the phase, mirroring the gating-step convention established by `pre-push-quality-gate`.
 
 This document carries NO step-activation logic. Activation is controlled by the manifest composer in `manage-execution-manifest/scripts/manage-execution-manifest.py` via the `pre_submission_self_review_inactive` pre-filter (see `manage-execution-manifest/standards/decision-rules.md`). The composer drops the step when `commit_strategy == none` (transitively, via `commit_strategy_none`) OR the plan's live footprint is empty. When the dispatcher runs this step the executor always runs to completion: a clean run records `outcome=done`; a non-empty findings list records `outcome=failed` and halts the phase.
 
 ## Domain-Aware Candidate Surfacing
 
-The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the eight candidate sub-lists below as TOON. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
+The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the twelve candidate sub-lists below as TOON. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
 
 ## Inputs (inline step — Step 1)
 
@@ -37,7 +37,7 @@ The deterministic surfacer is pluggable via the `ext-self-review-{domain}` exten
 |-------------------|:--------:|-------------|
 | `plan_id` | Yes | Plan identifier. |
 | `WORKTREE` | Yes | Repo-relative working-directory path. |
-| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the eight candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
+| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the twelve candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
 
 | `candidates` sub-list | Schema | Purpose |
 |-----------------------|--------|---------|
@@ -49,6 +49,10 @@ The deterministic surfacer is pluggable via the `ext-self-review-{domain}` exten
 | `contract_sources[N]{file,sources}` | Per modified file: nearby `SKILL.md` and `standards/*.md` paths | Contract cross-reference anchor |
 | `schema_bearing_files[N]{file,format}` | Markdown files within the contract radius whose content contains a fenced JSON or TOON block | Contract drift detection |
 | `keep_markers[N]{file,line,identifier,kind}` + `protected_identifiers[M]` | `<!-- self-review: keep <id> -->` markers in the post-image; the top-level `protected_identifiers` set mirrors the identifier values for fast membership checks | Duplication scan refuses to drop any protected identifier |
+| `producer_consumer[N]{file,line,key,consumed}` | Produced output-dict keys (`output['key'] = ...`) with no consumer (`foo['key']` / `.get('key')`) anywhere in the diff | Dangling-producer check (check #6) |
+| `source_of_truth[N]{name,files,values}` | UPPER_SNAKE_CASE constants assigned divergent literals across two diff files | Source-of-truth drift check (check #7) |
+| `same_document_consistency[N]{file,line,keyword,text}` | Added `.md` normative directives (MUST/NEVER/etc.) for sibling-contradiction review | Same-document consistency check (check #8) |
+| `description_vs_body[N]{file,line,key,description}` | Modified `.md` files carrying a frontmatter `description`/`summary` whose body the diff also changed | Description-vs-body consistency check (check #9) |
 
 Skills the caller MUST forward in `skills[]`: none (the workflow reads files with the `Read` tool and emits no script calls).
 
@@ -72,7 +76,7 @@ Capture `{cov_scope}` and `{cov_instruction}` (when absent, treat as `inherit`).
 
 ### Step 1: Deterministic surface (inline)
 
-Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the eight candidate sub-lists in a single TOON document on stdout.
+Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the twelve candidate sub-lists in a single TOON document on stdout.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -94,7 +98,7 @@ Capture the helper's TOON output as `{candidates_toon}` for forwarding to the co
 
 ### Step 1b: Candidate-count gate (inline vs dispatch) — B5
 
-Parse the candidate sub-lists from `{candidates_toon}` and read `total_candidates` from the surfacer's `counts.total` field, which sums the six line-level heuristic lists (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`). The review-anchor lists (`contract_sources`, `schema_bearing_files`) and the derived `protected_identifiers` index are excluded from `total_candidates` for the same reason they are excluded from `counts.total` (see the surfacing skill's § Output note).
+Parse the candidate sub-lists from `{candidates_toon}` and read `total_candidates` from the surfacer's `counts.total` field, which sums the ten line-level heuristic lists (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`). The review-anchor lists (`contract_sources`, `schema_bearing_files`) and the derived `protected_identifiers` index are excluded from `total_candidates` for the same reason they are excluded from `counts.total` (see the surfacing skill's § Output note).
 
 Evaluate the gate, with the threshold `{gate}` indexed by `{cov_scope}` (`inherit`/`change-set` → `5`; `artifact` → `8`; `component`/`module`/`overall` → `12`). The `inherit` path preserves the `<= 5` threshold verbatim:
 
@@ -169,7 +173,7 @@ Before scanning the line-level candidate lists, load the contract sources surfac
 
 For each non-empty candidate list, apply the corresponding cognitive check to the surfaced items only — never expand the review to candidates the helper did not surface.
 
-> **Coverage contract**: the per-candidate lens depth is governed by the coverage instruction resolved in Step 0 (`{cov_instruction}`). The surface-only rule above caps the scope to what the surfacer surfaced at every rung — never widen the candidate set past it. The thoroughness rung sets the depth: `inherit`/`T1`/`T2` → run the five checks below as today (face-value per candidate); `T3`+ → additionally trace each surfaced candidate's siblings and cross-references before adjudicating it (the contract cross-references in Step 2a already supply the anchors). `inherit/inherit` reproduces today's behavior bit-for-bit. See the two-dial scope × thoroughness contract in [`../../dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) and the gather/expand/consume obligation in [`../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md`](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md).
+> **Coverage contract**: the per-candidate lens depth is governed by the coverage instruction resolved in Step 0 (`{cov_instruction}`). The surface-only rule above caps the scope to what the surfacer surfaced at every rung — never widen the candidate set past it. The thoroughness rung sets the depth: `inherit`/`T1`/`T2` → run the nine checks below as today (face-value per candidate); `T3`+ → additionally trace each surfaced candidate's siblings and cross-references before adjudicating it (the contract cross-references in Step 2a already supply the anchors). `inherit/inherit` reproduces today's behavior bit-for-bit. See the two-dial scope × thoroughness contract in [`../../dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) and the gather/expand/consume obligation in [`../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md`](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md).
 
 1. **Symmetric pair test-coverage check** — for each `symmetric_pairs` entry, search the test directory for a test that exercises BOTH `name` and `partner` and asserts the post-state of the partner without first invoking `name` in the same test. A symmetric pair where one half is silently skipped is the canonical defect class. Defect → record finding `{file, line, defect_class: symmetric_pair_uncovered, rationale: <which half is unexercised and why it matters>}`.
 
@@ -194,6 +198,14 @@ For each non-empty candidate list, apply the corresponding cognitive check to th
 
    Defect → record finding `{file, line, defect_class: contract_drift, rationale: <which contract source disagrees with the hunk, and what the drift is>}`.
 
+6. **Producer-consumer check** — for each `producer_consumer` entry, the helper has already established that the produced output key has no consumer in the diff. Confirm the dangling producer is a real defect: read the producer line and decide whether the emitted value is genuinely meant to be read downstream (a contract field a consumer must dispatch on) or is a legitimate write-only output (e.g., a TOON field the script emits for the caller, never re-read inside the script). A value emitted into a control-flow contract with no branch reading it is a defect. Defect → record finding `{file, line, defect_class: producer_without_consumer, rationale: <which key is produced, and the downstream branch that should consume it but does not>}`.
+
+7. **Source-of-truth consistency check** — for each `source_of_truth` entry, the helper has surfaced a constant declared with divergent literals across two files. Read both declarations in context and decide which is the authoritative source of truth and whether the divergence is an intentional per-file value or a drift (the diff updated one declaration and forgot the sibling). A genuine drift — two declarations that are meant to agree but no longer do — is a defect. Defect → record finding `{file, line, defect_class: source_of_truth_drift, rationale: <the constant, the two divergent values, and which declaration is stale>}`. Use the first declaring file/line from the entry's `files` field as the finding anchor.
+
+8. **Same-document consistency check** — for each `same_document_consistency` entry, read the added normative directive (`text`) and compare it against the sibling normative statements ALREADY present in the same document. A new `MUST`/`NEVER`/`ALWAYS` rule that contradicts, narrows, or widens an existing normative statement in the same file leaves operators unable to know which rule governs. Defect → record finding `{file, line, defect_class: same_document_contradiction, rationale: <the new directive, the sibling directive it contradicts, and the conflict>}`. When the added directive is consistent with (or orthogonal to) its document siblings, record no finding.
+
+9. **Description-vs-body consistency check** — for each `description_vs_body` entry, read the frontmatter `description`/`summary` (`description` field) against the document body the diff changed. When the body now implements a model the description no longer matches — a deleted machinery the description still advertises, a renamed concept, a removed track/mode the summary still names — the description is stale. Defect → record finding `{file, line, defect_class: description_body_drift, rationale: <which part of the description the body no longer implements>}`. When the description still accurately summarizes the changed body, record no finding.
+
 ### Dispatched-envelope output (returned from Steps 2–3 to Step 4)
 
 ```toon
@@ -206,7 +218,7 @@ findings[N]{file,line,defect_class,rationale}:
 `status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome failed` per the gating-step convention. Empty `findings` → caller marks `--outcome done`.
 
 `display_detail` shape:
-- Empty `findings` → `"self-review clean: {N} candidates examined"` where `{N}` is the surfacer's `counts.total` (the six line-level heuristic lists: `regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`).
+- Empty `findings` → `"self-review clean: {N} candidates examined"` where `{N}` is the surfacer's `counts.total` (the ten line-level heuristic lists: `regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`).
 - Non-empty `findings` → `"self-review found {K} issues"`.
 
 ### Step 4: Mark Step Complete (inline)

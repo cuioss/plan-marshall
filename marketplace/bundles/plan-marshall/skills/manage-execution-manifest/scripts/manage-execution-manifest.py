@@ -99,6 +99,7 @@ EXECUTION_LOG_KEY = 'execution_log'
 DEFAULT_PHASE_5_STEPS = ('quality_check', 'build_verify')
 DEFAULT_PHASE_6_STEPS = (
     'finalize-step-simplify',
+    'finalize-step-whole-tree-gate',
     'commit-push',
     'create-pr',
     'ci-verify',
@@ -836,6 +837,17 @@ def _log_simplify_omitted(plan_id: str, change_type: str, affected_files_count: 
     _emit_decision_log(plan_id, message)
 
 
+def _log_whole_tree_gate_omitted(
+    plan_id: str, compatibility: str, change_type: str, affected_files_count: int
+) -> None:
+    """Emit the decision-log entry for the ``whole_tree_gate_inactive`` pre-filter."""
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) finalize-step-whole-tree-gate omitted — '
+        f'compatibility={compatibility} change_type={change_type} affected_files_count={affected_files_count}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
 def _log_bot_enforcement_guard_fired(plan_id: str, provider: str) -> None:
     """Emit the decision-log entry for the ``bot_enforcement_guard`` violation.
 
@@ -1117,6 +1129,85 @@ def _apply_simplify_inactive(
     return [s for s in phase_6_candidates if s != 'finalize-step-simplify'], True
 
 
+# Code-bearing change types that gate ``finalize-step-whole-tree-gate``
+# activation. Broader than ``_SIMPLIFY_CHANGE_TYPES`` because the whole-tree
+# survivor sweep is meaningful for ``enhancement`` deletions too; ``analysis``
+# (no code change) and ``verification`` (tests only, deletes nothing) are
+# excluded. See standards/decision-rules.md § Pre-Filter: whole_tree_gate_inactive.
+_WHOLE_TREE_GATE_CHANGE_TYPES = frozenset({'tech_debt', 'feature', 'enhancement', 'bug_fix'})
+
+
+def _read_compatibility() -> str:
+    """Read ``plan.phase-2-refine.compatibility`` from marshal.json.
+
+    Returns ``'breaking'`` when the file is missing, the keys are absent, or the
+    value is not a non-empty string — matching ``DEFAULT_PLAN_REFINE['compatibility']``,
+    so a fresh project (or one that never overrode the knob) resolves to the
+    default the rest of the pipeline assumes. The composer reads marshal.json
+    straight through, mirroring ``_read_lightweight_track_override`` /
+    ``_read_activation_globs``.
+    """
+    marshal_path = get_marshal_path()
+    if marshal_path is None or not marshal_path.exists():
+        return 'breaking'
+    try:
+        data = read_json(marshal_path, default={})
+    except (OSError, json.JSONDecodeError):
+        return 'breaking'
+    if not isinstance(data, dict):
+        return 'breaking'
+    plan = data.get('plan')
+    if not isinstance(plan, dict):
+        return 'breaking'
+    refine = plan.get('phase-2-refine')
+    if not isinstance(refine, dict):
+        return 'breaking'
+    value = refine.get('compatibility')
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return 'breaking'
+
+
+def _apply_whole_tree_gate_inactive(
+    phase_6_candidates: list[str],
+    compatibility: str,
+    change_type: str,
+    affected_files_count: int,
+) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``finalize-step-whole-tree-gate`` when its gate fails.
+
+    The whole-tree completeness gate exists to catch survivors of deletions a
+    clean-slate/breaking plan was meant to remove, so the gate activates the
+    step (keeps it) whenever ALL of:
+
+    1. ``compatibility == 'breaking'`` — a ``deprecation`` / ``smart_and_ask``
+       plan deliberately keeps old surfaces alongside new ones, so a surviving
+       reference is expected, not a defect;
+    2. ``change_type ∈ {tech_debt, feature, enhancement, bug_fix}`` — the
+       code-bearing change types; ``analysis`` / ``verification`` delete
+       nothing; and
+    3. ``affected_files_count > 0``.
+
+    When any condition fails, ``finalize-step-whole-tree-gate`` is removed from
+    ``phase_6_candidates``. The pre-filter is a no-op when the step is already
+    absent from the candidate set (e.g., a project marshal.json that never lists
+    it). Returns the filtered list plus a flag indicating whether the pre-filter
+    fired (i.e., the step was active in the input but dropped after the check).
+    """
+    if 'finalize-step-whole-tree-gate' not in phase_6_candidates:
+        return phase_6_candidates, False
+
+    if (
+        compatibility == 'breaking'
+        and change_type in _WHOLE_TREE_GATE_CHANGE_TYPES
+        and affected_files_count > 0
+    ):
+        # Gate passes — keep the step.
+        return phase_6_candidates, False
+
+    return [s for s in phase_6_candidates if s != 'finalize-step-whole-tree-gate'], True
+
+
 # Scope-gated phase-6 subtraction sets. Each entry lists the step references the
 # scope_gated_finalize pre-filter drops, expressed as match-sets that cover both
 # the bare and prefixed forms a candidate list may carry. The candidate list is
@@ -1241,7 +1332,7 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # ceremony_policy.finalize run-at-all selection (post-matrix transform)
 # =============================================================================
 #
-# The three finalize run-at-all gates (`ceremony_policy.finalize.<gate>`) drive
+# The four finalize run-at-all gates (`ceremony_policy.finalize.<gate>`) drive
 # a post-matrix transform that forces each gate's finalize step in (`always`),
 # out (`never`), or defers to the existing decision machinery (`auto`, the
 # default no-op). Each gate maps to exactly one finalize step ID:
@@ -1249,6 +1340,12 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 #   self_review   → finalize-step-pre-submission-self-review
 #   qgate         → pre-push-quality-gate (the finalize blocking-findings re-capture)
 #   plugin_doctor → finalize-step-plugin-doctor
+#   simplify      → finalize-step-simplify (holistic post-implementation sweep)
+#
+# `simplify` is the symmetric peer of the other three gates: `auto` defers to
+# the `simplify_inactive` pre-filter that already decided the step at matrix
+# time, `always` re-adds it even when that pre-filter dropped it, and `never`
+# forces it out.
 #
 # The transform NEVER touches `automated-review`: the bot-review invariant
 # (lesson 2026-04-27-18-003, enforced by `_apply_bot_enforcement_guard`) is
@@ -1292,10 +1389,14 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
         ),
         'project:finalize-step-plugin-doctor',
     ),
+    'simplify': (
+        frozenset({'finalize-step-simplify'}),
+        'finalize-step-simplify',
+    ),
 }
 
 # The run-at-all gate fields for the finalize section, in canonical order.
-_CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'plugin_doctor')
+_CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'plugin_doctor', 'simplify')
 
 # Canonical default for every finalize gate when marshal.json omits the block.
 _CEREMONY_FINALIZE_DEFAULT = 'auto'
@@ -2027,6 +2128,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #      when the live footprint is empty.
     #   4. simplify_inactive — drop finalize-step-simplify when
     #      change_type ∉ {feature, bug_fix, tech_debt} OR affected_files_count == 0.
+    #   5. whole_tree_gate_inactive — drop finalize-step-whole-tree-gate unless
+    #      compatibility == breaking AND change_type ∈ {tech_debt, feature,
+    #      enhancement, bug_fix} AND affected_files_count > 0.
     # Each pre-filter returns (filtered_candidates, fired_flag); we log a
     # dedicated decision-log line per fired pre-filter in addition to the row
     # log line emitted by _log_decision below.
@@ -2053,7 +2157,21 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates, args.change_type, affected_files_count
     )
 
-    # Pre-filter 5 (scope_gated_finalize) drops heavyweight phase-6 review/audit
+    # Pre-filter 5 (whole_tree_gate_inactive) drops finalize-step-whole-tree-gate
+    # unless the plan is clean-slate/breaking and code-bearing: compatibility ==
+    # breaking AND change_type ∈ {tech_debt, feature, enhancement, bug_fix} AND
+    # affected_files_count > 0. The whole-tree survivor sweep only makes sense on
+    # a breaking plan — deprecation / smart_and_ask plans deliberately keep old
+    # surfaces, so a surviving reference there is expected, not a defect.
+    # compatibility is read from marshal.json (plan.phase-2-refine.compatibility,
+    # default breaking). It runs after simplify_inactive and before
+    # scope_gated_finalize per standards/decision-rules.md.
+    compatibility = _read_compatibility()
+    phase_6_candidates, whole_tree_gate_omitted = _apply_whole_tree_gate_inactive(
+        phase_6_candidates, compatibility, args.change_type, affected_files_count
+    )
+
+    # Pre-filter 6 (scope_gated_finalize) drops heavyweight phase-6 review/audit
     # steps by scope: surgical drops the three non-guarded steps, single_module
     # drops only plan-retrospective, and the lightweight_track_override escape
     # hatch additionally drops automated-review. It runs after the other
@@ -2176,6 +2294,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_pre_submission_self_review_omitted(plan_id)
     if simplify_omitted:
         _log_simplify_omitted(plan_id, args.change_type, affected_files_count)
+    if whole_tree_gate_omitted:
+        _log_whole_tree_gate_omitted(plan_id, compatibility, args.change_type, affected_files_count)
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
     for change in ceremony_forced_in:
@@ -2203,6 +2323,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
         'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
         'simplify_omitted': simplify_omitted,
+        'whole_tree_gate_omitted': whole_tree_gate_omitted,
+        'compatibility': compatibility,
         'scope_gated_finalize_dropped': scope_gated_dropped,
         'lightweight_track_override': lightweight_track_override,
         'ceremony_finalize_gates': ceremony_finalize_gates,

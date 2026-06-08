@@ -56,7 +56,7 @@ Implement a JWT token validation service for the authentication module. The serv
 **Change per file:** New class in package `de.cuioss.auth.jwt`; implements `validate(String token)`, `extractClaims(String token)`, and `isExpired(String token)`; depends on `KeyProvider` for signature verification; supports RS256 and HS256 algorithms via `io.jsonwebtoken:jjwt-api`.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
 - Criteria: Compiles without error
 
 **Success Criteria:**
@@ -83,7 +83,7 @@ Implement a JWT token validation service for the authentication module. The serv
 **Change per file:** `JwtConfiguration.java` — new `@ConfigurationProperties`-bound class with fields `issuer`, `audience`, and `clockSkewSeconds`; `application.properties` — document the three keys `auth.jwt.issuer`, `auth.jwt.audience`, `auth.jwt.clock-skew` with example values.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
 - Criteria: Compiles without error
 
 **Success Criteria:**
@@ -109,7 +109,7 @@ Implement a JWT token validation service for the authentication module. The serv
 **Change per file:** New test class covering: valid token acceptance, expired token rejection, invalid signature rejection, missing required claims, and clock-skew tolerance boundary cases. Uses `io.jsonwebtoken:jjwt-impl` to build test tokens inline.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets test`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test"`
 - Criteria: All tests pass with no failures
 
 **Success Criteria:**
@@ -136,7 +136,7 @@ Implement a JWT token validation service for the authentication module. The serv
 **Change per file:** Add class-level Javadoc with a usage example to both classes; document every public method with `@param`, `@return`, and `@throws`; document each configuration field in `JwtConfiguration` with its key name and valid value range.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify"`
 - Criteria: Full verify including Javadoc linting passes without warnings
 
 **Success Criteria:**
