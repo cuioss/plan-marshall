@@ -164,7 +164,7 @@
     },
     "automation": {
       "finalize_without_asking": true,
-      "loop_back_without_asking": false,
+      "loop_back_without_asking": true,
       "auto_merge_after_ci": true
     },
     "overrides": []
