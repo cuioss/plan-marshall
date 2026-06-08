@@ -36,8 +36,11 @@ retrospective + archive).
 
 SOURCE and DESTINATION are resolved **cwd-independently** so the verb is correct
 from ANY cwd (worktree or main): the SOURCE worktree path is resolved via the
-canonical ``manage-status get-worktree-path`` channel (mirroring
-``git-workflow.py``'s ``_resolve_worktree_path_for_plan``), and the DESTINATION
+canonical ``manage-status get-worktree-path`` channel with a structural
+``get_worktree_root() / {plan_id}`` filesystem-probe fallback for the
+moved-in-from-main case (the plan dir MOVED off main into its worktree at
+phase-5, so the channel's status.json read on main returns NOT_FOUND), mirroring
+``git-workflow.py``'s ``cmd_locate_plan_checkout``; the DESTINATION
 main plan dir is resolved via the single sanctioned main-anchored resolver
 ``resolve_main_anchored_path('plans/{plan_id}')`` (ADR-002). Neither resolution
 depends on the process cwd, so the idempotence guard returns ``noop`` ONLY when
@@ -68,7 +71,10 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from file_ops import get_executor_path  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    get_executor_path,
+    get_worktree_root,
+)
 from marketplace_paths import (  # type: ignore[import-not-found]
     PLAN_DIR_NAME,
     resolve_main_anchored_path,
@@ -110,21 +116,43 @@ def _load_merge_lock() -> Any:
 # ---------------------------------------------------------------------------
 # cwd-independent SOURCE worktree-path resolution
 # ---------------------------------------------------------------------------
-# Mirrors git-workflow.py's _manage_status_call + _resolve_worktree_path_for_plan:
-# resolve the SOURCE worktree path via the canonical ``manage-status
-# get-worktree-path`` channel so the move-back is correct regardless of caller
-# cwd (the bug this script fixes — get_worktree_root() resolved cwd-relatively
-# and produced a false noop when invoked from the worktree cwd).
+# Resolves the SOURCE worktree path so the move-back is correct from ANY cwd
+# (worktree or main). Two resolution paths are tried in order, mirroring the
+# sibling git-workflow.py ``cmd_locate_plan_checkout``:
+#   1. The canonical ``manage-status get-worktree-path`` channel, which reads
+#      ``status.metadata.worktree_path`` from the plan's ``status.json``. This
+#      succeeds for a not-yet-moved plan whose status.json is still on main.
+#   2. A structural ``get_worktree_root() / {plan_id}`` filesystem probe for the
+#      moved-in-from-main case: under the ADR-002 move model the plan dir is
+#      MOVED off main into its worktree at phase-5, so the manage-status channel
+#      (reading main's now-absent status.json) returns NOT_FOUND. The probe
+#      confirms status.json at the canonical worktree layout on disk directly.
+# Genuine infrastructure failures (executor missing, timeout, parse error) and
+# the genuine "no worktree / plan absent" outcome still surface as NOT_FOUND.
+
+# Expected-error substrings: a manage-status error whose message contains one of
+# these is the recoverable "channel could not resolve" case (no worktree
+# configured / status.json missing), which the structural probe rescues. Any
+# other error is a critical infrastructure failure surfaced verbatim.
+_EXPECTED_ERROR_SUBSTRINGS = (
+    'no worktree configured',
+    'not found',
+    'does not exist',
+    'use_worktree is false',
+    'worktree_path is unset',
+)
 
 
-def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | None]:
-    """Resolve ``status.metadata.worktree_path`` for ``plan_id`` cwd-independently.
+def _resolve_worktree_path_via_status_channel(
+    plan_id: str,
+) -> tuple[Path | None, dict | None]:
+    """Resolve the worktree path via the ``manage-status get-worktree-path`` channel.
 
     Returns ``(path, None)`` on success, ``(None, error_dict)`` on failure. The
-    error dict is a fully-formed TOON-shaped payload ready to return from the
-    handler. Resolution failure (executor missing, non-success TOON,
-    ``use_worktree`` false, or empty ``worktree_path``) yields a
-    ``NOT_FOUND`` / ``plan_resolution_failed`` error.
+    error dict is a fully-formed TOON-shaped payload (``NOT_FOUND`` code). A
+    caller that wants the structural fallback inspects the error message against
+    :data:`_EXPECTED_ERROR_SUBSTRINGS` to distinguish a recoverable
+    channel-could-not-resolve case from a critical infrastructure failure.
     """
     try:
         executor = get_executor_path()
@@ -197,6 +225,64 @@ def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | N
         )
 
     return Path(str(worktree_path_value)), None
+
+
+def _structural_worktree_probe(plan_id: str) -> Path | None:
+    """Probe the canonical ``get_worktree_root() / {plan_id}`` location on disk.
+
+    Returns the worktree path when ``status.json`` is present at the canonical
+    ``{plan_id}/.plan/local/plans/{plan_id}/status.json`` layout, else ``None``.
+    Outside a git repo (``get_worktree_root`` raises ``RuntimeError``) there is
+    no worktree root to probe, so the probe yields ``None``.
+    """
+    try:
+        candidate = get_worktree_root() / plan_id
+    except RuntimeError:
+        return None
+    status_json = candidate / PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
+    if status_json.is_file():
+        return candidate
+    return None
+
+
+def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | None]:
+    """Resolve ``status.metadata.worktree_path`` for ``plan_id`` cwd-independently.
+
+    Returns ``(path, None)`` on success, ``(None, error_dict)`` on failure. The
+    error dict is a fully-formed TOON-shaped payload ready to return from the
+    handler. Resolution tries the canonical ``manage-status get-worktree-path``
+    channel first, then a structural ``get_worktree_root() / {plan_id}``
+    filesystem probe for the moved-in-from-main case (the plan dir MOVED off main
+    into its worktree at phase-5, ADR-002, so the channel's status.json read on
+    main returns NOT_FOUND). Critical infrastructure failures still surface
+    verbatim; only the recoverable channel-could-not-resolve case is rescued by
+    the probe.
+    """
+    path, error = _resolve_worktree_path_via_status_channel(plan_id)
+    if path is not None:
+        return path, None
+
+    # The channel could not resolve. Propagate a critical infrastructure failure
+    # verbatim; rescue only the recoverable channel-could-not-resolve case (no
+    # worktree configured / status.json missing — the moved-in-from-main case)
+    # via the structural probe.
+    assert error is not None  # noqa: S101 — channel returns an error when path is None
+    # ``make_error`` (triage_helpers) stores the human-readable text under the
+    # ``error`` key, NOT ``message`` — read ``error`` first so the recoverable
+    # channel-could-not-resolve case is actually detected (a ``message``-only read
+    # always saw '' and made the structural-probe fallback unreachable). Keep
+    # ``message`` as a defensive fallback for any non-``make_error`` payload shape.
+    msg = str(error.get('error') or error.get('message') or '').lower()
+    if not any(s in msg for s in _EXPECTED_ERROR_SUBSTRINGS):
+        return None, error
+
+    probed = _structural_worktree_probe(plan_id)
+    if probed is not None:
+        return probed, None
+
+    # Neither the channel nor the structural probe resolved the worktree — the
+    # genuine "no worktree / plan absent" outcome. Surface the channel's error.
+    return None, error
 
 
 # ---------------------------------------------------------------------------

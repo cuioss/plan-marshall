@@ -519,6 +519,315 @@ class TestIntegrateReclaimOrphan:
 
 
 # =============================================================================
+# cwd-independent SOURCE resolution — structural probe + channel/probe fallback
+# (this plan, Deliverable 1 — the moved-in-from-main case)
+# =============================================================================
+
+
+def _stage_worktree_at_canonical_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plan_id: str
+) -> Path:
+    """Stage a worktree at the canonical ``get_worktree_root() / {plan_id}`` layout.
+
+    Drives the DESTINATION resolver (``resolve_main_anchored_path``) via
+    ``PLAN_BASE_DIR`` pointing at a staged main ``.plan/local``, AND pins the SOURCE
+    probe's ``get_worktree_root()`` seam at ``{main}/worktrees`` so the worktree
+    resolves deterministically regardless of the autouse ``PLAN_BASE_DIR`` sandbox or
+    the process cwd. Materializes
+    ``{root}/{plan_id}/.plan/local/plans/{plan_id}/status.json`` — exactly the
+    on-disk shape :func:`_structural_worktree_probe` keys on. Returns the staged
+    worktree path (``get_worktree_root() / plan_id``).
+    """
+    main_local = tmp_path / 'main' / '.plan' / 'local'
+    main_local.mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(main_local))
+
+    worktree_root = main_local / 'worktrees'
+    # Pin the SOURCE probe's worktree-root seam directly (rather than relying on
+    # the env-var-derived get_base_dir(), which the autouse sandbox also sets):
+    # the probe calls the module-bound ``get_worktree_root`` in integrate_into_main.
+    monkeypatch.setattr(integrate_into_main, 'get_worktree_root', lambda: worktree_root)
+
+    worktree_path = worktree_root / plan_id
+    status_json = worktree_path / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+    status_json.parent.mkdir(parents=True)
+    status_json.write_text('{}\n')
+    return worktree_path
+
+
+class TestStructuralWorktreeProbe:
+    """Direct coverage of :func:`_structural_worktree_probe`.
+
+    The probe is the moved-in-from-main fallback: it confirms ``status.json`` at the
+    canonical ``get_worktree_root() / {plan_id} / .plan/local/plans/{plan_id}/``
+    layout on disk, independent of any ``manage-status`` channel read (which fails on
+    main once the plan dir has MOVED into the worktree, ADR-002).
+    """
+
+    def test_probe_resolves_when_status_json_present_at_canonical_layout(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        plan_id = 'probe-plan'
+        worktree_path = _stage_worktree_at_canonical_root(tmp_path, monkeypatch, plan_id)
+
+        # cwd is irrelevant to the probe — pin it somewhere unrelated to prove it.
+        monkeypatch.chdir(tmp_path)
+
+        probed = integrate_into_main._structural_worktree_probe(plan_id)
+        assert probed == worktree_path
+
+    def test_probe_returns_none_when_status_json_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        plan_id = 'probe-plan'
+        worktree_path = _stage_worktree_at_canonical_root(tmp_path, monkeypatch, plan_id)
+        # Remove the sentinel: a worktree dir without status.json is NOT resolvable.
+        (worktree_path / '.plan' / 'local' / 'plans' / plan_id / 'status.json').unlink()
+
+        assert integrate_into_main._structural_worktree_probe(plan_id) is None
+
+    def test_probe_returns_none_when_worktree_root_unresolvable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Outside a git repo / with no base dir, ``get_worktree_root`` raises
+        ``RuntimeError`` — the probe swallows it and yields ``None`` rather than
+        propagating (there is simply no worktree root to probe)."""
+
+        def boom() -> Path:
+            raise RuntimeError('no base dir resolvable')
+
+        monkeypatch.setattr(integrate_into_main, 'get_worktree_root', boom)
+        assert integrate_into_main._structural_worktree_probe('any-plan') is None
+
+
+class TestResolveWorktreePathFallback:
+    """Coverage of :func:`_resolve_worktree_path_for_plan`'s channel→probe ladder.
+
+    The function tries the canonical ``manage-status get-worktree-path`` channel
+    first, then the structural probe ONLY for a recoverable
+    channel-could-not-resolve error (the moved-in-from-main case). A critical
+    infrastructure failure short-circuits verbatim without consulting the probe.
+    """
+
+    def test_channel_success_short_circuits_without_probe(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        plan_id = 'chan-plan'
+        channel_path = Path('/staged/worktrees') / plan_id
+        monkeypatch.setattr(
+            integrate_into_main,
+            '_resolve_worktree_path_via_status_channel',
+            lambda pid: (channel_path, None),
+        )
+
+        # If the channel resolves, the probe must NOT be consulted at all.
+        def fail_probe(pid: str) -> Path | None:
+            raise AssertionError('probe must not run when the channel resolves')
+
+        monkeypatch.setattr(integrate_into_main, '_structural_worktree_probe', fail_probe)
+
+        path, err = integrate_into_main._resolve_worktree_path_for_plan(plan_id)
+        assert err is None
+        assert path == channel_path
+
+    def test_recoverable_channel_error_falls_through_to_probe(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The moved-in-from-main case: the channel cannot read main's now-absent
+        status.json (a recoverable 'no worktree configured' NOT_FOUND), and the
+        structural probe rescues it by confirming status.json in the worktree."""
+        plan_id = 'moved-in-plan'
+        worktree_path = _stage_worktree_at_canonical_root(tmp_path, monkeypatch, plan_id)
+
+        recoverable = integrate_into_main.make_error(
+            'No worktree configured for this plan — '
+            'status.metadata.use_worktree is false or worktree_path is unset',
+            code=integrate_into_main.ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+        monkeypatch.setattr(
+            integrate_into_main,
+            '_resolve_worktree_path_via_status_channel',
+            lambda pid: (None, recoverable),
+        )
+
+        path, err = integrate_into_main._resolve_worktree_path_for_plan(plan_id)
+        assert err is None, err
+        assert path == worktree_path
+
+    def test_critical_channel_error_surfaces_verbatim_without_probe(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A critical infrastructure failure (e.g. executor missing) is NOT a
+        recoverable channel-could-not-resolve case — it surfaces verbatim and the
+        structural probe is never consulted."""
+        plan_id = 'crit-plan'
+        critical = integrate_into_main.make_error(
+            'plan-marshall executor not available (.plan/execute-script.py missing)',
+            code=integrate_into_main.ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+        monkeypatch.setattr(
+            integrate_into_main,
+            '_resolve_worktree_path_via_status_channel',
+            lambda pid: (None, critical),
+        )
+
+        def fail_probe(pid: str) -> Path | None:
+            raise AssertionError('probe must not run for a critical channel error')
+
+        monkeypatch.setattr(integrate_into_main, '_structural_worktree_probe', fail_probe)
+
+        path, err = integrate_into_main._resolve_worktree_path_for_plan(plan_id)
+        assert path is None
+        assert err is critical
+
+    def test_recoverable_channel_error_with_probe_miss_surfaces_channel_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Recoverable channel error AND the probe also misses (genuinely no
+        worktree / plan absent): the channel's NOT_FOUND error is surfaced."""
+        plan_id = 'absent-plan'
+        recoverable = integrate_into_main.make_error(
+            'No worktree configured for this plan',
+            code=integrate_into_main.ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+        monkeypatch.setattr(
+            integrate_into_main,
+            '_resolve_worktree_path_via_status_channel',
+            lambda pid: (None, recoverable),
+        )
+        monkeypatch.setattr(
+            integrate_into_main, '_structural_worktree_probe', lambda pid: None
+        )
+
+        path, err = integrate_into_main._resolve_worktree_path_for_plan(plan_id)
+        assert path is None
+        assert err is recoverable
+
+
+class TestIntegrateFromMainViaStructuralProbe:
+    """End-to-end move-back driven from MAIN cwd through the REAL fallback ladder.
+
+    This is the moved-in-from-main case at the script level: the channel
+    (``_resolve_worktree_path_via_status_channel``) returns a recoverable
+    NOT_FOUND (main's status.json has MOVED into the worktree), and the REAL
+    structural probe resolves the SOURCE from the canonical worktree layout —
+    WITHOUT stubbing ``_resolve_worktree_path_for_plan`` wholesale. The DESTINATION
+    is the REAL ``resolve_main_anchored_path`` via ``PLAN_BASE_DIR``. cwd is pinned
+    to MAIN (not the worktree), exactly the invocation the fallback makes correct.
+    """
+
+    def _build_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> dict:
+        plan_id = 'main-probe-plan'
+
+        # Stage main + the worktree at the canonical get_worktree_root()/{plan_id}
+        # layout so the REAL structural probe can resolve the SOURCE.
+        worktree_path = _stage_worktree_at_canonical_root(tmp_path, monkeypatch, plan_id)
+        main_local = tmp_path / 'main' / '.plan' / 'local'
+        main_plan_dir = main_local / 'plans' / plan_id
+        (main_local / 'plans').mkdir(parents=True, exist_ok=True)
+
+        wt_plan_dir = worktree_path / '.plan' / 'local' / 'plans' / plan_id
+        (wt_plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['doc/foo.md']})
+        )
+        wt_global_logs = worktree_path / '.plan' / 'local' / 'logs'
+        wt_global_logs.mkdir(parents=True)
+        (wt_global_logs / 'work.log').write_text('[STATUS] hello\n')
+
+        # cwd is MAIN — the moved-in-from-main invocation. (PLAN_BASE_DIR, not cwd,
+        # drives resolution, but pinning cwd to main proves cwd-independence.)
+        monkeypatch.chdir(tmp_path / 'main')
+
+        # SOURCE channel returns a recoverable NOT_FOUND (main's status.json moved
+        # into the worktree); the REAL structural probe must rescue it.
+        recoverable = integrate_into_main.make_error(
+            'No worktree configured for this plan — '
+            'status.metadata.use_worktree is false or worktree_path is unset',
+            code=integrate_into_main.ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
+        monkeypatch.setattr(
+            integrate_into_main,
+            '_resolve_worktree_path_via_status_channel',
+            lambda pid: (None, recoverable),
+        )
+
+        fake_lock = _FakeMergeLock()
+        monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: fake_lock)
+
+        return {
+            'plan_id': plan_id,
+            'main_plan_dir': main_plan_dir,
+            'worktree_path': worktree_path,
+            'wt_plan_dir': wt_plan_dir,
+            'fake_lock': fake_lock,
+        }
+
+    def test_move_back_from_main_resolves_source_via_probe_and_integrates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env = self._build_env(tmp_path, monkeypatch)
+
+        result = integrate_into_main.run_integrate_into_main(
+            Namespace(plan_id=env['plan_id'])
+        )
+
+        # An ACTUAL move-back driven from main cwd — the structural probe resolved
+        # the SOURCE worktree from status.json, never a false noop / NOT_FOUND.
+        assert result['status'] == 'success', result
+        assert result['action'] == 'integrated', result
+
+        # Plan dir now resident at MAIN...
+        assert env['main_plan_dir'].is_dir()
+        assert (env['main_plan_dir'] / 'status.json').is_file()
+        # ...and GONE from the worktree (moved, not copied).
+        assert not env['wt_plan_dir'].exists()
+
+        # The folded global log travelled to the plan dir.
+        assert (env['main_plan_dir'] / 'logs' / 'work.log').is_file()
+        assert 'work.log' in result['folded_logs']
+
+        # Lock acquired AND released — the probe path is a real move-back.
+        assert env['fake_lock'].acquired == 1
+        assert env['fake_lock'].released == 1
+
+    def test_probe_resolved_source_is_not_clobbered_by_a_critical_channel_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When the channel returns a CRITICAL error (not the recoverable
+        moved-in-from-main shape), the probe is skipped and integrate surfaces the
+        critical error verbatim — no move-back is attempted."""
+        env = self._build_env(tmp_path, monkeypatch)
+
+        critical = integrate_into_main.make_error(
+            'manage-status get-worktree-path failed: boom',
+            code=integrate_into_main.ErrorCode.NOT_FOUND,
+            plan_id=env['plan_id'],
+        )
+        monkeypatch.setattr(
+            integrate_into_main,
+            '_resolve_worktree_path_via_status_channel',
+            lambda pid: (None, critical),
+        )
+
+        result = integrate_into_main.run_integrate_into_main(
+            Namespace(plan_id=env['plan_id'])
+        )
+
+        assert result['status'] == 'error', result
+        # No move-back happened; the worktree-resident plan dir is untouched and the
+        # merge lock was never acquired (resolution failed before lock acquisition).
+        assert env['wt_plan_dir'].is_dir()
+        assert not env['main_plan_dir'].exists()
+        assert env['fake_lock'].acquired == 0
+
+
+# =============================================================================
 # CLI argparse plumbing
 # =============================================================================
 
