@@ -42,10 +42,10 @@ This phase dispatches under one role key: **`phase-3-outline`** (resolves throug
 
 The Complex Track per-deliverable loop (Steps 9c + 10) iterates over the deliverable list — but the *inputs* feeding the per-deliverable design body are loop-invariant: they are written before the loop begins (phase-2-refine, phase-3-outline entry, Step 9 domain-resolution) and are not mutated by the loop body. The dispatched agent MUST read each of the following inputs ONCE at phase entry and reference the cached values throughout every per-deliverable iteration:
 
-- The clarified request narrative (read via `manage-plan-documents read --plan-id {plan_id} --document request`).
+- The clarified request narrative (read via `manage-plan-documents request read --plan-id {plan_id} --section clarified_request`).
 - `domains` and `compatibility` (read via `manage-files read --plan-id {plan_id} --file references.json`).
 - `module_mapping.toon` if present at `.plan/local/plans/{plan_id}/module_mapping.toon`.
-- The architecture topology (read via `manage-architecture topology` at phase entry).
+- The architecture topology (read via `manage-architecture overview` at phase entry).
 - The resolved domain outline skill notation (resolved once via Step 9 domain-resolution).
 
 **Prohibited actions:**
