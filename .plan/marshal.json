@@ -28,7 +28,6 @@
     },
     "phase-5-execute": {
       "commit_strategy": "per_plan",
-      "finalize_without_asking": true,
       "verification_max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
       "per_task_budget_reserve_tokens": "50K",
@@ -45,8 +44,6 @@
       "max_iterations": 3,
       "review_bot_buffer_seconds": 300,
       "pr_merge_strategy": "squash",
-      "loop_back_without_asking": true,
-      "auto_merge_after_ci": true,
       "auto_rebase_threshold": "no_overlap_only",
       "pre_push_quality_gate": {
         "activation_globs": [
@@ -152,6 +149,25 @@
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
     "checks_wait_timeout_seconds": 600
+  },
+  "ceremony_policy": {
+    "planning": {
+      "deep_lane": "auto",
+      "revalidation": "auto",
+      "escalation": "auto",
+      "qgate": "auto"
+    },
+    "finalize": {
+      "self_review": "auto",
+      "qgate": "auto",
+      "plugin_doctor": "auto"
+    },
+    "automation": {
+      "finalize_without_asking": true,
+      "loop_back_without_asking": true,
+      "auto_merge_after_ci": true
+    },
+    "overrides": []
   },
   "project": {
     "default_base_branch": "main",
