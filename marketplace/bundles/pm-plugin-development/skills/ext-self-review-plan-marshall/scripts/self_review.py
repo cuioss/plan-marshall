@@ -958,8 +958,7 @@ def _detect_source_of_truth(added: list[tuple[str, int, str]]) -> list[dict[str,
     """
     # Per constant name: map file -> set of literal RHS values declared there.
     by_name: dict[str, dict[str, set[str]]] = {}
-    first_line: dict[str, tuple[str, int]] = {}
-    for path, lineno, content in added:
+    for path, _lineno, content in added:
         if not path.endswith('.py'):
             continue
         m = _CONSTANT_ASSIGN.match(content)
@@ -968,7 +967,6 @@ def _detect_source_of_truth(added: list[tuple[str, int, str]]) -> list[dict[str,
         name = m.group(1)
         value = m.group(2)
         by_name.setdefault(name, {}).setdefault(path, set()).add(value)
-        first_line.setdefault(name, (path, lineno))
 
     out: list[dict[str, Any]] = []
     for name in sorted(by_name):

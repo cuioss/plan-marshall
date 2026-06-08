@@ -305,14 +305,16 @@ def _iter_sweep_files(sweep_root: Path):
     """Yield every text-bearing file under ``sweep_root`` not in an excluded dir."""
     if not sweep_root.is_dir():
         return
-    for path in sweep_root.rglob('*'):
-        if not path.is_file():
-            continue
-        if path.suffix not in _SWEEP_SUFFIXES:
-            continue
-        if any(part in _EXCLUDED_DIR_NAMES for part in path.parts):
-            continue
-        yield path
+    try:
+        for path in sweep_root.iterdir():
+            if path.is_dir():
+                if path.name not in _EXCLUDED_DIR_NAMES:
+                    yield from _iter_sweep_files(path)
+            elif path.is_file():
+                if path.suffix in _SWEEP_SUFFIXES:
+                    yield path
+    except OSError:
+        pass
 
 
 def sweep_survivors(
