@@ -600,8 +600,8 @@ def cmd_pr_comments(args: argparse.Namespace) -> dict:
 
 # GitLab job ``status`` partitioning. The raw job-status vocabulary is
 # lower-case ``success | skipped | manual | failed | canceled | created |
-# pending | running | preparing | scheduled | waiting_for_resource``; see
-# lesson-2026-05-18-16-001 deliverable 4 for the canonical table.
+# pending | running | preparing | scheduled | waiting_for_resource``. The
+# three partitions below carry the canonical status → outcome table.
 _JOB_STATUS_NON_FAILING: frozenset[str] = frozenset({'success', 'skipped', 'manual'})
 _JOB_STATUS_FAILING: frozenset[str] = frozenset({'failed', 'canceled'})
 _JOB_STATUS_WAIT: frozenset[str] = frozenset(
@@ -885,7 +885,7 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
 
     # Derive overall via the canonical job-status partition. ``mixed`` is no
     # longer possible — every input resolves to ``pending | success |
-    # failure | none``. See lesson-2026-05-18-16-001 deliverable 4.
+    # failure | none``.
     overall, failing_rows, _wait_rows = _derive_overall_status(jobs)
     # When the pipeline envelope itself reports a definitive state but jobs
     # are missing (rare API hiccup), fall back to the pipeline_status mapping
@@ -1088,8 +1088,7 @@ def _fetch_pr_overall_ci_status(pr_number: int) -> tuple[bool, Any]:
     # Map the pipeline-level status to the canonical four-valued vocabulary
     # via the same partition the per-job classifier uses. This keeps the
     # provider-independent envelope shape consistent across cmd_ci_status,
-    # cmd_ci_wait, and _fetch_pr_overall_ci_status. See
-    # lesson-2026-05-18-16-001 deliverable 4.
+    # cmd_ci_wait, and _fetch_pr_overall_ci_status.
     synthetic_job = {'status': pipeline_status}
     failing, wait, non_failing = _classify_check_buckets([synthetic_job])
     if wait:

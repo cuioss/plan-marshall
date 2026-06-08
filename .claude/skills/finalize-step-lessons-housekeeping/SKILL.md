@@ -120,7 +120,7 @@ When a completely-covered lesson still carries durable knowledge, decide where t
 | Open, un-shipped recurrence | Stays in `lessons-learned/` (retain) |
 | Pure "this bug was fixed", no reusable rule | Delete (remove outright, Step 4) |
 
-**Promotion-vs-ADR note** (extends lesson `2026-05-26-17-001`): a closed lesson's residue is a **standard, not an ADR**. A standard codifies *what to do* (a rule, convention, or contract a skill loads to change behavior); an ADR records *why a decision was made among weighed alternatives*. Promote a reusable rule into `standards/`/`references/` (or `CLAUDE.md`); reach for an ADR only when the residue is genuinely a decision with documented trade-offs, not an operating rule.
+**Promotion-vs-ADR note**: a closed lesson's residue is a **standard, not an ADR**. A standard codifies *what to do* (a rule, convention, or contract a skill loads to change behavior); an ADR records *why a decision was made among weighed alternatives*. Promote a reusable rule into `standards/`/`references/` (or `CLAUDE.md`); reach for an ADR only when the residue is genuinely a decision with documented trade-offs, not an operating rule.
 
 ### Step 4: Remove completely-covered lessons
 

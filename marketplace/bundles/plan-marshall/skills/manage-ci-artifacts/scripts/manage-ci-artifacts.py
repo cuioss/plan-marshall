@@ -2,8 +2,8 @@
 # ruff: noqa: I001, E402
 """CI run artifact persistence layer.
 
-Backs the ``ci-verify`` finalize step from lesson-2026-05-18-16-001
-deliverable 7. Persists per-job CI logs plus a ``manifest.toon`` under
+Backs the ``ci-verify`` finalize step. Persists per-job CI logs plus a
+``manifest.toon`` under
 ``.plan/local/plans/{plan_id}/artifacts/ci-runs/{run_id}/`` so retrospectives
 that run after GitHub's 90-day log retention window can still consult
 the evidence.

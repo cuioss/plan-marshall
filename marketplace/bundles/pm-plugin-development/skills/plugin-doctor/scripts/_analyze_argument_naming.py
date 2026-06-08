@@ -25,9 +25,8 @@ rule-specific ``details`` keys (notation/subcommand/flag/etc.).
 Activation
 ----------
 This rule cluster is unconditionally active across all marketplace markdown.
-See lesson ``2026-04-29-23-002`` for the rationale (three recurrences of
-stale-flag drift in skill workflows within ~3 days drove the move from a
-gated transitional period to default-on enforcement).
+Recurring stale-flag drift in skill workflows motivated default-on
+enforcement rather than a gated transitional period.
 
 Public API
 ----------
@@ -784,8 +783,8 @@ def scan_canonical_forms(
 def analyze_argument_naming(marketplace_root: Path) -> list[dict]:
     """Run the full argument-naming rule cluster against ``marketplace_root``.
 
-    Unconditionally active. See lesson ``2026-04-29-23-002`` for the rationale
-    behind moving from a gated transitional period to default-on enforcement.
+    Unconditionally active — default-on enforcement rather than a gated
+    transitional period, because stale-flag drift recurred in skill workflows.
 
     Returns a flat list of finding dicts (one per detected drift). Use
     ``rule_id`` to differentiate rule clusters.

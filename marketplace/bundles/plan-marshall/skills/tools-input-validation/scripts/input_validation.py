@@ -81,7 +81,8 @@ def validate_plan_id(plan_id: str) -> str:
 def validate_lesson_id(lesson_id: str) -> str:
     """Validate lesson_id matches YYYY-MM-DD-HH-NNN (date-hour-counter).
 
-    Examples: "2026-04-28-12-001", "2026-04-27-18-007".
+    The five dash-separated fields are year, month, day, hour, and a
+    three-digit counter (e.g. <year>-<month>-<day>-<hour>-<counter>).
     """
     if not lesson_id or not LESSON_ID_RE.match(lesson_id):
         raise ValueError(f'Invalid lesson_id format: {lesson_id!r}. Must match {LESSON_ID_RE.pattern}')
@@ -675,7 +676,7 @@ def is_valid_resource_name(resource_name: str) -> bool:
 # These helpers detect lesson-ID-shaped tokens in arbitrary text (typically
 # task titles/descriptions) and verify them against the live
 # ``manage-lessons`` inventory. They implement the runtime "live-anchor"
-# discipline mandated by lesson 2026-04-29-10-001: the canonical
+# discipline: the canonical
 # ``LESSON_ID_RE`` shape MUST be re-asserted against actual repo data on
 # first scanner use per process so a silent regex/ID-shape drift surfaces
 # as a hard failure instead of producing a "no IDs match anything" false
@@ -792,7 +793,7 @@ def _list_live_lesson_ids() -> list[str]:
 def verify_lesson_id_regex_against_inventory() -> None:
     """Assert that LESSON_ID_RE matches at least one live lesson ID.
 
-    Implements lesson 2026-04-29-10-001 at runtime: re-validates the
+    Implements the live-anchor discipline at runtime: re-validates the
     canonical regex shape against actual repo data on first scanner use
     per process. Behavior:
 
@@ -819,7 +820,7 @@ def verify_lesson_id_regex_against_inventory() -> None:
     except LessonInventoryUnavailable as exc:
         # Inventory unreachable — typical when the executor (.plan/execute-script.py)
         # has not been generated yet (fresh CI checkout, ephemeral runner). The
-        # live-anchor discipline (lesson 2026-04-29-10-001) is intended to catch
+        # live-anchor discipline is intended to catch
         # regex drift against real data, NOT to block all scanner use when the
         # infrastructure isn't bootstrapped. Treat this exactly like an empty
         # inventory: warn once on stderr, mark as checked, proceed. The next

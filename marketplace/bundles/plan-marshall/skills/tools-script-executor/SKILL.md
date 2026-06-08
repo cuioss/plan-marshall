@@ -64,7 +64,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --plan-id EXAMPLE-PLAN --file notes.md --content-file .plan/temp/EXAMPLE-PLAN/notes.md
 
 # Build operations
-python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets clean,verify
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "clean verify"
 
 # References operations
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set --plan-id EXAMPLE-PLAN --field foo --value bar

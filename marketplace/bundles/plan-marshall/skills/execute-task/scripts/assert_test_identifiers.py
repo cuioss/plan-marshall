@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Assert that written pytest identifiers appear in a module-test log.
 
-This helper is the second half of the execute-task module_testing guardrail
-(D2 in the lesson-2026-04-17-009 solution outline). After a green
-``module-tests`` run, the execute-task skill calls this helper with:
+This helper is the second half of the execute-task module_testing guardrail.
+After a green ``module-tests`` run, the execute-task skill calls this helper
+with:
 
 1. The pytest node identifiers (``module::class::test``) that the task just
    wrote or modified in the active worktree, and

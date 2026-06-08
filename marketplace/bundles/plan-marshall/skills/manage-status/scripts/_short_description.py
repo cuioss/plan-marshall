@@ -4,8 +4,8 @@
 This helper encapsulates the algorithm that produces the terminal-title
 ``short_description`` from a plan title:
 
-* Strip lesson-id style prefixes such as ``2026-04-19-13-004-…`` or
-  ``lesson-2026-04-19-13-004-…``.
+* Strip lesson-id style prefixes (the ``YYYY-MM-DD-HH-NNN`` token, with or
+  without a leading ``lesson-``) from the front of the title.
 * Collapse internal whitespace runs and replace the remaining spaces
   with underscores.
 * Truncate the result at the last underscore boundary that fits within

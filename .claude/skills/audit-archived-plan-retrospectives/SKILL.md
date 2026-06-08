@@ -294,16 +294,17 @@ lesson already covering that notation satisfies Gate 1 for every later plan that
 trips the same rejection — so the dedup check MUST search the corpus by the source
 notation, not by the consuming plan ID.
 
-**Token-economics flags are already covered by lesson `2026-06-01-12-001`**: the
-`token-economics` check's anti-pattern taxonomy is derived directly from that
-filed, `active` lesson (its remediation direction #5 proposed this very check). A
-flagged token-economics row is therefore COVERED on a Gate-1 dedup basis — name
-`2026-06-01-12-001` as the covering reference and do NOT re-file. The file-worthy
-signal from this check is a corpus *drift* (e.g. the execute-share falling
-further, a fresh fixed-overhead recurrence on a plan created after a remediation
-shipped, or a previously-unflagged anti-pattern becoming systemic), which extends
-`2026-06-01-12-001` via Gate-1 `merge_into` rather than opening a parallel lesson.
-See `checks/token-economics.md` § "Adjudication against lesson 2026-06-01-12-001".
+**Token-economics flags are already covered by the canonical token-economics
+lesson**: the `token-economics` check's anti-pattern taxonomy is derived directly
+from that filed, `active` lesson (its remediation direction #5 proposed this very
+check). A flagged token-economics row is therefore COVERED on a Gate-1 dedup
+basis — name that covering lesson as the reference and do NOT re-file. The
+file-worthy signal from this check is a corpus *drift* (e.g. the execute-share
+falling further, a fresh fixed-overhead recurrence on a plan created after a
+remediation shipped, or a previously-unflagged anti-pattern becoming systemic),
+which extends the covering lesson via Gate-1 `merge_into` rather than opening a
+parallel lesson. See `checks/token-economics.md` § "Adjudication against the
+canonical token-economics lesson".
 
 ### Step 4b: Review-completeness gate
 
@@ -360,8 +361,7 @@ cannot pass the gate while any coupling fired unresolved.
       plans were named (`blind_plan_ids`) rather than cleared.
 - [ ] For the quality-chain check specifically, EVERY per-finding row was walked
       step-by-step — never sampled — per `checks/quality-chain.md` §
-      "Methodology constraint: walk every finding, never sample" (adjudicated
-      against lesson `2026-06-01-13-001`).
+      "Methodology constraint: walk every finding, never sample".
 - [ ] Every dismissal of a potential-signal row carries a cited justification —
       no bare "looks fine" and no silent skip.
 - [ ] Every "already covered" / dedup / active-plan drop was corpus-verified with

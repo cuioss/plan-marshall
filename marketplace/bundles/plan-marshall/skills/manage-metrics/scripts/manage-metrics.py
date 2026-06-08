@@ -1031,8 +1031,7 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     bare task_complete return, harness cancellation, error, unknown) along
     with the dispatched agent's <usage> totals at the time of return. The
     accumulating file becomes the audit trail for diagnosing
-    `[OUTCOME]`-coverage gaps caused by agent-initiated re-dispatch — see
-    lesson 2026-05-08-14-001.
+    `[OUTCOME]`-coverage gaps caused by agent-initiated re-dispatch.
 
     The file uses the same column layout for every row so plan-retrospective
     fact extractors can ingest it without a schema lookup. Each row is a
@@ -1478,8 +1477,7 @@ def main() -> int:
             '``unknown`` — missing or unrecognised causes are script errors. '
             'The orchestrator invokes this on every phase Task return so '
             'plan-retrospective can correlate agent-initiated re-dispatch '
-            'events with [OUTCOME]-log coverage gaps (lesson '
-            '2026-05-08-14-001).'
+            'events with [OUTCOME]-log coverage gaps.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

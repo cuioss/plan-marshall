@@ -1,7 +1,7 @@
 # Check: token-economics (cross-plan)
 
-Operationalizes the one-off token deep-dive captured in lesson
-`2026-06-01-12-001` as a repeatable check. Joins each plan's per-phase token
+Operationalizes the one-off token deep-dive captured in the canonical
+token-economics lesson as a repeatable check. Joins each plan's per-phase token
 spend (`work/metrics.toon`) to its footprint (`references.json::scope_estimate`,
 affected/modified file count) and its `status.json::metadata` change_type, then
 computes per-plan token shares and efficiency ratios and a **corpus-relative**
@@ -43,7 +43,7 @@ For each plan the script computes:
 | `tokens_per_task` | `total_tokens // tasks` (task count = `tasks/TASK-*.json`). |
 | `session_message_count` | The top-level `metrics.toon` scalar. |
 | `change_type`, `scope` | Joined from `status.json::metadata` and `references.json`. |
-| `exec_metrics_blind` | True when the `5-execute` phase recorded `total_tokens == 0` — the sub-agent token-attribution gap (lesson `2026-06-01-11-002`). |
+| `exec_metrics_blind` | True when the `5-execute` phase recorded `total_tokens == 0` — the sub-agent token-attribution gap. |
 
 ## Cross-plan computation
 
@@ -179,8 +179,8 @@ each flagged row is self-describing.
 
 ## How the orchestrator interprets the rows
 
-This check is the repeatable form of the analysis adjudicated in lesson
-`2026-06-01-12-001`. That lesson is already filed and `status=active`, so a
+This check is the repeatable form of the analysis adjudicated in the canonical
+token-economics lesson. That lesson is already filed and `status=active`, so a
 running audit's job is to track whether the corpus is moving toward or away from
 its findings, NOT to re-file it:
 
@@ -189,7 +189,7 @@ its findings, NOT to re-file it:
   tiny change. Surface it; the remediation (a lightweight track for surgical
   plans) is already named in the lesson's remediation directions — a *new*
   recurrence on a plan created AFTER a lightweight-track plan ships is the signal
-  worth a Gate-1 dedup/extend against `2026-06-01-12-001`.
+  worth a Gate-1 dedup/extend against the canonical token-economics lesson.
 - **`planning_gt_exec` / `outline_heavy` / `refine_heavy`** — planning outspent
   execution (anti-pattern B). Cross-read with `scope-estimate-accuracy`: a
   surgical-scope plan that is planning-heavy is the prime lightweight-track
@@ -201,26 +201,26 @@ its findings, NOT to re-file it:
   concluding.
 - **`long_session`** — anti-pattern D. A marathon session on a small change
   re-loads accumulated context every turn; cross-read with the session-handoff
-  gap (`2026-05-31-20-003`).
+  gap lesson.
 - **`exec_metrics_blind`** — anti-pattern E. Read every other number for that
   plan as a floor (see the annotation rule above). The blindness is the
-  prerequisite fix (`2026-06-01-11-002`); until it lands the corpus totals
-  under-count the heaviest phase.
+  prerequisite fix (the exec-metrics-attribution lesson); until it lands the
+  corpus totals under-count the heaviest phase.
 - **corpus distribution / aggregate tables** — informational context. The
   "X% of corpus tokens reach `5-execute`" line and the tokens/file inversion
   table are the lesson's headline numbers recomputed live; a meaningful drift in
   either (execute share rising, tokens/file inversion flattening) is the
   process-improvement signal the check exists to surface over time.
 
-## Adjudication against lesson 2026-06-01-12-001
+## Adjudication against the canonical token-economics lesson
 
-The lesson `2026-06-01-12-001` is the canonical, already-filed source of this
+The canonical token-economics lesson is the already-filed source of this
 check's anti-pattern taxonomy (its remediation direction #5 explicitly proposes
 "so this analysis becomes a repeatable check rather than a one-off" — this check
 IS that). Consequences for Step 4 lesson filing:
 
 1. **Do NOT re-file the lesson.** A flagged row here is COVERED by
-   `2026-06-01-12-001` on a Gate-1 dedup basis — name that lesson ID as the
+   that lesson on a Gate-1 dedup basis — name its lesson ID as the
    covering reference and stop. Re-filing the same token-economics finding is the
    prohibited "assumption is not verification" anti-pattern in reverse: the
    coverage IS verified (this check's flag set is literally derived from the
@@ -229,11 +229,11 @@ IS that). Consequences for Step 4 lesson filing:
    file-worthy signal is movement: the corpus execute-share falling further, a
    new fixed-overhead recurrence on a plan created after a remediation shipped, or
    a previously-unflagged anti-pattern (e.g. `1-init` bloat, anti-pattern F)
-   becoming systemic. Such a drift extends `2026-06-01-12-001` via Gate-1
-   `merge_into`, it does not open a parallel lesson.
+   becoming systemic. Such a drift extends the canonical token-economics lesson
+   via Gate-1 `merge_into`, it does not open a parallel lesson.
 3. **Blind-plan floors are caveated, not findings.** An `exec_metrics_blind` plan
    contributes a FLOOR; do not adjudicate its `tokens_per_file` as a precise
-   finding. The blindness itself is covered by `2026-06-01-11-002`.
+   finding. The blindness itself is covered by the exec-metrics-attribution lesson.
 
 ## Critical rules
 

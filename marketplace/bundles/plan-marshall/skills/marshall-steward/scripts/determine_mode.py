@@ -349,8 +349,7 @@ def _validate_blocking_types_mapping(mapping: dict[str, Callable[[str, str], int
     ``_FINALIZE_BLOCKING_TYPES`` MUST be one of the two callable thunks
     declared above. Adding a new blocking type without supplying its
     callable (or supplying an unknown callable) raises ``TypeError`` here,
-    not silently at first capture — see the deliverable contract in lesson
-    ``2026-05-08-19-003``.
+    not silently at first capture.
     """
     for key, value in mapping.items():
         if not callable(value):

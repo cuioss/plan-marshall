@@ -153,11 +153,16 @@ Example wizard step:
 
 ## Command Resolution
 
-Callers use the provider-agnostic `ci` router script:
+Callers use the provider-agnostic `ci` router script. The PR body is supplied
+via the prepared-body mechanism (`pr prepare-body` allocates a scratch path, the
+caller writes the markdown body to it, then `pr create` consumes it):
 
 ```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body \
+    --plan-id PLAN_ID
+# Write the PR body markdown to the returned path, then:
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-    --title "Feature X" --body "Description"
+    --title "Feature X" --plan-id PLAN_ID
 ```
 
 The router:

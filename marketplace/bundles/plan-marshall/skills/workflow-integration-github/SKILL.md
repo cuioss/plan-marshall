@@ -132,9 +132,11 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 3. **Process by Action Type** — having consumed the script-validated `ci-finding` struct (Step 2b), the LLM decides per action type (the validated struct, not the raw `detail` body, is the input):
 
    **For code_change:** Read file, implement change, reply with commit reference
-   **For explain:** Generate explanation, reply via:
+   **For explain:** Generate explanation, then reply via the prepared-comment / slot mechanism — `pr prepare-comment` allocates a scratch path, the explanation markdown is written to it, then `pr reply` consumes it:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply --pr-number {pr} --body "..."
+   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-comment --plan-id {plan_id} --for reply --slot {slot}
+   # Write the explanation markdown to the returned path, then:
+   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply --pr-number {pr} --plan-id {plan_id} --slot {slot}
    ```
    Resolve thread:
    ```bash

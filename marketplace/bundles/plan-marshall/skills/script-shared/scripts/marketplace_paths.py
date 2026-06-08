@@ -289,9 +289,7 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
     # generate_executor.py running inside an isolated worktree) would
     # silently regenerate the executor against the cached main checkout
     # because cache-first short-circuits on the first cache hit. The
-    # explicit override exists precisely to escape that branch — see
-    # lesson 2026-05-01-09-001 (consolidated 2026-04-29-06-001) for the
-    # original failure mode.
+    # explicit override exists precisely to escape that branch.
     explicit_anchor = marketplace_root is not None or bool(os.environ.get('PM_MARKETPLACE_ROOT'))
 
     if scope == 'auto':

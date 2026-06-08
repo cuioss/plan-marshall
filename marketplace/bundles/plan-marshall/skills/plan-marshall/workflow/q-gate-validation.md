@@ -548,7 +548,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 #### 2.15 Worktree-Linter Validator
 
-Verify that no skill, agent, or script in `solution_outline.md`'s `affected_files` (or any deliverable's `Change per file` block) reintroduces the three stale worktree-handling patterns that the centralized [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) standard explicitly forbids. The centralized file (created in TASK-3 of plan `lesson-2026-05-07-11-001`) is the **single authoritative source** for worktree-handling rules — every check below cross-references it.
+Verify that no skill, agent, or script in `solution_outline.md`'s `affected_files` (or any deliverable's `Change per file` block) reintroduces the three stale worktree-handling patterns that the centralized [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) standard explicitly forbids. The centralized file is the **single authoritative source** for worktree-handling rules — every check below cross-references it.
 
 **Activation condition**: Runs in the `3-outline` and `4-plan` phase contexts. Activates whenever a deliverable's `affected_files` contains at least one path matching `marketplace/bundles/*/skills/**/*.md`, `marketplace/bundles/*/agents/*.md`, `marketplace/bundles/*/skills/**/scripts/*.py`, or `marketplace/bundles/*/skills/**/scripts/*.sh`. Skips deliverables whose only affected files are tests, fixtures, or non-skill documentation.
 
@@ -627,9 +627,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 **Negative example**: The centralized `worktree-handling.md` itself contains the forbidden patterns inside an "Anti-pattern" subsection ("Do NOT use `cd $WORKTREE && git status`"). Suppression rule applies — silent pass.
 
 **Cross-references**:
-- Authoritative source: [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) (created TASK-3 of plan `lesson-2026-05-07-11-001`)
-- WL-B migration source: TASK-4 of plan `lesson-2026-05-07-11-001` (`.claude/worktrees/` → `.plan/local/worktrees/`)
-- WL-C contract source: TASK-10 of plan `lesson-2026-05-07-11-001` (auto-routing `--plan-id` extension)
+- Authoritative source: [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md)
+- WL-B migration: `.claude/worktrees/` → `.plan/local/worktrees/`
+- WL-C contract: auto-routing `--plan-id` extension
 - Rationale: Worktree-handling rules duplicated across skill files drift independently; the centralized standard is the single authoritative source and this validator enforces it at Q-Gate time so per-skill drift is caught before execute.
 
 #### 2.17 Architecture-Mismatch Validator

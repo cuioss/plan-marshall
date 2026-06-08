@@ -367,7 +367,7 @@ Seven forward-looking lint rules.
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
-| `no-lesson-id-in-skill-prose` | Forbid narrative lesson-ID citations in skill prose — strip the ID and trivia, keep the rule content | Five structural exemptions: allowlisted skill paths (manage-lessons/**, phase-6-finalize/workflow/lessons-*.md, phase-6-finalize/standards/lessons-*.md, plugin-doctor/references/rule-provenance.md), YAML frontmatter, fenced code blocks, `Source:` provenance lines, and bare inline-code spans (without a prose "lesson" prefix) | Inline marker `<!-- doctor-ignore: lesson-id-prose -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
+| `no-lesson-id-in-skill-prose` | Forbid narrative lesson-ID citations in skill prose — strip the ID and trivia, keep the rule content. Scans `*.md` AND `*.py` (comments, docstrings, string literals) | Allowlisted skill paths apply to both file classes. For markdown only: YAML frontmatter, fenced code blocks, `Source:` provenance lines, and bare inline-code spans (without a prose "lesson" prefix). For Python these markdown-only exemptions do NOT apply | Inline marker `<!-- doctor-ignore: lesson-id-prose -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
 | `no-historical-prose-in-skills` | Forbid historical/transitional narrative in skill prose — driving-lesson prefixes, back-references, earlier-proposal descriptions, seed-failure citations, plan-authorship annotations, guard-introduction prose | Seven allowlisted file paths; YAML frontmatter, fenced code blocks, `Source:` provenance lines, and inline-code spans are exempt per-line | Inline marker `<!-- doctor-ignore: historical-prose -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
 
 ### no-lesson-id-in-skill-prose
@@ -376,20 +376,30 @@ Seven forward-looking lint rules.
 
 **Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_lesson_id_in_skill_prose.py`
 
-**Scope**: All `*.md` files under `marketplace/bundles/*/{skills,agents,commands}/**`.
+**Scope**: Three trees, two file classes:
 
-**Intent**: Strip narrative lesson-ID citations and recurrence trivia from skill prose so the surface documents present-tense rules rather than the historical incidents that motivated them. The rule recognises two lesson-ID format families — `YYYY-MM-DD-NNN` and `YYYY-MM-DD-HH-NNN` — and the prose-prefixed forms `lesson XXX` and `lesson-XXX`. It also catches the backtick-wrapped form `` lesson `YYYY-...` `` where "lesson" is prose context outside the backtick — this is a narrative citation regardless of the backtick, since the word "lesson" establishes the reader-navigation intent.
+- `*.md` and `*.py` under `marketplace/bundles/*/{skills,agents,commands}/**`.
+- `*.md` and `*.py` under the project-local `.claude/skills/**` tree (resolved relative to the marketplace bundles root). This tree has no allowlisted members — it is scanned in full.
 
-**Detection logic**: Two-pass scan per line. Pass 1 detects non-backtick prose forms using the main regex and skips bare IDs inside inline-code spans. Pass 2 detects the `` lesson `YYYY-...` `` backtick-prefixed form using a dedicated regex — this form is never exempt, because "lesson" outside the backtick is always prose context.
+For `.py` sources the rule scans comments, docstrings, and string literals — the contexts where narrative lesson-ID citations accumulate in scripts.
 
-**Allowlist** (file-level skip — the entire file is exempt because it operates ON lessons as domain content):
+**Intent**: Strip narrative lesson-ID citations and recurrence trivia from skill prose so the surface documents present-tense rules rather than the historical incidents that motivated them. The rule recognises two lesson-ID format families — `YYYY-MM-DD-NNN` and `YYYY-MM-DD-HH-NNN` — and the prose-prefixed forms `lesson XXX` and `lesson-XXX`. In markdown it also catches the backtick-wrapped form `` lesson `YYYY-...` `` where "lesson" is prose context outside the backtick — this is a narrative citation regardless of the backtick, since the word "lesson" establishes the reader-navigation intent.
+
+**Detection logic**: Two-pass scan per line. Pass 1 detects non-backtick prose forms using the main regex; in markdown it skips bare IDs inside inline-code spans, while in Python backticks carry no inline-code meaning so the ID is flagged. Pass 2 detects the `` lesson `YYYY-...` `` backtick-prefixed form using a dedicated regex — this Pass runs for markdown only (in Python the bare ID was already caught by Pass 1, so Pass 2 would double-count). In markdown this form is never exempt, because "lesson" outside the backtick is always prose context.
+
+**Allowlist** (file-level skip — the entire file is exempt because it operates ON lessons as domain content; applies to both `*.md` and `*.py` under `marketplace/bundles/`):
 
 - `marketplace/bundles/plan-marshall/skills/manage-lessons/**`
 - `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/lessons-*.md`
 - `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/lessons-*.md`
+- `marketplace/bundles/plan-marshall/skills/plan-retrospective/**`
+- `marketplace/bundles/plan-marshall/skills/plan-doctor/**`
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md` — the canonical citation home for plugin-doctor rules.
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md` — cites lesson IDs as authoritative design references.
 
-**Per-line structural exemptions** (skip the match, not the file):
+The allowlist is unchanged by the widened scope — the same exempt prefixes apply across both file classes and both trees. (The project-local `.claude/skills/**` tree has no allowlisted members.)
+
+**Per-line structural exemptions** — **markdown only** (skip the match, not the file). These do NOT apply to `.py` sources, where comments, docstrings, and string literals are deliberately in scope:
 
 1. **YAML frontmatter** — between the leading `---` fences at the start of a markdown file.
 2. **Fenced code block** — any line inside a ``` ``` ``` fence regardless of info-string.

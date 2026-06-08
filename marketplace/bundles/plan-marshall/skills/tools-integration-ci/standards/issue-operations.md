@@ -8,16 +8,39 @@ Issue lifecycle operations: create, view, close.
 
 **Pattern**: Provider-Agnostic Router
 
-Create an issue.
+Create an issue using the three-step path-allocate pattern. The script owns path
+allocation — callers never invent scratch paths. The issue body is written
+directly by the main context with its native Write tool, and the `issue create`
+subcommand consumes the prepared file. No multi-line markdown crosses the shell
+boundary, so the host platform's shell-heading heuristic never fires.
 
-### Step 1: Resolve and Execute
+### Step 1: Allocate Scratch Body Path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue prepare-body \
+    --plan-id {plan_id} --slot {unique_slot}
+```
+
+Read the `path` field from the returned TOON. It is the canonical, script-owned
+location for the issue body, bound to this plan and slot.
+
+### Step 2: Write the Issue Body
+
+```
+Write({path from prepare-body}) with issue body markdown content
+```
+
+### Step 3: Create Issue
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue create \
-    --title "Bug: feature X" --body "Description"
+    --title "Bug: feature X" --plan-id {plan_id} --slot {unique_slot}
 ```
 
-### Step 2: Process Result
+The subcommand reads the body from the prepared scratch file, creates the issue,
+and deletes the scratch on success.
+
+### Step 4: Process Result
 
 ```toon
 status: success

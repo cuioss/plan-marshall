@@ -200,8 +200,8 @@ def _parse_uniform_array(ctx: ParseContext, count: int, fields: list[str], min_i
             # Identifier character class includes `-` so hyphenated TOON keys
             # (`base-branch`, `worktree-path`) still terminate arrays correctly when
             # a sibling key/value pair follows the array body without an outdent.
-            # See lesson 2026-05-24-14-001 for the CI-stress fixtures and the
-            # `failures[N]{notation,exit_code}` regression that motivated the
+            # The CI-stress fixtures and the
+            # `failures[N]{notation,exit_code}` regression motivated the
             # lookahead.
             looks_like_key_value = (
                 re.match(r'^[a-zA-Z_][\w_-]*\s*:(?=\s|$)', content)

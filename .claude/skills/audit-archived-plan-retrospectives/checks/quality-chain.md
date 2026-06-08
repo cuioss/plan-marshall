@@ -163,8 +163,8 @@ shift-left tier — and state a per-row verdict with cited evidence. Sampling a
 subset of finding rows and generalizing a verdict to the rest is a contract
 violation, the same violation the SKILL.md Step-3 contract forbids corpus-wide.
 
-This walk-every-finding constraint adjudicates against **lesson
-`2026-06-01-13-001`**: an audit that spot-checks a handful of findings and
+This walk-every-finding constraint guards against a known failure mode: an
+audit that spot-checks a handful of findings and
 declares the chain "healthy" produces a fabricated all-clear — the genuine
 shift-left signal (a Tier-1 `auto_review_only` cluster) hides in the rows the
 sampler skipped. The per-finding `severity` column and the

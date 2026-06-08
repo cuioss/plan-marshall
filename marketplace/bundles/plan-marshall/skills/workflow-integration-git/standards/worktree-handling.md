@@ -26,7 +26,7 @@ Rationale:
 
 - `.plan/` is the canonical plan-state root that is already excluded from version control by every plan-marshall project's `.gitignore`. Placing worktrees under `.plan/local/worktrees/` inherits the same gitignore coverage without a separate carve-out.
 - `local/` signals "host-local, do not transport" — the directory is a per-host scratch space, never published, never archived.
-- `{plan-id}/` is the plan identifier (e.g., `lesson-2026-05-07-11-001`), one directory per active plan.
+- `{plan-id}/` is the plan identifier (e.g., `my-feature-plan`), one directory per active plan.
 
 The path is computed by the worktree-handling layer; callers never construct it from string concatenation. Resolve it via:
 

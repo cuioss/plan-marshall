@@ -115,14 +115,13 @@ class MainCheckoutDirtiedDuringPlan(Exception):
     """Raised when the main checkout's dirty-file set is a proper superset of
     the previous-boundary baseline during a worktree-routed plan.
 
-    This is the layer-D enforcement gap surfaced by lesson
-    ``2026-05-08-08-001``: layers A/B/C of worktree routing are closed
-    (``manage-*`` cwd-agnostic, ``--plan-id`` auto-routing, raw tool flags
-    using the resolved path), but layer D (any tool that touches the
+    This is the layer-D enforcement gap: layers A/B/C of worktree routing are
+    closed (``manage-*`` cwd-agnostic, ``--plan-id`` auto-routing, raw tool
+    flags using the resolved path), but layer D (any tool that touches the
     filesystem free-form — ``Edit`` / ``Write`` / ``Bash`` / external CLIs)
-    has no enforcement and relies on prompt discipline alone. The original
-    lesson proposed a ``PreToolUse`` hook; that approach was rejected during
-    refine for being host-platform-specific (Claude-Code-only — fails on
+    has no enforcement and relies on prompt discipline alone. A ``PreToolUse``
+    hook was considered and rejected for being host-platform-specific
+    (Claude-Code-only — fails on
     OpenCode and any future adapter target) and brittle (settings.json
     mutation, absolute paths, version drift).
 
@@ -1046,8 +1045,7 @@ def _query_pending_qgate_count_aggregated(plan_id: str) -> int | None:
     which excludes ``qgate``). Producer-mismatch findings filed by
     ``add_qgate_finding(...)`` from ``github_pr.py`` / ``gitlab_pr.py`` /
     ``sonar.py`` / ``_build_shared.py`` therefore did not surface in the
-    blocking-count check before this helper existed — see lesson
-    ``2026-05-05-11-001`` follow-up plan ``findings-pipeline-blocking-fixes``.
+    blocking-count check before this helper existed.
 
     Loops :data:`QGATE_PHASES` and sums each per-phase
     ``manage-findings qgate list --phase {p} --resolution pending`` result's

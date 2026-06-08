@@ -1,15 +1,25 @@
 # ruff: noqa: I001, E402
 """Tests for the ``no-lesson-id-in-skill-prose`` rule analyzer.
 
-The analyzer detects narrative lesson-ID citations inside marketplace bundle
-skill markdown files. Two lesson-ID format families are recognised:
+The analyzer detects narrative lesson-ID citations across three file classes:
+
+1. Markdown (``*.md``) under
+   ``marketplace/bundles/*/{skills,agents,commands}/**``.
+2. Python (``*.py``) under
+   ``marketplace/bundles/*/{skills,agents,commands}/**`` — comments,
+   docstrings, and string literals.
+3. Both markdown and Python under the project-local ``.claude/skills/**``
+   tree (resolved relative to the marketplace bundles root).
+
+Two lesson-ID format families are recognised:
 
 1. ``YYYY-MM-DD-NNN`` (e.g., ``2026-04-17-012``)
 2. ``YYYY-MM-DD-HH-NNN`` (e.g., ``2026-04-29-23-002``)
 
 Prose-prefixed forms ``lesson XXX`` and ``lesson-XXX`` are also recognised.
 
-Five structurally-defined documentary contexts are exempt:
+For **markdown** sources, five structurally-defined documentary contexts are
+exempt:
 
 1. Allowlisted skill path (file-level skip).
 2. YAML frontmatter.
@@ -17,13 +27,19 @@ Five structurally-defined documentary contexts are exempt:
 4. ``Source:`` provenance line.
 5. Inline-code span (backticks).
 
-Plus an inline suppression marker
+For **Python** sources, the markdown-only structural exemptions (frontmatter,
+fenced code block, ``Source:`` line, inline-code span) do NOT apply — the
+whole point of scanning ``.py`` is to catch lesson IDs in comments,
+docstrings, and string literals. Only the path-allowlist and the inline
+suppression marker apply.
+
+For both file classes an inline suppression marker
 ``<!-- doctor-ignore: lesson-id-prose -->`` (same-line or preceding line)
-that suppresses the finding on the marked line only.
+suppresses the finding on the marked line only.
 
 Test layers:
   * (a) Positive cases — narrative citation triggers a finding for each
-        recognised format family and prefix form.
+        recognised format family and prefix form (markdown).
   * (b) Allowlist cases — files inside lesson-domain allowlisted paths
         produce zero findings regardless of citation density.
   * (c) Skip-context cases — lesson IDs inside YAML frontmatter, ``Source:``
@@ -32,8 +48,11 @@ Test layers:
         marker (same-line and prior-line) suppresses the finding.
   * (e) Boundary cases — non-lesson date-like tokens and out-of-scope paths
         produce no findings.
-  * (f) ``test_real_marketplace_has_zero_findings`` invariant — the actual
-        cleaned tree produces no findings.
+  * (g) Python-source cases — citations in ``.py`` comments, docstrings, and
+        string literals are flagged; markdown-only exemptions do NOT apply;
+        the path-allowlist and suppression marker still apply.
+  * (h) Project-local ``.claude/skills/**`` cases — both ``*.md`` and
+        ``*.py`` under the sibling project-local tree are scanned.
 """
 
 from pathlib import Path
@@ -78,6 +97,53 @@ def _make_skill_md(
     md = skill_dir / filename
     md.write_text(content, encoding='utf-8')
     return tmp_path, md
+
+
+def _make_skill_py(
+    tmp_path: Path,
+    content: str,
+    bundle: str = 'test-bundle',
+    skill: str = 'test-skill',
+    filename: str = 'script.py',
+) -> tuple[Path, Path]:
+    """Create a ``{bundle}/skills/{skill}/scripts/{filename}`` under ``tmp_path``.
+
+    Mirrors the actual layout scanned by ``_skill_source_targets`` for the
+    Python file class: ``marketplace_root/*/{skills,agents,commands}/**/*.py``.
+
+    Returns ``(marketplace_root, py_path)``.
+    """
+    scripts_dir = tmp_path / bundle / 'skills' / skill / 'scripts'
+    scripts_dir.mkdir(parents=True)
+    py = scripts_dir / filename
+    py.write_text(content, encoding='utf-8')
+    return tmp_path, py
+
+
+def _make_claude_skill_file(
+    tmp_path: Path,
+    content: str,
+    skill: str = 'audit-skill',
+    filename: str = 'SKILL.md',
+) -> tuple[Path, Path]:
+    """Create a project-local ``.claude/skills/{skill}/{filename}`` + bundles root.
+
+    The analyzer resolves the ``.claude/skills`` tree as
+    ``marketplace_root.parent.parent / '.claude' / 'skills'``. To exercise
+    that resolution the marketplace bundles root must live at
+    ``tmp_path/marketplace/bundles`` so that two levels up lands on
+    ``tmp_path``, where ``.claude/skills`` is created.
+
+    Returns ``(marketplace_root, claude_file_path)`` where ``marketplace_root``
+    is the bundles directory to pass to the analyzer.
+    """
+    bundles_root = tmp_path / 'marketplace' / 'bundles'
+    bundles_root.mkdir(parents=True)
+    claude_dir = tmp_path / '.claude' / 'skills' / skill
+    claude_dir.mkdir(parents=True)
+    target = claude_dir / filename
+    target.write_text(content, encoding='utf-8')
+    return bundles_root, target
 
 
 # ===========================================================================
@@ -519,3 +585,207 @@ class TestBoundaryCases:
         )
         findings = analyze_lesson_id_in_skill_prose(tmp_path)
         assert len(findings) == 1
+
+
+# ===========================================================================
+# (g) Python-source cases — comments, docstrings, string literals
+# ===========================================================================
+
+
+class TestPythonSourceDetection:
+    """Narrative lesson-ID citations in ``.py`` sources must be flagged."""
+
+    def test_py_comment_citation_triggers_finding(self, tmp_path: Path) -> None:
+        """A lesson-ID in a ``#`` comment is a finding."""
+        content = '# Guard added per lesson 2026-04-17-012 for the rationale.\n'
+        marketplace_root, py_path = _make_skill_py(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
+        assert findings[0]['file'] == str(py_path)
+
+    def test_py_docstring_citation_triggers_finding(self, tmp_path: Path) -> None:
+        """A lesson-ID inside a module docstring is a finding."""
+        content = (
+            '"""Module summary.\n\n'
+            'This dedup logic was added per lesson 2026-04-29-23-002.\n'
+            '"""\n'
+        )
+        marketplace_root, _ = _make_skill_py(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+
+    def test_py_string_literal_citation_triggers_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """A lesson-ID inside a string literal is a finding."""
+        content = "MESSAGE = 'See lesson 2026-04-17-012 for context.'\n"
+        marketplace_root, _ = _make_skill_py(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+
+    def test_py_lesson_dash_prefix_triggers_finding(self, tmp_path: Path) -> None:
+        """The ``lesson-XXX`` prefix form is recognised in Python prose."""
+        content = '# Cross-bundle sweep (lesson-2026-04-29-08-003) migrated all.\n'
+        marketplace_root, _ = _make_skill_py(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+
+    def test_py_markdown_fence_exemption_does_not_apply(
+        self, tmp_path: Path
+    ) -> None:
+        """A ``` ``` ``` line in Python is NOT a fence exemption — still flagged.
+
+        Markdown-only structural exemptions must not leak into Python scanning.
+        A line that merely looks like a markdown fence delimiter in a ``.py``
+        file does not gate the citation that follows.
+        """
+        content = (
+            '# ```python\n'
+            '# Provenance: lesson 2026-04-17-012\n'
+            '# ```\n'
+        )
+        marketplace_root, _ = _make_skill_py(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+
+    def test_py_source_line_exemption_does_not_apply(
+        self, tmp_path: Path
+    ) -> None:
+        """A ``Source:`` line in Python is NOT exempt — still flagged."""
+        content = '# Source: lesson 2026-04-17-012\n'
+        marketplace_root, _ = _make_skill_py(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+
+    def test_py_backtick_wrapped_id_still_flagged(self, tmp_path: Path) -> None:
+        """Backtick has no inline-code meaning in Python — the ID is flagged.
+
+        Counted exactly once (Pass 1 catches the bare ID; the markdown-only
+        backtick Pass 2 is disabled for Python so there is no double-count).
+        """
+        content = '# Per lesson `2026-04-29-23-002` the emission was lost.\n'
+        marketplace_root, _ = _make_skill_py(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+
+    def test_py_allowlisted_path_is_exempt(self, tmp_path: Path) -> None:
+        """A ``.py`` under an allowlisted skill path produces zero findings."""
+        content = '# Validates lesson 2026-04-17-012 references.\n'
+        scripts_dir = (
+            tmp_path
+            / 'plan-marshall'
+            / 'skills'
+            / 'manage-lessons'
+            / 'scripts'
+        )
+        scripts_dir.mkdir(parents=True)
+        (scripts_dir / 'manage_lessons.py').write_text(content, encoding='utf-8')
+        findings = analyze_lesson_id_in_skill_prose(tmp_path)
+        assert findings == []
+
+    def test_py_suppression_marker_applies(self, tmp_path: Path) -> None:
+        """The inline suppression marker suppresses a finding in Python prose."""
+        content = (
+            '# See lesson 2026-04-17-012. <!-- doctor-ignore: lesson-id-prose -->\n'
+        )
+        marketplace_root, _ = _make_skill_py(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert findings == []
+
+    def test_py_bare_date_token_not_flagged(self, tmp_path: Path) -> None:
+        """A bare ``YYYY-MM-DD`` date in Python is not a lesson-ID format."""
+        content = '# Recorded on 2026-04-29.\n'
+        marketplace_root, _ = _make_skill_py(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert findings == []
+
+
+# ===========================================================================
+# (h) Project-local .claude/skills/** cases
+# ===========================================================================
+
+
+class TestClaudeSkillsTree:
+    """The project-local ``.claude/skills/**`` tree (both ``*.md`` and
+    ``*.py``) is scanned in addition to the marketplace bundles tree."""
+
+    def test_claude_skill_md_citation_triggers_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """A markdown citation under ``.claude/skills/`` is flagged."""
+        content = 'Covered by lesson 2026-06-01-12-001 (Gate-1 dedup).\n'
+        marketplace_root, target = _make_claude_skill_file(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+        assert findings[0]['file'] == str(target)
+
+    def test_claude_skill_py_citation_triggers_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """A Python citation under ``.claude/skills/`` is flagged."""
+        content = '# Gate-1 dedup against lesson 2026-05-31-21-001.\n'
+        marketplace_root, target = _make_claude_skill_file(
+            tmp_path, content, filename='audit.py'
+        )
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+        assert findings[0]['file'] == str(target)
+
+    def test_claude_skill_nested_check_doc_is_scanned(
+        self, tmp_path: Path
+    ) -> None:
+        """A nested ``.claude/skills/{skill}/checks/*.md`` file is scanned."""
+        bundles_root = tmp_path / 'marketplace' / 'bundles'
+        bundles_root.mkdir(parents=True)
+        checks_dir = (
+            tmp_path / '.claude' / 'skills' / 'audit-skill' / 'checks'
+        )
+        checks_dir.mkdir(parents=True)
+        (checks_dir / 'quality-chain.md').write_text(
+            'See lesson 2026-05-31-20-002 for the chain rule.\n',
+            encoding='utf-8',
+        )
+        findings = analyze_lesson_id_in_skill_prose(bundles_root)
+        assert len(findings) == 1
+
+    def test_claude_skill_clean_tree_produces_no_findings(
+        self, tmp_path: Path
+    ) -> None:
+        """A clean ``.claude/skills/`` tree produces zero findings."""
+        content = 'This prose names the codified rule, not any lesson ID.\n'
+        marketplace_root, _ = _make_claude_skill_file(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert findings == []
+
+    def test_missing_claude_skills_tree_is_tolerated(
+        self, tmp_path: Path
+    ) -> None:
+        """When no ``.claude/skills`` tree exists, only the bundles tree scans.
+
+        The bundles-only ``tmp_path`` layout used by the markdown tests has no
+        sibling ``.claude/skills`` directory, so the project-local enumerator
+        must return an empty list rather than raising.
+        """
+        content = 'See lesson 2026-04-17-012 for context.\n'
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        # Exactly the one markdown finding; the absent .claude/skills tree
+        # contributes nothing and does not raise.
+        assert len(findings) == 1
+
+    def test_claude_and_bundles_findings_combine(self, tmp_path: Path) -> None:
+        """Findings from both the bundles tree and ``.claude/skills`` combine."""
+        bundles_root = tmp_path / 'marketplace' / 'bundles'
+        skill_dir = bundles_root / 'test-bundle' / 'skills' / 'test-skill'
+        skill_dir.mkdir(parents=True)
+        (skill_dir / 'SKILL.md').write_text(
+            'See lesson 2026-04-17-012 here.\n', encoding='utf-8'
+        )
+        claude_dir = tmp_path / '.claude' / 'skills' / 'audit-skill'
+        claude_dir.mkdir(parents=True)
+        (claude_dir / 'SKILL.md').write_text(
+            'Covered by lesson 2026-06-01-12-001.\n', encoding='utf-8'
+        )
+        findings = analyze_lesson_id_in_skill_prose(bundles_root)
+        assert len(findings) == 2

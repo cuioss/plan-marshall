@@ -335,13 +335,20 @@ In both examples the two failing checks (`verify / verify` and `lint`) carry dis
 
 ### issue create
 
-Create an issue.
+Create an issue. The body is supplied via the prepared-body / slot mechanism:
+`issue prepare-body` allocates a script-owned scratch path, the caller writes the
+markdown body to it with the native Write tool, then `issue create` consumes the
+prepared file. No multi-line markdown crosses the shell boundary.
 
 **Command**:
 ```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue prepare-body \
+    --plan-id PLAN_ID --slot SLOT
+# Write the issue body markdown to the returned path, then:
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue create \
     --title "Bug: feature X not working" \
-    --body "Description of the issue" \
+    --plan-id PLAN_ID \
+    --slot SLOT \
     [--labels "bug,priority:high"]
 ```
 
@@ -349,7 +356,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue crea
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `--title` | Yes | Issue title |
-| `--body` | Yes | Issue description |
+| `--plan-id` | Yes | Plan identifier; binds the prepared-body scratch path |
+| `--slot` | No | Prepared-body slot selector (must match the `prepare-body` call) |
 | `--labels` | No | Comma-separated labels |
 
 **Success Output**:
