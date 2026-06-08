@@ -40,8 +40,11 @@ Skill: plan-marshall:tools-integration-ci
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr view
 ```
 
-- `status: success` with `pr_number` → PR already exists, skip creation. Use returned `pr_number` for automated review step.
-- `status: error` → no PR exists, proceed to create one.
+Inspect the returned TOON — branch on BOTH `status` AND `state` (an open PR is reusable; a merged/closed one is not):
+
+- `status: success` AND `state == open` → an open PR already exists for this branch. Skip creation; reuse the returned `pr_number` for the automated review step (Mark Step Complete → Branch B).
+- `status: success` AND `state ∈ {merged, closed}` → the returned PR is a **stale association**, not a reusable PR. This happens when the branch name is reused across runs (a deterministic `feature/{plan_id}` whose prior run already merged): `gh pr view <branch>` returns the most-recent PR for the branch name regardless of state when no open PR exists, so a merged/closed PR resolves here. The current branch's new commits need their own PR — do NOT reuse it. Proceed to create a fresh PR (Mark Step Complete → Branch A). Recipe plan_ids carry a `{yyyy-mm-dd-hh}` suffix (see `phase-1-init/SKILL.md` Step 2 "From recipe") precisely to avoid this branch-name reuse, but this state guard is the structural backstop if a collision ever occurs by another path.
+- `status: error` → no PR exists, proceed to create one (Branch A).
 
 ### Generate PR body
 
