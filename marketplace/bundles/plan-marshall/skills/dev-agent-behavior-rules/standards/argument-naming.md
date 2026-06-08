@@ -147,14 +147,14 @@ The `pr`, `checks`, `issue`, and `branch` subcommand surfaces are common across 
 | Create a pull request | `ci pr create --title "{title}" --plan-id {id}` |
 | View the PR for the current branch | `ci pr view` |
 | List pull requests | `ci pr list [--head {branch}] [--state open|closed|all]` |
-| Reply to a PR | `ci pr reply --pr-number {n} --body-file {path}` |
+| Reply to a PR | `ci pr reply --pr-number {n} --plan-id {id} [--slot {slot}]` (body via prior `ci pr prepare-comment --for reply`) |
 | Resolve a review thread | `ci pr resolve-thread --thread-id {id}` |
-| Reply within a thread | `ci pr thread-reply --pr-number {n} --thread-id {id} --body-file {path}` |
+| Reply within a thread | `ci pr thread-reply --pr-number {n} --thread-id {id} --plan-id {id} [--slot {slot}]` (body via prior `ci pr prepare-comment --for thread-reply`) |
 | Get PR reviews | `ci pr reviews --pr-number {n}` |
 | Get PR inline comments | `ci pr comments --pr-number {n} [--unresolved-only]` |
 | Wait for new bot comments | `ci pr wait-for-comments --pr-number {n} [--timeout {s}] [--interval {s}]` |
 | Merge a pull request | `ci pr merge {--pr-number {n} \| --head {branch}} [--strategy merge\|squash\|rebase] [--delete-branch]` |
-| Edit PR title or body | `ci pr edit --pr-number {n} [--title "{title}"] [--body-file {path}]` |
+| Edit PR title or body | `ci pr edit --pr-number {n} --plan-id {id} [--title "{title}"] [--slot {slot}]` (body via prior `ci pr prepare-body`) |
 | Check CI status | `ci checks status {--pr-number {n} \| --head {branch}}` |
 | Wait for CI to complete | `ci checks wait --pr-number {n} [--timeout {s}] [--interval {s}]` |
 | Wait for CI status flip | `ci checks wait-for-status-flip --pr-number {n} [--timeout {s}] [--interval {s}] [--expected success\|failure\|any]` |
