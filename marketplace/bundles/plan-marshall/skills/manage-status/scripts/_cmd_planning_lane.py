@@ -27,6 +27,7 @@ also ``never``), ``auto`` (the default) defers to the signals.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -103,7 +104,10 @@ def _request_is_concrete(body: str) -> bool:
 
 def _read_scope_estimate(plan_id: str) -> str | None:
     """S2 — read ``scope_estimate`` from references.json (None when absent)."""
-    references = read_json(get_plan_dir(plan_id) / 'references.json', default={})
+    try:
+        references = read_json(get_plan_dir(plan_id) / 'references.json', default={})
+    except (OSError, json.JSONDecodeError):
+        return None
     if isinstance(references, dict):
         value = references.get('scope_estimate')
         if isinstance(value, str):
@@ -113,7 +117,10 @@ def _read_scope_estimate(plan_id: str) -> str | None:
 
 def _read_compatibility() -> str | None:
     """S4 — read ``plan.phase-2-refine.compatibility`` from marshal.json."""
-    config = read_json(base_path(FILE_MARSHAL), default={})
+    try:
+        config = read_json(base_path(FILE_MARSHAL), default={})
+    except (OSError, json.JSONDecodeError):
+        return None
     if isinstance(config, dict):
         plan_block = config.get('plan', {})
         if isinstance(plan_block, dict):
@@ -127,7 +134,10 @@ def _read_compatibility() -> str | None:
 
 def _read_ceremony_deep_lane() -> str:
     """Read ``ceremony_policy.planning.deep_lane`` (``auto`` when absent)."""
-    config = read_json(base_path(FILE_MARSHAL), default={})
+    try:
+        config = read_json(base_path(FILE_MARSHAL), default={})
+    except (OSError, json.JSONDecodeError):
+        return 'auto'
     if isinstance(config, dict):
         ceremony = config.get('ceremony_policy', {})
         if isinstance(ceremony, dict):

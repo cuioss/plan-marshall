@@ -32,6 +32,7 @@ what fired; routing is never gated.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from _cmd_change_type_heuristic import (
@@ -56,7 +57,10 @@ _NULL_SCOPE_VALUES = frozenset({'', 'none'})
 
 def _read_references(plan_id: str) -> dict[str, Any]:
     """Return the plan's references.json as a dict (empty on any failure)."""
-    references = read_json(get_plan_dir(plan_id) / 'references.json', default={})
+    try:
+        references = read_json(get_plan_dir(plan_id) / 'references.json', default={})
+    except (OSError, json.JSONDecodeError):
+        return {}
     return references if isinstance(references, dict) else {}
 
 

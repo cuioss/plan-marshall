@@ -1344,7 +1344,10 @@ def _read_ceremony_finalize_gates(plan_facts: dict[str, str]) -> dict[str, str]:
     marshal_path = get_marshal_path()
     if marshal_path is None or not marshal_path.exists():
         return resolved
-    data = read_json(marshal_path, default={})
+    try:
+        data = read_json(marshal_path, default={})
+    except (OSError, json.JSONDecodeError):
+        return resolved
     if not isinstance(data, dict):
         return resolved
     ceremony = data.get('ceremony_policy')
