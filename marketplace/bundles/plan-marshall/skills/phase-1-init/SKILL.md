@@ -78,8 +78,8 @@ documented in **Step 2a** below.
 - From description: first 3-5 meaningful words, kebab-cased, max 50 chars.
 - From lesson: derived from the lesson **title** — see **Step 2a** below.
 - From issue: issue number (e.g., `#123` → `issue-123`).
-- From recipe: `recipe-{recipe_key}` (e.g., `recipe-refactor-to-standards`).
-- Description, issue, and recipe rules: always kebab-case, max 50 chars.
+- From recipe: `recipe-{recipe_key}-{yyyy-mm-dd-hh}`, where `{yyyy-mm-dd-hh}` is the current UTC time obtained with a single `date -u +%Y-%m-%d-%H` Bash call (e.g., `recipe-refactor-to-standards-2026-06-08-16`). The timestamp suffix makes every recipe run produce a fresh `plan_id` — and therefore a fresh `feature/{plan_id}` branch — so a re-run of the same recipe never reuses a prior run's branch name. This is load-bearing: the Step 2a.3 collision check below only consults `manage-status list`, which excludes *archived* plans, so without the suffix a recipe re-run whose prior run was already archived reuses the identical branch name. A merged PR's branch-name association lingers on the remote even after the branch is deleted, so the next run's `create-pr` existence check (`ci pr view`, unfiltered by state) would resolve the stale merged PR instead of creating a fresh one.
+- Description and issue rules: always kebab-case, max 50 chars. The recipe rule is kebab-case too, but its `{yyyy-mm-dd-hh}` suffix is appended after truncation, so a recipe `plan_id` may slightly exceed 50 characters — expected and acceptable, the same convention as the Step 2a.3 collision suffix.
 
 #### Step 2a: Lesson-Source Plan ID Derivation
 
