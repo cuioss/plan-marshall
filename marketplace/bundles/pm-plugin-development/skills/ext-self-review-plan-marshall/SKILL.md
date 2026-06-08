@@ -1,13 +1,13 @@
 ---
 name: ext-self-review-plan-marshall
-description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files) for pre-submission structural self-review.
+description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter) for pre-submission structural self-review.
 user-invocable: false
 implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing
 ---
 
 # Self-Review Candidate Surfacing — plan-marshall domain
 
-**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the five structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift) against a bounded surface, not an unbounded read of the whole diff.
+**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the nine structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift) against a bounded surface, not an unbounded read of the whole diff.
 
 ## Enforcement
 
@@ -48,7 +48,7 @@ The marker is a pure structural signal — no LLM call is added to the surface s
 
 ## Subcommand: `surface`
 
-Surfaces eight candidate lists from the worktree's staged diff against the base branch.
+Surfaces twelve candidate lists from the worktree's staged diff against the base branch.
 
 ### Inputs
 
@@ -78,7 +78,11 @@ counts:
   schema_bearing_files: N7
   keep_markers: N8
   protected_identifiers: N9
-  total: N1+N2+N3+N4+N5+N8
+  producer_consumer: N10
+  source_of_truth: N11
+  same_document_consistency: N12
+  description_vs_body: N13
+  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13
 
 regexes[N1]{file,line,pattern}:
   {repo-relative-path},{line},{regex-pattern-string}
@@ -106,9 +110,21 @@ keep_markers[N8]{file,line,identifier,kind}:
 
 protected_identifiers[N9]:
   {identifier}
+
+producer_consumer[N10]{file,line,key,consumed}:
+  {repo-relative-path},{line},{produced-key},false
+
+source_of_truth[N11]{name,files,values}:
+  {constant-name},{semicolon-joined-declaring-files},{semicolon-joined-distinct-values}
+
+same_document_consistency[N12]{file,line,keyword,text}:
+  {repo-relative-path},{line},{normative-keyword},{directive-line-text}
+
+description_vs_body[N13]{file,line,key,description}:
+  {repo-relative-path},{line},{description|summary},{frontmatter-description-text}
 ```
 
-> The `total` count covers the six line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`) only. `contract_sources` and `schema_bearing_files` are review-anchor categories with their own counts; they are not summed into `total` because each modified file contributes at most one `contract_sources` entry whose payload is references rather than candidates. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
+> The `total` count covers the ten line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`) only. `contract_sources` and `schema_bearing_files` are review-anchor categories with their own counts; they are not summed into `total` because each modified file contributes at most one `contract_sources` entry whose payload is references rather than candidates. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
 
 ### Detection Rules
 
@@ -148,6 +164,14 @@ protected_identifiers[N9]:
 
 8. **Keep-identifier markers** — added lines containing `<!-- self-review: keep <identifier> -->` (see § Keep-Identifier Markers above for the marker contract). For each match the detector emits an entry with `identifier`, `file`, `line`, and `kind`. The `kind` is `keep_protected` when the identifier is still present elsewhere in the file's post-image (the marker line itself is excluded from the grep) and `keep_violation` when the identifier is no longer present — the second case is an orphaned marker that signals the consolidation removed a protected token. The deduplicated, sorted set of every identifier whose marker resolved to `keep_protected` is emitted as `protected_identifiers` so the LLM cognitive review can refuse a consolidation that would drop one of them.
 
+9. **Producer-consumer pairs** — added `.py` lines that *produce* a value into a dict-keyed output slot (`output['key'] = ...`, `output["key"] = ...`) with NO matching *consumer* anywhere in the diff's added lines. A consumer is a subscript read (`foo['key']` not on the LHS of an assignment) or a `.get('key'...)` call; the producer line's own LHS key never counts as a consumption of itself. The producer-consumer relation is diff-global (a key produced in one file and consumed in another counts as consumed). Each entry carries `file`, `line` (the producer line), `key` (the produced slot), and `consumed` (always `false` — only unconsumed producers are surfaced). A dangling producer surfaces a value emitted but never read by any downstream branch; the cognitive review's check 6 decides whether the missing consumer is a real defect.
+
+10. **Source-of-truth duplicates** — added `.py` lines binding the SAME UPPER_SNAKE_CASE constant (`NAME = <literal>`) in two or more distinct diff files with NON-identical literal values. This is the source-of-truth drift signal: the diff changed the value in one declared SoT location but not the other. Each entry carries `name` (the constant), `files` (a `; `-joined sorted list of the declaring files), and `values` (a `; `-joined sorted list of the distinct literal RHS values, each truncated to 80 characters). A constant assigned the same value in two files, or a constant declared in a single file, surfaces nothing. The cognitive review's check 7 adjudicates which declaration is stale.
+
+11. **Same-document normative directives** — added `.md` lines carrying an RFC-2119-style normative keyword (`MUST`, `MUST NOT`, `SHALL`, `SHALL NOT`, `NEVER`, `ALWAYS`, `REQUIRED`, `FORBIDDEN`). Each added normative directive is surfaced so the cognitive review can compare it against sibling normative statements ALREADY in the same document — a new normative rule that contradicts an existing one is the same-document-consistency defect. By construction this is a Mode-2 guard: an added normative line MUST surface a candidate, never an empty surface. Each entry carries `file`, `line`, `keyword` (the normative keyword that fired), and `text` (the directive line, truncated to 200 characters). The cognitive review's check 8 reads the surfaced directive against its document siblings.
+
+12. **Description-vs-body frontmatter** — surfaces one candidate per modified `.md` file that carries a frontmatter `description:` (or `summary:`) key in its post-image AND has at least one added line in the document body (any added line below the closing frontmatter `---` delimiter). A pure frontmatter-only edit, or a `.md` with no frontmatter description, surfaces nothing. The frontmatter description summarizes the document's model; when the body changes, the description may now describe a model the body no longer implements. Each entry carries `file`, `line` (the frontmatter description line in the post-image), `key` (`description` or `summary`), and `description` (the description value, truncated to 200 characters). The cognitive review's check 9 reads the description against the changed body and surfaces a drift when they diverge.
+
 ### Errors
 
 | Condition | Output |
@@ -177,6 +201,10 @@ This script is a **worktree-scoped (Bucket B)** script (per `tools-script-execut
 - Empty-diff edge case (empty live footprint → empty candidate lists)
 - `--project-dir` honoring (script does not discover root from cwd)
 - Keep-identifier marker detection: `keep_protected` when the identifier is still grep-able in the post-image; `keep_violation` when the consolidation removed the token; marker syntax variations (whitespace tolerance, multiple markers per file) all recognized
+- Producer-consumer detection: an `output['key'] = ...` producer with no consumer surfaces a candidate (positive); the same key read back via subscript or `.get()` (in the same or another file) suppresses it (negative); the producer line's own LHS key never self-consumes
+- Source-of-truth duplicate detection: the same UPPER_SNAKE_CASE constant assigned divergent literals across two files surfaces a candidate (positive); the same constant assigned identical values, or declared in a single file, surfaces nothing (negative)
+- Same-document normative-directive detection: an added `.md` line carrying a normative keyword (MUST/NEVER/etc.) surfaces a candidate (positive); a non-normative added line, or an added `.py` line, surfaces nothing (negative)
+- Description-vs-body detection: a modified `.md` with a frontmatter `description`/`summary` key AND an added body line surfaces a candidate (positive); a pure frontmatter-only edit, or a `.md` with no frontmatter description, surfaces nothing (negative)
 
 ## Canonical invocations
 

@@ -17,7 +17,30 @@ Every `manage-*` script call in this document carries the following exit-code co
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
-This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `finalize-step-simplify` in `manifest.phase_6.steps` (bare name — the manifest holds un-prefixed step ids; the dispatcher prepends `default:` when looking up the dispatch-table row). The step is gated into the manifest at composition time by the `manage-execution-manifest` decision rule (see `manage-execution-manifest/standards/decision-rules.md`), so this executor is never dispatched for change types or empty-changeset plans the rule excludes.
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `finalize-step-simplify` in `manifest.phase_6.steps` (bare name — the manifest holds un-prefixed step ids; the dispatcher prepends `default:` when looking up the dispatch-table row). The step is gated into the manifest at composition time by the two `manage-execution-manifest` decision surfaces described in **Activation and skip-reason** below, so this executor is never dispatched for the plans those surfaces exclude.
+
+## Activation and skip-reason
+
+Two independent composition-time surfaces decide whether `finalize-step-simplify` lands in `manifest.phase_6.steps` (both owned by `manage-execution-manifest` — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md)):
+
+1. **The `simplify_inactive` pre-filter** — drops the step when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`. This is the change-shape gate: a pure-analysis / verification / enhancement plan, or a plan that touched zero files, has no surplus structure worth a holistic sweep.
+2. **The `ceremony_policy.finalize.simplify` run-at-all gate** (`auto` default | `always` | `never`) — the operator override applied by the `ceremony_finalize_selection` post-matrix transform. `auto` defers to the `simplify_inactive` pre-filter (historical behaviour); `always` forces the step in even when the pre-filter would have dropped it; `never` removes it unconditionally. The gate is NOT a footgun — `never` skips a quality-improvement sweep, not a safety net — so setting it emits no `[WARNING]`. The config contract (field definition, default, validation) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § ceremony_policy; this step is the consumer.
+
+**Visible skip-reason**: whenever the step is skipped, the composer emits a decision-log line to the plan's `logs/decision.log` that names which surface fired, so the omission is observable rather than silent:
+
+- Pre-filter skip (`auto` deferred to a failing `simplify_inactive`):
+
+  ```
+  (plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — change_type={value} affected_files_count={N}
+  ```
+
+- Ceremony `never` skip (operator forced the step out):
+
+  ```
+  (plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — finalize.simplify=never, dropped finalize-step-simplify from phase_6.steps
+  ```
+
+A `record-step` row with `outcome: skipped` is additionally appended to the manifest's `execution_log[]` when the dispatcher resolves the step as absent, so the skip is both decision-logged at compose time and execution-logged at finalize time.
 
 ## Inputs
 

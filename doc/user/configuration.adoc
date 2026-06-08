@@ -106,6 +106,7 @@ Separate from the `automation.*` knobs above (which decide *whether to pause* on
 | `ceremony_policy.finalize.self_review` | `auto` | yes | Whether the pre-submission structural + cognitive self-review is selected into the execution manifest.
 | `ceremony_policy.finalize.qgate` | `auto` | **hard** | Whether the finalize blocking-findings re-capture runs. Highest-risk footgun — `never` can push a red tree.
 | `ceremony_policy.finalize.plugin_doctor` | `auto` | yes | Whether the structural marketplace lint runs before push.
+| `ceremony_policy.finalize.simplify` | `auto` | no | Whether the holistic post-implementation simplification sweep runs. `always` forces it in even when the composer's `simplify_inactive` pre-filter would drop it; `never` skips it. Not a footgun — `never` skips a quality-improvement sweep, not a safety net.
 |===
 
 Read or set the run-at-all gates with the same `ceremony-policy` verb (dotted `<section>.<gate>` path):

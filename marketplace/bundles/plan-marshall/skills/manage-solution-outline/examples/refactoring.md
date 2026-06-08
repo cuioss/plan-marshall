@@ -70,7 +70,7 @@ Refactor the monolithic AuthenticationService into smaller, focused components f
 **Change per file:** `TokenService.java` — new class in `de.cuioss.auth.token` receiving `generateToken()`, `validateToken()`, `refreshToken()`, and `revokeToken()` moved verbatim from `AuthenticationService`; `AuthenticationService.java` — replace moved method bodies with CDI-injected `TokenService` delegation calls.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
 - Criteria: Compiles without error
 
 **Success Criteria:**
@@ -96,7 +96,7 @@ Refactor the monolithic AuthenticationService into smaller, focused components f
 **Change per file:** `SessionManager.java` — new class in `de.cuioss.auth.session` receiving `createSession()`, `invalidateSession()`, `getSession()`, and session timeout handling; `AuthenticationService.java` — inject `SessionManager` via CDI and delegate the four session methods.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
 - Criteria: Compiles without error
 
 **Success Criteria:**
@@ -122,7 +122,7 @@ Refactor the monolithic AuthenticationService into smaller, focused components f
 **Change per file:** `UserLookupService.java` — new class in `de.cuioss.auth.user` receiving `findByUsername()`, `findById()`, and user caching logic; `AuthenticationService.java` — inject `UserLookupService` via CDI and delegate user resolution calls.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
 - Criteria: Compiles without error
 
 **Success Criteria:**
@@ -147,7 +147,7 @@ Refactor the monolithic AuthenticationService into smaller, focused components f
 **Change per file:** Retain only `authenticate()` and `logout()` orchestration logic; all three extracted services are injected via `@Inject`; remove any residual duplicated logic; add `@ApplicationScoped` CDI scope annotation if not already present.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
 - Criteria: Compiles without error
 
 **Success Criteria:**
@@ -176,7 +176,7 @@ Refactor the monolithic AuthenticationService into smaller, focused components f
 **Change per file:** `TokenServiceTest.java`, `SessionManagerTest.java`, `UserLookupServiceTest.java` — new test classes exercising each extracted service in isolation; `AuthenticationServiceTest.java` — replace direct logic tests with mock-injected delegation tests using Mockito or Weld.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets test`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test"`
 - Criteria: All tests pass with no failures
 
 **Success Criteria:**
@@ -203,7 +203,7 @@ Refactor the monolithic AuthenticationService into smaller, focused components f
 **Change per file:** `authentication-module.adoc` — update the package diagram and class-relationship section to reflect the new four-class structure (orchestrator + three extracted services); `README.md` — revise the authentication module overview paragraph to describe the new design.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify"`
 - Criteria: Full verify passes
 
 **Success Criteria:**

@@ -194,10 +194,23 @@ def _extract_metadata_block(content: str) -> dict[str, str]:
 
 
 def _extract_profiles(content: str) -> list[str]:
-    """Extract **Profiles:** list from deliverable content."""
+    """Extract **Profiles:** list from deliverable content.
+
+    The ``**Profiles:**`` line MAY carry a trailing same-line HTML comment
+    recording the file-type bucket — the documented canonical form is
+    ``**Profiles:** <!-- bucket: documentation_only -->`` followed by the
+    ``- `` bullet list on subsequent lines. The widened lead-in
+    ``\\*\\*Profiles:\\*\\*[^\\n]*\\n\\s*`` tolerates any non-newline trailing
+    content (the bucket comment, or nothing) on the ``**Profiles:**`` line
+    before consuming the line break and any leading whitespace ahead of the
+    first bullet. Profiles are still extracted only from the ``- `` bullets,
+    so the comment text is never mis-read as a profile.
+    """
     profiles: list[str] = []
 
-    profiles_match = re.search(r'\*\*Profiles:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
+    profiles_match = re.search(
+        r'\*\*Profiles:\*\*[^\n]*\n\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE
+    )
     if not profiles_match:
         return profiles
 

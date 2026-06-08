@@ -228,6 +228,7 @@ DEFAULT_PLAN_EXECUTE = {
 BUILT_IN_FINALIZE_STEPS = [
     'default:pre-push-quality-gate',
     'default:finalize-step-simplify',
+    'default:finalize-step-whole-tree-gate',
     'default:commit-push',
     'default:create-pr',
     'default:ci-verify',
@@ -252,6 +253,7 @@ OPTIONAL_BUNDLE_FINALIZE_STEPS = [
 BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:pre-push-quality-gate': 'Run quality-gate per affected bundle as the last gate before push',
     'default:finalize-step-simplify': 'Holistic post-implementation simplification sweep — collapse accidental complexity introduced across the plan diff',
+    'default:finalize-step-whole-tree-gate': 'Whole-tree completeness gate for clean-slate/breaking plans — greps the entire marketplace tree (not the diff) for surviving references to symbols/contracts the plan deleted and flags request-mandate items absent from the diff; runs pre-commit so a survivor BLOCKS the push',
     'default:commit-push': 'Commit and push changes',
     'default:create-pr': 'Create pull request',
     'default:ci-verify': 'Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (requires: [ci-complete] in consume-failures mode)',
@@ -333,6 +335,13 @@ DEFAULT_PLAN_FINALIZE = {
 #                               highest-risk footgun: `never` can mask real
 #                               build/test failures and push a red tree).
 #   - `finalize.plugin_doctor`— structural marketplace lint before push.
+#   - `finalize.simplify`     — holistic post-implementation simplification
+#                               sweep (`finalize-step-simplify`). `auto` (the
+#                               default) defers to the manifest composer's
+#                               `simplify_inactive` pre-filter; `always`/`never`
+#                               force the step in/out. Not a footgun — `never`
+#                               skips a quality-improvement sweep, not a safety
+#                               net, so it does not appear in CEREMONY_FOOTGUNS.
 #
 # Axis 2 — automation (`bool`): once a gate has run, proceed without asking?
 # The three automation knobs (`finalize_without_asking`,
@@ -351,7 +360,7 @@ VALID_CEREMONY_RUN_AT_ALL = ('auto', 'always', 'never')
 # The run-at-all gate fields, grouped by section. Used by validation and by the
 # footgun catalogue below.
 CEREMONY_PLANNING_GATES = ('deep_lane', 'revalidation', 'escalation', 'qgate')
-CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'plugin_doctor')
+CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'plugin_doctor', 'simplify')
 
 # Footgun catalogue: dotted gate paths whose `never` value disables a safety net
 # and therefore MUST emit a set-time `[WARNING]` rather than silently applying.
@@ -383,6 +392,7 @@ DEFAULT_CEREMONY_POLICY = {
         'self_review': 'auto',
         'qgate': 'auto',
         'plugin_doctor': 'auto',
+        'simplify': 'auto',
     },
     # Automation axis — the three boolean automation knobs, with their
     # historical defaults preserved.

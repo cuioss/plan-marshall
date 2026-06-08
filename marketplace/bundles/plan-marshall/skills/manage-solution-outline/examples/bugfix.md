@@ -81,7 +81,7 @@ Fix a race condition where concurrent requests can access a session after timeou
 **Change per file:** Read and annotate the race window — identify the exact lines where `isExpired()` returns false, where the timeout thread calls `markExpired()` and `cleanup()`, and where `getSession()` dereferences the removed map entry.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
 - Criteria: Compiles without error (no code changes yet)
 
 **Success Criteria:**
@@ -106,7 +106,7 @@ Fix a race condition where concurrent requests can access a session after timeou
 **Change per file:** Add `ReentrantReadWriteLock` field; wrap `getSession()` with read lock and `invalidate()` with write lock; introduce `SessionState` enum (`ACTIVE`, `INVALIDATED`) for logical delete before physical removal.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
 - Criteria: Compiles without error
 
 **Success Criteria:**
@@ -131,7 +131,7 @@ Fix a race condition where concurrent requests can access a session after timeou
 **Change per file:** Add a configurable grace period (default 5 s) between logical invalidation (`INVALIDATED` state) and physical map removal; `getSession()` returns `null` for `INVALIDATED` sessions without waiting for physical removal.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
 - Criteria: Compiles without error
 
 **Success Criteria:**
@@ -157,7 +157,7 @@ Fix a race condition where concurrent requests can access a session after timeou
 **Change per file:** New test class that spawns multiple reader threads concurrently with a timeout trigger thread; asserts that no `NullPointerException` is thrown and that all threads observe consistent session state.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets test`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test"`
 - Criteria: All tests pass, including the new race condition test
 
 **Success Criteria:**
@@ -184,7 +184,7 @@ Fix a race condition where concurrent requests can access a session after timeou
 **Change per file:** New integration test that exercises `SessionStore` under realistic concurrent load with multiple sessions timing out; verifies no authentication failures occur during the grace period.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify"`
 - Criteria: Full verify passes including integration tests
 
 **Success Criteria:**

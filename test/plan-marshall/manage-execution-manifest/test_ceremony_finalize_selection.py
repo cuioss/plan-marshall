@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Tests for the ``ceremony_finalize_selection`` post-matrix transform.
 
-The transform applies the three ``ceremony_policy.finalize`` run-at-all gates
-(``self_review`` / ``qgate`` / ``plugin_doctor``, each ``always|never|auto``)
-to the matrix-produced ``phase_6.steps``:
+The transform applies the four ``ceremony_policy.finalize`` run-at-all gates
+(``self_review`` / ``qgate`` / ``plugin_doctor`` / ``simplify``, each
+``always|never|auto``) to the matrix-produced ``phase_6.steps``:
 
 - ``auto`` (the default) defers to the existing machinery — no-op.
 - ``never`` drops the gate's finalize step.
@@ -206,7 +206,12 @@ class TestCeremonyFinalizeAuto:
         assert result is not None
         assert result['status'] == 'success'
         gates = result['ceremony_finalize_gates']
-        assert gates == {'self_review': 'auto', 'qgate': 'auto', 'plugin_doctor': 'auto'}
+        assert gates == {
+            'self_review': 'auto',
+            'qgate': 'auto',
+            'plugin_doctor': 'auto',
+            'simplify': 'auto',
+        }
         assert result['ceremony_finalize_forced_in'] == []
         assert result['ceremony_finalize_forced_out'] == []
 
@@ -440,6 +445,145 @@ class TestCeremonyFinalizeOverrides:
         assert result is not None
         # Last matching row wins → never.
         assert result['ceremony_finalize_gates']['qgate'] == 'never'
+
+
+# =============================================================================
+# Test: simplify gate — symmetric peer of the other three finalize gates
+# =============================================================================
+
+
+class TestCeremonyFinalizeSimplify:
+    """The ``simplify`` gate forces ``finalize-step-simplify`` in/out, with
+    ``auto`` deferring to the matrix-time ``simplify_inactive`` pre-filter.
+
+    ``finalize-step-simplify`` is a member of ``DEFAULT_PHASE_6_STEPS``; the
+    ``simplify_inactive`` pre-filter keeps it only when
+    ``change_type ∈ {feature, bug_fix, tech_debt}`` AND ``affected_files > 0``.
+    The default ``_compose_ns`` (``change_type='feature'``,
+    ``affected_files_count=5``) therefore keeps the step in the ``auto`` baseline.
+    """
+
+    def test_auto_defers_to_prefilter_keep_branch(self, plan_context):
+        # change_type=feature, files>0 → simplify_inactive keeps the step;
+        # auto is a no-op, so it survives.
+        _seed_marshal(ceremony_finalize={'simplify': 'auto'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-auto-keep'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['ceremony_finalize_gates']['simplify'] == 'auto'
+        assert result['ceremony_finalize_forced_in'] == []
+        assert result['ceremony_finalize_forced_out'] == []
+        assert 'finalize-step-simplify' in _bare(_manifest_phase_6_steps(result))
+
+    def test_auto_defers_to_prefilter_drop_branch(self, plan_context):
+        # change_type=enhancement is outside the simplify activation set
+        # ({feature, bug_fix, tech_debt}) → the simplify_inactive pre-filter
+        # drops the step; auto does NOT re-add it. On a multi_module enhancement
+        # (Row 7 default) the rest of phase_6 is retained.
+        _seed_marshal(ceremony_finalize={'simplify': 'auto'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(plan_id='ceremony-simplify-auto-drop', change_type='enhancement')
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['ceremony_finalize_gates']['simplify'] == 'auto'
+        # auto never force-includes — the pre-filter's drop stands.
+        assert 'finalize-step-simplify' not in result['ceremony_finalize_forced_in']
+        assert 'finalize-step-simplify' not in _bare(_manifest_phase_6_steps(result))
+
+    def test_never_drops_simplify_step(self, plan_context):
+        # Baseline keeps the step (feature + files>0); never must drop it.
+        _seed_marshal(ceremony_finalize={'simplify': 'never'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-never'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'finalize-step-simplify' not in _bare(_manifest_phase_6_steps(result))
+        assert 'finalize-step-simplify' in result['ceremony_finalize_forced_out']
+
+    def test_never_is_no_op_when_already_dropped_by_prefilter(self, plan_context):
+        # enhancement change_type → simplify_inactive already dropped the step;
+        # never simplify is then a no-op (no double-drop, no forced_out entry).
+        _seed_marshal(ceremony_finalize={'simplify': 'never'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(plan_id='ceremony-simplify-never-absent', change_type='enhancement')
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'finalize-step-simplify' not in result['ceremony_finalize_forced_out']
+        assert 'finalize-step-simplify' not in _bare(_manifest_phase_6_steps(result))
+
+    def test_always_readds_simplify_dropped_by_prefilter(self, plan_context):
+        # enhancement change_type → simplify_inactive drops the step; always
+        # must re-add it regardless, overriding the pre-filter.
+        _seed_marshal(ceremony_finalize={'simplify': 'always'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(plan_id='ceremony-simplify-always-readd', change_type='enhancement')
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'finalize-step-simplify' in _bare(_manifest_phase_6_steps(result))
+        assert 'finalize-step-simplify' in result['ceremony_finalize_forced_in']
+
+    def test_always_is_no_op_when_step_already_present(self, plan_context):
+        # feature + files>0 → the step survives the matrix; always is a no-op.
+        _seed_marshal(ceremony_finalize={'simplify': 'always'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-always-present'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['ceremony_finalize_forced_in'] == []
+        assert 'finalize-step-simplify' in _bare(_manifest_phase_6_steps(result))
+
+    def test_always_inserts_before_plan_mutating_tail(self, plan_context):
+        # enhancement drops the step; always re-adds it before the
+        # plan-mutating tail.
+        _seed_marshal(ceremony_finalize={'simplify': 'always'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(plan_id='ceremony-simplify-always-order', change_type='enhancement')
+        )
+
+        assert result is not None
+        steps = _manifest_phase_6_steps(result)
+        bare_seq = [next(iter(_bare([s]))) for s in steps]
+        assert 'finalize-step-simplify' in bare_seq
+        assert 'archive-plan' in bare_seq
+        assert bare_seq.index('finalize-step-simplify') < bare_seq.index('archive-plan')
+
+    def test_override_forces_simplify_never(self, plan_context):
+        # Section says always; a matching override forces never.
+        _seed_marshal(
+            ceremony_finalize={'simplify': 'always'},
+            overrides=[
+                {'when': {'change_type': 'feature'}, 'set': {'finalize.simplify': 'never'}}
+            ],
+        )
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-override'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['ceremony_finalize_gates']['simplify'] == 'never'
+        assert 'finalize-step-simplify' not in _bare(_manifest_phase_6_steps(result))
 
 
 # =============================================================================

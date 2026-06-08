@@ -437,7 +437,8 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "finalize": {
       "self_review": "auto",
       "qgate": "auto",
-      "plugin_doctor": "auto"
+      "plugin_doctor": "auto",
+      "simplify": "auto"
     },
     "automation": {
       "finalize_without_asking": true,
@@ -488,6 +489,7 @@ A top-level block (sibling to `plan` / `ci` / `project`) carrying lifecycle-wide
 | `finalize.self_review` | Whether the pre-submission structural + cognitive self-review runs (manifest finalize step-selection). |
 | `finalize.qgate` | Whether finalize re-captures blocking findings. **Highest-risk gate** — `never` can mask real build/test failures. |
 | `finalize.plugin_doctor` | Whether structural marketplace lint runs before push. |
+| `finalize.simplify` | Whether the holistic post-implementation simplification sweep (`finalize-step-simplify`) runs. `always` forces it in even when the composer's `simplify_inactive` pre-filter would drop it; `never` skips it; `auto` defers to that pre-filter. Not a footgun — `never` skips a quality-improvement sweep, not a safety net. |
 
 **Axis 2 — automation (`bool`).** Once a gate has run, proceed without asking? The three automation knobs live only here. Defaults preserve the historical values.
 

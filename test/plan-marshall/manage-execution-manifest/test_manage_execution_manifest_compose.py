@@ -237,9 +237,12 @@ def test_tests_only_runs_module_tests_and_full_phase_6(plan_context):
     manifest = read_manifest('matrix-tests')
     assert manifest is not None
     assert manifest['phase_5']['verification_steps'] == ['build_verify']
-    # finalize-step-simplify is dropped by the simplify_inactive pre-filter:
-    # change_type=verification is not in {feature, bug_fix, tech_debt}.
-    expected_phase_6 = [s for s in DEFAULT_PHASE_6_STEPS if s != 'finalize-step-simplify']
+    # finalize-step-simplify is dropped by the simplify_inactive pre-filter and
+    # finalize-step-whole-tree-gate by the whole_tree_gate_inactive pre-filter:
+    # change_type=verification is in neither gate's code-bearing change-type set.
+    expected_phase_6 = [
+        s for s in DEFAULT_PHASE_6_STEPS if s not in {'finalize-step-simplify', 'finalize-step-whole-tree-gate'}
+    ]
     assert manifest['phase_6']['steps'] == expected_phase_6
 
 
@@ -2026,6 +2029,181 @@ def test_simplify_inactive_no_decision_log_on_kept_branch(plan_context):
         _mem._emit_decision_log = original_emit
 
     drop_entries = [(pid, msg) for pid, msg in captured if 'finalize-step-simplify omitted' in msg]
+    assert drop_entries == []
+
+
+# =============================================================================
+# Pre-Filter: whole_tree_gate_inactive (finalize-step-whole-tree-gate gate)
+#
+# finalize-step-whole-tree-gate is a candidate by default (it sits in
+# DEFAULT_PHASE_6_STEPS). The whole_tree_gate_inactive pre-filter DROPS it
+# unless ALL of compatibility == breaking, change_type ∈ {tech_debt, feature,
+# enhancement, bug_fix}, and affected_files_count > 0. The whole-tree survivor
+# sweep only makes sense on a clean-slate/breaking deletion plan — a
+# deprecation / smart_and_ask plan deliberately keeps old surfaces, so a
+# surviving reference there is expected, not a defect.
+#
+# compatibility is read from marshal.json (plan.phase-2-refine.compatibility,
+# default breaking) — the fixture has no override, so _read_compatibility()
+# returns 'breaking' by default. Cases that need a non-breaking compatibility
+# monkeypatch _mem._read_compatibility, mirroring the simplify _emit_decision_log
+# capture pattern above.
+#
+# See standards/decision-rules.md § Pre-Filter: whole_tree_gate_inactive.
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    'change_type,affected_files_count,expect_present,expect_omitted',
+    [
+        # Gate passes (compatibility defaults to breaking): code-bearing change
+        # types with files > 0. enhancement is included (broader than simplify).
+        ('feature', 5, True, False),
+        ('bug_fix', 1, True, False),
+        ('tech_debt', 3, True, False),
+        ('enhancement', 2, True, False),
+        # Gate fails on change_type: not code-bearing for this gate.
+        ('analysis', 5, False, True),
+        ('verification', 5, False, True),
+        # Gate fails on affected_files_count == 0.
+        ('feature', 0, False, True),
+        ('tech_debt', 0, False, True),
+    ],
+)
+def test_whole_tree_gate_inactive_gate(
+    plan_context, change_type, affected_files_count, expect_present, expect_omitted
+):
+    """finalize-step-whole-tree-gate lands only on a breaking, code-bearing plan with files > 0."""
+    slug = f'{change_type}-{affected_files_count}'.replace('_', '-')
+    plan_id = f'matrix-wtg-{slug}'
+    # Non-surgical, code-shaped scope so the surgical Row 5 / docs Row 3 paths
+    # don't intersect-narrow phase_6.steps and confuse the assertion.
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type=change_type,
+            scope_estimate='multi_module',
+            affected_files_count=affected_files_count,
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+    # compatibility resolves to the breaking default (no marshal.json override).
+    assert result['compatibility'] == 'breaking'
+    assert result['whole_tree_gate_omitted'] is expect_omitted
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    if expect_present:
+        assert 'finalize-step-whole-tree-gate' in manifest['phase_6']['steps']
+    else:
+        assert 'finalize-step-whole-tree-gate' not in manifest['phase_6']['steps']
+
+
+@pytest.mark.parametrize('compatibility', ['deprecation', 'smart_and_ask'])
+def test_whole_tree_gate_inactive_dropped_for_non_breaking_compatibility(plan_context, compatibility):
+    """A code-bearing plan still drops the gate when compatibility != breaking.
+
+    deprecation / smart_and_ask plans deliberately keep old surfaces, so a
+    surviving reference is expected — the survivor sweep would FAIL legitimately
+    retained references, so the gate must not activate.
+    """
+    # plan_ids may not contain underscores — slug the parametrized compatibility.
+    plan_id = f'matrix-wtg-{compatibility.replace("_", "-")}'
+    original = _mem._read_compatibility
+    _mem._read_compatibility = lambda: compatibility
+    try:
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',  # code-bearing
+                scope_estimate='multi_module',
+                affected_files_count=5,  # files > 0
+            )
+        )
+    finally:
+        _mem._read_compatibility = original
+
+    assert result is not None and result['status'] == 'success'
+    assert result['compatibility'] == compatibility
+    assert result['whole_tree_gate_omitted'] is True
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'finalize-step-whole-tree-gate' not in manifest['phase_6']['steps']
+
+
+def test_whole_tree_gate_inactive_noop_when_step_absent_from_candidates(plan_context):
+    """When finalize-step-whole-tree-gate is not a candidate, the pre-filter is a no-op."""
+    candidates_without_gate = [s for s in DEFAULT_PHASE_6_STEPS if s != 'finalize-step-whole-tree-gate']
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='matrix-wtg-absent',
+            change_type='analysis',  # gate would fail
+            scope_estimate='multi_module',
+            affected_files_count=0,  # gate would fail
+            phase_6_steps=','.join(candidates_without_gate),
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+    # No-op: the step was never present, so the pre-filter did not "fire".
+    assert result['whole_tree_gate_omitted'] is False
+    manifest = read_manifest('matrix-wtg-absent')
+    assert manifest is not None
+    assert 'finalize-step-whole-tree-gate' not in manifest['phase_6']['steps']
+
+
+def test_whole_tree_gate_inactive_emits_decision_log_only_on_drop(plan_context):
+    """The drop-only decision-log line fires exactly once on the dropped branch."""
+    captured: list[tuple[str, str]] = []
+    original_emit = _mem._emit_decision_log
+
+    def _capture(plan_id, message):
+        captured.append((plan_id, message))
+
+    _mem._emit_decision_log = _capture
+    try:
+        # Dropped branch: analysis change_type fails the gate (compatibility defaults breaking).
+        cmd_compose(
+            _compose_ns(
+                plan_id='matrix-wtg-drop',
+                change_type='analysis',
+                scope_estimate='multi_module',
+                affected_files_count=3,
+            )
+        )
+    finally:
+        _mem._emit_decision_log = original_emit
+
+    drop_entries = [(pid, msg) for pid, msg in captured if 'finalize-step-whole-tree-gate omitted' in msg]
+    assert len(drop_entries) == 1, f'expected one whole-tree-gate omission entry, got {captured!r}'
+    pid, msg = drop_entries[0]
+    assert pid == 'matrix-wtg-drop'
+    assert msg == (
+        '(plan-marshall:manage-execution-manifest:compose) finalize-step-whole-tree-gate omitted — '
+        'compatibility=breaking change_type=analysis affected_files_count=3'
+    )
+
+
+def test_whole_tree_gate_inactive_no_decision_log_on_kept_branch(plan_context):
+    """No whole-tree-gate-omission log fires when the gate passes (step retained)."""
+    captured: list[tuple[str, str]] = []
+    original_emit = _mem._emit_decision_log
+
+    def _capture(plan_id, message):
+        captured.append((plan_id, message))
+
+    _mem._emit_decision_log = _capture
+    try:
+        cmd_compose(
+            _compose_ns(
+                plan_id='matrix-wtg-kept',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=4,
+            )
+        )
+    finally:
+        _mem._emit_decision_log = original_emit
+
+    drop_entries = [(pid, msg) for pid, msg in captured if 'finalize-step-whole-tree-gate omitted' in msg]
     assert drop_entries == []
 
 
