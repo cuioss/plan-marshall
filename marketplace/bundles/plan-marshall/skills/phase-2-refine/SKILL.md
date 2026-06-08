@@ -76,10 +76,10 @@ This phase dispatches under one role key: **`phase-2-refine`** (resolves through
 
 The confidence loop (Steps 3b/3c/8/9/10/11/12) re-evaluates classification, source-premise verification, and confidence aggregation across iterations — but the *inputs* feeding those re-evaluations are loop-invariant: they are written before the loop begins (phase-1-init, phase-2-refine entry) and are not mutated by the loop body. The dispatched agent MUST read each of the following inputs ONCE at phase entry and reference the cached values throughout every loop iteration:
 
-- `request.md` — both `clarified_request` and `original_input` sections (read via `manage-plan-documents read --plan-id {plan_id} --document request`).
+- `request.md` — both `clarified_request` and `original_input` sections (read via `manage-plan-documents request read --plan-id {plan_id}`).
 - `references.json` — `domains`, `base_branch`, `worktree_path`, `affected_files`, `change_type` (read via `manage-files read --plan-id {plan_id} --file references.json`).
 - `module_mapping.toon` if present at `.plan/local/plans/{plan_id}/module_mapping.toon` (read via `manage-files read`).
-- The architecture topology (read via `manage-architecture topology` at phase entry).
+- The architecture topology (read via `manage-architecture overview` at phase entry).
 
 **Prohibited actions:**
 - Never re-read loop-invariant inputs inside the confidence-loop body — re-reading inside the loop is envelope-cost waste; resolve all invariant inputs before the loop begins.

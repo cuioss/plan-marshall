@@ -28,6 +28,15 @@ See also `standards/lessons-integration.md` for conceptual guidance on when and 
 
 These counts MAY be consulted as context when authoring the lesson bodies (e.g., to focus recording on whichever signal source dominated), but the body MUST NOT re-issue `manage-findings qgate list`, `manage-status read`, or `manage-logging read --type work` to recompute them — the dispatcher already paid that cost.
 
+When the lesson author needs the original/clarified request as context, read it via the canonical verb chain:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request read --plan-id {plan_id} --section clarified_request
+```
+
+`manage-plan-documents`' only top-level choices are `{list-types, request}` — the request read is the `request` noun's `read` sub-verb, NOT a top-level `read` (and there is no `references` noun).
+
 This step runs as a Task dispatch under the `post-run-review` sub-key (resolved via `manage-config effort resolve-target --phase phase-6-finalize --role post-run-review`) with a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. The dispatcher emits the standardized `[DISPATCH]` work-log line at the call site — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) for the canonical emission contract. The `post-run-review` sub-key bundles lessons-capture with retrospective — both workflows look back at the full plan history and ride the same level. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — lessons capture is advisory and never blocks the rest of the pipeline.
 
 ### `[DISPATCH]` log line (emitted by the dispatcher)

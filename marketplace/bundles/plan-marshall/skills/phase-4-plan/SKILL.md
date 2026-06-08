@@ -60,7 +60,7 @@ This phase dispatches under one role key: **`phase-4-plan`** (resolves through `
 The task-creation loop (Steps 5 + 6) iterates per deliverable — but the *inputs* feeding the per-deliverable task creation are loop-invariant: they are read once during phase entry / Step 3 deliverable load and Step 4 dependency-graph construction, and are not mutated by the loop body. The dispatched agent MUST read each of the following inputs ONCE at phase entry and reference the cached values throughout every per-deliverable iteration:
 
 - The deliverable set (read via Step 3 deliverable-load from `solution_outline.md`).
-- The architecture topology (read via `manage-architecture topology` at phase entry).
+- The architecture topology (read via `manage-architecture overview` at phase entry).
 - The per-deliverable skill resolutions (resolved via `architecture module --module {D.module}` for each distinct module before the per-deliverable iteration begins — one query per unique module, cached; not re-queried per deliverable or per profile).
 - The execution manifest composition inputs (the manifest is composed once at Step 7b — not per-deliverable).
 
