@@ -402,7 +402,11 @@ def _skill_source_targets(marketplace_root: Path) -> list[tuple[Path, str | None
     if not marketplace_root.is_dir():
         return []
     results: list[tuple[Path, str | None, str]] = []
-    for bundle_dir in sorted(marketplace_root.iterdir()):
+    try:
+        bundle_dirs = sorted(marketplace_root.iterdir())
+    except OSError:
+        bundle_dirs = []
+    for bundle_dir in bundle_dirs:
         if not bundle_dir.is_dir():
             continue
         for sub in ('skills', 'agents', 'commands'):
@@ -440,7 +444,11 @@ def _claude_skill_source_targets(marketplace_root: Path) -> list[tuple[Path, str
         return []
     results: list[tuple[Path, str | None, str]] = []
     for glob, kind in _KIND_BY_GLOB:
-        for src in sorted(skills_root.rglob(glob)):
+        try:
+            sources = sorted(skills_root.rglob(glob))
+        except OSError:
+            continue
+        for src in sources:
             if src.is_file():
                 results.append((src, None, kind))
     return results
