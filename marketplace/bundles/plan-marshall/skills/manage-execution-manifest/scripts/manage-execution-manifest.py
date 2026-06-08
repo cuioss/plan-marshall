@@ -22,6 +22,7 @@ import json
 import shlex
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +80,15 @@ VALID_TRACKS = ('simple', 'complex')
 
 VALID_COMMIT_STRATEGIES = ('per_plan', 'per_deliverable', 'none')
 DEFAULT_COMMIT_STRATEGY = 'per_plan'
+
+# record-step contract. The execution log records per-step execution outcome
+# plus token attribution into a new ``execution_log[]`` section of the
+# manifest, written by the ``record-step`` subcommand. Phases are the bare
+# phase keys the orchestrator emits at step-dispatch time; outcomes name
+# whether the step ran, was skipped, or errored.
+VALID_RECORD_PHASES = ('5-execute', '6-finalize')
+VALID_RECORD_OUTCOMES = ('executed', 'skipped', 'error')
+EXECUTION_LOG_KEY = 'execution_log'
 
 # Default candidate step sets when callers don't pass --phase-5-steps / --phase-6-steps.
 # These are bare step IDs (post boundary-normalization shape) that resolve to
@@ -1227,6 +1237,228 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
     _emit_decision_log(plan_id, message)
 
 
+# =============================================================================
+# ceremony_policy.finalize run-at-all selection (post-matrix transform)
+# =============================================================================
+#
+# The three finalize run-at-all gates (`ceremony_policy.finalize.<gate>`) drive
+# a post-matrix transform that forces each gate's finalize step in (`always`),
+# out (`never`), or defers to the existing decision machinery (`auto`, the
+# default no-op). Each gate maps to exactly one finalize step ID:
+#
+#   self_review   → finalize-step-pre-submission-self-review
+#   qgate         → pre-push-quality-gate (the finalize blocking-findings re-capture)
+#   plugin_doctor → finalize-step-plugin-doctor
+#
+# The transform NEVER touches `automated-review`: the bot-review invariant
+# (lesson 2026-04-27-18-003, enforced by `_apply_bot_enforcement_guard`) is
+# orthogonal and is preserved verbatim — the three ceremony gates are the only
+# finalize steps this transform may add or drop. Run-at-all values are validated
+# at set time by `manage-config`'s `validate_ceremony_policy`; the composer
+# defensively treats any non-`{always,never}` value (including `auto` and a
+# malformed value) as defer.
+#
+# Step IDs are matched against both the bare form and every prefixed form a
+# candidate list may carry. Candidate lists are `default:`-namespace-normalized
+# at intake (`_strip_default_prefix`), but `project:` / `bundle:skill` prefixes
+# are preserved verbatim, so the match-sets below list every form. The `always`
+# re-insertion uses the canonical `project:`-prefixed form for the two
+# finalize-step skills (their authoritative manifest shape) and the bare form
+# for `pre-push-quality-gate` (a built-in `default:` step, normalized bare).
+
+# Gate → (match-set, canonical insertion form). The match-set covers every
+# prefixed/bare form a candidate list may carry; the insertion form is the
+# canonical identifier `always` re-adds when the step is absent.
+_CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
+    'self_review': (
+        frozenset(
+            {
+                'finalize-step-pre-submission-self-review',
+                'project:finalize-step-pre-submission-self-review',
+            }
+        ),
+        'project:finalize-step-pre-submission-self-review',
+    ),
+    'qgate': (
+        frozenset({'pre-push-quality-gate'}),
+        'pre-push-quality-gate',
+    ),
+    'plugin_doctor': (
+        frozenset(
+            {
+                'finalize-step-plugin-doctor',
+                'project:finalize-step-plugin-doctor',
+            }
+        ),
+        'project:finalize-step-plugin-doctor',
+    ),
+}
+
+# The run-at-all gate fields for the finalize section, in canonical order.
+_CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'plugin_doctor')
+
+# Canonical default for every finalize gate when marshal.json omits the block.
+_CEREMONY_FINALIZE_DEFAULT = 'auto'
+
+
+def _ceremony_override_matches(when: object, plan_facts: dict[str, str]) -> bool:
+    """Return ``True`` iff an ``overrides[]`` row's ``when`` clause matches the plan facts.
+
+    Mirrors ``manage-config``'s ``ceremony_override_matches`` (the authoritative
+    validator-side helper) but is inlined here so the composer stays
+    self-contained — it does not import ``manage-config``'s private command
+    modules, matching the precedent set by the planning-lane router's inlined
+    ``_read_ceremony_deep_lane``. An empty ``when`` clause matches every plan;
+    a row applies only when every key/value pair in ``when`` is present and
+    equal in ``plan_facts``.
+    """
+    if not isinstance(when, dict):
+        return False
+    for fact, expected in when.items():
+        if plan_facts.get(fact) != expected:
+            return False
+    return True
+
+
+def _read_ceremony_finalize_gates(plan_facts: dict[str, str]) -> dict[str, str]:
+    """Resolve the three ``ceremony_policy.finalize`` gate values for this plan.
+
+    Reads ``marshal.json``'s ``ceremony_policy.finalize`` block directly (the
+    composer reads marshal.json straight through, like the planning-lane
+    router), merging the canonical ``auto`` default under any absent gate. Then
+    applies ``ceremony_policy.overrides[]`` rows in order — each matching row's
+    ``set`` map wins over the section value for any ``finalize.<gate>`` dotted
+    path it carries (later rows win over earlier rows, mirroring the
+    last-write-wins semantics of a dotted-path ``set``).
+
+    ``plan_facts`` carries the deterministic per-plan facts the override
+    ``when`` clauses match on (``scope_estimate`` / ``plan_source`` /
+    ``change_type``).
+
+    Returns a ``{gate: value}`` dict for the three finalize gates; values are
+    always one of the section/override values (or the ``auto`` default). The
+    caller treats any value other than ``always`` / ``never`` as defer.
+    """
+    resolved: dict[str, str] = dict.fromkeys(_CEREMONY_FINALIZE_GATES, _CEREMONY_FINALIZE_DEFAULT)
+
+    marshal_path = get_marshal_path()
+    if marshal_path is None or not marshal_path.exists():
+        return resolved
+    data = read_json(marshal_path, default={})
+    if not isinstance(data, dict):
+        return resolved
+    ceremony = data.get('ceremony_policy')
+    if not isinstance(ceremony, dict):
+        return resolved
+
+    finalize = ceremony.get('finalize')
+    if isinstance(finalize, dict):
+        for gate in _CEREMONY_FINALIZE_GATES:
+            value = finalize.get(gate)
+            if isinstance(value, str) and value:
+                resolved[gate] = value
+
+    overrides = ceremony.get('overrides')
+    if isinstance(overrides, list):
+        for row in overrides:
+            if not isinstance(row, dict):
+                continue
+            if not _ceremony_override_matches(row.get('when', {}), plan_facts):
+                continue
+            set_map = row.get('set')
+            if not isinstance(set_map, dict):
+                continue
+            for dotted, value in set_map.items():
+                if not isinstance(dotted, str) or not isinstance(value, str):
+                    continue
+                section, _, gate = dotted.partition('.')
+                if section == 'finalize' and gate in _CEREMONY_FINALIZE_GATES and value:
+                    resolved[gate] = value
+
+    return resolved
+
+
+def _ceremony_finalize_insert_index(phase_6_steps: list[str]) -> int:
+    """Resolve the insertion position for an ``always``-forced finalize step.
+
+    A ceremony finalize step must run before the plan-mutating tail
+    (``archive-plan`` / ``record-metrics`` / ``branch-cleanup`` /
+    ``plan-marshall:plan-retrospective``) so the gate is honoured before the
+    plan directory is moved or the branch cleaned up. Returns the index of the
+    first plan-mutating step, or the end of the list when no anchor is present.
+    """
+    plan_mutating = {
+        'archive-plan',
+        'record-metrics',
+        'branch-cleanup',
+        'plan-marshall:plan-retrospective',
+    }
+    for index, step in enumerate(phase_6_steps):
+        if step in plan_mutating:
+            return index
+    return len(phase_6_steps)
+
+
+def _apply_ceremony_finalize_selection(
+    phase_6_steps: list[str],
+    gates: dict[str, str],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Force ceremony finalize gates in (``always``) / out (``never``) in-place.
+
+    For each of the three finalize gates:
+
+    - ``never`` → drop every match-set form of the gate's step from
+      ``phase_6_steps`` (a no-op when already absent).
+    - ``always`` → ensure the gate's canonical step is present, inserting it
+      before the plan-mutating tail when absent (a no-op when any match-set form
+      is already present).
+    - any other value (``auto`` / malformed) → defer (no-op).
+
+    ``automated-review`` is NEVER touched — the gate map contains only the three
+    ceremony finalize steps, so the bot-review invariant is structurally
+    preserved.
+
+    Mutates ``phase_6_steps`` in place. Returns ``(forced_in, forced_out)`` —
+    two lists of ``{'gate': ..., 'step': ...}`` dicts naming each gate that
+    actually changed the list, for per-change decision-log emission.
+    """
+    forced_in: list[dict[str, str]] = []
+    forced_out: list[dict[str, str]] = []
+
+    for gate in _CEREMONY_FINALIZE_GATES:
+        value = gates.get(gate, _CEREMONY_FINALIZE_DEFAULT)
+        match_set, canonical = _CEREMONY_FINALIZE_STEP_MAP[gate]
+
+        if value == 'never':
+            present = [s for s in phase_6_steps if s in match_set]
+            if present:
+                phase_6_steps[:] = [s for s in phase_6_steps if s not in match_set]
+                forced_out.append({'gate': gate, 'step': present[0]})
+        elif value == 'always':
+            if not any(s in match_set for s in phase_6_steps):
+                insert_index = _ceremony_finalize_insert_index(phase_6_steps)
+                phase_6_steps.insert(insert_index, canonical)
+                forced_in.append({'gate': gate, 'step': canonical})
+        # else: defer (auto / malformed) — no-op.
+
+    return forced_in, forced_out
+
+
+def _log_ceremony_finalize_selection(
+    plan_id: str,
+    gate: str,
+    value: str,
+    step: str,
+) -> None:
+    """Emit one decision-log entry per ceremony-finalize forced in/out change."""
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — '
+        f'finalize.{gate}={value}, {"added" if value == "always" else "dropped"} {step} '
+        f'{"to" if value == "always" else "from"} phase_6.steps'
+    )
+    _emit_decision_log(plan_id, message)
+
+
 def _read_ci_provider() -> str | None:
     """Return the CI provider identifier (``github``, ``gitlab``) from marshal.json.
 
@@ -1862,6 +2094,29 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     mutated_tasks = _route_task_verification_commands(plan_id, body)
     _log_execution_tier_routing(plan_id, mutated_tasks, list(body['phase_5'].get('verification_steps', [])))
 
+    # ceremony_policy.finalize run-at-all selection runs AFTER the seven-row
+    # matrix (and execution_tier routing) and BEFORE the bot-enforcement guard.
+    # It forces each of the three finalize gates' steps in (`always`) or out
+    # (`never`) on the matrix-produced `phase_6.steps`, deferring to the existing
+    # machinery on `auto` (the default). `always` is the only path that can
+    # re-add a step the scope_gated_finalize pre-filter dropped — which is the
+    # point: the operator-set `always` overrides the implicit scope gate. The
+    # transform never touches `automated-review`, so running it before the
+    # bot-enforcement guard leaves the bot-review invariant intact. Override
+    # rows (`ceremony_policy.overrides[]`) are resolved against the plan facts
+    # (`scope_estimate` / `plan_source` / `change_type`). See
+    # standards/decision-rules.md § ceremony_policy.finalize Selection.
+    ceremony_plan_facts: dict[str, str] = {
+        'scope_estimate': args.scope_estimate,
+        'change_type': args.change_type,
+    }
+    if recipe_key:
+        ceremony_plan_facts['plan_source'] = recipe_key
+    ceremony_finalize_gates = _read_ceremony_finalize_gates(ceremony_plan_facts)
+    ceremony_forced_in, ceremony_forced_out = _apply_ceremony_finalize_selection(
+        body['phase_6']['steps'], ceremony_finalize_gates
+    )
+
     # Bot-enforcement guard runs AFTER the seven-row matrix and BEFORE manifest
     # persistence. On GitHub/GitLab plans where `automated-review` is missing
     # from `phase_6.steps`, the guard remediates in-place (appends the step and
@@ -1920,6 +2175,10 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_simplify_omitted(plan_id, args.change_type, affected_files_count)
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
+    for change in ceremony_forced_in:
+        _log_ceremony_finalize_selection(plan_id, change['gate'], 'always', change['step'])
+    for change in ceremony_forced_out:
+        _log_ceremony_finalize_selection(plan_id, change['gate'], 'never', change['step'])
     _log_decision(plan_id, rule, body)
 
     return {
@@ -1943,6 +2202,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'simplify_omitted': simplify_omitted,
         'scope_gated_finalize_dropped': scope_gated_dropped,
         'lightweight_track_override': lightweight_track_override,
+        'ceremony_finalize_gates': ceremony_finalize_gates,
+        'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],
+        'ceremony_finalize_forced_out': [c['step'] for c in ceremony_forced_out],
     }
 
 
@@ -1963,6 +2225,102 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any] | None:
         'status': 'success',
         'plan_id': plan_id,
         **manifest,
+    }
+
+
+def _log_record_step(plan_id: str, entry: dict[str, Any]) -> None:
+    """Emit one decision-log line per recorded execution-log row.
+
+    Written in-process via ``_emit_decision_log`` (the same helper the
+    composer uses), so the line lands in the plan's own ``logs/decision.log``
+    alongside ``execution.toon``. The line names the step, phase, outcome,
+    and the token-attribution triple so a retrospective can correlate
+    per-step execution metadata with the manifest without re-parsing the
+    ``execution_log`` section.
+    """
+    message = (
+        '(plan-marshall:manage-execution-manifest:record-step) '
+        f'Recorded {entry["step_id"]} phase={entry["phase"]} outcome={entry["outcome"]} — '
+        f'total_tokens={entry["total_tokens"]}, tool_uses={entry["tool_uses"]}, '
+        f'duration_ms={entry["duration_ms"]}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
+def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Append a per-step execution-log row to the manifest.
+
+    Records per-step execution outcome plus token attribution into the
+    manifest's ``execution_log[]`` section (created on first record). Each
+    invocation appends exactly one row — re-invocation appends another row
+    deterministically (the section is an ordered append log, not a keyed
+    map), so repeated dispatch of the same step records every attempt. The
+    manifest is written atomically and one decision-log line is emitted per
+    record.
+
+    Token-attribution fields (``total_tokens`` / ``tool_uses`` /
+    ``duration_ms``) default to ``0`` when the caller omits them — a skipped
+    step legitimately consumes no tokens, and a step dispatched without a
+    ``<usage>`` tag reports zeros rather than a missing column.
+    """
+    plan_id = require_valid_plan_id(args)
+
+    if args.phase not in VALID_RECORD_PHASES:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {args.phase!r}. Must be one of {list(VALID_RECORD_PHASES)}',
+        }
+    if args.outcome not in VALID_RECORD_OUTCOMES:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_outcome',
+            'message': f'Invalid outcome: {args.outcome!r}. Must be one of {list(VALID_RECORD_OUTCOMES)}',
+        }
+
+    manifest = read_manifest(plan_id)
+    if manifest is None:
+        output_toon_error(
+            'file_not_found',
+            f'execution.toon not found for plan {plan_id}',
+            plan_id=plan_id,
+        )
+        return None
+
+    entry = {
+        'step_id': args.step_id,
+        'phase': args.phase,
+        'outcome': args.outcome,
+        'total_tokens': max(0, int(args.total_tokens or 0)),
+        'tool_uses': max(0, int(args.tool_uses or 0)),
+        'duration_ms': max(0, int(args.duration_ms or 0)),
+        'timestamp': datetime.now(UTC).isoformat(),
+    }
+
+    execution_log = manifest.get(EXECUTION_LOG_KEY)
+    if not isinstance(execution_log, list):
+        execution_log = []
+    execution_log.append(entry)
+    manifest[EXECUTION_LOG_KEY] = execution_log
+    write_manifest(plan_id, manifest)
+
+    _log_record_step(plan_id, entry)
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'file': MANIFEST_FILENAME,
+        'recorded': True,
+        'step_id': entry['step_id'],
+        'phase': entry['phase'],
+        'outcome': entry['outcome'],
+        'total_tokens': entry['total_tokens'],
+        'tool_uses': entry['tool_uses'],
+        'duration_ms': entry['duration_ms'],
+        'timestamp': entry['timestamp'],
+        'execution_log_count': len(execution_log),
     }
 
 
@@ -2421,6 +2779,23 @@ def _build_parser() -> argparse.ArgumentParser:
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)
     add_plan_id_arg(read_parser)
 
+    record_step_parser = subparsers.add_parser(
+        'record-step',
+        help='Append a per-step execution-log row (outcome + token attribution) to execution.toon',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(record_step_parser)
+    record_step_parser.add_argument('--step-id', required=True, help='Step identifier being recorded')
+    record_step_parser.add_argument(
+        '--phase', required=True, help='Phase the step ran in (one of VALID_RECORD_PHASES: 5-execute|6-finalize)'
+    )
+    record_step_parser.add_argument(
+        '--outcome', required=True, help='Execution outcome (one of VALID_RECORD_OUTCOMES: executed|skipped|error)'
+    )
+    record_step_parser.add_argument('--total-tokens', type=int, default=0, help='Total tokens attributed to the step')
+    record_step_parser.add_argument('--tool-uses', type=int, default=0, help='Tool-use count attributed to the step')
+    record_step_parser.add_argument('--duration-ms', type=int, default=0, help='Wall-clock duration in milliseconds')
+
     validate_parser = subparsers.add_parser('validate', help='Validate execution.toon', allow_abbrev=False)
     add_plan_id_arg(validate_parser)
     validate_parser.add_argument('--phase-5-steps', default=None, help='Comma-separated allowed Phase 5 step IDs')
@@ -2464,6 +2839,7 @@ def main() -> int:
     handlers = {
         'compose': cmd_compose,
         'read': cmd_read,
+        'record-step': cmd_record_step,
         'validate': cmd_validate,
         'validate-loadable': cmd_validate_loadable,
     }

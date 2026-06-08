@@ -172,22 +172,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 |-------|------|---------|-----------|
 | `per_deliverable_build` | enum(`off`\|`compile-only`\|`compile+scoped-test`\|`full`) | `compile+scoped-test` | Build depth phase-5-execute runs at each per-deliverable chain-tail point (Step 10). `off` skips the per-deliverable build entirely (the end-of-phase quality sweep is the only build); `compile-only` resolves the changed module and runs compile only; `compile+scoped-test` additionally runs scoped `module-tests` for the changed module; `full` runs whole-tree `quality-gate` per deliverable (legacy behavior, opt-in only). Read by phase-5-execute per-deliverable. Invalid values are rejected by the config setter. |
 
-**Symmetric auto-continuation knobs:**
-
-| Field | Phase | Type | Default | Semantics |
-|-------|-------|------|---------|-----------|
-| `finalize_without_asking` | `phase-5-execute` | bool | `false` | Forward direction. When `true`, after the `5-execute → 6-finalize` transition the orchestrator dispatches `phase-6-finalize` inline rather than halting and prompting the user. |
-| `loop_back_without_asking` | `phase-6-finalize` | bool | `false` | Reverse direction. When `true`, a phase-6-finalize step recording `outcome: loop_back` (FIX disposition on a `pr-comment` finding, `pr-comment-overflow` capture, or sonar-roundtrip FIX) re-dispatches the execute pipeline inline, transitions back to `6-finalize`, and re-enters the finalize loop — bounded by `phase-6-finalize.max_iterations` (default 3). When `false` (default), the dispatcher halts and returns control to the user. The two knobs are independent: full unattended execution requires both `true`. See `phase-6-finalize/SKILL.md` Step 3 § "Loop-back continuation hook" for the dispatch shape and the four-corner truth table. |
-
-Each is set with the standard phase-set verb:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field finalize_without_asking --value true
-
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set --field loop_back_without_asking --value true
-```
+**Symmetric auto-continuation knobs:** the forward (`finalize_without_asking`) and reverse (`loop_back_without_asking`) auto-continuation knobs, together with `auto_merge_after_ci`, live under the top-level `ceremony_policy.automation` block — see [§ Section: ceremony_policy](#section-ceremony_policy) for their semantics, defaults, and the standard get/set access shape.
 
 ### Manage Verification Steps
 
@@ -256,6 +241,51 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   ext-defaults get --key preferred_build_profile
 ```
+
+---
+
+## Workflow: Ceremony Policy
+
+**Pattern**: Read-Process
+
+Read the lifecycle-wide `ceremony_policy` block — the run-at-all gates (`planning.*` / `finalize.*`) and the three automation knobs (`automation.finalize_without_asking`, `automation.loop_back_without_asking`, `automation.auto_merge_after_ci`). This is the runtime read surface every orchestrator consumes; the values are merged so a fresh `marshal.json` that predates the block still reads the canonical defaults.
+
+### Read an automation knob
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ceremony-policy get --field automation.finalize_without_asking
+```
+
+**Output** (TOON):
+
+```toon
+status: success
+section: ceremony_policy
+field: automation.finalize_without_asking
+value: true
+```
+
+### Read a run-at-all gate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ceremony-policy get --field finalize.qgate
+```
+
+### Read a sub-block or the whole block
+
+```bash
+# Whole automation sub-dict
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ceremony-policy get --field automation
+
+# Whole ceremony_policy block (no --field)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ceremony-policy get
+```
+
+The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable dotted path returns `error_type: field_not_found`. `overrides[]` is plan-fact-scoped and consumed by the manifest composer with plan facts; a plain `get` returns the base section value, never an override-resolved value.
 
 ---
 
@@ -350,6 +380,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
 | `project` | `get/set` (`default_base_branch`, `branch_naming`, `sanctioned_conftest`) |
+| `ceremony-policy` | `get [--field <dotted.path>]` (read run-at-all gates + automation knobs; runtime read surface) |
 | `plan` | `{phase} get/set`, set-steps, add-step, remove-step, set-max-iterations |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `build-map` | `seed` (re-seed from extensions, write-once), `read` (merged effective map = seed ∪ overrides) |
@@ -396,13 +427,31 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "temp_on_maintenance": true
     }
   },
+  "ceremony_policy": {
+    "planning": {
+      "deep_lane": "auto",
+      "revalidation": "auto",
+      "escalation": "auto",
+      "qgate": "auto"
+    },
+    "finalize": {
+      "self_review": "auto",
+      "qgate": "auto",
+      "plugin_doctor": "auto"
+    },
+    "automation": {
+      "finalize_without_asking": true,
+      "loop_back_without_asking": false,
+      "auto_merge_after_ci": true
+    },
+    "overrides": []
+  },
   "plan": {
     "phase-1-init": {
       "branch_strategy": "feature"
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
-      "fast_path_threshold": 100,
       "compatibility": "breaking"
     },
     "phase-5-execute": {
@@ -414,7 +463,6 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "phase-6-finalize": {
       "max_iterations": 3,
       "review_bot_buffer_seconds": 180,
-      "loop_back_without_asking": false,
       "steps": [
         "commit_push", "create_pr", "automated_review",
         "sonar_roundtrip", "lessons_capture",
@@ -424,6 +472,45 @@ The defaults template contains only `system` domain. Technical domains (java, ja
   }
 }
 ```
+
+### Section: ceremony_policy
+
+A top-level block (sibling to `plan` / `ci` / `project`) carrying lifecycle-wide policy along two orthogonal axes.
+
+**Axis 1 — run-at-all (`auto|always|never` per gate).** Does the gate execute at all? `auto` defers to the existing decision machinery (lane router / manifest composer); `always` forces the gate in; `never` skips it. Gates:
+
+| Gate | Controls |
+|------|----------|
+| `planning.deep_lane` | Whether the precondition-driven deep planning lane runs (consumed by the phase-1-init lane router). `never` forces light, but a hard escalation still ratchets unless `planning.escalation: never` is also set. |
+| `planning.revalidation` | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). |
+| `planning.escalation` | Whether the hard-escalation safety ratchet (explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. |
+| `planning.qgate` | Whether the planning-time q-gate validation runs (deep-lane outline dispatch). |
+| `finalize.self_review` | Whether the pre-submission structural + cognitive self-review runs (manifest finalize step-selection). |
+| `finalize.qgate` | Whether finalize re-captures blocking findings. **Highest-risk gate** — `never` can mask real build/test failures. |
+| `finalize.plugin_doctor` | Whether structural marketplace lint runs before push. |
+
+**Axis 2 — automation (`bool`).** Once a gate has run, proceed without asking? The three automation knobs live only here. Defaults preserve the historical values.
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `automation.finalize_without_asking` | `true` | Auto-continue into finalize after execute. |
+| `automation.loop_back_without_asking` | `false` | Auto-re-enter on a finalize loop_back outcome. |
+| `automation.auto_merge_after_ci` | `true` | Auto-merge the PR after CI passes. |
+
+**`overrides[]`** — condition-scoped rows that win over the section values, matched on plan facts (`scope_estimate`, `plan_source`, `change_type`). Each row is `{when: {<fact>: <value>, ...}, set: {<dotted.path>: <value>, ...}}`. An empty `when` clause matches every plan; a row applies only when every `when` key/value pair equals the plan's fact (see `ceremony_override_matches`).
+
+**Footgun catalogue (warned at config-set time).** Setting any of the following gates to `never` disables a safety net. The change is allowed — the operator owns the risk — but is NEVER silent: `manage-config` emits a `[WARNING]` to stderr naming the disabled safety (see `ceremony_set_footgun_warnings`).
+
+| Footgun (`= never`) | Disables | Warning tier |
+|---------------------|----------|--------------|
+| `planning.revalidation` | the premise / narrative-vs-code safety check | warn-at-set-time |
+| `planning.deep_lane` | the precondition-driven deep lane (hard escalation still ratchets unless `planning.escalation: never`) | warn-at-set-time |
+| `planning.escalation` | the hard-escalation safety ratchet (full-speed-full-risk) | warn-at-set-time |
+| `finalize.self_review` | the pre-submission structural + cognitive self-review | warn-at-set-time |
+| `finalize.qgate` | finalize blocking-findings re-capture — **can push a red tree** | strongest tier (names the masking risk; CI may still fail) |
+| `finalize.plugin_doctor` | structural marketplace lint before push (CI still runs plugin-doctor) | warn-at-set-time |
+
+**Access shape.** Read gate values and automation knobs through the dedicated `ceremony-policy get` verb, which takes a dotted `--field` path into the merged block (defaults merged under the live values) — e.g. `ceremony-policy get --field finalize.qgate` or `ceremony-policy get --field automation.finalize_without_asking`. This is the runtime read surface every orchestrator consumes for the three automation knobs and the run-at-all gates; see [§ Workflow: Ceremony Policy](#workflow-ceremony-policy) and the [`ceremony-policy get`](#ceremony-policy-get) canonical invocation. The run-at-all enum is validated by `validate_ceremony_policy`; the automation axis is boolean-only.
 
 ---
 
@@ -667,6 +754,20 @@ takes a JSON object value that round-trips through `get`; `sanctioned_conftest`
 takes a JSON array of path strings that round-trips through `get`. A non-array
 value (or an array containing a non-string item) for `sanctioned_conftest` is
 rejected with `error_type: invalid_type`.
+
+### ceremony-policy get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ceremony-policy get \
+  [--field FIELD]
+```
+
+`--field` is a dotted path into the merged `ceremony_policy` block (canonical
+defaults merged under the live values): `automation.finalize_without_asking`,
+`automation.loop_back_without_asking`, `automation.auto_merge_after_ci`,
+`planning.<gate>`, `finalize.<gate>`, or a sub-block name
+(`automation` / `planning` / `finalize`). Omit `--field` to return the whole
+merged block. Read-only; an unresolvable path returns `error_type: field_not_found`.
 
 ### plan {phase} get
 

@@ -729,6 +729,97 @@ plan_id: my-feature
 released: true
 ```
 
+### planning-lane
+
+Deterministic planning-lane router with two sub-verbs (`route` / `escalate`). Resolves `planning_lane ∈ {light, deep}` from cheap field reads plus a `request.md` regex — **zero codebase discovery, zero LLM cognition**. The default is `light`; any deep-precondition signal forces `deep`. Escalation is **one-way** (light may ratchet to deep, never deep→light).
+
+**route** — evaluate the signal set, resolve the lane, and (with `--persist`) write `status.metadata.planning_lane`. Emits one decision-log line naming every signal value and the winning predicate.
+
+The signal set (`deep` IFF any deep-precondition fires; otherwise `light`):
+
+| # | Signal | Source (cheap read) | → deep when |
+|---|--------|---------------------|-------------|
+| S1 | `plan_source` | `status.metadata.plan_source` | source is free-form (absent/unset) **AND** S5 concreteness fails (`lesson`/`recipe` bias light) |
+| S2 | `scope_estimate` | `references.scope_estimate` | ∈ {`multi_module`, `broad`, `none`, unset} (`surgical`/`single_module` → light) |
+| S3 | `change_type` | `status.metadata.change_type` | ∈ {`feature`, `feature_breaking`} (`bug_fix`/`tech_debt`/`enhancement`/`verification` → light) |
+| S4 | `compatibility` | `marshal.json plan.phase-2-refine.compatibility` | == `breaking` |
+| S5 | request concreteness | regex over `request.md` clarified/original body | body names NO file path **AND** NO concrete fix signal (fenced code block / `python3 .plan/execute-script.py` CLI / `manage-*` notation) |
+| S6 | explicit override | `status.metadata.planning_lane_override` (or `--lane-override deep`) | == `deep` forces deep (one-way) |
+
+**ceremony short-circuit** — `ceremony_policy.planning.deep_lane` is read BEFORE the signal set: `always` → force `deep`; `never` → force `light` (the DQ3 hard-escalation ratchet still fires unless `planning.escalation: never` is also set); `auto` (default) → the signal set decides.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status planning-lane route \
+  --plan-id {plan_id} [--lane-override deep|light] [--persist]
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+planning_lane: deep
+ceremony_deep_lane: auto
+decision_predicate: signal_set
+fired_signals[2]:
+  - "S3:change_type"
+  - "S4:compatibility"
+persisted: true
+classification_validation:
+  mismatch_count: 0
+  mismatches[0]:
+  findings_emitted: 0
+```
+
+`route` runs the deterministic **classification-validation gate** (see `classification-validate` below) as a pre-route pass and surfaces its result under `classification_validation`. The gate is **flag-not-block** — it never changes the resolved lane; a flagged mismatch only records a Q-Gate finding.
+
+**escalate** — the one-way light→deep ratchet evaluated inside the light-lane envelope. Sets `planning_lane=deep`, `lane_escalated=true`, and records the `escalation_trigger` (`explosion` / `premise` / `cross_cutting`). The `lane_escalated` flag is sticky — a deep lane never reverts, so there is no downgrade verb.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status planning-lane escalate \
+  --plan-id {plan_id} --trigger explosion|premise|cross_cutting [--persist]
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+planning_lane: deep
+lane_escalated: true
+escalation_trigger: explosion
+persisted: true
+```
+
+### classification-validate
+
+Deterministic **classification-validation gate** — cross-checks the plan's `change_type` and `scope_estimate` against cheap request signals and emits a phase-1-init Q-Gate finding on a mismatch. **Zero codebase discovery, zero LLM cognition; flag-not-block** — it NEVER gates routing. The gate runs automatically as a pre-route pass inside `planning-lane route`; this subcommand exposes it standalone (e.g., for a phase-1-init invocation that does not route immediately).
+
+Two mismatch classes are flagged, both chosen to raise zero false positives:
+
+- **`feature_as_bug_fix`** — `change_type == bug_fix` while the deterministic change-type heuristic (the same scoring engine `change-type-heuristic` uses) resolves a **non-ambiguous** `feature` winner from the request narrative. A borderline / tied narrative never trips it.
+- **`non_empty_affected_files_with_null_scope`** — `references.affected_files` is non-empty while `references.scope_estimate` is null / empty / `none`. Deterministic data-gap check, no heuristic.
+
+Each flagged mismatch records a `warning`-severity `anti-pattern` Q-Gate finding against the `2-refine` phase (the Q-Gate store opens at `2-refine`; `1-init` is not a Q-Gate phase, and `2-refine` is exactly where classification is revisited) and emits one `decision.log` line. Findings dedup by title, so re-running the gate does not duplicate them.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status classification-validate \
+  --plan-id {plan_id}
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+change_type: bug_fix
+scope_estimate: null
+mismatch_count: 1
+mismatches[1]{mismatch,title,finding_status,hash_id}:
+  feature_as_bug_fix,Classification mismatch: change_type=bug_fix over a feature-shaped request,success,a1b2c3d4
+findings_emitted: 1
+blocked: false
+```
+
+`blocked` is always `false` — the gate is advisory. When no mismatch fires, `mismatch_count: 0` and `findings_emitted: 0`.
+
 ### self-test
 
 Verify manage-status health (checks imports, phase routing table, directory access).
@@ -779,6 +870,9 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `merge-lock acquire` | `--plan-id` | BLOCKING acquire of the cross-plan merge-lock. Writes the `merging_on_main` marker when free; polls (Python `time.sleep`, 5-minute window) when held, then returns `status: blocked` with `blocking_plan_id` on timeout. Never issues `AskUserQuestion` — orchestrator owns the escalation. |
 | `merge-lock check` | `--plan-id` | Non-blocking read of the current merge-lock holder (`status: free` or `held` with `holder_plan_id`). |
 | `merge-lock release` | `--plan-id` | Idempotently clear this plan's merge-lock marker; `released: true` only when a marker was present. |
+| `planning-lane route` | `--plan-id [--lane-override deep\|light] [--persist]` | Deterministic planning-lane router. Resolves `planning_lane ∈ {light, deep}` from the DQ1 signal set (S1–S6) plus a `request.md` regex with zero discovery; `ceremony_policy.planning.deep_lane` (`always`/`never`/`auto`) short-circuits the signals. Default is light; any deep signal forces deep. With `--persist`, writes `status.metadata.planning_lane`. Emits one decision-log line naming every signal value and the winning predicate. |
+| `planning-lane escalate` | `--plan-id --trigger explosion\|premise\|cross_cutting [--persist]` | One-way light→deep ratchet. Sets `planning_lane=deep` + `lane_escalated=true` + `escalation_trigger`; the flag is sticky and there is no downgrade path. With `--persist`, writes the mutation to `status.metadata`. |
+| `classification-validate` | `--plan-id` | Deterministic classification-validation gate (flag-not-block). Cross-checks `change_type` / `scope_estimate` against cheap request signals; flags `feature_as_bug_fix` (bug_fix stamp over a non-ambiguous feature narrative) and `non_empty_affected_files_with_null_scope`, recording a `warning` `anti-pattern` Q-Gate finding against `2-refine` per mismatch. NEVER blocks routing; runs automatically as a pre-route pass inside `planning-lane route`. |
 | `self-test` | _(none)_ | Verify manage-status health |
 
 ---
@@ -935,6 +1029,22 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock check \
   --plan-id PLAN_ID
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock release \
+  --plan-id PLAN_ID
+```
+
+### planning-lane
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status planning-lane route \
+  --plan-id PLAN_ID
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status planning-lane escalate \
+  --plan-id PLAN_ID --trigger explosion
+```
+
+### classification-validate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status classification-validate \
   --plan-id PLAN_ID
 ```
 

@@ -33,6 +33,25 @@ JSON structure and field definitions for project configuration.
     "sonar_project": null,
     "checks_wait_timeout_seconds": 600
   },
+  "ceremony_policy": {
+    "planning": {
+      "deep_lane": "auto",
+      "revalidation": "auto",
+      "escalation": "auto",
+      "qgate": "auto"
+    },
+    "finalize": {
+      "self_review": "auto",
+      "qgate": "auto",
+      "plugin_doctor": "auto"
+    },
+    "automation": {
+      "finalize_without_asking": true,
+      "loop_back_without_asking": false,
+      "auto_merge_after_ci": true
+    },
+    "overrides": []
+  },
   "plan": {
     "open_in_ide": true,
     "coverage": {
@@ -57,7 +76,6 @@ JSON structure and field definitions for project configuration.
     },
     "phase-5-execute": {
       "commit_strategy": "per_plan",
-      "finalize_without_asking": true,
       "verification_max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
       "per_task_budget_reserve_tokens": "50K",
@@ -71,8 +89,6 @@ JSON structure and field definitions for project configuration.
       "max_iterations": 3,
       "review_bot_buffer_seconds": 180,
       "pr_merge_strategy": "squash",
-      "loop_back_without_asking": false,
-      "auto_merge_after_ci": true,
       "auto_rebase_threshold": "no_overlap_only",
       "lightweight_track_override": false,
       "pre_push_quality_gate": {
@@ -380,7 +396,6 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
   "plan": {
     "phase-5-execute": {
       "commit_strategy": "per_plan",
-      "finalize_without_asking": true,
       "verification_max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
       "per_task_budget_reserve_tokens": "50K",
@@ -397,7 +412,6 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
 | `commit_strategy` | string | "per_plan" | per_deliverable, per_plan, none — when the execute loop commits (each deliverable chain-tail / once at end of phase / defer to finalize) |
-| `finalize_without_asking` | bool | true | Auto-continue to finalize phase after execute completes |
 | `verification_max_iterations` | int | 5 | Maximum verify-execute-verify loops |
 | `per_deliverable_build` | string | "compile+scoped-test" | off, compile-only, compile+scoped-test, full — build depth at each per-deliverable chain-tail point (Step 10). `off` skips the focused build; `compile-only` type-checks the changed module; `compile+scoped-test` adds the module's scoped tests; `full` runs a whole-tree quality-gate per deliverable (legacy, opt-in). |
 | `per_task_budget_reserve_tokens` | string | "50K" | Per-task budget **reserve** — the minimum context-window margin that must remain free before the budget-bounded task loop starts another task. Governs the continue-vs-yield sentinel. The `_tokens` suffix names the unit; the human-friendly value form (`"50K"`) is parsed to an int by `sensible_number.parse_sensible_int` in the phase-5-execute consumer. The workflow's documented fallback when the key is absent is `50000`. |
@@ -427,8 +441,6 @@ Finalize pipeline with numbered boolean steps.
       "max_iterations": 3,
       "review_bot_buffer_seconds": 180,
       "pr_merge_strategy": "squash",
-      "loop_back_without_asking": false,
-      "auto_merge_after_ci": true,
       "auto_rebase_threshold": "no_overlap_only",
       "lightweight_track_override": false,
       "pre_push_quality_gate": {
@@ -449,14 +461,66 @@ Finalize pipeline with numbered boolean steps.
 | `max_iterations` | int | 3 | Maximum finalize-verify-finalize loops |
 | `review_bot_buffer_seconds` | int | 180 | Max seconds to wait after CI for new review-bot comments to arrive (used as `--timeout` for `pr wait-for-comments`; the polling subcommand exits as soon as a new comment is posted, so this is a ceiling, not a fixed delay) |
 | `pr_merge_strategy` | string | "squash" | squash, merge, rebase — the merge method the branch-cleanup step passes to `pr merge` |
-| `loop_back_without_asking` | bool | false | Auto-continue from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute`. `false` (default) halts at every loop_back and returns control to the user; `true` opts into the full unattended cycle, capped by `max_iterations`. |
-| `auto_merge_after_ci` | bool | true | Whether to merge automatically once CI passes. `true` (default) merges via the cross-plan merge-lock; `false` prompts the operator before merging. Plain boolean — not tri-state. |
-| `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `auto_merge_after_ci`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
+| `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `ceremony_policy.automation.auto_merge_after_ci`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
 | `lightweight_track_override` | bool | false | Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter. `false` (default) keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans. |
 | `pre_push_quality_gate.activation_globs` | list[string] | `[]` | Glob list the manifest composer reads to decide whether the `default:pre-push-quality-gate` finalize step is active. An empty list (default) leaves the step inactive. |
 | `steps` | list | (see below) | Ordered list of step references to execute — persisted sorted ascending by each step's authoritative `order` value |
 
 Default steps: `default:commit-push`, `default:create-pr`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
+
+### ceremony_policy
+
+A top-level block (sibling to `plan` / `ci` / `project`) carrying lifecycle-wide policy along two orthogonal axes plus a condition-scoped overrides list. The `automation.*` axis is the single home for the three auto-continuation knobs migrated out of the loose `plan.phase-{5-execute,6-finalize}` locations — config-doc-contract: there is no loose `plan.*` survivor for these three knobs.
+
+```json
+{
+  "ceremony_policy": {
+    "planning": {
+      "deep_lane": "auto",
+      "revalidation": "auto",
+      "escalation": "auto",
+      "qgate": "auto"
+    },
+    "finalize": {
+      "self_review": "auto",
+      "qgate": "auto",
+      "plugin_doctor": "auto"
+    },
+    "automation": {
+      "finalize_without_asking": true,
+      "loop_back_without_asking": false,
+      "auto_merge_after_ci": true
+    },
+    "overrides": []
+  }
+}
+```
+
+**Axis 1 — run-at-all (`auto|always|never` per gate).** Whether the gate executes at all. `auto` defers to the existing decision machinery (lane router / manifest composer); `always` forces the gate in; `never` skips it (and, for the footgun gates, emits a set-time `[WARNING]`). Planning gates: `deep_lane`, `revalidation`, `escalation`, `qgate`. Finalize gates: `self_review`, `qgate`, `plugin_doctor`. Every gate defaults to `auto`; the enum is validated by `validate_ceremony_policy`.
+
+| Field | Type | Default | Footgun? | Description |
+|-------|------|---------|----------|-------------|
+| `planning.deep_lane` | enum | auto | yes | Whether the precondition-driven deep planning lane runs. Consumed by the phase-1-init `planning-lane route`. `always` forces deep; `never` forces light (the DQ3 hard-escalation ratchet still fires unless `planning.escalation` is also `never`); `auto` defers to the DQ1 signal set. |
+| `planning.revalidation` | enum | auto | yes | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). `never` disables the safety check. |
+| `planning.escalation` | enum | auto | yes | Whether the hard-escalation safety ratchet (DQ3 explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in (itself a footgun). |
+| `planning.qgate` | enum | auto | no | Whether the planning-time Q-Gate validation runs (deep-lane outline dispatch). |
+| `finalize.self_review` | enum | auto | yes | Whether the pre-submission structural + cognitive self-review (`finalize-step-pre-submission-self-review`) is selected into the execution manifest. `always` overrides the manifest composer's `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose` (the `ceremony_finalize_selection` post-matrix transform). |
+| `finalize.qgate` | enum | auto | **hard** | Whether the finalize blocking-findings re-capture (`pre-push-quality-gate`) is selected. The highest-risk footgun: `never` can mask real build/test failures and push a red tree — the set-time `[WARNING]` names the masking risk explicitly. |
+| `finalize.plugin_doctor` | enum | auto | yes | Whether the structural marketplace lint before push (`finalize-step-plugin-doctor`) is selected. `always` overrides the `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. |
+
+The three `finalize.*` gates map one-to-one to finalize steps and are consumed by the manifest composer's `ceremony_finalize_selection` post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "ceremony_policy.finalize Selection" for the gate→step map and the `automated-review` carve-out. The four `planning.*` gates are consumed by the phase-1-init lane router and the planning-time Q-Gate dispatch.
+
+**Axis 2 — automation (`bool`).** Once a gate has run, proceed without asking? The three knobs live only here; defaults preserve the historical values.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `automation.finalize_without_asking` | bool | true | Forward auto-continuation: auto-continue into finalize after execute completes. Read at runtime via `manage-config ceremony-policy get --field automation.finalize_without_asking`. |
+| `automation.loop_back_without_asking` | bool | false | Reverse auto-continuation: auto-re-enter execute on a `phase-6-finalize` `loop_back` outcome. `false` (default) halts at every loop_back and returns control to the user; `true` opts into the full unattended cycle, capped by `phase-6-finalize.max_iterations`. |
+| `automation.auto_merge_after_ci` | bool | true | Whether to merge automatically once CI passes. `true` (default) merges via the cross-plan merge-lock; `false` prompts the operator before merging. Plain boolean — not tri-state. |
+
+**`overrides[]`** — condition-scoped rows that win over the section values, matched on plan facts (`scope_estimate`, `plan_source`, `change_type`). Each row is `{when: {<fact>: <value>, ...}, set: {<dotted.path>: <value>, ...}}`. An empty `when` matches every plan; a row applies only when every `when` key/value pair equals the plan's fact.
+
+**Access shape.** Read via `manage-config ceremony-policy get --field <section>.<field>` (dotted path; defaults merged under live values); write via `manage-config ceremony-policy set --field <section>.<field> --value V`. The run-at-all enum is validated by `validate_ceremony_policy`; the automation axis is boolean-only; a footgun gate set to `never` emits a set-time `[WARNING]`. See [`manage-config/SKILL.md`](../SKILL.md) § "Section: ceremony_policy" for the footgun catalogue and the workflow examples.
 
 ### Coverage cell (per-phase + plan-wide)
 

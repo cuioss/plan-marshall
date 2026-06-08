@@ -179,123 +179,58 @@ This mirrors the existing `plan_without_asking` (phase-3-outline) and `execute_w
 The `phase-boundary` call above already recorded the start of `2-refine` — do
 not call `start-phase 2-refine` again.
 
-#### Lightweight-track bypass branch (phases 2-4 skip for lesson-derived surgical plans)
+#### Planning-lane dispatch (light vs deep)
 
-Before the **Phase handshake (verify)** below, evaluate a deterministic three-conjunction bypass predicate. When the predicate evaluates true, the entire phases-2-4 pipeline is skipped — no refine, outline, or plan envelope is spawned, all three phases are marked done with `outcome=skipped`, a minimal inline task list is generated from the init-captured request, and the orchestrator transitions straight to phase-5-execute. The orchestrator remains LLM-driven; this gate is the only deterministic short-circuit in the planning path.
+The **planning lane** — `status.metadata.planning_lane`, resolved by the phase-1-init lane router (`manage-status planning-lane route`) — is the structural selector for the whole phases-2-4 pipeline. The orchestrator branches on it deterministically: a `light` plan runs ONE collapsed light-lane envelope (refine-no-loop + Simple-outline + deliverable-derivation folded together); a `deep` plan runs today's full refine-loop → outline → plan pipeline. The orchestrator remains LLM-driven; this lane read is the only deterministic branch in the planning path.
 
-**Bypass predicate** — ALL three conditions MUST hold (hard conjunction; failing any one falls through to the standard refine→outline→plan pipeline below). `change_type` is NOT a gate — feature, refactor, and bug_fix lesson-derived plans are all eligible:
-
-1. `status.metadata.plan_source` matches the lesson-id pattern (e.g., `lesson:YYYY-MM-DD-HH-NNN` or a bare lesson-id token recognised by `manage-status` metadata writers — the marker that phase-1-init recorded the plan as lesson-derived).
-2. `references.scope_estimate == surgical` (the change footprint is narrowly localised; the iterate-to-confidence and discovery loops of phases 2-4 do not add value at this scope).
-3. `status.metadata.confidence == 100` (the lesson body was crisp enough that phase-1-init captured maximum confidence at init time; refine cannot meaningfully iterate further).
-
-Read the fields (single call each):
+Read the lane (single call) before the **Phase handshake (verify)** below:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
-  --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field planning_lane
 ```
 
-Extract `metadata.plan_source` and `metadata.confidence` from the TOON output.
+Extract `value` (`light` or `deep`). When the field is absent or unresolved, treat it as `deep` (the conservative, full-pipeline default).
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read \
-  --plan-id {plan_id}
-```
+**Light-lane branch** — when `planning_lane == light`:
 
-Extract `scope_estimate` from the TOON output.
-
-**Bypass branch** — when ALL three conditions hold:
-
-1. Log the bypass decision (decision-level, exact wording for grep-ability):
+1. Log the lane decision (decision-level, exact wording for grep-ability):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      decision --plan-id {plan_id} --level INFO \
-     --message "(plan-marshall:planning) lightweight-track-bypass: lesson_id={plan_source} confidence=100 scope_estimate=surgical — skipping phases 2-4"
+     --message "(plan-marshall:planning) planning-lane=light — dispatching ONE collapsed light-lane envelope (refine+outline+derive), skipping the deep refine-loop and Complex-Track outline"
    ```
 
-2. Emit the canonical `[STATUS]` skipped-phase log line to work-log naming all three skipped phases (mirrors the wording used by other skipped-phase paths so the retrospective can attribute the saved envelope cost):
+2. Resolve the dispatch target and dispatch ONE light-lane envelope. The envelope LOADS `plan-marshall:phase-3-outline/workflow/light-lane.md` as its workflow (the doc folds refine-no-loop + Simple-outline + deliverable-derivation, bounds discovery per DQ2, and evaluates the DQ3 escalation ratchet in-context). Resolve the level via the `phase-3-outline` role:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     work --plan-id {plan_id} --level INFO \
-     --message "[STATUS] (plan-marshall:planning) phases 2-refine, 3-outline, 4-plan skipped — lightweight-track bypass predicate matched (lesson-derived, surgical, confidence=100)"
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     effort resolve-target --role phase-3-outline
    ```
 
-3. Mark all three skipped phases done with `outcome=skipped` via `manage-status mark-step-done` (one call per phase):
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-     --plan-id {plan_id} --phase 2-refine --step refine-analyze --outcome skipped
+   ```
+   Task: plan-marshall:{target}
+     name: phase-3-outline-light-lane
+     plan_id: {plan_id}
+     skills[]:
+       - plan-marshall:phase-3-outline
+     workflow: plan-marshall:phase-3-outline/workflow/light-lane.md
+     WORKTREE: .
    ```
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-     --plan-id {plan_id} --phase 3-outline --step outline-analyze --outcome skipped
-   ```
+3. **Inspect the light-lane return** for the escalation signal:
+   - **`outcome: escalate_to_deep`** (the DQ3 ratchet fired — the envelope already set `planning_lane=deep` + `lane_escalated=true` via `manage-status planning-lane escalate`): the orchestrator OWNS the deep-lane re-dispatch (the leaf cannot self-dispatch). Log the re-dispatch decision, then **fall through to the deep-lane branch below** — run the full refine-loop → outline → plan pipeline fresh from the escalation point:
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-     --plan-id {plan_id} --phase 4-plan --step plan-tasks --outcome skipped
-   ```
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+       decision --plan-id {plan_id} --level INFO \
+       --message "(plan-marshall:planning) light-lane returned escalate_to_deep (trigger={escalation_trigger}) — orchestrator re-dispatching the deep refine→outline→plan pipeline"
+     ```
 
-4. Set `qgate_validation_required: false` via the metadata setter (no refine/outline ran, so there is no Q-Gate narrative to validate; any post-return q-gate-validation dispatch MUST read this value as `false` and skip):
+   - **`status: success`** (deliverables derived, no escalation): the light lane has already written `solution_outline.md`, derived the deliverables, and transitioned `3-outline`. Record the `2-refine → 3-outline → 4-plan` boundary metrics from the envelope's `<usage>`, then proceed to **Action: outline** Step 4-plan (task derivation) — the light lane self-derived the outline, so the Complex-Track + q-gate-validation sibling dispatch is skipped (see `planning-outline.md` § lane branch).
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-     --plan-id {plan_id} --set --field qgate_validation_required --value false
-   ```
-
-5. Generate a minimal inline task list (1-3 tasks) directly from the init-captured request, writing it via the existing `manage-tasks` path the orchestrator uses for planned tasks (no phase-4-plan envelope is dispatched). Each task carries the surgical change footprint derived from the lesson body — title, profile (`implementation` for the common single-file lesson fix), domain, deliverable index, and a verification command. Keep the list minimal: a surgical lesson-derived plan should not require more than three tasks.
-
-6. Record zero-token `manage-metrics phase-boundary` entries for each skipped phase boundary (no envelope was dispatched, so no agent tokens accrue to any of the three phases):
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
-     --plan-id {plan_id} --prev-phase 2-refine --next-phase 3-outline \
-     --total-tokens 0 --tool-uses 0 --duration-ms 0
-   ```
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
-     --plan-id {plan_id} --prev-phase 3-outline --next-phase 4-plan \
-     --total-tokens 0 --tool-uses 0 --duration-ms 0
-   ```
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
-     --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute \
-     --total-tokens 0 --tool-uses 0 --duration-ms 0
-   ```
-
-7. Capture phase handshake invariants for each skipped phase so the 5-execute entry assertion does not flag `phase_status==skipped` as drift (one call per phase):
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
-     --plan-id {plan_id} --phase 2-refine
-   ```
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
-     --plan-id {plan_id} --phase 3-outline
-   ```
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
-     --plan-id {plan_id} --phase 4-plan
-   ```
-
-8. Transition directly to phase-5-execute:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
-     --plan-id {plan_id} --completed 4-plan
-   ```
-
-Then proceed directly to **Action: execute** (the phase-5-execute loop). Skip the entire standard refine→outline→plan pipeline below (the **Phase handshake (verify)** for 1-init, the standard refine dispatch, the **Post-return q-gate-validation dispatch**, the **Post-dispatch contract assertion**, the refine **Metrics** fused-call, and the **Action: outline** 3-outline + 4-plan run — the bypass branch has already executed steps 6 and 7 above and generated the inline task list).
-
-**Standard dispatch branch** — when ANY of the three conditions is false, fall through to the standard refine→outline→plan pipeline documented below. Non-matching plans (e.g., free-form `task=`/`issue=`-sourced plans, lessons with `confidence<100`, or non-surgical scopes) retain the full phases-2-4 pipeline without modification.
+**Deep-lane branch** — when `planning_lane == deep` (or the light-lane envelope returned `escalate_to_deep`): run the full phases-2-4 pipeline documented below without modification (the standard refine→outline→plan dispatch chain).
 
 **Phase handshake (verify)**: Before entering 2-refine, verify the captured invariants for the previous phase still match the live state. Stop on `status: drift`.
 

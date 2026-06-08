@@ -23,7 +23,7 @@ Visual overview of the refine workflow for human readers.
 │      │   Module Mapping                                         │
 │      │   Feasibility Check                                      │
 │      │   Scope Size Estimation                                  │
-│      │   Track Selection ─────────→ decision.log                │
+│      │   Track Derivation (from planning_lane) → decision.log    │
 │      ↓                    (module details on demand)            │
 │  Step 8: Evaluate Confidence                                    │
 │      │                                                          │

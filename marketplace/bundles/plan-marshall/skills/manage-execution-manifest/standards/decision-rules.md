@@ -28,6 +28,44 @@ For each rule the composer emits:
 - `phase_5.verification_steps` — ordered list[string] subset of `phase_5_candidates`.
 - `phase_6.steps` — ordered list[string] subset of `phase_6_candidates`.
 
+## The `execution_log` Section (record-step)
+
+The `execution_log[]` section is a runtime append log that is **separate from the decision matrix** — `compose` never reads or writes it. It is populated exclusively by the `record-step` subcommand, one row appended per invocation, capturing per-step execution outcome plus token attribution into the manifest. This makes per-step execution metadata loggable per-plan deterministically rather than relying on the fragile orchestrator `<usage>`-forwarding boundary call.
+
+**Section shape** (TOON):
+
+```toon
+execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timestamp}:
+  - quality_check,5-execute,executed,12000,8,4200,2026-06-08T10:15:00+00:00
+  - create-pr,6-finalize,skipped,0,0,0,2026-06-08T10:42:00+00:00
+```
+
+**Row fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `step_id` | string | The dispatched step identifier (a phase-5 verification step ID or a phase-6 finalize step ID). |
+| `phase` | enum | `5-execute` or `6-finalize` — the phase the step ran in. |
+| `outcome` | enum | `executed` (the step ran), `skipped` (the step was gated off), or `error` (the step errored). |
+| `total_tokens` | int (≥0) | Total tokens attributed to the step; default `0` when omitted. |
+| `tool_uses` | int (≥0) | Tool-use count attributed to the step; default `0` when omitted. |
+| `duration_ms` | int (≥0) | Wall-clock duration in milliseconds; default `0` when omitted. |
+| `timestamp` | string | ISO-8601 UTC timestamp generated at record time (`datetime.now(UTC).isoformat()`). |
+
+**Record-step contract:**
+
+- The manifest MUST already exist (composed at `phase-4-plan` Step 8b). `record-step` against a missing manifest returns `file_not_found` — it never composes a fresh manifest.
+- Each call appends **exactly one** row. `execution_log[]` is an ordered append log, NOT a keyed map — re-invocation with the same `step_id` appends another row, so every dispatch attempt of a step is recorded (a step that runs, errors, then re-runs produces three rows in order).
+- The token-attribution triple defaults to `0` when the caller omits the flags: a `skipped` step legitimately consumes no tokens, and a step dispatched without a `<usage>` tag reports zeros rather than a missing column.
+- Invalid `--phase` (not in `{5-execute, 6-finalize}`) returns `invalid_phase`; invalid `--outcome` (not in `{executed, skipped, error}`) returns `invalid_outcome` — both before any manifest read or write.
+- One `decision.log` line is emitted per record via the in-process `_emit_decision_log` helper (the same helper the composer uses), so the line lands in the plan's own `logs/decision.log` alongside `execution.toon`:
+
+```
+(plan-marshall:manage-execution-manifest:record-step) Recorded {step_id} phase={phase} outcome={outcome} — total_tokens={N}, tool_uses={N}, duration_ms={N}
+```
+
+**Producers:** `phase-5-execute` (per verification step) and `phase-6-finalize` (per finalize step). The composer (`phase-4-plan`) is NOT a producer of `execution_log` — it writes only `phase_5` / `phase_6`.
+
 ## Pre-Filters
 
 Before evaluating the seven-row matrix below, the composer applies a fixed sequence of pre-filters to the `phase_6_candidates` list. Each pre-filter is independent of the row matrix's change-type / scope / recipe inputs, so modeling them as pre-filters keeps the seven-row matrix orthogonal and lets the composer emit one dedicated `decision.log` entry per fired pre-filter.
@@ -42,9 +80,10 @@ The pre-filters run in this order:
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
-After the seven-row matrix runs, one post-matrix transform inspects the matrix output before the manifest is persisted:
+After the seven-row matrix runs, two post-matrix transforms inspect the matrix output before the manifest is persisted, in this order:
 
-1. **`bot_enforcement_guard`** — on GitHub/GitLab plans where `default:automated-review` is missing from the final `phase_6.steps`, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
+1. **`ceremony_finalize_selection`** — applies the three `ceremony_policy.finalize` run-at-all gates (`self_review` / `qgate` / `plugin_doctor`, each `always|never|auto`) to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `automated-review`. Documented in its own subsection below.
+2. **`bot_enforcement_guard`** — on GitHub/GitLab plans where `default:automated-review` is missing from the final `phase_6.steps`, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
 
 ### Pre-Filter: `commit_strategy_none`
 
@@ -173,6 +212,40 @@ Paths no extension claims are tagged `unknown` by the aggregator AND surface as 
 ```
 
 The never-silently-drop policy is load-bearing: an unclassified path indicates either a missing domain extension OR a brand-new file type the project has not yet declared, and silently routing it to `documentation_only` would suppress the holistic Python verification that the path may actually need. Surfacing `unknown` forces the user (or the future Q-Gate finding) to declare the path's role explicitly.
+
+## ceremony_policy.finalize Selection
+
+**Type**: Composition-time post-matrix transform (NOT a pre-filter). Runs *after* the seven-row matrix has produced the final `phase_6.steps` list and *after* `execution_tier` routing, *before* the `bot_enforcement_guard`.
+
+**Inputs**: the three `ceremony_policy.finalize` run-at-all gates, resolved from `marshal.json::ceremony_policy.finalize` with `ceremony_policy.overrides[]` applied:
+
+| Gate | Finalize step it controls | Run-at-all values |
+|------|---------------------------|-------------------|
+| `self_review` | `finalize-step-pre-submission-self-review` | `always` \| `never` \| `auto` (default) |
+| `qgate` | `pre-push-quality-gate` (finalize blocking-findings re-capture) | `always` \| `never` \| `auto` (default) |
+| `plugin_doctor` | `finalize-step-plugin-doctor` | `always` \| `never` \| `auto` (default) |
+
+**Gate resolution**: the composer reads `marshal.json::ceremony_policy.finalize` directly (merging the canonical `auto` default under any absent gate), then applies each matching `ceremony_policy.overrides[]` row in order. An override row's `set` map wins over the section value for any `finalize.<gate>` dotted path it carries; later rows win over earlier rows. A row matches when every key/value pair in its `when` clause equals the plan's facts (`scope_estimate` / `plan_source` / `change_type`); an empty `when` matches every plan.
+
+**Effect** (per gate, against the matrix-produced `phase_6.steps`):
+
+- **`never`** — every match-set form of the gate's step (bare and `project:`-prefixed) is removed from `phase_6.steps`. A no-op when already absent. `never` is a footgun for each of these three gates and emits a set-time `[WARNING]` at `manage-config ceremony-policy set` time (see [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § ceremony_policy); the composer applies the resolved value without re-warning.
+- **`always`** — the gate's canonical step is ensured present, inserted before the plan-mutating tail (`archive-plan` / `record-metrics` / `branch-cleanup` / `plan-marshall:plan-retrospective`) when absent. A no-op when any match-set form is already present. `always` is the **only** path that can re-add a step the `scope_gated_finalize` pre-filter dropped — that is the point: an operator-set `always` overrides the implicit scope gate.
+- **`auto`** (the default) — defer to the existing decision machinery (the `scope_gated_finalize` pre-filter and the seven-row matrix already decided). No-op.
+
+**The deliberate `automated-review` carve-out**: this transform's gate map contains only the three ceremony finalize steps. It NEVER adds or drops `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is structurally preserved regardless of any ceremony gate value. The two transforms are orthogonal: ceremony selection forces the three review/lint gates per operator policy; the bot guard independently ensures `automated-review` is scheduled on GitHub/GitLab plans.
+
+**Why a post-matrix transform (not a pre-filter)**: `always` must be able to re-add a step that `scope_gated_finalize` removed before the matrix ran. A pre-filter runs before the matrix, so it cannot express force-include against a subtraction the scope gate already applied. Running after the matrix lets the transform see the final list and override both the scope gate and any row-level narrowing.
+
+**Decision log line** (one per forced change, in addition to the row's own log line and any pre-filter log lines):
+
+```
+(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — finalize.{gate}={value}, {added|dropped} {step} {to|from} phase_6.steps
+```
+
+When all three gates resolve to `auto` (the default), the transform is a no-op and emits no log entry.
+
+**Cross-reference**: the `ceremony_policy.finalize` schema (run-at-all enum, footgun catalogue, override shape) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § ceremony_policy — this section documents only how the composer consumes the three finalize gates. Do not restate the schema here.
 
 ## Bot-Enforcement Guard
 

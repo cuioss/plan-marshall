@@ -623,7 +623,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-1-init) session_id not captured at plan-init — phase-6-finalize will attempt a late session capture before its hard-block abort"
 ```
 
-If `value` is present and non-empty, no log entry is required — continue to Step 9. This check only surfaces the gap; it never aborts the phase and never renumbers existing steps.
+If `value` is present and non-empty, no log entry is required — continue to Step 8b. This check only surfaces the gap; it never aborts the phase and never renumbers existing steps.
+
+### Step 8b: Route Planning Lane
+
+Invoke the deterministic planning-lane router (D4) to resolve `planning_lane ∈ {light, deep}` and persist it into `status.metadata.planning_lane`. The router runs with **zero codebase discovery** — every signal is a cheap field read (`status.metadata`, `references.json`, a `request.md` regex) plus the `ceremony_policy.planning.deep_lane` short-circuit. It reads the signal proxies available at init (`change_type` / `scope_estimate` may still be unset this early — the router treats an unknown signal as its deep-biasing default per the DQ1 signal set, biasing the first-pass routing conservatively toward deep; the light lane is confirmed once the orchestrator re-routes with the full signal set):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status planning-lane route \
+  --plan-id {plan_id} --persist
+```
+
+Parse `planning_lane` from the returned TOON (`light` or `deep`) and carry it into the Step 12 return TOON. The router emits its own decision-log line naming every signal value and the winning predicate, so no separate `manage-logging decision` call is required here. The orchestrator dispatches the planning pipeline structurally by lane — see [`plan-marshall/workflow/planning.md`](../plan-marshall/workflow/planning.md) for the lane-dispatch contract.
+
+**Classification-validation gate (runs automatically inside `route`).** `planning-lane route` runs the deterministic classification-validation gate as a pre-route pass before resolving the lane. The gate cross-checks the plan's `change_type` and `scope_estimate` against cheap request signals and, on a mismatch, records a phase-1-init Q-Gate finding (against the `2-refine` phase). It is **flag-not-block** — it never changes the resolved lane and never halts initialization; a flagged mismatch only surfaces a finding the refine phase acts on. Two classes are flagged: `feature_as_bug_fix` (a `bug_fix` stamp over a non-ambiguous feature narrative) and `non_empty_affected_files_with_null_scope`. The `route` return carries the gate result under `classification_validation` (`mismatch_count`, `mismatches`, `findings_emitted`); no separate invocation is required at init. To run the gate standalone (e.g. a re-check after metadata changes), invoke `manage-status classification-validate --plan-id {plan_id}`.
+
+See `manage-status` Canonical invocations → `planning-lane` and `manage-status` § `classification-validate` for the full subcommand contracts (signal table, the one-way escalate verb, the two mismatch classes, and the decision-log shape).
 
 ### Step 9: Store Domains in References
 
@@ -681,6 +696,7 @@ plan_id: {plan_id}
 domain: {domain}
 next_phase: 2-refine
 use_worktree: {true|false}
+planning_lane: {light|deep}
 
 source:
   type: {description|lesson|issue}
@@ -691,6 +707,8 @@ artifacts:
   status: status.json
   references: references.json
 ```
+
+`planning_lane` is the value resolved by Step 8b's `manage-status planning-lane route`. The orchestrator dispatches the planning pipeline by this lane.
 
 **Always append the current-checkout cwd directive from Step 6 point 4 verbatim after the TOON output.** Phases 2-4 run on the current working tree because worktree materialization is deferred to phase-5-execute Step 2.5. The orchestrating LLM uses the directive to decide, per call, whether a `.plan/execute-script.py` invocation is Bucket A (cwd-agnostic, no routing flags) or Bucket B (pass `--plan-id {plan_id}`, which auto-resolves the current working tree now and the materialized worktree once phase-5 creates it).
 
@@ -707,7 +725,7 @@ display_detail: "<plan {plan_id} created, domain {domain}>"
 
 `display_detail` shape on success: `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`); ≤80 chars, ASCII, no trailing period. On error, `display_detail` carries the short error label (see § Error Handling for the structured envelope).
 
-All other fields (`plan_id`, `domain`, `next_phase`, `use_worktree`, `source`, `artifacts`) are documented in Step 12 above and form the rest of the return payload.
+All other fields (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above and form the rest of the return payload.
 
 ---
 
