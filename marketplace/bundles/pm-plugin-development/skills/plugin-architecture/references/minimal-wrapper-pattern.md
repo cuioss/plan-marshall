@@ -302,8 +302,7 @@ Parameters:
 Step 3: Verify Build
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
-    --targets "clean test" \
-    --module {module} \
+    --command-args "clean test" \
     --mode structured
 ```
 ```
