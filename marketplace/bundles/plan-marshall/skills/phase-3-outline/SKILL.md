@@ -70,14 +70,16 @@ Step-level exceptions to this default — calls whose non-zero exit is itself th
 
 ---
 
-## Two-Track Design
+## Two-Lane Design
 
-| Track | When Used | Approach |
-|-------|-----------|----------|
-| **Simple** | Localized changes (single_file, single_module, few_files) | Direct deliverable creation from module_mapping |
-| **Complex** | Codebase-wide changes (multi_module, codebase_wide) | Load domain skill for discovery/analysis |
+The outline runs one of two lanes, selected by `status.metadata.planning_lane` (resolved by the phase-1-init lane router — see Step 4c below). Each lane reuses one of the two deliverable-authoring procedures:
 
-**Track determined by**: phase-2-refine (stored in references.json)
+| Lane | Procedure reused | Approach |
+|------|------------------|----------|
+| **light** | Simple-Track authoring (Steps 6–8) | Bounded-discovery deliverable creation in the collapsed [light-lane envelope](workflow/light-lane.md) — refine-no-loop + Simple-outline + deliverable-derivation folded into one dispatch |
+| **deep** | Complex-Track authoring (Steps 9–11) | Load domain skill for discovery/analysis; full Complex-Track outline + q-gate-validation |
+
+**Lane determined by**: the phase-1-init lane router (`manage-status planning-lane route`), persisted to `status.metadata.planning_lane`. There is no separate refine-time track-selection classifier — the lane decision is the sole selector, and `references.json:track` is derived from it (deep ⇒ complex, light ⇒ simple).
 
 ---
 
@@ -98,7 +100,7 @@ The Phase Entry Protocol's `phase_handshake verify --phase 2-refine --strict` ca
 ## Workflow Overview
 
 ```
-Step 2: Load Inputs → Step 3: Recipe Detection → Step 4: Detect Change Type → Step 5: Route by Track → {Simple: Steps 6-8 | Complex: Steps 9-11} → Step 12: Return
+Step 2: Load Inputs → Step 3: Recipe Detection → Step 4: Detect Change Type → Step 4c: Route by Planning Lane → Step 5: Select Authoring Procedure → {light/Simple: Steps 6-8 | deep/Complex: Steps 9-11} → Step 12: Return
 ```
 
 ---
@@ -243,17 +245,34 @@ For detailed procedures (agent spawning, metadata read, post-check override logi
 
 ---
 
-## Step 5: Route by Track
+## Step 4c: Route by Planning Lane
 
-Based on `track` from Step 2:
+The **planning lane** (resolved by the phase-1-init lane router — `status.metadata.planning_lane`) is the structural lane selector that subsumes the legacy Simple/Complex track classifier. Read it once at phase entry:
 
-If track == simple → go to Step 6. If track == complex → go to Step 9.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field planning_lane
+```
+
+- **`planning_lane == light`** → the orchestrator dispatches the [light-lane collapsed scoping workflow](workflow/light-lane.md) (`plan-marshall:phase-3-outline/workflow/light-lane.md`), which folds refine-no-loop + Simple-outline + deliverable-derivation into ONE envelope with discovery bounded to the declared affected files + their one-hop neighbours (cap 25). That doc owns the full light-lane flow including the DQ3 one-way escalation ratchet (`manage-status planning-lane escalate`) that self-promotes to deep when evidence contradicts the cheap classification. The inline Steps 5–12 below are NOT run for a light-lane plan.
+- **`planning_lane == deep`** (or absent / unresolved) → run today's Complex-Track flow inline (Step 5 → Step 9 → Step 11 → Step 12). The deep lane is the refine-loop + Complex-outline + q-gate-validation pipeline, unchanged.
+
+The lane decision replaces the Simple/Complex *track-selection classifier* — on an escalation the light-lane envelope returns `outcome: escalate_to_deep` and the orchestrator re-dispatches the deep lane fresh. See `workflow/light-lane.md` and `manage-status` Canonical invocations → `planning-lane`.
+
+## Step 5: Select the Authoring Procedure
+
+The planning lane (Step 4c) determines which deliverable-authoring procedure runs — there is no separate refine-time track classifier:
+
+- **deep lane (inline)** → the **Complex-Track procedure** (Steps 9–11): full discovery + analysis + q-gate-validation. Go to Step 9.
+- **light lane** → the **Simple-Track authoring procedure** (Steps 6–8) is reused *inside* the [light-lane envelope](workflow/light-lane.md), bounded per DQ2. The light lane does not run these inline Steps — `light-lane.md` invokes the Simple-Track authoring rules (File-type classifier, deliverable template, Step 9c design-notes) directly. The Steps 6–8 procedure below is the authoritative source those rules reference.
+
+The `references.json:track` value (deep ⇒ complex, light ⇒ simple) is the persisted record of this selection; the lane is the live selector.
 
 ---
 
-## Simple Track (Steps 6-8)
+## Simple-Track Authoring Procedure (Steps 6-8)
 
-For localized changes where targets are already known from module_mapping.
+For localized changes where targets are already known from module_mapping. The light lane reuses this procedure inside its collapsed envelope (bounded discovery); the deep lane does not run it (deep ⇒ Complex-Track).
 
 | Step | Purpose | Key Action |
 |------|---------|------------|

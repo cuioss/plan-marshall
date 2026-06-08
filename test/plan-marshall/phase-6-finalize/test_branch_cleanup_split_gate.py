@@ -55,6 +55,9 @@ _cmd_init_mod = _load_module('_cmd_init_for_split_gate', '_cmd_init.py')
 _cmd_quality_phases_mod = _load_module(
     '_cmd_quality_phases_for_split_gate', '_cmd_quality_phases.py'
 )
+_cmd_ceremony_policy_mod = _load_module(
+    '_cmd_ceremony_policy_for_split_gate', '_cmd_ceremony_policy.py'
+)
 
 
 def _branch_cleanup_text() -> str:
@@ -102,52 +105,40 @@ def test_auto_rebase_threshold_roundtrips_when_set(plan_context):
 
 
 def test_auto_merge_after_ci_default_is_true(plan_context):
-    """Fresh marshal.json must surface auto_merge_after_ci default True."""
+    """Fresh marshal.json must surface auto_merge_after_ci default True.
+
+    The knob was migrated to ceremony_policy.automation; the runtime read is
+    now `ceremony-policy get --field automation.auto_merge_after_ci`.
+    """
     # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
     # Act
-    args = Namespace(
-        noun='plan',
-        sub_noun='phase-6-finalize',
-        verb='get',
-        field='auto_merge_after_ci',
-    )
-    result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-6-finalize')
+    args = Namespace(verb='get', field='automation.auto_merge_after_ci')
+    result = _cmd_ceremony_policy_mod.cmd_ceremony_policy(args)
 
     # Assert
     assert result['status'] == 'success'
     assert result['value'] is True
 
 
-def test_auto_merge_after_ci_roundtrip_true(plan_context):
-    """auto_merge_after_ci must round-trip through set/get."""
+def test_auto_merge_after_ci_read_from_ceremony_automation(plan_context):
+    """auto_merge_after_ci reads through the ceremony-policy get verb.
+
+    The whole `automation` sub-block surfaces the migrated knob; a fresh
+    marshal.json (no live ceremony_policy override) reads the canonical
+    default.
+    """
     # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # Act — set
-    set_args = Namespace(
-        noun='plan',
-        sub_noun='phase-6-finalize',
-        verb='set',
-        field='auto_merge_after_ci',
-        value='true',
-    )
-    set_result = _cmd_quality_phases_mod.cmd_phase(set_args, 'phase-6-finalize')
-    assert set_result['status'] == 'success'
-
-    # Act — get
-    get_args = Namespace(
-        noun='plan',
-        sub_noun='phase-6-finalize',
-        verb='get',
-        field='auto_merge_after_ci',
-    )
-    get_result = _cmd_quality_phases_mod.cmd_phase(get_args, 'phase-6-finalize')
+    # Act — read the whole automation sub-block
+    args = Namespace(verb='get', field='automation')
+    result = _cmd_ceremony_policy_mod.cmd_ceremony_policy(args)
 
     # Assert
-    assert get_result['status'] == 'success'
-    assert get_result['value'] is True
+    assert result['status'] == 'success'
+    assert result['value']['auto_merge_after_ci'] is True
 
 
 # ---- Doc-level invariants ----------------------------------------------------

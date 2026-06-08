@@ -190,11 +190,11 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field finalize_without_asking --value {true|false}
+  ceremony-policy set --field automation.finalize_without_asking --value {true|false}
 ```
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set --field loop_back_without_asking --value {true|false}
+  ceremony-policy set --field automation.loop_back_without_asking --value {true|false}
 ```
 
 ---

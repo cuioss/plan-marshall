@@ -132,10 +132,6 @@ For the complete procedure (sync invocation, diff surfacing, finding-emission co
 
 Read `confidence_threshold` from project config (`manage-config plan phase-2-refine get --field confidence_threshold`). Default: `95`.
 
-### Step 4b: Load Fast-Path Threshold
-
-Read `fast_path_threshold` from project config (`manage-config plan phase-2-refine get --field fast_path_threshold`). Default: `100`. Read-only during refine — the same `set`/`init`/`sync-defaults`/`sync-plan-defaults` prohibition defined in the Enforcement section above applies. Store as `fast_path_threshold` for use in Step 10.
-
 ### Step 5: Load Compatibility Strategy
 
 Read `compatibility` from project config. Valid values:
@@ -182,7 +178,7 @@ Evaluate the request against five quality dimensions using `arch_context`:
 
 ### Step 9: Analyze Request in Architecture Context
 
-Four sub-analyses using `arch_context`:
+Three sub-analyses using `arch_context`:
 
 **Module Mapping**: Identify which modules are affected. Use `architecture module` for detailed info when confidence < 70%, `architecture graph` for cross-module changes.
 
@@ -191,21 +187,6 @@ Four sub-analyses using `arch_context`:
 **Scope Size Estimation**: Derive `scope_estimate` from the `module_mapping` using the standard derivation helper (see `standards/refine-workflow-detail.md` Step 9 — Derivation Rules). Allowed values: `none | surgical | single_module | multi_module | broad`. The same enum and rule of thumb is documented in `manage-solution-outline:standards/solution-outline-standard.md` so the value flows unchanged into the solution outline. Persist the derived value to `references.json` via `manage-references set --field scope_estimate` and include it in the Step 13 return TOON.
 
 > **Coverage contract**: `scope_estimate` is the *scope* dial of the two-dial coverage contract; its orthogonal partner is *thoroughness* (how completely in-radius items are covered and how deeply their relations are traced). Refine defaults to roughly T2 / change-set unless the request signals otherwise. See the scope × thoroughness ladders, the grade-to-the-floor rule, and the coupling constraint in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).
-
-**Track Selection**: Determine `simple` vs `complex` track using hard-gate triggers:
-
-```
-Complex Track triggers (hard gates, OR logic):
-  [T1] scope_estimate is multi_module or broad
-  [T2] Request contains scope words (all, every, migrate, refactor, etc.)
-  [T3] module_mapping uses patterns/globs instead of explicit file paths
-  [T4] Domain requires discovery (plugin-dev, documentation, requirements)
-       — skipped via escape hatch when explicit paths + narrow scope
-
-If ANY trigger fires → track = complex
-If NONE fire AND S1+S2+S3 all true → track = simple
-Otherwise → track = complex
-```
 
 ### Step 10: Evaluate Confidence
 
@@ -234,8 +215,6 @@ For batch input, the analyzer can stage the per-dimension scores as JSON at `.pl
 
 The script returns `{confidence, breakdown[]{dimension, score, weight, weighted}, missing_dimensions, persisted}`; with `--persist`, the overall confidence also lands in `status.metadata.confidence` so phase-3-outline and downstream consumers can read it without re-running the math.
 
-**First-pass fast path** (distinct from the loop-exit rule below): on the first analysis pass only (`iteration_count == 1`), if confidence >= `fast_path_threshold`, skip the clarification loop (Steps 11-12) entirely and proceed directly to Step 13. The fast path is a stricter, first-pass-only gate that decides whether the loop is entered at all. On every subsequent iteration only the `confidence_threshold` loop-exit semantics below apply.
-
 If confidence >= `confidence_threshold` → Step 13. Otherwise → Step 11.
 
 ### Step 11: Clarify with User
@@ -252,7 +231,7 @@ When confidence reaches threshold:
 
 1. **Persist module mapping** to `work/module_mapping.toon`
 2. **Persist `scope_estimate`** to `references.json` via `manage-references set --field scope_estimate --value {scope_estimate}` (one of `none | surgical | single_module | multi_module | broad`)
-3. **Persist `track`** to `references.json` via `manage-references set --field track --value {track}` (one of `simple | complex`) — symmetric to the `scope_estimate` persist above. `manage-execution-manifest compose --track` and phase-4-plan read this field as the single source of truth.
+3. **Persist `track`** to `references.json` via `manage-references set --field track --value {track}` (one of `simple | complex`) — symmetric to the `scope_estimate` persist above. The value is **derived from the planning lane**, not from a refine-time classifier: `planning_lane == deep` ⇒ `track = complex` (the deep lane runs the Complex-Track outline); `planning_lane == light` ⇒ `track = simple` (the light lane reuses Simple-Track deliverable authoring by construction). `manage-execution-manifest compose --track` and phase-4-plan read this field as the single source of truth.
 4. **Log decisions** to decision.log (scope, domains -- with duplicate guard)
 5. **Run Q-Gate verification checks**: module mapping completeness, track-scope consistency, scope realism, confidence justification
 6. **Signal q-gate-validation activation for the narrative-vs-code-validator** — lesson-derived plans only. When `status.json` reports `plan_source` set to a non-recipe value (i.e., `plan_source` is present and not the literal string `recipe`), the phase sets `qgate_validation_required: true` in its return TOON so the orchestrator (`plan-marshall:plan-marshall/workflow/planning.md`) dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level Task after the phase returns. The phase body cannot dispatch q-gate-validation itself because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. Lesson-derived plans encode the source lesson id directly in `plan_source` (e.g., `2026-05-11-08-004`), so the guard MUST treat any non-null, non-`recipe` value as lesson-derived. The orchestrator aggregates the validator's `qgate_pending_count` into the phase's running count before re-evaluating the existing 3-iteration auto-loop predicate. See [`refine-workflow-detail.md` Step 13.5](standards/refine-workflow-detail.md#step-135-dispatch-q-gate-validation--lesson-derived-plans-only) for the activation-guard contract. The flag is `false` when `plan_source` is absent or equals `recipe`.

@@ -593,6 +593,27 @@ Replace the placeholders with the integers parsed from the dispatched agent's `<
 
 The orchestrator's `phase-boundary` call in `workflow/execution.md` (recorded at end of execute) reads this accumulator as a fallback when its `--total-tokens` / `--tool-uses` / `--duration-ms` flags are omitted. Inline tasks contribute nothing — `manage-metrics enrich` (run by `phase-6-finalize:default:record-metrics`) sweeps the transcript for any subagent `<usage>` tags whose timestamp falls inside the `5-execute` window and adds them to the per-phase `subagent_*` columns of the metrics report as a post-hoc safety net.
 
+### Step 8c: Record Per-Step Execution Outcome to the Manifest
+
+**Applies to**: every Phase 5 verification step the envelope dispatches — the per-task `default:quality_check` / `default:build_verify` / `default:coverage_check` built-in steps, the Step 11b final quality sweep, and each external (`project:` / `bundle:skill`) verification step. This is the consuming side of the `record-step` contract published by `manage-execution-manifest` (see that skill's Producers table — `phase-5-execute` is named as a `record-step` producer).
+
+After a verification step settles (its build/check completes with a known outcome), append one execution-log row to the manifest so per-step execution metadata is loggable per-plan deterministically, rather than relying on the fragile orchestrator `<usage>`-forwarding boundary call alone:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest record-step \
+  --plan-id {plan_id} --step-id {step_id} --phase 5-execute --outcome {executed|skipped|error} \
+  --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
+```
+
+See `manage-execution-manifest` Canonical invocations → `record-step` for the authoritative argument surface. Contract:
+
+- `--phase` is always `5-execute` in this phase; `--step-id` is the verification step ID (e.g. `quality_check`, `build_verify`, `coverage_check`, or an external step's notation).
+- `--outcome` is `executed` when the step ran, `skipped` when a skip rule fired (e.g. the Step 11b skip when `verification_steps` is empty, or the Step 10b documentation-only / `off` skip), and `error` when the step's build/check exited non-zero (recorded BEFORE the Step 11/11b `triage_required` return so the failed attempt is on the execution log).
+- The token-attribution triple (`--total-tokens` / `--tool-uses` / `--duration-ms`) is the per-step cost; supply the integers parsed from the dispatched agent's `<usage>` block when one is available, and `0` for inline build invocations that carry no `<usage>` tag (a skipped step legitimately reports zeros). These are the SAME integers forwarded to the Step 8b `accumulate-agent-usage` call — Step 8b sums them into the per-phase accumulator that fills the `total_tokens` column, while Step 8c records the per-step breakdown; the two are complementary, not redundant.
+- The manifest MUST already exist (composed by `phase-4-plan` Step 8b); `record-step` returns `file_not_found` otherwise. The append is atomic and one decision-log line is emitted per record.
+
+**Exec-blind contract**: Phase 5 exec token counts MUST be recorded on EVERY plan. The combination of Step 8b (`accumulate-agent-usage` → fills the per-phase `total_tokens` column) and the orchestrator's end-of-execute `phase-boundary` call (which always fires at the `5-execute → 6-finalize` transition, reading the accumulator as its fallback) guarantees the phase-5 `total_tokens` in `metrics.toon` is non-zero — closing the historical exec-blind path where phase-5 `total_tokens==0`. Step 8c's per-step `execution_log[]` rows are the auditable per-step breakdown behind that aggregate. Because the `phase-boundary` record is reached unconditionally at the transition (Step 12 → **Phase Transition**), there is no plan path that skips the closing-phase token record.
+
 ### Step 9: Independent Change Verification
 
 **Applies to**: `implementation` and `module_testing` profile tasks only. Skip this step for `verification` profile tasks.
@@ -1092,7 +1113,7 @@ This automatically updates status.json and moves to the next phase.
 **After transition**, check `finalize_without_asking` config:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --field finalize_without_asking --audit-plan-id {plan_id}
+  ceremony-policy get --field automation.finalize_without_asking
 ```
 
 - **IF `finalize_without_asking == true`**: Log and auto-continue to finalize phase

@@ -317,30 +317,6 @@ Store as `confidence_threshold` for use in Step 10.
 
 ---
 
-## Step 4b: Load Fast-Path Threshold
-
-Read the fast-path threshold from project configuration.
-
-**Read-only**: This step MUST only read configuration. The verbs `set`, `init`, `sync-defaults`, and `sync-plan-defaults` are forbidden here — they mutate project configuration that must remain stable across the confidence loop. Only `get` is permitted.
-
-**EXECUTE**:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-2-refine get --field fast_path_threshold --audit-plan-id {plan_id}
-```
-
-**Default**: If not configured or field not found, use `100` (a perfect first-pass confidence is required to skip the clarification loop).
-
-**Log** (to decision.log - config read is a decision):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Config: fast_path_threshold={fast_path_threshold}"
-```
-
-Store as `fast_path_threshold` for use in Step 10. The key governs whether the clarification loop is entered at all after the first analysis pass; it is distinct from `confidence_threshold`, which governs in-loop iteration exit.
-
----
-
 ## Step 5: Load Compatibility Strategy
 
 Read the compatibility approach from project configuration and persist to references.json in Step 11.
@@ -544,69 +520,17 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 The same value MUST appear in the Step 13 return TOON under the key `scope_estimate`. `phase-3-outline` MAY refine the value after deliverables crystalize (e.g., a Simple Track plan whose final deliverable list collapses to ≤3 files in one module is downgraded to `surgical`); when it does, it overwrites the field via the same `manage-references set` call.
 
-### Track Selection
+### Track Derivation from Planning Lane
 
-**Question**: Does this request need complex discovery or can targets be determined directly?
+`track` is **derived from the planning lane** (`status.metadata.planning_lane`, resolved by the phase-1-init lane router), not from a refine-time hard-gate classifier:
 
-**Track Selection Logic**:
+- `planning_lane == deep` ⇒ `track = complex` — the deep lane runs the Complex-Track outline (discovery + analysis).
+- `planning_lane == light` ⇒ `track = simple` — the light lane reuses Simple-Track deliverable authoring by construction.
 
-**CRITICAL**: Complex Track triggers are hard gates — if ANY trigger fires, the track MUST be complex. Do NOT override with subjective reasoning. Evaluate each trigger mechanically. T4 has an escape hatch for cases where discovery has already been completed by phase-2-refine.
-
-```
-Step A — Check Complex Track triggers (hard gates, OR logic):
-  [T1] scope_estimate is multi_module or broad
-  [T2] Request contains scope words (see list below)
-  [T3] module_mapping uses patterns/globs instead of explicit file paths
-  [T4] Domain requires discovery (see list below)
-       (This trigger is skipped if the T4 Escape Hatch conditions are met. See details below.)
-
-  → If ANY of T1-T4 is true (after escape hatch) → track = complex (STOP, do not evaluate Simple)
-
-Step B — Only if ALL of T1-T4 are false, check Simple Track:
-  [S1] scope_estimate is none, surgical, or single_module
-  [S2] module_mapping explicitly specifies target file(s) by full path
-  [S3] Request is localized (add, create, implement specific thing)
-
-  → If ALL of S1-S3 are true → track = simple
-  → Otherwise → track = complex
-```
-
-**Scope Words [T2]**:
-Scan request text for: `all`, `every`, `everywhere`, `across`, `migrate`, `update all`, `refactor`, `replace all`
-
-**Domain Discovery Requirements [T4]**:
-These domains have no standard structure and always need discovery:
-- `plan-marshall-plugin-dev` (marketplace plugins)
-- `documentation` (AsciiDoc, ADR locations vary)
-- `requirements` (specs can be anywhere)
-
-**T4 Escape Hatch**:
-T4 is skipped (does not fire) when BOTH conditions are true:
-1. `module_mapping` contains only explicit file paths (no patterns, globs, or approximate counts)
-2. `scope_estimate` is `none`, `surgical`, or `single_module`
-
-When the escape hatch applies, phase-2-refine has already identified the exact targets — the codebase discovery that T4 mandates would be redundant. The escape hatch does NOT apply when T1, T2, or T3 have already fired (those are evaluated first).
-
-**Module mapping explicitness [T3]**:
-- Explicit: `affected_files: [path/to/file1.md, path/to/file2.md]` → does NOT trigger T3
-- Broad: `file_pattern: {agents,commands}/*.md` or `agents: ~13 files` → TRIGGERS T3
-
-**Finding format**:
-```
-TRACK_SELECTION: {simple|complex}
-  - [T1] Scope multi_module/codebase_wide: {yes/no}
-  - [T2] Scope words found: {yes/no - which words}
-  - [T3] Module mapping broad/patterns: {yes/no}
-  - [T4] Domain requires discovery: {yes/no}
-  - [T4 escape hatch] Explicit paths + narrow scope: {yes/no - skipped T4 if yes}
-  - Triggers fired: {T1,T2,T3,T4 or none}
-  - Track: {complex if any trigger | simple if none}
-```
-
-**Log track decision** (to decision.log):
+**Log the derived track decision** (to decision.log):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Track: {track} - {reasoning}"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Track: {track} (derived from planning_lane={planning_lane})"
 ```
 
 ---
@@ -632,13 +556,9 @@ If confidence >= threshold → go to Step 13. Otherwise continue.
 
 ### Decision
 
-The fast-path check applies on the first analysis pass only and is evaluated before the loop-exit check. It is distinct from `confidence_threshold`: `fast_path_threshold` decides whether the clarification loop is entered at all after the first pass, while `confidence_threshold` decides when an already-entered loop exits.
+The loop-exit check is governed solely by `confidence_threshold` — the deep refine lane runs the full clarification loop until confidence reaches threshold. (Light-lane plans never enter refine's clarification loop at all: the phase-1-init lane router routes them to the collapsed light-lane envelope, which authors deliverables in a single bounded-discovery dispatch.)
 
 ```
-IF iteration_count == 1 AND confidence >= fast_path_threshold:
-  Log: "[REFINE:8] Fast path: clarification loop skipped. Confidence: {confidence}% >= fast_path_threshold {fast_path_threshold}%"
-  CONTINUE to Step 13 (Persist and Return Results)
-
 IF confidence >= confidence_threshold:
   Log: "[REFINE:8] Request refinement complete. Confidence: {confidence}%"
   CONTINUE to Step 13 (Persist and Return Results)
@@ -797,7 +717,7 @@ The accepted enum values are `none | surgical | single_module | multi_module | b
 
 ### Persist track to references.json
 
-Persist the `track` value selected in Step 9 so phase-4-plan and the manifest composer read a single source of truth — symmetric to the `scope_estimate` persist above:
+Persist the `track` value derived from the planning lane in Step 9 (deep ⇒ complex, light ⇒ simple) so phase-4-plan and the manifest composer read a single source of truth — symmetric to the `scope_estimate` persist above:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \

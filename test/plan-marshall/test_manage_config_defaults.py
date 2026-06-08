@@ -38,43 +38,46 @@ _config_defaults = _load_module('_config_defaults', '_config_defaults.py')
 
 class TestLoopBackWithoutAskingDefault:
     """``loop_back_without_asking`` is the reverse-direction symmetric
-    counterpart of ``finalize_without_asking``. The defaults are
-    intentionally asymmetric: forward auto-continue is the common case and
-    defaults to ``True``; reverse loop-back surfaces a control return to
-    the user and defaults to ``False`` so unattended runs cannot silently
-    re-enter execute on a finalize-side fix."""
+    counterpart of ``finalize_without_asking``. Both now live under the
+    top-level ``ceremony_policy.automation`` block (migrated out of the loose
+    ``plan.phase-6-finalize`` location). The defaults are intentionally
+    asymmetric: forward auto-continue is the common case and defaults to
+    ``True``; reverse loop-back surfaces a control return to the user and
+    defaults to ``False`` so unattended runs cannot silently re-enter execute
+    on a finalize-side fix."""
 
     def test_default_is_false(self) -> None:
         """``get_default_config()`` MUST expose
-        ``plan.phase-6-finalize.loop_back_without_asking == False``."""
+        ``ceremony_policy.automation.loop_back_without_asking == False``."""
         cfg = _config_defaults.get_default_config()
         assert (
-            cfg['plan']['phase-6-finalize']['loop_back_without_asking']
+            cfg['ceremony_policy']['automation']['loop_back_without_asking']
             is False
         ), (
-            'get_default_config()["plan"]["phase-6-finalize"]'
+            'get_default_config()["ceremony_policy"]["automation"]'
             '["loop_back_without_asking"] must default to False'
         )
 
     def test_finalize_block_default_matches(self) -> None:
-        """The ``DEFAULT_PLAN_FINALIZE`` module constant MUST agree with the
+        """The ``DEFAULT_CEREMONY_POLICY`` module constant MUST agree with the
         value exposed by ``get_default_config()`` — they are the same
         physical default and must never drift."""
         assert (
-            _config_defaults.DEFAULT_PLAN_FINALIZE['loop_back_without_asking']
+            _config_defaults.DEFAULT_CEREMONY_POLICY['automation']['loop_back_without_asking']
             is False
         )
 
     def test_asymmetric_with_finalize_without_asking(self) -> None:
         """The two auto-continuation knobs default asymmetrically —
         ``finalize_without_asking=True`` (forward auto) and
-        ``loop_back_without_asking=False`` (reverse halt). If they drift
-        to a symmetric pair, the contract documented in
-        ``marshall-steward/references/wizard-flow.md`` § Step 7c is
-        broken."""
+        ``loop_back_without_asking=False`` (reverse halt). Both read from
+        ``ceremony_policy.automation``. If they drift to a symmetric pair,
+        the contract documented in ``marshall-steward/references/wizard-flow.md``
+        § Step 7c is broken."""
         cfg = _config_defaults.get_default_config()
-        forward = cfg['plan']['phase-5-execute']['finalize_without_asking']
-        reverse = cfg['plan']['phase-6-finalize']['loop_back_without_asking']
+        automation = cfg['ceremony_policy']['automation']
+        forward = automation['finalize_without_asking']
+        reverse = automation['loop_back_without_asking']
         assert forward is True and reverse is False, (
             'finalize_without_asking must default to True and '
             'loop_back_without_asking must default to False '
@@ -84,20 +87,21 @@ class TestLoopBackWithoutAskingDefault:
     def test_fresh_project_fallback_seeds_key(self) -> None:
         """A fresh project bootstrap (calling ``get_default_config()``
         without any prior marshal.json) MUST seed
-        ``loop_back_without_asking`` explicitly — the key being absent
-        would force every downstream consumer to apply its own fallback,
-        and the silent-default surface area is exactly the bug pattern
-        this test guards against."""
+        ``loop_back_without_asking`` explicitly under
+        ``ceremony_policy.automation`` — the key being absent would force
+        every downstream consumer to apply its own fallback, and the
+        silent-default surface area is exactly the bug pattern this test
+        guards against."""
         cfg = _config_defaults.get_default_config()
-        finalize = cfg['plan']['phase-6-finalize']
-        assert 'loop_back_without_asking' in finalize, (
+        automation = cfg['ceremony_policy']['automation']
+        assert 'loop_back_without_asking' in automation, (
             'Fresh-project bootstrap must seed loop_back_without_asking '
-            'explicitly in plan.phase-6-finalize'
+            'explicitly in ceremony_policy.automation'
         )
         # Sanity: the fresh-project value matches the module-level constant
         assert (
-            finalize['loop_back_without_asking']
-            == _config_defaults.DEFAULT_PLAN_FINALIZE['loop_back_without_asking']
+            automation['loop_back_without_asking']
+            == _config_defaults.DEFAULT_CEREMONY_POLICY['automation']['loop_back_without_asking']
         )
 
 
@@ -106,46 +110,49 @@ class TestAutoMergeAfterCiDefault:
     coordinated via the cross-plan merge-lock so concurrently-finalizing
     plans serialize safely on the merge-to-main critical section. ``False``
     is the explicit interactive opt-out (prompt the operator before merge).
-    The flag is a plain boolean — NOT a tri-state."""
+    The flag is a plain boolean — NOT a tri-state. It now lives under the
+    top-level ``ceremony_policy.automation`` block (migrated out of the loose
+    ``plan.phase-6-finalize`` location)."""
 
     def test_default_is_true(self) -> None:
         """``get_default_config()`` MUST expose
-        ``plan.phase-6-finalize.auto_merge_after_ci == True``."""
+        ``ceremony_policy.automation.auto_merge_after_ci == True``."""
         cfg = _config_defaults.get_default_config()
         assert (
-            cfg['plan']['phase-6-finalize']['auto_merge_after_ci']
+            cfg['ceremony_policy']['automation']['auto_merge_after_ci']
             is True
         ), (
-            'get_default_config()["plan"]["phase-6-finalize"]'
+            'get_default_config()["ceremony_policy"]["automation"]'
             '["auto_merge_after_ci"] must default to True'
         )
 
     def test_finalize_block_default_matches(self) -> None:
-        """The ``DEFAULT_PLAN_FINALIZE`` module constant MUST agree with the
+        """The ``DEFAULT_CEREMONY_POLICY`` module constant MUST agree with the
         value exposed by ``get_default_config()`` — they are the same
         physical default and must never drift."""
         assert (
-            _config_defaults.DEFAULT_PLAN_FINALIZE['auto_merge_after_ci']
+            _config_defaults.DEFAULT_CEREMONY_POLICY['automation']['auto_merge_after_ci']
             is True
         )
 
     def test_fresh_project_seeds_true(self) -> None:
         """A fresh project bootstrap (calling ``get_default_config()``
         without any prior marshal.json) MUST seed ``auto_merge_after_ci``
-        with the ``True`` default — the key being absent would force every
-        downstream consumer to apply its own fallback, and the new
-        lock-coordinated default would not flow to fresh projects."""
+        with the ``True`` default under ``ceremony_policy.automation`` — the
+        key being absent would force every downstream consumer to apply its
+        own fallback, and the lock-coordinated default would not flow to
+        fresh projects."""
         cfg = _config_defaults.get_default_config()
-        finalize = cfg['plan']['phase-6-finalize']
-        assert 'auto_merge_after_ci' in finalize, (
+        automation = cfg['ceremony_policy']['automation']
+        assert 'auto_merge_after_ci' in automation, (
             'Fresh-project bootstrap must seed auto_merge_after_ci '
-            'explicitly in plan.phase-6-finalize'
+            'explicitly in ceremony_policy.automation'
         )
         assert (
-            finalize['auto_merge_after_ci']
-            == _config_defaults.DEFAULT_PLAN_FINALIZE['auto_merge_after_ci']
+            automation['auto_merge_after_ci']
+            == _config_defaults.DEFAULT_CEREMONY_POLICY['automation']['auto_merge_after_ci']
         )
-        assert finalize['auto_merge_after_ci'] is True
+        assert automation['auto_merge_after_ci'] is True
 
 
 class TestBranchNamingDefault:

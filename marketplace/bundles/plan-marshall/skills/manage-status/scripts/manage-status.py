@@ -30,6 +30,7 @@ import argparse
 from _cmd_aggregate_confidence import cmd_aggregate_confidence
 from _cmd_assert_step_recorded import cmd_assert_step_recorded
 from _cmd_change_type_heuristic import cmd_change_type_heuristic
+from _cmd_classification_validate import cmd_classification_validate
 from _cmd_lifecycle import (
     cmd_archive,
     cmd_create,
@@ -42,6 +43,10 @@ from _cmd_merge_lock import (
     cmd_merge_lock_acquire,
     cmd_merge_lock_check,
     cmd_merge_lock_release,
+)
+from _cmd_planning_lane import (
+    cmd_planning_lane_escalate,
+    cmd_planning_lane_route,
 )
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from _status_query import (
@@ -432,6 +437,83 @@ def main() -> int:
     )
     add_plan_id_arg(merge_lock_release_parser)
     merge_lock_release_parser.set_defaults(func=cmd_merge_lock_release)
+
+    # planning-lane (route | escalate)
+    planning_lane_parser = subparsers.add_parser(
+        'planning-lane',
+        help='Deterministic planning-lane router (route | escalate)',
+        description=(
+            "Resolve planning_lane in {light, deep} from cheap field reads + a "
+            "request.md regex (zero codebase discovery, zero LLM cognition). "
+            "'route' evaluates the DQ1 signal set (S1-S6): default is light; any "
+            "deep-precondition signal forces deep; ceremony_policy.planning."
+            "deep_lane (always|never|auto) short-circuits the signals. 'escalate' "
+            "is the one-way light->deep ratchet — it sets planning_lane=deep + "
+            "lane_escalated=true and refuses any downgrade to light. Both verbs "
+            "emit one decision-log line."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    planning_lane_subparsers = planning_lane_parser.add_subparsers(
+        dest='planning_lane_verb', required=True
+    )
+
+    planning_lane_route_parser = planning_lane_subparsers.add_parser(
+        'route',
+        help='Resolve {light|deep} from the DQ1 signal set and persist it',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(planning_lane_route_parser)
+    planning_lane_route_parser.add_argument(
+        '--lane-override',
+        choices=['deep', 'light'],
+        default=None,
+        help='Seed the S6 explicit-override signal (CLI-init convenience)',
+    )
+    planning_lane_route_parser.add_argument(
+        '--persist',
+        action='store_true',
+        help='Write the resolved lane into status.metadata.planning_lane',
+    )
+    planning_lane_route_parser.set_defaults(func=cmd_planning_lane_route)
+
+    planning_lane_escalate_parser = planning_lane_subparsers.add_parser(
+        'escalate',
+        help='One-way light->deep ratchet (refuses downgrade)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(planning_lane_escalate_parser)
+    planning_lane_escalate_parser.add_argument(
+        '--trigger',
+        choices=['explosion', 'premise', 'cross_cutting'],
+        required=True,
+        help='The DQ3 escalation trigger that fired',
+    )
+    planning_lane_escalate_parser.add_argument(
+        '--persist',
+        action='store_true',
+        help='Write the escalation mutation into status.metadata',
+    )
+    planning_lane_escalate_parser.set_defaults(func=cmd_planning_lane_escalate)
+
+    # classification-validate (deterministic, flag-not-block)
+    classification_validate_parser = subparsers.add_parser(
+        'classification-validate',
+        help='Cross-check change_type/scope_estimate vs cheap request signals (flag-not-block)',
+        description=(
+            "Deterministic classification-validation gate. Cross-checks the plan's "
+            "change_type and scope_estimate against cheap request signals and emits a "
+            "phase-1-init Q-Gate finding (recorded against 2-refine) on a mismatch. "
+            "Flags two classes — feature-as-bug_fix and non-empty-affected_files with "
+            "a null scope_estimate — and NEVER blocks routing. Also runs automatically "
+            "as a pre-route pass inside 'planning-lane route'."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(classification_validate_parser)
+    classification_validate_parser.set_defaults(func=cmd_classification_validate)
 
     # self-test
     self_test_parser = subparsers.add_parser('self-test', help='Verify manage-status health', allow_abbrev=False)

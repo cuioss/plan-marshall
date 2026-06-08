@@ -51,6 +51,10 @@ phase_6:
     - lessons-capture
     - branch-cleanup
     - archive-plan
+
+execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timestamp}:
+  - quality_check,5-execute,executed,12000,8,4200,2026-06-08T10:15:00+00:00
+  - create-pr,6-finalize,skipped,0,0,0,2026-06-08T10:42:00+00:00
 ```
 
 ### Schema Fields
@@ -62,6 +66,7 @@ phase_6:
 | `phase_5.early_terminate` | bool | If `true`, Phase 5 transitions directly to Phase 6 without running tasks (analysis-only plans with empty affected_files) |
 | `phase_5.verification_steps` | list[string] | Ordered list of Phase 5 verification step IDs (e.g., `quality-gate`, `module-tests`, `coverage`). Empty list means no verification needed (e.g., docs-only plans) |
 | `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `commit-push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `archive-plan`, `record-metrics`, `lessons-integration`. CI completion is a dispatcher-resolved precondition declared via `requires: [ci-complete]` on consumer step frontmatters (see `phase-6-finalize/SKILL.md` Step 3 § "Precondition resolution") — it is not itself a step in the canonical set. |
+| `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms` (default `0`), and an ISO-8601 `timestamp`. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
 
 ---
 
@@ -83,7 +88,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   [--recipe-key {recipe_key}] \
   [--affected-files-count {N}] \
   [--phase-5-steps {step1,step2,...}] \
-  [--phase-6-steps {step1,step2,...}]
+  [--phase-6-steps {step1,step2,...}] \
+  [--commit-strategy {per_plan|per_deliverable|none}]
 ```
 
 **Parameters**:
@@ -95,6 +101,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--affected-files-count` (optional, default 0): Count of affected files surfaced by the outline; used by the `early_terminate` rule
 - `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs from `marshal.json` (e.g., `quality-gate,module-tests,coverage`). The decision matrix selects a subset. If omitted, defaults to `quality-gate,module-tests`.
 - `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `commit-push,create-pr,automated-review,sonar-roundtrip,lessons-capture,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
+- `--commit-strategy` (optional, default `per_plan`): `per_plan|per_deliverable|none` — the resolved commit strategy from phase-5-execute config. When `none`, `commit-push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_strategy_none` pre-filter before the matrix runs.
 
 **Output** (TOON):
 ```toon
@@ -109,6 +116,19 @@ phase_5:
 phase_6:
   steps_count: 6
 rule_fired: surgical_tech_debt
+commit_strategy: per_plan
+commit_push_omitted: false
+pre_push_quality_gate_omitted: false
+pre_submission_self_review_omitted: false
+simplify_omitted: true
+scope_gated_finalize_dropped[0]:
+lightweight_track_override: false
+ceremony_finalize_gates:
+  self_review: auto
+  qgate: auto
+  plugin_doctor: auto
+ceremony_finalize_forced_in[0]:
+ceremony_finalize_forced_out[0]:
 ```
 
 ### read
@@ -121,6 +141,51 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 ```
 
 **Output** (TOON): the full manifest content (see schema above), wrapped with `status: success` and echoed `plan_id`.
+
+### record-step
+
+Append one per-step execution record (outcome + token attribution) to the manifest's `execution_log[]` section. The manifest MUST already exist (composed by `phase-4-plan` Step 8b); `record-step` returns `file_not_found` otherwise.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  record-step \
+  --plan-id {plan_id} \
+  --step-id {step_id} \
+  --phase {5-execute|6-finalize} \
+  --outcome {executed|skipped|error} \
+  [--total-tokens {N}] \
+  [--tool-uses {N}] \
+  [--duration-ms {N}]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--step-id` (required): Step identifier being recorded (e.g., a phase-5 verification step ID or a phase-6 finalize step ID)
+- `--phase` (required): `5-execute|6-finalize` — the phase the step ran in
+- `--outcome` (required): `executed|skipped|error` — whether the step ran, was skipped, or errored
+- `--total-tokens` (optional, default `0`): Total tokens attributed to the step
+- `--tool-uses` (optional, default `0`): Tool-use count attributed to the step
+- `--duration-ms` (optional, default `0`): Wall-clock duration in milliseconds
+
+Each call appends exactly one row to `execution_log[]` (an ordered append log, not a keyed map) and emits one `decision.log` line via the in-process `_emit_decision_log` helper. Re-invocation appends another row deterministically, so every dispatch of a step is recorded. This makes per-step execution metadata loggable per-plan deterministically rather than relying on the fragile orchestrator `<usage>`-forwarding boundary call.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+file: execution.toon
+recorded: true
+step_id: quality_check
+phase: 5-execute
+outcome: executed
+total_tokens: 12000
+tool_uses: 8
+duration_ms: 4200
+timestamp: 2026-06-08T10:15:00+00:00
+execution_log_count: 1
+```
+
+On a missing manifest: `status: error`, `error: file_not_found`. On an invalid `--phase` / `--outcome` value: `status: error`, `error: invalid_phase` / `invalid_outcome`.
 
 ### validate
 
@@ -225,6 +290,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 |---------|------------|-------------|
 | `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps]` | Compose and write execution.toon |
 | `read` | `--plan-id` | Read manifest as TOON |
+| `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
 | `validate` | `--plan-id [--phase-5-steps] [--phase-6-steps]` | Validate manifest schema + step IDs |
 | `validate-loadable` | `--plan-id (--step-id ID \| --all)` | Verify standards file presence for built-in `phase_6.steps` entries |
 
@@ -241,6 +307,8 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `invalid_change_type` | --change-type not in the valid enum |
 | `invalid_scope_estimate` | --scope-estimate not in the valid enum |
 | `invalid_track` | --track not `simple` or `complex` |
+| `invalid_phase` | `record-step` --phase not `5-execute` or `6-finalize` |
+| `invalid_outcome` | `record-step` --outcome not `executed`, `skipped`, or `error` |
 | `invalid_manifest` | Manifest schema invalid or step IDs unknown |
 | `invalid_arguments` | `validate-loadable` invoked without exactly one of `--step-id` / `--all` |
 
@@ -272,6 +340,17 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest read \
   --plan-id PLAN_ID
+```
+
+### record-step
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest record-step \
+  --plan-id PLAN_ID \
+  --step-id STEP_ID \
+  --phase {5-execute|6-finalize} \
+  --outcome {executed|skipped|error} \
+  [--total-tokens N] [--tool-uses N] [--duration-ms N]
 ```
 
 ### validate
@@ -318,6 +397,20 @@ Before the seven-row matrix and the bot-enforcement guard, the composer applies 
 
 The composer emits one `decision.log` line per scope-gated subtraction (canonical prefix `(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction`) and surfaces `scope_gated_finalize_dropped` and `lightweight_track_override` in the `compose` result for observability.
 
+### ceremony_policy.finalize selection (`ceremony_finalize_selection`)
+
+After the seven-row matrix produces the final `phase_6.steps` (and after `execution_tier` routing), and before the bot-enforcement guard, the composer applies the three `ceremony_policy.finalize` run-at-all gates — each `always|never|auto` — to force their finalize steps in or out:
+
+| Gate | Finalize step | `never` → drop · `always` → force-include · `auto` → defer |
+|------|---------------|------------------------------------------------------------|
+| `self_review` | `finalize-step-pre-submission-self-review` | force the pre-submission structural + cognitive self-review |
+| `qgate` | `pre-push-quality-gate` | force the finalize blocking-findings re-capture |
+| `plugin_doctor` | `finalize-step-plugin-doctor` | force the structural marketplace lint before push |
+
+`always` is the only path that re-adds a step the `scope_gated_finalize` pre-filter dropped — an operator-set `always` overrides the implicit scope gate. Gate values are resolved from `marshal.json::ceremony_policy.finalize` with `ceremony_policy.overrides[]` applied against the plan facts (`scope_estimate` / `plan_source` / `change_type`). The transform NEVER touches `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is preserved verbatim regardless of any ceremony gate value.
+
+The composer emits one `decision.log` line per forced change (canonical prefix `(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection`) and surfaces `ceremony_finalize_gates`, `ceremony_finalize_forced_in`, and `ceremony_finalize_forced_out` in the `compose` result for observability. The full rule (gate→step map, override resolution, `automated-review` carve-out, post-matrix-transform rationale) is documented in [standards/decision-rules.md](standards/decision-rules.md) § "ceremony_policy.finalize Selection". The `ceremony_policy.finalize` schema itself (run-at-all enum, footgun catalogue) is owned by [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) § ceremony_policy.
+
 ---
 
 ## Integration
@@ -327,6 +420,8 @@ The composer emits one `decision.log` line per scope-gated subtraction (canonica
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | `phase-4-plan` | compose | Emit manifest as terminal step before phase transition (Step 8b) |
+| `phase-5-execute` | record-step | Append a per-step execution-log row (outcome + token attribution) after each verification step dispatches |
+| `phase-6-finalize` | record-step | Append a per-step execution-log row (outcome + token attribution) after each finalize step dispatches |
 
 ### Consumers
 

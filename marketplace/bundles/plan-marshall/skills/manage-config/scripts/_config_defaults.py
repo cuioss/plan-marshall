@@ -204,7 +204,6 @@ def validate_per_deliverable_build(value: str) -> None:
 
 DEFAULT_PLAN_EXECUTE = {
     'commit_strategy': 'per_plan',
-    'finalize_without_asking': True,
     'verification_max_iterations': 5,
     # Per-deliverable build depth gating phase-5-execute's chain-tail focused
     # build (Step 10). Enum: see VALID_PER_DELIVERABLE_BUILD /
@@ -276,30 +275,9 @@ DEFAULT_PLAN_FINALIZE = {
     'max_iterations': 3,
     'review_bot_buffer_seconds': 180,
     'pr_merge_strategy': 'squash',
-    # Symmetric counterpart to phase-5-execute's `finalize_without_asking=True`
-    # default. When False (default), the dispatcher halts at every loop_back
-    # outcome from a phase-6-finalize step (FIX disposition, pr-comment-overflow,
-    # or sonar-roundtrip FIX) and returns control to the user — the conservative
-    # interactive shape. Set to True to opt into the full unattended cycle where
-    # a loop_back outcome re-dispatches the execute pipeline inline (execute-task
-    # → mark done → transition 5-execute → 6-finalize via finalize_without_asking)
-    # and re-enters the finalize loop, capped by max_iterations.
-    'loop_back_without_asking': False,
-    # Gates the final `pr merge --delete-branch` step in the branch-cleanup
-    # workflow independently of the pre-rebase auto-proceed gate (driven by
-    # `auto_rebase_threshold` in branch-cleanup.md). Default True is
-    # auto-merge after CI, coordinated via the cross-plan merge-lock so
-    # concurrent plans serialize safely on the merge-to-main critical section
-    # (the lock is precisely what makes auto-merge a safe default). Set False
-    # to opt into the conservative interactive shape — after CI passes, the
-    # operator is prompted before merging. The auto-merge fallback path
-    # (`pr merge` -> `pr auto-merge` on branch-protection error) is unaffected
-    # when an explicit "Yes, merge" consent (or the `auto_merge_after_ci == true`
-    # bypass) was given; it does NOT activate on a deferred "No, skip merge".
-    # This flag is a plain boolean — NOT a tri-state.
-    'auto_merge_after_ci': True,
     # Threshold gating the pre-rebase auto-proceed decision in branch-cleanup.md,
-    # orthogonal to `auto_merge_after_ci` (which gates the post-CI merge). The
+    # orthogonal to `ceremony_policy.automation.auto_merge_after_ci` (which gates
+    # the post-CI merge). The
     # value `no_overlap_only` permits the auto-rebase to proceed only when the
     # rebase would touch a disjoint file set; any overlap defers to the operator.
     # branch-cleanup.md reads this row via
@@ -328,6 +306,142 @@ DEFAULT_PLAN_FINALIZE = {
     'lightweight_track_override': False,
     'steps': list(BUILT_IN_FINALIZE_STEPS),
 }
+
+# =============================================================================
+# Ceremony policy (top-level `ceremony_policy` in marshal.json)
+# =============================================================================
+#
+# A lifecycle-wide policy block, sibling to `plan` / `ci` / `project`, with two
+# orthogonal axes:
+#
+# Axis 1 — run-at-all (`auto|always|never` per gate): does the gate execute?
+#   - `planning.deep_lane`    — does the precondition-driven deep lane run
+#                               (consumed by the phase-1-init lane router).
+#   - `planning.revalidation` — does the premise / narrative-vs-code safety
+#                               check run (consumed by the light lane + deep
+#                               refine).
+#   - `planning.escalation`   — does the hard-escalation safety ratchet stay
+#                               live (DQ3 explosion / build-break / premise).
+#                               `auto` keeps it live; `never` is the explicit
+#                               full-speed-full-risk opt-in (itself a footgun).
+#   - `planning.qgate`        — does the planning-time q-gate validation run
+#                               (consumed by the deep-lane outline dispatch).
+#   - `finalize.self_review`  — pre-submission structural + cognitive
+#                               self-review (consumed by manifest finalize
+#                               step-selection).
+#   - `finalize.qgate`        — finalize blocking-findings re-capture (the
+#                               highest-risk footgun: `never` can mask real
+#                               build/test failures and push a red tree).
+#   - `finalize.plugin_doctor`— structural marketplace lint before push.
+#
+# Axis 2 — automation (`bool`): once a gate has run, proceed without asking?
+# The three automation knobs (`finalize_without_asking`,
+# `loop_back_without_asking`, `auto_merge_after_ci`) live ONLY here under
+# `ceremony_policy.automation` — every reader resolves them via
+# `manage-config ... ceremony_policy get --field automation.<knob>`. Defaults
+# preserve the historical values.
+#
+# `overrides[]` — condition-scoped rows that win over the section values,
+# matched on plan facts (`scope_estimate`, `plan_source`, `change_type`). Each
+# row is `{when: {<fact>: <value>, ...}, set: {<dotted.path>: <value>, ...}}`.
+
+# Run-at-all axis enum. Each gate field takes one of these values.
+VALID_CEREMONY_RUN_AT_ALL = ('auto', 'always', 'never')
+
+# The run-at-all gate fields, grouped by section. Used by validation and by the
+# footgun catalogue below.
+CEREMONY_PLANNING_GATES = ('deep_lane', 'revalidation', 'escalation', 'qgate')
+CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'plugin_doctor')
+
+# Footgun catalogue: dotted gate paths whose `never` value disables a safety net
+# and therefore MUST emit a set-time `[WARNING]` rather than silently applying.
+# Maps each footgun path to the human-readable name of the safety it disables —
+# the warning message names it explicitly so the operator owns the risk
+# knowingly. `finalize.qgate` is the highest-risk footgun (masks real failures);
+# it is flagged by CEREMONY_HARD_FOOTGUNS below.
+CEREMONY_FOOTGUNS = {
+    'planning.revalidation': 'the premise / narrative-vs-code safety check',
+    'planning.deep_lane': 'the precondition-driven deep lane',
+    'planning.escalation': 'the hard-escalation safety ratchet (full-speed-full-risk)',
+    'finalize.self_review': 'the pre-submission structural + cognitive self-review',
+    'finalize.qgate': 'finalize blocking-findings re-capture (can mask real build/test failures)',
+    'finalize.plugin_doctor': 'structural marketplace lint before push',
+}
+
+# Highest-risk footgun set: paths whose `never` value can push a red tree. The
+# warning tier for these names the masking risk explicitly.
+CEREMONY_HARD_FOOTGUNS = frozenset({'finalize.qgate'})
+
+DEFAULT_CEREMONY_POLICY = {
+    'planning': {
+        'deep_lane': 'auto',
+        'revalidation': 'auto',
+        'escalation': 'auto',
+        'qgate': 'auto',
+    },
+    'finalize': {
+        'self_review': 'auto',
+        'qgate': 'auto',
+        'plugin_doctor': 'auto',
+    },
+    # Automation axis — the three boolean automation knobs, with their
+    # historical defaults preserved.
+    'automation': {
+        'finalize_without_asking': True,
+        'loop_back_without_asking': False,
+        'auto_merge_after_ci': True,
+    },
+    'overrides': [],
+}
+
+
+def validate_ceremony_policy(policy: dict) -> None:
+    """Validate a ``ceremony_policy`` block's run-at-all gate values.
+
+    Each gate field under ``planning`` / ``finalize`` must be one of
+    :data:`VALID_CEREMONY_RUN_AT_ALL` (``auto|always|never``). Unknown gate
+    keys and malformed sub-blocks are rejected. The ``automation`` axis is
+    boolean-only; ``overrides`` must be a list. The validator is value-only —
+    it does NOT emit footgun warnings (that is a set-time side-effect, see
+    :func:`_cmd_finalize_steps.ceremony_set_footgun_warnings`).
+
+    Raises:
+        ValueError: on any invalid enum value, unknown gate key, or malformed
+            sub-block.
+    """
+    if not isinstance(policy, dict):
+        raise ValueError('ceremony_policy must be a dict')
+
+    for section, allowed_gates in (
+        ('planning', CEREMONY_PLANNING_GATES),
+        ('finalize', CEREMONY_FINALIZE_GATES),
+    ):
+        block = policy.get(section, {})
+        if not isinstance(block, dict):
+            raise ValueError(f"ceremony_policy.{section} must be a dict")
+        for gate, value in block.items():
+            if gate not in allowed_gates:
+                raise ValueError(
+                    f"Unknown ceremony_policy.{section} gate '{gate}'. "
+                    f"Allowed: {list(allowed_gates)}"
+                )
+            if value not in VALID_CEREMONY_RUN_AT_ALL:
+                raise ValueError(
+                    f"Invalid ceremony_policy.{section}.{gate} '{value}'. "
+                    f"Allowed: {list(VALID_CEREMONY_RUN_AT_ALL)}"
+                )
+
+    automation = policy.get('automation', {})
+    if not isinstance(automation, dict):
+        raise ValueError('ceremony_policy.automation must be a dict')
+    for key, value in automation.items():
+        if not isinstance(value, bool):
+            raise ValueError(f"ceremony_policy.automation.{key} must be a bool")
+
+    overrides = policy.get('overrides', [])
+    if not isinstance(overrides, list):
+        raise ValueError('ceremony_policy.overrides must be a list')
+
 
 # CI integration defaults (consumed by tools-integration-ci/scripts/ci_base.py).
 #
@@ -376,6 +490,7 @@ def get_default_config() -> dict:
         'skill_domains': {'system': system_domain},
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
         'ci': copy.deepcopy(DEFAULT_CI),
+        'ceremony_policy': copy.deepcopy(DEFAULT_CEREMONY_POLICY),
         'plan': {
             'open_in_ide': DEFAULT_OPEN_IN_IDE,
             'coverage': copy.deepcopy(DEFAULT_PLAN_COVERAGE),

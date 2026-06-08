@@ -80,19 +80,27 @@ _cmd_quality_phases_mod = _load_module(
 )
 
 
-def test_default_plan_finalize_includes_auto_merge_after_ci():
-    """DEFAULT_PLAN_FINALIZE must declare auto_merge_after_ci with default True."""
-    # Arrange
-    finalize_defaults = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+def test_ceremony_automation_includes_auto_merge_after_ci():
+    """ceremony_policy.automation must declare auto_merge_after_ci with default True.
 
-    # Act / Assert
-    assert 'auto_merge_after_ci' in finalize_defaults, (
-        'auto_merge_after_ci must be schema-registered in DEFAULT_PLAN_FINALIZE'
+    The knob was migrated out of the loose DEFAULT_PLAN_FINALIZE location into the
+    top-level ceremony_policy.automation block — config-doc-contract: no loose-path
+    survivors.
+    """
+    # Arrange
+    automation = _config_defaults_mod.DEFAULT_CEREMONY_POLICY['automation']
+
+    # Act / Assert — present in the migrated home, absent from the loose block
+    assert 'auto_merge_after_ci' in automation, (
+        'auto_merge_after_ci must be schema-registered in ceremony_policy.automation'
     )
-    assert finalize_defaults['auto_merge_after_ci'] is True, (
+    assert automation['auto_merge_after_ci'] is True, (
         'auto_merge_after_ci default must be True '
         '(auto-merge after CI, serialized via the cross-plan merge-lock; '
         'set False to prompt on every merge)'
+    )
+    assert 'auto_merge_after_ci' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE, (
+        'auto_merge_after_ci must NOT survive in the loose DEFAULT_PLAN_FINALIZE block'
     )
 
 

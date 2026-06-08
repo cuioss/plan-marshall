@@ -8,13 +8,14 @@ Visual summary of the phase-3-outline two-track workflow for human reference.
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  Step 1: Load Inputs                                              │
-│          → Read track from references.json (set by phase-2-refine)      │
+│          → Read planning_lane from status.metadata (set at phase-1-init) │
 │          → Read request (clarified_request or body)              │
 │          → Read module_mapping, domains, compatibility           │
 │                                                                   │
-│  Step 2: Route by Track                                           │
+│  Step 2: Route by Lane                                            │
 │          ┌──────────────────┬──────────────────┐                 │
-│          │  track = simple  │  track = complex │                 │
+│          │  lane = light    │  lane = deep     │                 │
+│          │  (track=simple)  │  (track=complex) │                 │
 │          │        ↓         │        ↓         │                 │
 │          │   Steps 3-5      │   Steps 6-9      │                 │
 │          └──────────────────┴──────────────────┘                 │

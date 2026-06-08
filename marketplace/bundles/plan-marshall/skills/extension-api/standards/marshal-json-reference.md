@@ -25,11 +25,19 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `plan.phase-4-plan.execute_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-5-execute.commit_strategy` | User config | phase-5-execute | - |
 | `plan.phase-5-execute.steps` | Built-in + `provides_verify_steps()` | phase-4-plan, phase-5-execute | [ext-point-verify-steps.md](ext-point-verify-steps.md) |
-| `plan.phase-5-execute.finalize_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-5-execute.verification_max_iterations` | User config | phase-5-execute | - |
 | `plan.phase-6-finalize.steps` | Built-in + `provides_finalize_steps()` | phase-6-finalize | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) |
-| `plan.phase-6-finalize.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.max_iterations` | User config | phase-6-finalize (loop-back ceiling) | - |
+
+## Ceremony Policy (marshal.json)
+
+Lifecycle-wide policy under the top-level `ceremony_policy.*` block — sibling to `plan` / `ci` / `project`. The `automation.*` axis carries the three auto-continuation knobs migrated out of the loose `plan.phase-{5-execute,6-finalize}` locations; read at runtime via `manage-config ceremony-policy get --field automation.<knob>`. See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Section: ceremony_policy" for the full schema (run-at-all gates + footgun catalogue).
+
+| Path | Set By | Used By | Extension Point Doc |
+|------|--------|---------|---------------------|
+| `ceremony_policy.automation.finalize_without_asking` | User config | plan-marshall orchestrator | - |
+| `ceremony_policy.automation.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
+| `ceremony_policy.automation.auto_merge_after_ci` | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |
 
 ## Project Configuration (marshal.json)
 

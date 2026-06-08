@@ -43,7 +43,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 The bulk of project configuration. Canonical schema and field reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
-`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, `system`, and `ci` sections. Each phase block holds fields specific to that phase. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_strategy`, `verification_max_iterations`, `per_deliverable_build`, `per_task_budget_reserve_tokens`, `max_iterations`, `review_bot_buffer_seconds`, `pr_merge_strategy`, `auto_merge_after_ci`, `auto_rebase_threshold`, `lightweight_track_override`, `pre_push_quality_gate`, `open_in_ide`, the `system.retention.*` knobs, `ci.checks_wait_timeout_seconds`, the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, `system`, `ci`, and `ceremony_policy` sections. Each phase block holds fields specific to that phase; `ceremony_policy` carries lifecycle-wide policy (run-at-all gates + the three auto-continuation knobs). The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_strategy`, `verification_max_iterations`, `per_deliverable_build`, `per_task_budget_reserve_tokens`, `max_iterations`, `review_bot_buffer_seconds`, `pr_merge_strategy`, the `ceremony_policy.automation.*` auto-continuation knobs, `auto_rebase_threshold`, `lightweight_track_override`, `pre_push_quality_gate`, `open_in_ide`, the `system.retention.*` knobs, `ci.checks_wait_timeout_seconds`, the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
 [#effort-and-models]
 === Effort and model selection
@@ -62,18 +62,64 @@ Boolean fields under each phase that decide whether the next-phase transition pa
 | `plan.phase-1-init.init_without_asking` | `true` | …from `phase-1-init` to `phase-2-refine`. Set to `false` to stop after init and review the captured request before refinement starts.
 | `plan.phase-3-outline.plan_without_asking` | `false` | …from the outline review checkpoint to task creation.
 | `plan.phase-4-plan.execute_without_asking` | `true` | …from `phase-4-plan` to `phase-5-execute`.
-| `plan.phase-5-execute.finalize_without_asking` | `true` | …from `phase-5-execute` to `phase-6-finalize` (forward direction).
-| `plan.phase-6-finalize.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops.
-| `plan.phase-6-finalize.auto_merge_after_ci` | `true` | …from a green CI run to the `pr merge --delete-branch` step. `true` (default) merges automatically once CI passes, serialised across concurrent plans by the cross-plan merge-lock; `false` prompts the operator before merging.
+| `ceremony_policy.automation.finalize_without_asking` | `true` | …from `phase-5-execute` to `phase-6-finalize` (forward direction).
+| `ceremony_policy.automation.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops.
+| `ceremony_policy.automation.auto_merge_after_ci` | `true` | …from a green CI run to the `pr merge --delete-branch` step. `true` (default) merges automatically once CI passes, serialised across concurrent plans by the cross-plan merge-lock; `false` prompts the operator before merging.
 |===
 
-Set via `/marshall-steward` → Configuration → Review Gates, or directly:
+The first three gates live under their phase block; the three auto-continuation knobs (`finalize_without_asking`, `loop_back_without_asking`, `auto_merge_after_ci`) live under the top-level `ceremony_policy.automation` block. Set the phase-block gates via `/marshall-steward` → Configuration → Review Gates, or directly:
 
 [source,bash]
 ----
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init set --field init_without_asking --value false
 ----
+
+Read or set the `ceremony_policy.automation` knobs via the dedicated `ceremony-policy` verb:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ceremony-policy get --field automation.finalize_without_asking
+
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ceremony-policy set --field automation.auto_merge_after_ci --value false
+----
+
+[#ceremony-run-at-all-gates]
+=== Ceremony run-at-all gates
+
+Separate from the `automation.*` knobs above (which decide *whether to pause* once a gate has run), the `ceremony_policy.planning.*` and `ceremony_policy.finalize.*` gates decide *whether each gate runs at all*. Each gate is a tri-state enum — `auto` (default), `always`, or `never`:
+
+* `auto` — defer to the existing decision machinery (the phase-1-init lane router for the planning gates, the manifest composer for the finalize gates). This is the historical behaviour.
+* `always` — force the gate in, overriding the machinery that would otherwise skip it. For the finalize gates this overrides the manifest composer's `scope_gated_finalize` drop on surgical / single-module plans.
+* `never` — skip the gate. For the gates marked *footgun* below this disables a safety net, so a `never` set emits a set-time `[WARNING]` naming the disabled safety; `finalize.qgate` is the highest-risk (it can mask real build/test failures and push a red tree).
+
+[cols="1,1,1,3", options="header"]
+|===
+| Config key | Default | Footgun? | What the gate controls
+
+| `ceremony_policy.planning.deep_lane` | `auto` | yes | Whether the precondition-driven deep planning lane runs. `always` forces deep; `never` forces light.
+| `ceremony_policy.planning.revalidation` | `auto` | yes | Whether the premise / narrative-vs-code safety check runs.
+| `ceremony_policy.planning.escalation` | `auto` | yes | Whether the hard-escalation safety ratchet stays live. `never` is the explicit full-speed-full-risk opt-in.
+| `ceremony_policy.planning.qgate` | `auto` | no | Whether the planning-time Q-Gate validation runs.
+| `ceremony_policy.finalize.self_review` | `auto` | yes | Whether the pre-submission structural + cognitive self-review is selected into the execution manifest.
+| `ceremony_policy.finalize.qgate` | `auto` | **hard** | Whether the finalize blocking-findings re-capture runs. Highest-risk footgun — `never` can push a red tree.
+| `ceremony_policy.finalize.plugin_doctor` | `auto` | yes | Whether the structural marketplace lint runs before push.
+|===
+
+Read or set the run-at-all gates with the same `ceremony-policy` verb (dotted `<section>.<gate>` path):
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ceremony-policy get --field finalize.self_review
+
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ceremony-policy set --field finalize.plugin_doctor --value always
+----
+
+Condition-scoped overrides under `ceremony_policy.overrides[]` win over the section values for plans whose facts (`scope_estimate` / `plan_source` / `change_type`) match the row's `when` clause. See the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] § ceremony_policy for the override shape and the footgun catalogue.
 
 [#step-configuration]
 === Step configuration (verify + finalize pipelines)

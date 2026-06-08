@@ -109,11 +109,17 @@ def test_sync_defaults_preserves_user_set_keys(plan_context):
 
 
 def test_sync_defaults_preserves_user_set_false(plan_context):
-    """A user-set False survives even when the default value is also False."""
-    # Arrange — user explicitly disabled auto_merge_after_ci (matches default False)
+    """A user-set False survives even though the default value is True.
+
+    The auto_merge_after_ci knob lives under ceremony_policy.automation; the
+    deep-merge contract preserves a user override by key-existence (no value
+    comparison), so an explicit False survives the True default and is not
+    reported as added.
+    """
+    # Arrange — user explicitly disabled auto_merge_after_ci (default is True)
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'auto_merge_after_ci': False}}},
+        {'ceremony_policy': {'automation': {'auto_merge_after_ci': False}}},
     )
 
     # Act
@@ -122,8 +128,8 @@ def test_sync_defaults_preserves_user_set_false(plan_context):
     # Assert — present means "key exists"; no value comparison, no re-add
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
-    assert config['plan']['phase-6-finalize']['auto_merge_after_ci'] is False
-    assert 'plan.phase-6-finalize.auto_merge_after_ci' not in result['added']
+    assert config['ceremony_policy']['automation']['auto_merge_after_ci'] is False
+    assert 'ceremony_policy.automation.auto_merge_after_ci' not in result['added']
 
 
 def test_sync_defaults_adds_deeply_nested_missing_key(plan_context):

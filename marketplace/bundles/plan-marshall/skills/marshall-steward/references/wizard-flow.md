@@ -344,11 +344,11 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field finalize_without_asking --value {true|false}
+  ceremony-policy set --field automation.finalize_without_asking --value {true|false}
 ```
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set --field loop_back_without_asking --value {true|false}
+  ceremony-policy set --field automation.loop_back_without_asking --value {true|false}
 ```
 
 The `loop_back_without_asking` knob is the structural counterpart to `finalize_without_asking`: forward gates the `5-execute → 6-finalize` transition, reverse gates the `6-finalize → 5-execute` inline re-dispatch when a phase-6-finalize step records `outcome: loop_back` (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX). Defaults are intentionally asymmetric — `finalize_without_asking=true` (forward auto-continue) and `loop_back_without_asking=false` (reverse halt-and-prompt). Opt into `loop_back_without_asking=true` for the full unattended cycle in both directions. Reverse loop-back is also bounded by `phase-6-finalize.max_iterations` (default 3) — the dispatcher halts and prompts the user when the cap is reached even with the flag set.
