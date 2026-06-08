@@ -170,7 +170,8 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
     "branch_naming": {
       "working_prefixes": ["feature/", "fix/", "chore/"],
       "ci_allowlist": ["main", "feature/*", "fix/*", "chore/*", "dependabot/**"]
-    }
+    },
+    "sanctioned_conftest": ["test/conftest.py", "test/adapters/conftest.py"]
   }
 }
 ```
@@ -182,6 +183,7 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 | `default_base_branch` | string | "main" | The project's canonical base branch. `phase-1-init` seeds `references.base_branch` from it; the wizard derives the suggestion from `origin/HEAD`, falling back to `main`. Per-plan overrides via `manage-references set --field base_branch`. |
 | `branch_naming.working_prefixes` | list[string] | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes. `manage-status create` validates `--worktree-branch` against this set. The literals live in `constants.py` (`DEFAULT_BRANCH_PREFIX_WORKING`) as the fail-closed fallback. |
 | `branch_naming.ci_allowlist` | list[string] | `["main", "feature/*", "fix/*", "chore/*", "dependabot/**"]` | The CI push-trigger allowlist (glob form), pinned by a structural test against `.github/workflows/python-verify.yml`. Source-of-truth literals in `constants.py` (`DEFAULT_CI_BRANCH_ALLOWLIST`). |
+| `sanctioned_conftest` | list[string] | `["test/conftest.py", "test/adapters/conftest.py"]` | The allow-list of `conftest.py` paths that the `execute-task` shadow-risk rewrite step MUST NOT redirect to a sibling `_fixtures.py`. A sibling `conftest.py` nested under a skill test directory shadows the top-level `test/conftest.py`; any matching `step.target` not in this list is rewritten before execution. Read via `manage-config project get --field sanctioned_conftest`; the fallback when absent is the `DEFAULT_PROJECT` default shown here. |
 
 ## Section: skill_domains
 
