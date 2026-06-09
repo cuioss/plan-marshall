@@ -95,6 +95,16 @@ Cross-group feedback (TASK-N references) requires sequential action between grou
 
 - **FIX** — allocate fix task FIRST (so the task number is known for the thread reply), then post the thread reply chain, then resolve the finding.
 
+  **Ground-truth precondition (runs BEFORE `prepare-add`).** When the FIX would remove or rewrite a passage the finding cites — a `review_body` / comment finding quoting specific source text — first confirm that the cited passage still exists in the current worktree. Read `{finding.file_path}` (or `Grep` for the cited text within it) and check whether the quoted passage is still present. If the passage is ABSENT (already removed by a prior triage iteration or by a HEAD advance), do NOT allocate a fix task — a no-op fix task for a passage that is no longer present cannot make progress and re-loops finalize. Instead, resolve the finding as `taken_into_account` and skip the rest of this FIX body:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution taken_into_account \
+    --detail "Cited passage no longer present in worktree — resolved without fix task to avoid a no-op finalize loop"
+  ```
+
+  When the cited passage IS still present (or the finding cites no specific passage), proceed with the standard FIX flow below unchanged.
+
   Allocate via the two-step prepare-add → commit-add flow:
 
   ```bash

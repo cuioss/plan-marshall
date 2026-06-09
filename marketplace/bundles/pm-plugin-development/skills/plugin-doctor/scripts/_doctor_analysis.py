@@ -390,18 +390,22 @@ def extract_issues_from_notation_staleness_analysis(findings: list[dict]) -> lis
 
     The analyzer returns findings with the native shape
     (``rule_id``/``type``/``file``/``line``/``severity``/``fixable``/
-    ``details``). Plugin-doctor's downstream categorizer keys on
-    ``type``/``fixable`` (see ``categorize_all_issues``), so this helper
-    normalises each finding to the shared schema while preserving
-    rule-specific fields under ``details``.
+    ``details``). It emits TWO rules — ``notation-staleness`` (stale script
+    segment) and ``notation-bundle-skill-drift`` (non-resolving bundle / skill
+    segment); each finding carries its own ``rule_id``/``type``, so this helper
+    preserves them rather than collapsing both to a single rule key. Plugin-
+    doctor's downstream categorizer keys on ``type``/``fixable`` (see
+    ``categorize_all_issues``), so this helper normalises each finding to the
+    shared schema while preserving rule-specific fields under ``details``.
     """
     issues: list[dict] = []
     for finding in findings:
         details = finding.get('details', {})
+        rule_id = finding.get('rule_id', NOTATION_STALENESS_RULE_ID)
         issues.append(
             {
-                'type': NOTATION_STALENESS_RULE_ID,
-                'rule_id': NOTATION_STALENESS_RULE_ID,
+                'type': finding.get('type', rule_id),
+                'rule_id': rule_id,
                 'file': finding.get('file', ''),
                 'line': finding.get('line'),
                 'severity': finding.get('severity', 'error'),

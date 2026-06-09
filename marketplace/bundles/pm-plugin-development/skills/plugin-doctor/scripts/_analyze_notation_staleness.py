@@ -25,12 +25,30 @@ For each three-part executor notation found, it resolves the target
 ``scripts/`` directory relative to the marketplace root and verifies a
 matching ``{script}.py`` file exists.
 
+Two-rule coverage
+-----------------
+This module emits two rules over the same three-segment notation surface:
+
+- ``notation-staleness`` — the third (script) segment has no matching
+  ``{script}.py`` file under an otherwise-resolving
+  ``bundles/{bundle}/skills/{skill}/scripts/`` directory.
+- ``notation-bundle-skill-drift`` — the FIRST or SECOND segment does not
+  resolve: the ``{bundle}`` directory or the ``{skill}`` directory is missing
+  on disk. This drift is only evaluated for notations anchored to the executor
+  invocation prefix (``python3 .plan/execute-script.py {notation}``), because a
+  bare three-segment token whose bundle/skill is unknown is indistinguishable
+  from an incidental colon-joined token (URL, timestamp, prose). Anchoring on
+  the executor prefix removes that ambiguity — anything following
+  ``execute-script.py`` is unambiguously an executor notation.
+
 Canonical hint
 --------------
 When the third segment has no matching file but the hyphen/underscore-
-flipped form does match a real file, the finding carries a
-``details.canonical_hint`` naming the corrected notation so the fix can be
-applied mechanically.
+flipped form does match a real file, the ``notation-staleness`` finding
+carries a ``details.canonical_hint`` naming the corrected notation so the fix
+can be applied mechanically. ``notation-bundle-skill-drift`` findings carry a
+``details.canonical_hint`` naming which segment (bundle or skill) failed to
+resolve.
 
 Pattern alignment
 -----------------
@@ -57,7 +75,8 @@ Public API
 - ``analyze_notation_staleness(paths, rules_filter=None)``: entry point —
   scans a skill directory (or set of files / directories) and returns
   findings.
-- ``RULE_ID``: the canonical rule key.
+- ``RULE_ID``: the canonical staleness rule key.
+- ``DRIFT_RULE_ID``: the bundle/skill drift rule key.
 """
 
 from __future__ import annotations
@@ -67,6 +86,7 @@ import re
 from pathlib import Path
 
 RULE_ID = 'notation-staleness'
+DRIFT_RULE_ID = 'notation-bundle-skill-drift'
 
 # Match a three-part executor notation following the canonical executor
 # invocation prefix ``python3 .plan/execute-script.py`` OR appearing as a
@@ -74,6 +94,15 @@ RULE_ID = 'notation-staleness'
 # The notation segments are alphanumeric plus hyphen / underscore.
 _SEGMENT = r'[A-Za-z0-9][A-Za-z0-9_-]*'
 _NOTATION_RE = re.compile(
+    rf'(?P<bundle>{_SEGMENT}):(?P<skill>{_SEGMENT}):(?P<script>{_SEGMENT})'
+)
+
+# Anchored form: a three-part notation immediately following the executor
+# invocation prefix. Anything matching here is unambiguously an executor
+# notation, so a non-resolving bundle / skill segment is real drift rather than
+# an incidental colon-joined token.
+_EXECUTOR_NOTATION_RE = re.compile(
+    rf'execute-script\.py\s+'
     rf'(?P<bundle>{_SEGMENT}):(?P<skill>{_SEGMENT}):(?P<script>{_SEGMENT})'
 )
 
@@ -130,6 +159,97 @@ def _script_exists(root: Path, bundle: str, skill: str, script: str) -> bool:
     return (scripts_dir / f'{script}.py').is_file()
 
 
+@functools.cache
+def _bundle_dir_exists(root: Path, bundle: str) -> bool:
+    """Return True when ``bundles/{bundle}/`` is a real bundle directory."""
+    return (root / 'bundles' / bundle / '.claude-plugin' / 'plugin.json').is_file()
+
+
+@functools.cache
+def _skill_dir_exists(root: Path, bundle: str, skill: str) -> bool:
+    """Return True when ``bundles/{bundle}/skills/{skill}/`` exists on disk."""
+    return (root / 'bundles' / bundle / 'skills' / skill).is_dir()
+
+
+def _scan_bundle_skill_drift(line: str, idx: int, path: Path, root: Path) -> list[dict]:
+    """Detect bundle/skill-segment drift in executor-anchored notations.
+
+    Only notations anchored to ``execute-script.py {notation}`` are evaluated —
+    the anchor removes the bundle/skill ambiguity that the bare-token path must
+    tolerate. Emits a ``notation-bundle-skill-drift`` finding when the
+    ``{bundle}`` directory or the ``{skill}`` directory does not resolve.
+    """
+    findings: list[dict] = []
+    for match in _EXECUTOR_NOTATION_RE.finditer(line):
+        bundle = match.group('bundle')
+        skill = match.group('skill')
+        script = match.group('script')
+        notation = f'{bundle}:{skill}:{script}'
+
+        if not _bundle_dir_exists(root, bundle):
+            findings.append(
+                {
+                    'rule_id': DRIFT_RULE_ID,
+                    'type': DRIFT_RULE_ID,
+                    'file': str(path),
+                    'line': idx,
+                    'severity': 'error',
+                    'fixable': False,
+                    'description': (
+                        f'Executor notation `{notation}` names bundle '
+                        f'`{bundle}`, but `bundles/{bundle}/` is not a real '
+                        f'bundle directory — the notation does not resolve '
+                        f'(notation-bundle-skill-drift)'
+                    ),
+                    'details': {
+                        'notation': notation,
+                        'bundle': bundle,
+                        'skill': skill,
+                        'script': script,
+                        'reason': 'bundle_dir_missing',
+                        'canonical_hint': (
+                            f'No bundle `{bundle}` exists under `bundles/` — '
+                            f'correct the first notation segment to a real '
+                            f'bundle name'
+                        ),
+                    },
+                }
+            )
+            continue
+
+        if not _skill_dir_exists(root, bundle, skill):
+            findings.append(
+                {
+                    'rule_id': DRIFT_RULE_ID,
+                    'type': DRIFT_RULE_ID,
+                    'file': str(path),
+                    'line': idx,
+                    'severity': 'error',
+                    'fixable': False,
+                    'description': (
+                        f'Executor notation `{notation}` names skill '
+                        f'`{skill}` in bundle `{bundle}`, but '
+                        f'`bundles/{bundle}/skills/{skill}/` does not exist — '
+                        f'the notation does not resolve '
+                        f'(notation-bundle-skill-drift)'
+                    ),
+                    'details': {
+                        'notation': notation,
+                        'bundle': bundle,
+                        'skill': skill,
+                        'script': script,
+                        'reason': 'skill_dir_missing',
+                        'canonical_hint': (
+                            f'No skill `{skill}` exists under '
+                            f'`bundles/{bundle}/skills/` — correct the second '
+                            f'notation segment to a real skill name'
+                        ),
+                    },
+                }
+            )
+    return findings
+
+
 def _scan_file(path: Path, root: Path) -> list[dict]:
     """Scan a single file and return all notation-staleness findings."""
     try:
@@ -139,7 +259,17 @@ def _scan_file(path: Path, root: Path) -> list[dict]:
 
     findings: list[dict] = []
     seen: set[tuple[int, str]] = set()
+    drift_seen: set[tuple[int, str]] = set()
     for idx, line in enumerate(text.splitlines(), start=1):
+        # Bundle/skill drift is evaluated first, over executor-anchored
+        # notations only (the anchor removes bundle/skill ambiguity).
+        for drift in _scan_bundle_skill_drift(line, idx, path, root):
+            drift_key = (idx, drift['details']['notation'])
+            if drift_key in drift_seen:
+                continue
+            drift_seen.add(drift_key)
+            findings.append(drift)
+
         for match in _NOTATION_RE.finditer(line):
             bundle = match.group('bundle')
             skill = match.group('skill')

@@ -54,11 +54,21 @@ def _make_skill(
 ) -> Path:
     """Create ``marketplace/bundles/{bundle}/skills/{skill}`` with script files.
 
+    Also writes the bundle's ``.claude-plugin/plugin.json`` so the bundle and
+    skill segments of any executor notation in the fixture resolve on disk —
+    keeping the ``notation-bundle-skill-drift`` rule silent so these tests
+    isolate the third-segment ``notation-staleness`` behaviour they target.
+
     Returns the skill directory path.
     """
-    skill_dir = (
-        tmp_path / 'marketplace' / 'bundles' / bundle / 'skills' / skill
-    )
+    bundle_dir = tmp_path / 'marketplace' / 'bundles' / bundle
+    plugin_dir = bundle_dir / '.claude-plugin'
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    plugin_json = plugin_dir / 'plugin.json'
+    if not plugin_json.exists():
+        plugin_json.write_text('{}', encoding='utf-8')
+
+    skill_dir = bundle_dir / 'skills' / skill
     scripts_dir = skill_dir / 'scripts'
     scripts_dir.mkdir(parents=True)
     for fname in script_files:

@@ -18,6 +18,18 @@ Coverage:
 * (d) ``--skip-staleness-guard`` still bypasses every refusal branch.
 
 Plus focused unit tests for the fingerprint helper (i)–(v).
+
+The single-digest fingerprint is supplemented by a file-level content-hash
+check (``_file_level_drift``) that compares the live ``target/claude/`` tree
+against the per-file hash manifest the emitter records in the sentinel's
+``file_hashes`` field, naming the specific drifted paths. Those cases keep
+the sentinel fingerprint matching (so the fingerprint branch passes) and
+write a faithful manifest for the emitted fixture tree, then introduce
+manifest-vs-live drift — a deleted manifest file (``missing``), a mutated
+manifest file (``diverged``), a live file absent from the manifest
+(``extra``) — covering the three classes individually and together, the
+intact-tree negative control, and the ``--skip-staleness-guard`` bypass of
+the file-level branch.
 """
 
 from __future__ import annotations
@@ -99,17 +111,53 @@ def _git_init_and_commit(cwd: Path, message: str = 'initial') -> None:
     subprocess.run(['git', 'commit', '-q', '-m', message], cwd=cwd, check=True)
 
 
-def _write_sentinel(cwd: Path, fingerprint: str | None) -> Path:
+def _target_file_hashes(cwd: Path) -> dict[str, str]:
+    """Compute the per-file blob-hash manifest for ``cwd/target/claude/``.
+
+    Mirrors ``marketplace.targets.claude.target._compute_emit_file_hashes``:
+    walks every regular file under the emitted ``target/claude/`` tree,
+    excludes the sentinel itself, and returns a mapping of
+    target-relative POSIX path to git blob SHA via the shared
+    ``hash_objects`` primitive. Tests use this to construct a faithful
+    manifest for an emitted fixture tree, exactly as the real emitter
+    would have written it.
+    """
+    target_root = cwd / 'target' / 'claude'
+    rel_paths: list[str] = []
+    abs_paths: list[str] = []
+    for path in sorted(target_root.rglob('*')):
+        if not path.is_file() or path.is_symlink():
+            continue
+        rel = path.relative_to(target_root).as_posix()
+        if rel == _SENTINEL_NAME:
+            continue
+        rel_paths.append(rel)
+        abs_paths.append(str(path.resolve()))
+    if not rel_paths:
+        return {}
+    shas = hash_objects(target_root, abs_paths)
+    return dict(zip(rel_paths, shas, strict=True))
+
+
+def _write_sentinel(
+    cwd: Path,
+    fingerprint: str | None,
+    file_hashes: dict[str, str] | None = None,
+) -> Path:
     """Write the emit-marker sentinel into ``cwd/target/claude/``.
 
     Mirrors the payload shape that ``marketplace.targets.claude.target``
     writes at the end of every successful emit. Passing ``None`` for
     ``fingerprint`` reproduces the degraded sentinel emitted by the
-    non-git fallback (the guard refuses on null too).
+    non-git fallback (the guard refuses on null too). ``file_hashes``
+    carries the per-file manifest the file-level drift check compares the
+    live target tree against; when omitted it defaults to an empty
+    manifest (no file-level entries to check).
     """
-    payload: dict[str, str | None] = {
+    payload: dict[str, object] = {
         'emit_completed_at': '2026-05-27T12:00:00+00:00',
         'source_tree_fingerprint': fingerprint,
+        'file_hashes': file_hashes if file_hashes is not None else {},
     }
     sentinel = cwd / 'target' / 'claude' / _SENTINEL_NAME
     _write(sentinel, json.dumps(payload, indent=2) + '\n')
@@ -137,7 +185,7 @@ def test_fresh_emit_with_matching_fingerprint_passes(tmp_path: Path) -> None:
     _git_init_and_commit(cwd)
 
     fingerprint = _compute_fingerprint_for(cwd)
-    _write_sentinel(cwd, fingerprint)
+    _write_sentinel(cwd, fingerprint, _target_file_hashes(cwd))
 
     cache = tmp_path / 'cache'
     result = _run('--cache-root', str(cache), cwd=cwd)
@@ -404,3 +452,187 @@ def test_fingerprint_raises_outside_git_repo(tmp_path: Path) -> None:
 
     with pytest.raises(FingerprintError):
         compute_source_tree_fingerprint(cwd)
+
+
+# =============================================================================
+# File-level content-hash drift (_file_level_drift) — per-file granularity
+# =============================================================================
+#
+# The sentinel fingerprint (step 4 of the guard) only covers tracked files
+# under marketplace/bundles/; the gitignored, TRANSFORMED target/claude/ tree
+# never contributes to it. The file-level drift check (step 5) supplements the
+# single digest by comparing every live file under target/claude/ against the
+# per-file hash manifest the emitter recorded in the sentinel's ``file_hashes``
+# field — naming the offending paths. The manifest, NOT the raw
+# marketplace/bundles/ source, is the comparison baseline because target/claude/
+# is generator output (expanded variants, variant-aware plugin.json, a
+# top-level marketplace.json) with no verbatim source counterpart. These tests
+# isolate step 5 by keeping the sentinel fingerprint matching (so step 4 passes)
+# and writing a faithful manifest for the emitted fixture tree, then introducing
+# manifest-vs-live drift — a mutated manifest file (diverged), a deleted
+# manifest file (missing), or a live file absent from the manifest (extra).
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_file_drift_missing_from_target_refuses(tmp_path: Path) -> None:
+    """A manifest entry whose live target file is deleted is named as missing.
+
+    The manifest is built from the intact emitted tree (so step 4's
+    fingerprint still matches), then a manifest-listed live file is removed
+    — the file-level check (step 5) reports it as missing from the target.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    # Manifest captures the intact emitted tree, including demo/README.md.
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    # Delete a manifest-listed live file AFTER the manifest is captured.
+    (cwd / 'target' / 'claude' / 'demo' / 'README.md').unlink()
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'drifted from its emit manifest at file level' in data['summary_message']
+    assert 'missing from target: demo/README.md' in data['summary_message']
+    # The refusal carries the regenerate hint so the operator knows the fix.
+    assert 'Regenerate with' in data['summary_message']
+    assert 'marketplace/targets/generate.py' in data['summary_message']
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_file_drift_extra_in_target_refuses(tmp_path: Path) -> None:
+    """A live target file absent from the manifest is named as extra in target.
+
+    The stray file is added AFTER the manifest is captured, so it has no
+    manifest entry — step 4 passes and the file-level check reports the
+    unaccounted-for artefact.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    # Live target carries a file the manifest never recorded.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'STALE.md', '# stale\n')
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'drifted from its emit manifest at file level' in data['summary_message']
+    assert 'extra in target: demo/STALE.md' in data['summary_message']
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_file_drift_content_diverged_refuses(tmp_path: Path) -> None:
+    """A manifest-listed file whose live bytes change is named as diverged.
+
+    The manifest pins demo/README.md's emit-time hash; mutating the live
+    file afterwards makes the live re-hash diverge — step 4 passes (the
+    source tree is untouched) and the per-file blob-SHA comparison flags it.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    # Mutate the live target copy AFTER the manifest captured its hash.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'README.md', '# demo DIVERGED\n')
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'drifted from its emit manifest at file level' in data['summary_message']
+    assert 'content diverged: demo/README.md' in data['summary_message']
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_file_drift_reports_all_three_classes_together(tmp_path: Path) -> None:
+    """missing, extra, and diverged drift are reported in one refusal message."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    # A second manifest-listed file so the deletion (missing) and the
+    # mutation (diverged) hit distinct paths.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'KEEP.md', '# keep\n')
+    _git_init_and_commit(cwd)
+
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    # missing: a manifest-listed live file is deleted.
+    (cwd / 'target' / 'claude' / 'demo' / 'KEEP.md').unlink()
+    # diverged: a manifest-listed live file is mutated.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'README.md', '# demo DIVERGED\n')
+    # extra: a live file absent from the manifest is added.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'ONLY_TARGET.md', '# tgt\n')
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    msg = data['summary_message']
+    assert 'missing from target: demo/KEEP.md' in msg
+    assert 'extra in target: demo/ONLY_TARGET.md' in msg
+    assert 'content diverged: demo/README.md' in msg
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
+def test_no_file_drift_when_target_matches_manifest_passes(tmp_path: Path) -> None:
+    """An intact tree matching its emit manifest clears the file-level check.
+
+    Beyond the fresh-emit happy path, this asserts the file-level check
+    returns clean (no missing/extra/diverged) when every live file hashes
+    identically to its manifest entry — the negative control for the three
+    refusal branches above.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0', 'demo2': '0.2.0'})
+    _make_target(cwd, {'demo': '0.1.0', 'demo2': '0.2.0'})
+    _git_init_and_commit(cwd)
+
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    cache = tmp_path / 'cache'
+    result = _run('--cache-root', str(cache), cwd=cwd)
+    assert result.returncode == 0, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert (cache / 'demo' / '0.1.0' / 'README.md').is_file()
+    assert (cache / 'demo2' / '0.2.0' / 'README.md').is_file()
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
+def test_skip_staleness_guard_bypasses_file_drift(tmp_path: Path) -> None:
+    """--skip-staleness-guard reaches the sync path even with file-level drift."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+    # Diverge a manifest-listed live file — guard would refuse with the
+    # file-level message without --skip-staleness-guard.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'README.md', '# demo DRIFTED\n')
+
+    cache = tmp_path / 'cache'
+    result = _run('--skip-staleness-guard', '--cache-root', str(cache), cwd=cwd)
+    assert result.returncode == 0, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert (cache / 'demo' / '0.1.0' / 'README.md').is_file()
