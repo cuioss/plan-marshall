@@ -66,6 +66,9 @@ _sensible_number_mod = _load_sensible_number()
 parse_sensible_int = _sensible_number_mod.parse_sensible_int
 
 
+_config_core_mod = _load_module(
+    '_config_core_for_split_gate_test', '_config_core.py'
+)
 _config_defaults_mod = _load_module(
     '_config_defaults_for_split_gate_test', '_config_defaults.py'
 )
@@ -80,32 +83,29 @@ _cmd_quality_phases_mod = _load_module(
 )
 
 
-def test_ceremony_automation_includes_auto_merge_after_ci():
-    """ceremony_policy.automation must declare auto_merge_after_ci with default True.
+def test_default_plan_finalize_includes_auto_merge_after_ci():
+    """DEFAULT_PLAN_FINALIZE must declare auto_merge_after_ci with default True.
 
-    The knob was migrated out of the loose DEFAULT_PLAN_FINALIZE location into the
-    top-level ceremony_policy.automation block — config-doc-contract: no loose-path
-    survivors.
+    The knob is a flat field under plan.phase-6-finalize — the ceremony_policy
+    block was dissolved and every automation knob distributed back into its
+    owning phase.
     """
     # Arrange
-    automation = _config_defaults_mod.DEFAULT_CEREMONY_POLICY['automation']
+    finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
-    # Act / Assert — present in the migrated home, absent from the loose block
-    assert 'auto_merge_after_ci' in automation, (
-        'auto_merge_after_ci must be schema-registered in ceremony_policy.automation'
+    # Act / Assert — homed in the phase block with the True default
+    assert 'auto_merge_after_ci' in finalize, (
+        'auto_merge_after_ci must be schema-registered in DEFAULT_PLAN_FINALIZE'
     )
-    assert automation['auto_merge_after_ci'] is True, (
+    assert finalize['auto_merge_after_ci'] is True, (
         'auto_merge_after_ci default must be True '
         '(auto-merge after CI, serialized via the cross-plan merge-lock; '
         'set False to prompt on every merge)'
     )
-    assert 'auto_merge_after_ci' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE, (
-        'auto_merge_after_ci must NOT survive in the loose DEFAULT_PLAN_FINALIZE block'
-    )
 
 
-def test_default_ceremony_policy_finalize_simplify_defaults_to_auto():
-    """ceremony_policy.finalize must declare the simplify gate with default 'auto'.
+def test_default_plan_finalize_simplify_defaults_to_auto():
+    """DEFAULT_PLAN_FINALIZE must declare the simplify gate with default 'auto'.
 
     `simplify` is the symmetric peer of the other three finalize gates
     (self_review / qgate / plugin_doctor): `auto` defers to the manifest
@@ -113,64 +113,54 @@ def test_default_ceremony_policy_finalize_simplify_defaults_to_auto():
     finalize-step-simplify step in/out.
     """
     # Arrange
-    finalize = _config_defaults_mod.DEFAULT_CEREMONY_POLICY['finalize']
+    finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
     # Act / Assert
     assert 'simplify' in finalize, (
-        'simplify must be schema-registered in ceremony_policy.finalize'
+        'simplify must be schema-registered in DEFAULT_PLAN_FINALIZE'
     )
     assert finalize['simplify'] == 'auto', (
-        "ceremony_policy.finalize.simplify default must be 'auto' "
+        "plan.phase-6-finalize.simplify default must be 'auto' "
         '(defer to the simplify_inactive pre-filter)'
     )
 
 
-def test_get_default_config_includes_ceremony_finalize_simplify():
-    """get_default_config() must surface ceremony_policy.finalize.simplify == 'auto'."""
+def test_get_default_config_includes_finalize_simplify():
+    """get_default_config() must surface plan.phase-6-finalize.simplify == 'auto'."""
     # Arrange / Act
     config = _config_defaults_mod.get_default_config()
 
     # Assert
-    finalize = config['ceremony_policy']['finalize']
+    finalize = config['plan']['phase-6-finalize']
     assert finalize.get('simplify') == 'auto'
 
 
-def test_ceremony_finalize_gates_includes_simplify_as_peer():
-    """CEREMONY_FINALIZE_GATES must enumerate simplify alongside the other three gates."""
+def test_default_plan_finalize_carries_all_four_finalize_gates():
+    """DEFAULT_PLAN_FINALIZE must carry the four distributed finalize gates at 'auto'."""
     # Arrange / Act
-    gates = _config_defaults_mod.CEREMONY_FINALIZE_GATES
+    finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
     # Assert — the symmetric-peer ladder: simplify joins the existing three gates
-    assert gates == ('self_review', 'qgate', 'plugin_doctor', 'simplify')
-    assert 'simplify' in gates
+    for gate in ('self_review', 'qgate', 'plugin_doctor', 'simplify'):
+        assert finalize.get(gate) == 'auto', (
+            f'plan.phase-6-finalize.{gate} default must be auto'
+        )
 
 
-def test_validate_ceremony_policy_accepts_simplify_run_at_all_values():
-    """validate_ceremony_policy must accept every auto|always|never value for finalize.simplify."""
+def test_validate_run_at_all_accepts_simplify_run_at_all_values():
+    """validate_run_at_all must accept every auto|always|never value for the simplify gate."""
     # Arrange / Act / Assert — no exception for any allowed run-at-all value
-    for value in _config_defaults_mod.VALID_CEREMONY_RUN_AT_ALL:
-        _config_defaults_mod.validate_ceremony_policy({'finalize': {'simplify': value}})
+    for value in _config_defaults_mod.VALID_RUN_AT_ALL:
+        _config_defaults_mod.validate_run_at_all(value, 'plan.phase-6-finalize.simplify')
 
 
-def test_validate_ceremony_policy_rejects_invalid_simplify_value():
-    """validate_ceremony_policy must raise ValueError for a simplify value outside the enum."""
+def test_validate_run_at_all_rejects_invalid_simplify_value():
+    """validate_run_at_all must raise ValueError for a simplify value outside the enum."""
     # Arrange / Act / Assert
     import pytest
 
-    with pytest.raises(ValueError, match=r'ceremony_policy\.finalize\.simplify'):
-        _config_defaults_mod.validate_ceremony_policy({'finalize': {'simplify': 'sometimes'}})
-
-
-def test_ceremony_finalize_simplify_is_not_a_footgun():
-    """finalize.simplify must NOT appear in the footgun catalogues.
-
-    `never` for simplify skips a quality-improvement sweep, not a safety net, so
-    it MUST NOT emit a set-time footgun [WARNING]. It is absent from both the
-    soft (CEREMONY_FOOTGUNS) and hard (CEREMONY_HARD_FOOTGUNS) catalogues.
-    """
-    # Arrange / Act / Assert
-    assert 'finalize.simplify' not in _config_defaults_mod.CEREMONY_FOOTGUNS
-    assert 'finalize.simplify' not in _config_defaults_mod.CEREMONY_HARD_FOOTGUNS
+    with pytest.raises(ValueError, match=r'plan\.phase-6-finalize\.simplify'):
+        _config_defaults_mod.validate_run_at_all('sometimes', 'plan.phase-6-finalize.simplify')
 
 
 def test_default_plan_finalize_includes_auto_rebase_threshold():
@@ -278,28 +268,24 @@ def test_validate_per_deliverable_build_rejects_unknown_value():
         _config_defaults_mod.validate_per_deliverable_build('reckless')
 
 
-def test_default_plan_finalize_includes_pre_push_quality_gate():
-    """DEFAULT_PLAN_FINALIZE must declare pre_push_quality_gate with empty activation_globs."""
-    # Arrange
-    finalize_defaults = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+def test_default_plan_finalize_omits_pre_push_quality_gate_activation_globs():
+    """DEFAULT_PLAN_FINALIZE must NOT carry a pre_push_quality_gate.activation_globs knob.
 
-    # Act / Assert
-    assert 'pre_push_quality_gate' in finalize_defaults, (
-        'pre_push_quality_gate must be schema-registered in DEFAULT_PLAN_FINALIZE'
-    )
-    assert finalize_defaults['pre_push_quality_gate'] == {'activation_globs': []}, (
-        'pre_push_quality_gate default must be {activation_globs: []} (step inactive by default)'
-    )
+    Pre-push activation is derived entirely from skill_domains.build_map globs
+    (D7/D8); the separate finalize-phase pre_push_quality_gate config field was
+    dropped, so a surviving seed would re-introduce a dead activation source.
+    """
+    # Arrange / Act / Assert
+    assert 'pre_push_quality_gate' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
 
-def test_get_default_config_includes_pre_push_quality_gate():
-    """get_default_config() must surface plan.phase-6-finalize.pre_push_quality_gate.activation_globs == []."""
+def test_get_default_config_omits_pre_push_quality_gate():
+    """get_default_config() must NOT surface plan.phase-6-finalize.pre_push_quality_gate."""
     # Arrange / Act
     config = _config_defaults_mod.get_default_config()
 
     # Assert
-    finalize = config['plan']['phase-6-finalize']
-    assert finalize.get('pre_push_quality_gate') == {'activation_globs': []}
+    assert 'pre_push_quality_gate' not in config['plan']['phase-6-finalize']
 
 
 def test_default_project_default_base_branch_is_main():
@@ -374,180 +360,74 @@ def test_project_get_returns_default_when_block_absent(plan_context):
     assert result['value'] == 'main'
 
 
-_EXPECTED_BRANCH_NAMING = {
-    'working_prefixes': ['feature/', 'fix/', 'chore/'],
-    'ci_allowlist': ['main', 'feature/*', 'fix/*', 'chore/*', 'dependabot/**'],
-}
+_EXPECTED_WORKING_PREFIXES = ['feature/', 'fix/', 'chore/']
 
 
-def test_default_project_includes_branch_naming_block():
-    """DEFAULT_PROJECT must declare branch_naming with the canonical sets."""
+def test_default_project_includes_working_prefixes():
+    """DEFAULT_PROJECT must declare working_prefixes with the canonical set."""
     # Arrange
     project_defaults = _config_defaults_mod.DEFAULT_PROJECT
 
     # Act / Assert
-    assert 'branch_naming' in project_defaults
-    assert project_defaults['branch_naming'] == _EXPECTED_BRANCH_NAMING
+    assert 'working_prefixes' in project_defaults
+    assert project_defaults['working_prefixes'] == _EXPECTED_WORKING_PREFIXES
 
 
-def test_get_default_config_includes_branch_naming():
-    """get_default_config() must surface project.branch_naming with both sets."""
+def test_default_project_drops_branch_naming_wrapper():
+    """The flattened model removes the nested branch_naming wrapper entirely."""
+    # Arrange / Act / Assert
+    assert 'branch_naming' not in _config_defaults_mod.DEFAULT_PROJECT
+
+
+def test_get_default_config_includes_working_prefixes():
+    """get_default_config() must surface project.working_prefixes."""
     # Arrange / Act
     config = _config_defaults_mod.get_default_config()
 
     # Assert
-    assert config['project'].get('branch_naming') == _EXPECTED_BRANCH_NAMING
+    assert config['project'].get('working_prefixes') == _EXPECTED_WORKING_PREFIXES
 
 
-def test_default_branch_naming_excludes_docs_prefix():
-    """The default ci_allowlist must NOT contain the retired 'docs/' prefix."""
+def test_default_working_prefixes_excludes_docs_prefix():
+    """The default working_prefixes must NOT contain the retired 'docs/' prefix."""
     # Arrange
-    allowlist = _config_defaults_mod.DEFAULT_PROJECT['branch_naming']['ci_allowlist']
-    working = _config_defaults_mod.DEFAULT_PROJECT['branch_naming']['working_prefixes']
+    working = _config_defaults_mod.DEFAULT_PROJECT['working_prefixes']
 
-    # Act / Assert — 'docs/' is explicitly retired from both sets
-    assert not any('docs' in entry for entry in allowlist), (
-        "'docs/' is explicitly retired and must be absent from ci_allowlist"
-    )
+    # Act / Assert — 'docs/' is explicitly retired
     assert 'docs/' not in working
 
 
-def test_project_get_branch_naming_returns_default_when_key_absent(plan_context):
-    """A fresh marshal.json lacking branch_naming returns the default block."""
-    # Arrange — init then strip branch_naming to emulate a legacy marshal.json
+def test_project_get_working_prefixes_returns_default_when_key_absent(plan_context):
+    """A fresh marshal.json lacking working_prefixes returns the default list."""
+    # Arrange — init then strip working_prefixes to emulate a legacy marshal.json
     _cmd_init_mod.cmd_init(Namespace(force=False))
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    config.get('project', {}).pop('branch_naming', None)
+    config.get('project', {}).pop('working_prefixes', None)
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
     # Act
-    args = Namespace(verb='get', field='branch_naming')
+    args = Namespace(verb='get', field='working_prefixes')
     result = _cmd_system_plan_mod.cmd_project(args)
 
-    # Assert — implicit-default fallback to DEFAULT_PROJECT['branch_naming']
+    # Assert — implicit-default fallback to DEFAULT_PROJECT['working_prefixes']
     assert result['status'] == 'success'
-    assert result['value'] == _EXPECTED_BRANCH_NAMING
+    assert result['value'] == _EXPECTED_WORKING_PREFIXES
 
 
-def test_project_set_then_get_roundtrip_branch_naming(plan_context):
-    """`project set --field branch_naming --value <json>` round-trips via get."""
+def test_project_set_then_get_roundtrip_working_prefixes(plan_context):
+    """`project set --field working_prefixes --value <json>` round-trips via get."""
     # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
-    custom = {
-        'working_prefixes': ['feature/', 'fix/', 'chore/', 'spike/'],
-        'ci_allowlist': ['main', 'feature/*', 'fix/*', 'chore/*', 'spike/*', 'dependabot/**'],
-    }
-
-    # Act — set (JSON value)
-    set_args = Namespace(verb='set', field='branch_naming', value=json.dumps(custom))
-    set_result = _cmd_system_plan_mod.cmd_project(set_args)
-    assert set_result['status'] == 'success'
-
-    # Act — get
-    get_args = Namespace(verb='get', field='branch_naming')
-    get_result = _cmd_system_plan_mod.cmd_project(get_args)
-
-    # Assert — the dict round-trips, not a bare JSON string
-    assert get_result['status'] == 'success'
-    assert get_result['value'] == custom
-
-
-def test_project_set_branch_naming_rejects_invalid_json(plan_context):
-    """`project set --field branch_naming` with a non-JSON value errors out."""
-    # Arrange
-    _cmd_init_mod.cmd_init(Namespace(force=False))
-
-    # Act
-    set_args = Namespace(verb='set', field='branch_naming', value='not-json')
-    result = _cmd_system_plan_mod.cmd_project(set_args)
-
-    # Assert
-    assert result['status'] == 'error'
-    assert result.get('error_type') == 'invalid_json'
-
-
-def test_read_branch_naming_returns_live_block():
-    """read_branch_naming returns the live project.branch_naming when present."""
-    # Arrange
-    custom = {
-        'working_prefixes': ['feature/', 'spike/'],
-        'ci_allowlist': ['main', 'feature/*'],
-    }
-    config = {'project': {'branch_naming': custom}}
-
-    # Act
-    result = _cmd_system_plan_mod.read_branch_naming(config)
-
-    # Assert
-    assert result == custom
-
-
-def test_read_branch_naming_falls_back_to_default():
-    """read_branch_naming returns the default block when the key is absent."""
-    # Arrange — config with no project.branch_naming
-    config: dict = {'project': {}}
-
-    # Act
-    result = _cmd_system_plan_mod.read_branch_naming(config)
-
-    # Assert — fail-closed to DEFAULT_PROJECT['branch_naming']
-    assert result == _EXPECTED_BRANCH_NAMING
-
-
-_EXPECTED_SANCTIONED_CONFTEST = ['test/conftest.py', 'test/adapters/conftest.py']
-
-
-def test_default_project_includes_sanctioned_conftest_block():
-    """DEFAULT_PROJECT must declare sanctioned_conftest with the canonical allow-list."""
-    # Arrange
-    project_defaults = _config_defaults_mod.DEFAULT_PROJECT
-
-    # Act / Assert
-    assert 'sanctioned_conftest' in project_defaults
-    assert project_defaults['sanctioned_conftest'] == _EXPECTED_SANCTIONED_CONFTEST
-
-
-def test_get_default_config_includes_sanctioned_conftest():
-    """get_default_config() must surface project.sanctioned_conftest with the allow-list."""
-    # Arrange / Act
-    config = _config_defaults_mod.get_default_config()
-
-    # Assert
-    assert config['project'].get('sanctioned_conftest') == _EXPECTED_SANCTIONED_CONFTEST
-
-
-def test_project_get_sanctioned_conftest_returns_default_when_key_absent(plan_context):
-    """A fresh marshal.json lacking sanctioned_conftest returns the default allow-list."""
-    # Arrange — init then strip sanctioned_conftest to emulate a legacy marshal.json
-    _cmd_init_mod.cmd_init(Namespace(force=False))
-    marshal_path = plan_context.fixture_dir / 'marshal.json'
-    config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    config.get('project', {}).pop('sanctioned_conftest', None)
-    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
-
-    # Act
-    args = Namespace(verb='get', field='sanctioned_conftest')
-    result = _cmd_system_plan_mod.cmd_project(args)
-
-    # Assert — implicit-default fallback to DEFAULT_PROJECT['sanctioned_conftest']
-    assert result['status'] == 'success'
-    assert result['value'] == _EXPECTED_SANCTIONED_CONFTEST
-
-
-def test_project_set_then_get_roundtrip_sanctioned_conftest(plan_context):
-    """`project set --field sanctioned_conftest --value <json>` round-trips via get as a list."""
-    # Arrange
-    _cmd_init_mod.cmd_init(Namespace(force=False))
-    custom = ['test/conftest.py', 'test/adapters/conftest.py', 'test/special/conftest.py']
+    custom = ['feature/', 'fix/', 'chore/', 'spike/']
 
     # Act — set (JSON array value)
-    set_args = Namespace(verb='set', field='sanctioned_conftest', value=json.dumps(custom))
+    set_args = Namespace(verb='set', field='working_prefixes', value=json.dumps(custom))
     set_result = _cmd_system_plan_mod.cmd_project(set_args)
     assert set_result['status'] == 'success'
 
     # Act — get
-    get_args = Namespace(verb='get', field='sanctioned_conftest')
+    get_args = Namespace(verb='get', field='working_prefixes')
     get_result = _cmd_system_plan_mod.cmd_project(get_args)
 
     # Assert — the list round-trips, not a bare JSON string
@@ -555,13 +435,27 @@ def test_project_set_then_get_roundtrip_sanctioned_conftest(plan_context):
     assert get_result['value'] == custom
 
 
-def test_project_set_sanctioned_conftest_rejects_non_array(plan_context):
-    """`project set --field sanctioned_conftest` with a JSON object errors out as invalid_type."""
+def test_project_set_working_prefixes_rejects_invalid_json(plan_context):
+    """`project set --field working_prefixes` with a non-JSON value errors out."""
     # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # Act — a valid-JSON-but-wrong-shape value (object, not array)
-    set_args = Namespace(verb='set', field='sanctioned_conftest', value='{"a": 1}')
+    # Act
+    set_args = Namespace(verb='set', field='working_prefixes', value='not-json')
+    result = _cmd_system_plan_mod.cmd_project(set_args)
+
+    # Assert
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_json'
+
+
+def test_project_set_working_prefixes_rejects_non_array(plan_context):
+    """`project set --field working_prefixes` with a non-array JSON value errors out."""
+    # Arrange
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # Act — a JSON object is valid JSON but the wrong shape
+    set_args = Namespace(verb='set', field='working_prefixes', value='{"a": 1}')
     result = _cmd_system_plan_mod.cmd_project(set_args)
 
     # Assert
@@ -569,18 +463,24 @@ def test_project_set_sanctioned_conftest_rejects_non_array(plan_context):
     assert result.get('error_type') == 'invalid_type'
 
 
-def test_project_set_sanctioned_conftest_rejects_non_string_items(plan_context):
-    """`project set --field sanctioned_conftest` with non-string array items errors out."""
-    # Arrange
-    _cmd_init_mod.cmd_init(Namespace(force=False))
+def test_default_project_omits_sanctioned_conftest_key():
+    """DEFAULT_PROJECT must NOT declare sanctioned_conftest — the seed was removed (D2).
 
-    # Act — array with a non-string item
-    set_args = Namespace(verb='set', field='sanctioned_conftest', value='["test/conftest.py", 42]')
-    result = _cmd_system_plan_mod.cmd_project(set_args)
+    The conftest-vs-_fixtures.py naming rule is now advisory prose only; it is no
+    longer a shipped config field. A surviving seed would re-introduce the
+    meta-project-convention leak this deliverable removed.
+    """
+    # Arrange / Act / Assert
+    assert 'sanctioned_conftest' not in _config_defaults_mod.DEFAULT_PROJECT
+
+
+def test_get_default_config_omits_sanctioned_conftest_key():
+    """get_default_config() must NOT surface project.sanctioned_conftest — the field is gone."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
 
     # Assert
-    assert result['status'] == 'error'
-    assert result.get('error_type') == 'invalid_type'
+    assert 'sanctioned_conftest' not in config['project']
 
 
 def test_default_plan_refine_includes_simplicity_lean():
@@ -779,3 +679,194 @@ def test_get_default_config_seeds_no_per_phase_coverage():
                 f'per-phase block {key!r} must NOT seed a coverage key — '
                 'coverage is plan-wide only'
             )
+
+
+# =============================================================================
+# build_map relocation + required-seed defaults (D6/D7/D14)
+# =============================================================================
+
+
+def test_get_default_config_seeds_build_map_under_skill_domains():
+    """get_default_config() must seed the required build_map under skill_domains.
+
+    The build_map is relocated from the top level into its owning skill_domains
+    block and is always seeded (write-once via seed_build_map_into). The live
+    aggregation may be empty in the test environment, but the key MUST be present.
+    """
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert — relocated under skill_domains, never at the top level.
+    assert 'build_map' not in config, (
+        'build_map must NOT sit at the top level — it is relocated under skill_domains'
+    )
+    assert 'skill_domains' in config
+    assert 'build_map' in config['skill_domains'], (
+        'skill_domains.build_map must be seeded (required) by get_default_config()'
+    )
+    assert isinstance(config['skill_domains']['build_map'], dict)
+
+
+def test_get_default_config_omits_retired_build_map_overrides():
+    """get_default_config() must NOT carry the retired build_map_overrides key.
+
+    The override layer was dropped (D14): the seeded build_map is the single
+    source of truth and user corrections are made directly to the seeded entries.
+    """
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert — no override layer anywhere.
+    assert 'build_map_overrides' not in config
+    assert 'build_map_overrides' not in config['skill_domains']
+
+
+# =============================================================================
+# Top-level marshal.json key ordering (D13)
+# =============================================================================
+#
+# save_config() in _config_core.py enforces a canonical top-level key order when
+# persisting marshal.json. After the D1–D6 dissolutions, the surviving top-level
+# blocks (ci/ceremony_policy/build_map/build_map_overrides removed) are listed
+# alphabetically: extension_defaults, plan, project, providers, skill_domains,
+# system. These tests pin that contract and prove the committed marshal.json
+# already round-trips through save_config with its key order unchanged.
+
+_EXPECTED_CANONICAL_KEY_ORDER = [
+    'extension_defaults',
+    'plan',
+    'project',
+    'providers',
+    'skill_domains',
+    'system',
+]
+
+# The committed marshal.json the repo ships. Resolved relative to this test file:
+# test/plan-marshall/manage-config/test_config_defaults.py -> repo root -> .plan/marshal.json.
+_COMMITTED_MARSHAL_PATH = (
+    Path(__file__).parent.parent.parent.parent / '.plan' / 'marshal.json'
+)
+
+
+def _save_config_to(tmp_marshal_path, config, monkeypatch):
+    """Run _config_core.save_config against a redirected MARSHAL_PATH.
+
+    Points the loaded _config_core module's MARSHAL_PATH at ``tmp_marshal_path``
+    so save_config writes the fixture file instead of the real committed
+    marshal.json, then returns the re-loaded top-level key order.
+    """
+    monkeypatch.setattr(_config_core_mod, 'MARSHAL_PATH', tmp_marshal_path)
+    _config_core_mod.save_config(config)
+    written = json.loads(tmp_marshal_path.read_text(encoding='utf-8'))
+    return list(written.keys())
+
+
+def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
+    """save_config must emit the six surviving top-level keys in canonical order.
+
+    A scrambled-input dict carrying every surviving top-level block must come
+    back out in the alphabetical canonical order, proving save_config's key_order
+    is the authoritative ordering — independent of insertion order.
+    """
+    # Arrange — every canonical key present, deliberately reverse-scrambled
+    scrambled = {
+        'system': {},
+        'skill_domains': {},
+        'providers': {},
+        'project': {},
+        'plan': {},
+        'extension_defaults': {},
+    }
+    marshal_path = tmp_path / 'marshal.json'
+
+    # Act
+    actual_order = _save_config_to(marshal_path, scrambled, monkeypatch)
+
+    # Assert — canonical order regardless of input order
+    assert actual_order == _EXPECTED_CANONICAL_KEY_ORDER
+
+
+def test_save_config_omits_absent_keys_preserving_relative_order(tmp_path, monkeypatch):
+    """save_config must list only the present keys, in canonical relative order.
+
+    The committed marshal.json omits extension_defaults; save_config must not
+    fabricate an empty block for it, and the surviving keys must keep their
+    canonical relative order.
+    """
+    # Arrange — drop extension_defaults (matching the committed file), scramble the rest
+    config = {
+        'system': {},
+        'plan': {},
+        'skill_domains': {},
+        'project': {},
+        'providers': {},
+    }
+    marshal_path = tmp_path / 'marshal.json'
+
+    # Act
+    actual_order = _save_config_to(marshal_path, config, monkeypatch)
+
+    # Assert — extension_defaults absent, others in canonical relative order
+    assert actual_order == ['plan', 'project', 'providers', 'skill_domains', 'system']
+
+
+def test_save_config_appends_unknown_keys_after_canonical_block(tmp_path, monkeypatch):
+    """save_config must append unrecognized top-level keys after the canonical block.
+
+    Unknown keys are preserved (never dropped) and placed after every canonical
+    key, so a stray block survives a save without corrupting the canonical order.
+    """
+    # Arrange
+    config = {
+        'zzz_unknown': {},
+        'system': {},
+        'plan': {},
+    }
+    marshal_path = tmp_path / 'marshal.json'
+
+    # Act
+    actual_order = _save_config_to(marshal_path, config, monkeypatch)
+
+    # Assert — canonical keys first (in order), unknown appended last
+    assert actual_order == ['plan', 'system', 'zzz_unknown']
+
+
+def test_committed_marshal_json_top_level_keys_already_canonical():
+    """The committed .plan/marshal.json must already be in canonical key order.
+
+    Regression guard: the shipped file must not drift out of the order
+    save_config enforces, otherwise the next save would reorder it and produce a
+    spurious diff.
+    """
+    # Arrange / Act
+    assert _COMMITTED_MARSHAL_PATH.exists(), (
+        f'committed marshal.json must exist at {_COMMITTED_MARSHAL_PATH}'
+    )
+    committed = json.loads(_COMMITTED_MARSHAL_PATH.read_text(encoding='utf-8'))
+    committed_keys = list(committed.keys())
+
+    # Assert — the committed key order equals the canonical order filtered to present keys
+    expected = [k for k in _EXPECTED_CANONICAL_KEY_ORDER if k in committed]
+    assert committed_keys == expected, (
+        f'committed marshal.json top-level keys {committed_keys} are not in canonical '
+        f'order {expected}'
+    )
+
+
+def test_committed_marshal_json_round_trips_through_save_config_unchanged(tmp_path, monkeypatch):
+    """The committed marshal.json must round-trip through save_config unchanged.
+
+    Loading the shipped file and re-saving it via save_config must leave the
+    top-level key order byte-for-byte identical — the strongest guarantee that
+    save_config will never reorder the committed config.
+    """
+    # Arrange — load the committed config and capture its current key order
+    committed = json.loads(_COMMITTED_MARSHAL_PATH.read_text(encoding='utf-8'))
+    before = list(committed.keys())
+    marshal_path = tmp_path / 'marshal.json'
+
+    # Act — persist via save_config to the redirected fixture path
+    after = _save_config_to(marshal_path, committed, monkeypatch)
+
+    # Assert — key order is unchanged by the round-trip
+    assert after == before

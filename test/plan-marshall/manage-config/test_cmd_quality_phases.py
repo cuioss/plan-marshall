@@ -65,7 +65,7 @@ def test_execute_verify_get(plan_context):
     result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
 
     assert result['status'] == 'success'
-    assert 'verification_max_iterations' in result
+    assert 'max_iterations' in result
     assert 'steps' in result
     assert 'default:quality_check' in result['steps']
 
@@ -80,7 +80,7 @@ def test_execute_verify_set_max_iterations(plan_context):
 
     # Verify changed
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    assert config['plan']['phase-5-execute']['verification_max_iterations'] == 10
+    assert config['plan']['phase-5-execute']['max_iterations'] == 10
 
 
 def test_execute_set_steps(plan_context):
@@ -169,7 +169,7 @@ def test_execute_verify_get_field(plan_context):
         Namespace(
             sub_noun='phase-5-execute',
             verb='get',
-            field='verification_max_iterations',
+            field='max_iterations',
         )
     )
 
@@ -753,7 +753,7 @@ def test_cli_plan_phase_5_execute_get(plan_context):
     result = run_script(SCRIPT_PATH, 'plan', 'phase-5-execute', 'get')
 
     assert result.success, f'Should succeed: {result.stderr}'
-    assert 'verification_max_iterations' in result.stdout
+    assert 'max_iterations' in result.stdout
 
 
 def test_cli_plan_phase_6_finalize_get(plan_context):

@@ -271,7 +271,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
 2. Identify failing component
 3. Fix the issue (profile-specific — see executor skill for scope)
 4. Re-run verification
-5. Iterate until pass (max `verification_max_iterations` from config, default 5)
+5. Iterate until pass (max `max_iterations` from config, default 5)
 
 If still failing after max iterations:
 

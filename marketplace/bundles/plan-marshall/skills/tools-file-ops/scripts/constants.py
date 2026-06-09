@@ -29,47 +29,27 @@ PHASE_COUNT = len(PHASES)
 QGATE_PHASES = PHASES[1:]  # ('2-refine', '3-outline', '4-plan', '5-execute', '6-finalize')
 
 # ---------------------------------------------------------------------------
-# Branch-prefix sets (FAIL-CLOSED FALLBACK DEFAULTS ONLY)
+# Branch-prefix set (FAIL-CLOSED FALLBACK DEFAULT ONLY)
 # ---------------------------------------------------------------------------
-# The authoritative source for the branch-prefix sets is `.plan/marshal.json`
-# under `project.branch_naming` (read AND written through `manage-config`). The
-# two tuples below are consulted SOLELY when that config key is absent or
-# unreadable (e.g. a fresh checkout before `/marshall-steward` has run) — they
-# are the fail-closed fallback, never the live source of truth.
+# The authoritative source for the working-branch prefix set is
+# `.plan/marshal.json` under `project.working_prefixes` (read AND written
+# through `manage-config`). The tuple below is consulted SOLELY when that
+# config key is absent or unreadable (e.g. a fresh checkout before
+# `/marshall-steward` has run) — it is the fail-closed fallback, never the live
+# source of truth.
 #
-# `_config_defaults.py` imports these names to build
-# `DEFAULT_PROJECT['branch_naming']`; the literals therefore live here exactly
-# once and are not duplicated elsewhere.
+# `_config_defaults.py` imports this name to build
+# `DEFAULT_PROJECT['working_prefixes']`; the literals therefore live here
+# exactly once and are not duplicated elsewhere.
 #
 # `DEFAULT_BRANCH_PREFIX_WORKING` is the closed set of allowed working-branch
 # prefixes. A plan feature branch is always a working branch (never `main` or
 # `dependabot/**`); the branch-prefix validation in `marshall-steward`
 # enforces this set.
 #
-# `DEFAULT_CI_BRANCH_ALLOWLIST` is the full CI push-trigger allowlist in glob
-# form, matching `.github/workflows/python-verify.yml`'s `on.push.branches`
-# list verbatim. A PR whose branch prefix falls outside this list silently
-# receives no `verify / verify` check and is structurally unmergeable.
-#
-# `docs/` is EXPLICITLY RETIRED from both sets and must NOT be re-admitted —
-# it was never CI-triggered. Use `chore/` for documentation-only changes.
+# `docs/` is EXPLICITLY RETIRED and must NOT be re-admitted — it was never
+# CI-triggered. Use `chore/` for documentation-only changes.
 DEFAULT_BRANCH_PREFIX_WORKING = ('feature/', 'fix/', 'chore/')
-DEFAULT_CI_BRANCH_ALLOWLIST = ('main', 'feature/*', 'fix/*', 'chore/*', 'dependabot/**')
-
-# `DEFAULT_SANCTIONED_CONFTEST` is the closed set of `conftest.py` paths that are
-# permitted in this project's test tree. Every OTHER `conftest.py` under a skill
-# or script test directory (any path matching `test/**/`) is a defect: pytest
-# auto-discovers `conftest.py` and evaluates it as a fixture-collection module
-# for the whole bundle, so a stray sibling silently shadows the top-level
-# `test/conftest.py` and disables shared fixtures. The sanctioned set is
-# project data, NOT a hard-coded marketplace literal: it is materialised into
-# `DEFAULT_PROJECT['sanctioned_conftest']` and operators override it via
-# `manage-config project set --field sanctioned_conftest`. The generic rule
-# ("do not name a new test helper conftest.py — use `_fixtures.py`") is
-# project-invariant and stays in the shipped skill prose; only this concrete
-# allow-list is config-driven. The literal lives here exactly once as the
-# fail-closed fallback seed.
-DEFAULT_SANCTIONED_CONFTEST = ('test/conftest.py', 'test/adapters/conftest.py')
 
 # ---------------------------------------------------------------------------
 # Phase statuses

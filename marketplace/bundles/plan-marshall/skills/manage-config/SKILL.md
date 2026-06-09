@@ -19,6 +19,7 @@ Manages project-level infrastructure configuration in `.plan/marshal.json`.
 - Do not bypass initialization (marshal.json must exist before queries)
 - Domain configuration follows the noun-verb pattern documented in the API Reference
 - Phase configuration uses the `plan {phase} {verb}` pattern
+- Every addition, removal, relocation, or rename of a config field MUST satisfy the governance rules in [standards/config-design-principles.md](standards/config-design-principles.md) — ownership boundaries (Rule 1 foreign-system, Rule 2 meta-project convention), placement (Rule 5), anti-speculation (Rule 6), and the lossless field-migration mechanics (Rule 3).
 
 ## Workflow: Initialize Configuration
 
@@ -172,7 +173,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 |-------|------|---------|-----------|
 | `per_deliverable_build` | enum(`off`\|`compile-only`\|`compile+scoped-test`\|`full`) | `compile+scoped-test` | Build depth phase-5-execute runs at each per-deliverable chain-tail point (Step 10). `off` skips the per-deliverable build entirely (the end-of-phase quality sweep is the only build); `compile-only` resolves the changed module and runs compile only; `compile+scoped-test` additionally runs scoped `module-tests` for the changed module; `full` runs whole-tree `quality-gate` per deliverable (legacy behavior, opt-in only). Read by phase-5-execute per-deliverable. Invalid values are rejected by the config setter. |
 
-**Symmetric auto-continuation knobs:** the forward (`finalize_without_asking`) and reverse (`loop_back_without_asking`) auto-continuation knobs, together with `auto_merge_after_ci`, live under the top-level `ceremony_policy.automation` block — see [§ Section: ceremony_policy](#section-ceremony_policy) for their semantics, defaults, and the standard get/set access shape.
+**Symmetric auto-continuation knobs:** the forward (`finalize_without_asking`) and reverse (`loop_back_without_asking`) auto-continuation knobs, together with `auto_merge_after_ci`, are flat knobs under `plan.phase-6-finalize` — read/written via the standard `manage-config plan phase-6-finalize get/set --field <knob>` access shape.
 
 ### Manage Verification Steps
 
@@ -244,25 +245,39 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ---
 
-## Workflow: Ceremony Policy
+## Workflow: Phase-Local Run-at-all Gates and Automation Knobs
 
 **Pattern**: Read-Process
 
-Read the lifecycle-wide `ceremony_policy` block — the run-at-all gates (`planning.*` / `finalize.*`) and the three automation knobs (`automation.finalize_without_asking`, `automation.loop_back_without_asking`, `automation.auto_merge_after_ci`). This is the runtime read surface every orchestrator consumes; the values are merged so a fresh `marshal.json` that predates the block still reads the canonical defaults.
+The lifecycle run-at-all gates and automation knobs are flat knobs under their owning phase — read/written through the standard `plan <phase> get/set --field <knob>` verb. Each gate takes `auto|always|never` (validated by `validate_run_at_all`); the automation knobs are boolean. Distribution:
+
+| Knob | Location | Read via |
+|------|----------|----------|
+| `deep_lane` | `plan.phase-1-init` | `plan phase-1-init get --field deep_lane` |
+| `escalation` | `plan.phase-1-init` | `plan phase-1-init get --field escalation` |
+| `revalidation` | `plan.phase-2-refine` | `plan phase-2-refine get --field revalidation` |
+| `qgate` (planning) | `plan.phase-3-outline` | `plan phase-3-outline get --field qgate` |
+| `finalize_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field finalize_without_asking` |
+| `loop_back_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field loop_back_without_asking` |
+| `auto_merge_after_ci` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field auto_merge_after_ci` |
+| `self_review` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field self_review` |
+| `qgate` (finalize) | `plan.phase-6-finalize` | `plan phase-6-finalize get --field qgate` |
+| `plugin_doctor` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field plugin_doctor` |
+| `simplify` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field simplify` |
 
 ### Read an automation knob
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  ceremony-policy get --field automation.finalize_without_asking
+  plan phase-6-finalize get --field finalize_without_asking
 ```
 
 **Output** (TOON):
 
 ```toon
 status: success
-section: ceremony_policy
-field: automation.finalize_without_asking
+phase: phase-6-finalize
+field: finalize_without_asking
 value: true
 ```
 
@@ -270,22 +285,10 @@ value: true
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  ceremony-policy get --field finalize.qgate
+  plan phase-6-finalize get --field qgate
 ```
 
-### Read a sub-block or the whole block
-
-```bash
-# Whole automation sub-dict
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  ceremony-policy get --field automation
-
-# Whole ceremony_policy block (no --field)
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  ceremony-policy get
-```
-
-The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable dotted path returns `error_type: field_not_found`. `overrides[]` is plan-fact-scoped and consumed by the manifest composer with plan facts; a plain `get` returns the base section value, never an override-resolved value.
+The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable field returns `error_type: field_not_found`.
 
 ---
 
@@ -293,11 +296,11 @@ The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable
 
 **Pattern**: Script Automation
 
-The `build_map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. It is seeded from the registered domain extensions with write-once semantics — an existing seed survives a re-seed so user corrections are preserved. The user-override layer (`build_map_overrides`) is left untouched by both operations.
+The `skill_domains.build_map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. It lives under `skill_domains` (its owning block), is required and always seeded, and is populated from the registered domain extensions with write-once semantics — an existing seed survives a re-seed so user corrections are preserved. There is no separate override layer; corrections are made directly to the seeded entries.
 
 ### Seed the Build Map
 
-Re-seeds `build_map` from every registered extension's `classify_globs()` + `classify_build_class()` predicates. Write-once: an existing `build_map` block is never clobbered — only a missing or empty block is populated. Typically run once after `/marshall-steward` configures domains, and again whenever a domain extension is added or updated.
+Re-seeds `skill_domains.build_map` from every registered extension's `classify_globs()` + `classify_build_class()` predicates. Write-once: an existing `build_map` block is never clobbered — only a missing or empty block is populated. It is always seeded at `init` / `sync-defaults`; run `build-map seed` again whenever a domain extension is added or updated.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed
@@ -318,7 +321,7 @@ build_map:
 
 ### Read the Effective Build Map
 
-Returns the merged effective build map (`seed ∪ overrides`, overrides winning by glob). This is the map the `architecture derive-verification` command reads to emit a task's verification command set.
+Returns the effective build map read from `skill_domains.build_map`. This is the map the `architecture derive-verification` command reads to emit a task's verification command set. The read **fails closed**: when `skill_domains.build_map` is absent it returns a structured error rather than an empty map.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map read
@@ -331,13 +334,12 @@ status: success
 build_map:
   python: [...]
   documentation: [...]
-  _overrides: [...]
-domain_count: 3
+domain_count: 2
 ```
 
-`_overrides` appears only when one or more `build_map_overrides` entries have no matching glob in any seeded domain. `domain_count` is the total number of keys in the returned `build_map` (including `_overrides` when present).
+`domain_count` is the number of domain keys in the returned `build_map`.
 
-> **Schema and semantics**: See [standards/data-model.md § build_map](standards/data-model.md) for the `{glob, role, build_class}` entry schema, the closed `build_class` enum, and the `build_map_overrides` override contract.
+> **Schema and semantics**: See [standards/data-model.md § build_map](standards/data-model.md) for the `{glob, role, build_class}` entry schema and the closed `build_class` enum.
 
 ---
 
@@ -379,11 +381,10 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `resolve-execute-task-skill` | `--profile` (resolve execute-task skill for profile) |
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
-| `project` | `get/set` (`default_base_branch`, `branch_naming`, `sanctioned_conftest`) |
-| `ceremony-policy` | `get [--field <dotted.path>]` (read run-at-all gates + automation knobs; runtime read surface) |
-| `plan` | `{phase} get/set`, set-steps, add-step, remove-step, set-max-iterations |
+| `project` | `get/set` (`default_base_branch`, `working_prefixes`) |
+| `plan` | `{phase} get/set` (incl. run-at-all gates + finalize automation knobs), set-steps, add-step, remove-step, set-max-iterations |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
-| `build-map` | `seed` (re-seed from extensions, write-once), `read` (merged effective map = seed ∪ overrides) |
+| `build-map` | `seed` (re-seed `skill_domains.build_map` from extensions, write-once), `read` (effective map from `skill_domains.build_map`, fail-closed when absent) |
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
 
@@ -427,43 +428,37 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "temp_on_maintenance": true
     }
   },
-  "ceremony_policy": {
-    "planning": {
-      "deep_lane": "auto",
-      "revalidation": "auto",
-      "escalation": "auto",
-      "qgate": "auto"
-    },
-    "finalize": {
-      "self_review": "auto",
-      "qgate": "auto",
-      "plugin_doctor": "auto",
-      "simplify": "auto"
-    },
-    "automation": {
-      "finalize_without_asking": true,
-      "loop_back_without_asking": false,
-      "auto_merge_after_ci": true
-    },
-    "overrides": []
-  },
   "plan": {
     "phase-1-init": {
-      "branch_strategy": "feature"
+      "branch_strategy": "feature",
+      "deep_lane": "auto",
+      "escalation": "auto"
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
-      "compatibility": "breaking"
+      "compatibility": "breaking",
+      "revalidation": "auto"
+    },
+    "phase-3-outline": {
+      "plan_without_asking": false,
+      "qgate": "auto"
     },
     "phase-5-execute": {
       "commit_strategy": "per_deliverable",
-      "verification_max_iterations": 5,
+      "max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
       "steps": ["quality_check", "build_verify"]
     },
     "phase-6-finalize": {
       "max_iterations": 3,
       "review_bot_buffer_seconds": 180,
+      "finalize_without_asking": true,
+      "loop_back_without_asking": false,
+      "auto_merge_after_ci": true,
+      "self_review": "auto",
+      "qgate": "auto",
+      "plugin_doctor": "auto",
+      "simplify": "auto",
       "steps": [
         "commit_push", "create_pr", "automated_review",
         "sonar_roundtrip", "lessons_capture",
@@ -474,45 +469,32 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 }
 ```
 
-### Section: ceremony_policy
+### Phase-Local Run-at-all Gates and Automation Knobs
 
-A top-level block (sibling to `plan` / `ci` / `project`) carrying lifecycle-wide policy along two orthogonal axes.
+The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs, each owned by the phase whose decision machinery consumes it. Every gate takes `auto|always|never` (validated by `validate_run_at_all`): `auto` defers to the existing machinery (lane router / manifest composer), `always` forces the gate in, `never` skips it. The automation knobs are boolean.
 
-**Axis 1 — run-at-all (`auto|always|never` per gate).** Does the gate execute at all? `auto` defers to the existing decision machinery (lane router / manifest composer); `always` forces the gate in; `never` skips it. Gates:
+**Run-at-all gates:**
 
-| Gate | Controls |
-|------|----------|
-| `planning.deep_lane` | Whether the precondition-driven deep planning lane runs (consumed by the phase-1-init lane router). `never` forces light, but a hard escalation still ratchets unless `planning.escalation: never` is also set. |
-| `planning.revalidation` | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). |
-| `planning.escalation` | Whether the hard-escalation safety ratchet (explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. |
-| `planning.qgate` | Whether the planning-time q-gate validation runs (deep-lane outline dispatch). |
-| `finalize.self_review` | Whether the pre-submission structural + cognitive self-review runs (manifest finalize step-selection). |
-| `finalize.qgate` | Whether finalize re-captures blocking findings. **Highest-risk gate** — `never` can mask real build/test failures. |
-| `finalize.plugin_doctor` | Whether structural marketplace lint runs before push. |
-| `finalize.simplify` | Whether the holistic post-implementation simplification sweep (`finalize-step-simplify`) runs. `always` forces it in even when the composer's `simplify_inactive` pre-filter would drop it; `never` skips it; `auto` defers to that pre-filter. Not a footgun — `never` skips a quality-improvement sweep, not a safety net. |
+| Gate | Owning phase | Controls |
+|------|--------------|----------|
+| `deep_lane` | `phase-1-init` | Whether the precondition-driven deep planning lane runs (phase-1-init lane router). `never` forces light, but a hard escalation still ratchets unless `escalation: never` is also set. |
+| `escalation` | `phase-1-init` | Whether the hard-escalation safety ratchet (explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. |
+| `revalidation` | `phase-2-refine` | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). |
+| `qgate` | `phase-3-outline` | Whether the planning-time q-gate validation runs (deep-lane outline dispatch). |
+| `self_review` | `phase-6-finalize` | Whether the pre-submission structural + cognitive self-review runs (manifest finalize step-selection). |
+| `qgate` | `phase-6-finalize` | Whether finalize re-captures blocking findings. **Highest-risk gate** — `never` can mask real build/test failures. |
+| `plugin_doctor` | `phase-6-finalize` | Whether structural marketplace lint runs before push. |
+| `simplify` | `phase-6-finalize` | Whether the holistic post-implementation simplification sweep (`finalize-step-simplify`) runs. `always` forces it in even when the composer's `simplify_inactive` pre-filter would drop it; `never` skips it; `auto` defers to that pre-filter. |
 
-**Axis 2 — automation (`bool`).** Once a gate has run, proceed without asking? The three automation knobs live only here. Defaults preserve the historical values.
+**Finalize automation knobs (boolean, under `phase-6-finalize`):**
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `automation.finalize_without_asking` | `true` | Auto-continue into finalize after execute. |
-| `automation.loop_back_without_asking` | `false` | Auto-re-enter on a finalize loop_back outcome. |
-| `automation.auto_merge_after_ci` | `true` | Auto-merge the PR after CI passes. |
+| `finalize_without_asking` | `true` | Auto-continue into finalize after execute. |
+| `loop_back_without_asking` | `false` | Auto-re-enter on a finalize loop_back outcome. |
+| `auto_merge_after_ci` | `true` | Auto-merge the PR after CI passes. |
 
-**`overrides[]`** — condition-scoped rows that win over the section values, matched on plan facts (`scope_estimate`, `plan_source`, `change_type`). Each row is `{when: {<fact>: <value>, ...}, set: {<dotted.path>: <value>, ...}}`. An empty `when` clause matches every plan; a row applies only when every `when` key/value pair equals the plan's fact (see `ceremony_override_matches`).
-
-**Footgun catalogue (warned at config-set time).** Setting any of the following gates to `never` disables a safety net. The change is allowed — the operator owns the risk — but is NEVER silent: `manage-config` emits a `[WARNING]` to stderr naming the disabled safety (see `ceremony_set_footgun_warnings`).
-
-| Footgun (`= never`) | Disables | Warning tier |
-|---------------------|----------|--------------|
-| `planning.revalidation` | the premise / narrative-vs-code safety check | warn-at-set-time |
-| `planning.deep_lane` | the precondition-driven deep lane (hard escalation still ratchets unless `planning.escalation: never`) | warn-at-set-time |
-| `planning.escalation` | the hard-escalation safety ratchet (full-speed-full-risk) | warn-at-set-time |
-| `finalize.self_review` | the pre-submission structural + cognitive self-review | warn-at-set-time |
-| `finalize.qgate` | finalize blocking-findings re-capture — **can push a red tree** | strongest tier (names the masking risk; CI may still fail) |
-| `finalize.plugin_doctor` | structural marketplace lint before push (CI still runs plugin-doctor) | warn-at-set-time |
-
-**Access shape.** Read gate values and automation knobs through the dedicated `ceremony-policy get` verb, which takes a dotted `--field` path into the merged block (defaults merged under the live values) — e.g. `ceremony-policy get --field finalize.qgate` or `ceremony-policy get --field automation.finalize_without_asking`. This is the runtime read surface every orchestrator consumes for the three automation knobs and the run-at-all gates; see [§ Workflow: Ceremony Policy](#workflow-ceremony-policy) and the [`ceremony-policy get`](#ceremony-policy-get) canonical invocation. The run-at-all enum is validated by `validate_ceremony_policy`; the automation axis is boolean-only.
+**Access shape.** Read/write each knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate` or `plan phase-6-finalize get --field finalize_without_asking`. See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
 
 ---
 
@@ -732,17 +714,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config projec
   --field FIELD
 ```
 
-`--field branch_naming` returns the canonical branch-prefix block
-(`working_prefixes`, `ci_allowlist`), falling back to the
-`DEFAULT_PROJECT` default when the key is absent from marshal.json.
-
-`--field sanctioned_conftest` returns the project's allow-list of permitted
-`conftest.py` paths (a flat JSON array of path strings), falling back to the
-`DEFAULT_PROJECT` default (`["test/conftest.py", "test/adapters/conftest.py"]`)
-when the key is absent. This is the concrete allow-list the test-helper-naming
-rules in `phase-3-outline`, `phase-4-plan`, and `execute-task` read instead of
-restating a literal list in shipped skill prose. The generic rule (do not name a
-new test helper `conftest.py`) stays in the skill prose and is project-invariant.
+`--field working_prefixes` returns the canonical closed set of allowed
+working-branch prefixes (a flat JSON array of strings, default
+`["feature/", "fix/", "chore/"]`), falling back to the `DEFAULT_PROJECT`
+default when the key is absent from marshal.json.
 
 ### project set
 
@@ -751,25 +726,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config projec
   --field FIELD --value VALUE
 ```
 
-Scalar fields (e.g. `default_base_branch`) take a plain value; `branch_naming`
-takes a JSON object value that round-trips through `get`; `sanctioned_conftest`
-takes a JSON array of path strings that round-trips through `get`. A non-array
-value (or an array containing a non-string item) for `sanctioned_conftest` is
-rejected with `error_type: invalid_type`.
-
-### ceremony-policy get
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ceremony-policy get \
-  [--field FIELD]
-```
-
-`--field` is a dotted path into the merged `ceremony_policy` block (canonical
-defaults merged under the live values): `automation.finalize_without_asking`,
-`automation.loop_back_without_asking`, `automation.auto_merge_after_ci`,
-`planning.<gate>`, `finalize.<gate>`, or a sub-block name
-(`automation` / `planning` / `finalize`). Omit `--field` to return the whole
-merged block. Read-only; an unresolvable path returns `error_type: field_not_found`.
+Scalar fields (e.g. `default_base_branch`) take a plain value; the list-valued
+field `working_prefixes` takes a JSON array of strings that round-trips through
+`get`. A non-array value (or an array containing a non-string item) is rejected
+with `error_type: invalid_type`.
 
 ### plan {phase} get
 
@@ -997,6 +957,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-
 
 ## Related
 
+- [standards/config-design-principles.md](standards/config-design-principles.md) — Governance rules for what belongs in `marshal.json` and how config fields change (ownership, placement, anti-speculation, lossless migration)
 - `manage-architecture` — Consumes configuration for project analysis
 - `marshall-steward` — Interactive configuration wizard
 - `extension-api` — Build system detection uses config

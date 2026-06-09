@@ -56,6 +56,11 @@ def cmd_sync_defaults(args) -> dict:
     Reads the live marshal.json, deep-merges any missing keys from
     ``get_default_config()`` into it (preserving every existing value), writes
     the merged config back, and reports the added keys grouped by dotted path.
+
+    Because ``get_default_config()`` always seeds ``skill_domains.build_map``
+    (D6), the deep-merge back-fills the required build_map into any existing
+    project that predates the relocation — the user's other ``skill_domains``
+    entries are preserved unchanged.
     """
     if not is_initialized():
         return error_exit('marshal.json not found. Run command /marshall-steward first')

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Tests for the marshal.json-resolved ``DEFAULT_CI_TIMEOUT`` in ``ci_base.py``.
 
-Covers deliverable 7 (B8 — CI checks-wait timeout config). The resolver
-contract (``ci_base._resolve_ci_timeout``):
+The resolver contract (``ci_base._resolve_ci_timeout``):
 
-* When marshal.json is absent OR the ``ci.checks_wait_timeout_seconds`` key is
-  unset, the resolver returns ``600`` (the conservative fallback that replaces
-  the prior hard-coded 300s default).
-* When marshal.json sets ``ci.checks_wait_timeout_seconds`` to a positive
-  integer, the resolver returns that value.
+* When marshal.json is absent OR the
+  ``plan.phase-6-finalize.checks_wait_timeout_seconds`` key is unset, the
+  resolver returns ``600`` (the conservative fallback that replaces the prior
+  hard-coded 300s default).
+* When marshal.json sets ``plan.phase-6-finalize.checks_wait_timeout_seconds``
+  to a positive integer, the resolver returns that value.
 * The argparse ``--timeout`` flag on both ``checks wait`` and
   ``pr wait-for-comments`` defaults to ``DEFAULT_CI_TIMEOUT`` (i.e. they share
   the same resolver-derived default).
@@ -61,7 +61,7 @@ def test_resolver_returns_fallback_when_marshal_absent(fresh_marshal):
 
 
 def test_resolver_returns_fallback_when_key_unset(fresh_marshal):
-    """marshal.json present without the ci section -> resolver returns 600."""
+    """marshal.json present without the finalize timeout key -> resolver returns 600."""
     # Arrange
     fresh_marshal.write_text(json.dumps({'plan': {}, 'skill_domains': {}}), encoding='utf-8')
 
@@ -73,9 +73,12 @@ def test_resolver_returns_fallback_when_key_unset(fresh_marshal):
 
 
 def test_resolver_returns_marshal_value_when_key_set(fresh_marshal):
-    """``ci.checks_wait_timeout_seconds: 900`` -> resolver returns 900."""
+    """``plan.phase-6-finalize.checks_wait_timeout_seconds: 900`` -> resolver returns 900."""
     # Arrange
-    fresh_marshal.write_text(json.dumps({'ci': {'checks_wait_timeout_seconds': 900}}), encoding='utf-8')
+    fresh_marshal.write_text(
+        json.dumps({'plan': {'phase-6-finalize': {'checks_wait_timeout_seconds': 900}}}),
+        encoding='utf-8',
+    )
 
     # Act
     timeout = ci_base._resolve_ci_timeout()
@@ -87,7 +90,10 @@ def test_resolver_returns_marshal_value_when_key_set(fresh_marshal):
 def test_resolver_returns_fallback_when_value_non_positive(fresh_marshal):
     """Non-positive integer guards against accidental zero/negative configs."""
     # Arrange
-    fresh_marshal.write_text(json.dumps({'ci': {'checks_wait_timeout_seconds': 0}}), encoding='utf-8')
+    fresh_marshal.write_text(
+        json.dumps({'plan': {'phase-6-finalize': {'checks_wait_timeout_seconds': 0}}}),
+        encoding='utf-8',
+    )
 
     # Act
     timeout = ci_base._resolve_ci_timeout()
@@ -99,7 +105,10 @@ def test_resolver_returns_fallback_when_value_non_positive(fresh_marshal):
 def test_resolver_returns_fallback_when_value_not_int(fresh_marshal):
     """A string value is rejected and the resolver falls back to 600."""
     # Arrange
-    fresh_marshal.write_text(json.dumps({'ci': {'checks_wait_timeout_seconds': 'not-an-int'}}), encoding='utf-8')
+    fresh_marshal.write_text(
+        json.dumps({'plan': {'phase-6-finalize': {'checks_wait_timeout_seconds': 'not-an-int'}}}),
+        encoding='utf-8',
+    )
 
     # Act
     timeout = ci_base._resolve_ci_timeout()

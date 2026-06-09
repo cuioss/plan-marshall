@@ -1,6 +1,7 @@
-"""Build-time guard enforcing conftest.py discipline across the test tree.
+"""Meta-project build-time guard enforcing conftest.py discipline across the test tree.
 
-This test walks ``test/**/conftest.py`` and asserts that only the sanctioned
+This is a meta-project-only test — it is NOT shipped runtime enforcement and reads
+no config. It walks ``test/**/conftest.py`` and asserts that only the allowed
 conftest module exists: ``test/conftest.py`` (root). Every other conftest.py is a
 sibling-fixture anti-pattern that must be renamed to ``_fixtures.py`` per the shared
 testing standards.
@@ -22,7 +23,7 @@ ALLOWED_CONFTESTS: frozenset[str] = frozenset(
 )
 
 
-def test_no_unsanctioned_conftest_files() -> None:
+def test_no_unallowed_conftest_files() -> None:
     project_root = Path(__file__).resolve().parent.parent
     test_dir = project_root / 'test'
 
@@ -31,7 +32,7 @@ def test_no_unsanctioned_conftest_files() -> None:
     offenders = discovered - ALLOWED_CONFTESTS
 
     assert not offenders, (
-        'Unsanctioned conftest.py files found:\n'
+        'Unallowed conftest.py files found:\n'
         + '\n'.join(f'  - {path}' for path in sorted(offenders))
         + "\n\nRename to '_fixtures.py' per plan-marshall:dev-general-module-testing"
         ' / pm-dev-python:pytest-testing guidance. Sibling conftest.py files leak'

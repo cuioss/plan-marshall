@@ -249,8 +249,9 @@ def add_body_consumer_args(subparser: argparse.ArgumentParser) -> None:
 # Shared defaults for CI polling operations.
 #
 # `DEFAULT_CI_TIMEOUT` is resolved at module load via `_resolve_ci_timeout()`:
-#   1. Read `ci.checks_wait_timeout_seconds` from marshal.json when the file
-#      is present and the key is set — the project-level override.
+#   1. Read `plan.phase-6-finalize.checks_wait_timeout_seconds` from marshal.json
+#      when the file is present and the key is set — the project-level override.
+#      The timeout is a finalize wait-policy owned by phase-6-finalize.
 #   2. Fall back to 600 seconds when marshal.json is absent OR the key is
 #      unset. The 600s baseline replaces the prior hard-coded 300s default
 #      after verify jobs were observed taking 318s+ on hot CI runners.
@@ -277,8 +278,8 @@ def _resolve_ci_timeout() -> int:
         if not is_initialized():
             return 600
         cfg = load_config()
-        ci_section = cfg.get('ci') or {}
-        value = ci_section.get('checks_wait_timeout_seconds')
+        finalize_section = cfg.get('plan', {}).get('phase-6-finalize', {}) or {}
+        value = finalize_section.get('checks_wait_timeout_seconds')
         if isinstance(value, int) and value > 0:
             return value
         return 600

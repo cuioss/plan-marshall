@@ -394,6 +394,39 @@ The plugin-doctor analyzer [`_analyze_manage_invocation.py`](../../plugin-doctor
 
 Both rules run under `quality-gate`, so a documented call that drifts from the live surface — or a script-bearing skill that omits its Canonical-invocations section — is caught before it ships. Deriving the surface from `--help` rather than an AST walk is what lets the rule see loop-registered, helper-registered, and shared-flag subcommands that literal `add_parser` AST extraction cannot.
 
+## New get/set input shape must pass its own validator
+
+When you add a verb whose value proposition IS a new input shape — a dotted path, a
+glob, a compound key — the input validator is the part most likely to lag the
+feature. The validator was written for the *old* shape and silently rejects the
+*new* shape the verb exists to support, so the verb is dead on arrival while every
+unit test that exercises only the old shape stays green.
+
+This is the script-authoring companion to the config-governance migration rules in
+[`plan-marshall:manage-config`](../../../../plan-marshall/skills/manage-config/standards/config-design-principles.md)
+§ "Config Design Principles": those rules govern *what* a config field is and *how*
+it moves; this rule governs the *validator boundary* every new `get`/`set` input
+shape must clear.
+
+Two normative requirements:
+
+1. **The feature-defining input shape is the mandatory first test case.** A
+   `get`/`set` verb whose reason to exist is a new input shape MUST have that exact
+   shape as its first boundary test — driven through the CLI entry point (the
+   executor notation), not by calling the validator helper in isolation. Testing
+   the validator in isolation can pass while the wired-up parser still rejects the
+   shape.
+2. **Every documentation example of a new verb is an implicit test assertion.**
+   When the `## Canonical invocations` block shows the verb accepting a dotted-path
+   or compound-key value, a boundary test MUST assert that exact documented call
+   succeeds. A documented call the validator rejects is a contract the script
+   violates the moment it ships.
+
+The canonical failure: a verb that bound a name-validator (which rejects dots) to a
+`--field <dotted.path>` argument, so the very dotted-path shape the verb existed to
+support was rejected by its own validator — a defect invisible to every test that
+exercised only single-segment field names.
+
 ## Integration Rules
 
 Before publishing a script:
@@ -409,3 +442,4 @@ Before publishing a script:
 - IDE import warnings suppressed with `# type: ignore[import-not-found]`
 - Tests use conftest import pattern (one sys.path insert only)
 - Documented script invocations follow the explicit-call-or-xref rules above; script-bearing skills publish a `## Canonical invocations` section
+- A new `get`/`set` verb whose value proposition is a new input shape (dotted path, glob, compound key) has that exact shape as its first boundary test, driven through the CLI entry point

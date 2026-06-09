@@ -19,10 +19,10 @@ The signal set (DQ1 of the planning-lanes solution outline):
 
 ``deep`` IFF (S1 ∨ S2 ∨ S3 ∨ S4 ∨ S5 ∨ S6-deep); otherwise ``light``.
 
-``ceremony_policy.planning.deep_lane`` is read BEFORE the signal set and
+``plan.phase-1-init.deep_lane`` is read BEFORE the signal set and
 short-circuits the evaluation: ``always`` forces deep, ``never`` forces light
-(the DQ3 hard-escalation ratchet still fires unless ``planning.escalation`` is
-also ``never``), ``auto`` (the default) defers to the signals.
+(the DQ3 hard-escalation ratchet still fires unless ``plan.phase-1-init.escalation``
+is also ``never``), ``auto`` (the default) defers to the signals.
 """
 
 from __future__ import annotations
@@ -132,18 +132,18 @@ def _read_compatibility() -> str | None:
     return None
 
 
-def _read_ceremony_deep_lane() -> str:
-    """Read ``ceremony_policy.planning.deep_lane`` (``auto`` when absent)."""
+def _read_deep_lane_gate() -> str:
+    """Read ``plan.phase-1-init.deep_lane`` (``auto`` when absent)."""
     try:
         config = read_json(base_path(FILE_MARSHAL), default={})
     except (OSError, json.JSONDecodeError):
         return 'auto'
     if isinstance(config, dict):
-        ceremony = config.get('ceremony_policy', {})
-        if isinstance(ceremony, dict):
-            planning = ceremony.get('planning', {})
-            if isinstance(planning, dict):
-                value = planning.get('deep_lane')
+        plan_block = config.get('plan', {})
+        if isinstance(plan_block, dict):
+            init = plan_block.get('phase-1-init', {})
+            if isinstance(init, dict):
+                value = init.get('deep_lane')
                 if value in ('auto', 'always', 'never'):
                     return str(value)
     return 'auto'
@@ -248,16 +248,16 @@ def cmd_planning_lane_route(args) -> dict:
     # observability and the routing continues unconditionally.
     classification_validation = run_classification_validation(plan_id)
 
-    ceremony = _read_ceremony_deep_lane()
+    ceremony = _read_deep_lane_gate()
 
     evaluation: dict[str, Any]
     if ceremony == 'always':
         lane = DEEP
-        decision = 'ceremony_policy.planning.deep_lane=always'
-        evaluation = {'lane': lane, 'fired_signals': ['ceremony:always'], 'signals': {}}
+        decision = 'plan.phase-1-init.deep_lane=always'
+        evaluation = {'lane': lane, 'fired_signals': ['deep_lane:always'], 'signals': {}}
     elif ceremony == 'never':
         lane = LIGHT
-        decision = 'ceremony_policy.planning.deep_lane=never'
+        decision = 'plan.phase-1-init.deep_lane=never'
         evaluation = {'lane': lane, 'fired_signals': [], 'signals': {}}
     else:
         evaluation = _evaluate_signals(plan_id, metadata)

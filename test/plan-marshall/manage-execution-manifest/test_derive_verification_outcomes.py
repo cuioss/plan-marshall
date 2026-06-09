@@ -133,7 +133,10 @@ def _seed(project_dir: str) -> None:
     save_module_derived('pm-b', _module_derived('pm-b', 'pm-b'), project_dir)
     marshal = Path(project_dir) / '.plan' / 'marshal.json'
     marshal.parent.mkdir(parents=True, exist_ok=True)
-    marshal.write_text(json.dumps({'build_map': _BUILD_MAP}, indent=2), encoding='utf-8')
+    # build_map is relocated under skill_domains (single source of truth).
+    marshal.write_text(
+        json.dumps({'skill_domains': {'build_map': _BUILD_MAP}}, indent=2), encoding='utf-8'
+    )
 
 
 def _derive(project_dir: str, changed: str) -> dict:

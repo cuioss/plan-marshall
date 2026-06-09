@@ -79,7 +79,7 @@ Run the **minimal premise-check** — the cheap version of the deep refine's pre
 
 **On a premise contradiction** (the request's stated premise contradicts the read code): jump to **Step 4 (Escalation Ratchet)** with `trigger = premise`.
 
-The premise-check is gated by `ceremony_policy.planning.revalidation` — when that gate resolves to `never`, skip the check (the operator owns the risk, having been warned at config-set time per the DQ4 footgun catalogue). `auto` / `always` run it.
+The premise-check is gated by `plan.phase-2-refine.revalidation` (read via `manage-config plan phase-2-refine get --field revalidation`) — when that gate resolves to `never`, skip the check (the operator owns the risk). `auto` / `always` run it.
 
 ### Step 4: Escalation Ratchet (DQ3 — one-way light→deep)
 

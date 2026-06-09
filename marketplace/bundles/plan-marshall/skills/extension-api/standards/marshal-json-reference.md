@@ -12,6 +12,7 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `skill_domains.{key}.profiles` | `get_skill_domains()` | Skill loading | Core |
 | `skill_domains.{key}.outline_skill` | `provides_outline_skill()` | phase-3-outline | [ext-point-outline.md](ext-point-outline.md) |
 | `skill_domains.{key}.workflow_skill_extensions.triage` | `provides_triage()` | phase-5-execute, phase-6-finalize | [ext-point-triage.md](ext-point-triage.md) |
+| `skill_domains.build_map` | `classify_globs()` + `classify_build_class()` (seeded, write-once, required + always seeded) | architecture derive-verification; phase-6-finalize pre-push-quality-gate activation | Core |
 | `extension_defaults.*` | `config_defaults()` | Various (write-once semantics) | Core |
 
 ## Plan Phase Configuration (marshal.json)
@@ -25,19 +26,28 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `plan.phase-4-plan.execute_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-5-execute.commit_strategy` | User config | phase-5-execute | - |
 | `plan.phase-5-execute.steps` | Built-in + `provides_verify_steps()` | phase-4-plan, phase-5-execute | [ext-point-verify-steps.md](ext-point-verify-steps.md) |
-| `plan.phase-5-execute.verification_max_iterations` | User config | phase-5-execute | - |
+| `plan.phase-5-execute.max_iterations` | User config | phase-5-execute | - |
 | `plan.phase-6-finalize.steps` | Built-in + `provides_finalize_steps()` | phase-6-finalize | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) |
 | `plan.phase-6-finalize.max_iterations` | User config | phase-6-finalize (loop-back ceiling) | - |
+| `plan.phase-6-finalize.checks_wait_timeout_seconds` | User config | tools-integration-ci (CI-completion polling timeout) | - |
 
-## Ceremony Policy (marshal.json)
+## Run-at-all Gates and Finalize Automation Knobs (marshal.json)
 
-Lifecycle-wide policy under the top-level `ceremony_policy.*` block — sibling to `plan` / `ci` / `project`. The `automation.*` axis carries the three auto-continuation knobs migrated out of the loose `plan.phase-{5-execute,6-finalize}` locations; read at runtime via `manage-config ceremony-policy get --field automation.<knob>`. See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Section: ceremony_policy" for the full schema (run-at-all gates + footgun catalogue).
+The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs under their owning phase — `deep_lane` / `escalation` under `plan.phase-1-init`, `revalidation` under `plan.phase-2-refine`, `qgate` under `plan.phase-3-outline`, and the finalize gates (`self_review` / `qgate` / `plugin_doctor` / `simplify`) plus the three automation knobs under `plan.phase-6-finalize`. Read at runtime via `manage-config plan <phase> get --field <knob>`. See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs" for the full schema.
 
 | Path | Set By | Used By | Extension Point Doc |
 |------|--------|---------|---------------------|
-| `ceremony_policy.automation.finalize_without_asking` | User config | plan-marshall orchestrator | - |
-| `ceremony_policy.automation.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
-| `ceremony_policy.automation.auto_merge_after_ci` | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |
+| `plan.phase-1-init.deep_lane` | User config | phase-1-init lane router | - |
+| `plan.phase-1-init.escalation` | User config | phase-1-init escalation ratchet | - |
+| `plan.phase-2-refine.revalidation` | User config | light lane + deep refine | - |
+| `plan.phase-3-outline.qgate` | User config | deep-lane outline dispatch | - |
+| `plan.phase-6-finalize.self_review` | User config | manage-execution-manifest (finalize selection) | - |
+| `plan.phase-6-finalize.qgate` | User config | manage-execution-manifest (finalize selection) | - |
+| `plan.phase-6-finalize.plugin_doctor` | User config | manage-execution-manifest (finalize selection) | - |
+| `plan.phase-6-finalize.simplify` | User config | manage-execution-manifest (finalize selection) | - |
+| `plan.phase-6-finalize.finalize_without_asking` | User config | plan-marshall orchestrator | - |
+| `plan.phase-6-finalize.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
+| `plan.phase-6-finalize.auto_merge_after_ci` | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |
 
 ## Project Configuration (marshal.json)
 
@@ -46,11 +56,7 @@ Project-level settings under the `project.*` block — persist across plans, see
 | Path | Set By | Used By | Extension Point Doc |
 |------|--------|---------|---------------------|
 | `project.default_base_branch` | User config (`marshall-steward`) | phase-1-init (references.base_branch seed) | - |
-| `project.branch_naming.working_prefixes` | User config | marshall-steward (branch-prefix validation) | - |
-| `project.branch_naming.ci_allowlist` | User config | structural CI-allowlist test | - |
-| `project.sanctioned_conftest` | User config | phase-3-outline, phase-4-plan, execute-task (test-helper-naming allow-list) | - |
-
-`project.sanctioned_conftest` is the project's allow-list of permitted `conftest.py` paths (a JSON array of path strings). The three runtime sites read it instead of restating a literal list in shipped skill prose; the generic rule (do not name a new test helper `conftest.py`) stays in the skill prose and is project-invariant. Fail-closed default: `["test/conftest.py", "test/adapters/conftest.py"]` (from `DEFAULT_SANCTIONED_CONFTEST` in `constants.py`).
+| `project.working_prefixes` | User config | marshall-steward (branch-prefix validation), structural branch-prefix coverage test | - |
 
 ## Build Configuration (run-configuration.json)
 

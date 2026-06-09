@@ -476,7 +476,8 @@ def merge_module_data(module_name: str, project_dir: str = '.') -> dict[str, Any
 # =============================================================================
 #
 # The deriver is the SINGLE deterministic consumer of the build_map contract.
-# It reads the merged build_map from marshal.json (seed ∪ user overrides),
+# It reads the build_map from marshal.json (skill_domains.build_map, single
+# source of truth — no override layer),
 # classifies each changed-artifact path to a build_class (longest-glob-wins),
 # resolves the owning module per path, and lets the CLI handler emit the
 # architecture-resolved verification command set per the build_class →
@@ -487,20 +488,20 @@ def merge_module_data(module_name: str, project_dir: str = '.') -> dict[str, Any
 
 
 def load_merged_build_map(project_dir: str = '.') -> dict[str, list[dict[str, str]]]:
-    """Return the merged effective build_map (seed ∪ overrides) for ``project_dir``.
+    """Return the effective ``skill_domains.build_map`` for ``project_dir``.
 
     Reads ``{project_dir}/.plan/marshal.json`` directly (project_dir-honoring,
-    mirroring the ``ext_defaults_*`` accessors) and applies the
-    ``manage-config`` merge so the deriver consumes the exact same effective
-    map the user sees via ``manage-config build-map read`` — seed entries with
-    any ``build_map_overrides`` applied last (overrides win by glob).
+    mirroring the ``ext_defaults_*`` accessors) and delegates to the
+    ``manage-config`` reader so the deriver consumes the exact same effective
+    map the user sees via ``manage-config build-map read`` — the build_map under
+    ``skill_domains`` (single source of truth, no override layer).
 
     Args:
         project_dir: Project directory containing ``.plan/marshal.json``.
 
     Returns:
-        The merged ``{domain: [{glob, role, build_class}]}`` dict. An empty
-        dict when the marshal.json is absent or carries no ``build_map``.
+        The ``{domain: [{glob, role, build_class}]}`` dict. An empty dict when
+        the marshal.json is absent or carries no ``skill_domains.build_map``.
     """
     marshal_path = Path(project_dir) / '.plan' / 'marshal.json'
     if not marshal_path.exists():
@@ -513,14 +514,17 @@ def load_merged_build_map(project_dir: str = '.') -> dict[str, list[dict[str, st
 
 
 def _merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
-    """Delegate to ``manage-config`` ``merge_build_map`` (single source of merge logic).
+    """Delegate to ``manage-config`` ``merge_build_map`` (single source of read logic).
 
-    The merge logic (seed ∪ overrides, overrides win by glob) is owned by
-    ``manage-config``'s ``_config_core.merge_build_map``. Importing it keeps one
-    implementation of the override-precedence rule rather than re-deriving it
-    here. The ``manage-config`` scripts dir is added to ``sys.path`` lazily so
-    the manage-architecture skill still imports cleanly when loaded in isolation
-    (the import failure degrades to "no build_map", not a crash).
+    The build_map read (from ``skill_domains.build_map``, single source of
+    truth — no override layer) is owned by ``manage-config``'s
+    ``_config_core.merge_build_map``. Importing it keeps one implementation
+    rather than re-deriving it here. The ``manage-config`` scripts dir is added
+    to ``sys.path`` lazily so the manage-architecture skill still imports
+    cleanly when loaded in isolation. Both the import failure and the
+    fail-closed ``BuildMapMissingError`` (absent build_map) degrade to "no
+    build_map" (an empty dict) rather than crashing the deriver — the deriver's
+    contract is "empty map when absent", not "raise".
     """
     import sys
 
@@ -534,10 +538,13 @@ def _merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
     if config_scripts_dir not in sys.path:
         sys.path.insert(0, config_scripts_dir)
     try:
-        from _config_core import merge_build_map  # type: ignore[import-not-found]
+        from _config_core import BuildMapMissingError, merge_build_map  # type: ignore[import-not-found]
     except ImportError:
         return {}
-    return merge_build_map(config)
+    try:
+        return merge_build_map(config)
+    except BuildMapMissingError:
+        return {}
 
 
 def classify_changed_path(path: str, merged_build_map: dict[str, list[dict[str, str]]]) -> str | None:
