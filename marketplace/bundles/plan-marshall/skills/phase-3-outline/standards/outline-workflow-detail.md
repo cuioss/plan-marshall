@@ -881,6 +881,55 @@ The `**Change per file:**` and `**Verification.Criteria:**` text in the template
 
 **Coordination with `recipe-lesson-cleanup`**: the recipe's Step 2c is the lesson-conversion entry point — it classifies each surviving directive and marks retrospective ones `shape: documentation-port` before Step 3 composes the outline. The phase-3-outline recognition rule is the general-plan entry point — it fires when any plan/deliverable (recipe-sourced or not) originates from a retrospective lesson. Both produce the same documentation-port shape from this one template; keeping the definition here ensures a change to the signals or template updates both callers at once.
 
+### State-verification discipline during outline
+
+These rules govern how the outline must verify actual state — defect liveness, on-disk paths, and analyzer scope — before settling a deliverable's classification or `**Affected files:**` list. They share one premise: the outline reasons from a snapshot (a backward-looking signal, a remembered path, a sampled violation set) that may no longer match what is on disk, so each rule requires an empirical check against the live tree before the snapshot is committed into the solution outline.
+
+#### Empirically verify defect liveness before settling on `documentation_only`
+
+**Trigger predicate**: phase-2-refine's `narrative_vs_code_validator` flagged a proposed fix direction as `stale` / already-shipped (the fix the request reasoned from appears, on code-reading, to be already in place), and the outline is about to classify the deliverable as `documentation_only` on that basis.
+
+**Required action**: do NOT settle on `documentation_only` from code-reading alone. First gather two pieces of empirical evidence per reported defect:
+
+1. **Identify the ship PR and merge date of the alleged fix.** The load-bearing code change is the real cutoff — not a workflow-only PR that masquerades as the fix. Locate the commit/PR that actually changed the offending code path and record when it merged.
+2. **Check post-fix archived-plan data for plans that ran after the ship date.** A clean cutoff (no recurrence in plans that ran after the fix merged) confirms `fixed → documentation_only`. Persistence past the ship date (the symptom still appears in plans that ran after the fix landed) proves the defect is still live, and a real code fix — not a docs-only port — is in scope.
+
+**When the two halves disagree** (e.g. one reported defect is genuinely fixed but a second is still live), escalate the empirical finding to the user via `AskUserQuestion` before finalizing scope. Do not silently settle the whole plan as `documentation_only` when part of it is still a live defect.
+
+**Generalize beyond lesson-sourced plans**: any plan derived from a backward-looking signal — a lesson, a retrospective, an archived-plan audit, or a prior finding — inherits a premise captured at signal time. That premise may have gone stale between when the signal was authored and when the plan runs. The empirical-liveness check applies to every such plan: confirm the reported defect or gap is still live against the current tree before accepting a classification that assumes it is (or is not) already resolved.
+
+#### Verify read-intent affected-file paths exist on disk before writing them into `**Affected files:**`
+
+**Trigger predicate**: the outline is about to write a `read`-intent step into a deliverable's `**Affected files:**` block, pointing at a Python script (or any existing, non-created file) that the deliverable will read rather than author.
+
+**Required action**: verify the exact on-disk path before committing it to the outline. Run `architecture find --pattern {basename}` (or fall back to `Glob` when the architecture verb returns elision) to resolve the file's actual path, and confirm the resolved path matches what is about to be written. A `read`-intent path that does not resolve to a real file on disk is a phantom path: it sails through outline but fails the `files_exist` Q-Gate check in phase-4-plan and forces a corrective `rename-path` round-trip.
+
+**`manage-*` script naming convention** (the most common source of guessed-but-wrong read paths): a `manage-*` skill's scripts follow a fixed naming convention — the entrypoint is `manage-{skill}.py`, and private helpers are named `_cmd_*.py` / `_*_core.py` / `_*_defaults.py`. Do NOT guess a plausible "canonical" monolithic name (e.g. `config.py` for the `manage-config` skill) — the real entrypoint is `manage-config.py`, and the logic the deliverable wants to read may live in a `_*` helper rather than the entrypoint. Resolve the actual filename with `architecture find` before writing it into `**Affected files:**`.
+
+#### Run the widened analyzer during outline to enumerate the FULL newly-in-scope violation set
+
+**Trigger predicate**: a deliverable widens the scope of a deterministic analyzer / lint / regex rule — it makes the rule apply to more files, more directories, a looser match pattern, or a new file class than it covered before.
+
+**Litmus test**: "Does this deliverable make an existing rule apply to files it did not apply to before? If yes, run the rule and list every violation in the newly covered files."
+
+**Required action** (all three steps, in order):
+
+1. **Run the widened rule during outline against the post-change scope and capture the FULL violation list.** Do not sample, survey, or reason from a representative subset — execute the rule with its new (wider) scope and read off every hit.
+2. **Enumerate every newly-in-scope violation file in `affected_files`** so each becomes a remediation deliverable. The new-scope violation set is exactly `(widened-rule findings) − (pre-existing narrow-rule findings)`: subtract the violations the rule already reported under its old narrow scope, and what remains is the set the widening newly exposes. Every member of that set must appear in the outline as a file the plan will fix.
+3. **Size the plan against the complete count, not a sample.** The plan's effort estimate, task count, and deliverable list must reflect the full newly-in-scope violation count. When the plan is sized against a sample, the enforcement gate it ships cannot reach zero — unremediated newly-in-scope violations remain — and the plan balloons mid-execute via scope-expansion escalations as the missed violations surface one by one.
+
+#### Verify test-file paths against disk before committing `affected_files`, disambiguating top-level vs subdirectory locations
+
+**Trigger predicate**: the outline is about to commit an `**Affected files:**` entry that references a test file (`test_*.py`).
+
+**Required action** (apply in order):
+
+1. **Run `architecture find --pattern {basename}`** to locate the file's actual path.
+2. **If the architecture verb returns elision or no result** (typical for a new test file the plan will create), use `Glob: test/**/{basename}.py` to confirm the parent directory exists and to see whether a same-named file already lives elsewhere in the tree.
+3. **For existing test files that must be modified**, verify the path resolves to a real file on disk before including it.
+
+**Top-level vs subdirectory disambiguation**: a test file may exist BOTH at a top-level path (`test/{bundle}/`) AND in a subdirectory (`test/{bundle}/{skill}/`). When a basename appears at two distinct paths, treat the two paths as different files — they are not interchangeable. Be explicit in the deliverable about which directory the intent applies to. Reversing the two (writing the top-level path when the subdirectory path was meant, or vice versa) produces a `files_exist` Q-Gate failure in phase-4-plan and a corrective `rename-path` round-trip. Resolving the basename against disk and naming the exact directory before the outline is written is what prevents the swap.
+
 ### Step 11: Q-Gate Verification
 
 **Purpose**: Verify skill output meets quality standards.
