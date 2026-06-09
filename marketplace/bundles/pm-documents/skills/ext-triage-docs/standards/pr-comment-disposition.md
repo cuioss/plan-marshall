@@ -32,6 +32,7 @@ Concrete violations of documentation standards (see `pm-documents:ref-asciidoc`,
 | Markdown lint `error` level | MD040 fenced code without language, MD034 bare URL outside angle brackets | markdownlint config |
 | Tone / voice violation | Marketing language ("blazingly fast", "revolutionary") in technical doc | `ref-documentation` (Tone Analysis) |
 | Inconsistent terminology | Same concept named two ways within same document (e.g., "task" and "step" interchangeably) | `ref-documentation` |
+| Missing boundary envelope on a newly-authored reference / external-content boundary | A cross-reference, `link:`, or `include::` directive this PR added that points at an unverified or non-existent target without resolution (the documentation analogue of an unguarded external-input boundary) | central FIX row — see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (boundary-envelope row) |
 
 ## REPLY-AND-RESOLVE Categories
 
@@ -56,6 +57,8 @@ Decline the suggestion with the corresponding template. Always reply before reso
 | Bot suggests adding dates / timestamps for "freshness" | `Project policy ("No timestamps") forbids dates in document body. Freshness is tracked via git history, not body content.` |
 
 ### Scope Out of Bounds
+
+**Exclusion (load-bearing):** "Scope Out of Bounds" may NOT be applied to a finding on a file this PR modified — such a finding is in-scope **by definition** and is a FIX-Eligible boundary-envelope finding (see the boundary-envelope row above), never a Scope-Out reply. For the canonical exclusion wording see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (Scope Out of Bounds exclusion).
 
 | Trigger | Reply Template |
 |---------|----------------|

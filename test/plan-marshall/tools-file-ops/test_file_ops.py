@@ -37,6 +37,7 @@ from file_ops import (
     output_error,
     output_success,
     parse_markdown_metadata,
+    read_json,
     require_plan_exists,
     safe_main,
     set_base_dir,
@@ -841,3 +842,45 @@ def test_guard_not_applicable_when_base_dir_unresolvable(tmp_path, monkeypatch):
     monkeypatch.chdir(isolated)
 
     assert guard_worktree_cwd('plan-unresolvable') is None
+
+
+# =============================================================================
+# read_json tests
+# =============================================================================
+
+
+def test_read_json_missing_file_returns_default(tmp_path):
+    """A nonexistent path returns the caller-supplied default."""
+    missing = tmp_path / 'absent.json'
+
+    assert read_json(missing, default=[]) == []
+
+
+def test_read_json_corrupt_content_degrades_to_supplied_default(tmp_path):
+    """Malformed JSON degrades to the explicit default instead of raising.
+
+    Regression: read_json previously called json.loads unguarded, so a corrupt
+    marshal.json crashed every caller with json.JSONDecodeError. It now degrades
+    corrupt content to the supplied default, mirroring the not-found case. The
+    explicit default=[] mirrors the _read_build_map_globs call shape.
+    """
+    corrupt = tmp_path / 'corrupt.json'
+    corrupt.write_text('{ this is not: valid json', encoding='utf-8')
+
+    assert read_json(corrupt, default=[]) == []
+
+
+def test_read_json_corrupt_content_degrades_to_default_default(tmp_path):
+    """Corrupt content with no explicit default degrades to the {} default-default."""
+    corrupt = tmp_path / 'corrupt.json'
+    corrupt.write_text('not json at all', encoding='utf-8')
+
+    assert read_json(corrupt) == {}
+
+
+def test_read_json_valid_content_round_trips(tmp_path):
+    """A valid JSON file still parses normally (no degradation on the happy path)."""
+    valid = tmp_path / 'valid.json'
+    valid.write_text('{"key": "value"}', encoding='utf-8')
+
+    assert read_json(valid) == {'key': 'value'}

@@ -9,7 +9,7 @@ Subcommands:
     check-structure               Check if the per-module project-architecture layout exists
     seed-blocking-finding-types   Idempotently seed default phase-boundary
                                   blocking-finding partitions into marshal.json
-    check-branch-naming           Detect absence or drift of project.working_prefixes
+    check-working-prefixes        Detect absence or drift of project.working_prefixes
                                   against the canonical default (non-clobbering)
 
 Note: check-docs and check-structure overlap with menu-healthcheck steps 2 and 5.
@@ -23,7 +23,7 @@ Usage:
     python3 determine_mode.py fix-docs
     python3 determine_mode.py check-structure
     python3 determine_mode.py seed-blocking-finding-types
-    python3 determine_mode.py check-branch-naming
+    python3 determine_mode.py check-working-prefixes
 
 Output (TOON format):
     mode subcommand:
@@ -62,7 +62,7 @@ Output (TOON format):
         seeded_count	6
         skipped_count	0
 
-    check-branch-naming subcommand:
+    check-working-prefixes subcommand:
         status	ok
 
         status	missing
@@ -756,7 +756,7 @@ def cmd_check_missing_finalize_steps(args: argparse.Namespace) -> dict:
     return {'status': 'ok', 'missing_count': 0}
 
 
-def detect_branch_naming_drift(plan_dir: Path) -> dict:
+def detect_working_prefixes_drift(plan_dir: Path) -> dict:
     """Compare ``marshal.json::project["working_prefixes"]`` against the canonical
     ``DEFAULT_PROJECT["working_prefixes"]`` list and classify the project's state.
 
@@ -815,15 +815,15 @@ def detect_branch_naming_drift(plan_dir: Path) -> dict:
     return ok_result
 
 
-def cmd_check_branch_naming(args: argparse.Namespace) -> dict:
-    """Handle the 'check-branch-naming' subcommand.
+def cmd_check_working_prefixes(args: argparse.Namespace) -> dict:
+    """Handle the 'check-working-prefixes' subcommand.
 
     Surfaces ``project.working_prefixes`` absence or drift against the canonical
     default so the wizard can prompt the operator to add/update it. The
     detection is non-clobbering — a current or operator-customized (superset)
     list returns ``status: ok`` and is never flagged.
     """
-    result = detect_branch_naming_drift(Path(args.plan_dir))
+    result = detect_working_prefixes_drift(Path(args.plan_dir))
     outcome = result['outcome']
     if outcome == 'absent':
         return {'status': 'missing', 'detail': 'absent', 'missing_keys': 'working_prefixes'}
@@ -892,16 +892,16 @@ def main() -> int:
         help='Directory containing marshal.json (default: .plan)',
     )
 
-    # check-branch-naming subcommand
-    branch_naming_parser = subparsers.add_parser(
-        'check-branch-naming',
+    # check-working-prefixes subcommand
+    working_prefixes_parser = subparsers.add_parser(
+        'check-working-prefixes',
         help=(
             'Detect absence or drift of project.working_prefixes against the canonical '
             'default — surfaces missing/drifted branch-prefix config so the wizard can prompt.'
         ),
         allow_abbrev=False,
     )
-    branch_naming_parser.add_argument(
+    working_prefixes_parser.add_argument(
         '--plan-dir',
         type=str,
         default='.plan',
@@ -922,8 +922,8 @@ def main() -> int:
         result = cmd_seed_blocking_finding_types(args)
     elif args.command == 'check-missing-finalize-steps':
         result = cmd_check_missing_finalize_steps(args)
-    elif args.command == 'check-branch-naming':
-        result = cmd_check_branch_naming(args)
+    elif args.command == 'check-working-prefixes':
+        result = cmd_check_working_prefixes(args)
     else:
         parser.print_help()
         return 1

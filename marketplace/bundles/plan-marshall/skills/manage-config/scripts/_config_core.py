@@ -442,9 +442,10 @@ def merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
 
     The ``build_map`` is the single source of truth — there is no override
     layer. This function fails closed: when ``skill_domains.build_map`` is
-    absent it raises :class:`BuildMapMissingError` rather than returning an
-    empty dict, so a missing seed surfaces as a structured error instead of a
-    silent no-build.
+    absent or is a non-dict (corrupt) value it raises
+    :class:`BuildMapMissingError` rather than returning an empty dict or
+    crashing, so a missing or corrupt seed surfaces as a structured error
+    instead of a silent no-build or an untyped ``AttributeError``.
 
     Args:
         config: The loaded marshal.json config dict (read-only — never mutated).
@@ -454,15 +455,16 @@ def merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
         ``skill_domains.build_map``.
 
     Raises:
-        BuildMapMissingError: When ``skill_domains.build_map`` is absent.
+        BuildMapMissingError: When ``skill_domains.build_map`` is absent or is
+            not a dict.
     """
     skill_domains = config.get('skill_domains')
-    if not isinstance(skill_domains, dict) or 'build_map' not in skill_domains:
+    seed = skill_domains.get('build_map') if isinstance(skill_domains, dict) else None
+    if not isinstance(seed, dict):
         raise BuildMapMissingError(
-            'skill_domains.build_map is absent. Run `manage-config build-map seed` '
+            'skill_domains.build_map is absent or not a dict. Run `manage-config build-map seed` '
             'or re-run /marshall-steward to seed it.'
         )
-    seed: dict[str, list[dict[str, str]]] = skill_domains['build_map']
 
     # Deep-copy the seed so the caller never mutates the persisted block.
     return {domain: [dict(entry) for entry in entries] for domain, entries in seed.items()}

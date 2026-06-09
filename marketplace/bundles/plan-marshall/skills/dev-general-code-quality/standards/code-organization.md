@@ -227,11 +227,18 @@ if (isActiveAdmin(user))
 
 The guiding principle: implement the minimum that satisfies the present requirement. Surplus structure is not free — every speculative parameter, re-export, or abstraction layer is something a future reader must understand, a static analyzer must scan, and a maintainer must keep correct. When in doubt, leave it out; the change is cheap to add later against a real requirement and expensive to retrofit-remove once callers depend on its accidental presence.
 
+**Required-vs-speculative carve-out (the discriminator):** "Minimum" excludes genuinely-required error handling at a real I/O / external-input boundary — it does NOT mean "strip all guards." A guard at a real boundary that handles a failure the boundary can actually produce is **required** and MUST be kept or added; a guard for a state that cannot occur is **speculative** and is stripped. Apply this discriminator before deleting any guard:
+
+* **Required (keep / add).** Error handling at a real failure path that can occur in production: an unguarded parse of an external file (`json.loads` on a file the program does not write — config, manifest, network payload), a missing type-guard on externally-sourced data (`.items()` / `.attr` on a value sourced from user config or an external API without an `isinstance` check), a missing envelope on a network / filesystem boundary that can fail. These are not "defensive complexity" — they are the correct handling of a failure mode the boundary genuinely produces, and removing them reintroduces a latent crash.
+* **Speculative (strip — YAGNI).** Guards for failures that cannot occur given the call graph (a re-check of an invariant a caller already guarantees, a `try/except` around code that cannot raise), configurability for callers that do not exist, and abstraction for a second implementation that is not planned. These remain surplus and are removed.
+
+The test is the failure's reality, not the guard's presence: *can the boundary actually produce this failure?* If yes, the guard is required; if the state is impossible, the guard is speculative. The catalogue's "Defensive try/except" anti-pattern below targets the speculative case only — it never licenses deleting a real-boundary guard.
+
 **Detection:**
 
 * **Unused parameters preserved for future use.** A parameter that no code path reads, kept "because a caller might need it later". Remove it; add it back when a real caller needs it.
 * **Thin/backward-compat re-exports with <= 1 live caller.** A module that exists only to re-export a symbol from another module, with at most one importer. Inline the import at the single call site and delete the shim.
-* **Defensive try/except around already-handled or should-fail-loudly failures.** A guard that swallows or re-wraps an exception the caller already handles, or that masks a programming error that should crash loudly. Let it propagate.
+* **Defensive try/except around already-handled or should-fail-loudly failures.** A guard that swallows or re-wraps an exception the caller already handles, or that masks a programming error that should crash loudly. Let it propagate. *This anti-pattern is the speculative case only — it does NOT license removing required error handling at a real I/O / external-input boundary (see the required-vs-speculative carve-out above).*
 * **Multiple near-identical helpers where one parameterised function suffices.** Two or more functions differing only in a constant or a branch. Collapse into one function with a parameter.
 * **Signature-restating docstrings/comments.** A docstring or comment that names the parameters and return type without adding intent ("WHY") beyond what the signature already states. Delete it or replace it with a rationale.
 * **Config keys/flags with a single hard-coded caller.** A configuration knob, feature flag, or setting read in exactly one place and never varied. Inline the constant and remove the key.

@@ -556,21 +556,27 @@ def get_marshal_path() -> Path:
 
 
 def read_json(path: str | Path, default: Any = None) -> Any:
-    """Read and parse a JSON file, returning default if not found.
+    """Read and parse a JSON file, returning default if not found or corrupt.
 
     Args:
         path: Path to JSON file
         default: Value to return if file doesn't exist (default: empty dict)
 
     Returns:
-        Parsed JSON content, or default if file not found
+        Parsed JSON content, or default if the file does not exist or contains
+        unparseable JSON. Corrupt/malformed content degrades to default — the
+        same deterministic degradation as the not-found case — rather than
+        raising json.JSONDecodeError.
     """
     if default is None:
         default = {}
     p = Path(path)
     if not p.exists():
         return default
-    return json.loads(p.read_text(encoding='utf-8'))
+    try:
+        return json.loads(p.read_text(encoding='utf-8'))
+    except json.JSONDecodeError:
+        return default
 
 
 def write_json(path: str | Path, data: Any) -> None:

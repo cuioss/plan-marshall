@@ -122,6 +122,20 @@ def test_merge_build_map_fails_closed_when_skill_domains_lacks_build_map():
         _config_core_mod.merge_build_map({'skill_domains': {'system': {}}})
 
 
+@pytest.mark.parametrize('corrupt_build_map', [[], ['glob'], 'a string', 42])
+def test_merge_build_map_fails_closed_when_build_map_is_non_dict(corrupt_build_map):
+    """A present-but-non-dict skill_domains.build_map raises BuildMapMissingError.
+
+    Regression: merge_build_map previously assigned skill_domains['build_map'] to
+    seed without a type check, so a corrupt non-dict value crashed the subsequent
+    .items() deep-copy with an untyped AttributeError. The hardened fail-closed
+    guard now treats a non-dict build_map the same as an absent one.
+    """
+    config = {'skill_domains': {'build_map': corrupt_build_map}}
+    with pytest.raises(_config_core_mod.BuildMapMissingError):
+        _config_core_mod.merge_build_map(config)
+
+
 def test_get_build_map_returns_empty_when_absent():
     """get_build_map returns {} (not an error) when skill_domains.build_map is absent."""
     assert _config_core_mod.get_build_map({}) == {}

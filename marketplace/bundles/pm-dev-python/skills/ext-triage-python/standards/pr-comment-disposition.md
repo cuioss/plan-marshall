@@ -29,6 +29,7 @@ Concrete violations of Python standards (see `pm-dev-python:python-core`, `pm-de
 | Dataclass/Pydantic misuse | Missing `field(default_factory=...)`, `@dataclass(frozen=True)` mutated, Pydantic v1 syntax in v2 module | `python-core` |
 | Pattern matching | `match`/`case` with overlapping patterns or unreachable case | `python-core` |
 | Coverage drop | New public function lacks any test | `pytest-testing` |
+| Missing boundary envelope on a newly-authored I/O / external-input boundary, or missing `isinstance` guard on externally-sourced data | Unguarded `json.loads` on external file content (crashes on corrupt input); `.attr` / `.items()` on a value sourced from external config without a type check (`AttributeError` on a corrupt non-dict) | central FIX row — see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (boundary-envelope row) |
 
 ## REPLY-AND-RESOLVE Categories
 
@@ -53,6 +54,8 @@ Decline the suggestion with the corresponding template. Always reply before reso
 | Bot suggests `print()` over CuiLogger / structured logging | `Module standard requires structured logging (see `cui-logging` for CUI modules). `print()` is acceptable only for CLI user-facing output, not diagnostics.` |
 
 ### Scope Out of Bounds
+
+**Exclusion (load-bearing):** "Scope Out of Bounds" may NOT be applied to a finding on a file this PR modified — such a finding is in-scope **by definition** and is a FIX-Eligible boundary-envelope finding (see the boundary-envelope row above), never a Scope-Out reply. For the canonical exclusion wording see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (Scope Out of Bounds exclusion).
 
 | Trigger | Reply Template |
 |---------|----------------|

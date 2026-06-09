@@ -130,7 +130,13 @@ Task: plan-marshall:{target}
       thin re-export shims, defensive catch-alls around already-handled
       failures, near-identical helpers collapsible into one, signature-restating
       docstrings, single-caller config keys, and speculative abstractions with
-      no second implementation. Apply edits directly to the worktree via Edit.
+      no second implementation. Do NOT delete a guard that sits at a real I/O /
+      external-input boundary (an unguarded-parse fix, an isinstance type-guard
+      on externally-sourced data, an envelope on a network/filesystem boundary):
+      required real-boundary error handling is NOT speculative defensive
+      complexity — see the required-vs-speculative carve-out in
+      dev-general-code-quality standards/code-organization.md #minimum-viable-code.
+      Apply edits directly to the worktree via Edit.
       Coverage depth (from the resolved coverage instruction "{cov_instruction}"):
       at T1/T2/inherit, review each anti-pattern at face value (today's behavior);
       at T3+, trace each deletion candidate's callers and cross-references before

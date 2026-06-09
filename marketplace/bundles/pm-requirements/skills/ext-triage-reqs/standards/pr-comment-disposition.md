@@ -32,6 +32,7 @@ Concrete violations of requirements-engineering standards (see `pm-requirements:
 | Project setup gap | New requirements document missing standard top-level structure | `setup` |
 | Cross-reference broken | `<<REQ-002>>` points to nonexistent or renamed requirement | `requirements-authoring` (see `ref-asciidoc` for syntax) |
 | Modal verb misuse | "should" used where "shall" is required for normative requirements (per RFC 2119 / project glossary) | `requirements-authoring` (Modal Verbs) |
+| Missing boundary envelope on a newly-authored requirement / traceability boundary | A requirement this PR added that introduces a normative obligation without its required guard — no acceptance criterion or no bidirectional traceability link (the requirements analogue of an unguarded external-input boundary) | central FIX row — see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (boundary-envelope row) |
 
 ## REPLY-AND-RESOLVE Categories
 
@@ -56,6 +57,8 @@ Decline the suggestion with the corresponding template. Always reply before reso
 | Bot proposes folding two requirements into one when the plan splits them for clarity | `Plan splits `{req}` into two requirements per `{plan_id}` for independent acceptance testing. Folding reverses the split.` |
 
 ### Scope Out of Bounds
+
+**Exclusion (load-bearing):** "Scope Out of Bounds" may NOT be applied to a finding on a file this PR modified — such a finding is in-scope **by definition** and is a FIX-Eligible boundary-envelope finding (see the boundary-envelope row above), never a Scope-Out reply. For the canonical exclusion wording see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (Scope Out of Bounds exclusion).
 
 | Trigger | Reply Template |
 |---------|----------------|
