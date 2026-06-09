@@ -6,9 +6,9 @@
 
 The `ext-point-dynamic-level-executor` extension point declares that a marketplace agent participates in role-based variant emission. It is the only extension point in the `ext-point-*` family whose consumer is an **agent file** (not a skill); the implementor is the agent's frontmatter, and the producer is the build target (`marketplace/targets/claude/`).
 
-When an agent declares this extension point, the build target emits one variant agent file per ordinal level (`low`, `medium`, `high`, `xhigh`, `xxhigh`) into `target/claude/{bundle}/agents/`, each variant pinned to a specific `(model, effort)` primitive. The canonical no-suffix file is also emitted (with `implements:` and `levels:` stripped) so the `inherit` resolution case dispatches the user-configured-or-default model. Dispatch sites resolve the role's level via `manage-config effort resolve-target --role <key>` (which returns the canonical name when level is `inherit`/empty, otherwise the per-level variant `execution-context-{level}`) and call the matching variant by name.
+When an agent declares this extension point, the build target emits one variant agent file per ordinal level (`low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`) into `target/claude/{bundle}/agents/`, each variant pinned to a specific `(model, effort)` primitive. The canonical no-suffix file is also emitted (with `implements:` and `levels:` stripped) so the `inherit` resolution case dispatches the user-configured-or-default model. Dispatch sites resolve the role's level via `manage-config effort resolve-target --role <key>` (which returns the canonical name when level is `inherit`/empty, otherwise the per-level variant `execution-context-{level}`) and call the matching variant by name.
 
-The marketplace ships exactly one implementor — `plan-marshall:execution-context` — the single generic dispatcher that drives every plan-marshall `Task:` invocation. Arbitrary workflow bodies are dispatched through the six emitted variants via the companion workflow-doc ext-point (`ext-point-execution-context-workflow`).
+The marketplace ships exactly one implementor — `plan-marshall:execution-context` — the single generic dispatcher that drives every plan-marshall `Task:` invocation. Arbitrary workflow bodies are dispatched through the seven emitted variants (including canonical) via the companion workflow-doc ext-point (`ext-point-execution-context-workflow`).
 
 The end-to-end trace:
 
@@ -47,7 +47,7 @@ levels: [high, xxhigh]   # OPTIONAL — restricts emitted variants to a subset
 | Field | Required | Description |
 |-------|----------|-------------|
 | `implements` | Yes | Fully-qualified ext-point reference: `plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`. Single switch that turns variant emission on for this agent. |
-| `levels` | No | Whitelist of ordinal levels to emit. When omitted, the build target emits all five (`low`, `medium`, `high`, `xhigh`, `xxhigh`). When present, only listed levels are emitted. The canonical (`inherit`) is always emitted regardless of `levels`. |
+| `levels` | No | Whitelist of ordinal levels to emit. When omitted, the build target emits all six (`low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`). When present, only listed levels are emitted. The canonical (`inherit`) is always emitted regardless of `levels`. |
 
 ### Forbidden Fields
 
@@ -60,7 +60,7 @@ The plugin-doctor `hardcoded-model-on-canonical` rule (see `pm-plugin-developmen
 
 ### Level → Primitive Binding
 
-The level → `(model, effort)` mapping is documented in [`plan-marshall:plan-marshall/standards/effort-levels.md`](../../plan-marshall/standards/effort-levels.md). Agent authors do NOT redeclare the binding — it is read once by the build target. See that document for the canonical table and the `xxhigh` Opus-4.8-only build-time guard.
+The level → `(model, effort)` mapping is documented in [`plan-marshall:plan-marshall/standards/effort-levels.md`](../../plan-marshall/standards/effort-levels.md). Agent authors do NOT redeclare the binding — it is read once by the build target. See that document for the canonical table and the `max` Opus-4.8-only build-time guard.
 
 ### Role Registry
 
@@ -81,8 +81,9 @@ Given a canonical agent at `marketplace/bundles/{bundle}/agents/{name}.md` with 
 | `target/claude/{bundle}/agents/{name}-low.md` | Variant: `name: {name}-low`, `model: haiku`, no `effort:` (haiku does not accept effort). `implements:`/`levels:` stripped. |
 | `target/claude/{bundle}/agents/{name}-medium.md` | Variant: `name: {name}-medium`, `model: sonnet`, `effort: medium`. |
 | `target/claude/{bundle}/agents/{name}-high.md` | Variant: `name: {name}-high`, `model: sonnet`, `effort: high`. |
-| `target/claude/{bundle}/agents/{name}-xhigh.md` | Variant: `name: {name}-xhigh`, `model: opus`, `effort: high`. |
-| `target/claude/{bundle}/agents/{name}-xxhigh.md` | Variant: `name: {name}-xxhigh`, `model: opus`, `effort: xhigh`. **Refused at build time** when canonical's resolved model alias does not accept `effort: xhigh` (Opus-4.8-only guard). |
+| `target/claude/{bundle}/agents/{name}-xhigh.md` | Variant: `name: {name}-xhigh`, `model: opus`, `effort: medium`. |
+| `target/claude/{bundle}/agents/{name}-xxhigh.md` | Variant: `name: {name}-xxhigh`, `model: opus`, `effort: high`. |
+| `target/claude/{bundle}/agents/{name}-max.md` | Variant: `name: {name}-max`, `model: opus`, `effort: xhigh`. **Refused at build time** when canonical's resolved model alias does not accept `effort: xhigh` (Opus-4.8-only guard). |
 
 When the canonical declares `levels: [high, xxhigh]`, only `{name}.md`, `{name}-high.md`, and `{name}-xxhigh.md` are emitted.
 
@@ -109,7 +110,7 @@ The build target enforces these rules at emission time:
 | `implements:` value is the canonical fully-qualified ext-point reference | Per-agent | Build error: unrecognized `implements:` target |
 | Canonical does not declare `model:` or `effort:` | Per-agent | Build error: forbidden field on canonical |
 | `levels:` (when present) contains only known ordinal level keys | Per-agent | Build error: unknown level |
-| `xxhigh` variant only emitted when the resolved canonical model accepts `effort: xhigh` | Per-variant | Variant skipped + build warning |
+| `max` variant only emitted when the resolved canonical model accepts `effort: xhigh` | Per-variant | Variant skipped + build warning |
 | Variant `name:` matches `{canonical-name}-{level}` exactly | Per-variant | Build error: variant name mismatch |
 | Canonical no-suffix file always emitted (regardless of `levels:`) | Per-agent | Build error: canonical missing |
 
@@ -144,11 +145,12 @@ target/claude/plan-marshall/agents/
 ├── execution-context-low.md      # model: haiku
 ├── execution-context-medium.md   # model: sonnet, effort: medium
 ├── execution-context-high.md     # model: sonnet, effort: high
-├── execution-context-xhigh.md    # model: opus, effort: high
-└── execution-context-xxhigh.md   # model: opus, effort: xhigh (Opus-4.8-only)
+├── execution-context-xhigh.md    # model: opus, effort: medium
+├── execution-context-xxhigh.md   # model: opus, effort: high
+└── execution-context-max.md      # model: opus, effort: xhigh (Opus-4.8-only)
 ```
 
-`target/claude/plan-marshall/.claude-plugin/plugin.json` registers six agent entries for the canonical (the canonical + five variants).
+`target/claude/plan-marshall/.claude-plugin/plugin.json` registers seven agent entries for the canonical (the canonical + six variants).
 
 ### Dispatch site
 
@@ -195,8 +197,8 @@ The `resolve-target` subcommand returns `execution-context` when the level is `i
 
 | Bundle | Agent | `levels:` whitelist | Lever |
 |--------|-------|---------------------|-------|
-| plan-marshall | execution-context | (default — all five) | level/effort lever — write-capable dispatcher |
-| plan-marshall | execution-context-reader | (default — all five) | read-only tool-surface lever — untrusted-content ingestion |
+| plan-marshall | execution-context | (default — all six) | level/effort lever — write-capable dispatcher |
+| plan-marshall | execution-context-reader | (default — all six) | read-only tool-surface lever — untrusted-content ingestion |
 
 `execution-context` is the generic write-capable dispatcher whose body is parameterised by the `workflow` field in its prompt-body contract (see [`ext-point-execution-context-workflow`](ext-point-execution-context-workflow.md) for the workflow-doc side of the contract). Any number of workflow docs across the marketplace can be dispatched through its emitted variants.
 
