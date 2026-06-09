@@ -10,7 +10,7 @@ order: 9
 
 ## Purpose
 
-Run the plugin-doctor `quality-gate` invariant rule set (argparse safety, argument-naming, manage-invocation, extension contracts, shell-substitution, lesson-id / historical prose, role-field) scoped to the marketplace source of any skill the plan modifies — gating structural lint **before push**. Catches structural breakage that the Python `quality-gate` (ruff/mypy/pytest) cannot detect. The `modified_files` read (Step 1) and skill-dir extraction (Step 2) SUPPLY the `--paths` targets the gate scopes to; the skip-clean exit (Step 3) skips the gate when the plan touched no skill.
+Run the plugin-doctor `quality-gate` invariant rule set (argparse safety, argument-naming, manage-invocation, extension contracts, shell-substitution, lesson-id / historical prose, role-field) scoped to the marketplace source of any skill the plan modifies — gating structural lint **before push**. Catches structural breakage that the Python `quality-gate` (ruff/mypy/pytest) cannot detect. The `affected_files` read (Step 1) and skill-dir extraction (Step 2) SUPPLY the `--paths` targets the gate scopes to; the skip-clean exit (Step 3) skips the gate when the read succeeds and the plan touched no skill.
 
 Ordered at `order: 9` so it slots between `project:finalize-step-pre-submission-self-review` and `default:commit-push` (order 10) — structural lint gates before the commit is pushed, not after CI.
 
@@ -22,7 +22,7 @@ Invoked by `plan-marshall:phase-6-finalize` for projects that include `project:f
 
 Accepts the standard finalize-step arguments:
 
-- `--plan-id` — plan identifier (required, used to query references.json for modified_files)
+- `--plan-id` — plan identifier (required, used to query references.json for affected_files)
 - `--iteration` — finalize iteration counter (accepted for contract compliance, no effect)
 
 MUST be ordered **before** `default:commit-push` in the steps list so structural lint gates before push.
@@ -31,14 +31,14 @@ In a worktree-backed plan, the gate step is preceded by a worktree-fresh-executo
 
 ## Workflow
 
-### Step 1: Read modified files
+### Step 1: Read affected files
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
-  --plan-id {plan_id} --field modified_files
+  --plan-id {plan_id} --field affected_files
 ```
 
-Parse the returned list of file paths.
+Parse the returned list of file paths. Capture the read's `status`: `status: success` means the read resolved (the list MAY be empty); `status: error` / `field_not_found` means the scope-deriving read is broken (not empty) and Step 3's indeterminate branch applies.
 
 ### Step 2: Extract skill directory paths (the `--paths` supplier)
 
@@ -50,9 +50,11 @@ For each matching file, extract the skill directory path (everything up to and i
 
 Example: `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` → `marketplace/bundles/plan-marshall/skills/phase-5-execute`
 
-### Step 3: Skip-clean exit
+### Step 3: Skip-clean exit (only on a successful, genuinely-empty read)
 
-If zero skill paths remain after filtering, log, record the step as done, and return success:
+The skip-clean exit is taken ONLY when the Step 1 read succeeded (`status: success`) AND zero skill paths remain after Step 2 filtering — the plan genuinely touched no skill. An errored / `field_not_found` read is **indeterminate** (the input is broken, not empty) and MUST NOT take this exit; it falls through to the whole-tree fallback below.
+
+**Case (a) — successful read, zero skill paths after filtering** (the plan touched no skill): log, record the step as done, and return success:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -64,6 +66,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-plugin-doctor --outcome done \
   --display-detail "no skill changes detected"
+```
+
+**Case (b) — read errored / `field_not_found`** (indeterminate scope, not empty): do NOT take the skip-clean exit and do NOT record `--outcome done --display-detail "no skill changes detected"` off the broken read. Instead, fall back to gating the full plan scope so structural lint still runs: log the indeterminate-read fallback, proceed to Step 4 (resolve worktree path), then in Step 5 run the `quality-gate` with **no `--paths` scoping** (whole-tree gate) against the resolved `--marketplace-root`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[STATUS] (project:finalize-step-plugin-doctor) affected_files read indeterminate; falling back to whole-tree plugin-doctor quality-gate"
 ```
 
 ### Step 4: Regenerate a worktree-fresh executor
@@ -95,13 +105,20 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[STATUS] (project:finalize-step-plugin-doctor) Worktree executor regeneration failed; gating against existing executor"
 ```
 
-### Step 5: Run the scopeable quality-gate
+### Step 5: Run the quality-gate
 
-Run the plugin-doctor `quality-gate` scoped to the skill directories extracted in Step 2, against the marketplace root resolved in Step 4 (`{worktree_path}/marketplace` for a worktree, `marketplace` for the main checkout):
+**Scoped invocation** (the common case — Step 1 read succeeded and Step 2 yielded one or more skill directories): run the plugin-doctor `quality-gate` scoped to the skill directories extracted in Step 2, against the marketplace root resolved in Step 4 (`{worktree_path}/marketplace` for a worktree, `marketplace` for the main checkout):
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace \
   quality-gate --paths {space-separated skill directory paths} --marketplace-root {marketplace root}
+```
+
+**Whole-tree fallback** (the indeterminate case — Step 3 Case (b): the `affected_files` read errored / `field_not_found`): run the `quality-gate` with **no `--paths` scoping** against the same resolved marketplace root, so the structural lint still runs over the whole tree rather than false-skipping off a broken scope-deriving read:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace \
+  quality-gate --marketplace-root {marketplace root}
 ```
 
 Parse the TOON output. The violation signal is `status: fail` (the script also exits 1) OR `total_issues > 0`. On a violation, log the failure, record the step outcome `failed`, and exit with `status: error` so phase-6-finalize aborts **before** `default:commit-push`:
@@ -127,7 +144,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 | Missing `pm-plugin-development` bundle | Fatal config error — the project opted into the wrapper without the dependency |
 | Empty `worktree_path` (main-checkout flow) | Skip Step 4 regeneration — the executor already reflects the current checkout; proceed to the scan |
 | Worktree executor regeneration fails | Non-fatal — log WARN and gate against the existing executor; finalize does not hard-block on a mapping refresh |
-| Empty modified_files | Skip-clean exit — record `mark-step-done --outcome done --display-detail "no skill changes detected"` so the `phase_steps_complete` handshake invariant counts the step as done |
+| `affected_files` read succeeds, zero skill paths after filtering | Skip-clean exit (plan touched no skills) — record `mark-step-done --outcome done --display-detail "no skill changes detected"` so the `phase_steps_complete` handshake invariant counts the step as done |
+| `affected_files` read errors / `field_not_found` | Indeterminate: do NOT skip-clean; fall back to the whole-tree `quality-gate` (Step 5, no `--paths`) so structural lint still runs, then record the outcome from that gate run |
 | plugin-doctor `status: fail` / `total_issues > 0` | Fatal — record `mark-step-done --outcome failed --display-detail "plugin-doctor: {total_issues} violations"`, then abort finalize before `default:commit-push` |
 | plugin-doctor `status: pass` / `total_issues: 0` | Record `mark-step-done --outcome done --display-detail "plugin-doctor clean: {N} skills gated"` |
 
