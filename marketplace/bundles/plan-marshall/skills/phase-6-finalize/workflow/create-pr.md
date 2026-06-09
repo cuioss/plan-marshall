@@ -34,6 +34,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Skill: plan-marshall:tools-integration-ci
 ```
 
+### Resolve branch context
+
+Read the plan's branch and base-branch from `references.json`. This step grounds the `{base_branch}` placeholder used in every subsequent git diff and `ci pr create` call — do NOT improvise a branch-context read from any other source.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get-context \
+  --plan-id {plan_id}
+```
+
+Parse the returned TOON and bind:
+
+- `{branch}` ← `branch` field (the feature branch, e.g. `feature/{plan_id}`)
+- `{base_branch}` ← `base_branch` field (e.g. `main`)
+
+Both fields are required. If `status: error` is returned, STOP and return an error TOON — the plan has no references context and the PR cannot be created.
+
 ### Check if PR already exists
 
 ```bash
