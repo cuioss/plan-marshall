@@ -446,7 +446,7 @@ def main() -> int:
             "Resolve planning_lane in {light, deep} from cheap field reads + a "
             "request.md regex (zero codebase discovery, zero LLM cognition). "
             "'route' evaluates the DQ1 signal set (S1-S6): default is light; any "
-            "deep-precondition signal forces deep; ceremony_policy.planning."
+            "deep-precondition signal forces deep; plan.phase-1-init."
             "deep_lane (always|never|auto) short-circuits the signals. 'escalate' "
             "is the one-way light->deep ratchet — it sets planning_lane=deep + "
             "lane_escalated=true and refuses any downgrade to light. Both verbs "

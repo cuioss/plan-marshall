@@ -142,7 +142,7 @@ def cmd_phase(args, phase_section: str) -> dict:
 
     elif args.verb == 'set-max-iterations' and phase_section in LIST_STEP_PHASES:
         value = int(args.value)
-        key = 'verification_max_iterations' if phase_section == 'phase-5-execute' else 'max_iterations'
+        key = 'max_iterations'
         section[key] = value
         plan_config[phase_section] = section
         config['plan'] = plan_config

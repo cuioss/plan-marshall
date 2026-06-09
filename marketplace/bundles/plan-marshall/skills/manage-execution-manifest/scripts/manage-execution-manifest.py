@@ -813,7 +813,7 @@ def _log_pre_push_quality_gate_omitted(plan_id: str) -> None:
     """Emit the decision-log entry for the ``pre_push_quality_gate_inactive`` pre-filter."""
     message = (
         '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
-        'activation_globs empty or no footprint match'
+        'no build_map globs or no footprint match'
     )
     _emit_decision_log(plan_id, message)
 
@@ -893,12 +893,21 @@ def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> N
 # =============================================================================
 
 
-def _read_activation_globs() -> list[str]:
-    """Read ``plan.phase-6-finalize.pre_push_quality_gate.activation_globs`` from marshal.json.
+def _read_build_map_globs() -> list[str]:
+    """Derive the pre-push-quality-gate activation globs from ``skill_domains.build_map``.
 
-    Returns an empty list when the file is missing, the keys are absent, or the
-    value is not a list. The pre-filter treats any of these conditions as
-    "inactive" and removes ``default:pre-push-quality-gate``.
+    The build_map under ``skill_domains`` is the single source of truth for the
+    file-to-build contract — every ``{glob, role, build_class}`` entry across all
+    domains names a file type the project knows how to build. The pre-push
+    quality gate activates whenever the live footprint touches any of those
+    globs (polyglot-OR + descriptor-triggering, D7/D8): a registered file type
+    in the diff means the bundle is buildable and the gate is meaningful.
+
+    Returns the deduplicated list of non-empty glob strings collected from every
+    build_map entry. Returns an empty list when the file is missing, the
+    ``skill_domains.build_map`` block is absent, or no entry carries a glob — the
+    pre-filter treats an empty list as "inactive" and removes
+    ``default:pre-push-quality-gate``.
     """
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
@@ -906,19 +915,25 @@ def _read_activation_globs() -> list[str]:
     data = read_json(marshal_path, default={})
     if not isinstance(data, dict):
         return []
-    plan = data.get('plan')
-    if not isinstance(plan, dict):
+    skill_domains = data.get('skill_domains')
+    if not isinstance(skill_domains, dict):
         return []
-    phase_6 = plan.get('phase-6-finalize')
-    if not isinstance(phase_6, dict):
+    build_map = skill_domains.get('build_map')
+    if not isinstance(build_map, dict):
         return []
-    pre_push = phase_6.get('pre_push_quality_gate')
-    if not isinstance(pre_push, dict):
-        return []
-    globs = pre_push.get('activation_globs')
-    if not isinstance(globs, list):
-        return []
-    return [g for g in globs if isinstance(g, str) and g]
+    globs: list[str] = []
+    seen: set[str] = set()
+    for entries in build_map.values():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            glob = entry.get('glob')
+            if isinstance(glob, str) and glob and glob not in seen:
+                seen.add(glob)
+                globs.append(glob)
+    return globs
 
 
 def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
@@ -1029,12 +1044,13 @@ def _apply_commit_strategy_none(phase_6_candidates: list[str], commit_strategy: 
 def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
     """Pre-filter: drop ``pre-push-quality-gate`` when activation conditions fail.
 
-    Activation requires BOTH:
+    Activation is derived from ``skill_domains.build_map`` (single source of
+    truth) and requires BOTH:
 
-    1. ``plan.phase-6-finalize.pre_push_quality_gate.activation_globs`` in
-       ``marshal.json`` is non-empty.
-    2. At least one entry in the live plan footprint matches one of the
-       configured globs (using ``fnmatch.fnmatch``).
+    1. The build_map under ``skill_domains`` carries at least one ``glob`` entry
+       (i.e. the project registers at least one buildable file type).
+    2. At least one entry in the live plan footprint matches one of those
+       build_map globs (using ``fnmatch.fnmatch``).
 
     When either condition fails, ``pre-push-quality-gate`` is removed from
     ``phase_6_candidates``. The pre-filter is a no-op when ``pre-push-quality-gate``
@@ -1046,7 +1062,7 @@ def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id
     if 'pre-push-quality-gate' not in phase_6_candidates:
         return phase_6_candidates, False
 
-    globs = _read_activation_globs()
+    globs = _read_build_map_globs()
     if not globs:
         return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
 
@@ -1064,8 +1080,9 @@ def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id
 def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
     """Pre-filter: drop ``pre-submission-self-review`` when activation conditions fail.
 
-    Activation requires the live plan footprint to be non-empty. There is no
-    ``activation_globs`` knob — the four cognitive checks the step targets
+    Activation requires the live plan footprint to be non-empty. Unlike
+    ``pre-push-quality-gate`` (which gates on the ``skill_domains.build_map``
+    globs), this step has no glob gate — the four cognitive checks it targets
     (symmetric pairs, regex over-fit, wording, duplication) apply to any code or
     doc change. During early compose (phase-4-plan, before the worktree is
     materialised) the footprint is empty, so the step is omitted; it is
@@ -1142,8 +1159,8 @@ def _read_compatibility() -> str:
     value is not a non-empty string — matching ``DEFAULT_PLAN_REFINE['compatibility']``,
     so a fresh project (or one that never overrode the knob) resolves to the
     default the rest of the pipeline assumes. The composer reads marshal.json
-    straight through, mirroring ``_read_lightweight_track_override`` /
-    ``_read_activation_globs``.
+    straight through, mirroring ``_read_drop_review_on_scope_gate`` /
+    ``_read_build_map_globs``.
     """
     marshal_path = get_marshal_path()
     if marshal_path is None or not marshal_path.exists():
@@ -1217,7 +1234,7 @@ def _apply_whole_tree_gate_inactive(
 # ``automated-review`` is deliberately NOT in either implicit set: the
 # bot-enforcement guard re-adds it on GitHub/GitLab plans, so dropping it via
 # the implicit scope gate would be a silently-undone no-op. The only path that
-# suppresses ``automated-review`` is the explicit ``lightweight_track_override``
+# suppresses ``automated-review`` is the explicit ``drop_review_on_scope_gate``
 # opt-in (see ``_apply_scope_gated_finalize``).
 _SCOPE_GATED_SURGICAL_DROP = frozenset(
     {
@@ -1238,8 +1255,8 @@ _SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
 _SCOPE_GATED_OVERRIDE_DROP = frozenset({'automated-review', 'default:automated-review'})
 
 
-def _read_lightweight_track_override() -> bool:
-    """Read ``plan.phase-6-finalize.lightweight_track_override`` from marshal.json.
+def _read_drop_review_on_scope_gate() -> bool:
+    """Read ``plan.phase-6-finalize.drop_review_on_scope_gate`` from marshal.json.
 
     Returns ``False`` when the file is missing, the keys are absent, or the
     value is not a boolean ``True``. The escape hatch defaults to off: only an
@@ -1258,13 +1275,13 @@ def _read_lightweight_track_override() -> bool:
     phase_6 = plan.get('phase-6-finalize')
     if not isinstance(phase_6, dict):
         return False
-    return phase_6.get('lightweight_track_override') is True
+    return phase_6.get('drop_review_on_scope_gate') is True
 
 
 def _apply_scope_gated_finalize(
     phase_6_candidates: list[str],
     scope_estimate: str,
-    lightweight_track_override: bool,
+    drop_review_on_scope_gate: bool,
 ) -> tuple[list[str], list[str]]:
     """Pre-filter: drop heavyweight phase-6 review/audit steps by scope.
 
@@ -1279,7 +1296,7 @@ def _apply_scope_gated_finalize(
 
     ``automated-review`` is NEVER subtracted by the implicit scope gate (the
     bot-enforcement guard would re-add it, making the subtraction a no-op).
-    When ``lightweight_track_override`` is ``True`` AND the plan is itself
+    When ``drop_review_on_scope_gate`` is ``True`` AND the plan is itself
     scope-gated (``scope_estimate in ('surgical', 'single_module')``), the gate
     additionally drops ``automated-review`` — the only path that suppresses the
     bot-review gate, explicitly opted into via marshal.json. The override is
@@ -1301,7 +1318,7 @@ def _apply_scope_gated_finalize(
     else:
         drop_set = frozenset()
 
-    if lightweight_track_override and scope_estimate in ('surgical', 'single_module'):
+    if drop_review_on_scope_gate and scope_estimate in ('surgical', 'single_module'):
         drop_set = drop_set | _SCOPE_GATED_OVERRIDE_DROP
 
     if not drop_set:
@@ -1327,10 +1344,10 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 
 
 # =============================================================================
-# ceremony_policy.finalize run-at-all selection (post-matrix transform)
+# plan.phase-6-finalize run-at-all selection (post-matrix transform)
 # =============================================================================
 #
-# The four finalize run-at-all gates (`ceremony_policy.finalize.<gate>`) drive
+# The four finalize run-at-all gates (`plan.phase-6-finalize.<gate>`) drive
 # a post-matrix transform that forces each gate's finalize step in (`always`),
 # out (`never`), or defers to the existing decision machinery (`auto`, the
 # default no-op). Each gate maps to exactly one finalize step ID:
@@ -1347,9 +1364,9 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 #
 # The transform NEVER touches `automated-review`: the bot-review invariant
 # (enforced by `_apply_bot_enforcement_guard`) is orthogonal and is preserved
-# verbatim — the three ceremony gates are the only
+# verbatim — the four finalize gates are the only
 # finalize steps this transform may add or drop. Run-at-all values are validated
-# at set time by `manage-config`'s `validate_ceremony_policy`; the composer
+# at set time by `manage-config`'s `validate_run_at_all`; the composer
 # defensively treats any non-`{always,never}` value (including `auto` and a
 # malformed value) as defer.
 #
@@ -1400,43 +1417,19 @@ _CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'plugin_doctor', 'simplify')
 _CEREMONY_FINALIZE_DEFAULT = 'auto'
 
 
-def _ceremony_override_matches(when: object, plan_facts: dict[str, str]) -> bool:
-    """Return ``True`` iff an ``overrides[]`` row's ``when`` clause matches the plan facts.
+def _read_finalize_gates() -> dict[str, str]:
+    """Resolve the four ``plan.phase-6-finalize`` run-at-all gate values.
 
-    Mirrors ``manage-config``'s ``ceremony_override_matches`` (the authoritative
-    validator-side helper) but is inlined here so the composer stays
-    self-contained — it does not import ``manage-config``'s private command
-    modules, matching the precedent set by the planning-lane router's inlined
-    ``_read_ceremony_deep_lane``. An empty ``when`` clause matches every plan;
-    a row applies only when every key/value pair in ``when`` is present and
-    equal in ``plan_facts``.
-    """
-    if not isinstance(when, dict):
-        return False
-    for fact, expected in when.items():
-        if plan_facts.get(fact) != expected:
-            return False
-    return True
-
-
-def _read_ceremony_finalize_gates(plan_facts: dict[str, str]) -> dict[str, str]:
-    """Resolve the three ``ceremony_policy.finalize`` gate values for this plan.
-
-    Reads ``marshal.json``'s ``ceremony_policy.finalize`` block directly (the
+    Reads ``marshal.json``'s ``plan.phase-6-finalize`` block directly (the
     composer reads marshal.json straight through, like the planning-lane
-    router), merging the canonical ``auto`` default under any absent gate. Then
-    applies ``ceremony_policy.overrides[]`` rows in order — each matching row's
-    ``set`` map wins over the section value for any ``finalize.<gate>`` dotted
-    path it carries (later rows win over earlier rows, mirroring the
-    last-write-wins semantics of a dotted-path ``set``).
+    router), merging the canonical ``auto`` default under any absent gate. Each
+    gate (``self_review`` / ``qgate`` / ``plugin_doctor`` / ``simplify``) is a
+    flat phase-local knob — read via
+    ``manage-config plan phase-6-finalize get --field <gate>``.
 
-    ``plan_facts`` carries the deterministic per-plan facts the override
-    ``when`` clauses match on (``scope_estimate`` / ``plan_source`` /
-    ``change_type``).
-
-    Returns a ``{gate: value}`` dict for the three finalize gates; values are
-    always one of the section/override values (or the ``auto`` default). The
-    caller treats any value other than ``always`` / ``never`` as defer.
+    Returns a ``{gate: value}`` dict for the four finalize gates; values are
+    always one of the configured values (or the ``auto`` default). The caller
+    treats any value other than ``always`` / ``never`` as defer.
     """
     resolved: dict[str, str] = dict.fromkeys(_CEREMONY_FINALIZE_GATES, _CEREMONY_FINALIZE_DEFAULT)
 
@@ -1449,33 +1442,17 @@ def _read_ceremony_finalize_gates(plan_facts: dict[str, str]) -> dict[str, str]:
         return resolved
     if not isinstance(data, dict):
         return resolved
-    ceremony = data.get('ceremony_policy')
-    if not isinstance(ceremony, dict):
+    plan_block = data.get('plan')
+    if not isinstance(plan_block, dict):
+        return resolved
+    finalize = plan_block.get('phase-6-finalize')
+    if not isinstance(finalize, dict):
         return resolved
 
-    finalize = ceremony.get('finalize')
-    if isinstance(finalize, dict):
-        for gate in _CEREMONY_FINALIZE_GATES:
-            value = finalize.get(gate)
-            if isinstance(value, str) and value:
-                resolved[gate] = value
-
-    overrides = ceremony.get('overrides')
-    if isinstance(overrides, list):
-        for row in overrides:
-            if not isinstance(row, dict):
-                continue
-            if not _ceremony_override_matches(row.get('when', {}), plan_facts):
-                continue
-            set_map = row.get('set')
-            if not isinstance(set_map, dict):
-                continue
-            for dotted, value in set_map.items():
-                if not isinstance(dotted, str) or not isinstance(value, str):
-                    continue
-                section, _, gate = dotted.partition('.')
-                if section == 'finalize' and gate in _CEREMONY_FINALIZE_GATES and value:
-                    resolved[gate] = value
+    for gate in _CEREMONY_FINALIZE_GATES:
+        value = finalize.get(gate)
+        if isinstance(value, str) and value:
+            resolved[gate] = value
 
     return resolved
 
@@ -1564,14 +1541,11 @@ def _log_ceremony_finalize_selection(
 def _read_ci_provider() -> str | None:
     """Return the CI provider identifier (``github``, ``gitlab``) from marshal.json.
 
-    Resolution order (first match wins):
+    The provider is resolved from the ``providers[]`` entry where
+    ``category == 'ci'``, mapping skill name to a short identifier:
 
-    1. ``ci.provider`` — short identifier set explicitly by the project.
-    2. ``providers[]`` entry where ``category == 'ci'``, mapping skill name to
-       a short identifier:
-
-       * ``plan-marshall:workflow-integration-github`` -> ``github``
-       * ``plan-marshall:workflow-integration-gitlab`` -> ``gitlab``
+    * ``plan-marshall:workflow-integration-github`` -> ``github``
+    * ``plan-marshall:workflow-integration-gitlab`` -> ``gitlab``
 
     Returns ``None`` when the marshal file is missing, no CI provider is
     declared, or the resolved value is neither ``github`` nor ``gitlab``.
@@ -1583,11 +1557,6 @@ def _read_ci_provider() -> str | None:
         data = read_json(marshal_path)
     except (OSError, json.JSONDecodeError):
         return None
-    ci_block = data.get('ci')
-    if isinstance(ci_block, dict):
-        provider = ci_block.get('provider')
-        if isinstance(provider, str) and provider in {'github', 'gitlab'}:
-            return provider
     providers = data.get('providers')
     if not isinstance(providers, list):
         return None
@@ -2119,7 +2088,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #   1. commit_strategy_none — drop commit-push (and pre-push-quality-gate
     #      and pre-submission-self-review) when no push will occur.
     #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate when
-    #      activation_globs is empty or no live-footprint entry matches.
+    #      skill_domains.build_map carries no globs or no live-footprint entry
+    #      matches a build_map glob.
     #   3. pre_submission_self_review_inactive — drop pre-submission-self-review
     #      when the live footprint is empty.
     #   4. simplify_inactive — drop finalize-step-simplify when
@@ -2169,16 +2139,16 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
 
     # Pre-filter 6 (scope_gated_finalize) drops heavyweight phase-6 review/audit
     # steps by scope: surgical drops the three non-guarded steps, single_module
-    # drops only plan-retrospective, and the lightweight_track_override escape
+    # drops only plan-retrospective, and the drop_review_on_scope_gate escape
     # hatch additionally drops automated-review. It runs after the other
     # pre-filters and before the seven-row matrix and the bot-enforcement guard,
     # so it only ever narrows the candidate list. automated-review is dropped
     # ONLY via the explicit override — never by the implicit scope gate — so the
     # bot-enforcement invariant stays intact by default. See
     # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
-    lightweight_track_override = _read_lightweight_track_override()
+    drop_review_on_scope_gate = _read_drop_review_on_scope_gate()
     phase_6_candidates, scope_gated_dropped = _apply_scope_gated_finalize(
-        phase_6_candidates, args.scope_estimate, lightweight_track_override
+        phase_6_candidates, args.scope_estimate, drop_review_on_scope_gate
     )
 
     body, rule = _decide(
@@ -2211,25 +2181,19 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     mutated_tasks = _route_task_verification_commands(plan_id, body)
     _log_execution_tier_routing(plan_id, mutated_tasks, list(body['phase_5'].get('verification_steps', [])))
 
-    # ceremony_policy.finalize run-at-all selection runs AFTER the seven-row
+    # plan.phase-6-finalize run-at-all selection runs AFTER the seven-row
     # matrix (and execution_tier routing) and BEFORE the bot-enforcement guard.
-    # It forces each of the three finalize gates' steps in (`always`) or out
+    # It forces each of the four finalize gates' steps in (`always`) or out
     # (`never`) on the matrix-produced `phase_6.steps`, deferring to the existing
     # machinery on `auto` (the default). `always` is the only path that can
     # re-add a step the scope_gated_finalize pre-filter dropped — which is the
     # point: the operator-set `always` overrides the implicit scope gate. The
     # transform never touches `automated-review`, so running it before the
-    # bot-enforcement guard leaves the bot-review invariant intact. Override
-    # rows (`ceremony_policy.overrides[]`) are resolved against the plan facts
-    # (`scope_estimate` / `plan_source` / `change_type`). See
-    # standards/decision-rules.md § ceremony_policy.finalize Selection.
-    ceremony_plan_facts: dict[str, str] = {
-        'scope_estimate': args.scope_estimate,
-        'change_type': args.change_type,
-    }
-    if recipe_key:
-        ceremony_plan_facts['plan_source'] = recipe_key
-    ceremony_finalize_gates = _read_ceremony_finalize_gates(ceremony_plan_facts)
+    # bot-enforcement guard leaves the bot-review invariant intact. The gate
+    # values are flat phase-local knobs read directly from
+    # `plan.phase-6-finalize.<gate>`. See
+    # standards/decision-rules.md § plan.phase-6-finalize Selection.
+    ceremony_finalize_gates = _read_finalize_gates()
     ceremony_forced_in, ceremony_forced_out = _apply_ceremony_finalize_selection(
         body['phase_6']['steps'], ceremony_finalize_gates
     )
@@ -2321,7 +2285,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'whole_tree_gate_omitted': whole_tree_gate_omitted,
         'compatibility': compatibility,
         'scope_gated_finalize_dropped': scope_gated_dropped,
-        'lightweight_track_override': lightweight_track_override,
+        'drop_review_on_scope_gate': drop_review_on_scope_gate,
         'ceremony_finalize_gates': ceremony_finalize_gates,
         'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],
         'ceremony_finalize_forced_out': [c['step'] for c in ceremony_forced_out],

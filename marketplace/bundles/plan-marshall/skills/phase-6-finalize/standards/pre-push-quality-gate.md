@@ -20,7 +20,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 ## Inputs
 
 - `git working-tree state` — the live footprint, computed on demand from the worktree by the `manage-references compute-footprint` query (below): the union of the three-dot diff (`git diff --name-only {base_ref}...HEAD`) and the porcelain working-tree state (`git status --porcelain`). There is no persisted ledger; the footprint is always derived live from the worktree, which is the single source of truth.
-- `phase-6-finalize.pre_push_quality_gate.activation_globs` — list[string] of fnmatch globs. The manifest composer already gated activation on this list; the executor re-reads it to scope which live-and-intended entries should contribute to bundle derivation (defense-in-depth — only entries that match a configured glob feed bundle derivation).
+- `skill_domains.build_map` globs — the fnmatch globs collected from every `{glob, role, build_class}` entry in `skill_domains.build_map`. The manifest composer already gated activation on whether the footprint matches any of these globs; the executor re-reads them to scope which live-and-intended entries should contribute to bundle derivation (defense-in-depth — only entries that match a registered build_map glob feed bundle derivation).
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). The `quality-gate` build invocation below MUST identify the worktree via `--plan-id {plan_id}` (which auto-resolves through `manage-status get-worktree-path`) — **not** the `--project-dir {worktree_path}` escape hatch. This is a hard requirement, not a stylistic preference: the freshness-relevant build-log line that `pyproject_build run` emits must land in the **plan-scoped** execution-log tier (`.plan/local/plans/{plan_id}/logs/script-execution.log`), because the immediately-following `default:commit-push` (`order: 10`) step runs the `pre-commit-verify-freshness` gate, which reads exactly that plan-scoped log to confirm the worktree was verified after its last source mutation. The `--project-dir` escape hatch routes the executor's two-tier audit-log entry to the **global** tier instead, where the freshness gate cannot see it — producing a false-negative `stale`/`undecidable` verdict and a refused push even though the gate just ran. The two flags are mutually exclusive (Bucket B two-state contract); for this freshness-relevant call site, `--plan-id` is the only correct choice. See `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness" for the gate that consumes the plan-scoped log line.
 
 ## Execution
@@ -34,21 +34,20 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 Extract the `files` array from the TOON output. This is the live footprint derived from the worktree — the union of the three-dot `{base_ref}...HEAD` diff and the porcelain working-tree state — so it already reflects only what is actually modified now. A file that was touched then reverted does not appear, so it forces no redundant `quality-gate` run against a bundle with no actual changes.
 
-### Read activation_globs
+### Read the build_map globs
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field pre_push_quality_gate.activation_globs \
-  --audit-plan-id {plan_id}
+  build-map read --audit-plan-id {plan_id}
 ```
 
-Extract `value` (list[string]). The manifest composer guarantees the list is non-empty when this step is dispatched, but the executor reads it again for defense-in-depth.
+Extract `build_map` (the domain-keyed `{glob, role, build_class}` map) from the TOON output and collect the set of `glob` values across every domain entry. The manifest composer guarantees the footprint matches at least one of these globs when this step is dispatched, but the executor reads them again for defense-in-depth.
 
 ### Derive unique bundle set
 
 For each entry `path` in `files`:
 
-1. Skip the entry if it matches none of the `activation_globs` (using `fnmatch.fnmatch`).
+1. Skip the entry if it matches none of the build_map globs (using `fnmatch.fnmatch`).
 2. If the entry begins with `marketplace/bundles/`, take path segment 2 as the bundle (e.g., `marketplace/bundles/plan-marshall/skills/.../foo.py` → `plan-marshall`).
 3. Otherwise, if the entry begins with `test/`, take path segment 1 as the bundle (e.g., `test/plan-marshall/.../test_foo.py` → `plan-marshall`).
 4. Otherwise, the entry contributes no bundle (drop silently).

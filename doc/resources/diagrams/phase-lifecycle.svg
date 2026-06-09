@@ -72,7 +72,7 @@
 
   <!-- 5 → 6 -->
   <line class="arrow" x1="910" y1="210" x2="966" y2="210" marker-end="url(#arrow)"/>
-  <text x="940" y="160" class="arrow-lbl">ceremony_policy.automation.finalize_without_asking</text>
+  <text x="940" y="160" class="arrow-lbl">plan.phase-6-finalize.finalize_without_asking</text>
 
   <!-- ============= Loop-back (6 → 5) — the headline feature ============= -->
   <!-- Curved arrow leaves node 6 at its bottom-left, dips below the row, and re-enters node 5 at its bottom -->

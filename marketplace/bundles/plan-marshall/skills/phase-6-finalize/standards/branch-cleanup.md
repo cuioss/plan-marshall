@@ -311,7 +311,7 @@ The pre-merge gate fires after `ci wait` returns green on the rebased branch and
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  ceremony-policy get --field automation.auto_merge_after_ci
+  plan phase-6-finalize get --field auto_merge_after_ci
 ```
 
 Extract `value` as `{auto_merge_after_ci}` (default: `true`). Valid values: `true`, `false`. The default is now `true` — auto-merge after CI, serialized across plans via the cross-plan merge-lock so concurrent plans can never race on the merge-to-main critical section. `false` is the explicit interactive opt-out (prompt the operator before merging). The read mechanism is a plain boolean — no tri-state, no back-compat normalization.

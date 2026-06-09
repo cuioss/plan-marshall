@@ -107,7 +107,11 @@ def _module_derived(name: str, module_path: str) -> dict:
 
 
 def _seed(project_dir: str, build_map: dict | None = _BUILD_MAP) -> None:
-    """Seed _project.json, one module (paths.module=pm-mod), and marshal.json::build_map."""
+    """Seed _project.json, one module (paths.module=pm-mod), and marshal.json.
+
+    The build_map is seeded under ``skill_domains.build_map`` (relocated; single
+    source of truth), which is where ``load_merged_build_map`` reads it.
+    """
     save_project_meta(
         {
             'name': 'derive-verification-test',
@@ -123,7 +127,7 @@ def _seed(project_dir: str, build_map: dict | None = _BUILD_MAP) -> None:
     marshal.parent.mkdir(parents=True, exist_ok=True)
     payload: dict = {}
     if build_map is not None:
-        payload['build_map'] = build_map
+        payload['skill_domains'] = {'build_map': build_map}
     marshal.write_text(json.dumps(payload, indent=2), encoding='utf-8')
 
 

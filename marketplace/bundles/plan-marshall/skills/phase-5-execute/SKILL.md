@@ -219,7 +219,7 @@ Skill: {step_reference}
   Arguments: --plan-id {plan_id}
 ```
 
-Input contract: `--plan-id` only. Retry logic is managed by the task runner (Step 11 triage loop with `verification_max_iterations`), not by the step itself.
+Input contract: `--plan-id` only. Retry logic is managed by the task runner (Step 11 triage loop with `max_iterations`), not by the step itself.
 
 **Return Contract** (required TOON output from external steps):
 
@@ -828,7 +828,7 @@ After the test-contract task completes, the standard verification path resumes �
 
 **11a**: Read `verify_iteration` counter from task metadata (default: 0).
 
-**11b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 12.
+**11b**: If `verify_iteration >= max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 12.
 
 **11c**: Persist each failing finding to the Q-Gate findings store (producer-side; the triage dispatch reads from the store by reference):
 
@@ -1113,7 +1113,7 @@ This automatically updates status.json and moves to the next phase.
 **After transition**, check `finalize_without_asking` config:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  ceremony-policy get --field automation.finalize_without_asking
+  plan phase-6-finalize get --field finalize_without_asking
 ```
 
 - **IF `finalize_without_asking == true`**: Log and auto-continue to finalize phase

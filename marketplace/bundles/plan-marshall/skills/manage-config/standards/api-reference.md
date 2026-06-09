@@ -131,50 +131,32 @@ absent or unreadable.
 | Verb | Parameters | Description |
 |------|-----------|-------------|
 | `get` | `--field` | Get a project field. Falls back to the canonical default (from `DEFAULT_PROJECT`) when the key is absent from the live `project` block. |
-| `set` | `--field`, `--value` | Set a project field. Scalar fields are coerced (bool/int/str); JSON fields (`branch_naming`) take a JSON value that round-trips through `get`. |
+| `set` | `--field`, `--value` | Set a project field. Scalar fields are coerced (bool/int/str); the list-valued JSON field `working_prefixes` takes a JSON array value that round-trips through `get`. |
 
 ### Fields
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `default_base_branch` | string | `main` | Project's canonical base branch; seeds `references.base_branch` at plan init. |
-| `branch_naming` | object | see below | Canonical branch-prefix sets (`working_prefixes`, `ci_allowlist`). |
+| `working_prefixes` | list[string] | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes for plan feature branches (e.g. `feature/`), enforced by the branch-prefix validation in `marshall-steward`. A structural test (`test_branch_prefix_allowlist.py`) asserts every prefix is covered by a `.github/workflows/python-verify.yml` push trigger, so a dropped prefix that would make a PR unmergeable fails CI. The `docs/` prefix is explicitly retired and absent. |
 
-`branch_naming` default value:
-
-```json
-{
-  "working_prefixes": ["feature/", "fix/", "chore/"],
-  "ci_allowlist": ["main", "feature/*", "fix/*", "chore/*", "dependabot/**"]
-}
-```
-
-- `working_prefixes` — the closed set of allowed working-branch prefixes
-  for plan feature branches (e.g. `feature/`), enforced by the branch-prefix
-  validation in `marshall-steward`.
-- `ci_allowlist` — the full CI push-trigger allowlist (glob form), kept in sync
-  with `.github/workflows/python-verify.yml` by a structural test (operator-editable;
-  the test fails CI on drift between this value and the workflow file).
-
-The `docs/` prefix is explicitly retired and absent from both sets.
-
-### Example: get branch_naming
+### Example: get working_prefixes
 
 ```bash
-manage-config project get --field branch_naming
+manage-config project get --field working_prefixes
 ```
 
-Returns the live block, or the default block (implicit-default fallback) when
+Returns the live list, or the default list (implicit-default fallback) when
 the key is absent from marshal.json.
 
-### Example: set branch_naming
+### Example: set working_prefixes
 
 ```bash
-manage-config project set --field branch_naming \
-  --value '{"working_prefixes": ["feature/", "fix/", "chore/", "spike/"], "ci_allowlist": ["main", "feature/*", "fix/*", "chore/*", "spike/*", "dependabot/**"]}'
+manage-config project set --field working_prefixes \
+  --value '["feature/", "fix/", "chore/", "spike/"]'
 ```
 
-The JSON value round-trips through `get`.
+The JSON array round-trips through `get`.
 
 ---
 
@@ -248,7 +230,7 @@ Error responses surfaced by `set-steps` and `add-step`:
 Optional `--field` parameter on `get` to retrieve a specific field:
 
 ```bash
-manage-config plan phase-5-execute get --field verification_max_iterations
+manage-config plan phase-5-execute get --field max_iterations
 ```
 
 ---
@@ -472,12 +454,12 @@ manage-config init [--force]
 
 ## Noun: build-map
 
-Seed and read the file-to-build contract (`build_map` block in marshal.json). The block is a domain-keyed inventory of `{glob, role, build_class}` entries seeded from the registered domain extensions; it is never clobbered on re-seed (write-once). The `build_map_overrides` array is the user-override layer and is left untouched by both operations. See [data-model.md § build_map](data-model.md) for the complete schema, the closed `build_class` enum, and override semantics.
+Seed and read the file-to-build contract (`skill_domains.build_map` block in marshal.json). The block is a domain-keyed inventory of `{glob, role, build_class}` entries seeded from the registered domain extensions; it lives under `skill_domains`, is required and always seeded, and is never clobbered on re-seed (write-once). There is no override layer — corrections are made directly to the seeded entries. See [data-model.md § skill_domains.build_map](data-model.md) for the complete schema and the closed `build_class` enum.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
-| `seed` | -- | Re-seed `build_map` from extensions with write-once semantics. Returns `action: seeded` when written; `action: preserved` when an existing block is left untouched. |
-| `read` | -- | Return the merged effective build map (`seed ∪ overrides`, overrides winning by glob). The `_overrides` synthetic domain holds any override entry whose glob matched no seeded domain. |
+| `seed` | -- | Re-seed `skill_domains.build_map` from extensions with write-once semantics. Returns `action: seeded` when written; `action: preserved` when an existing block is left untouched. |
+| `read` | -- | Return the effective build map from `skill_domains.build_map`. **Fails closed**: returns a structured error when `skill_domains.build_map` is absent (rather than an empty map). |
 
 ### Example: seed
 
@@ -514,7 +496,7 @@ build_map:
 domain_count: 2
 ```
 
-`_overrides` domain is appended when one or more `build_map_overrides` entries have no matching glob in any seeded domain.
+`domain_count` is the number of domain keys in the returned `build_map`. When `skill_domains.build_map` is absent the read fails closed with a structured error payload instead.
 
 ## Error Responses
 

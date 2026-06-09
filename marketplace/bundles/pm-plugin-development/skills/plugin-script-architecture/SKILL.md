@@ -47,6 +47,11 @@ See: `standards/cross-skill-integration.md` § "Script invocation in documentati
 
 The explicit-call-or-xref authoring rule for documented script invocations plus the `## Canonical invocations` section contract. Every documented `python3 .plan/execute-script.py {notation} …` call must be the exact-correct inline call or an xref to the owning skill's Canonical-invocations section, and every script-bearing skill publishes that section. Enforced at edit time by the `manage-invocation-invalid` and `missing-canonical-block` plugin-doctor rules.
 
+### 7. New get/set Input Shape Validator
+See: `standards/cross-skill-integration.md` § "New get/set input shape must pass its own validator"
+
+A `get`/`set` verb whose value proposition IS a new input shape (a dotted path, glob, or compound key) must have that exact shape as its first boundary test, driven through the CLI entry point — the input validator is the part most likely to lag the feature and silently reject the shape the verb exists to support. The config-governance companion lives in [`plan-marshall:manage-config`](../../../plan-marshall/skills/manage-config/standards/config-design-principles.md) § "Config Design Principles".
+
 ## References
 
 - `references/notation-spec.md` - Full notation specification

@@ -21,11 +21,15 @@ def cmd_init(args) -> dict:
     if is_initialized() and not getattr(args, 'force', False):
         return error_exit('marshal.json already exists. Use --force to overwrite.')
 
+    # get_default_config already seeds the required skill_domains.build_map (D6)
+    # from the registered extensions, so init always materialises it.
     config = get_default_config()
 
     # NOTE: build_systems is NOT persisted - determined at runtime via extensions
 
-    # Auto-detect technical domains (returns list of domain keys)
+    # Auto-detect technical domains (returns list of domain keys). The detected
+    # domains are added alongside the already-seeded skill_domains.build_map;
+    # the `not in skill_domains` guard never clobbers the build_map.
     detected_keys = detect_domains()
     if detected_keys:
         skill_domains = config.get('skill_domains', {})

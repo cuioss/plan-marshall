@@ -21,37 +21,7 @@ JSON structure and field definitions for project configuration.
   ],
   "project": {
     "default_base_branch": "main",
-    "branch_naming": {
-      "working_prefixes": ["feature/", "fix/", "chore/"],
-      "ci_allowlist": ["main", "feature/*", "fix/*", "chore/*", "dependabot/**"]
-    }
-  },
-  "ci": {
-    "repo_url": "https://github.com/org/repo",
-    "provider": "github",
-    "detected_at": "2025-01-15T10:30:00Z",
-    "sonar_project": null,
-    "checks_wait_timeout_seconds": 600
-  },
-  "ceremony_policy": {
-    "planning": {
-      "deep_lane": "auto",
-      "revalidation": "auto",
-      "escalation": "auto",
-      "qgate": "auto"
-    },
-    "finalize": {
-      "self_review": "auto",
-      "qgate": "auto",
-      "plugin_doctor": "auto",
-      "simplify": "auto"
-    },
-    "automation": {
-      "finalize_without_asking": true,
-      "loop_back_without_asking": false,
-      "auto_merge_after_ci": true
-    },
-    "overrides": []
+    "working_prefixes": ["feature/", "fix/", "chore/"]
   },
   "plan": {
     "open_in_ide": true,
@@ -62,22 +32,26 @@ JSON structure and field definitions for project configuration.
     "phase-1-init": {
       "branch_strategy": "feature",
       "use_worktree": true,
-      "init_without_asking": true
+      "init_without_asking": true,
+      "deep_lane": "auto",
+      "escalation": "auto"
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
       "compatibility": "breaking",
-      "simplicity": "lean"
+      "simplicity": "lean",
+      "revalidation": "auto"
     },
     "phase-3-outline": {
-      "plan_without_asking": false
+      "plan_without_asking": false,
+      "qgate": "auto"
     },
     "phase-4-plan": {
       "execute_without_asking": true
     },
     "phase-5-execute": {
       "commit_strategy": "per_plan",
-      "verification_max_iterations": 5,
+      "max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
       "per_task_budget_reserve_tokens": "50K",
       "steps": [
@@ -90,11 +64,16 @@ JSON structure and field definitions for project configuration.
       "max_iterations": 3,
       "review_bot_buffer_seconds": 180,
       "pr_merge_strategy": "squash",
+      "checks_wait_timeout_seconds": 600,
       "auto_rebase_threshold": "no_overlap_only",
-      "lightweight_track_override": false,
-      "pre_push_quality_gate": {
-        "activation_globs": []
-      },
+      "drop_review_on_scope_gate": false,
+      "finalize_without_asking": true,
+      "loop_back_without_asking": false,
+      "auto_merge_after_ci": true,
+      "self_review": "auto",
+      "qgate": "auto",
+      "plugin_doctor": "auto",
+      "simplify": "auto",
       "steps": [
         "default:commit-push", "default:create-pr", "default:automated-review",
         "default:sonar-roundtrip", "default:lessons-capture",
@@ -103,6 +82,15 @@ JSON structure and field definitions for project configuration.
     }
   },
   "skill_domains": {
+    "build_map": {
+      "python": [
+        { "glob": "marketplace/bundles/**/scripts/*.py", "role": "production", "build_class": "prod-compile" },
+        { "glob": "test/**/test_*.py", "role": "test", "build_class": "test-run" }
+      ],
+      "documentation": [
+        { "glob": "marketplace/bundles/**/skills/**/*.md", "role": "documentation", "build_class": "docs-validate" }
+      ]
+    },
     "system": {
       "defaults": ["plan-marshall:dev-agent-behavior-rules"],
       "optionals": ["plan-marshall:dev-agent-behavior-rules"],
@@ -119,18 +107,6 @@ JSON structure and field definitions for project configuration.
       }
     }
   },
-  "build_map": {
-    "python": [
-      { "glob": "marketplace/bundles/**/scripts/*.py", "role": "production", "build_class": "prod-compile" },
-      { "glob": "test/**/test_*.py", "role": "test", "build_class": "test-run" }
-    ],
-    "documentation": [
-      { "glob": "marketplace/bundles/**/skills/**/*.md", "role": "documentation", "build_class": "docs-validate" }
-    ]
-  },
-  "build_map_overrides": [
-    { "glob": "marketplace/bundles/**/scripts/generated_*.py", "role": "production", "build_class": "none" }
-  ],
   "system": {
     "retention": {
       "logs_days": 1,
@@ -168,11 +144,7 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 {
   "project": {
     "default_base_branch": "main",
-    "branch_naming": {
-      "working_prefixes": ["feature/", "fix/", "chore/"],
-      "ci_allowlist": ["main", "feature/*", "fix/*", "chore/*", "dependabot/**"]
-    },
-    "sanctioned_conftest": ["test/conftest.py", "test/adapters/conftest.py"]
+    "working_prefixes": ["feature/", "fix/", "chore/"]
   }
 }
 ```
@@ -182,9 +154,7 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `default_base_branch` | string | "main" | The project's canonical base branch. `phase-1-init` seeds `references.base_branch` from it; the wizard derives the suggestion from `origin/HEAD`, falling back to `main`. Per-plan overrides via `manage-references set --field base_branch`. |
-| `branch_naming.working_prefixes` | list[string] | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes. `manage-status create` validates `--worktree-branch` against this set. The literals live in `constants.py` (`DEFAULT_BRANCH_PREFIX_WORKING`) as the fail-closed fallback. |
-| `branch_naming.ci_allowlist` | list[string] | `["main", "feature/*", "fix/*", "chore/*", "dependabot/**"]` | The CI push-trigger allowlist (glob form), pinned by a structural test against `.github/workflows/python-verify.yml`. Source-of-truth literals in `constants.py` (`DEFAULT_CI_BRANCH_ALLOWLIST`). |
-| `sanctioned_conftest` | list[string] | `["test/conftest.py", "test/adapters/conftest.py"]` | The allow-list of `conftest.py` paths that the `execute-task` shadow-risk rewrite step MUST NOT redirect to a sibling `_fixtures.py`. A sibling `conftest.py` nested under a skill test directory shadows the top-level `test/conftest.py`; any matching `step.target` not in this list is rewritten before execution. Read via `manage-config project get --field sanctioned_conftest`; the fallback when absent is the `DEFAULT_PROJECT` default shown here. |
+| `working_prefixes` | list[string] | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes. `manage-status create` validates `--worktree-branch` against this set. The literals live in `constants.py` (`DEFAULT_BRANCH_PREFIX_WORKING`) as the fail-closed fallback. A structural test (`test_branch_prefix_allowlist.py`) asserts every prefix is covered by a `.github/workflows/python-verify.yml` push trigger, so a dropped prefix that would make a PR unmergeable fails CI. |
 
 ## Section: skill_domains
 
@@ -195,28 +165,30 @@ Key structural summary:
 - **Technical domains**: Reference a `bundle` and declare `workflow_skill_extensions` (outline, triage)
 - **Profiles**: Loaded at runtime from `extension.py`, not stored in marshal.json
 
-## Section: build_map
+## Section: skill_domains.build_map
 
-The file-to-build contract: a top-level, domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. `build_map` is the persisted, user-adaptable layer of the contract; the deterministic deriver (`architecture derive-verification`) reads the merged effective map to emit a task's verification command set.
+The file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. `build_map` lives under `skill_domains` (its owning block), is **required and always seeded**, and is the persisted, user-adaptable layer of the contract; the deterministic deriver (`architecture derive-verification`) reads the effective map to emit a task's verification command set.
 
-### Source and write-once semantics
+### Source, write-once semantics, and fail-closed read
 
 `build_map` is **seeded from the domain extensions**, not hand-authored. Each registered extension's `classify_globs()` supplies its `(glob, role)` inventory, and `classify_build_class(glob, role)` maps each entry to its `build_class`; the aggregator collects these into the `{domain: [{glob, role, build_class}]}` structure. The predicates stay in extension Python — they are **not** migrated into config; `build_map` is the seeded snapshot of their output.
 
-Seeding is **write-once**: an existing `build_map` block is never clobbered by a re-seed, so a correction made directly to the seeded block survives. Re-seed (preserving the existing seed and overrides) via `build-map seed`; read the merged effective map via `build-map read`.
+Seeding is **write-once**: an existing `build_map` block is never clobbered by a re-seed, so a correction made directly to the seeded block survives. It is always seeded at `init` / `sync-defaults`; re-seed (preserving the existing seed) via `build-map seed`; read the effective map via `build-map read`. The read **fails closed**: when `skill_domains.build_map` is absent the read returns a structured error rather than an empty map, so a missing seed surfaces instead of silently yielding a no-build. There is no separate override layer; corrections are made directly to the seeded entries.
 
 ### Structure
 
 ```json
 {
-  "build_map": {
-    "python": [
-      { "glob": "marketplace/bundles/**/scripts/*.py", "role": "production", "build_class": "prod-compile" },
-      { "glob": "test/**/test_*.py", "role": "test", "build_class": "test-run" }
-    ],
-    "documentation": [
-      { "glob": "marketplace/bundles/**/skills/**/*.md", "role": "documentation", "build_class": "docs-validate" }
-    ]
+  "skill_domains": {
+    "build_map": {
+      "python": [
+        { "glob": "marketplace/bundles/**/scripts/*.py", "role": "production", "build_class": "prod-compile" },
+        { "glob": "test/**/test_*.py", "role": "test", "build_class": "test-run" }
+      ],
+      "documentation": [
+        { "glob": "marketplace/bundles/**/skills/**/*.md", "role": "documentation", "build_class": "docs-validate" }
+      ]
+    }
   }
 }
 ```
@@ -241,38 +213,9 @@ Closed five-value set. The single source of truth is `BUILD_CLASSES` in `script-
 | `build-config-full` | config | `verify` (full reactor for the changed module) |
 | `none` | any | No command — a changed set whose only role yields `none` derives no build |
 
-## Section: build_map_overrides
-
-A top-level array that is the **user-override layer** over the seeded `build_map`. Each entry corrects a wrong mapping by glob. Overrides survive re-seeding (the seed is write-once and the overrides array is left untouched) and are applied last at read time, so a user correction always wins.
-
-### Override semantics
-
-`build-map read` returns the merged effective map (`seed ∪ overrides`, overrides winning). For each override `{glob, role, build_class}`:
-
-- Every seed entry with the same `glob` has its `role` and/or `build_class` replaced — overrides **win by glob** wherever the glob appears across all domains.
-- A glob not present in any domain's seed is appended under a synthetic `_overrides` domain, so an override is never silently dropped.
-
-### Structure
-
-```json
-{
-  "build_map_overrides": [
-    { "glob": "marketplace/bundles/**/scripts/generated_*.py", "role": "production", "build_class": "none" }
-  ]
-}
-```
-
-### Fields (per array entry)
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `glob` | string | Yes | The glob whose seeded mapping this override corrects. |
-| `role` | string | No | Replacement file role applied to matching seed entries (`production`, `test`, `documentation`, `config`). Omit to leave the seeded role unchanged. |
-| `build_class` | string | No | Replacement `build_class` (closed five-value enum above) applied to matching seed entries. Omit to leave the seeded build_class unchanged. The canonical correction for a generated file that should not build is `build_class: none`. |
-
 Managed via:
-- `build-map seed` (re-seed `build_map` from extensions, preserving existing seed + overrides — write-once)
-- `build-map read` (return the merged effective map = seed ∪ overrides, overrides winning by glob)
+- `build-map seed` (re-seed `skill_domains.build_map` from extensions — write-once)
+- `build-map read` (return the effective map from `skill_domains.build_map`; fail-closed when absent)
 
 ## Section: system
 
@@ -326,7 +269,9 @@ These fields live directly under `plan`, outside any phase block.
     "phase-1-init": {
       "branch_strategy": "feature",
       "use_worktree": true,
-      "init_without_asking": true
+      "init_without_asking": true,
+      "deep_lane": "auto",
+      "escalation": "auto"
     }
   }
 }
@@ -337,6 +282,8 @@ These fields live directly under `plan`, outside any phase block.
 | `branch_strategy` | string | "feature" | direct, feature |
 | `use_worktree` | bool | true | Whether the plan allocates an isolated worktree. `true` (default, with `branch_strategy: feature`) materialises a worktree at `.plan/local/worktrees/{plan-id}/` during `phase-5-execute` Step 2.5; `false` runs against the main checkout. |
 | `init_without_asking` | bool | true | Auto-continue from `phase-1-init` to `phase-2-refine`. `true` (default) skips the gate; `false` stops after init and waits for the user. |
+| `deep_lane` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the precondition-driven deep planning lane. Consumed by the phase-1-init `planning-lane route`. `always` forces deep; `never` forces light (the DQ3 hard-escalation ratchet still fires unless `escalation` is also `never`); `auto` defers to the DQ1 signal set. Validated by `validate_run_at_all`. |
+| `escalation` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the hard-escalation safety ratchet (DQ3 explosion / build-break / premise). `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. Validated by `validate_run_at_all`. |
 
 ### phase-2-refine
 
@@ -346,7 +293,8 @@ These fields live directly under `plan`, outside any phase block.
     "phase-2-refine": {
       "confidence_threshold": 95,
       "compatibility": "breaking",
-      "simplicity": "lean"
+      "simplicity": "lean",
+      "revalidation": "auto"
     }
   }
 }
@@ -357,6 +305,7 @@ These fields live directly under `plan`, outside any phase block.
 | `confidence_threshold` | int | 95 | Confidence threshold for refinement completion |
 | `compatibility` | string | "breaking" | breaking, deprecation, smart_and_ask |
 | `simplicity` | string | "lean" | lean, pragmatic, defensive — how aggressively the implementation favours the minimum viable surface over speculative structure. `lean` (default) implements the strict minimum; `pragmatic` keeps low-risk structure that aids readability; `defensive` retains belt-and-suspenders guards/seams where uncertain. |
+| `revalidation` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the premise / narrative-vs-code safety check (light lane + deep refine). `never` disables the safety check. Validated by `validate_run_at_all`. |
 
 ### phase-3-outline
 
@@ -364,7 +313,8 @@ These fields live directly under `plan`, outside any phase block.
 {
   "plan": {
     "phase-3-outline": {
-      "plan_without_asking": false
+      "plan_without_asking": false,
+      "qgate": "auto"
     }
   }
 }
@@ -373,6 +323,7 @@ These fields live directly under `plan`, outside any phase block.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `plan_without_asking` | bool | false | Auto-proceed from outline to task creation without user review |
+| `qgate` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the planning-time Q-Gate validation (deep-lane outline dispatch). Validated by `validate_run_at_all`. |
 
 ### phase-4-plan
 
@@ -399,7 +350,7 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
   "plan": {
     "phase-5-execute": {
       "commit_strategy": "per_plan",
-      "verification_max_iterations": 5,
+      "max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
       "per_task_budget_reserve_tokens": "50K",
       "steps": [
@@ -415,7 +366,7 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
 | `commit_strategy` | string | "per_plan" | per_deliverable, per_plan, none — when the execute loop commits (each deliverable chain-tail / once at end of phase / defer to finalize) |
-| `verification_max_iterations` | int | 5 | Maximum verify-execute-verify loops |
+| `max_iterations` | int | 5 | Maximum verify-execute-verify loops |
 | `per_deliverable_build` | string | "compile+scoped-test" | off, compile-only, compile+scoped-test, full — build depth at each per-deliverable chain-tail point (Step 10). `off` skips the focused build; `compile-only` type-checks the changed module; `compile+scoped-test` adds the module's scoped tests; `full` runs a whole-tree quality-gate per deliverable (legacy, opt-in). |
 | `per_task_budget_reserve_tokens` | string | "50K" | Per-task budget **reserve** — the minimum context-window margin that must remain free before the budget-bounded task loop starts another task. Governs the continue-vs-yield sentinel. The `_tokens` suffix names the unit; the human-friendly value form (`"50K"`) is parsed to an int by `sensible_number.parse_sensible_int` in the phase-5-execute consumer. The workflow's documented fallback when the key is absent is `50000`. |
 
@@ -444,11 +395,16 @@ Finalize pipeline with numbered boolean steps.
       "max_iterations": 3,
       "review_bot_buffer_seconds": 180,
       "pr_merge_strategy": "squash",
+      "checks_wait_timeout_seconds": 600,
       "auto_rebase_threshold": "no_overlap_only",
-      "lightweight_track_override": false,
-      "pre_push_quality_gate": {
-        "activation_globs": []
-      },
+      "drop_review_on_scope_gate": false,
+      "finalize_without_asking": true,
+      "loop_back_without_asking": false,
+      "auto_merge_after_ci": true,
+      "self_review": "auto",
+      "qgate": "auto",
+      "plugin_doctor": "auto",
+      "simplify": "auto",
       "steps": [
         "default:commit-push", "default:create-pr", "default:automated-review",
         "default:sonar-roundtrip", "default:lessons-capture",
@@ -464,68 +420,28 @@ Finalize pipeline with numbered boolean steps.
 | `max_iterations` | int | 3 | Maximum finalize-verify-finalize loops |
 | `review_bot_buffer_seconds` | int | 180 | Max seconds to wait after CI for new review-bot comments to arrive (used as `--timeout` for `pr wait-for-comments`; the polling subcommand exits as soon as a new comment is posted, so this is a ceiling, not a fixed delay) |
 | `pr_merge_strategy` | string | "squash" | squash, merge, rebase — the merge method the branch-cleanup step passes to `pr merge` |
-| `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `ceremony_policy.automation.auto_merge_after_ci`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
-| `lightweight_track_override` | bool | false | Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter. `false` (default) keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans. |
-| `pre_push_quality_gate.activation_globs` | list[string] | `[]` | Glob list the manifest composer reads to decide whether the `default:pre-push-quality-gate` finalize step is active. An empty list (default) leaves the step inactive. |
+| `checks_wait_timeout_seconds` | int | 600 | Default timeout (seconds) for the CI-completion polling commands consumed by `ci_base.py` (`ci checks wait`, `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two `issue wait-for-*` polls). An explicit `--timeout` CLI flag always wins; the 600s fallback covers callers running outside a plan-marshall project. This is a finalize wait-policy, owned by phase-6-finalize. |
+| `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `auto_merge_after_ci`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
+| `drop_review_on_scope_gate` | bool | false | Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter. `false` (default) keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans. |
+| `finalize_without_asking` | bool | true | Forward auto-continuation: auto-continue into finalize after execute completes. `true` (default) skips the gate. |
+| `loop_back_without_asking` | bool | false | Reverse auto-continuation: auto-re-enter execute on a `phase-6-finalize` `loop_back` outcome. `false` (default) halts at every loop_back and returns control to the user; `true` opts into the full unattended cycle, capped by `max_iterations`. |
+| `auto_merge_after_ci` | bool | true | Whether to merge automatically once CI passes. `true` (default) merges via the cross-plan merge-lock; `false` prompts the operator before merging. |
+| `self_review` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the pre-submission structural + cognitive self-review (`finalize-step-pre-submission-self-review`). `always` overrides the manifest composer's `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
+| `qgate` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the finalize blocking-findings re-capture (`pre-push-quality-gate`). **Highest-risk gate** — `never` can mask real build/test failures and push a red tree. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
+| `plugin_doctor` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the structural marketplace lint before push (`finalize-step-plugin-doctor`). `always` overrides the `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
+| `simplify` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the holistic post-implementation simplification sweep (`finalize-step-simplify`). `always` forces the step in even when the composer's `simplify_inactive` pre-filter would drop it; `never` removes it; `auto` (the default) defers to that pre-filter. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
+| — (pre-push-quality-gate activation) | derived | — | The `default:pre-push-quality-gate` finalize step's activation is **derived from `skill_domains.build_map`** — no dedicated config key. The manifest composer activates the step when the live footprint touches any `glob` registered in `skill_domains.build_map`; an absent build_map or no footprint match leaves the step inactive. |
 | `steps` | list | (see below) | Ordered list of step references to execute — persisted sorted ascending by each step's authoritative `order` value |
 
 Default steps: `default:commit-push`, `default:create-pr`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 
-### ceremony_policy
+### Run-at-all gates and finalize automation knobs (phase-local)
 
-A top-level block (sibling to `plan` / `ci` / `project`) carrying lifecycle-wide policy along two orthogonal axes plus a condition-scoped overrides list. The `automation.*` axis is the single home for the three auto-continuation knobs migrated out of the loose `plan.phase-{5-execute,6-finalize}` locations — config-doc-contract: there is no loose `plan.*` survivor for these three knobs.
+The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`, `qgate` under `phase-3-outline`, and `self_review` / `qgate` / `plugin_doctor` / `simplify` plus the three automation knobs (`finalize_without_asking` / `loop_back_without_asking` / `auto_merge_after_ci`) under `phase-6-finalize`. Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
 
-```json
-{
-  "ceremony_policy": {
-    "planning": {
-      "deep_lane": "auto",
-      "revalidation": "auto",
-      "escalation": "auto",
-      "qgate": "auto"
-    },
-    "finalize": {
-      "self_review": "auto",
-      "qgate": "auto",
-      "plugin_doctor": "auto",
-      "simplify": "auto"
-    },
-    "automation": {
-      "finalize_without_asking": true,
-      "loop_back_without_asking": false,
-      "auto_merge_after_ci": true
-    },
-    "overrides": []
-  }
-}
-```
+The four `phase-6-finalize` gates map one-to-one to finalize steps and are consumed by the manifest composer's finalize selection post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection" for the gate→step map and the `automated-review` carve-out. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, `revalidation` by the refine revalidation pass, and `phase-3-outline.qgate` by the planning-time Q-Gate dispatch.
 
-**Axis 1 — run-at-all (`auto|always|never` per gate).** Whether the gate executes at all. `auto` defers to the existing decision machinery (lane router / manifest composer); `always` forces the gate in; `never` skips it (and, for the footgun gates, emits a set-time `[WARNING]`). Planning gates: `deep_lane`, `revalidation`, `escalation`, `qgate`. Finalize gates: `self_review`, `qgate`, `plugin_doctor`, `simplify`. Every gate defaults to `auto`; the enum is validated by `validate_ceremony_policy`.
-
-| Field | Type | Default | Footgun? | Description |
-|-------|------|---------|----------|-------------|
-| `planning.deep_lane` | enum | auto | yes | Whether the precondition-driven deep planning lane runs. Consumed by the phase-1-init `planning-lane route`. `always` forces deep; `never` forces light (the DQ3 hard-escalation ratchet still fires unless `planning.escalation` is also `never`); `auto` defers to the DQ1 signal set. |
-| `planning.revalidation` | enum | auto | yes | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). `never` disables the safety check. |
-| `planning.escalation` | enum | auto | yes | Whether the hard-escalation safety ratchet (DQ3 explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in (itself a footgun). |
-| `planning.qgate` | enum | auto | no | Whether the planning-time Q-Gate validation runs (deep-lane outline dispatch). |
-| `finalize.self_review` | enum | auto | yes | Whether the pre-submission structural + cognitive self-review (`finalize-step-pre-submission-self-review`) is selected into the execution manifest. `always` overrides the manifest composer's `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose` (the `ceremony_finalize_selection` post-matrix transform). |
-| `finalize.qgate` | enum | auto | **hard** | Whether the finalize blocking-findings re-capture (`pre-push-quality-gate`) is selected. The highest-risk footgun: `never` can mask real build/test failures and push a red tree — the set-time `[WARNING]` names the masking risk explicitly. |
-| `finalize.plugin_doctor` | enum | auto | yes | Whether the structural marketplace lint before push (`finalize-step-plugin-doctor`) is selected. `always` overrides the `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. |
-| `finalize.simplify` | enum | auto | no | Whether the holistic post-implementation simplification sweep (`finalize-step-simplify`) is selected. `always` forces the step in even when the composer's `simplify_inactive` pre-filter would drop it; `never` removes it; `auto` (the default) defers to that pre-filter. Not a footgun — `never` skips a quality-improvement sweep, not a safety net, so it is absent from the footgun catalogue. Consumed by `manage-execution-manifest compose`. |
-
-The four `finalize.*` gates map one-to-one to finalize steps and are consumed by the manifest composer's `ceremony_finalize_selection` post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "ceremony_policy.finalize Selection" for the gate→step map and the `automated-review` carve-out. The four `planning.*` gates are consumed by the phase-1-init lane router and the planning-time Q-Gate dispatch.
-
-**Axis 2 — automation (`bool`).** Once a gate has run, proceed without asking? The three knobs live only here; defaults preserve the historical values.
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `automation.finalize_without_asking` | bool | true | Forward auto-continuation: auto-continue into finalize after execute completes. Read at runtime via `manage-config ceremony-policy get --field automation.finalize_without_asking`. |
-| `automation.loop_back_without_asking` | bool | false | Reverse auto-continuation: auto-re-enter execute on a `phase-6-finalize` `loop_back` outcome. `false` (default) halts at every loop_back and returns control to the user; `true` opts into the full unattended cycle, capped by `phase-6-finalize.max_iterations`. |
-| `automation.auto_merge_after_ci` | bool | true | Whether to merge automatically once CI passes. `true` (default) merges via the cross-plan merge-lock; `false` prompts the operator before merging. Plain boolean — not tri-state. |
-
-**`overrides[]`** — condition-scoped rows that win over the section values, matched on plan facts (`scope_estimate`, `plan_source`, `change_type`). Each row is `{when: {<fact>: <value>, ...}, set: {<dotted.path>: <value>, ...}}`. An empty `when` matches every plan; a row applies only when every `when` key/value pair equals the plan's fact.
-
-**Access shape.** Read via `manage-config ceremony-policy get --field <section>.<field>` (dotted path; defaults merged under live values); write via `manage-config ceremony-policy set --field <section>.<field> --value V`. The run-at-all enum is validated by `validate_ceremony_policy`; the automation axis is boolean-only; a footgun gate set to `never` emits a set-time `[WARNING]`. See [`manage-config/SKILL.md`](../SKILL.md) § "Section: ceremony_policy" for the footgun catalogue and the workflow examples.
+**Access shape.** Read/write each knob via the standard `manage-config plan <phase> get/set --field <knob>` verb. See [`manage-config/SKILL.md`](../SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs".
 
 ### Coverage cell (per-phase + plan-wide)
 
@@ -563,45 +479,9 @@ Resolved via:
 - `coverage read --default` (raw `plan.coverage` lookup)
 - `coverage expand --thoroughness T3 --scope component` (static identifier → contract instruction block; `inherit/inherit` → behavior-preserving instruction)
 
-## Section: ci
+## CI Provider Resolution
 
-CI provider configuration (project-level, shared via git).
-
-### Structure
-
-```json
-{
-  "ci": {
-    "repo_url": "https://github.com/org/repo",
-    "provider": "github",
-    "detected_at": "2025-01-15T10:30:00Z",
-    "sonar_project": "my-project-key",
-    "checks_wait_timeout_seconds": 600
-  }
-}
-```
-
-### Fields
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `repo_url` | string | No | - | Git remote origin URL |
-| `provider` | string | Yes | - | CI provider: `github`, `gitlab`, `unknown` |
-| `detected_at` | string | No | - | ISO timestamp of last detection |
-| `sonar_project` | string | No | null | SonarQube/Cloud project key |
-| `checks_wait_timeout_seconds` | int | No | 600 | Default timeout (seconds) for the CI polling commands that wait for run completion (`ci checks wait`, `ci pr wait-for-comments`, …). An explicit `--timeout` CLI flag always wins; the 600s fallback covers callers running outside a plan-marshall project. |
-
-### Provider Values
-
-| Value | CLI Tool | Description |
-|-------|----------|-------------|
-| `github` | `gh` | GitHub (github.com or enterprise) |
-| `gitlab` | `glab` | GitLab (gitlab.com or self-hosted) |
-| `unknown` | - | Could not detect provider |
-
-### Note: Authenticated Tools
-
-Tool availability is verified live via `plan-marshall:tools-integration-ci:ci_health verify-all` — it is not persisted, since tool/auth status varies per developer machine and is cheap to check on demand.
+There is no top-level `ci` block. The CI provider is resolved from the `providers[]` array (the entry whose `category == 'ci'`, mapping `plan-marshall:workflow-integration-github` → `github` and `plan-marshall:workflow-integration-gitlab` → `gitlab`). The CI-completion polling timeout lives under `plan.phase-6-finalize.checks_wait_timeout_seconds` (a finalize wait-policy — see § `phase-6-finalize`). Tool availability is verified live via `plan-marshall:tools-integration-ci:ci_health verify-all` — it is not persisted, since tool/auth status varies per developer machine and is cheap to check on demand.
 
 ## Default Values
 

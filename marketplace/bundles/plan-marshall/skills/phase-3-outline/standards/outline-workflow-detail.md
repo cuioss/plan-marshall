@@ -701,14 +701,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 **Why**: pytest auto-discovers `conftest.py` and evaluates it as a fixture-collection module for every test run. Adding a `conftest.py` under `test/{bundle}/{skill}/` changes pytest collection semantics globally for that bundle's tests, causing hidden coupling, duplicate-fixture warnings, and in the worst case test collection failures unrelated to the plan's intent. Using `_fixtures.py` (imported explicitly by the tests that need it) keeps the helper local, scoped, and reviewable as plain Python.
 
-**Allow-list**: The set of `conftest.py` files permitted in this project is config-driven — read it from `project.sanctioned_conftest` in marshal.json (see [`manage-config` Canonical invocations → `project get`](../../manage-config/SKILL.md#project-get)):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  project get --field sanctioned_conftest
-```
-
-Parse `value` (a JSON array of path strings); these are the only `conftest.py` paths that MAY appear in a deliverable's `**Affected files:**` list. When the key is absent the script falls back to the `DEFAULT_PROJECT` default (`["test/conftest.py", "test/adapters/conftest.py"]`). Any other `conftest.py` in an `**Affected files:**` list is a defect. Replace with `_fixtures.py` (or a similarly scoped helper name) and update any `Change per file:` text to describe explicit imports from the tests that consume it. The generic rule is project-invariant: do not name a new test helper `conftest.py`.
+**Permitted set**: The only `conftest.py` files permitted in this project are the two top-level files `test/conftest.py` and `test/adapters/conftest.py`. These are the only `conftest.py` paths that MAY appear in a deliverable's `**Affected files:**` list. Any other `conftest.py` in an `**Affected files:**` list is a defect. Replace with `_fixtures.py` (or a similarly scoped helper name) and update any `Change per file:` text to describe explicit imports from the tests that consume it. The generic rule is project-invariant: do not name a new test helper `conftest.py`.
 
 **Cross-references**:
 - `plan-marshall:dev-general-module-testing` — testing methodology (AAA pattern, coverage, test organization) this rule supports

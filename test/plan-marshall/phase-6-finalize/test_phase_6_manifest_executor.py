@@ -916,8 +916,8 @@ class TestAutomatedReviewCiSignalAndOverflow:
 # documented contract introduced when a phase-6-finalize step's outcome=loop_back can
 # re-dispatch the execute pipeline inline rather than halting and prompting
 # the user. The flag is the reverse-direction symmetric counterpart to the
-# forward `ceremony_policy.automation.finalize_without_asking` knob (both live
-# under the top-level ceremony_policy.automation block).
+# forward `plan.phase-6-finalize.finalize_without_asking` knob (both are flat
+# fields under plan.phase-6-finalize).
 #
 # Test surface mirrors the rest of this file: pin SKILL.md / workflow /
 # config-defaults narrative markers because the orchestrator is workflow-
@@ -970,7 +970,7 @@ _MANAGE_CONFIG_SKILL_MD = (
 class TestLoopBackWithoutAskingContract:
     """Pin the symmetric auto-continuation contract:
 
-    1. ``ceremony_policy.automation.loop_back_without_asking`` field exists with
+    1. ``plan.phase-6-finalize.loop_back_without_asking`` field exists with
        default ``False`` in the manage-config defaults surface.
     2. ``phase-6-finalize/SKILL.md`` Step 3 dispatch loop documents the
        flag-set, flag-unset, and cap-reached branches.
@@ -1020,49 +1020,42 @@ class TestLoopBackWithoutAskingContract:
         loop-back surfaces a control return to the user so unattended runs
         cannot silently re-enter execute on a finalize-side fix. The full
         unattended cycle remains opt-in via ``loop_back_without_asking=True``.
-        The knob was migrated to the top-level ``ceremony_policy.automation``
-        block — config-doc-contract: no loose-path survivors."""
-        # Locate the DEFAULT_CEREMONY_POLICY block and confirm the automation
-        # field is set to False.
-        assert "DEFAULT_CEREMONY_POLICY = {" in config_defaults_text, (
-            'DEFAULT_CEREMONY_POLICY block must exist in _config_defaults.py'
+        The knob is a flat field under ``plan.phase-6-finalize`` — the
+        ``ceremony_policy`` block was dissolved and every automation knob
+        distributed back into its owning phase."""
+        # Locate the DEFAULT_PLAN_FINALIZE block and confirm the field is
+        # declared with default False.
+        assert "DEFAULT_PLAN_FINALIZE = {" in config_defaults_text, (
+            'DEFAULT_PLAN_FINALIZE block must exist in _config_defaults.py'
         )
-        block_start = config_defaults_text.index("DEFAULT_CEREMONY_POLICY = {")
+        block_start = config_defaults_text.index("DEFAULT_PLAN_FINALIZE = {")
         # Find the closing brace of the dict literal.
         block_end = config_defaults_text.index("\n}\n", block_start)
         block = config_defaults_text[block_start : block_end + 3]
-        # The field MUST be present and default to False in the automation axis.
+        # The field MUST be present and default to False in the finalize block.
         assert "'loop_back_without_asking': False" in block, (
-            'DEFAULT_CEREMONY_POLICY.automation must declare loop_back_without_asking with default False'
+            'DEFAULT_PLAN_FINALIZE must declare loop_back_without_asking with default False'
         )
-        # And it MUST NOT survive in the loose DEFAULT_PLAN_FINALIZE block.
-        finalize_start = config_defaults_text.index("DEFAULT_PLAN_FINALIZE = {")
-        finalize_end = config_defaults_text.index("\n}\n", finalize_start)
-        finalize_block = config_defaults_text[finalize_start : finalize_end + 3]
-        assert 'loop_back_without_asking' not in finalize_block, (
-            'loop_back_without_asking must NOT survive in the loose DEFAULT_PLAN_FINALIZE block'
+        # The dissolved ceremony_policy block must not survive.
+        assert 'DEFAULT_CEREMONY_POLICY' not in config_defaults_text, (
+            'DEFAULT_CEREMONY_POLICY must be gone after the ceremony_policy dissolution'
         )
 
-    def test_loop_back_field_read_through_ceremony_policy_get(
+    def test_loop_back_field_read_through_phase_get(
         self, manage_config_skill_text: str
     ):
-        """The field MUST be readable via the dedicated
-        ``ceremony-policy get --field automation.loop_back_without_asking``
-        shape (the migrated runtime read surface). The SKILL.md must document
-        the field explicitly under the ceremony_policy section so callers know
-        it is a valid surface."""
+        """The field MUST be readable via the standard
+        ``plan phase-6-finalize get --field loop_back_without_asking`` shape
+        (the distributed runtime read surface). The SKILL.md must document the
+        flat field explicitly so callers know it is a valid surface."""
         text = manage_config_skill_text
         assert 'loop_back_without_asking' in text, (
             'manage-config SKILL.md must document loop_back_without_asking as a configurable field'
         )
-        # The ceremony_policy automation table must list the field.
-        assert 'automation.loop_back_without_asking' in text, (
-            'manage-config SKILL.md must document automation.loop_back_without_asking'
-        )
-        # The runtime read shape must be documented via the ceremony-policy get verb.
-        assert 'ceremony-policy get' in text, (
-            'manage-config SKILL.md must document the ceremony-policy get verb '
-            'as the runtime read surface for the automation knobs'
+        # The runtime read shape must be documented via the standard phase get verb.
+        assert 'plan phase-6-finalize get --field loop_back_without_asking' in text, (
+            'manage-config SKILL.md must document the '
+            'plan phase-6-finalize get --field loop_back_without_asking read surface'
         )
 
     # ---- SKILL.md dispatch loop documentation ----------------------------
@@ -1273,28 +1266,24 @@ class TestLoopBackWithoutAskingContract:
         self, marshal_reference_text: str
     ):
         """``extension-api/standards/marshal-json-reference.md`` MUST register
-        ``ceremony_policy.automation.loop_back_without_asking`` in the
-        ceremony-policy table near the existing ``finalize_without_asking`` row.
+        ``plan.phase-6-finalize.loop_back_without_asking`` near the existing
+        ``finalize_without_asking`` row.
 
-        The three auto-continuation knobs were migrated out of the loose
-        ``plan.phase-{5-execute,6-finalize}`` locations into the top-level
-        ``ceremony_policy.automation`` block — config-doc-contract: no
-        loose-path survivors."""
+        The three auto-continuation knobs are flat fields under
+        ``plan.phase-6-finalize`` — the ``ceremony_policy`` block was dissolved
+        and every automation knob distributed back into its owning phase."""
         text = marshal_reference_text
-        assert 'ceremony_policy.automation.loop_back_without_asking' in text, (
-            'marshal-json-reference.md must list ceremony_policy.automation.loop_back_without_asking'
+        assert 'plan.phase-6-finalize.loop_back_without_asking' in text, (
+            'marshal-json-reference.md must list plan.phase-6-finalize.loop_back_without_asking'
         )
         # Adjacency check: the reverse row must sit near the forward row to
         # mirror the forward/reverse pairing.
-        forward_idx = text.index('ceremony_policy.automation.finalize_without_asking')
-        reverse_idx = text.index('ceremony_policy.automation.loop_back_without_asking')
+        forward_idx = text.index('plan.phase-6-finalize.finalize_without_asking')
+        reverse_idx = text.index('plan.phase-6-finalize.loop_back_without_asking')
         assert abs(reverse_idx - forward_idx) < 800, (
             'loop_back_without_asking row must sit near finalize_without_asking row in marshal-json-reference.md'
         )
-        # The loose paths MUST NOT survive in the reference doc.
-        assert 'plan.phase-6-finalize.loop_back_without_asking' not in text, (
-            'loose plan.phase-6-finalize.loop_back_without_asking path must not survive'
-        )
-        assert 'plan.phase-5-execute.finalize_without_asking' not in text, (
-            'loose plan.phase-5-execute.finalize_without_asking path must not survive'
+        # The dissolved ceremony_policy paths must NOT survive in the reference doc.
+        assert 'ceremony_policy' not in text, (
+            'the dissolved ceremony_policy block must not survive in marshal-json-reference.md'
         )
