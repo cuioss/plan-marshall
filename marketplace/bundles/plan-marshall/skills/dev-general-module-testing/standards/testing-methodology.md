@@ -363,8 +363,7 @@ result = unit_under_test(inputs)
 
 argv = captured.single_call.argv
 assert argv contains "--required-flag"          # required flag present
-assert argv contains exactly the declared flags  # no undeclared flag
-assert "--reqired-flag" not in argv               # misspelling would be caught here
+assert argv contains exactly the declared flags  # no undeclared or misspelled flags
 ```
 
 Do NOT stub a higher-level "run this assembled command" wrapper when the thing under test is the assembly. Such a stub receives the malformed argv, ignores it, and reports success — the exact blind spot this rule exists to close.
