@@ -412,6 +412,72 @@ The allowlist is unchanged by the widened scope — the same exempt prefixes app
 
 ---
 
+## Rule Pack: Allowed-tools-body drift
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `allowed-tools-body-drift` | Flag a component whose body invokes a tool absent from its declared, non-empty `allowed-tools`/`tools` frontmatter list — a consistency check, NOT a schema prohibition | Components that omit `allowed-tools`/`tools` entirely are NOT flagged (the "inherit all tools" default; the retired `unsupported-skill-tools-field` rule stays deleted). Only directive-shaped invocations (`Read:`, `- Skill:`, `Tool: Bash`) count; fenced code blocks are exempt; declared-but-unused tools are NOT flagged | Inline marker `<!-- doctor-ignore: allowed-tools-drift -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
+
+### allowed-tools-body-drift
+
+**Rule ID**: `allowed-tools-body-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_allowed_tools_drift.py`
+
+**Scope**: All `*.md` under two trees:
+
+- `marketplace/bundles/*/{skills,agents,commands}/**`.
+- the project-local `.claude/skills/**` tree (resolved relative to the marketplace bundles root).
+
+**Intent**: Detect a one-directional *drift* between a component's declared tool surface and the tools its workflow body actually invokes — a tool the body invokes that the frontmatter omits. This is a self-consistency check, not a schema rule. Skills MAY declare `allowed-tools` per the Claude Code skills schema but are not required to; a missing declaration is the "inherit all tools" default and is never flagged. The rule fires only where a tool is BOTH invoked in the body AND the frontmatter declares a non-empty list that omits it.
+
+**Detection logic**: Parse the declared tool set from the `allowed-tools` (or `tools`) frontmatter using the shared `parse_declared_tools` parser (reused from `_analyze_coverage.py` so the two analyzers stay consistent). When the declared list is empty/absent, emit nothing. Otherwise scan the body for tool invocations — a known tool name (`Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`, `AskUserQuestion`, `Skill`, `Task`, `WebFetch`) appearing as a directive at a line start (`Read:`, `- Skill:`) or in a `Tool: {ToolName}` directive. Emit one finding per invoked tool absent from the declared set.
+
+**Per-line structural exemptions**:
+
+1. **Fenced code block** — body lines inside ``` ``` ``` fences (any info-string) are exempt: a tool name inside an example command block is not a live invocation.
+2. **No-frontmatter / empty declaration** — a component without an `allowed-tools`/`tools` declaration, or with an empty one, is exempt entirely (the "inherit all tools" default).
+
+**Suppression mechanism**: Place `<!-- doctor-ignore: allowed-tools-drift -->` on the same line as the match, or on the immediately preceding line, to suppress the finding on the marked line only.
+
+**Recommended fix**: Reconcile the declaration with usage — either add the invoked tool to the `allowed-tools`/`tools` frontmatter list, or remove the body invocation if the tool genuinely should not be used. The rule never prescribes which direction; it flags the inconsistency.
+
+---
+
+## Rule Pack: Skill self-declared-rule self-compliance
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `skill-self-declared-rule-violation` | Flag a `SKILL.md` that declares a flat-numbering / no-sub-numbering rule in its own body yet uses sub-numbered (`1a`/`3a`/`5a`-style) step headings in that same body — a self-consistency check, NOT a global numbering ban | Self-referential: a `SKILL.md` that uses sub-numbering WITHOUT declaring such a rule is NOT flagged. Only `SKILL.md` is scanned. Heading-shaped lines inside YAML frontmatter and fenced code blocks are exempt. Scoped narrowly to the one self-rule class that is regex-checkable (numbering discipline); non-regex-checkable self-rule classes are out of scope by design | Inline marker `<!-- doctor-ignore: self-declared-rule -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
+
+### skill-self-declared-rule-violation
+
+**Rule ID**: `skill-self-declared-rule-violation`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_self_declared_rule_compliance.py`
+
+**Scope**: All `SKILL.md` under two trees:
+
+- `marketplace/bundles/*/{skills,agents,commands}/**`.
+- the project-local `.claude/skills/**` tree (resolved relative to the marketplace bundles root).
+
+Only `SKILL.md` is scanned — the numbering-discipline rule is a property of a skill's workflow document, not of every markdown file.
+
+**Intent**: Detect a self-referential defect: a `SKILL.md` that *authors* a numbering-discipline rule (a body passage prohibiting sub-numbering / mandating flat step numbering) must obey that rule in its own step headings. The check is self-referential, not a global numbering ban — sub-numbering is permitted in the general case, and a file that uses it without declaring a flat-numbering rule is never flagged. Scope is deliberately narrowed to the numbering-discipline class — the one self-rule class that is regex-checkable; non-regex-checkable self-rule classes (tone, structure, naming) have no deterministic surfacer and are out of scope.
+
+**Detection logic**: First test whether the file declares a numbering-discipline rule — a body passage (outside YAML frontmatter and fenced code blocks) matching any of the declaration phrases (`flat-numbering`, `flat numbering`, `no sub-numbering`, `no-sub-numbering`, `prohibit sub-numbering`, `without sub-numbering`, etc.). When such a declaration is present, scan the file's own step headings for the banned sub-numbered shape: a markdown heading (`##` .. `####`) whose leading label is `Step Nx` or a bare `Nx`, where `N` is a digit immediately followed by a lowercase letter (e.g. `### Step 1a`, `#### 3b`). Emit one finding per self-violating heading, naming both the declared rule and the offending heading.
+
+**Per-line structural exemptions**:
+
+1. **YAML frontmatter** — heading-shaped lines inside the leading `---` fences are not body content and are skipped for both declaration and violation detection.
+2. **Fenced code block** — lines inside ``` ``` ``` fences are exempt: a heading-shaped line inside an example block is not a live heading, and a declaration phrase inside an example block is not an authored rule.
+
+**Suppression mechanism**: Place `<!-- doctor-ignore: self-declared-rule -->` on the same line as the violating heading, or on the immediately preceding line, to suppress the finding on the marked line only.
+
+**Recommended fix**: Renumber the offending headings to a flat sequence so the document obeys the numbering rule it declares — or, if the declared rule no longer reflects intent, revise the declaration. The rule flags the inconsistency between the authored rule and the document's own headings.
+
+---
+
 ### no-historical-prose-in-skills
 
 **Rule ID**: `no-historical-prose-in-skills`
