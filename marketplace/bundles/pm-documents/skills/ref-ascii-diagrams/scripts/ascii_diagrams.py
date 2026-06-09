@@ -48,13 +48,23 @@ def _leading_ws(line: str) -> str:
 def is_top_rule(line: str) -> bool:
     """True when ``line`` (ignoring indent) is a box top rule ``┌─…─┐``."""
     body = line.strip()
-    return len(body) >= 2 and body[0] == TOP_LEFT and body[-1] == TOP_RIGHT
+    return (
+        len(body) >= 2
+        and body[0] == TOP_LEFT
+        and body[-1] == TOP_RIGHT
+        and all(c == HORIZONTAL for c in body[1:-1])
+    )
 
 
 def is_bottom_rule(line: str) -> bool:
     """True when ``line`` (ignoring indent) is a box bottom rule ``└─…─┘``."""
     body = line.strip()
-    return len(body) >= 2 and body[0] == BOTTOM_LEFT and body[-1] == BOTTOM_RIGHT
+    return (
+        len(body) >= 2
+        and body[0] == BOTTOM_LEFT
+        and body[-1] == BOTTOM_RIGHT
+        and all(c == HORIZONTAL for c in body[1:-1])
+    )
 
 
 def is_box_line(line: str) -> bool:
@@ -84,9 +94,14 @@ def _box_run_lines(lines: list[str], top_index: int) -> int | None:
         if not line.strip():
             # Blank line breaks a box run.
             return None
-        if _leading_ws(line) != indent:
-            # Deeper / shallower indent is interior content of this box or a
-            # nested box — treated as interior, never as the run boundary.
+        line_indent = _leading_ws(line)
+        if not line_indent.startswith(indent):
+            # Shallower or mismatched indent means we have exited the box's
+            # indentation context — terminate the search.
+            return None
+        if line_indent != indent:
+            # Deeper indent is interior content of this box or a nested box —
+            # treated as interior, never as the run boundary.
             continue
         if is_bottom_rule(line):
             return j
@@ -112,11 +127,18 @@ def _target_inner_width(lines: list[str], top_index: int, bottom_index: int) -> 
     indent_len = len(indent)
     width = 0
     for j in range(top_index, bottom_index + 1):
-        body = lines[j][indent_len:].rstrip('\n')
-        # Inner width = total body length minus the two border characters.
-        inner = len(body) - 2
-        if inner > width:
-            width = inner
+        line = lines[j]
+        # Only lines at the box's own indent that carry both borders contribute
+        # to the target width; deeper-indented content does not force the
+        # enclosing box wider than its own border lines already require.
+        if _leading_ws(line) == indent and (
+            is_top_rule(line) or is_bottom_rule(line) or is_box_line(line)
+        ):
+            body = line[indent_len:].rstrip('\n')
+            # Inner width = total body length minus the two border characters.
+            inner = len(body) - 2
+            if inner > width:
+                width = inner
     return width
 
 
@@ -253,7 +275,10 @@ def _collect_files(target: Path) -> list[Path]:
     suffixes = {'.md', '.adoc'}
     if target.is_file():
         return [target] if target.suffix.lower() in suffixes else []
-    return sorted(p for p in target.rglob('*') if p.is_file() and p.suffix.lower() in suffixes)
+    try:
+        return sorted(p for p in target.rglob('*') if p.is_file() and p.suffix.lower() in suffixes)
+    except OSError:
+        return []
 
 
 def cmd_check(args: argparse.Namespace) -> None:

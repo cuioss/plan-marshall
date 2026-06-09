@@ -90,6 +90,12 @@ def test_is_top_rule_rejects_non_top_lines():
     assert not is_top_rule("")
 
 
+def test_is_top_rule_rejects_text_between_corners():
+    # A line with non-horizontal characters between the corners is NOT a top rule.
+    assert not is_top_rule("┌ some text ┐")
+    assert not is_top_rule("┌─ text ─┐")
+
+
 def test_is_bottom_rule_detects_bottom_border():
     assert is_bottom_rule("└────┘")
     assert is_bottom_rule("  └──┘")
@@ -98,6 +104,12 @@ def test_is_bottom_rule_detects_bottom_border():
 def test_is_bottom_rule_rejects_non_bottom_lines():
     assert not is_bottom_rule("┌────┐")
     assert not is_bottom_rule("│ content │")
+
+
+def test_is_bottom_rule_rejects_text_between_corners():
+    # A line with non-horizontal characters between the corners is NOT a bottom rule.
+    assert not is_bottom_rule("└ some text ┘")
+    assert not is_bottom_rule("└─ text ─┘")
 
 
 def test_is_box_line_requires_both_vertical_borders():
@@ -132,6 +144,28 @@ def test_box_run_lines_returns_none_on_blank_break():
     bottom = _box_run_lines(lines, 0)
 
     # Assert
+    assert bottom is None
+
+
+def test_box_run_lines_treats_deeper_indent_as_interior():
+    # Arrange — a deeper-indented line is interior content, not a terminator.
+    lines = ["┌──┐", "│x│", "  nested content", "│y│", "└──┘"]
+
+    # Act
+    bottom = _box_run_lines(lines, 0)
+
+    # Assert — deeper indent is interior; box run still finds the bottom rule.
+    assert bottom == 4
+
+
+def test_box_run_lines_terminates_on_shallower_indent():
+    # Arrange — a line at shallower indent than the box exits the box context.
+    lines = ["  ┌──┐", "  │x│", "unindented line", "  └──┘"]
+
+    # Act
+    bottom = _box_run_lines(lines, 0)
+
+    # Assert — shallower indent terminates the run; no bottom rule found.
     assert bottom is None
 
 
