@@ -18,7 +18,7 @@
   },
   "model_map": {
     "opus": {
-      "id": "claude-opus-4-7",
+      "id": "claude-opus-4-8",
       "supports_effort": ["medium", "high", "xhigh"]
     },
     "sonnet": {

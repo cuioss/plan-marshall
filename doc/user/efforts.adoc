@@ -27,7 +27,7 @@ Six ordinal tiers plus a sentinel. The build emits one `execution-context-{level
 | `high` | Sonnet | high | Analytical work: triage, validation, multi-file reasoning.
 | `xhigh` | Opus | medium | Opus reasoning without max thinking — fills the Sonnet-high → Opus-high cost/quality gap.
 | `xxhigh` | Opus | high | High-effort Opus — today's standard Opus top tier.
-| `max` | Opus | xhigh | Top tier (Opus-4.7-only). Build-time guard skips emission when the resolved alias does not accept `effort: xhigh`.
+| `max` | Opus | xhigh | Top tier (Opus-4.8-only). Build-time guard skips emission when the resolved alias does not accept `effort: xhigh`.
 | `inherit` | (parent) | (parent) | Sentinel: dispatch the canonical no-suffix variant, inheriting whatever the parent session uses.
 |===
 
@@ -169,7 +169,7 @@ Check, in order:
 
 === `max` isn't running on Opus
 
-`max` resolves to `(opus, xhigh)`, which is Opus-4.7-only. When the build target can't emit that variant (the resolved alias does not accept `effort: xhigh`), it skips emission and the dispatch falls back to the canonical no-suffix variant, which inherits the parent session's model. Check `.plan/logs/` for the build warning.
+`max` resolves to `(opus, xhigh)`, which is Opus-4.8-only. When the build target can't emit that variant (the resolved alias does not accept `effort: xhigh`), it skips emission and the dispatch falls back to the canonical no-suffix variant, which inherits the parent session's model. Check `.plan/logs/` for the build warning.
 
 === Wizard refuses my level value
 

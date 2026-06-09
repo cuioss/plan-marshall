@@ -18,7 +18,7 @@ The middle hop (`target/claude/`) is produced by `marketplace/targets/generate.p
 The Claude-target reader under `marketplace/targets/claude/` walks each bundle. The dispatcher entry point is `emitter.py`; the variant-emission logic (`LEVEL_TABLE`, `emit_variants_for_agent`, the role-eligibility check) lives in the sibling `variant_emitter.py`. For an agent declaring `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`, the emitter produces up to seven files:
 
 1. The **canonical** no-suffix file (e.g. `execution-context.md`) with `implements:` and `levels:` stripped. Claude Code dispatches this when the resolver returns `inherit`. The dispatched subagent inherits the parent session's model.
-2. Six **level-suffixed variants** (`execution-context-{low|medium|high|xhigh|xxhigh|max}.md`), each with `model:` and `effort:` baked into the frontmatter from the level → primitive mapping in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`]. The `-max` variant is Opus-4.7-only — the build emitter's guard skips it when the resolved alias does not accept `effort: xhigh`, leaving six files in that case.
+2. Six **level-suffixed variants** (`execution-context-{low|medium|high|xhigh|xxhigh|max}.md`), each with `model:` and `effort:` baked into the frontmatter from the level → primitive mapping in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`]. The `-max` variant is Opus-4.8-only — the build emitter's guard skips it when the resolved alias does not accept `effort: xhigh`, leaving six files in that case.
 
 `plugin.json` registers every emitted entry so Claude Code's agent registry sees the canonical and each level variant.
 
@@ -62,7 +62,7 @@ This synchronises all bundles from `target/claude/` to `~/.claude/plugins/cache/
 
 == Registered marketplace path
 
-The Claude Code marketplace registration MUST point at `target/claude/`, not at the source `marketplace/` directory. The source `marketplace/bundles/<bundle>/.claude-plugin/plugin.json` declares only the canonical agent files; the build target expands each role-eligible agent into per-level variants (`{name}-low.md` through `{name}-max.md` — six suffix variants, with `-max` build-time-guarded as Opus-4.7-only) under `target/claude/<bundle>/agents/` and emits a variant-aware `plugin.json` plus a top-level `target/claude/.claude-plugin/marketplace.json`. Registering the source path makes Claude Code's plugin loader install only the canonicals, so every dispatch site that resolves to `execution-context-{level}` fails with `Agent type not found`.
+The Claude Code marketplace registration MUST point at `target/claude/`, not at the source `marketplace/` directory. The source `marketplace/bundles/<bundle>/.claude-plugin/plugin.json` declares only the canonical agent files; the build target expands each role-eligible agent into per-level variants (`{name}-low.md` through `{name}-max.md` — six suffix variants, with `-max` build-time-guarded as Opus-4.8-only) under `target/claude/<bundle>/agents/` and emits a variant-aware `plugin.json` plus a top-level `target/claude/.claude-plugin/marketplace.json`. Registering the source path makes Claude Code's plugin loader install only the canonicals, so every dispatch site that resolves to `execution-context-{level}` fails with `Agent type not found`.
 
 One-time migration on a developer machine:
 

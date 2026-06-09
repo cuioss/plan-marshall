@@ -30,8 +30,14 @@ When the execute phase finishes, the plan transitions from "isolated work" to "l
 
 The point of the arc is that the transition from "in-flight plan" to "landed mainline state" is not improvised. PR review and merge are first-class steps in the plan's own workflow, not separate manual rituals, so the boundary between "the agent is still working" and "the work is part of mainline" is unambiguous and the same shape for every plan.
 
+[NOTE]
+====
+Because several plans can be in flight at once, the merge step is coordinated by a cooperative lock: a plan acquires the lock before merging into `main` and releases it afterward, so two plans never race to land on `main` at the same moment. The lock is cooperative — it serialises the merge boundary without blocking the rest of each plan's isolated work. The exact acquisition and release mechanism is part of the canonical worktree/merge contract linked under <<related,Related>>.
+====
+
 image::../resources/diagrams/post-execute-shipping-flow.svg[Post-execute shipping flow — four-stage pipeline from in-flight plan through PR cycle, merge, and cleanup back to the main checkout, align=center]
 
+[#related]
 == Related
 
 * link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`workflow-integration-git/standards/worktree-handling.md`] — canonical contract: path resolution, lifecycle, tri-state assertion, dispatch protocol, the `git -C` rule, cleanup ordering, the `--plan-id` contract

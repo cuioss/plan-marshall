@@ -60,7 +60,7 @@ The plugin-doctor `hardcoded-model-on-canonical` rule (see `pm-plugin-developmen
 
 ### Level → Primitive Binding
 
-The level → `(model, effort)` mapping is documented in [`plan-marshall:plan-marshall/standards/effort-levels.md`](../../plan-marshall/standards/effort-levels.md). Agent authors do NOT redeclare the binding — it is read once by the build target. See that document for the canonical table and the `xxhigh` Opus-4.7-only build-time guard.
+The level → `(model, effort)` mapping is documented in [`plan-marshall:plan-marshall/standards/effort-levels.md`](../../plan-marshall/standards/effort-levels.md). Agent authors do NOT redeclare the binding — it is read once by the build target. See that document for the canonical table and the `xxhigh` Opus-4.8-only build-time guard.
 
 ### Role Registry
 
@@ -82,7 +82,7 @@ Given a canonical agent at `marketplace/bundles/{bundle}/agents/{name}.md` with 
 | `target/claude/{bundle}/agents/{name}-medium.md` | Variant: `name: {name}-medium`, `model: sonnet`, `effort: medium`. |
 | `target/claude/{bundle}/agents/{name}-high.md` | Variant: `name: {name}-high`, `model: sonnet`, `effort: high`. |
 | `target/claude/{bundle}/agents/{name}-xhigh.md` | Variant: `name: {name}-xhigh`, `model: opus`, `effort: high`. |
-| `target/claude/{bundle}/agents/{name}-xxhigh.md` | Variant: `name: {name}-xxhigh`, `model: opus`, `effort: xhigh`. **Refused at build time** when canonical's resolved model alias does not accept `effort: xhigh` (Opus-4.7-only guard). |
+| `target/claude/{bundle}/agents/{name}-xxhigh.md` | Variant: `name: {name}-xxhigh`, `model: opus`, `effort: xhigh`. **Refused at build time** when canonical's resolved model alias does not accept `effort: xhigh` (Opus-4.8-only guard). |
 
 When the canonical declares `levels: [high, xxhigh]`, only `{name}.md`, `{name}-high.md`, and `{name}-xxhigh.md` are emitted.
 
@@ -145,7 +145,7 @@ target/claude/plan-marshall/agents/
 ├── execution-context-medium.md   # model: sonnet, effort: medium
 ├── execution-context-high.md     # model: sonnet, effort: high
 ├── execution-context-xhigh.md    # model: opus, effort: high
-└── execution-context-xxhigh.md   # model: opus, effort: xhigh (Opus-4.7-only)
+└── execution-context-xxhigh.md   # model: opus, effort: xhigh (Opus-4.8-only)
 ```
 
 `target/claude/plan-marshall/.claude-plugin/plugin.json` registers six agent entries for the canonical (the canonical + five variants).

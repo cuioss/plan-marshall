@@ -14,7 +14,7 @@ Provider management skill for plan-marshall. Stores credentials outside LLM reac
 
 **Prohibited actions:**
 - Never print, log, serialize, or expose credentials to stdout, stderr, or TOON output
-- Never read credential files directly — all access goes through `_credentials_core.py`
+- Never read credential files directly — all access goes through `_providers_core.py`
 - Never bypass HTTPS enforcement when auth headers are configured
 - Never pass secrets as CLI arguments or through the LLM — secrets go into files directly by the user
 
