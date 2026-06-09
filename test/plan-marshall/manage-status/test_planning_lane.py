@@ -4,14 +4,14 @@
 The router resolves ``planning_lane ∈ {light, deep}`` from the DQ1 signal set
 (S1–S6) plus a ``request.md`` regex, with zero codebase discovery. The default
 is ``light``; any deep-precondition signal forces ``deep``; the
-``ceremony_policy.planning.deep_lane`` (``always``/``never``/``auto``) gate
+``plan.phase-1-init.deep_lane`` (``always``/``never``/``auto``) gate
 short-circuits the signal evaluation. The ``escalate`` verb is a one-way
 light→deep ratchet that refuses any downgrade.
 
 Coverage:
 - Each signal (S1–S6) firing deep in isolation.
 - The all-light default (no deep signal fires).
-- The ceremony ``always`` / ``never`` short-circuit.
+- The deep_lane ``always`` / ``never`` short-circuit.
 - ``--lane-override`` handling.
 - ``--persist`` writes status.metadata.planning_lane.
 - The one-way escalate invariant (deep + lane_escalated, no downgrade).
@@ -99,8 +99,10 @@ def _write_references(plan_dir: Path, scope_estimate: str | None) -> None:
 def _write_marshal(fixture_dir: Path, *, compatibility: str = 'deprecation', deep_lane: str = 'auto') -> None:
     """Write a minimal marshal.json at the fixture root (= PLAN_BASE_DIR)."""
     config = {
-        'plan': {'phase-2-refine': {'compatibility': compatibility}},
-        'ceremony_policy': {'planning': {'deep_lane': deep_lane}},
+        'plan': {
+            'phase-1-init': {'deep_lane': deep_lane},
+            'phase-2-refine': {'compatibility': compatibility},
+        },
     }
     (fixture_dir / 'marshal.json').write_text(json.dumps(config, indent=2), encoding='utf-8')
 
@@ -287,49 +289,49 @@ def test_s6_lane_override_deep_forces_deep(plan_context):
 
 
 # =============================================================================
-# ceremony_policy.planning.deep_lane short-circuit
+# plan.phase-1-init.deep_lane short-circuit
 # =============================================================================
 
 
-def test_ceremony_always_forces_deep_overriding_light_signals(plan_context):
-    """ceremony deep_lane=always forces deep even when every signal is light."""
-    # Arrange — all-light baseline, then ceremony always
-    _light_setup(plan_context, 'pl-ceremony-always')
+def test_deep_lane_always_forces_deep_overriding_light_signals(plan_context):
+    """deep_lane=always forces deep even when every signal is light."""
+    # Arrange — all-light baseline, then deep_lane always
+    _light_setup(plan_context, 'pl-deep-lane-always')
     _write_marshal(plan_context.fixture_dir, compatibility='deprecation', deep_lane='always')
 
     # Act
-    result = cmd_planning_lane_route(_ns_route('pl-ceremony-always'))
+    result = cmd_planning_lane_route(_ns_route('pl-deep-lane-always'))
 
     # Assert
     assert result['planning_lane'] == 'deep'
-    assert result['decision_predicate'] == 'ceremony_policy.planning.deep_lane=always'
+    assert result['decision_predicate'] == 'plan.phase-1-init.deep_lane=always'
     assert result['ceremony_deep_lane'] == 'always'
 
 
-def test_ceremony_never_forces_light_overriding_deep_signals(plan_context):
-    """ceremony deep_lane=never forces light even when deep signals fire."""
-    # Arrange — multiple deep signals present, then ceremony never short-circuits
-    plan_dir = _light_setup(plan_context, 'pl-ceremony-never')
+def test_deep_lane_never_forces_light_overriding_deep_signals(plan_context):
+    """deep_lane=never forces light even when deep signals fire."""
+    # Arrange — multiple deep signals present, then deep_lane never short-circuits
+    plan_dir = _light_setup(plan_context, 'pl-deep-lane-never')
     _write_references(plan_dir, scope_estimate='multi_module')  # S2 deep
     _write_status(plan_dir, metadata={'plan_source': 'lesson', 'change_type': 'feature'})  # S3 deep
     _write_marshal(plan_context.fixture_dir, compatibility='breaking', deep_lane='never')  # S4 deep
 
     # Act
-    result = cmd_planning_lane_route(_ns_route('pl-ceremony-never'))
+    result = cmd_planning_lane_route(_ns_route('pl-deep-lane-never'))
 
     # Assert — the never short-circuit wins over all the deep signals
     assert result['planning_lane'] == 'light'
-    assert result['decision_predicate'] == 'ceremony_policy.planning.deep_lane=never'
+    assert result['decision_predicate'] == 'plan.phase-1-init.deep_lane=never'
 
 
-def test_ceremony_auto_defers_to_signal_set(plan_context):
-    """ceremony deep_lane=auto (default) lets the signal set decide."""
+def test_deep_lane_auto_defers_to_signal_set(plan_context):
+    """deep_lane=auto (default) lets the signal set decide."""
     # Arrange — one deep signal under auto
-    plan_dir = _light_setup(plan_context, 'pl-ceremony-auto')
+    plan_dir = _light_setup(plan_context, 'pl-deep-lane-auto')
     _write_references(plan_dir, scope_estimate='broad')  # S2 deep
 
     # Act
-    result = cmd_planning_lane_route(_ns_route('pl-ceremony-auto'))
+    result = cmd_planning_lane_route(_ns_route('pl-deep-lane-auto'))
 
     # Assert
     assert result['decision_predicate'] == 'signal_set'

@@ -261,7 +261,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Step 11: Quality Pipeline Configuration (Optional)
 
-Ask the user to accept defaults (all generic verify steps + 10 finalize steps, default iterations) or configure individually. The 10 default finalize steps (the `BUILT_IN_FINALIZE_STEPS` list in `_config_defaults.py`) are `pre-push-quality-gate`, `commit-push`, `create-pr`, `ci-verify`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, and `archive-plan`. `pre-push-quality-gate` is a built-in default that stays inactive until its `pre_push_quality_gate.activation_globs` list is populated. CI completion is a dispatcher-resolved precondition (`requires: [ci-complete]` declared on `ci-verify`, `automated-review`, and `sonar-roundtrip` frontmatters), not a sibling step. If configuring, discover available steps and apply.
+Ask the user to accept defaults (all generic verify steps + 10 finalize steps, default iterations) or configure individually. The 10 default finalize steps (the `BUILT_IN_FINALIZE_STEPS` list in `_config_defaults.py`) are `pre-push-quality-gate`, `commit-push`, `create-pr`, `ci-verify`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, and `archive-plan`. `pre-push-quality-gate` is a built-in default whose activation is derived from `skill_domains.build_map` — it activates whenever the live footprint touches a glob registered in the build_map. CI completion is a dispatcher-resolved precondition (`requires: [ci-complete]` declared on `ci-verify`, `automated-review`, and `sonar-roundtrip` frontmatters), not a sibling step. If configuring, discover available steps and apply.
 
 **Verification steps** (phase-5-execute) — per-step multi-select:
 
@@ -344,11 +344,11 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  ceremony-policy set --field automation.finalize_without_asking --value {true|false}
+  plan phase-6-finalize set --field finalize_without_asking --value {true|false}
 ```
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  ceremony-policy set --field automation.loop_back_without_asking --value {true|false}
+  plan phase-6-finalize set --field loop_back_without_asking --value {true|false}
 ```
 
 The `loop_back_without_asking` knob is the structural counterpart to `finalize_without_asking`: forward gates the `5-execute → 6-finalize` transition, reverse gates the `6-finalize → 5-execute` inline re-dispatch when a phase-6-finalize step records `outcome: loop_back` (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX). Defaults are intentionally asymmetric — `finalize_without_asking=true` (forward auto-continue) and `loop_back_without_asking=false` (reverse halt-and-prompt). Opt into `loop_back_without_asking=true` for the full unattended cycle in both directions. Reverse loop-back is also bounded by `phase-6-finalize.max_iterations` (default 3) — the dispatcher halts and prompts the user when the cap is reached even with the flag set.

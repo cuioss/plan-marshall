@@ -122,11 +122,12 @@ pre_push_quality_gate_omitted: false
 pre_submission_self_review_omitted: false
 simplify_omitted: true
 scope_gated_finalize_dropped[0]:
-lightweight_track_override: false
+drop_review_on_scope_gate: false
 ceremony_finalize_gates:
   self_review: auto
   qgate: auto
   plugin_doctor: auto
+  simplify: auto
 ceremony_finalize_forced_in[0]:
 ceremony_finalize_forced_out[0]:
 ```
@@ -391,25 +392,26 @@ Before the seven-row matrix and the bot-enforcement guard, the composer applies 
 - **`single_module`** — drops only `plan-marshall:plan-retrospective`.
 - **`multi_module` / `broad` / `none`** — no implicit subtraction; the full candidate set is retained.
 
-`automated-review` is NEVER dropped by the implicit scope gate: the bot-enforcement guard re-adds it on GitHub/GitLab plans, so an implicit drop would be a silently-undone no-op. The only path that suppresses `automated-review` is the explicit `lightweight_track_override` escape hatch.
+`automated-review` is NEVER dropped by the implicit scope gate: the bot-enforcement guard re-adds it on GitHub/GitLab plans, so an implicit drop would be a silently-undone no-op. The only path that suppresses `automated-review` is the explicit `drop_review_on_scope_gate` escape hatch.
 
-**`lightweight_track_override`** — read from `marshal.json` at `plan.phase-6-finalize.lightweight_track_override` (default `false`). When `true` **and** the plan is itself scope-gated (`scope_estimate ∈ {surgical, single_module}`), the scope gate additionally drops `automated-review` — the single deliberate path that suppresses the bot-review gate, explicitly opted into. The override is scoped, not global: on `multi_module` / `broad` / `none` plans it is inert, so flipping the project-wide knob can never silently disable bot review on a large plan. The default keeps the bot-review invariant intact.
+**`drop_review_on_scope_gate`** — read from `marshal.json` at `plan.phase-6-finalize.drop_review_on_scope_gate` (default `false`). When `true` **and** the plan is itself scope-gated (`scope_estimate ∈ {surgical, single_module}`), the scope gate additionally drops `automated-review` — the single deliberate path that suppresses the bot-review gate, explicitly opted into. The override is scoped, not global: on `multi_module` / `broad` / `none` plans it is inert, so flipping the project-wide knob can never silently disable bot review on a large plan. The default keeps the bot-review invariant intact.
 
-The composer emits one `decision.log` line per scope-gated subtraction (canonical prefix `(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction`) and surfaces `scope_gated_finalize_dropped` and `lightweight_track_override` in the `compose` result for observability.
+The composer emits one `decision.log` line per scope-gated subtraction (canonical prefix `(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction`) and surfaces `scope_gated_finalize_dropped` and `drop_review_on_scope_gate` in the `compose` result for observability.
 
-### ceremony_policy.finalize selection (`ceremony_finalize_selection`)
+### phase-6-finalize run-at-all selection (`ceremony_finalize_selection`)
 
-After the seven-row matrix produces the final `phase_6.steps` (and after `execution_tier` routing), and before the bot-enforcement guard, the composer applies the three `ceremony_policy.finalize` run-at-all gates — each `always|never|auto` — to force their finalize steps in or out:
+After the seven-row matrix produces the final `phase_6.steps` (and after `execution_tier` routing), and before the bot-enforcement guard, the composer applies the four `plan.phase-6-finalize` run-at-all gates — each `always|never|auto` — to force their finalize steps in or out:
 
 | Gate | Finalize step | `never` → drop · `always` → force-include · `auto` → defer |
 |------|---------------|------------------------------------------------------------|
 | `self_review` | `finalize-step-pre-submission-self-review` | force the pre-submission structural + cognitive self-review |
 | `qgate` | `pre-push-quality-gate` | force the finalize blocking-findings re-capture |
 | `plugin_doctor` | `finalize-step-plugin-doctor` | force the structural marketplace lint before push |
+| `simplify` | `finalize-step-simplify` | force the holistic post-implementation simplification sweep |
 
-`always` is the only path that re-adds a step the `scope_gated_finalize` pre-filter dropped — an operator-set `always` overrides the implicit scope gate. Gate values are resolved from `marshal.json::ceremony_policy.finalize` with `ceremony_policy.overrides[]` applied against the plan facts (`scope_estimate` / `plan_source` / `change_type`). The transform NEVER touches `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is preserved verbatim regardless of any ceremony gate value.
+`always` is the only path that re-adds a step the `scope_gated_finalize` pre-filter dropped — an operator-set `always` overrides the implicit scope gate. Gate values are read directly from the flat phase-local knobs `marshal.json::plan.phase-6-finalize.<gate>`. The transform NEVER touches `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is preserved verbatim regardless of any gate value.
 
-The composer emits one `decision.log` line per forced change (canonical prefix `(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection`) and surfaces `ceremony_finalize_gates`, `ceremony_finalize_forced_in`, and `ceremony_finalize_forced_out` in the `compose` result for observability. The full rule (gate→step map, override resolution, `automated-review` carve-out, post-matrix-transform rationale) is documented in [standards/decision-rules.md](standards/decision-rules.md) § "ceremony_policy.finalize Selection". The `ceremony_policy.finalize` schema itself (run-at-all enum, footgun catalogue) is owned by [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) § ceremony_policy.
+The composer emits one `decision.log` line per forced change (canonical prefix `(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection`) and surfaces `ceremony_finalize_gates`, `ceremony_finalize_forced_in`, and `ceremony_finalize_forced_out` in the `compose` result for observability. The full rule (gate→step map, `automated-review` carve-out, post-matrix-transform rationale) is documented in [standards/decision-rules.md](standards/decision-rules.md) § "plan.phase-6-finalize Selection". The gate schema itself (run-at-all enum, defaults) is owned by [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) § phase-6-finalize.
 
 ---
 

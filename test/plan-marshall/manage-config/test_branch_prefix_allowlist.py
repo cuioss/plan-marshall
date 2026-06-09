@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-"""Structural drift guard: python-verify.yml push allowlist == marshal.json allowlist.
+"""Structural coverage guard: every working_prefix is CI-push-triggered.
 
-Pins the CI push-trigger branch allowlist in
-``.github/workflows/python-verify.yml`` (``on.push.branches``) to the canonical
-``project.branch_naming.ci_allowlist`` read through the Deliverable-1 accessor
-(``read_branch_naming``), which falls back to ``DEFAULT_CI_BRANCH_ALLOWLIST`` from
-``constants`` when the project ``marshal.json`` (or the key) is absent — so the
-test pins workflow-file <-> marshal.json consistency with marshal.json as the
-source of truth, and still runs deterministically in a checkout that has not
-been initialised.
+Pins the canonical working-branch prefix set in
+``project.working_prefixes`` (read from the repo's ``.plan/marshal.json``, or the
+``DEFAULT_PROJECT['working_prefixes']`` fail-closed default when the project
+``marshal.json`` or the key is absent) against the CI push-trigger branch
+allowlist in ``.github/workflows/python-verify.yml`` (``on.push.branches``).
+
+The check is a **subset coverage** assertion, not full equality: every
+``working_prefix`` MUST be covered by at least one workflow push trigger. The
+workflow allowlist owns CI-only entries (``main``, ``dependabot/**``) that are
+deliberately NOT working prefixes, so an equality check would be wrong — the
+prefix set is the source of truth for what plans may create, and the workflow is
+the source of truth for what CI runs. This test only enforces the one-way
+implication that matters: a working prefix with no CI trigger.
 
 Lesson ``2026-05-21-18-002`` / PR #441: a PR whose branch prefix falls outside
-the closed CI allowlist silently receives no ``verify / verify`` status check and
-is structurally unmergeable. Any drift of the workflow allowlist (an entry
-added, removed, or reordered) fails this test, forcing a deliberate, lockstep
-update of ``project.branch_naming.ci_allowlist`` in marshal.json (and the
-constants fallback). ``docs/`` is explicitly retired and asserted absent.
+the CI push allowlist silently receives no ``verify / verify`` status check and
+is structurally unmergeable. A ``working_prefix`` not covered by any workflow
+trigger fails this test, forcing the workflow file (or the prefix set) to be
+updated. ``docs/`` is explicitly retired and asserted absent.
 """
 
 # ruff: noqa: I001, E402
@@ -54,18 +58,18 @@ def _load_module(name: str, filename: str):
     return mod
 
 
-_cmd_system_plan_mod = _load_module(
-    '_cmd_system_plan_for_branch_prefix_allowlist_test', '_cmd_system_plan.py'
+_config_defaults_mod = _load_module(
+    '_config_defaults_for_branch_prefix_allowlist_test', '_config_defaults.py'
 )
 
 
 def _load_project_config() -> dict:
     """Load the repo's marshal.json if present, else an empty config.
 
-    The empty-config path drives ``read_branch_naming`` to its fail-closed
-    default (``DEFAULT_CI_BRANCH_ALLOWLIST`` via ``DEFAULT_PROJECT``), keeping the
-    test deterministic in a fresh checkout where ``.plan/marshal.json`` does not
-    exist (e.g. a CI runner before ``/marshall-steward``).
+    The empty-config path drives the prefix lookup to its fail-closed default
+    (``DEFAULT_PROJECT['working_prefixes']``), keeping the test deterministic in
+    a fresh checkout where ``.plan/marshal.json`` does not exist (e.g. a CI
+    runner before ``/marshall-steward``).
     """
     try:
         return json.loads(_MARSHAL_PATH.read_text(encoding='utf-8'))
@@ -73,10 +77,13 @@ def _load_project_config() -> dict:
         return {}
 
 
-def _expected_allowlist() -> list[str]:
-    """The canonical CI allowlist read through the single source-of-truth accessor."""
-    block = _cmd_system_plan_mod.read_branch_naming(_load_project_config())
-    return list(block['ci_allowlist'])
+def _working_prefixes() -> list[str]:
+    """The canonical working-branch prefix set, live block or fail-closed default."""
+    config = _load_project_config()
+    project = config.get('project') if isinstance(config, dict) else None
+    if isinstance(project, dict) and isinstance(project.get('working_prefixes'), list):
+        return list(project['working_prefixes'])
+    return list(_config_defaults_mod.DEFAULT_PROJECT['working_prefixes'])
 
 
 def _parse_push_branches() -> list[str]:
@@ -107,20 +114,42 @@ def _parse_push_branches() -> list[str]:
     return [entry.strip().strip('"').strip("'") for entry in raw_entries if entry.strip()]
 
 
-def test_workflow_push_allowlist_equals_marshal_allowlist():
-    """python-verify.yml's on.push.branches must equal the marshal.json ci_allowlist."""
+def _prefix_is_covered(prefix: str, triggers: list[str]) -> bool:
+    """Return True when a workflow push trigger covers the working ``prefix``.
+
+    A prefix like ``feature/`` is covered by a glob trigger ``feature/*`` (the
+    canonical form) or by an exact match. The comparison strips the trailing
+    ``/`` from the prefix and the trailing ``/*`` / ``/**`` from the trigger so
+    ``feature/`` matches ``feature/*``.
+    """
+    prefix_stem = prefix.rstrip('/')
+    for trigger in triggers:
+        trigger_stem = re.sub(r'/\*+$', '', trigger).rstrip('/')
+        if trigger_stem == prefix_stem:
+            return True
+    return False
+
+
+def test_every_working_prefix_is_ci_push_triggered():
+    """Every project.working_prefixes entry must be covered by a workflow push trigger."""
     # Arrange
-    expected = _expected_allowlist()
+    prefixes = _working_prefixes()
+    triggers = _parse_push_branches()
 
     # Act
-    actual = _parse_push_branches()
+    uncovered = [p for p in prefixes if not _prefix_is_covered(p, triggers)]
 
-    # Assert — exact equality (including order) so any drift fails CI
-    assert actual == expected, (
-        'python-verify.yml on.push.branches drifted from '
-        'project.branch_naming.ci_allowlist (marshal.json source of truth, '
-        'constants fallback). Update both in lockstep — see lesson '
-        f'2026-05-21-18-002 / CLAUDE.md Branch Naming.\n  workflow: {actual}\n  expected: {expected}'
+    # Assert — subset coverage: a working prefix with no CI trigger makes its
+    # PRs structurally unmergeable (no verify / verify check). See lesson
+    # 2026-05-21-18-002 / CLAUDE.md Branch Naming.
+    assert not uncovered, (
+        'Working prefix(es) not covered by any python-verify.yml on.push.branches '
+        'trigger — a PR on such a branch silently receives no verify / verify '
+        'check and is structurally unmergeable. Add a matching push trigger to '
+        'the workflow (or drop the prefix from project.working_prefixes).\n'
+        f'  uncovered prefixes: {uncovered}\n'
+        f'  working_prefixes:   {prefixes}\n'
+        f'  workflow triggers:  {triggers}'
     )
 
 
@@ -135,4 +164,16 @@ def test_workflow_push_allowlist_excludes_docs_prefix():
     assert not any(re.match(r'^docs(/|\*|$)', entry) for entry in actual), (
         "'docs/' is explicitly retired and must be absent from the "
         f'python-verify.yml push allowlist; found: {actual}'
+    )
+
+
+def test_docs_prefix_absent_from_working_prefixes():
+    """The retired 'docs/' prefix must NOT appear in project.working_prefixes."""
+    # Arrange / Act
+    prefixes = _working_prefixes()
+
+    # Assert — 'docs/' is explicitly retired from the working-prefix set.
+    assert 'docs/' not in prefixes, (
+        "'docs/' is explicitly retired and must be absent from "
+        f'project.working_prefixes; found: {prefixes}'
     )

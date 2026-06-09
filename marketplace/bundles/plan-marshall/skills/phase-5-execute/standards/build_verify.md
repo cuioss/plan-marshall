@@ -33,7 +33,7 @@ Run the returned `executable` as the verification command for the task.
 
 ## Return Contract
 
-Follows the standard phase-5-execute verification result shape: a non-zero exit code or test failures in the build log surface as failures and are routed through the Step 10 triage loop (fix-task creation, suppress, or accept) with `verification_max_iterations` from config.
+Follows the standard phase-5-execute verification result shape: a non-zero exit code or test failures in the build log surface as failures and are routed through the Step 10 triage loop (fix-task creation, suppress, or accept) with `max_iterations` from config.
 
 ## Related Steps
 

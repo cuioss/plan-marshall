@@ -67,12 +67,15 @@ def save_config(config: dict) -> None:
     """Save config to marshal.json with ordered keys."""
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    # Canonical key order for marshal.json
+    # Canonical key order for marshal.json. The dissolved/relocated top-level
+    # blocks (ci, ceremony_policy, build_map, build_map_overrides) are gone:
+    # ci/ceremony-policy config was distributed back into its owning phase
+    # blocks, and build_map lives nested under skill_domains. The order lists
+    # every surviving top-level key alphabetically.
     key_order = [
-        'build_map',
-        'build_map_overrides',
         'extension_defaults',
         'plan',
+        'project',
         'providers',
         'skill_domains',
         'system',
@@ -316,12 +319,35 @@ def ext_defaults_list(project_dir: str = '.') -> dict:
 # Build Map API
 # =============================================================================
 #
-# The build_map block in marshal.json is the file-to-build contract: a
-# per-domain inventory of {glob, role, build_class} entries seeded from every
-# registered extension's classify_globs() + classify_build_class(). It is the
-# user-adaptable persistence layer for what each domain's predicates compute in
-# Python. The user-override layer (build_map_overrides, a top-level array of
-# {glob, role, build_class}) survives re-seeding and wins by glob at read time.
+# The skill_domains.build_map block in marshal.json is the file-to-build
+# contract: a per-domain inventory of {glob, role, build_class} entries seeded
+# from every registered extension's classify_globs() + classify_build_class().
+# It is the user-adaptable persistence layer for what each domain's predicates
+# compute in Python. The build_map lives under skill_domains (its owning block)
+# and is required and always seeded — there is no separate override layer; user
+# corrections are made directly to the seeded entries.
+
+
+class BuildMapMissingError(Exception):
+    """Raised when skill_domains.build_map is required but absent (fail-closed)."""
+
+    pass
+
+
+def get_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
+    """Return the ``skill_domains.build_map`` block, or an empty dict when absent.
+
+    Read-only helper that locates the relocated ``build_map`` under
+    ``skill_domains``. Returns ``{}`` (not an error) when the block is absent —
+    callers that require it fail-closed via :func:`merge_build_map`.
+    """
+    skill_domains = config.get('skill_domains')
+    if not isinstance(skill_domains, dict):
+        return {}
+    build_map = skill_domains.get('build_map')
+    if not isinstance(build_map, dict):
+        return {}
+    return build_map
 
 
 def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
@@ -382,14 +408,14 @@ def _safe_domain_key(ext: object) -> str:
 
 
 def seed_build_map_into(config: dict) -> dict:
-    """Seed the top-level ``build_map`` block into ``config`` (write-once).
+    """Seed ``skill_domains.build_map`` into ``config`` (write-once).
 
     Aggregates the per-domain build map from every registered extension and
-    writes it into ``config['build_map']`` using write-once semantics: an
-    existing ``build_map`` is NEVER clobbered, so a re-seed preserves any user
-    correction made directly to the seeded block. The ``build_map_overrides``
-    array is independent and is left untouched here. The caller is responsible
-    for persisting ``config`` (e.g. via :func:`save_config`).
+    writes it into ``config['skill_domains']['build_map']`` using write-once
+    semantics: an existing ``build_map`` is NEVER clobbered, so a re-seed
+    preserves any user correction made directly to the seeded block. The
+    ``skill_domains`` container is created when absent. The caller is
+    responsible for persisting ``config`` (e.g. via :func:`save_config`).
 
     Args:
         config: The loaded marshal.json config dict (mutated in place when seeded).
@@ -398,54 +424,46 @@ def seed_build_map_into(config: dict) -> dict:
         A result dict with ``action`` (``seeded`` | ``preserved``), the
         ``build_map`` that is now in ``config``, and its ``domain_count``.
     """
-    if 'build_map' in config:
-        existing: dict = config['build_map']
+    skill_domains = config.get('skill_domains')
+    if not isinstance(skill_domains, dict):
+        skill_domains = {}
+        config['skill_domains'] = skill_domains
+
+    if 'build_map' in skill_domains:
+        existing: dict = skill_domains['build_map']
         return {'action': 'preserved', 'build_map': existing, 'domain_count': len(existing)}
 
     aggregated = aggregate_build_map()
-    config['build_map'] = aggregated
+    skill_domains['build_map'] = aggregated
     return {'action': 'seeded', 'build_map': aggregated, 'domain_count': len(aggregated)}
 
 
 def merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
-    """Return the merged effective build map (seed ∪ overrides, overrides win).
+    """Return the effective build map read from ``skill_domains.build_map``.
 
-    Reads the seeded ``build_map`` block and applies the top-level
-    ``build_map_overrides`` array last: each override ``{glob, role,
-    build_class}`` replaces the entry with the same ``glob`` wherever it appears
-    in the seed (overrides win by glob), and a glob not present in any domain's
-    seed is appended under a synthetic ``_overrides`` domain so the override is
-    never silently dropped.
+    The ``build_map`` is the single source of truth — there is no override
+    layer. This function fails closed: when ``skill_domains.build_map`` is
+    absent it raises :class:`BuildMapMissingError` rather than returning an
+    empty dict, so a missing seed surfaces as a structured error instead of a
+    silent no-build.
 
     Args:
         config: The loaded marshal.json config dict (read-only — never mutated).
 
     Returns:
-        The merged ``{domain: [{glob, role, build_class}]}`` dict. Returns an
-        empty dict when the config carries no build_map.
+        A deep copy of the ``{domain: [{glob, role, build_class}]}`` dict from
+        ``skill_domains.build_map``.
+
+    Raises:
+        BuildMapMissingError: When ``skill_domains.build_map`` is absent.
     """
-    seed: dict[str, list[dict[str, str]]] = config.get('build_map', {})
-    overrides: list[dict[str, str]] = config.get('build_map_overrides', [])
+    skill_domains = config.get('skill_domains')
+    if not isinstance(skill_domains, dict) or 'build_map' not in skill_domains:
+        raise BuildMapMissingError(
+            'skill_domains.build_map is absent. Run `manage-config build-map seed` '
+            'or re-run /marshall-steward to seed it.'
+        )
+    seed: dict[str, list[dict[str, str]]] = skill_domains['build_map']
 
-    # Deep-copy the seed so the merge never mutates the persisted block.
-    merged: dict[str, list[dict[str, str]]] = {
-        domain: [dict(entry) for entry in entries] for domain, entries in seed.items()
-    }
-
-    for override in overrides:
-        glob = override.get('glob')
-        if glob is None:
-            continue
-        applied = False
-        for entries in merged.values():
-            for entry in entries:
-                if entry.get('glob') == glob:
-                    if 'role' in override:
-                        entry['role'] = override['role']
-                    if 'build_class' in override:
-                        entry['build_class'] = override['build_class']
-                    applied = True
-        if not applied:
-            merged.setdefault('_overrides', []).append(dict(override))
-
-    return merged
+    # Deep-copy the seed so the caller never mutates the persisted block.
+    return {domain: [dict(entry) for entry in entries] for domain, entries in seed.items()}

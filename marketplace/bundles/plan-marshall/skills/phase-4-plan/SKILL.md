@@ -89,18 +89,9 @@ See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standar
 
 ### Test Helper File Naming
 
-When a task step target lives under a skill test directory (any path matching `test/**/`) and represents a test helper (shared fixtures, sys.path shims, or other non-test Python module), the filename MUST NOT be `conftest.py`. Rename the target to `_fixtures.py` (or another descriptive `_*.py` name that is clearly not a pytest collection file) during task creation — before composing the JSON array passed to `manage-tasks batch-add`. Only the `conftest.py` files in the project's configured allow-list are permitted; any additional `conftest.py` under `test/{bundle}/{skill}/` changes pytest's global collection semantics for that bundle and causes hidden coupling or spurious collection failures.
+When a task step target lives under a skill test directory (any path matching `test/**/`) and represents a test helper (shared fixtures, sys.path shims, or other non-test Python module), the filename MUST NOT be `conftest.py`. Rename the target to `_fixtures.py` (or another descriptive `_*.py` name that is clearly not a pytest collection file) during task creation — before composing the JSON array passed to `manage-tasks batch-add`. Only the project's two top-level `conftest.py` files (`test/conftest.py` and `test/adapters/conftest.py`) are permitted; any additional `conftest.py` under `test/{bundle}/{skill}/` changes pytest's global collection semantics for that bundle and causes hidden coupling or spurious collection failures.
 
-**Allow-list** (config-driven — read from `project.sanctioned_conftest` in marshal.json; see [`manage-config` Canonical invocations → `project get`](../manage-config/SKILL.md#project-get)):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  project get --field sanctioned_conftest
-```
-
-Parse `value` (a JSON array of path strings); these are the only `conftest.py` paths that MAY appear in a task step. When the key is absent the script falls back to the `DEFAULT_PROJECT` default (`["test/conftest.py", "test/adapters/conftest.py"]`). The allow-list MUST NOT be duplicated or added to by task steps.
-
-If a deliverable's `Affected files` list names a `conftest.py` not in the configured allow-list, phase-4-plan MUST rewrite the target to `_fixtures.py` (preserving the parent directory) before persisting the step. Cross-reference: phase-3-outline owns the outline-time rule and rationale in [outline-workflow-detail.md §10d "Test Helper File Naming"](../phase-3-outline/standards/outline-workflow-detail.md#10d-test-helper-file-naming); this subsection enforces the same constraint at task-creation time so that any late-surviving `conftest.py` target is corrected before tasks reach phase-5-execute.
+If a deliverable's `Affected files` list names a `conftest.py` other than those two top-level files, phase-4-plan MUST rewrite the target to `_fixtures.py` (preserving the parent directory) before persisting the step. Cross-reference: phase-3-outline owns the outline-time rule and rationale in [outline-workflow-detail.md §10d "Test Helper File Naming"](../phase-3-outline/standards/outline-workflow-detail.md#10d-test-helper-file-naming); this subsection enforces the same constraint at task-creation time so that any late-surviving `conftest.py` target is corrected before tasks reach phase-5-execute.
 
 ### Basename Collision Pre-check
 
@@ -698,7 +689,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Purpose**: Run the `module-mapping-validator` and `scope-criterion-validator` from `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (§§ 2.11, 2.12) over the just-created tasks and the parent deliverables. Both validators reconcile LLM-authored task/deliverable shape against live ground truth (architecture which-module, architecture find/marketplace grep) and emit findings that the orchestrator's existing 3-iteration auto-loop consumes.
 
-**Activation guard**: Runs after every successful phase-4-plan invocation, regardless of `plan_source`, EXCEPT when the surgical-scope bypass predicate (B2) below fires. Both validators apply to every plan (lesson-derived, issue-derived, recipe-derived, free-form). The phase sets `qgate_validation_required: true` in its return TOON on every successful completion; the orchestrator's existing `verification_max_iterations` budget gates re-entry on its side. Skipping the signal is reserved for the unrecoverable error path (the phase has aborted with `status: error` before reaching the return-results step) AND the B2 surgical-scope bypass below.
+**Activation guard**: Runs after every successful phase-4-plan invocation, regardless of `plan_source`, EXCEPT when the surgical-scope bypass predicate (B2) below fires. Both validators apply to every plan (lesson-derived, issue-derived, recipe-derived, free-form). The phase sets `qgate_validation_required: true` in its return TOON on every successful completion; the orchestrator's existing `max_iterations` budget gates re-entry on its side. Skipping the signal is reserved for the unrecoverable error path (the phase has aborted with `status: error` before reaching the return-results step) AND the B2 surgical-scope bypass below.
 
 **B2 — Surgical q-gate-validation bypass (deterministic)**: Before signalling `qgate_validation_required: true`, evaluate the surgical-scope predicate:
 

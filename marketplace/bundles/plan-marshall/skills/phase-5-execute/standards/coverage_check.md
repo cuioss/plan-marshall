@@ -31,7 +31,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 ## Return Contract
 
-Follows the standard phase-5-execute verification result shape: a coverage value below the configured threshold (or a failed build) surfaces as a non-zero exit and is routed through the Step 10 triage loop (fix-task creation, suppress, or accept) with `verification_max_iterations` from config.
+Follows the standard phase-5-execute verification result shape: a coverage value below the configured threshold (or a failed build) surfaces as a non-zero exit and is routed through the Step 10 triage loop (fix-task creation, suppress, or accept) with `max_iterations` from config.
 
 ## Related Steps
 

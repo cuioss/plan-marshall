@@ -628,7 +628,7 @@ If `value` is present and non-empty, no log entry is required — continue to St
 
 ### Step 8b: Route Planning Lane
 
-Invoke the deterministic planning-lane router (D4) to resolve `planning_lane ∈ {light, deep}` and persist it into `status.metadata.planning_lane`. The router runs with **zero codebase discovery** — every signal is a cheap field read (`status.metadata`, `references.json`, a `request.md` regex) plus the `ceremony_policy.planning.deep_lane` short-circuit. It reads the signal proxies available at init (`change_type` / `scope_estimate` may still be unset this early — the router treats an unknown signal as its deep-biasing default per the DQ1 signal set, biasing the first-pass routing conservatively toward deep; the light lane is confirmed once the orchestrator re-routes with the full signal set):
+Invoke the deterministic planning-lane router (D4) to resolve `planning_lane ∈ {light, deep}` and persist it into `status.metadata.planning_lane`. The router runs with **zero codebase discovery** — every signal is a cheap field read (`status.metadata`, `references.json`, a `request.md` regex) plus the `plan.phase-1-init.deep_lane` short-circuit. It reads the signal proxies available at init (`change_type` / `scope_estimate` may still be unset this early — the router treats an unknown signal as its deep-biasing default per the DQ1 signal set, biasing the first-pass routing conservatively toward deep; the light lane is confirmed once the orchestrator re-routes with the full signal set):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status planning-lane route \

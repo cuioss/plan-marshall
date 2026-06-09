@@ -1391,20 +1391,29 @@ def test_cli_compose_commit_strategy_none_omits_commit_push(plan_context):
 def _write_marshal(
     fixture_dir: Path, *, activation_globs: list[str] | None = None, include_pre_push_key: bool = True
 ) -> None:
-    """Write a marshal.json with the given activation_globs configuration.
+    """Write a marshal.json whose pre-push activation derives from skill_domains.build_map.
 
-    When ``include_pre_push_key`` is False, the ``pre_push_quality_gate`` key is
-    omitted entirely (simulating the "absent" branch). When ``activation_globs``
-    is None and the key is present, the inner ``activation_globs`` field is
-    omitted (also "absent").
+    Pre-push-quality-gate activation now reads the per-entry globs from
+    ``skill_domains.build_map`` (D7/D8) — there is no separate
+    ``pre_push_quality_gate.activation_globs`` source. ``activation_globs`` here
+    names the globs the seeded build_map should carry:
+
+    - ``include_pre_push_key=False`` → omit the ``skill_domains.build_map`` block
+      entirely (simulates the "absent" branch → gate dropped).
+    - ``activation_globs is None`` (with the block present) → seed a build_map
+      whose single entry carries no usable glob (also "absent" → gate dropped).
+    - ``activation_globs == []`` → seed an empty build_map (no globs → dropped).
+    - ``activation_globs == [g, ...]`` → seed one build_map entry per glob so
+      ``_read_build_map_globs`` collects exactly those globs.
     """
     marshal_path = fixture_dir / 'marshal.json'
-    data: dict = {'plan': {'phase-6-finalize': {}}}
+    data: dict = {'plan': {'phase-6-finalize': {}}, 'skill_domains': {}}
     if include_pre_push_key:
-        pre_push: dict = {}
-        if activation_globs is not None:
-            pre_push['activation_globs'] = activation_globs
-        data['plan']['phase-6-finalize']['pre_push_quality_gate'] = pre_push
+        globs = activation_globs if activation_globs is not None else []
+        entries = [
+            {'glob': glob, 'role': 'production', 'build_class': 'prod-compile'} for glob in globs
+        ]
+        data['skill_domains']['build_map'] = {'python': entries}
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
 
@@ -1448,7 +1457,7 @@ class TestPrePushQualityGatePreFilter:
 
     _OMIT_LINE = (
         '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
-        'activation_globs empty or no footprint match'
+        'no build_map globs or no footprint match'
     )
 
     @staticmethod
@@ -2210,7 +2219,7 @@ def test_whole_tree_gate_inactive_no_decision_log_on_kept_branch(plan_context):
 # =============================================================================
 # Bot-Enforcement Guard — Remediation behavior (lesson 2026-04-28-10-001)
 #
-# When ci.provider is github or gitlab AND `automated-review` is missing from
+# When the resolved CI provider is github or gitlab AND `automated-review` is missing from
 # the assembled phase_6.steps (e.g., dropped by Row 5 surgical_bug_fix /
 # surgical_tech_debt), the guard appends `default:automated-review` back into
 # the list and emits a decision-log entry. The composition continues normally;
@@ -2226,14 +2235,21 @@ def test_whole_tree_gate_inactive_no_decision_log_on_kept_branch(plan_context):
 
 
 def _write_marshal_with_ci(fixture_dir: Path, *, provider: str) -> None:
-    """Write a marshal.json that configures ``ci.provider`` for the guard's lookup.
+    """Write a marshal.json whose ``providers[]`` resolves to the given CI provider.
 
-    The bot-enforcement guard reads ``data['ci']['provider']`` from the project's
-    ``marshal.json``. Tests for the github/gitlab branch must materialize this
-    field; the no-CI baseline simply omits it.
+    The bot-enforcement guard resolves the provider via ``_read_ci_provider``,
+    which maps the ``providers[]`` entry whose ``category == 'ci'`` to a short
+    identifier (``plan-marshall:workflow-integration-github`` -> ``github``,
+    ``plan-marshall:workflow-integration-gitlab`` -> ``gitlab``). Tests for the
+    github/gitlab branch must materialize this entry; the no-CI baseline simply
+    omits ``providers[]``.
     """
+    skill_name = f'plan-marshall:workflow-integration-{provider}'
     marshal_path = fixture_dir / 'marshal.json'
-    data: dict = {'ci': {'provider': provider}, 'plan': {'phase-6-finalize': {}}}
+    data: dict = {
+        'providers': [{'skill_name': skill_name, 'category': 'ci'}],
+        'plan': {'phase-6-finalize': {}},
+    }
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
 
@@ -2243,8 +2259,51 @@ _REMEDIATION_LINE_TEMPLATE = (
 )
 
 
+# =============================================================================
+# _read_ci_provider — direct regression coverage for the dissolved ci block
+# (D3 — ci.provider read-path removal)
+#
+# The legacy ``ci.provider`` short-identifier read-path is gone. The provider
+# is now resolved exclusively from the ``providers[]`` entry whose
+# ``category == 'ci'``. These tests pin that contract directly against
+# ``_read_ci_provider`` (rather than only end-to-end through the guard).
+# =============================================================================
+
+
+def test_read_ci_provider_resolves_github_from_providers_no_ci_block(plan_context):
+    """``providers[]`` github entry resolves to 'github' with NO ci block present."""
+    _write_marshal_with_ci(plan_context.fixture_dir, provider='github')
+    assert _mem._read_ci_provider() == 'github'
+
+
+def test_read_ci_provider_resolves_gitlab_from_providers_no_ci_block(plan_context):
+    """``providers[]`` gitlab entry resolves to 'gitlab' with NO ci block present."""
+    _write_marshal_with_ci(plan_context.fixture_dir, provider='gitlab')
+    assert _mem._read_ci_provider() == 'gitlab'
+
+
+def test_read_ci_provider_ignores_legacy_ci_provider_block(plan_context):
+    """A stale ``ci.provider`` block alone resolves to None — the read-path is removed.
+
+    Before D3, ``ci.provider`` was a first-match-wins source. After dissolution
+    the composer ignores the ``ci`` block entirely; only ``providers[]`` is
+    consulted. A marshal.json carrying ONLY the legacy block must resolve to
+    None so a stale field can never silently re-activate the guard.
+    """
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps({'ci': {'provider': 'github'}}), encoding='utf-8')
+    assert _mem._read_ci_provider() is None
+
+
+def test_read_ci_provider_returns_none_when_no_providers(plan_context):
+    """No ``providers[]`` and no ci block -> None (the no-CI baseline)."""
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps({'plan': {'phase-6-finalize': {}}}), encoding='utf-8')
+    assert _mem._read_ci_provider() is None
+
+
 class TestBotEnforcementGuardRemediation:
-    """Row 5 + ci.provider in {github, gitlab}: guard remediates instead of asserting."""
+    """Row 5 + resolved provider in {github, gitlab}: guard remediates instead of asserting."""
 
     @staticmethod
     def _capture_decision_log() -> tuple[list[tuple[str, str]], Callable[[str, str], None]]:
@@ -2350,29 +2409,29 @@ class TestBotEnforcementGuardRemediation:
     # --- Row 5 surgical_bug_fix variants ---
 
     def test_github_surgical_bug_fix_remediates_with_default_candidates(self, plan_context):
-        """Row 5 surgical_bug_fix + ci.provider=github (bare candidates) → remediation."""
+        """Row 5 surgical_bug_fix + provider=github (bare candidates) → remediation."""
         self._assert_remediation(plan_context, 'github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False)
 
     def test_gitlab_surgical_bug_fix_remediates_with_default_candidates(self, plan_context):
-        """Row 5 surgical_bug_fix + ci.provider=gitlab (bare candidates) → remediation."""
+        """Row 5 surgical_bug_fix + provider=gitlab (bare candidates) → remediation."""
         self._assert_remediation(plan_context, 'gitlab', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False)
 
     def test_github_surgical_bug_fix_remediates_with_prefixed_candidates(self, plan_context):
-        """Row 5 surgical_bug_fix + ci.provider=github (default:-prefixed candidates) → remediation."""
+        """Row 5 surgical_bug_fix + provider=github (default:-prefixed candidates) → remediation."""
         self._assert_remediation(plan_context, 'github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=True)
 
     # --- Row 5 surgical_tech_debt variants ---
 
     def test_github_surgical_tech_debt_remediates_with_default_candidates(self, plan_context):
-        """Row 5 surgical_tech_debt + ci.provider=github (bare candidates) → remediation."""
+        """Row 5 surgical_tech_debt + provider=github (bare candidates) → remediation."""
         self._assert_remediation(plan_context, 'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False)
 
     def test_gitlab_surgical_tech_debt_remediates_with_default_candidates(self, plan_context):
-        """Row 5 surgical_tech_debt + ci.provider=gitlab (bare candidates) → remediation."""
+        """Row 5 surgical_tech_debt + provider=gitlab (bare candidates) → remediation."""
         self._assert_remediation(plan_context, 'gitlab', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False)
 
     def test_github_surgical_tech_debt_remediates_with_prefixed_candidates(self, plan_context):
-        """Row 5 surgical_tech_debt + ci.provider=github (default:-prefixed candidates) → remediation."""
+        """Row 5 surgical_tech_debt + provider=github (default:-prefixed candidates) → remediation."""
         self._assert_remediation(plan_context, 'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=True)
 
     # --- Guard is a no-op when automated-review already present ---
@@ -2633,9 +2692,9 @@ def _write_full_marshal(
     """Write a marshal.json with the given phase-5/6 step lists.
 
     The phase-5 list is optional — when omitted, only ``phase-6-finalize.steps``
-    is populated. Both lists are written verbatim (prefixes preserved). Adds
-    the bot-enforcement default ``ci.provider=github`` so the bot-enforcement
-    guard sees a CI provider when ``automated-review`` is in the list.
+    is populated. Both lists are written verbatim (prefixes preserved). No CI
+    provider is declared, so the bot-enforcement guard is a no-op for these
+    fixtures.
     """
     marshal_path = fixture_dir / 'marshal.json'
     plan_block: dict = {'phase-6-finalize': {'steps': phase_6_steps}}
@@ -3225,7 +3284,7 @@ def test_duplicate_orchestrator_routings_are_deduped(plan_context, monkeypatch):
 # scope. surgical drops the three non-guarded steps (plan-retrospective,
 # pre-submission-self-review, plugin-doctor) but RETAINS automated-review by
 # default (the bot-enforcement guard re-adds it on GitHub/GitLab plans);
-# lightweight_track_override=true additionally drops automated-review;
+# drop_review_on_scope_gate=true additionally drops automated-review;
 # single_module drops only plan-retrospective. multi_module/broad retain the
 # full set. One decision-log line is emitted per subtraction.
 # =============================================================================
@@ -3250,10 +3309,10 @@ _SCOPE_GATE_PHASE_6 = (
 )
 
 
-def _write_lightweight_override_marshal(fixture_dir: Path, *, override: bool) -> None:
-    """Write a marshal.json with the lightweight_track_override knob set."""
+def _write_drop_review_marshal(fixture_dir: Path, *, override: bool) -> None:
+    """Write a marshal.json with the drop_review_on_scope_gate knob set."""
     marshal_path = fixture_dir / 'marshal.json'
-    data = {'plan': {'phase-6-finalize': {'lightweight_track_override': override}}}
+    data = {'plan': {'phase-6-finalize': {'drop_review_on_scope_gate': override}}}
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
 
@@ -3289,9 +3348,9 @@ class TestScopeGatedFinalizePreFilter:
         assert 'commit-push' in steps
         assert 'lessons-capture' in steps
 
-    def test_lightweight_override_additionally_drops_automated_review(self, plan_context):
-        """lightweight_track_override=true additionally drops automated-review."""
-        _write_lightweight_override_marshal(plan_context.fixture_dir, override=True)
+    def test_drop_review_additionally_drops_automated_review(self, plan_context):
+        """drop_review_on_scope_gate=true additionally drops automated-review."""
+        _write_drop_review_marshal(plan_context.fixture_dir, override=True)
         result = cmd_compose(
             _compose_ns(
                 plan_id='scope-surgical-override',
@@ -3313,12 +3372,12 @@ class TestScopeGatedFinalizePreFilter:
         assert 'project:finalize-step-pre-submission-self-review' not in steps
         assert 'project:finalize-step-plugin-doctor' not in steps
 
-    def test_lightweight_override_inert_on_non_scope_gated(self, plan_context):
-        """lightweight_track_override=true is INERT on a non-scope-gated plan:
+    def test_drop_review_inert_on_non_scope_gated(self, plan_context):
+        """drop_review_on_scope_gate=true is INERT on a non-scope-gated plan:
         automated-review is retained on multi_module scope even with the
         override set, so flipping the project-wide knob cannot silently disable
         bot review on a large plan (PR #551 reviewer finding)."""
-        _write_lightweight_override_marshal(plan_context.fixture_dir, override=True)
+        _write_drop_review_marshal(plan_context.fixture_dir, override=True)
         result = cmd_compose(
             _compose_ns(
                 plan_id='scope-multi-override',
@@ -3420,7 +3479,7 @@ class TestScopeGatedFinalizePreFilter:
 
     def test_result_carries_scope_gated_observability_fields(self, plan_context):
         """The compose result exposes scope_gated_finalize_dropped and
-        lightweight_track_override for observability."""
+        drop_review_on_scope_gate for observability."""
         result = cmd_compose(
             _compose_ns(
                 plan_id='scope-observability',
@@ -3432,7 +3491,7 @@ class TestScopeGatedFinalizePreFilter:
             )
         )
         assert result is not None and result['status'] == 'success'
-        assert result['lightweight_track_override'] is False
+        assert result['drop_review_on_scope_gate'] is False
         dropped = result['scope_gated_finalize_dropped']
         assert 'plan-marshall:plan-retrospective' in dropped
         assert 'project:finalize-step-pre-submission-self-review' in dropped

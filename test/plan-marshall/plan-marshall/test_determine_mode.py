@@ -445,14 +445,14 @@ def test_blocking_type_callable_names_registry_lists_both_thunks():
 
 
 # =============================================================================
-# check-branch-naming subcommand (project.branch_naming presence/drift)
+# check-branch-naming subcommand (project.working_prefixes presence/drift)
 # =============================================================================
 
 
 import copy  # noqa: E402, I001
 import json  # noqa: E402, I001
 
-_DEFAULT_BRANCH_NAMING = DEFAULT_PROJECT['branch_naming']
+_DEFAULT_WORKING_PREFIXES = DEFAULT_PROJECT['working_prefixes']
 
 
 def _write_marshal(plan_dir, config: dict) -> None:
@@ -465,10 +465,10 @@ class TestCheckBranchNamingSubcommand:
     """Test the 'check-branch-naming' subcommand and its detector."""
 
     def test_present_and_current_not_flagged(self, tmp_path):
-        """A marshal.json whose project.branch_naming equals the default returns ok."""
+        """A marshal.json whose project.working_prefixes equals the default returns ok."""
         # Arrange
         plan_dir = tmp_path / '.plan'
-        _write_marshal(plan_dir, {'project': {'branch_naming': copy.deepcopy(_DEFAULT_BRANCH_NAMING)}})
+        _write_marshal(plan_dir, {'project': {'working_prefixes': copy.deepcopy(_DEFAULT_WORKING_PREFIXES)}})
 
         # Act
         result = cmd_check_branch_naming(Namespace(plan_dir=str(plan_dir)))
@@ -477,8 +477,8 @@ class TestCheckBranchNamingSubcommand:
         assert result == {'status': 'ok'}
 
     def test_absent_key_flagged(self, tmp_path):
-        """A project block lacking branch_naming returns missing/absent."""
-        # Arrange — project present but no branch_naming key
+        """A project block lacking working_prefixes returns missing/absent."""
+        # Arrange — project present but no working_prefixes key
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {'default_base_branch': 'main'}})
 
@@ -488,15 +488,14 @@ class TestCheckBranchNamingSubcommand:
         # Assert
         assert result['status'] == 'missing'
         assert result['detail'] == 'absent'
-        assert result['missing_keys'] == 'branch_naming'
+        assert result['missing_keys'] == 'working_prefixes'
 
     def test_customized_superset_not_clobbered(self, tmp_path):
         """An operator superset (added prefixes) is honoured — never flagged."""
         # Arrange — working_prefixes is a strict superset of the default
-        superset = copy.deepcopy(_DEFAULT_BRANCH_NAMING)
-        superset['working_prefixes'] = [*superset['working_prefixes'], 'spike/']
+        superset = [*copy.deepcopy(_DEFAULT_WORKING_PREFIXES), 'spike/']
         plan_dir = tmp_path / '.plan'
-        _write_marshal(plan_dir, {'project': {'branch_naming': superset}})
+        _write_marshal(plan_dir, {'project': {'working_prefixes': superset}})
 
         # Act
         result = cmd_check_branch_naming(Namespace(plan_dir=str(plan_dir)))
@@ -505,20 +504,19 @@ class TestCheckBranchNamingSubcommand:
         assert result == {'status': 'ok'}
 
     def test_drift_missing_default_entry_flagged(self, tmp_path):
-        """A ci_allowlist missing a default entry returns missing/drift naming ci_allowlist."""
-        # Arrange — drop 'chore/*' from ci_allowlist (working_prefixes stays complete)
-        drifted = copy.deepcopy(_DEFAULT_BRANCH_NAMING)
-        drifted['ci_allowlist'] = [e for e in drifted['ci_allowlist'] if e != 'chore/*']
+        """A working_prefixes missing a default entry returns missing/drift."""
+        # Arrange — drop 'chore/' from working_prefixes
+        drifted = [e for e in copy.deepcopy(_DEFAULT_WORKING_PREFIXES) if e != 'chore/']
         plan_dir = tmp_path / '.plan'
-        _write_marshal(plan_dir, {'project': {'branch_naming': drifted}})
+        _write_marshal(plan_dir, {'project': {'working_prefixes': drifted}})
 
         # Act
         result = cmd_check_branch_naming(Namespace(plan_dir=str(plan_dir)))
 
-        # Assert — only ci_allowlist drifted
+        # Assert — working_prefixes drifted
         assert result['status'] == 'missing'
         assert result['detail'] == 'drift'
-        assert result['missing_keys'] == 'ci_allowlist'
+        assert result['missing_keys'] == 'working_prefixes'
 
     def test_missing_marshal_not_flagged(self, tmp_path):
         """No marshal.json present returns ok (graceful degrade)."""
@@ -533,7 +531,7 @@ class TestCheckBranchNamingSubcommand:
         assert result == {'status': 'ok'}
 
     def test_detect_returns_structured_outcome_for_absent(self, tmp_path):
-        """detect_branch_naming_drift returns the absent outcome with branch_naming key."""
+        """detect_branch_naming_drift returns the absent outcome with working_prefixes key."""
         # Arrange
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {}})
@@ -542,7 +540,7 @@ class TestCheckBranchNamingSubcommand:
         result = detect_branch_naming_drift(plan_dir)
 
         # Assert
-        assert result == {'outcome': 'absent', 'missing_keys': ['branch_naming']}
+        assert result == {'outcome': 'absent', 'missing_keys': ['working_prefixes']}
 
     def test_cli_plumbing_emits_toon(self, tmp_path):
         """check-branch-naming via subprocess emits valid TOON for the absent case."""
@@ -558,4 +556,4 @@ class TestCheckBranchNamingSubcommand:
         parsed = result.toon()
         assert parsed['status'] == 'missing'
         assert parsed['detail'] == 'absent'
-        assert str(parsed['missing_keys']) == 'branch_naming'
+        assert str(parsed['missing_keys']) == 'working_prefixes'

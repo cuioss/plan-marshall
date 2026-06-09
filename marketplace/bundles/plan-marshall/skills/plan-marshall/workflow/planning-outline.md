@@ -32,7 +32,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 ```
 
 - **`planning_lane == light`** → the [light-lane envelope](../../phase-3-outline/workflow/light-lane.md) dispatched from `planning.md` ALREADY self-derived the outline (it folds Simple-outline + deliverable-derivation in one envelope and wrote `solution_outline.md` + transitioned `3-outline`). The light lane sets `qgate_validation_required: false` — there is NO Complex-Track outline dispatch and NO q-gate-validation sibling dispatch on the light lane. Skip the entire Step-2 phase-3-outline dispatch + the **Post-return q-gate-validation dispatch** block below; proceed directly to **Step 3 (USER REVIEW GATE)** to display the light-lane-derived outline. (On a light-lane `escalate_to_deep` return, `planning.md` already flipped the lane to `deep` and re-entered the deep pipeline, so this read sees `deep`.)
-- **`planning_lane == deep`** (or absent) → run today's full Complex-Track dispatch below, guarded by `ceremony_policy.planning.qgate` (the q-gate-validation sibling dispatch is suppressed when that gate resolves to `never`).
+- **`planning_lane == deep`** (or absent) → run today's full Complex-Track dispatch below, guarded by `plan.phase-3-outline.qgate` (the q-gate-validation sibling dispatch is suppressed when that gate resolves to `never`).
 
 **Metrics**: The start of `3-outline` was already recorded by the
 `2-refine → 3-outline` fused boundary call above (or by the
@@ -95,7 +95,7 @@ Task: plan-marshall:{target}
 
 The agent returns the outline summary (`track`, `deliverable_count`, `qgate_pending_count`, `qgate_validation_required`, etc.) in its TOON. The Complex-Track per-deliverable loop (Steps 9c + 10 + 10b) iterates *inside* this envelope; the per-deliverable loop never spawns per-iteration subagents.
 
-**Post-return q-gate-validation dispatch (conditional, deep lane only)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the surgical-bypass predicate did NOT fire in Step 11) AND `ceremony_policy.planning.qgate != never`, dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` (bypass fired or recipe path short-circuited), when the plan ran the light lane (which sets `qgate_validation_required: false`), or when the `ceremony_policy.planning.qgate` gate resolves to `never` (the operator opted out at config-set time, having been warned per the DQ4 footgun catalogue — see the `ceremony_policy` block in `manage-config`), skip this block and continue directly to "Log solution outline creation" below.
+**Post-return q-gate-validation dispatch (conditional, deep lane only)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the surgical-bypass predicate did NOT fire in Step 11) AND `plan.phase-3-outline.qgate != never` (read via `manage-config plan phase-3-outline get --field qgate`), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` (bypass fired or recipe path short-circuited), when the plan ran the light lane (which sets `qgate_validation_required: false`), or when the `plan.phase-3-outline.qgate` gate resolves to `never` (the operator opted out at config-set time), skip this block and continue directly to "Log solution outline creation" below.
 
 Resolve the dispatch target via the same role used for phase-3-outline (q-gate-validation tracks the calling phase's default):
 
@@ -377,7 +377,7 @@ Task: plan-marshall:{target}
     validators: [module-mapping-validator, scope-criterion-validator]
 ```
 
-The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-4-plan so the combined aggregate drives the existing 3-iteration auto-loop predicate uniformly (re-dispatch phase-4-plan via the same envelope used in Step 4 when the combined count is non-zero, up to `verification_max_iterations`). Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
+The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-4-plan so the combined aggregate drives the existing 3-iteration auto-loop predicate uniformly (re-dispatch phase-4-plan via the same envelope used in Step 4 when the combined count is non-zero, up to `max_iterations`). Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
 
 **Metrics**: After the plan agent completes, record the `4-plan → 5-execute`
 boundary in a single fused call (forwarding the aggregated `<usage>` data

@@ -9,7 +9,7 @@ Subcommands:
     check-structure               Check if the per-module project-architecture layout exists
     seed-blocking-finding-types   Idempotently seed default phase-boundary
                                   blocking-finding partitions into marshal.json
-    check-branch-naming           Detect absence or drift of project.branch_naming
+    check-branch-naming           Detect absence or drift of project.working_prefixes
                                   against the canonical default (non-clobbering)
 
 Note: check-docs and check-structure overlap with menu-healthcheck steps 2 and 5.
@@ -67,23 +67,11 @@ Output (TOON format):
 
         status	missing
         detail	absent
-        missing_keys	branch_naming
+        missing_keys	working_prefixes
 
         status	missing
         detail	drift
-        missing_keys	ci_allowlist
-        seeded	phase-1-init,phase-2-refine,phase-3-outline,phase-4-plan,phase-5-execute,phase-6-finalize
-
-        status	success
-        seed_status	unchanged
-        seeded_count	0
-        skipped_count	6
-        skipped	phase-1-init,phase-2-refine,phase-3-outline,phase-4-plan,phase-5-execute,phase-6-finalize
-
-        status	success
-        seed_status	missing_marshal
-        seeded_count	0
-        skipped_count	0
+        missing_keys	working_prefixes
 """
 
 import argparse
@@ -769,17 +757,16 @@ def cmd_check_missing_finalize_steps(args: argparse.Namespace) -> dict:
 
 
 def detect_branch_naming_drift(plan_dir: Path) -> dict:
-    """Compare ``marshal.json::project["branch_naming"]`` against the canonical
-    ``DEFAULT_PROJECT["branch_naming"]`` block and classify the project's state.
+    """Compare ``marshal.json::project["working_prefixes"]`` against the canonical
+    ``DEFAULT_PROJECT["working_prefixes"]`` list and classify the project's state.
 
     Returns a structured result ``{'outcome': ..., 'missing_keys': [...]}`` where
     ``outcome`` is one of:
 
-    - ``'absent'`` — the ``branch_naming`` key is entirely missing from the
-      ``project`` block (``missing_keys == ['branch_naming']``).
-    - ``'drift'`` — the key is present but ``working_prefixes`` and/or
-      ``ci_allowlist`` is missing OR lacks a default entry (``missing_keys``
-      names the drifted sub-keys).
+    - ``'absent'`` — the ``working_prefixes`` key is entirely missing from the
+      ``project`` block (``missing_keys == ['working_prefixes']``).
+    - ``'drift'`` — the key is present but is not a list OR lacks a default
+      entry (``missing_keys == ['working_prefixes']``).
     - ``'ok'`` — the key is present and every default entry is included
       (operator *additions* / supersets are honoured and never flagged).
 
@@ -804,50 +791,42 @@ def detect_branch_naming_drift(plan_dir: Path) -> dict:
     except ImportError:
         return ok_result
 
-    default_block = DEFAULT_PROJECT.get('branch_naming', {})
-    if not isinstance(default_block, dict):
+    default_entries = DEFAULT_PROJECT.get('working_prefixes', [])
+    if not isinstance(default_entries, list):
         return ok_result
 
     project_section = data.get('project', {}) if isinstance(data, dict) else {}
     if not isinstance(project_section, dict):
         project_section = {}
 
-    if 'branch_naming' not in project_section:
-        return {'outcome': 'absent', 'missing_keys': ['branch_naming']}
+    if 'working_prefixes' not in project_section:
+        return {'outcome': 'absent', 'missing_keys': ['working_prefixes']}
 
-    live_block = project_section.get('branch_naming', {})
-    if not isinstance(live_block, dict):
-        # Present but malformed (not a dict) — treat as drift on both sub-keys.
-        return {'outcome': 'drift', 'missing_keys': list(default_block.keys())}
+    live_entries = project_section.get('working_prefixes')
+    if not isinstance(live_entries, list):
+        # Present but malformed (not a list) — treat as drift.
+        return {'outcome': 'drift', 'missing_keys': ['working_prefixes']}
 
-    drifted: list[str] = []
-    for sub_key, default_entries in default_block.items():
-        live_entries = live_block.get(sub_key)
-        if not isinstance(live_entries, list):
-            drifted.append(sub_key)
-            continue
-        # Non-clobbering: a superset (operator additions) is fine; only a
-        # MISSING default entry is drift.
-        if any(entry not in live_entries for entry in default_entries):
-            drifted.append(sub_key)
+    # Non-clobbering: a superset (operator additions) is fine; only a MISSING
+    # default entry is drift.
+    if any(entry not in live_entries for entry in default_entries):
+        return {'outcome': 'drift', 'missing_keys': ['working_prefixes']}
 
-    if drifted:
-        return {'outcome': 'drift', 'missing_keys': drifted}
     return ok_result
 
 
 def cmd_check_branch_naming(args: argparse.Namespace) -> dict:
     """Handle the 'check-branch-naming' subcommand.
 
-    Surfaces ``project.branch_naming`` absence or drift against the canonical
+    Surfaces ``project.working_prefixes`` absence or drift against the canonical
     default so the wizard can prompt the operator to add/update it. The
     detection is non-clobbering — a current or operator-customized (superset)
-    block returns ``status: ok`` and is never flagged.
+    list returns ``status: ok`` and is never flagged.
     """
     result = detect_branch_naming_drift(Path(args.plan_dir))
     outcome = result['outcome']
     if outcome == 'absent':
-        return {'status': 'missing', 'detail': 'absent', 'missing_keys': 'branch_naming'}
+        return {'status': 'missing', 'detail': 'absent', 'missing_keys': 'working_prefixes'}
     if outcome == 'drift':
         return {'status': 'missing', 'detail': 'drift', 'missing_keys': ','.join(result['missing_keys'])}
     return {'status': 'ok'}
@@ -917,7 +896,7 @@ def main() -> int:
     branch_naming_parser = subparsers.add_parser(
         'check-branch-naming',
         help=(
-            'Detect absence or drift of project.branch_naming against the canonical '
+            'Detect absence or drift of project.working_prefixes against the canonical '
             'default — surfaces missing/drifted branch-prefix config so the wizard can prompt.'
         ),
         allow_abbrev=False,

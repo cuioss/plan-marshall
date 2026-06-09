@@ -13,7 +13,7 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `recipe_key` | `--recipe-key` argument when supplied, else read by the composer from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) | string or absent |
 | `affected_files_count` | `references.json::affected_files` length | int (≥0) |
 | `commit_strategy` | `manage-config plan phase-5-execute get --field commit_strategy` | enum: `per_plan|per_deliverable|none` (default: `per_plan`) |
-| `activation_globs` | `marshal.json::plan.phase-6-finalize.pre_push_quality_gate.activation_globs` | list[string] (default: empty) |
+| `build_map_globs` | derived from `marshal.json::skill_domains.build_map` — the union of every entry's `glob` across all domains | list[string] (default: empty when build_map absent) |
 | `live_footprint` | derived on demand from the worktree (`{base}...HEAD` ∪ porcelain via `compute_plan_branch_diff`); empty before the worktree is materialized | list[string] (default: empty) |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.steps` | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
@@ -78,13 +78,13 @@ The pre-filters run in this order:
 3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when the live plan footprint is empty.
 4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
 5. **`whole_tree_gate_inactive`** — drops `finalize-step-whole-tree-gate` unless the plan is clean-slate/breaking and code-bearing: `compatibility == breaking` AND `change_type ∈ {tech_debt, feature, enhancement, bug_fix}` AND `affected_files_count > 0`.
-6. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. `automated-review` is dropped ONLY via the explicit `lightweight_track_override` opt-in, never by the implicit scope gate.
+6. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. `automated-review` is dropped ONLY via the explicit `drop_review_on_scope_gate` opt-in, never by the implicit scope gate.
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
 After the seven-row matrix runs, two post-matrix transforms inspect the matrix output before the manifest is persisted, in this order:
 
-1. **`ceremony_finalize_selection`** — applies the four `ceremony_policy.finalize` run-at-all gates (`self_review` / `qgate` / `plugin_doctor` / `simplify`, each `always|never|auto`) to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `automated-review`. Documented in its own subsection below.
+1. **`ceremony_finalize_selection`** — applies the four `plan.phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `plugin_doctor` / `simplify`, each `always|never|auto`) to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `automated-review`. Documented in its own subsection below.
 2. **`bot_enforcement_guard`** — on GitHub/GitLab plans where `default:automated-review` is missing from the final `phase_6.steps`, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
 
 ### Pre-Filter: `commit_strategy_none`
@@ -107,21 +107,21 @@ When `commit_strategy ∈ {per_plan, per_deliverable}` (or absent — the defaul
 
 **Condition**: At least one of:
 
-- `marshal.json::plan.phase-6-finalize.pre_push_quality_gate.activation_globs` is missing or empty, OR
+- `marshal.json::skill_domains.build_map` is absent or carries no `glob` entries, OR
 - the live plan footprint is empty, OR
-- No entry in the live footprint matches any glob in `activation_globs` (using `fnmatch.fnmatch`).
+- No entry in the live footprint matches any glob in `build_map_globs` (using `fnmatch.fnmatch`).
 
 **Effect**: `pre-push-quality-gate` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-push-quality-gate` was already removed by `commit_strategy_none`, this pre-filter is a no-op and emits no log entry.
 
-**Why a pre-filter (not an eighth row)**: Activation is project configuration paired with a glob match against the live footprint, both orthogonal to the change-type / scope / recipe inputs that the seven-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the seven-row matrix verbatim and adds exactly one independent decision-log line.
+**Why a pre-filter (not an eighth row)**: Activation is derived from `skill_domains.build_map` (the single source of truth for buildable file types) paired with a glob match against the live footprint, both orthogonal to the change-type / scope / recipe inputs that the seven-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the seven-row matrix verbatim and adds exactly one independent decision-log line.
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
 ```
-(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — activation_globs empty or no footprint match
+(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — no build_map globs or no footprint match
 ```
 
-When all three activation conditions are satisfied (non-empty globs, non-empty footprint, at least one glob match), the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the seven-row matrix.
+When all three activation conditions are satisfied (non-empty build_map globs, non-empty footprint, at least one glob match), the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `commit_strategy_none` and *before* every row of the seven-row matrix. The pre-filter is therefore observable independently — Row 7 (default), Row 5 (surgical_bug_fix / surgical_tech_debt), and Row 2 (recipe) all see a Phase 6 candidate list that already has `pre-push-quality-gate` removed if either pre-filter fired.
 
@@ -131,7 +131,7 @@ When all three activation conditions are satisfied (non-empty globs, non-empty f
 
 **Effect**: `pre-submission-self-review` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-submission-self-review` was already removed by `commit_strategy_none`, this pre-filter is a no-op and emits no log entry.
 
-**Why a pre-filter (not an eighth row)**: Activation depends only on the live footprint being non-empty (the four cognitive checks have no diff to inspect when the plan touched zero files). The condition is orthogonal to the change-type / scope / recipe inputs the seven-row matrix consumes. There is no `activation_globs` config knob — the four structural-defect classes the step targets (symmetric pairs, regex over-fit, wording, duplication) apply to any code or doc change, and gating by file extension would mean missing the very wording/duplication defects the lesson cites for `.md` files.
+**Why a pre-filter (not an eighth row)**: Activation depends only on the live footprint being non-empty (the four cognitive checks have no diff to inspect when the plan touched zero files). The condition is orthogonal to the change-type / scope / recipe inputs the seven-row matrix consumes. Unlike `pre-push-quality-gate` (which gates on the `skill_domains.build_map` globs), this step has no glob gate — the four structural-defect classes it targets (symmetric pairs, regex over-fit, wording, duplication) apply to any code or doc change, and gating by file extension would mean missing the very wording/duplication defects the lesson cites for `.md` files.
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
@@ -185,7 +185,7 @@ When the gate passes (`compatibility == breaking` AND `change_type ∈ {tech_deb
 
 ### Pre-Filter: `scope_gated_finalize`
 
-**Condition**: `scope_estimate ∈ {surgical, single_module}`. This is the sole entry condition for the pre-filter. `lightweight_track_override == true` is a *modifier* that only takes effect when the scope condition already holds — it is never a standalone trigger, so on `multi_module` / `broad` / `none` plans the override is inert.
+**Condition**: `scope_estimate ∈ {surgical, single_module}`. This is the sole entry condition for the pre-filter. `drop_review_on_scope_gate == true` is a *modifier* that only takes effect when the scope condition already holds — it is never a standalone trigger, so on `multi_module` / `broad` / `none` plans the override is inert.
 
 **Effect**: heavyweight phase-6 review/audit steps are removed from `phase_6_candidates` by scope before the rows are evaluated:
 
@@ -193,9 +193,9 @@ When the gate passes (`compatibility == breaking` AND `change_type ∈ {tech_deb
 - **`scope_estimate == 'single_module'`** — drops only `plan-marshall:plan-retrospective`.
 - **`scope_estimate ∈ {none, multi_module, broad}`** — no implicit subtraction; the full candidate set survives into the matrix.
 
-**The deliberate `automated-review` carve-out**: the implicit scope gate NEVER drops `automated-review`. The active `bot_enforcement_guard` (documented below) re-adds `automated-review` in-place on any GitHub/GitLab plan where it is missing, so an implicit drop would be a silently-undone no-op — and dropping it would contradict the documented invariant that "review gates a project opted into are NEVER silently suppressed by the planner". The only path that suppresses `automated-review` is the explicit `lightweight_track_override` opt-in: when `marshal.json`'s `plan.phase-6-finalize.lightweight_track_override` is `true` **and** the plan is itself scope-gated (`scope_estimate ∈ {surgical, single_module}`), the scope gate additionally drops `automated-review`. The override is scoped, not global — on `multi_module` / `broad` / `none` plans it is inert, so flipping the project-wide knob can never silently disable bot review on a large plan. The default (`false`) keeps the bot-review invariant intact. This resolves the request's "exclude automated-review for surgical scope" instruction by extending — not contradicting — the bot-enforcement model: the exclusion is opt-in and explicit, never implicit.
+**The deliberate `automated-review` carve-out**: the implicit scope gate NEVER drops `automated-review`. The active `bot_enforcement_guard` (documented below) re-adds `automated-review` in-place on any GitHub/GitLab plan where it is missing, so an implicit drop would be a silently-undone no-op — and dropping it would contradict the documented invariant that "review gates a project opted into are NEVER silently suppressed by the planner". The only path that suppresses `automated-review` is the explicit `drop_review_on_scope_gate` opt-in: when `marshal.json`'s `plan.phase-6-finalize.drop_review_on_scope_gate` is `true` **and** the plan is itself scope-gated (`scope_estimate ∈ {surgical, single_module}`), the scope gate additionally drops `automated-review`. The override is scoped, not global — on `multi_module` / `broad` / `none` plans it is inert, so flipping the project-wide knob can never silently disable bot review on a large plan. The default (`false`) keeps the bot-review invariant intact. This resolves the request's "exclude automated-review for surgical scope" instruction by extending — not contradicting — the bot-enforcement model: the exclusion is opt-in and explicit, never implicit.
 
-**Why a pre-filter (not an eighth row)**: the subtraction depends only on `scope_estimate` (and the `lightweight_track_override` config knob), both orthogonal to the change-type / recipe inputs the seven-row matrix consumes. Modeling it as a pre-filter keeps the seven-row matrix unchanged and is consistent with the composer's "rows and pre-filters only ever narrow the candidate list" architecture. It runs after `whole_tree_gate_inactive` and before the matrix and the bot-enforcement guard, so every row — and the guard — sees a candidate list already narrowed by the scope gate.
+**Why a pre-filter (not an eighth row)**: the subtraction depends only on `scope_estimate` (and the `drop_review_on_scope_gate` config knob), both orthogonal to the change-type / recipe inputs the seven-row matrix consumes. Modeling it as a pre-filter keeps the seven-row matrix unchanged and is consistent with the composer's "rows and pre-filters only ever narrow the candidate list" architecture. It runs after `whole_tree_gate_inactive` and before the matrix and the bot-enforcement guard, so every row — and the guard — sees a candidate list already narrowed by the scope gate.
 
 **Decision log line** (one per subtraction, in addition to the row's own log line and any other pre-filter log line):
 
@@ -203,7 +203,7 @@ When the gate passes (`compatibility == breaking` AND `change_type ∈ {tech_deb
 (plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction — scope_estimate={value}, dropped {step} from phase_6.steps
 ```
 
-When `scope_estimate ∈ {none, multi_module, broad}` and `lightweight_track_override == false`, the pre-filter is a no-op and emits no log entry; the full candidate set survives into the seven-row matrix.
+When `scope_estimate ∈ {none, multi_module, broad}` and `drop_review_on_scope_gate == false`, the pre-filter is a no-op and emits no log entry; the full candidate set survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `whole_tree_gate_inactive` and *before* every row of the seven-row matrix and the bot-enforcement guard.
 
@@ -235,11 +235,11 @@ Paths no extension claims are tagged `unknown` by the aggregator AND surface as 
 
 The never-silently-drop policy is load-bearing: an unclassified path indicates either a missing domain extension OR a brand-new file type the project has not yet declared, and silently routing it to `documentation_only` would suppress the holistic Python verification that the path may actually need. Surfacing `unknown` forces the user (or the future Q-Gate finding) to declare the path's role explicitly.
 
-## ceremony_policy.finalize Selection
+## plan.phase-6-finalize Selection
 
 **Type**: Composition-time post-matrix transform (NOT a pre-filter). Runs *after* the seven-row matrix has produced the final `phase_6.steps` list and *after* `execution_tier` routing, *before* the `bot_enforcement_guard`.
 
-**Inputs**: the four `ceremony_policy.finalize` run-at-all gates, resolved from `marshal.json::ceremony_policy.finalize` with `ceremony_policy.overrides[]` applied:
+**Inputs**: the four `plan.phase-6-finalize` run-at-all gates, read directly from `marshal.json::plan.phase-6-finalize`:
 
 | Gate | Finalize step it controls | Run-at-all values |
 |------|---------------------------|-------------------|
@@ -248,15 +248,15 @@ The never-silently-drop policy is load-bearing: an unclassified path indicates e
 | `plugin_doctor` | `finalize-step-plugin-doctor` | `always` \| `never` \| `auto` (default) |
 | `simplify` | `finalize-step-simplify` (holistic post-implementation simplification sweep) | `always` \| `never` \| `auto` (default) |
 
-**Gate resolution**: the composer reads `marshal.json::ceremony_policy.finalize` directly (merging the canonical `auto` default under any absent gate), then applies each matching `ceremony_policy.overrides[]` row in order. An override row's `set` map wins over the section value for any `finalize.<gate>` dotted path it carries; later rows win over earlier rows. A row matches when every key/value pair in its `when` clause equals the plan's facts (`scope_estimate` / `plan_source` / `change_type`); an empty `when` matches every plan.
+**Gate resolution**: the composer reads `marshal.json::plan.phase-6-finalize.<gate>` directly (merging the canonical `auto` default under any absent gate). Each gate is a flat phase-local knob — there is no condition-scoped override layer.
 
 **Effect** (per gate, against the matrix-produced `phase_6.steps`):
 
-- **`never`** — every match-set form of the gate's step (bare and `project:`-prefixed) is removed from `phase_6.steps`. A no-op when already absent. `never` is a footgun for `self_review` / `qgate` / `plugin_doctor` and emits a set-time `[WARNING]` at `manage-config ceremony-policy set` time (see [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § ceremony_policy); `simplify` is NOT a footgun (it skips a quality-improvement sweep, not a safety net), so its `never` emits no warning. The composer applies the resolved value without re-warning.
+- **`never`** — every match-set form of the gate's step (bare and `project:`-prefixed) is removed from `phase_6.steps`. A no-op when already absent. The composer applies the resolved value directly.
 - **`always`** — the gate's canonical step is ensured present, inserted before the plan-mutating tail (`archive-plan` / `record-metrics` / `branch-cleanup` / `plan-marshall:plan-retrospective`) when absent. A no-op when any match-set form is already present. `always` is the **only** path that can re-add a step the relevant pre-filter dropped — that is the point: an operator-set `always` overrides the implicit gate. For `self_review` / `qgate` / `plugin_doctor` the overridden pre-filter is `scope_gated_finalize`; for `simplify` it is `simplify_inactive`.
 - **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` / `plugin_doctor` that is the `scope_gated_finalize` pre-filter and the seven-row matrix; for `simplify` it is the `simplify_inactive` pre-filter (which drops the step when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`). No-op in every case.
 
-**The deliberate `automated-review` carve-out**: this transform's gate map contains only the four ceremony finalize steps (`finalize-step-pre-submission-self-review`, `pre-push-quality-gate`, `finalize-step-plugin-doctor`, `finalize-step-simplify`). It NEVER adds or drops `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is structurally preserved regardless of any ceremony gate value. The two transforms are orthogonal: ceremony selection forces the four review/lint/simplify gates per operator policy; the bot guard independently ensures `automated-review` is scheduled on GitHub/GitLab plans.
+**The deliberate `automated-review` carve-out**: this transform's gate map contains only the four finalize steps (`finalize-step-pre-submission-self-review`, `pre-push-quality-gate`, `finalize-step-plugin-doctor`, `finalize-step-simplify`). It NEVER adds or drops `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is structurally preserved regardless of any gate value. The two transforms are orthogonal: finalize selection forces the four review/lint/simplify gates per operator policy; the bot guard independently ensures `automated-review` is scheduled on GitHub/GitLab plans.
 
 **Why a post-matrix transform (not a pre-filter)**: `always` must be able to re-add a step that `scope_gated_finalize` removed before the matrix ran. A pre-filter runs before the matrix, so it cannot express force-include against a subtraction the scope gate already applied. Running after the matrix lets the transform see the final list and override both the scope gate and any row-level narrowing.
 
@@ -268,7 +268,7 @@ The never-silently-drop policy is load-bearing: an unclassified path indicates e
 
 When all four gates resolve to `auto` (the default), the transform is a no-op and emits no log entry.
 
-**Cross-reference**: the `ceremony_policy.finalize` schema (run-at-all enum, footgun catalogue, override shape) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § ceremony_policy — this section documents only how the composer consumes the three finalize gates. Do not restate the schema here.
+**Cross-reference**: the gate schema (run-at-all enum, defaults) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize — this section documents only how the composer consumes the four finalize gates. Do not restate the schema here.
 
 ## Bot-Enforcement Guard
 

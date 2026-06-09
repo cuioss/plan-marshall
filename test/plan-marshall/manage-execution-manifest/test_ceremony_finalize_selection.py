@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for the ``ceremony_finalize_selection`` post-matrix transform.
 
-The transform applies the four ``ceremony_policy.finalize`` run-at-all gates
+The transform applies the four ``plan.phase-6-finalize`` run-at-all gates
 (``self_review`` / ``qgate`` / ``plugin_doctor`` / ``simplify``, each
 ``always|never|auto``) to the matrix-produced ``phase_6.steps``:
 
@@ -11,16 +11,14 @@ The transform applies the four ``ceremony_policy.finalize`` run-at-all gates
   ``scope_gated_finalize`` pre-filter dropped it.
 
 The transform NEVER touches ``automated-review`` — the bot-review invariant
-(``bot_enforcement_guard``) is orthogonal and preserved. Override rows
-(``ceremony_policy.overrides[]``) win over the section values, matched on plan
-facts (``scope_estimate`` / ``plan_source`` / ``change_type``).
+(``bot_enforcement_guard``) is orthogonal and preserved.
 
-The actual implemented ``ceremony_policy.finalize`` contract is three
-independent ``always|never|auto`` gates (introduced in D3, schema owned by
-``manage-config/standards/data-model.md``). The TASK-17 planning description
-named stale ``full|light|none`` placeholder values; these tests cover the real
-per-gate contract per the task's stated intent ("the composer honours
-ceremony_policy.finalize deterministically").
+The gates are flat phase-local knobs read directly from
+``plan.phase-6-finalize.<gate>`` — the ``ceremony_policy`` block (and its
+condition-scoped ``overrides[]`` rows) was dissolved, and every gate distributed
+back into its owning phase block. The internal transform name retains the
+``ceremony_finalize`` prefix for continuity, but the configuration home is the
+flat ``plan.phase-6-finalize`` section.
 """
 
 import importlib.util
@@ -119,33 +117,35 @@ def _compose_ns(
 
 
 def _seed_marshal(
-    ceremony_finalize: dict[str, str] | None = None,
-    overrides: list[dict] | None = None,
+    finalize_gates: dict[str, str] | None = None,
     ci_provider: str | None = None,
 ) -> Path:
-    """Write a marshal.json carrying a ``ceremony_policy`` block for the test."""
+    """Write a marshal.json carrying the flat ``plan.phase-6-finalize`` gates."""
     from file_ops import get_marshal_path  # type: ignore[import-not-found]
 
+    phase_6: dict = {}
+    if finalize_gates is not None:
+        # The gates are flat fields under plan.phase-6-finalize.
+        phase_6.update(finalize_gates)
+
+    # Pre-push-quality-gate activation derives from skill_domains.build_map globs
+    # (D7/D8). The `**/*.py` build_map glob matches the stubbed footprint so the
+    # pre_push_quality_gate_inactive pre-filter does NOT drop the qgate step in
+    # the `auto` baseline (lets us isolate the ceremony transform's behaviour).
     marshal: dict = {
-        'plan': {
-            'phase-6-finalize': {
-                # activation_globs matches the stubbed footprint so the
-                # pre_push_quality_gate_inactive pre-filter does NOT drop the
-                # qgate step in the `auto` baseline (lets us isolate the
-                # ceremony transform's behaviour).
-                'pre_push_quality_gate': {'activation_globs': ['**/*.py']},
-            }
+        'plan': {'phase-6-finalize': phase_6},
+        'skill_domains': {
+            'build_map': {
+                'python': [
+                    {'glob': '**/*.py', 'role': 'production', 'build_class': 'prod-compile'},
+                ],
+            },
         },
     }
-    ceremony: dict = {}
-    if ceremony_finalize is not None:
-        ceremony['finalize'] = ceremony_finalize
-    if overrides is not None:
-        ceremony['overrides'] = overrides
-    if ceremony:
-        marshal['ceremony_policy'] = ceremony
     if ci_provider:
-        marshal['ci'] = {'provider': ci_provider}
+        marshal['providers'] = [
+            {'skill_name': f'plan-marshall:workflow-integration-{ci_provider}', 'category': 'ci'}
+        ]
 
     marshal_path = get_marshal_path()
     marshal_path.parent.mkdir(parents=True, exist_ok=True)
@@ -198,7 +198,7 @@ class TestCeremonyFinalizeAuto:
     """All three gates default to ``auto`` → the transform is a no-op."""
 
     def test_absent_ceremony_block_is_no_op(self, plan_context):
-        _seed_marshal()  # no ceremony_policy block at all
+        _seed_marshal()  # no finalize gate overrides at all
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-auto-absent'))
@@ -217,7 +217,7 @@ class TestCeremonyFinalizeAuto:
 
     def test_explicit_auto_gates_are_no_op(self, plan_context):
         _seed_marshal(
-            ceremony_finalize={'self_review': 'auto', 'qgate': 'auto', 'plugin_doctor': 'auto'}
+            finalize_gates={'self_review': 'auto', 'qgate': 'auto', 'plugin_doctor': 'auto'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -245,7 +245,7 @@ class TestCeremonyFinalizeNever:
 
     def test_never_drops_each_gate_step(self, plan_context):
         _seed_marshal(
-            ceremony_finalize={'self_review': 'never', 'qgate': 'never', 'plugin_doctor': 'never'}
+            finalize_gates={'self_review': 'never', 'qgate': 'never', 'plugin_doctor': 'never'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -266,7 +266,7 @@ class TestCeremonyFinalizeNever:
         # Candidate set EXCLUDES plugin_doctor; never plugin_doctor is a no-op.
         candidates = [s for s in _phase_6_with_ceremony_steps().split(',')
                       if s != 'project:finalize-step-plugin-doctor']
-        _seed_marshal(ceremony_finalize={'plugin_doctor': 'never'})
+        _seed_marshal(finalize_gates={'plugin_doctor': 'never'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -279,7 +279,7 @@ class TestCeremonyFinalizeNever:
 
     def test_never_preserves_automated_review(self, plan_context):
         _seed_marshal(
-            ceremony_finalize={'self_review': 'never', 'qgate': 'never', 'plugin_doctor': 'never'},
+            finalize_gates={'self_review': 'never', 'qgate': 'never', 'plugin_doctor': 'never'},
             ci_provider='github',
         )
         _stub_footprint(_FOOTPRINT)
@@ -304,7 +304,7 @@ class TestCeremonyFinalizeAlways:
         # On surgical scope, scope_gated_finalize drops self_review and
         # plugin_doctor (and plan-retrospective). `always` must re-add both.
         _seed_marshal(
-            ceremony_finalize={'self_review': 'always', 'plugin_doctor': 'always'}
+            finalize_gates={'self_review': 'always', 'plugin_doctor': 'always'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -328,7 +328,7 @@ class TestCeremonyFinalizeAlways:
     def test_always_readds_qgate_dropped_by_inactive_prefilter(self, plan_context):
         # Empty footprint → pre_push_quality_gate_inactive drops the qgate step.
         # `always` re-adds it regardless.
-        _seed_marshal(ceremony_finalize={'qgate': 'always'})
+        _seed_marshal(finalize_gates={'qgate': 'always'})
         _stub_footprint([])
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-always-qgate'))
@@ -339,7 +339,7 @@ class TestCeremonyFinalizeAlways:
         assert 'pre-push-quality-gate' in result['ceremony_finalize_forced_in']
 
     def test_always_is_no_op_when_step_already_present(self, plan_context):
-        _seed_marshal(ceremony_finalize={'self_review': 'always'})
+        _seed_marshal(finalize_gates={'self_review': 'always'})
         _stub_footprint(_FOOTPRINT)
 
         # multi_module feature → self_review survives the matrix already present.
@@ -351,7 +351,7 @@ class TestCeremonyFinalizeAlways:
         assert 'finalize-step-pre-submission-self-review' in _bare(_manifest_phase_6_steps(result))
 
     def test_always_inserts_before_plan_mutating_tail(self, plan_context):
-        _seed_marshal(ceremony_finalize={'plugin_doctor': 'always'})
+        _seed_marshal(finalize_gates={'plugin_doctor': 'always'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -369,82 +369,6 @@ class TestCeremonyFinalizeAlways:
         assert 'finalize-step-plugin-doctor' in bare_seq
         assert 'archive-plan' in bare_seq
         assert bare_seq.index('finalize-step-plugin-doctor') < bare_seq.index('archive-plan')
-
-
-# =============================================================================
-# Test: overrides — condition-scoped rows win over section values
-# =============================================================================
-
-
-class TestCeremonyFinalizeOverrides:
-    """``overrides[]`` rows matched on plan facts win over the section gate value."""
-
-    def test_matching_override_forces_never(self, plan_context):
-        _seed_marshal(
-            ceremony_finalize={'self_review': 'always'},
-            overrides=[
-                {'when': {'scope_estimate': 'surgical'}, 'set': {'finalize.self_review': 'never'}}
-            ],
-        )
-        _stub_footprint(_FOOTPRINT)
-
-        result = cmd_compose(
-            _compose_ns(
-                plan_id='ceremony-override-match',
-                scope_estimate='surgical',
-                change_type='bug_fix',
-            )
-        )
-
-        assert result is not None
-        assert result['status'] == 'success'
-        # Override wins: self_review resolves to never despite the section's always.
-        assert result['ceremony_finalize_gates']['self_review'] == 'never'
-        assert 'finalize-step-pre-submission-self-review' not in _bare(_manifest_phase_6_steps(result))
-
-    def test_non_matching_override_is_inert(self, plan_context):
-        _seed_marshal(
-            ceremony_finalize={'self_review': 'auto'},
-            overrides=[
-                {'when': {'scope_estimate': 'broad'}, 'set': {'finalize.self_review': 'never'}}
-            ],
-        )
-        _stub_footprint(_FOOTPRINT)
-
-        # Plan is multi_module, not broad → override does not match.
-        result = cmd_compose(_compose_ns(plan_id='ceremony-override-nomatch'))
-
-        assert result is not None
-        assert result['ceremony_finalize_gates']['self_review'] == 'auto'
-
-    def test_empty_when_matches_every_plan(self, plan_context):
-        _seed_marshal(
-            ceremony_finalize={'plugin_doctor': 'auto'},
-            overrides=[{'when': {}, 'set': {'finalize.plugin_doctor': 'never'}}],
-        )
-        _stub_footprint(_FOOTPRINT)
-
-        result = cmd_compose(_compose_ns(plan_id='ceremony-override-empty-when'))
-
-        assert result is not None
-        assert result['ceremony_finalize_gates']['plugin_doctor'] == 'never'
-        assert 'finalize-step-plugin-doctor' not in _bare(_manifest_phase_6_steps(result))
-
-    def test_later_override_row_wins(self, plan_context):
-        _seed_marshal(
-            ceremony_finalize={'qgate': 'auto'},
-            overrides=[
-                {'when': {}, 'set': {'finalize.qgate': 'always'}},
-                {'when': {}, 'set': {'finalize.qgate': 'never'}},
-            ],
-        )
-        _stub_footprint(_FOOTPRINT)
-
-        result = cmd_compose(_compose_ns(plan_id='ceremony-override-lastwins'))
-
-        assert result is not None
-        # Last matching row wins → never.
-        assert result['ceremony_finalize_gates']['qgate'] == 'never'
 
 
 # =============================================================================
@@ -466,7 +390,7 @@ class TestCeremonyFinalizeSimplify:
     def test_auto_defers_to_prefilter_keep_branch(self, plan_context):
         # change_type=feature, files>0 → simplify_inactive keeps the step;
         # auto is a no-op, so it survives.
-        _seed_marshal(ceremony_finalize={'simplify': 'auto'})
+        _seed_marshal(finalize_gates={'simplify': 'auto'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-auto-keep'))
@@ -483,7 +407,7 @@ class TestCeremonyFinalizeSimplify:
         # ({feature, bug_fix, tech_debt}) → the simplify_inactive pre-filter
         # drops the step; auto does NOT re-add it. On a multi_module enhancement
         # (Row 7 default) the rest of phase_6 is retained.
-        _seed_marshal(ceremony_finalize={'simplify': 'auto'})
+        _seed_marshal(finalize_gates={'simplify': 'auto'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -499,7 +423,7 @@ class TestCeremonyFinalizeSimplify:
 
     def test_never_drops_simplify_step(self, plan_context):
         # Baseline keeps the step (feature + files>0); never must drop it.
-        _seed_marshal(ceremony_finalize={'simplify': 'never'})
+        _seed_marshal(finalize_gates={'simplify': 'never'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-never'))
@@ -512,7 +436,7 @@ class TestCeremonyFinalizeSimplify:
     def test_never_is_no_op_when_already_dropped_by_prefilter(self, plan_context):
         # enhancement change_type → simplify_inactive already dropped the step;
         # never simplify is then a no-op (no double-drop, no forced_out entry).
-        _seed_marshal(ceremony_finalize={'simplify': 'never'})
+        _seed_marshal(finalize_gates={'simplify': 'never'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -527,7 +451,7 @@ class TestCeremonyFinalizeSimplify:
     def test_always_readds_simplify_dropped_by_prefilter(self, plan_context):
         # enhancement change_type → simplify_inactive drops the step; always
         # must re-add it regardless, overriding the pre-filter.
-        _seed_marshal(ceremony_finalize={'simplify': 'always'})
+        _seed_marshal(finalize_gates={'simplify': 'always'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -541,7 +465,7 @@ class TestCeremonyFinalizeSimplify:
 
     def test_always_is_no_op_when_step_already_present(self, plan_context):
         # feature + files>0 → the step survives the matrix; always is a no-op.
-        _seed_marshal(ceremony_finalize={'simplify': 'always'})
+        _seed_marshal(finalize_gates={'simplify': 'always'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-always-present'))
@@ -554,7 +478,7 @@ class TestCeremonyFinalizeSimplify:
     def test_always_inserts_before_plan_mutating_tail(self, plan_context):
         # enhancement drops the step; always re-adds it before the
         # plan-mutating tail.
-        _seed_marshal(ceremony_finalize={'simplify': 'always'})
+        _seed_marshal(finalize_gates={'simplify': 'always'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -568,23 +492,6 @@ class TestCeremonyFinalizeSimplify:
         assert 'archive-plan' in bare_seq
         assert bare_seq.index('finalize-step-simplify') < bare_seq.index('archive-plan')
 
-    def test_override_forces_simplify_never(self, plan_context):
-        # Section says always; a matching override forces never.
-        _seed_marshal(
-            ceremony_finalize={'simplify': 'always'},
-            overrides=[
-                {'when': {'change_type': 'feature'}, 'set': {'finalize.simplify': 'never'}}
-            ],
-        )
-        _stub_footprint(_FOOTPRINT)
-
-        result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-override'))
-
-        assert result is not None
-        assert result['status'] == 'success'
-        assert result['ceremony_finalize_gates']['simplify'] == 'never'
-        assert 'finalize-step-simplify' not in _bare(_manifest_phase_6_steps(result))
-
 
 # =============================================================================
 # Test: determinism — same inputs → same selection
@@ -596,7 +503,7 @@ class TestCeremonyFinalizeDeterminism:
 
     def test_repeated_compose_is_deterministic(self, plan_context):
         _seed_marshal(
-            ceremony_finalize={'self_review': 'always', 'qgate': 'never', 'plugin_doctor': 'auto'}
+            finalize_gates={'self_review': 'always', 'qgate': 'never', 'plugin_doctor': 'auto'}
         )
         _stub_footprint(_FOOTPRINT)
 

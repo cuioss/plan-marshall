@@ -109,8 +109,10 @@ def _write_references(
 
 def _write_marshal(fixture_dir: Path) -> None:
     config = {
-        'plan': {'phase-2-refine': {'compatibility': 'deprecation'}},
-        'ceremony_policy': {'planning': {'deep_lane': 'auto'}},
+        'plan': {
+            'phase-1-init': {'deep_lane': 'auto'},
+            'phase-2-refine': {'compatibility': 'deprecation'},
+        },
     }
     (fixture_dir / 'marshal.json').write_text(json.dumps(config, indent=2), encoding='utf-8')
 

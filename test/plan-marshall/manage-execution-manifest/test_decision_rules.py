@@ -84,18 +84,28 @@ def _compose_ns(
 
 
 def _seed_marshal(ci_provider: str | None = 'github') -> Path:
-    """Write a minimal marshal.json at PLAN_BASE_DIR/marshal.json for the test."""
+    """Write a minimal marshal.json at PLAN_BASE_DIR/marshal.json for the test.
+
+    Pre-push-quality-gate activation derives from ``skill_domains.build_map``
+    globs (D7/D8), so the seed carries a build_map entry whose ``**/*.py`` glob
+    keeps the gate active against a matching footprint.
+    """
     from file_ops import get_marshal_path  # type: ignore[import-not-found]
 
     marshal: dict = {
-        'plan': {
-            'phase-6-finalize': {
-                'pre_push_quality_gate': {'activation_globs': ['**/*.py']},
-            }
+        'plan': {'phase-6-finalize': {}},
+        'skill_domains': {
+            'build_map': {
+                'python': [
+                    {'glob': '**/*.py', 'role': 'production', 'build_class': 'prod-compile'},
+                ],
+            },
         },
     }
     if ci_provider:
-        marshal['ci'] = {'provider': ci_provider}
+        marshal['providers'] = [
+            {'skill_name': f'plan-marshall:workflow-integration-{ci_provider}', 'category': 'ci'}
+        ]
     marshal_path = get_marshal_path()
     marshal_path.parent.mkdir(parents=True, exist_ok=True)
     marshal_path.write_text(json.dumps(marshal, indent=2))

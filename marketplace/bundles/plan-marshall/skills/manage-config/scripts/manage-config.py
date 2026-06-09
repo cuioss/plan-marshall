@@ -17,7 +17,6 @@ Usage:
 import argparse
 
 from _cmd_build_map import cmd_build_map
-from _cmd_ceremony_policy import cmd_ceremony_policy
 from _cmd_coverage import cmd_coverage_expand, cmd_coverage_read, cmd_coverage_resolve
 from _cmd_domain_detect import cmd_domain_detect
 from _cmd_effort import cmd_effort, cmd_effort_apply_preset, cmd_effort_resolve_target
@@ -50,28 +49,7 @@ from input_validation import (  # type: ignore[import-not-found]
     add_domain_arg,
     add_field_arg,
     parse_args_with_toon_errors,
-    validate_package_name,
 )
-
-
-def _add_ceremony_field_arg(parser, required: bool) -> None:
-    """Add the ``--field`` argument for ceremony-policy get/set (dotted path).
-
-    ``ceremony_policy`` fields are dotted ``<section>.<field>`` paths
-    (``automation.finalize_without_asking``, ``finalize.self_review``,
-    ``planning.deep_lane``, …) — NOT the bare snake_case names the shared
-    ``add_field_arg`` validates. The dotted-snake-case validator
-    ``validate_package_name`` accepts ``[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*``,
-    which matches every ceremony dotted path while still rejecting traversal or
-    shell-metachar injection.
-    """
-    parser.add_argument(
-        '--field',
-        required=required,
-        type=validate_package_name,
-        help='Ceremony-policy field as a dotted <section>.<field> path '
-        '(e.g. automation.finalize_without_asking, finalize.self_review)',
-    )
 
 
 def _add_phase_subparser(
@@ -245,32 +223,6 @@ def main() -> int:
     proj_set = proj_sub.add_parser('set', help='Set a project field', allow_abbrev=False)
     add_field_arg(proj_set)
     proj_set.add_argument('--value', required=True, help='Field value')
-
-    # --- ceremony-policy (lifecycle-wide policy block, top-level) ---
-    p_cp = subparsers.add_parser(
-        'ceremony-policy',
-        help='Read the lifecycle-wide ceremony_policy block (run-at-all gates + automation knobs)',
-        allow_abbrev=False,
-    )
-    cp_sub = p_cp.add_subparsers(dest='verb', required=True, help='Operation')
-    cp_get = cp_sub.add_parser(
-        'get',
-        help='Get a ceremony_policy field by dotted path (e.g. automation.finalize_without_asking)',
-        allow_abbrev=False,
-    )
-    # ceremony_policy fields are dotted ``<section>.<field>`` paths
-    # (e.g. ``automation.finalize_without_asking``, ``finalize.self_review``),
-    # NOT the bare snake_case fields ``add_field_arg`` validates. Bind the
-    # dotted-snake-case validator (``validate_package_name``) directly so the
-    # documented + runtime-consumed read/write surface accepts the dotted path.
-    _add_ceremony_field_arg(cp_get, required=False)
-    cp_set = cp_sub.add_parser(
-        'set',
-        help='Set a ceremony_policy field by dotted path (e.g. automation.finalize_without_asking)',
-        allow_abbrev=False,
-    )
-    _add_ceremony_field_arg(cp_set, required=True)
-    cp_set.add_argument('--value', required=True, help='Field value')
 
     # --- plan (phase-based sub-nouns) ---
     p_plan = subparsers.add_parser('plan', help='Manage plan settings', allow_abbrev=False)
@@ -643,11 +595,6 @@ def main() -> int:
             p_proj.print_help()
             return 2
         result = cmd_project(args)
-    elif args.noun == 'ceremony-policy':
-        if not args.verb:
-            p_cp.print_help()
-            return 2
-        result = cmd_ceremony_policy(args)
     elif args.noun == 'plan':
         if not args.sub_noun or not args.verb:
             p_plan.print_help()

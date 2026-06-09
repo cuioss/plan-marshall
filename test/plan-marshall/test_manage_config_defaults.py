@@ -38,46 +38,46 @@ _config_defaults = _load_module('_config_defaults', '_config_defaults.py')
 
 class TestLoopBackWithoutAskingDefault:
     """``loop_back_without_asking`` is the reverse-direction symmetric
-    counterpart of ``finalize_without_asking``. Both now live under the
-    top-level ``ceremony_policy.automation`` block (migrated out of the loose
-    ``plan.phase-6-finalize`` location). The defaults are intentionally
-    asymmetric: forward auto-continue is the common case and defaults to
-    ``True``; reverse loop-back surfaces a control return to the user and
-    defaults to ``False`` so unattended runs cannot silently re-enter execute
-    on a finalize-side fix."""
+    counterpart of ``finalize_without_asking``. Both are flat knobs under
+    ``plan.phase-6-finalize`` (the ``ceremony_policy`` block was dissolved and
+    every gate/automation knob distributed back into its owning phase). The
+    defaults are intentionally asymmetric: forward auto-continue is the common
+    case and defaults to ``True``; reverse loop-back surfaces a control return
+    to the user and defaults to ``False`` so unattended runs cannot silently
+    re-enter execute on a finalize-side fix."""
 
     def test_default_is_false(self) -> None:
         """``get_default_config()`` MUST expose
-        ``ceremony_policy.automation.loop_back_without_asking == False``."""
+        ``plan.phase-6-finalize.loop_back_without_asking == False``."""
         cfg = _config_defaults.get_default_config()
         assert (
-            cfg['ceremony_policy']['automation']['loop_back_without_asking']
+            cfg['plan']['phase-6-finalize']['loop_back_without_asking']
             is False
         ), (
-            'get_default_config()["ceremony_policy"]["automation"]'
+            'get_default_config()["plan"]["phase-6-finalize"]'
             '["loop_back_without_asking"] must default to False'
         )
 
     def test_finalize_block_default_matches(self) -> None:
-        """The ``DEFAULT_CEREMONY_POLICY`` module constant MUST agree with the
+        """The ``DEFAULT_PLAN_FINALIZE`` module constant MUST agree with the
         value exposed by ``get_default_config()`` — they are the same
         physical default and must never drift."""
         assert (
-            _config_defaults.DEFAULT_CEREMONY_POLICY['automation']['loop_back_without_asking']
+            _config_defaults.DEFAULT_PLAN_FINALIZE['loop_back_without_asking']
             is False
         )
 
     def test_asymmetric_with_finalize_without_asking(self) -> None:
         """The two auto-continuation knobs default asymmetrically —
         ``finalize_without_asking=True`` (forward auto) and
-        ``loop_back_without_asking=False`` (reverse halt). Both read from
-        ``ceremony_policy.automation``. If they drift to a symmetric pair,
+        ``loop_back_without_asking=False`` (reverse halt). Both are flat
+        ``plan.phase-6-finalize`` knobs. If they drift to a symmetric pair,
         the contract documented in ``marshall-steward/references/wizard-flow.md``
         § Step 7c is broken."""
         cfg = _config_defaults.get_default_config()
-        automation = cfg['ceremony_policy']['automation']
-        forward = automation['finalize_without_asking']
-        reverse = automation['loop_back_without_asking']
+        finalize = cfg['plan']['phase-6-finalize']
+        forward = finalize['finalize_without_asking']
+        reverse = finalize['loop_back_without_asking']
         assert forward is True and reverse is False, (
             'finalize_without_asking must default to True and '
             'loop_back_without_asking must default to False '
@@ -88,20 +88,20 @@ class TestLoopBackWithoutAskingDefault:
         """A fresh project bootstrap (calling ``get_default_config()``
         without any prior marshal.json) MUST seed
         ``loop_back_without_asking`` explicitly under
-        ``ceremony_policy.automation`` — the key being absent would force
-        every downstream consumer to apply its own fallback, and the
+        ``plan.phase-6-finalize`` — the key being absent would force every
+        downstream consumer to apply its own fallback, and the
         silent-default surface area is exactly the bug pattern this test
         guards against."""
         cfg = _config_defaults.get_default_config()
-        automation = cfg['ceremony_policy']['automation']
-        assert 'loop_back_without_asking' in automation, (
+        finalize = cfg['plan']['phase-6-finalize']
+        assert 'loop_back_without_asking' in finalize, (
             'Fresh-project bootstrap must seed loop_back_without_asking '
-            'explicitly in ceremony_policy.automation'
+            'explicitly in plan.phase-6-finalize'
         )
         # Sanity: the fresh-project value matches the module-level constant
         assert (
-            automation['loop_back_without_asking']
-            == _config_defaults.DEFAULT_CEREMONY_POLICY['automation']['loop_back_without_asking']
+            finalize['loop_back_without_asking']
+            == _config_defaults.DEFAULT_PLAN_FINALIZE['loop_back_without_asking']
         )
 
 
@@ -110,100 +110,104 @@ class TestAutoMergeAfterCiDefault:
     coordinated via the cross-plan merge-lock so concurrently-finalizing
     plans serialize safely on the merge-to-main critical section. ``False``
     is the explicit interactive opt-out (prompt the operator before merge).
-    The flag is a plain boolean — NOT a tri-state. It now lives under the
-    top-level ``ceremony_policy.automation`` block (migrated out of the loose
-    ``plan.phase-6-finalize`` location)."""
+    The flag is a plain boolean — NOT a tri-state. It is a flat knob under
+    ``plan.phase-6-finalize`` (the ``ceremony_policy`` block was dissolved and
+    every automation knob distributed back into its owning phase)."""
 
     def test_default_is_true(self) -> None:
         """``get_default_config()`` MUST expose
-        ``ceremony_policy.automation.auto_merge_after_ci == True``."""
+        ``plan.phase-6-finalize.auto_merge_after_ci == True``."""
         cfg = _config_defaults.get_default_config()
         assert (
-            cfg['ceremony_policy']['automation']['auto_merge_after_ci']
+            cfg['plan']['phase-6-finalize']['auto_merge_after_ci']
             is True
         ), (
-            'get_default_config()["ceremony_policy"]["automation"]'
+            'get_default_config()["plan"]["phase-6-finalize"]'
             '["auto_merge_after_ci"] must default to True'
         )
 
     def test_finalize_block_default_matches(self) -> None:
-        """The ``DEFAULT_CEREMONY_POLICY`` module constant MUST agree with the
+        """The ``DEFAULT_PLAN_FINALIZE`` module constant MUST agree with the
         value exposed by ``get_default_config()`` — they are the same
         physical default and must never drift."""
         assert (
-            _config_defaults.DEFAULT_CEREMONY_POLICY['automation']['auto_merge_after_ci']
+            _config_defaults.DEFAULT_PLAN_FINALIZE['auto_merge_after_ci']
             is True
         )
 
     def test_fresh_project_seeds_true(self) -> None:
         """A fresh project bootstrap (calling ``get_default_config()``
         without any prior marshal.json) MUST seed ``auto_merge_after_ci``
-        with the ``True`` default under ``ceremony_policy.automation`` — the
-        key being absent would force every downstream consumer to apply its
-        own fallback, and the lock-coordinated default would not flow to
-        fresh projects."""
+        with the ``True`` default under ``plan.phase-6-finalize`` — the key
+        being absent would force every downstream consumer to apply its own
+        fallback, and the lock-coordinated default would not flow to fresh
+        projects."""
         cfg = _config_defaults.get_default_config()
-        automation = cfg['ceremony_policy']['automation']
-        assert 'auto_merge_after_ci' in automation, (
+        finalize = cfg['plan']['phase-6-finalize']
+        assert 'auto_merge_after_ci' in finalize, (
             'Fresh-project bootstrap must seed auto_merge_after_ci '
-            'explicitly in ceremony_policy.automation'
+            'explicitly in plan.phase-6-finalize'
         )
         assert (
-            automation['auto_merge_after_ci']
-            == _config_defaults.DEFAULT_CEREMONY_POLICY['automation']['auto_merge_after_ci']
+            finalize['auto_merge_after_ci']
+            == _config_defaults.DEFAULT_PLAN_FINALIZE['auto_merge_after_ci']
         )
-        assert automation['auto_merge_after_ci'] is True
+        assert finalize['auto_merge_after_ci'] is True
 
 
-class TestBranchNamingDefault:
-    """``project.branch_naming`` is the transparent, operator-editable source
-    of truth for the canonical branch-prefix sets seeded into marshal.json.
-    The two sub-lists (``working_prefixes`` and ``ci_allowlist``) must flow
-    to fresh projects via ``get_default_config()`` so the create-verb guard
-    and the workflow-allowlist structural test read a populated config rather
-    than every consumer applying its own fallback. ``docs/`` is explicitly
-    retired and must never appear in the default sets."""
+class TestWorkingPrefixesDefault:
+    """``project.working_prefixes`` is the transparent, operator-editable source
+    of truth for the canonical closed set of allowed working-branch prefixes
+    seeded into marshal.json. The flat list must flow to fresh projects via
+    ``get_default_config()`` so the branch-prefix validation and the structural
+    coverage test read a populated config rather than every consumer applying
+    its own fallback. ``docs/`` is explicitly retired and must never appear in
+    the default set. The CI push-trigger allowlist is owned by
+    ``python-verify.yml`` and is no longer mirrored in config."""
 
-    _EXPECTED = {
-        'working_prefixes': ['feature/', 'fix/', 'chore/'],
-        'ci_allowlist': ['main', 'feature/*', 'fix/*', 'chore/*', 'dependabot/**'],
-    }
+    _EXPECTED = ['feature/', 'fix/', 'chore/']
 
-    def test_default_config_exposes_branch_naming(self) -> None:
+    def test_default_config_exposes_working_prefixes(self) -> None:
         """``get_default_config()`` MUST expose
-        ``project.branch_naming`` with both canonical sets."""
+        ``project.working_prefixes`` with the canonical set."""
         cfg = _config_defaults.get_default_config()
-        assert cfg['project'].get('branch_naming') == self._EXPECTED, (
-            'get_default_config()["project"]["branch_naming"] must equal '
-            'the canonical branch-prefix sets'
+        assert cfg['project'].get('working_prefixes') == self._EXPECTED, (
+            'get_default_config()["project"]["working_prefixes"] must equal '
+            'the canonical working-branch prefix set'
         )
 
     def test_project_block_default_matches(self) -> None:
         """The ``DEFAULT_PROJECT`` module constant MUST agree with the value
         exposed by ``get_default_config()`` — same physical default, no drift."""
-        assert _config_defaults.DEFAULT_PROJECT['branch_naming'] == self._EXPECTED
+        assert _config_defaults.DEFAULT_PROJECT['working_prefixes'] == self._EXPECTED
 
     def test_docs_prefix_retired_from_defaults(self) -> None:
-        """The retired ``docs/`` prefix MUST be absent from both default sets —
+        """The retired ``docs/`` prefix MUST be absent from the default set —
         an unlisted CI prefix makes a PR structurally unmergeable."""
-        block = _config_defaults.DEFAULT_PROJECT['branch_naming']
-        assert not any('docs' in entry for entry in block['ci_allowlist']), (
-            "'docs/' must be absent from the default ci_allowlist"
+        prefixes = _config_defaults.DEFAULT_PROJECT['working_prefixes']
+        assert 'docs/' not in prefixes, (
+            "'docs/' must be absent from the default working_prefixes"
         )
-        assert 'docs/' not in block['working_prefixes']
 
-    def test_fresh_project_seeds_branch_naming(self) -> None:
-        """A fresh project bootstrap MUST seed ``branch_naming`` explicitly —
+    def test_branch_naming_key_removed_from_defaults(self) -> None:
+        """The flattened model removes the nested ``branch_naming`` wrapper —
+        only the flat ``working_prefixes`` field survives."""
+        assert 'branch_naming' not in _config_defaults.DEFAULT_PROJECT, (
+            'The nested branch_naming block must be gone after the flatten'
+        )
+
+    def test_fresh_project_seeds_working_prefixes(self) -> None:
+        """A fresh project bootstrap MUST seed ``working_prefixes`` explicitly —
         the key being absent would force every downstream consumer to apply
         its own fallback, defeating the single-source-of-truth design."""
         cfg = _config_defaults.get_default_config()
         project = cfg['project']
-        assert 'branch_naming' in project, (
-            'Fresh-project bootstrap must seed project.branch_naming explicitly'
+        assert 'working_prefixes' in project, (
+            'Fresh-project bootstrap must seed project.working_prefixes explicitly'
         )
         assert (
-            project['branch_naming']
-            == _config_defaults.DEFAULT_PROJECT['branch_naming']
+            project['working_prefixes']
+            == _config_defaults.DEFAULT_PROJECT['working_prefixes']
         )
 
 
