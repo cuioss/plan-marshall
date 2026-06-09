@@ -240,16 +240,27 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return the (glob, role) inventory derived from _CLASSIFY_PATTERNS.
+        """Return the Java domain's portable (suffix, role_heuristic) vocabulary.
 
-        Tuple-shape extension: the (glob, role) pairs are the first two elements
-        of each _CLASSIFY_PATTERNS entry (the third element is specificity, which
-        the build_map seed does not need). See the base classify_globs() contract.
+        Production and test Java share the ``.java`` suffix; the deriver's
+        location predicate splits them via the ``src/test`` (``test`` segment)
+        convention — ``.java`` under a test root is test, elsewhere production.
+        The Maven / Gradle build descriptors are claimed by exact basename under
+        ``config``. See the base classify_globs() contract for the tree-deriver
+        wiring.
         """
-        return [(glob, role) for glob, role, _ in self._CLASSIFY_PATTERNS]
+        return [
+            ('.java', 'production-by-location'),
+            ('.java', 'test-by-location'),
+            ('pom.xml', 'config'),
+            ('build.gradle', 'config'),
+            ('build.gradle.kts', 'config'),
+            ('settings.gradle', 'config'),
+            ('settings.gradle.kts', 'config'),
+        ]
 
     # build_class: this extension claims the ``production`` / ``test`` /
     # ``config`` roles, for which the ExtensionBase defaults
-    # (``production → prod-compile``, ``test → test-run``,
-    # ``config → build-config-full``) are correct. No classify_build_class
+    # (``production → compile``, ``test → module-tests``,
+    # ``config → verify``) are correct. No classify_build_class
     # override is required — the inherited base default is the contract.

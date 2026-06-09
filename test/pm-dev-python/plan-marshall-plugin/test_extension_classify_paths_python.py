@@ -81,19 +81,19 @@ def test_specificity_for_unclaimed_role_is_zero():
 # build_class per claimed role
 # =============================================================================
 
-_BUILD_CLASSES = frozenset({'prod-compile', 'test-run', 'docs-validate', 'build-config-full', 'none'})
+_BUILD_CLASSES = frozenset({'compile', 'module-tests', 'docs-validate', 'verify', 'none'})
 
 
-def test_production_path_build_class_is_prod_compile():
-    assert _ext.classify_build_class('scripts/foo.py', 'production') == 'prod-compile'
+def test_production_path_build_class_is_compile():
+    assert _ext.classify_build_class('scripts/foo.py', 'production') == 'compile'
 
 
-def test_test_path_build_class_is_test_run():
-    assert _ext.classify_build_class('test/foo_test.py', 'test') == 'test-run'
+def test_test_path_build_class_is_module_tests():
+    assert _ext.classify_build_class('test/foo_test.py', 'test') == 'module-tests'
 
 
-def test_config_path_build_class_is_build_config_full():
-    assert _ext.classify_build_class('pyproject.toml', 'config') == 'build-config-full'
+def test_config_path_build_class_is_verify():
+    assert _ext.classify_build_class('pyproject.toml', 'config') == 'verify'
 
 
 def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
@@ -112,25 +112,58 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() inventory (build_map seed source)
+# classify_globs() vocabulary (build_map seed source)
 # =============================================================================
+#
+# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
+# consumed by the script-shared tree-deriver — NOT literal path-globs. The
+# heuristic name decides the resolved role from where each matching file sits
+# in the real tree.
+
+_ROLE_HEURISTICS = frozenset(
+    {'production-by-location', 'test-by-location', 'documentation', 'config'}
+)
 
 
-def test_classify_globs_derives_glob_role_pairs_from_patterns():
-    """Tuple-shape extension: classify_globs derives (glob, role) from _CLASSIFY_PATTERNS."""
-    expected = [(glob, role) for glob, role, _ in _ext._CLASSIFY_PATTERNS]
-    assert _ext.classify_globs() == expected
+def test_classify_globs_returns_portable_py_vocabulary():
+    """The python vocabulary declares .py under both production and test heuristics."""
+    vocabulary = _ext.classify_globs()
+    assert ('.py', 'production-by-location') in vocabulary
+    assert ('.py', 'test-by-location') in vocabulary
 
 
-def test_classify_globs_roles_resolve_to_build_classes():
-    """Every (glob, role) in the inventory derives a build_class in the closed set."""
-    inventory = _ext.classify_globs()
-    assert inventory  # the python domain claims file types
-    for glob, role in inventory:
-        assert _ext.classify_build_class(glob, role) in _BUILD_CLASSES
+def test_classify_globs_declares_config_basenames():
+    """Config files are declared by exact basename under the config heuristic."""
+    vocabulary = _ext.classify_globs()
+    assert ('pyproject.toml', 'config') in vocabulary
+    assert ('uv.lock', 'config') in vocabulary
+    assert ('marshal.json', 'config') in vocabulary
 
 
-def test_classify_globs_covers_production_test_config_roles():
-    """The python glob inventory claims production, test, and config roles."""
-    roles = {role for _, role in _ext.classify_globs()}
-    assert roles == {'production', 'test', 'config'}
+def test_classify_globs_uses_only_role_heuristic_names():
+    """Every vocabulary tuple's second element is a role-heuristic name.
+
+    The vocabulary uses heuristic names (production-by-location etc.), never the
+    resolved roles (production/test) — the deriver resolves the heuristic per
+    file from its tree location.
+    """
+    for _suffix, role_heuristic in _ext.classify_globs():
+        assert role_heuristic in _ROLE_HEURISTICS
+
+
+def test_classify_globs_does_not_return_literal_path_globs():
+    """The vocabulary must NOT carry the old scripts/-anchored literal globs.
+
+    Regression guard for the build_map redesign: literal author-layout globs
+    (`scripts/*.py`, `**/scripts/**/*.py`) are gone — the suffix `.py` plus a
+    location heuristic replaces them so the tree-deriver finds production files
+    wherever they actually live.
+    """
+    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
+    for stale in ('scripts/*.py', '**/scripts/**/*.py', 'scripts/**/*.py', 'test/**/*.py'):
+        assert stale not in suffixes
+
+
+def test_classify_globs_is_nonempty():
+    """The python domain owns buildable file types, so the vocabulary is non-empty."""
+    assert _ext.classify_globs()

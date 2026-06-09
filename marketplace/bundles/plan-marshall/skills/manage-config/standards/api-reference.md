@@ -454,7 +454,7 @@ manage-config init [--force]
 
 ## Noun: build-map
 
-Seed and read the file-to-build contract (`skill_domains.build_map` block in marshal.json). The block is a domain-keyed inventory of `{glob, role, build_class}` entries seeded from the registered domain extensions; it lives under `skill_domains`, is required and always seeded, and is never clobbered on re-seed (write-once). There is no override layer — corrections are made directly to the seeded entries. See [data-model.md § skill_domains.build_map](data-model.md) for the complete schema and the closed `build_class` enum.
+Seed and read the file-to-build contract (`skill_domains.build_map` block in marshal.json). The block is a domain-keyed inventory of `{glob, role, build_class}` entries seeded from the registered domain extensions; it lives under `skill_domains`, is required and always seeded, and is never clobbered on re-seed (write-once). The seeded globs are **tree-derived (complete-by-construction)** — each extension's `classify_globs()` portable `(suffix, role_heuristic)` vocabulary is scanned against the real project tree by the `script-shared` tree-deriver, not shipped as author-guessed literals — and each entry's `build_class` is **canonical-named** (the value IS the canonical command, with no indirection map). There is no override layer — corrections are made directly to the seeded entries. See [data-model.md § skill_domains.build_map](data-model.md) for the complete schema and the closed canonical-named `build_class` set.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|

@@ -10,6 +10,16 @@ Covers the relocated, required build_map cluster:
   (raises) when the block is absent — there is no override layer.
 - Regression: ``skill_domains.build_map`` is present after seed, and the retired
   ``build_map_overrides`` / ``activation_globs`` keys are never written.
+
+It also covers the seed AGGREGATOR WIRING (the core of this deliverable): that
+``aggregate_build_map`` feeds every registered extension's portable
+``classify_globs()`` vocabulary through the ``script-shared`` tree-deriver
+(``derive_globs_from_tree``, reached via the
+``extension_discovery.derive_build_map_globs`` bridge) against the REAL project
+tree — so a production ``.py`` file living OUTSIDE ``scripts/`` is caught
+because it exists in the tree, not because an author guessed a glob. These
+tests drive the aggregator end-to-end against a synthetic fixture tree (no
+``_FAKE_AGGREGATED`` patch) so the wiring itself — not a stub — is exercised.
 """
 
 # ruff: noqa: I001, E402
@@ -58,8 +68,8 @@ _config_core_mod = sys.modules[_cmd_build_map_mod.seed_build_map_into.__module__
 # live extension set. Mirrors the real {domain: [{glob, role, build_class}]} shape.
 _FAKE_AGGREGATED = {
     'python': [
-        {'glob': 'scripts/*.py', 'role': 'production', 'build_class': 'prod-compile'},
-        {'glob': 'test/**/*.py', 'role': 'test', 'build_class': 'test-run'},
+        {'glob': 'scripts/*.py', 'role': 'production', 'build_class': 'compile'},
+        {'glob': 'test/**/*.py', 'role': 'test', 'build_class': 'module-tests'},
     ],
     'documentation': [
         {'glob': '*.adoc', 'role': 'documentation', 'build_class': 'docs-validate'},
@@ -103,7 +113,7 @@ def test_merge_build_map_returns_seed_from_skill_domains():
     # Assert — same structure, deep-copied (mutating result must not touch config)
     assert merged == _FAKE_AGGREGATED
     merged['python'][0]['build_class'] = 'mutated'
-    assert config['skill_domains']['build_map']['python'][0]['build_class'] == 'prod-compile'
+    assert config['skill_domains']['build_map']['python'][0]['build_class'] == 'compile'
 
 
 def test_merge_build_map_fails_closed_when_build_map_absent():
@@ -310,3 +320,213 @@ def test_seed_never_writes_retired_override_keys(plan_context, monkeypatch):
     assert 'activation_globs' not in config['skill_domains']
     build_map = config['skill_domains']['build_map']
     assert 'activation_globs' not in build_map
+
+
+# =============================================================================
+# Seed aggregator wiring — real tree-derivation (no _FAKE_AGGREGATED patch)
+# =============================================================================
+#
+# These tests exercise the actual wiring: aggregate_build_map() hands every
+# registered extension's portable classify_globs() vocabulary to the
+# script-shared tree-deriver (derive_globs_from_tree) against the REAL tree, so
+# a production .py OUTSIDE scripts/ is caught because it exists in the tree.
+# Unlike the write-once tests above, NO _FAKE_AGGREGATED stub is patched — the
+# aggregator runs for real against a synthetic fixture tree, with only its two
+# environmental collaborators redirected: the extension set it discovers and the
+# project root it scans.
+
+import importlib  # noqa: E402
+
+from extension_base import (  # type: ignore[import-not-found]  # noqa: E402
+    ROLE_HEURISTIC_PRODUCTION_BY_LOCATION,
+    ROLE_HEURISTIC_TEST_BY_LOCATION,
+    ExtensionBase,
+)
+
+# The extension_discovery module that aggregate_build_map() resolves
+# derive_build_map_globs / discover_all_extensions from at call time. Importing
+# it here gives the tests the same object to monkeypatch.
+_extension_discovery_mod = importlib.import_module('extension_discovery')
+
+
+class _PythonVocabularyExtension(ExtensionBase):
+    """A real extension owning the .py vocabulary under domain key 'python'.
+
+    Mirrors the python domain's portable (suffix, role_heuristic) vocabulary:
+    production-by-location AND test-by-location for .py. The deriver scans the
+    fixture tree and emits concrete globs anchored at each matching file's parent
+    directory, so a production .py outside scripts/ is covered.
+    """
+
+    def get_skill_domains(self) -> list[dict]:
+        return [{'domain': {'key': 'python', 'name': 'Python', 'description': 'Test'}, 'profiles': {}}]
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        return [
+            ('.py', ROLE_HEURISTIC_PRODUCTION_BY_LOCATION),
+            ('.py', ROLE_HEURISTIC_TEST_BY_LOCATION),
+        ]
+
+
+def _write_fixture_tree(root: Path, rel_paths: list[str]) -> None:
+    """Create each repo-relative path under ``root`` as an empty file."""
+    for rel in rel_paths:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('')
+
+
+def _wire_real_aggregator(monkeypatch, tree_root: Path, extension: ExtensionBase) -> None:
+    """Redirect aggregate_build_map()'s two environmental collaborators.
+
+    aggregate_build_map() resolves derive_build_map_globs + discover_all_extensions
+    from the extension_discovery module at call time, and scans
+    get_tracked_config_dir().parent as the project root. Patch the extension set
+    to the single supplied fake and the project root to the fixture tree, leaving
+    the real derive_build_map_globs/derive_globs_from_tree wiring intact so the
+    REAL tree scan runs against ``tree_root``.
+    """
+    fake_entries = [{'bundle': 'fake', 'path': 'fake/extension.py', 'module': extension}]
+    monkeypatch.setattr(
+        _extension_discovery_mod, 'discover_all_extensions', lambda: fake_entries
+    )
+    # get_tracked_config_dir().parent is the project root the aggregator scans;
+    # point it at {tree_root}/.plan so .parent resolves to tree_root.
+    monkeypatch.setattr(
+        _config_core_mod, 'get_tracked_config_dir', lambda: tree_root / '.plan'
+    )
+
+
+def test_aggregate_build_map_derives_glob_matching_out_of_scripts_production_py(tmp_path, monkeypatch):
+    """The aggregator derives a glob matching a production .py OUTSIDE scripts/.
+
+    This is the regression the deliverable fixes: a production file at
+    ``marketplace/targets/generate.py`` (not under ``scripts/``) is caught by the
+    tree-derived build_map because it exists in the tree — the old static-glob
+    seed would have silently missed it.
+    """
+    # Arrange — a fixture tree with a production .py living outside scripts/.
+    _write_fixture_tree(tmp_path, ['marketplace/targets/generate.py'])
+    _wire_real_aggregator(monkeypatch, tmp_path, _PythonVocabularyExtension())
+
+    # Act — run the REAL aggregator against the fixture tree.
+    aggregated = _config_core_mod.aggregate_build_map()
+
+    # Assert — a production-role glob in the python domain matches the
+    # out-of-scripts file.
+    assert 'python' in aggregated
+    prod_globs = [
+        entry['glob'] for entry in aggregated['python'] if entry['role'] == 'production'
+    ]
+    import fnmatch
+
+    assert any(fnmatch.fnmatchcase('marketplace/targets/generate.py', g) for g in prod_globs), (
+        f'no derived glob matched the out-of-scripts production file; globs={prod_globs}'
+    )
+
+
+def test_aggregate_build_map_stamps_each_entry_with_a_build_class(tmp_path, monkeypatch):
+    """Each derived (glob, role) entry is stamped with its domain's build_class.
+
+    The aggregator's second leg: after the tree-deriver emits (glob, role), the
+    aggregator queries the owning extension's classify_build_class(glob, role) and
+    records it. A production .py outside scripts/ therefore carries the
+    compile build_class, not a bare (glob, role) tuple. The build_class NAMES the
+    canonical command directly (no name-to-name indirection).
+    """
+    # Arrange
+    _write_fixture_tree(tmp_path, ['marketplace/targets/generate.py', 'test/manage-config/test_x.py'])
+    _wire_real_aggregator(monkeypatch, tmp_path, _PythonVocabularyExtension())
+
+    # Act
+    aggregated = _config_core_mod.aggregate_build_map()
+
+    # Assert — every entry carries the three keys and a sensible build_class.
+    entries = aggregated['python']
+    for entry in entries:
+        assert set(entry.keys()) == {'glob', 'role', 'build_class'}
+    by_role = {entry['role']: entry['build_class'] for entry in entries}
+    assert by_role['production'] == 'compile'
+    assert by_role['test'] == 'module-tests'
+
+
+def test_seed_cli_persists_tree_derived_out_of_scripts_glob(plan_context, tmp_path, monkeypatch):
+    """The seed CLI persists the tree-derived out-of-scripts glob under skill_domains.
+
+    End-to-end through the seed handler (cmd_build_map_seed): init, clear the
+    init-seeded block, then seed against a fixture tree containing an
+    out-of-scripts production .py. The persisted skill_domains.build_map must
+    carry a python-domain glob matching that file.
+    """
+    # Arrange — init, clear the init-seeded build_map, wire the real aggregator
+    # against a fixture tree with an out-of-scripts production file.
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    _strip_init_seeded_build_map(plan_context.fixture_dir)
+    _write_fixture_tree(tmp_path, ['marketplace/targets/generate.py'])
+    _wire_real_aggregator(monkeypatch, tmp_path, _PythonVocabularyExtension())
+
+    # Act — seed through the CLI handler.
+    result = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
+
+    # Assert — handler seeded, and the persisted block carries the matching glob.
+    assert result['status'] == 'success'
+    assert result['action'] == 'seeded'
+
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    build_map = config['skill_domains']['build_map']
+    assert 'python' in build_map
+    prod_globs = [e['glob'] for e in build_map['python'] if e['role'] == 'production']
+
+    import fnmatch
+
+    assert any(fnmatch.fnmatchcase('marketplace/targets/generate.py', g) for g in prod_globs), (
+        f'seeded build_map missing a glob for the out-of-scripts file; globs={prod_globs}'
+    )
+
+
+def test_read_cli_returns_tree_derived_seed(plan_context, tmp_path, monkeypatch):
+    """The read CLI returns the tree-derived seed, with the out-of-scripts glob intact.
+
+    Seed against a fixture tree, then read back through cmd_build_map_read: the
+    merged build_map the read CLI returns must carry the python-domain glob that
+    matches the out-of-scripts production .py.
+    """
+    # Arrange — init, clear, wire, seed.
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    _strip_init_seeded_build_map(plan_context.fixture_dir)
+    _write_fixture_tree(tmp_path, ['marketplace/targets/generate.py'])
+    _wire_real_aggregator(monkeypatch, tmp_path, _PythonVocabularyExtension())
+    _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
+
+    # Act — read back through the CLI.
+    result = _cmd_build_map_mod.cmd_build_map_read(Namespace(verb='read'))
+
+    # Assert — read succeeds and surfaces the matching glob.
+    assert result['status'] == 'success'
+    assert 'python' in result['build_map']
+    prod_globs = [e['glob'] for e in result['build_map']['python'] if e['role'] == 'production']
+
+    import fnmatch
+
+    assert any(fnmatch.fnmatchcase('marketplace/targets/generate.py', g) for g in prod_globs), (
+        f'read CLI did not return a glob for the out-of-scripts file; globs={prod_globs}'
+    )
+
+
+def test_aggregate_build_map_omits_domain_with_no_matching_files(tmp_path, monkeypatch):
+    """A domain whose vocabulary matches nothing in the tree is omitted entirely.
+
+    The .py vocabulary matches no file in a docs-only tree, so the python domain
+    contributes no entries and is dropped from the aggregated map (rather than
+    appearing with an empty list).
+    """
+    # Arrange — a tree with no .py files at all.
+    _write_fixture_tree(tmp_path, ['README.md', 'docs/intro.adoc'])
+    _wire_real_aggregator(monkeypatch, tmp_path, _PythonVocabularyExtension())
+
+    # Act
+    aggregated = _config_core_mod.aggregate_build_map()
+
+    # Assert — the python domain contributed nothing and is omitted.
+    assert 'python' not in aggregated

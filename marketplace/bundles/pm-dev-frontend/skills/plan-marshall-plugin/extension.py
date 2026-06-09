@@ -150,32 +150,29 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return an explicit (glob, role) inventory synthesized from the rules.
+        """Return the JS/TS domain's portable (suffix, role_heuristic) vocabulary.
 
-        Hand-rolled extension (no _CLASSIFY_PATTERNS tuple): _match_classify uses
-        filename / suffix / token checks, so there is no tuple to derive from.
-        The globs below mirror that body exactly — config files (exact names +
-        eslint.config.* prefix), test files (*.spec.* / *.test.* paired with each
-        JS/TS suffix), then production source (each JS/TS suffix). See the base
-        classify_globs() contract.
+        Each JS/TS suffix is declared under both the production-by-location and
+        test-by-location heuristics; the tree-deriver's predicate splits them via
+        the ``.spec.`` / ``.test.`` filename-infix convention (colocated tests) and
+        the ``test`` / ``tests`` directory-root convention. Config files are
+        claimed by exact basename. See the base classify_globs() contract for the
+        tree-deriver wiring.
         """
-        globs: list[tuple[str, str]] = []
-        # Config — exact filenames and the eslint.config.* prefix family.
-        for name in self._CONFIG_FILES:
-            globs.append((name, 'config'))
-        for prefix in self._CONFIG_PREFIXES:
-            globs.append((f'{prefix}*', 'config'))
-        # Test — *.spec.* / *.test.* paired with each JS/TS suffix.
-        for token in self._TEST_TOKENS:
-            for ext in self._SOURCE_SUFFIXES:
-                globs.append((f'*{token}*{ext}', 'test'))
-        # Production source — each JS/TS suffix not matched as a test/config file.
+        vocabulary: list[tuple[str, str]] = []
+        # Production / test source — each JS/TS suffix under both location
+        # heuristics; the deriver splits production vs test by the *.spec.* /
+        # *.test.* infix and the test-root convention.
         for ext in self._SOURCE_SUFFIXES:
-            globs.append((f'*{ext}', 'production'))
-        return globs
+            vocabulary.append((ext, 'production-by-location'))
+            vocabulary.append((ext, 'test-by-location'))
+        # Config — exact filenames the JS toolchain reads.
+        for name in self._CONFIG_FILES:
+            vocabulary.append((name, 'config'))
+        return vocabulary
 
     # build_class: this extension claims the ``production`` / ``test`` /
     # ``config`` roles, for which the ExtensionBase defaults
-    # (``production → prod-compile``, ``test → test-run``,
-    # ``config → build-config-full``) are correct. No classify_build_class
+    # (``production → compile``, ``test → module-tests``,
+    # ``config → verify``) are correct. No classify_build_class
     # override is required — the inherited base default is the contract.

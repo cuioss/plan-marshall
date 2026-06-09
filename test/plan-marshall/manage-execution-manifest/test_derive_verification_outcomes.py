@@ -71,12 +71,12 @@ cmd_derive_verification = _cmd_client.cmd_derive_verification
 # can be asserted over a multi-bundle population.
 _BUILD_MAP = {
     'plan-marshall-plugin-dev': [
-        {'glob': 'pm-a/scripts/*.py', 'role': 'production', 'build_class': 'prod-compile'},
-        {'glob': 'pm-b/scripts/*.py', 'role': 'production', 'build_class': 'prod-compile'},
-        {'glob': 'test/pm-a/**/*.py', 'role': 'test', 'build_class': 'test-run'},
-        {'glob': 'test/pm-a/*.py', 'role': 'test', 'build_class': 'test-run'},
-        {'glob': 'test/pm-b/**/*.py', 'role': 'test', 'build_class': 'test-run'},
-        {'glob': 'test/pm-b/*.py', 'role': 'test', 'build_class': 'test-run'},
+        {'glob': 'pm-a/scripts/*.py', 'role': 'production', 'build_class': 'compile'},
+        {'glob': 'pm-b/scripts/*.py', 'role': 'production', 'build_class': 'compile'},
+        {'glob': 'test/pm-a/**/*.py', 'role': 'test', 'build_class': 'module-tests'},
+        {'glob': 'test/pm-a/*.py', 'role': 'test', 'build_class': 'module-tests'},
+        {'glob': 'test/pm-b/**/*.py', 'role': 'test', 'build_class': 'module-tests'},
+        {'glob': 'test/pm-b/*.py', 'role': 'test', 'build_class': 'module-tests'},
         {'glob': 'marketplace/bundles/*/skills/*/SKILL.md', 'role': 'documentation', 'build_class': 'docs-validate'},
         {'glob': 'pm-a/skills/*/SKILL.md', 'role': 'documentation', 'build_class': 'docs-validate'},
         {'glob': 'pm-a/generated/*.py', 'role': 'production', 'build_class': 'none'},

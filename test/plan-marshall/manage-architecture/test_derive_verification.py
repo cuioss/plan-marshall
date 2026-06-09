@@ -57,13 +57,13 @@ cmd_derive_verification = _cmd_client.cmd_derive_verification
 # Globs are full-path fnmatch patterns, as the live extensions emit.
 _BUILD_MAP = {
     'plan-marshall-plugin-dev': [
-        {'glob': 'pm-mod/scripts/*.py', 'role': 'production', 'build_class': 'prod-compile'},
+        {'glob': 'pm-mod/scripts/*.py', 'role': 'production', 'build_class': 'compile'},
         # Both depth forms, exactly as the real domain extensions emit
         # (e.g. pm-dev-python carries both `test/**/*.py` and `test/*.py`):
         # fnmatch `**` does not span a missing directory level, so the shallow
         # `test/pm-mod/*.py` form is required to claim `test/pm-mod/test_foo.py`.
-        {'glob': 'test/pm-mod/**/*.py', 'role': 'test', 'build_class': 'test-run'},
-        {'glob': 'test/pm-mod/*.py', 'role': 'test', 'build_class': 'test-run'},
+        {'glob': 'test/pm-mod/**/*.py', 'role': 'test', 'build_class': 'module-tests'},
+        {'glob': 'test/pm-mod/*.py', 'role': 'test', 'build_class': 'module-tests'},
         {'glob': 'pm-mod/skills/*/SKILL.md', 'role': 'documentation', 'build_class': 'docs-validate'},
         {'glob': 'marketplace/bundles/*/skills/*/SKILL.md', 'role': 'documentation', 'build_class': 'docs-validate'},
         {'glob': 'pm-mod/generated/*.py', 'role': 'production', 'build_class': 'none'},
@@ -148,11 +148,11 @@ def test_classify_changed_path_longest_glob_wins():
     """When two globs match, the longest glob wins."""
     merged = {
         'd': [
-            {'glob': '*.py', 'role': 'production', 'build_class': 'prod-compile'},
+            {'glob': '*.py', 'role': 'production', 'build_class': 'compile'},
             {'glob': 'pm-mod/generated/*.py', 'role': 'production', 'build_class': 'none'},
         ]
     }
-    # The longer, more specific glob (none) wins over the broad *.py (prod-compile).
+    # The longer, more specific glob (none) wins over the broad *.py (compile).
     assert classify_changed_path('pm-mod/generated/foo.py', merged) == 'none'
 
 

@@ -1411,7 +1411,7 @@ def _write_marshal(
     if include_pre_push_key:
         globs = activation_globs if activation_globs is not None else []
         entries = [
-            {'glob': glob, 'role': 'production', 'build_class': 'prod-compile'} for glob in globs
+            {'glob': glob, 'role': 'production', 'build_class': 'compile'} for glob in globs
         ]
         data['skill_domains']['build_map'] = {'python': entries}
     marshal_path.write_text(json.dumps(data), encoding='utf-8')

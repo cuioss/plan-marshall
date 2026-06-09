@@ -64,7 +64,7 @@ def test_specificity_for_documentation_is_zero():
 # build_class per claimed role
 # =============================================================================
 
-_BUILD_CLASSES = frozenset({'prod-compile', 'test-run', 'docs-validate', 'build-config-full', 'none'})
+_BUILD_CLASSES = frozenset({'compile', 'module-tests', 'docs-validate', 'verify', 'none'})
 
 
 def test_documentation_path_build_class_is_docs_validate():
@@ -87,27 +87,45 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() inventory (build_map seed source)
+# classify_globs() vocabulary (build_map seed source)
 # =============================================================================
+#
+# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
+# consumed by the script-shared tree-deriver — NOT literal path-globs. Each doc
+# suffix is declared under the location-agnostic `documentation` heuristic.
+
+_ROLE_HEURISTICS = frozenset(
+    {'production-by-location', 'test-by-location', 'documentation', 'config'}
+)
 
 
-def test_classify_globs_synthesizes_doc_suffix_globs():
-    """Hand-rolled extension: classify_globs returns one *suffix glob per doc suffix."""
-    inventory = _ext.classify_globs()
-    assert ('*.md', 'documentation') in inventory
-    assert ('*.adoc', 'documentation') in inventory
-    assert ('*.asciidoc', 'documentation') in inventory
+def test_classify_globs_declares_each_doc_suffix_under_documentation():
+    """Each documentation suffix is declared under the documentation heuristic."""
+    vocabulary = _ext.classify_globs()
+    assert ('.md', 'documentation') in vocabulary
+    assert ('.adoc', 'documentation') in vocabulary
+    assert ('.asciidoc', 'documentation') in vocabulary
 
 
-def test_classify_globs_roles_resolve_to_build_classes():
-    """Every (glob, role) in the inventory derives a build_class in the closed set."""
-    inventory = _ext.classify_globs()
-    assert inventory
-    for glob, role in inventory:
-        assert _ext.classify_build_class(glob, role) in _BUILD_CLASSES
+def test_classify_globs_uses_only_role_heuristic_names():
+    """Every vocabulary tuple's second element is a role-heuristic name."""
+    for _suffix, role_heuristic in _ext.classify_globs():
+        assert role_heuristic in _ROLE_HEURISTICS
 
 
-def test_classify_globs_claims_only_documentation_role():
-    """The documents glob inventory claims only the documentation role."""
-    roles = {role for _, role in _ext.classify_globs()}
-    assert roles == {'documentation'}
+def test_classify_globs_claims_only_documentation_heuristic():
+    """The documents vocabulary uses only the documentation heuristic."""
+    heuristics = {heuristic for _, heuristic in _ext.classify_globs()}
+    assert heuristics == {'documentation'}
+
+
+def test_classify_globs_does_not_return_literal_path_globs():
+    """The vocabulary carries bare suffixes, not the old `*.md` synthesized globs."""
+    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
+    for stale in ('*.md', '*.adoc', '*.asciidoc'):
+        assert stale not in suffixes
+
+
+def test_classify_globs_is_nonempty():
+    """The documentation domain owns doc file types, so the vocabulary is non-empty."""
+    assert _ext.classify_globs()

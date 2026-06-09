@@ -410,7 +410,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture d
   --changed-artifacts PATH1,PATH2,...
 ```
 
-Derives the deterministic verification command set for a comma-separated changed-artifact list. Each path is classified to a `build_class` via the merged `build_map` (longest-glob-wins), grouped by class, and resolved to the architecture-command set per the build_class → command table. A docs-only changed set derives zero Python builds. See [resolve-command.md](standards/resolve-command.md) § "Build-class → verification command" for the canonical mapping and Output example.
+Derives the deterministic verification command set for a comma-separated changed-artifact list. Each path is classified to a `build_class` via the tree-derived `build_map` (longest-glob-wins), grouped by class, and resolved to the architecture-command set. The `build_class` value names the canonical command directly — there is no indirection map between the class and the command it resolves (`build_class: compile` resolves `compile`, `build_class: verify` resolves `verify`). A docs-only changed set derives zero Python builds. See [resolve-command.md](standards/resolve-command.md) § "Build-class → verification command" for the canonical mapping and Output example.
 
 ### graph
 

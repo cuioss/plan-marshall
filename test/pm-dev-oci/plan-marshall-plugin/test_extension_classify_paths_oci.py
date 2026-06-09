@@ -64,15 +64,15 @@ def test_unrelated_yml_is_unclaimed():
 # build_class per claimed role
 # =============================================================================
 
-_BUILD_CLASSES = frozenset({'prod-compile', 'test-run', 'docs-validate', 'build-config-full', 'none'})
+_BUILD_CLASSES = frozenset({'compile', 'module-tests', 'docs-validate', 'verify', 'none'})
 
 
-def test_dockerfile_build_class_is_prod_compile():
-    assert _ext.classify_build_class('Dockerfile', 'production') == 'prod-compile'
+def test_dockerfile_build_class_is_compile():
+    assert _ext.classify_build_class('Dockerfile', 'production') == 'compile'
 
 
-def test_compose_build_class_is_build_config_full():
-    assert _ext.classify_build_class('compose.yml', 'config') == 'build-config-full'
+def test_compose_build_class_is_verify():
+    assert _ext.classify_build_class('compose.yml', 'config') == 'verify'
 
 
 def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
@@ -91,34 +91,48 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() inventory (build_map seed source)
+# classify_globs() vocabulary (build_map seed source)
 # =============================================================================
+#
+# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
+# consumed by the script-shared tree-deriver — NOT literal path-globs. Container
+# build files are production-by-location; compose files are config. The
+# Dockerfile/Containerfile family is declared as a basename-suffix (so the
+# deriver matches `Dockerfile` and `app.Dockerfile` alike).
+
+_ROLE_HEURISTICS = frozenset(
+    {'production-by-location', 'test-by-location', 'documentation', 'config'}
+)
 
 
-def test_classify_globs_synthesizes_explicit_glob_inventory():
-    """Hand-rolled extension: classify_globs returns explicit globs from the rules.
-
-    The inventory mirrors _match_classify: exact-name production files
-    (.dockerignore), the Dockerfile/Containerfile prefix family as production,
-    and the compose config filenames.
-    """
-    inventory = _ext.classify_globs()
-    assert ('.dockerignore', 'production') in inventory
-    assert ('Dockerfile*', 'production') in inventory
-    assert ('Containerfile*', 'production') in inventory
-    assert ('compose.yml', 'config') in inventory
-    assert ('docker-compose.yml', 'config') in inventory
+def test_classify_globs_declares_production_container_files():
+    """.dockerignore and the Dockerfile/Containerfile family are production-by-location."""
+    vocabulary = _ext.classify_globs()
+    assert ('.dockerignore', 'production-by-location') in vocabulary
+    assert ('Dockerfile', 'production-by-location') in vocabulary
+    assert ('Containerfile', 'production-by-location') in vocabulary
 
 
-def test_classify_globs_roles_resolve_to_build_classes():
-    """Every (glob, role) in the inventory derives a build_class in the closed set."""
-    inventory = _ext.classify_globs()
-    assert inventory
-    for glob, role in inventory:
-        assert _ext.classify_build_class(glob, role) in _BUILD_CLASSES
+def test_classify_globs_declares_compose_config_files():
+    """Compose / docker-compose files are declared under the config heuristic."""
+    vocabulary = _ext.classify_globs()
+    assert ('compose.yml', 'config') in vocabulary
+    assert ('docker-compose.yml', 'config') in vocabulary
 
 
-def test_classify_globs_covers_production_and_config_roles():
-    """The oci glob inventory claims production and config roles."""
-    roles = {role for _, role in _ext.classify_globs()}
-    assert roles == {'production', 'config'}
+def test_classify_globs_uses_only_role_heuristic_names():
+    """Every vocabulary tuple's second element is a role-heuristic name."""
+    for _suffix, role_heuristic in _ext.classify_globs():
+        assert role_heuristic in _ROLE_HEURISTICS
+
+
+def test_classify_globs_does_not_return_literal_path_globs():
+    """The vocabulary carries plain basenames, not the old `Dockerfile*` glob form."""
+    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
+    for stale in ('Dockerfile*', 'Containerfile*'):
+        assert stale not in suffixes
+
+
+def test_classify_globs_is_nonempty():
+    """The oci domain owns container file types, so the vocabulary is non-empty."""
+    assert _ext.classify_globs()

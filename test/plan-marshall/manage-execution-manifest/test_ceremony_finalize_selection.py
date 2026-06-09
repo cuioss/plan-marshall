@@ -137,7 +137,7 @@ def _seed_marshal(
         'skill_domains': {
             'build_map': {
                 'python': [
-                    {'glob': '**/*.py', 'role': 'production', 'build_class': 'prod-compile'},
+                    {'glob': '**/*.py', 'role': 'production', 'build_class': 'compile'},
                 ],
             },
         },

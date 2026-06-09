@@ -109,12 +109,14 @@ The `hint` field is a recognition token, not optional prose — its presence in 
 
 `architecture derive-verification --changed-artifacts PATH1,PATH2,...` is the single deterministic consumer of the `build_map` file-to-build contract. It classifies each changed-artifact path to a `build_class` via the merged `build_map` (seed ∪ user overrides, longest-glob-wins), groups by `build_class`, and emits the architecture-resolved verification command set per the closed mapping below. This table is the **single source of truth** for the build_class → command mapping — `manage-execution-manifest` and `phase-4-plan` consume the deriver, they do not re-derive the table.
 
+The `build_class` value **names the canonical command directly** — there is no indirection map between the `build_class` and the command it resolves. The deriver resolves `build_class` as the canonical command itself (via `resolve --command {build_class}`), handling `docs-validate` and `none` as the two non-`resolve` cases. The same word — `compile`, `module-tests`, `verify` — spans `build_map`, this deriver, `architecture resolve`, and the `per_deliverable_build` depth knob.
+
 | `build_class` | role it attaches to | derived verification command(s) |
 |---|---|---|
-| `prod-compile` | production | `architecture resolve --command compile --module {M}` |
-| `test-run` | test | `architecture resolve --command test-compile --module {M}` **+** `architecture resolve --command module-tests --module {M}` |
+| `compile` | production | `architecture resolve --command compile --module {M}` |
+| `module-tests` | test | `architecture resolve --command test-compile --module {M}` **+** `architecture resolve --command module-tests --module {M}` |
 | `docs-validate` | documentation | marketplace skill `.md` → `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root marketplace`; any other doc → `pm-documents:ref-asciidoc:asciidoc validate --path {path}` |
-| `build-config-full` | config | `architecture resolve --command verify --module {M}` (full reactor for the affected module) |
+| `verify` | config | `architecture resolve --command verify --module {M}` (full reactor for the affected module) |
 | `none` | any | (no command — a changed set whose only role yields `none` derives no build) |
 
 `{M}` is the module resolved per changed path by longest `paths.module` prefix (the finest granularity the architecture API resolves). Derived commands are de-duplicated by their resolved `executable`, so N changed production files in one module derive **one** `compile`, not N. A changed set whose only classification is `docs-validate` (or `none`) derives **zero** Python builds — this is the structural property that ends the docs-only build recurrence.
@@ -130,8 +132,8 @@ classified_count: 3
 command_count: 2
 unclaimed[0]:
 commands[2]{build_class,path,module,command,executable,resolution_level,bash_timeout_seconds,exceeds_bash_ceiling,execution_tier,hint}:
-  prod-compile,marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/architecture.py,plan-marshall,compile,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""compile plan-marshall""",module,330,false,per_task,Bash timeout=330000ms
-  test-run,test/plan-marshall/manage-architecture/test_derive_verification.py,plan-marshall,module-tests,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""module-tests plan-marshall""",module,330,false,per_task,Bash timeout=330000ms
+  compile,marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/architecture.py,plan-marshall,compile,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""compile plan-marshall""",module,330,false,per_task,Bash timeout=330000ms
+  module-tests,test/plan-marshall/manage-architecture/test_derive_verification.py,plan-marshall,module-tests,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""module-tests plan-marshall""",module,330,false,per_task,Bash timeout=330000ms
 ```
 
 `docs-validate` commands carry `build_class`, `path`, `command: docs-validate`, and `executable` (the plugin-doctor or asciidoc notation) but no `module` / `resolution_level` / tier fields — they are fixed notations, not architecture-resolved. The `unclaimed` array lists changed paths that no `build_map` glob matched (they derive no build).

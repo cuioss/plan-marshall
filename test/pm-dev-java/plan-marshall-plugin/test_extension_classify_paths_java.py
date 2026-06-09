@@ -76,20 +76,20 @@ def test_specificity_for_main_java_higher_than_zero():
 # build_class per claimed role
 # =============================================================================
 
-_BUILD_CLASSES = frozenset({'prod-compile', 'test-run', 'docs-validate', 'build-config-full', 'none'})
+_BUILD_CLASSES = frozenset({'compile', 'module-tests', 'docs-validate', 'verify', 'none'})
 
 
-def test_production_path_build_class_is_prod_compile():
-    assert _ext.classify_build_class('src/main/java/Foo.java', 'production') == 'prod-compile'
+def test_production_path_build_class_is_compile():
+    assert _ext.classify_build_class('src/main/java/Foo.java', 'production') == 'compile'
 
 
-def test_test_path_build_class_is_test_run():
-    assert _ext.classify_build_class('src/test/java/FooTest.java', 'test') == 'test-run'
+def test_test_path_build_class_is_module_tests():
+    assert _ext.classify_build_class('src/test/java/FooTest.java', 'test') == 'module-tests'
 
 
-def test_config_path_build_class_is_build_config_full():
-    assert _ext.classify_build_class('pom.xml', 'config') == 'build-config-full'
-    assert _ext.classify_build_class('build.gradle', 'config') == 'build-config-full'
+def test_config_path_build_class_is_verify():
+    assert _ext.classify_build_class('pom.xml', 'config') == 'verify'
+    assert _ext.classify_build_class('build.gradle', 'config') == 'verify'
 
 
 def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
@@ -108,25 +108,53 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() inventory (build_map seed source)
+# classify_globs() vocabulary (build_map seed source)
 # =============================================================================
+#
+# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
+# consumed by the script-shared tree-deriver — NOT literal path-globs. The
+# `.java` suffix is declared under both production-by-location and
+# test-by-location (the deriver splits them via the src/test convention); the
+# Maven/Gradle build descriptors are declared by exact basename under config.
+
+_ROLE_HEURISTICS = frozenset(
+    {'production-by-location', 'test-by-location', 'documentation', 'config'}
+)
 
 
-def test_classify_globs_derives_glob_role_pairs_from_patterns():
-    """Tuple-shape extension: classify_globs derives (glob, role) from _CLASSIFY_PATTERNS."""
-    expected = [(glob, role) for glob, role, _ in _ext._CLASSIFY_PATTERNS]
-    assert _ext.classify_globs() == expected
+def test_classify_globs_declares_java_under_both_location_heuristics():
+    """The .java suffix appears under both production-by-location and test-by-location."""
+    vocabulary = _ext.classify_globs()
+    assert ('.java', 'production-by-location') in vocabulary
+    assert ('.java', 'test-by-location') in vocabulary
 
 
-def test_classify_globs_roles_resolve_to_build_classes():
-    """Every (glob, role) in the inventory derives a build_class in the closed set."""
-    inventory = _ext.classify_globs()
-    assert inventory  # the java domain claims file types
-    for glob, role in inventory:
-        assert _ext.classify_build_class(glob, role) in _BUILD_CLASSES
+def test_classify_globs_declares_build_descriptor_basenames():
+    """The Maven/Gradle build descriptors are declared by exact basename under config."""
+    vocabulary = _ext.classify_globs()
+    for descriptor in (
+        'pom.xml',
+        'build.gradle',
+        'build.gradle.kts',
+        'settings.gradle',
+        'settings.gradle.kts',
+    ):
+        assert (descriptor, 'config') in vocabulary
 
 
-def test_classify_globs_covers_production_test_config_roles():
-    """The java glob inventory claims production, test, and config roles."""
-    roles = {role for _, role in _ext.classify_globs()}
-    assert roles == {'production', 'test', 'config'}
+def test_classify_globs_uses_only_role_heuristic_names():
+    """Every vocabulary tuple's second element is a role-heuristic name."""
+    for _suffix, role_heuristic in _ext.classify_globs():
+        assert role_heuristic in _ROLE_HEURISTICS
+
+
+def test_classify_globs_does_not_return_literal_path_globs():
+    """The vocabulary carries bare suffixes/basenames, not the old src/main literal globs."""
+    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
+    for stale in ('**/src/main/**/*.java', 'src/main/**/*.java', '**/src/test/**/*.java'):
+        assert stale not in suffixes
+
+
+def test_classify_globs_is_nonempty():
+    """The java domain owns buildable file types, so the vocabulary is non-empty."""
+    assert _ext.classify_globs()

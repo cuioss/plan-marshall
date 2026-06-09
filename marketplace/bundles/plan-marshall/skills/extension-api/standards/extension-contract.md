@@ -442,6 +442,107 @@ Plan-wide bucket: `mixed_with_docs` (production + test + documentation present).
 
 ---
 
+### classify_globs (build_map vocabulary)
+
+Declares this extension's contribution to the `build_map` file-to-build contract as a **portable `(extension, role)` vocabulary** — NOT literal path-globs. Each entry pairs a file-extension suffix with a location-role heuristic name; the seed aggregator runs the base-lib tree-deriver over that vocabulary to produce the concrete, complete-by-construction globs written into `skill_domains.build_map`. The default implementation is an empty list — extensions that contribute no buildable file types simply do not override this method.
+
+**Lifecycle**: Called by `manage-config`'s `aggregate_build_map()` during `init` / `sync-defaults` / `build-map seed`. The aggregator collects every extension's vocabulary, hands it to `derive_globs_from_tree(project_root, extensions)` (the `script-shared` deriver), and writes the resulting concrete globs into `skill_domains.build_map`.
+
+```python
+def classify_globs(self) -> list[tuple[str, str]]:
+    """Return this extension's portable (extension, role) build_map vocabulary.
+
+    Each tuple is ``(suffix, role_heuristic)`` — a file-extension suffix and
+    the location-role heuristic that decides the file's role from where it
+    sits in the tree. The seed aggregator's tree-deriver scans the actual
+    project tree, matches files against this vocabulary, and emits one flat
+    ``{parent_dir}/*{suffix}`` glob per directory that contains a matched file
+    (never a recursive ``**`` form), covering EVERY matching file — so files
+    outside an author's assumed layout (e.g. ``marketplace/targets/*.py`` and
+    every ``marketplace/bundles/<bundle>/skills/plan-marshall-plugin/*.py``)
+    are caught because they exist in the tree, not because an author guessed a
+    glob).
+
+    Returns:
+        List of ``(suffix, role_heuristic)`` tuples. Example for the python
+        domain: ``[('.py', 'production-by-location'), ('.py', 'test-by-location')]``.
+
+    Default: ``[]`` — an extension that owns no buildable file types
+    contributes no vocabulary.
+    """
+```
+
+#### Why vocabulary, not literal globs
+
+A literal path-glob (`marketplace/bundles/**/scripts/*.py`) encodes the *author's* assumed layout, not the consumer project's. When a production `.py` file lives outside the assumed location (`marketplace/targets/foo.py`, `*/skills/plan-marshall-plugin/extension.py`), no author-shipped glob matches it, so it classifies to no `build_class` and derives zero build — a silent under-classification. The portable vocabulary moves the layout knowledge out of the author's glob and into a deterministic tree scan: the deriver finds where each `(suffix, role_heuristic)` file actually lives and emits globs that cover them all. The seed is therefore **complete-by-construction** over the real tree.
+
+#### Role heuristic names
+
+| Heuristic | Resolved role | Decides from |
+|-----------|---------------|--------------|
+| `production-by-location` | `production` | The file sits outside any test root (e.g. not under `test/`). |
+| `test-by-location` | `test` | The file sits under a test root (e.g. `test/**`, `**/test/**`). |
+| `documentation` | `documentation` | The suffix is a documentation suffix (e.g. `.md`, `.adoc`). |
+| `config` | `config` | The suffix is a build/lint/packaging config suffix. |
+
+The heuristic name resolves to one of the same four roles as `classify_paths` (`production` / `test` / `documentation` / `config`). The deriver owns the location predicates that turn a `*-by-location` heuristic into a concrete role for a given path.
+
+### classify_build_class (canonical command per entry)
+
+Maps each `(glob, role)` the aggregator holds to its **canonical-named `build_class`** — the canonical command name the entry resolves to (`compile` / `module-tests` / `verify` / `docs-validate` / `none`). There is no indirection enum: the `build_class` value IS the canonical command, so one vocabulary spans `build_map`, `derive-verification`, `architecture resolve`, and the `per_deliverable_build` depth knob (same meaning ⇒ same word).
+
+**Lifecycle**: Called by `aggregate_build_map()` once per derived `(glob, role)` pair to stamp the entry's `build_class` before it is written into `skill_domains.build_map`.
+
+```python
+def classify_build_class(self, glob: str, role: str) -> str:
+    """Return the canonical-named build_class for a (glob, role) entry.
+
+    The returned value is the canonical command name the entry resolves to:
+    ``compile`` (production), ``module-tests`` (test), ``verify`` (config),
+    ``docs-validate`` (documentation), or ``none`` (no build). The closed set
+    equals the canonical-command vocabulary — there is no name-to-name
+    indirection map.
+
+    Args:
+        glob: The concrete glob the deriver produced for this entry.
+        role: The resolved role — ``production`` / ``test`` /
+            ``documentation`` / ``config``.
+
+    Returns:
+        One of ``compile`` / ``module-tests`` / ``verify`` /
+        ``docs-validate`` / ``none``.
+
+    Default: a role→command map — ``production`` → ``compile``, ``test`` →
+    ``module-tests``, ``documentation`` → ``docs-validate``, ``config`` →
+    ``verify``, otherwise ``none``.
+    """
+```
+
+#### Canonical build_class values
+
+The single source of truth for the closed set is `BUILD_CLASSES` in `script-shared`'s extension constants, shared by `ExtensionBase.classify_build_class()`, the domain extensions, and their tests.
+
+| `build_class` | Role it attaches to | Derived verification |
+|---------------|---------------------|----------------------|
+| `compile` | production | `compile` for the changed module |
+| `module-tests` | test | `test-compile` + `module-tests` for the changed module |
+| `docs-validate` | documentation | `doctor-marketplace quality-gate` (marketplace skill `.md`) / asciidoc validate (other docs) |
+| `verify` | config | `verify` (full reactor for the changed module) |
+| `none` | any | No command — a changed set whose only role yields `none` derives no build |
+
+#### Worked example (build_map vocabulary)
+
+The python domain returns the vocabulary `[('.py', 'production-by-location'), ('.py', 'test-by-location')]`. Against a tree that contains `marketplace/targets/generate.py` (outside any test root) and `test/plan-marshall/manage-architecture/test_resolve.py` (under a test root), the deriver emits one flat `{parent_dir}/*{suffix}` glob per directory that contains a matched file (never a recursive `**` form):
+
+| Derived glob | role | build_class |
+|--------------|------|-------------|
+| `marketplace/targets/*.py` | `production` | `compile` |
+| `test/plan-marshall/manage-architecture/*.py` | `test` | `module-tests` |
+
+A file in a deeper directory yields its own anchored glob — e.g. `marketplace/targets/claude/base.py` derives `marketplace/targets/claude/*.py`, and every `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py` derives `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/*.py`. Coverage is complete because the tree scan emits one flat glob per matched directory, not because an author guessed a `scripts/`-anchored or recursive glob. The `build_class` of each production entry is the canonical command `compile` directly.
+
+---
+
 ### Protected Helpers
 
 #### _detect_applicable_profiles

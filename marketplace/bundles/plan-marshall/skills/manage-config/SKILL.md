@@ -296,11 +296,11 @@ The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable
 
 **Pattern**: Script Automation
 
-The `skill_domains.build_map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. It lives under `skill_domains` (its owning block), is required and always seeded, and is populated from the registered domain extensions with write-once semantics — an existing seed survives a re-seed so user corrections are preserved. There is no separate override layer; corrections are made directly to the seeded entries.
+The `skill_domains.build_map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. It lives under `skill_domains` (its owning block), is required and always seeded, and is populated from the registered domain extensions with write-once semantics — an existing seed survives a re-seed so user corrections are preserved. The seeded globs are **tree-derived (complete-by-construction)**, not author-shipped literals: each extension supplies a portable `(suffix, role_heuristic)` vocabulary via `classify_globs()`, and the `script-shared` tree-deriver scans the real project tree to emit concrete globs covering EVERY matching file. There is no separate override layer; corrections are made directly to the seeded entries.
 
 ### Seed the Build Map
 
-Re-seeds `skill_domains.build_map` from every registered extension's `classify_globs()` + `classify_build_class()` predicates. Write-once: an existing `build_map` block is never clobbered — only a missing or empty block is populated. It is always seeded at `init` / `sync-defaults`; run `build-map seed` again whenever a domain extension is added or updated.
+Re-seeds `skill_domains.build_map` from every registered extension's `classify_globs()` + `classify_build_class()` predicates. The aggregator hands each extension's portable `(suffix, role_heuristic)` vocabulary to the tree-deriver, which scans the actual tree and emits the concrete, complete-by-construction globs; `classify_build_class()` then stamps each derived entry with its canonical-named `build_class` (the `build_class` value IS the canonical command — there is no indirection map). Write-once: an existing `build_map` block is never clobbered — only a missing or empty block is populated. It is always seeded at `init` / `sync-defaults`; run `build-map seed` again whenever a domain extension is added or updated.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed
@@ -339,7 +339,7 @@ domain_count: 2
 
 `domain_count` is the number of domain keys in the returned `build_map`.
 
-> **Schema and semantics**: See [standards/data-model.md § build_map](standards/data-model.md) for the `{glob, role, build_class}` entry schema and the closed `build_class` enum.
+> **Schema and semantics**: See [standards/data-model.md § build_map](standards/data-model.md) for the `{glob, role, build_class}` entry schema, the tree-derived seed contract, and the closed canonical-named `build_class` set.
 
 ---
 

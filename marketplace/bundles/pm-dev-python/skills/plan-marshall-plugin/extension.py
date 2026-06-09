@@ -174,16 +174,24 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return the (glob, role) inventory derived from _CLASSIFY_PATTERNS.
+        """Return the python domain's portable (suffix, role_heuristic) vocabulary.
 
-        Tuple-shape extension: the (glob, role) pairs are the first two elements
-        of each _CLASSIFY_PATTERNS entry (the third element is specificity, which
-        the build_map seed does not need). See the base classify_globs() contract.
+        Production and test python share the ``.py`` suffix; the deriver's
+        location predicate splits them — ``.py`` outside a test root is
+        production, ``.py`` under a test root is test. The config files are
+        claimed by exact basename. See the base classify_globs() contract for the
+        tree-deriver wiring.
         """
-        return [(glob, role) for glob, role, _ in self._CLASSIFY_PATTERNS]
+        return [
+            ('.py', 'production-by-location'),
+            ('.py', 'test-by-location'),
+            ('pyproject.toml', 'config'),
+            ('uv.lock', 'config'),
+            ('marshal.json', 'config'),
+        ]
 
     # build_class: this extension claims the ``production`` / ``test`` /
     # ``config`` roles, for which the ExtensionBase defaults
-    # (``production → prod-compile``, ``test → test-run``,
-    # ``config → build-config-full``) are correct. No classify_build_class
+    # (``production → compile``, ``test → module-tests``,
+    # ``config → verify``) are correct. No classify_build_class
     # override is required — the inherited base default is the contract.
