@@ -38,7 +38,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id {plan_id} --field affected_files
 ```
 
-Parse the returned list of file paths. Capture the read's `status`: `status: success` means the read resolved (the list MAY be empty); `status: error` / `field_not_found` means the scope-deriving read is broken (not empty) and Step 3's indeterminate branch applies.
+Parse the returned list of file paths. Capture the read's status and error: `status: success` means the read resolved (the list MAY be empty); `status: error` with `error: field_not_found` means the scope-deriving read is broken (not empty) and Step 3's indeterminate branch applies.
 
 ### Step 2: Extract skill directory paths (the `--paths` supplier)
 
@@ -52,7 +52,7 @@ Example: `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` →
 
 ### Step 3: Skip-clean exit (only on a successful, genuinely-empty read)
 
-The skip-clean exit is taken ONLY when the Step 1 read succeeded (`status: success`) AND zero skill paths remain after Step 2 filtering — the plan genuinely touched no skill. An errored / `field_not_found` read is **indeterminate** (the input is broken, not empty) and MUST NOT take this exit; it falls through to the whole-tree fallback below.
+The skip-clean exit is taken ONLY when the Step 1 read succeeded (`status: success`) AND zero skill paths remain after Step 2 filtering — the plan genuinely touched no skill. An errored (`status: error` / `error: field_not_found`) read is **indeterminate** (the input is broken, not empty) and MUST NOT take this exit; it falls through to the whole-tree fallback below.
 
 **Case (a) — successful read, zero skill paths after filtering** (the plan touched no skill): log, record the step as done, and return success:
 
@@ -68,7 +68,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "no skill changes detected"
 ```
 
-**Case (b) — read errored / `field_not_found`** (indeterminate scope, not empty): do NOT take the skip-clean exit and do NOT record `--outcome done --display-detail "no skill changes detected"` off the broken read. Instead, fall back to gating the full plan scope so structural lint still runs: log the indeterminate-read fallback, proceed to Step 4 (resolve worktree path), then in Step 5 run the `quality-gate` with **no `--paths` scoping** (whole-tree gate) against the resolved `--marketplace-root`:
+**Case (b) — read returns `status: error` / `error: field_not_found`** (indeterminate scope, not empty): do NOT take the skip-clean exit and do NOT record `--outcome done --display-detail "no skill changes detected"` off the broken read. Instead, fall back to gating the full plan scope so structural lint still runs: log the indeterminate-read fallback, proceed to Step 4 (resolve worktree path), then in Step 5 run the `quality-gate` with **no `--paths` scoping** (whole-tree gate) against the resolved `--marketplace-root`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -145,7 +145,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 | Empty `worktree_path` (main-checkout flow) | Skip Step 4 regeneration — the executor already reflects the current checkout; proceed to the scan |
 | Worktree executor regeneration fails | Non-fatal — log WARN and gate against the existing executor; finalize does not hard-block on a mapping refresh |
 | `affected_files` read succeeds, zero skill paths after filtering | Skip-clean exit (plan touched no skills) — record `mark-step-done --outcome done --display-detail "no skill changes detected"` so the `phase_steps_complete` handshake invariant counts the step as done |
-| `affected_files` read errors / `field_not_found` | Indeterminate: do NOT skip-clean; fall back to the whole-tree `quality-gate` (Step 5, no `--paths`) so structural lint still runs, then record the outcome from that gate run |
+| `affected_files` read returns `status: error` / `error: field_not_found` | Indeterminate: do NOT skip-clean; fall back to the whole-tree `quality-gate` (Step 5, no `--paths`) so structural lint still runs, then record the outcome from that gate run |
 | plugin-doctor `status: fail` / `total_issues > 0` | Fatal — record `mark-step-done --outcome failed --display-detail "plugin-doctor: {total_issues} violations"`, then abort finalize before `default:commit-push` |
 | plugin-doctor `status: pass` / `total_issues: 0` | Record `mark-step-done --outcome done --display-detail "plugin-doctor clean: {N} skills gated"` |
 
