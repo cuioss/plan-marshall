@@ -15,6 +15,7 @@ count_source_files, discover_packages, discover_js_sources, discover_sources,
 ModuleBase, ModulePaths) are available via direct import from _build_discover.
 """
 
+import os
 from abc import ABC, abstractmethod
 
 # Re-export build vocabulary constants from private implementation.
@@ -39,11 +40,238 @@ from _extension_constants import (  # noqa: F401 — re-exported for backward co
     CMD_QUALITY_GATE,
     CMD_TEST_COMPILE,
     CMD_VERIFY,
+    HEURISTIC_TO_ROLE,
     PROFILE_PATTERNS,
+    ROLE_HEURISTIC_CONFIG,
+    ROLE_HEURISTIC_DOCUMENTATION,
+    ROLE_HEURISTIC_PRODUCTION_BY_LOCATION,
+    ROLE_HEURISTIC_TEST_BY_LOCATION,
+    ROLE_HEURISTICS,
 )
 from _extension_constants import (
     APPLICABLE_PROFILES as _APPLICABLE_PROFILES,
 )
+
+# Directories the tree-deriver never descends into when scanning for build_map
+# globs — VCS metadata, plan state, build/dependency output, and caches. These
+# hold no production / test source that should seed a build_class.
+_DERIVE_PRUNED_DIRS: frozenset[str] = frozenset(
+    {
+        '.git',
+        '.plan',
+        '.venv',
+        'venv',
+        'node_modules',
+        '__pycache__',
+        '.pytest_cache',
+        '.mypy_cache',
+        '.ruff_cache',
+        'target',
+        'dist',
+        'build',
+        '.idea',
+        '.tox',
+    }
+)
+
+# Path segments that mark a file as living under a test root. A file whose
+# repo-relative path contains any of these segments resolves to the ``test``
+# role under the ``*-by-location`` heuristics.
+_TEST_ROOT_SEGMENTS: frozenset[str] = frozenset({'test', 'tests'})
+
+# Filename infixes that mark a file as a test by naming convention (the JS / TS
+# ``*.spec.*`` / ``*.test.*`` convention) regardless of directory. A file
+# carrying one of these infixes resolves to the ``test`` role even when it sits
+# beside the production source it covers.
+_TEST_FILENAME_INFIXES: tuple[str, ...] = ('.spec.', '.test.')
+
+
+def _is_test_file(rel_path: str) -> bool:
+    """Return True when a repo-relative path is a test file by location or naming.
+
+    The location/naming predicate behind the ``*-by-location`` role heuristics. A
+    path is a test file when EITHER:
+
+    - any of its segments is ``test`` or ``tests`` (case-insensitive) — the
+      directory-root convention (``src/test/java/Foo.java``, ``test/foo_test.py``,
+      ``a/tests/b/c.py``); OR
+    - its basename carries a ``.spec.`` / ``.test.`` infix — the colocated
+      naming convention (``Button.spec.js``, ``util.test.ts``).
+
+    ``scripts/testing_util.py`` is NOT a test file (``testing_util`` is neither a
+    bare ``test`` segment nor a ``.spec.`` / ``.test.`` infix).
+
+    Args:
+        rel_path: Repo-relative, forward-slash-separated path.
+
+    Returns:
+        True when the path is a test file, else False.
+    """
+    if any(segment.lower() in _TEST_ROOT_SEGMENTS for segment in rel_path.split('/')):
+        return True
+    basename = rel_path.rsplit('/', 1)[-1]
+    return any(infix in basename for infix in _TEST_FILENAME_INFIXES)
+
+
+def _heuristic_keeps_file(role_heuristic: str, suffix: str, rel_path: str) -> bool:
+    """Return True when a tree file is claimed by a (suffix, role_heuristic) entry.
+
+    Couples the suffix predicate with the location/naming predicate the heuristic
+    implies:
+
+    - ``production-by-location``: matching suffix AND NOT a test file.
+    - ``test-by-location``: matching suffix AND a test file.
+    - ``documentation`` / ``config``: matching suffix regardless of location.
+
+    "Test file" is resolved by :func:`_is_test_file` — either under a ``test`` /
+    ``tests`` root or carrying a ``.spec.`` / ``.test.`` filename infix.
+
+    Args:
+        role_heuristic: One of the four ``ROLE_HEURISTICS`` names.
+        suffix: The vocabulary suffix (e.g. ``.py``) or an exact basename
+            (e.g. ``pyproject.toml``) the entry claims.
+        rel_path: Repo-relative path of the candidate file.
+
+    Returns:
+        True when the file is claimed by this entry, else False.
+    """
+    basename = rel_path.rsplit('/', 1)[-1]
+    suffix_matches = basename == suffix or basename.endswith(suffix)
+    if not suffix_matches:
+        return False
+    if role_heuristic == ROLE_HEURISTIC_PRODUCTION_BY_LOCATION:
+        return not _is_test_file(rel_path)
+    if role_heuristic == ROLE_HEURISTIC_TEST_BY_LOCATION:
+        return _is_test_file(rel_path)
+    # documentation / config heuristics are location-agnostic.
+    return True
+
+
+def _scan_tree_files(project_root: str) -> list[str]:
+    """Return every non-pruned repo-relative file path under ``project_root``.
+
+    Walks the tree once, pruning the directories in ``_DERIVE_PRUNED_DIRS``, and
+    returns forward-slash-separated repo-relative paths. The single tree walk is
+    shared across all extensions' vocabularies by ``derive_globs_from_tree``.
+
+    Args:
+        project_root: Absolute path to the project root.
+
+    Returns:
+        Sorted list of repo-relative file paths.
+    """
+    rel_paths: list[str] = []
+    root = os.path.abspath(project_root)
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune in place so os.walk does not descend into excluded dirs.
+        dirnames[:] = [d for d in dirnames if d not in _DERIVE_PRUNED_DIRS]
+        for filename in filenames:
+            abs_path = os.path.join(dirpath, filename)
+            rel = os.path.relpath(abs_path, root).replace(os.sep, '/')
+            rel_paths.append(rel)
+    return sorted(rel_paths)
+
+
+def derive_globs_from_tree(
+    project_root: str, extensions: list
+) -> dict[str, list[tuple[str, str]]]:
+    """Derive concrete, complete-by-construction ``(glob, role)`` globs per domain.
+
+    The shared base-lib deriver behind the build_map seed. It scans the actual
+    project tree ONCE and, for every registered extension's portable
+    ``(suffix, role_heuristic)`` vocabulary (``classify_globs()``), emits the
+    concrete globs that cover EVERY matching file in the tree. Because the globs
+    come from the real tree rather than an author's assumed layout, production
+    ``.py`` files outside ``scripts/`` (e.g. ``marketplace/targets/generate.py``
+    and every ``*/skills/plan-marshall-plugin/extension.py``) are caught — they
+    exist in the tree, not because an author guessed a glob. The seed is
+    therefore complete-by-construction.
+
+    The emitted globs are conservative: for each claimed file the deriver emits a
+    ``{directory}/*{suffix}`` glob anchored at the file's parent directory (or
+    ``{basename}`` for an exact-name config entry). Such a glob matches only files
+    of the claimed suffix directly inside that directory, so the derived set
+    never over-claims a sibling file the vocabulary did not match. Globs are
+    de-duplicated and emitted in deterministic sorted order.
+
+    Args:
+        project_root: Absolute path to the project root to scan.
+        extensions: List of extension instances (objects exposing
+            ``classify_globs()`` and ``get_skill_domains()``). Extensions whose
+            ``classify_globs()`` returns an empty vocabulary contribute nothing.
+
+    Returns:
+        A dict keyed by domain-key with a list of de-duplicated ``(glob, role)``
+        tuples as values. Domains contributing no globs are omitted entirely.
+    """
+    tree_files = _scan_tree_files(project_root)
+    derived: dict[str, list[tuple[str, str]]] = {}
+
+    for ext in extensions:
+        try:
+            vocabulary = ext.classify_globs()
+        except Exception:
+            continue
+        if not vocabulary:
+            continue
+
+        domain_key = ''
+        try:
+            domains = ext.get_skill_domains()
+            if domains:
+                domain_key = str(domains[0].get('domain', {}).get('key', '') or '')
+        except Exception:
+            domain_key = ''
+        if not domain_key:
+            continue
+
+        # role -> set of derived globs, so multiple vocabulary entries that
+        # resolve to the same (glob, role) collapse to one entry.
+        role_globs: dict[str, set[str]] = {}
+        for suffix, role_heuristic in vocabulary:
+            if role_heuristic not in ROLE_HEURISTICS:
+                continue
+            role = HEURISTIC_TO_ROLE[role_heuristic]
+            for rel_path in tree_files:
+                if not _heuristic_keeps_file(role_heuristic, suffix, rel_path):
+                    continue
+                glob = _glob_for_file(rel_path, suffix)
+                role_globs.setdefault(role, set()).add(glob)
+
+        entries = sorted(
+            ((glob, role) for role, globs in role_globs.items() for glob in globs)
+        )
+        if entries:
+            derived[domain_key] = entries
+
+    return derived
+
+
+def _glob_for_file(rel_path: str, suffix: str) -> str:
+    """Return the conservative glob covering ``rel_path`` for ``suffix``.
+
+    An exact-name config entry (the vocabulary suffix equals the file's
+    basename) derives the basename glob verbatim — e.g. ``pyproject.toml`` →
+    ``**/pyproject.toml`` is intentionally NOT used; the exact path is emitted so
+    only that file is claimed. A suffix entry derives the
+    ``{parent_dir}/*{suffix}`` glob anchored at the file's parent directory,
+    which matches only same-suffix files directly inside that directory.
+
+    Args:
+        rel_path: Repo-relative path of a claimed file.
+        suffix: The vocabulary suffix or exact basename that claimed the file.
+
+    Returns:
+        A glob string that covers ``rel_path`` and no file the vocabulary did
+        not match.
+    """
+    basename = rel_path.rsplit('/', 1)[-1]
+    if basename == suffix:
+        # Exact-name entry (config file like pyproject.toml): claim the exact path.
+        return rel_path
+    parent = rel_path.rsplit('/', 1)[0] if '/' in rel_path else ''
+    pattern = f'*{suffix}'
+    return f'{parent}/{pattern}' if parent else pattern
 
 
 class ExtensionBase(ABC):
@@ -440,18 +668,20 @@ class ExtensionBase(ABC):
                 ``production`` / ``test`` / ``documentation`` / ``config``.
 
         Returns:
-            A member of the closed 5-value enum ``BUILD_CLASSES``:
+            A member of the closed 5-value enum ``BUILD_CLASSES`` — each value
+            NAMES the canonical command directly (no name-to-name indirection):
 
-            - ``prod-compile``: production source — derives a ``compile``.
-            - ``test-run``: test source — derives ``test-compile`` + ``module-tests``.
+            - ``compile``: production source — resolves a ``compile``.
+            - ``module-tests``: test source — resolves ``test-compile`` +
+              ``module-tests``.
             - ``docs-validate``: documentation — derives a doc validation gate.
-            - ``build-config-full``: build/lint/packaging config — derives a full
-              reactor ``verify`` for the affected module.
+            - ``verify``: build/lint/packaging config — resolves a full reactor
+              ``verify`` for the affected module.
             - ``none``: no build derives from this (path, role) pair.
 
             The default maps roles deterministically:
-            ``production → prod-compile``, ``test → test-run``,
-            ``documentation → docs-validate``, ``config → build-config-full``,
+            ``production → compile``, ``test → module-tests``,
+            ``documentation → docs-validate``, ``config → verify``,
             and any unmatched role → ``none``. Domains that override
             ``classify_paths()`` inherit this default and override
             ``classify_build_class`` ONLY where the role→build_class default is
@@ -470,35 +700,39 @@ class ExtensionBase(ABC):
         return default_by_role.get(role, BUILD_CLASS_NONE)
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return this extension's ``(glob, role)`` classification inventory.
+        """Return this extension's portable ``(suffix, role_heuristic)`` vocabulary.
 
-        The build_map seed aggregator (``manage-config build-map seed``) walks
-        every registered extension and calls this method to learn each domain's
-        glob → role inventory WITHOUT having to know the extension's internal
-        classify shape. The aggregator then derives the build_class per entry
-        via ``classify_build_class(glob, role)`` and writes the aggregated
-        ``{domain: [{glob, role, build_class}]}`` structure into
-        ``marshal.json::build_map``.
+        Each tuple is ``(suffix, role_heuristic)`` — a file-extension suffix (or
+        an exact config basename) paired with a location-role heuristic name. The
+        vocabulary is portable: it encodes the file types this domain owns WITHOUT
+        encoding the author's assumed directory layout. The build_map seed
+        aggregator hands every registered extension's vocabulary to the
+        ``script-shared`` tree-deriver (``derive_globs_from_tree``), which scans
+        the actual project tree and emits one flat ``{parent_dir}/*{suffix}``
+        glob per directory that contains a matched file (never a recursive
+        ``**`` form) — so production files outside the assumed location (e.g.
+        ``marketplace/targets/*.py``, and every
+        ``marketplace/bundles/<bundle>/skills/plan-marshall-plugin/*.py``) are
+        caught because they exist in the tree, not because an author guessed a
+        glob.
 
         Returns:
-            A list of ``(glob, role)`` tuples — one per glob pattern this
-            extension claims, paired with the file role it assigns. ``role`` is
-            one of ``production`` / ``test`` / ``documentation`` / ``config``
-            (the four-role contract of ``classify_paths()``). The default
-            implementation returns an empty list: extensions that do not own any
-            file types (no ``classify_paths()`` override) contribute nothing to
-            the seed. Extensions that DO override ``classify_paths()`` override
-            this method as well, returning the glob inventory their classifier
-            recognises — either derived from a ``_CLASSIFY_PATTERNS`` tuple
-            (tuple-shape extensions) or synthesized as an explicit small glob
-            list from the extension's suffix / token / config-file rules
-            (hand-rolled extensions).
+            A list of ``(suffix, role_heuristic)`` tuples. ``suffix`` is a file
+            suffix (e.g. ``.py``) or an exact basename for a config file (e.g.
+            ``pyproject.toml``). ``role_heuristic`` is one of the four
+            ``ROLE_HEURISTICS`` names — ``production-by-location`` /
+            ``test-by-location`` / ``documentation`` / ``config`` — each of which
+            resolves (via the deriver's location predicates) to one of the four
+            ``classify_paths()`` roles. The default implementation returns an
+            empty list: extensions that own no buildable file types contribute no
+            vocabulary. Example for the python domain:
+            ``[('.py', 'production-by-location'), ('.py', 'test-by-location')]``.
 
         This accessor is exactly parallel to ``classify_build_class`` and
         ``classify_path_specificity``: a per-extension lookup the aggregator
         consumes, NOT a change to the ``classify_paths()`` return shape.
 
-        See ``extension-api/standards/extension-contract.md`` § classify_paths()
+        See ``extension-api/standards/extension-contract.md`` § classify_globs()
         for the complete contract documentation.
         """
         return []

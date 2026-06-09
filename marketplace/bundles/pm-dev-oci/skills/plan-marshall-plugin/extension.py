@@ -102,29 +102,30 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return an explicit (glob, role) inventory synthesized from the rules.
+        """Return the OCI domain's portable (suffix, role_heuristic) vocabulary.
 
-        Hand-rolled extension (no _CLASSIFY_PATTERNS tuple): _match_classify uses
-        filename checks, so there is no tuple to derive from. The globs below
-        mirror that body exactly — exact-name production files (.dockerignore),
-        the Dockerfile/Containerfile prefix family as production, and the compose
-        config filenames. See the base classify_globs() contract.
+        Container build files are claimed under the location-agnostic
+        ``production-by-location`` heuristic — ``.dockerignore`` and the
+        ``Dockerfile`` / ``Containerfile`` family (matched as a basename suffix,
+        so ``Dockerfile`` and ``app.Dockerfile`` are both caught). Compose files
+        are claimed under ``config``. The deriver emits a concrete glob covering
+        every matching file in the tree. See the base classify_globs() contract.
         """
-        globs: list[tuple[str, str]] = []
-        # Production — exact .dockerignore and the Dockerfile/Containerfile prefix family.
+        vocabulary: list[tuple[str, str]] = []
+        # Production — exact .dockerignore and the Dockerfile / Containerfile family.
         for name in self._PRODUCTION_FILENAMES:
-            globs.append((name, 'production'))
-        for prefix in self._PRODUCTION_FILENAME_PREFIXES:
-            globs.append((f'{prefix}*', 'production'))
+            vocabulary.append((name, 'production-by-location'))
+        for name in self._PRODUCTION_FILENAME_PREFIXES:
+            vocabulary.append((name, 'production-by-location'))
         # Config — compose / docker-compose filenames.
         for name in self._CONFIG_FILENAMES:
-            globs.append((name, 'config'))
-        return globs
+            vocabulary.append((name, 'config'))
+        return vocabulary
 
     # build_class: this extension claims the ``production`` / ``config`` roles
     # (Dockerfile/Containerfile production; compose config), for which the
-    # ExtensionBase defaults (``production → prod-compile``,
-    # ``config → build-config-full``) are correct. No classify_build_class
+    # ExtensionBase defaults (``production → compile``,
+    # ``config → verify``) are correct. No classify_build_class
     # override is required — the inherited base default is the contract.
 
     def get_skill_domains(self) -> list[dict]:

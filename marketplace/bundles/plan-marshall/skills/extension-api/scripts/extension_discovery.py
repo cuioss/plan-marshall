@@ -220,6 +220,36 @@ def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[
     return domains
 
 
+def derive_build_map_globs(
+    project_root: Path, extensions: list[dict[str, Any]] | None = None
+) -> dict[str, list[tuple[str, str]]]:
+    """Derive the tree-complete ``(glob, role)`` build_map inventory per domain.
+
+    Bridges extension discovery to the ``script-shared`` base-lib tree-deriver
+    (``derive_globs_from_tree``). Each registered extension declares a portable
+    ``(suffix, role_heuristic)`` vocabulary via ``classify_globs()``; the
+    deriver scans the actual ``project_root`` tree and emits the concrete globs
+    that cover EVERY matching file. The build_map seed aggregator
+    (``manage-config``) consumes this output to stamp each entry's
+    canonical-named ``build_class``.
+
+    Args:
+        project_root: Project root the deriver scans for matching files.
+        extensions: Optional pre-discovered extension list (from
+            ``discover_all_extensions()``). When omitted, all extensions are
+            discovered here.
+
+    Returns:
+        A dict keyed by domain-key with a list of de-duplicated ``(glob, role)``
+        tuples. Domains that contribute no globs are omitted.
+    """
+    from extension_base import derive_globs_from_tree  # type: ignore[import-not-found]
+
+    discovered = extensions if extensions is not None else discover_all_extensions()
+    modules = [ext['module'] for ext in discovered if ext.get('module') is not None]
+    return derive_globs_from_tree(str(project_root), modules)
+
+
 def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Get workflow extensions (triage, outline_skill) from extensions.
 

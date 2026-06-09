@@ -144,14 +144,14 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return an explicit (glob, role) inventory synthesized from the rules.
+        """Return the documentation domain's portable (suffix, role_heuristic) vocabulary.
 
-        Hand-rolled extension (no _CLASSIFY_PATTERNS tuple): _match_classify uses
-        suffix checks, so there is no tuple to derive from. Each documentation
-        suffix becomes a ``*{suffix}`` glob claiming the documentation role. See
-        the base classify_globs() contract.
+        Each documentation suffix (``.md`` / ``.adoc`` / ``.asciidoc``) is
+        declared under the location-agnostic ``documentation`` heuristic; the
+        tree-deriver emits a concrete glob covering every matching file. See the
+        base classify_globs() contract for the tree-deriver wiring.
         """
-        return [(f'*{suffix}', 'documentation') for suffix in self._DOC_SUFFIXES]
+        return [(suffix, 'documentation') for suffix in self._DOC_SUFFIXES]
 
     # build_class: this extension claims only the ``documentation`` role
     # (*.md / *.adoc / *.asciidoc), for which the ExtensionBase default

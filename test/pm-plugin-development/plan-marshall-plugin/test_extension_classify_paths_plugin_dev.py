@@ -102,7 +102,7 @@ def test_integration_overlap_resolution_pm_plugin_dev_wins():
 # build_class per claimed role
 # =============================================================================
 
-_BUILD_CLASSES = frozenset({'prod-compile', 'test-run', 'docs-validate', 'build-config-full', 'none'})
+_BUILD_CLASSES = frozenset({'compile', 'module-tests', 'docs-validate', 'verify', 'none'})
 
 
 def test_skill_md_build_class_is_docs_validate():
@@ -127,25 +127,48 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() inventory (build_map seed source)
+# classify_globs() vocabulary (build_map seed source)
 # =============================================================================
+#
+# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
+# consumed by the script-shared tree-deriver — NOT literal path-globs.
+# Marketplace skill markdown is plain `.md` under the documentation heuristic;
+# the deriver scans the tree and emits the concrete marketplace-anchored globs.
+# The longest-glob-wins overlap with pm-documents is resolved by the seed
+# aggregator's specificity comparison, not by this vocabulary.
+
+_ROLE_HEURISTICS = frozenset(
+    {'production-by-location', 'test-by-location', 'documentation', 'config'}
+)
 
 
-def test_classify_globs_derives_glob_role_pairs_from_patterns():
-    """Tuple-shape extension: classify_globs derives (glob, role) from _CLASSIFY_PATTERNS."""
-    expected = [(glob, role) for glob, role, _ in _ext._CLASSIFY_PATTERNS]
-    assert _ext.classify_globs() == expected
+def test_classify_globs_declares_md_under_documentation():
+    """The plugin-dev vocabulary is a single .md / documentation entry."""
+    assert _ext.classify_globs() == [('.md', 'documentation')]
 
 
-def test_classify_globs_roles_resolve_to_build_classes():
-    """Every (glob, role) in the inventory derives a build_class in the closed set."""
-    inventory = _ext.classify_globs()
-    assert inventory  # the plugin-dev domain claims marketplace skill markdown
-    for glob, role in inventory:
-        assert _ext.classify_build_class(glob, role) in _BUILD_CLASSES
+def test_classify_globs_uses_only_role_heuristic_names():
+    """Every vocabulary tuple's second element is a role-heuristic name."""
+    for _suffix, role_heuristic in _ext.classify_globs():
+        assert role_heuristic in _ROLE_HEURISTICS
 
 
-def test_classify_globs_claims_only_documentation_role():
-    """The plugin-dev glob inventory claims only the documentation role."""
-    roles = {role for _, role in _ext.classify_globs()}
-    assert roles == {'documentation'}
+def test_classify_globs_does_not_return_marketplace_anchored_literal_globs():
+    """The vocabulary carries a bare `.md` suffix, not the old marketplace-anchored globs.
+
+    Regression guard: the old literal globs
+    (`marketplace/bundles/*/skills/*/SKILL.md`, etc.) are gone — the tree-deriver
+    now produces those concrete globs from the real tree, so the vocabulary only
+    declares the portable `.md` / documentation pair.
+    """
+    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
+    for stale in (
+        'marketplace/bundles/*/skills/*/SKILL.md',
+        'marketplace/bundles/*/skills/*/standards/*.md',
+    ):
+        assert stale not in suffixes
+
+
+def test_classify_globs_is_nonempty():
+    """The plugin-dev domain owns marketplace skill markdown, so the vocabulary is non-empty."""
+    assert _ext.classify_globs()

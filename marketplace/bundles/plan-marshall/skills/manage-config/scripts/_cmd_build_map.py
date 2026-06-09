@@ -3,9 +3,13 @@ build-map command handlers for manage-config.
 
 The skill_domains.build_map block in marshal.json is the file-to-build
 contract: a per-domain inventory of {glob, role, build_class} entries seeded
-from every registered extension's classify_globs() + classify_build_class(). It
-is required and always seeded; user corrections are made directly to the seeded
-entries (there is no separate override layer).
+from the real project tree. Each extension's portable (suffix, role_heuristic)
+vocabulary (classify_globs()) is handed to the script-shared tree-deriver
+(derive_globs_from_tree), which scans the actual tree and emits the concrete
+globs covering every matching file; each (glob, role) is then stamped with its
+domain's classify_build_class(). It is required and always seeded; user
+corrections are made directly to the seeded entries (there is no separate
+override layer).
 """
 
 import argparse
@@ -32,12 +36,13 @@ def cmd_build_map(args: argparse.Namespace) -> dict:
 
 
 def cmd_build_map_seed(args: argparse.Namespace) -> dict:
-    """Seed marshal.json::skill_domains.build_map from the extensions (write-once).
+    """Seed marshal.json::skill_domains.build_map from the project tree (write-once).
 
-    Aggregates the per-domain build map from every registered extension and
-    writes it under ``skill_domains.build_map`` with write-once semantics — an
-    existing seed is preserved (never clobbered), so user corrections survive a
-    re-seed.
+    Aggregates the per-domain build map by deriving concrete globs from the real
+    project tree (each extension's portable classify_globs() vocabulary fed
+    through the script-shared tree-deriver) and writes it under
+    ``skill_domains.build_map`` with write-once semantics — an existing seed is
+    preserved (never clobbered), so user corrections survive a re-seed.
     """
     try:
         require_initialized()

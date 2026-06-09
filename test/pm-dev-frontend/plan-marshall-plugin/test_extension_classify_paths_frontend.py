@@ -77,19 +77,19 @@ def test_production_does_not_include_test_files():
 # build_class per claimed role
 # =============================================================================
 
-_BUILD_CLASSES = frozenset({'prod-compile', 'test-run', 'docs-validate', 'build-config-full', 'none'})
+_BUILD_CLASSES = frozenset({'compile', 'module-tests', 'docs-validate', 'verify', 'none'})
 
 
-def test_production_path_build_class_is_prod_compile():
-    assert _ext.classify_build_class('src/foo.js', 'production') == 'prod-compile'
+def test_production_path_build_class_is_compile():
+    assert _ext.classify_build_class('src/foo.js', 'production') == 'compile'
 
 
-def test_test_path_build_class_is_test_run():
-    assert _ext.classify_build_class('src/foo.spec.js', 'test') == 'test-run'
+def test_test_path_build_class_is_module_tests():
+    assert _ext.classify_build_class('src/foo.spec.js', 'test') == 'module-tests'
 
 
-def test_config_path_build_class_is_build_config_full():
-    assert _ext.classify_build_class('package.json', 'config') == 'build-config-full'
+def test_config_path_build_class_is_verify():
+    assert _ext.classify_build_class('package.json', 'config') == 'verify'
 
 
 def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
@@ -108,36 +108,52 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() inventory (build_map seed source)
+# classify_globs() vocabulary (build_map seed source)
 # =============================================================================
+#
+# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
+# consumed by the script-shared tree-deriver — NOT literal path-globs. Each
+# JS/TS suffix is declared under BOTH production-by-location and
+# test-by-location; the deriver splits them per file via the .spec./.test.
+# infix and the test-root convention.
+
+_ROLE_HEURISTICS = frozenset(
+    {'production-by-location', 'test-by-location', 'documentation', 'config'}
+)
 
 
-def test_classify_globs_synthesizes_explicit_glob_inventory():
-    """Hand-rolled extension: classify_globs returns explicit globs from the rules.
+def test_classify_globs_declares_each_js_ts_suffix_under_both_location_heuristics():
+    """Each JS/TS suffix appears under production-by-location AND test-by-location."""
+    vocabulary = _ext.classify_globs()
+    for ext in ('.js', '.mjs', '.ts', '.tsx', '.jsx'):
+        assert (ext, 'production-by-location') in vocabulary
+        assert (ext, 'test-by-location') in vocabulary
 
-    The inventory mirrors _match_classify: config filenames + the eslint.config.*
-    prefix family, test patterns (*.spec.* / *.test.* paired with each JS/TS
-    suffix), and production source (each JS/TS suffix).
+
+def test_classify_globs_declares_config_basenames():
+    """The JS toolchain config files are declared by exact basename under config."""
+    vocabulary = _ext.classify_globs()
+    assert ('package.json', 'config') in vocabulary
+    assert ('tsconfig.json', 'config') in vocabulary
+
+
+def test_classify_globs_uses_only_role_heuristic_names():
+    """Every vocabulary tuple's second element is a role-heuristic name."""
+    for _suffix, role_heuristic in _ext.classify_globs():
+        assert role_heuristic in _ROLE_HEURISTICS
+
+
+def test_classify_globs_does_not_return_literal_path_globs():
+    """The vocabulary carries bare suffixes, not the old synthesized literal globs.
+
+    Regression guard: the old `*.js` / `*.spec.*.js` / `eslint.config.*` literal
+    globs are gone — bare suffixes plus a location heuristic replace them.
     """
-    inventory = _ext.classify_globs()
-    assert ('package.json', 'config') in inventory
-    assert ('tsconfig.json', 'config') in inventory
-    assert ('eslint.config.*', 'config') in inventory
-    assert ('*.spec.*.js', 'test') in inventory
-    assert ('*.test.*.ts', 'test') in inventory
-    assert ('*.js', 'production') in inventory
-    assert ('*.tsx', 'production') in inventory
+    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
+    for stale in ('*.js', '*.tsx', '*.spec.*.js', '*.test.*.ts', 'eslint.config.*'):
+        assert stale not in suffixes
 
 
-def test_classify_globs_roles_resolve_to_build_classes():
-    """Every (glob, role) in the inventory derives a build_class in the closed set."""
-    inventory = _ext.classify_globs()
-    assert inventory
-    for glob, role in inventory:
-        assert _ext.classify_build_class(glob, role) in _BUILD_CLASSES
-
-
-def test_classify_globs_covers_production_test_config_roles():
-    """The frontend glob inventory claims production, test, and config roles."""
-    roles = {role for _, role in _ext.classify_globs()}
-    assert roles == {'production', 'test', 'config'}
+def test_classify_globs_is_nonempty():
+    """The frontend domain owns buildable file types, so the vocabulary is non-empty."""
+    assert _ext.classify_globs()

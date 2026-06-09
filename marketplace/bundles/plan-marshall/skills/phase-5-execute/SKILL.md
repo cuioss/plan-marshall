@@ -694,9 +694,9 @@ If `commit_strategy == per_deliverable` (cached from Step 2):
 
 If `commit_strategy` is `per_plan` or `none` → Skip the commit; still proceed to Step 10b.
 
-#### Step 10b: Focused Per-Deliverable Build (buildable-stuff guarded)
+#### Step 10b: Focused Per-Deliverable Build (derived-ladder, depth-sliced)
 
-The mid-execute per-deliverable build is **focused** by design: it resolves the single changed module from the just-completed deliverable and runs a depth-gated build scoped to that module — never a whole-tree sweep. The whole-tree quality sweep (`build_verify` / `quality_check`) stays **once** at end-of-phase (Step 11b) and is never repeated mid-execute. This step fires at the chain tail, after the Step 10a commit decision.
+The mid-execute per-deliverable build is **focused** by design: it consumes the deliverable's `build_map`-derived ladder — the canonical commands `architecture derive-verification` stamps per changed file — and runs the subset of that ladder selected by the depth knob, never a whole-tree sweep (except the opt-in `full` depth). There is **one** classification source: the same `build_map`-derived ladder that drives `derive-verification` also drives this step — no independent re-classification of the changed paths. The whole-tree quality sweep (`build_verify` / `quality_check`) stays **once** at end-of-phase (Step 11b) and is never repeated mid-execute. This step fires at the chain tail, after the Step 10a commit decision.
 
 1. **Read the depth knob** — resolve `per_deliverable_build` from the plan-scoped config:
 
@@ -715,49 +715,33 @@ The mid-execute per-deliverable build is **focused** by design: it resolves the 
      --message "(plan-marshall:phase-5-execute) per_deliverable_build=off — skipping focused build for deliverable {deliverable}; end-of-phase sweep is the only build"
    ```
 
-3. **Buildable-stuff guard** — classify the deliverable's changed paths against the canonical six-bucket file-type classifier before running any Python build. The classifier vocabulary, predicates, and overlap-resolution policy are the normative source of truth at [`../phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier) — do NOT restate the bucket vocabulary here. When the deliverable's changed paths resolve to `documentation_only` (no `.py` touched — typical workflow-doc edit), the deliverable has no buildable Python stuff: skip `compile` / `module-tests` and run only the documentation gate. The doc-gate form depends on which docs changed: when any changed path is a marketplace skill `.md` body (`marketplace/bundles/**/skills/**/*.md`), the doc gate MUST use the rule-complete, scoped `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root {worktree_path}/marketplace` form — NOT the rule-less `list-components`, because `list-components` runs zero rules (enumeration only) and omits the `analyze_lesson_id_in_skill_prose` (and other quality-gate) rules that CI's `verify / verify` stage runs, so a `list-components` pass is not a CI-equivalent gate; for non-marketplace docs, markdown validation is the gate. Never run the Python build for a `documentation_only` deliverable. The deliverable's pre-stamped derived ladder already reflects this — the deriver stamps zero Python commands on a `documentation_only` deliverable; this guard is the per-deliverable enforcement of that same classification at execute time. Log the skip and proceed to Step 11:
+3. **Derive the deliverable's build ladder** — for depths other than `off`, run the single deterministic deriver over the deliverable's changed paths to obtain the per-changed-file canonical-command rungs. There is no separate file-type re-classification step; the deriver IS the classifier:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+     derive-verification --changed-artifacts {comma_separated_changed_paths} --audit-plan-id {plan_id}
+   ```
+
+   Each row in the returned `commands[]` carries a `build_class` (the canonical command name — `compile` / `module-tests` / `docs-validate` / `verify` / `none`) and the architecture-resolved `executable` for that rung. The `build_class` vocabulary and the `build_class` → command mapping are owned by [`../manage-architecture/standards/resolve-command.md` § Build-class → verification command](../manage-architecture/standards/resolve-command.md#build-class--verification-command) — do NOT restate the vocabulary here; this step consumes the derived rows. A deliverable whose changed paths classify entirely to `docs-validate` / `none` yields **zero Python rungs** — the documentation-only short-circuit is therefore a structural property of the derived ladder, not a parallel classification: when no `compile` / `module-tests` rung is present, no Python build runs and only the derived `docs-validate` rung executes — for a marketplace skill `.md` that rung is the scopeable `doctor-marketplace quality-gate --paths {changed skill dirs} --marketplace-root {marketplace root}` the deriver stamped (for other docs, the asciidoc-validate notation).
+
+4. **Slice the derived ladder by depth and run the selected rungs** via the `executable` each row carries (never hard-code `./pw` / `mvn` / `gradle` / `npm` — the deriver already resolved each rung):
+
+   - **`compile-only`** → run only the rows whose `build_class` is `compile`, plus any `docs-validate` rows. Skip `module-tests` rows.
+   - **`compile+scoped-test`** (default) → run the `compile` rows AND the `module-tests` rows (each `module-tests` rung is itself the `test-compile` + `module-tests` pair the deriver stamped), plus any `docs-validate` rows. `compile` and `module-tests` are distinct checks — `module-tests` does not subsume `compile` — so both rung kinds run at this depth.
+   - **`full`** → ignore the per-rung slice and resolve+run the whole-tree `quality-gate` (the legacy whole-tree-per-deliverable behavior; opt-in only):
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+       resolve --command quality-gate --audit-plan-id {plan_id}
+     ```
+
+   For every rung executed (derived `executable` or the `full`-depth `quality-gate`), honor the architecture-resolved `bash_timeout_seconds` / `execution_tier` envelope carried on the row: for `execution_tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `execution_tier=orchestrator` return control to the orchestrator to run the long build (do NOT background it). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure). Log the documentation-only path when the derived ladder carries no Python rung:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      decision --plan-id {plan_id} --level INFO \
-     --message "(plan-marshall:phase-5-execute) Buildable-stuff guard: deliverable {deliverable} resolved documentation_only — skipping Python build, running doc gate only"
+     --message "(plan-marshall:phase-5-execute) Derived ladder for deliverable {deliverable} carries zero Python rungs — running only the derived doc gate"
    ```
-
-4. **Focused build** (buildable deliverable — at least one `.py` changed). Resolve the changed module, then run the depth-gated commands scoped to that module only:
-
-   a. **Resolve the changed module** from the deliverable's modified files:
-
-      ```bash
-      python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-        which-module --path {changed_path}
-      ```
-
-      Capture the returned module as `{module}`.
-
-   b. **Resolve and run the depth-gated build** via `architecture resolve` (never hard-code `./pw` / `mvn` / `gradle` / `npm`):
-
-      - **`compile-only`** → resolve and run `compile` scoped to the changed module:
-
-        ```bash
-        python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-          resolve --command compile --module {module} --audit-plan-id {plan_id}
-        ```
-
-      - **`compile+scoped-test`** (default) → run BOTH commands scoped to the changed module: first the `compile` command from the `compile-only` branch above, then resolve and run `module-tests`. The two are distinct checks (e.g. `compile` type-checks, `module-tests` runs the test suite); `module-tests` does not subsume `compile`, so both are required at this depth:
-
-        ```bash
-        python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-          resolve --command module-tests --module {module} --audit-plan-id {plan_id}
-        ```
-
-      - **`full`** → resolve and run whole-tree `quality-gate` (the legacy whole-tree-per-deliverable behavior; opt-in only):
-
-        ```bash
-        python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-          resolve --command quality-gate --audit-plan-id {plan_id}
-        ```
-
-      Execute the returned `executable` for each resolved command. Honor the architecture-resolved `bash_timeout_seconds` / `execution_tier` envelope: for `execution_tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `execution_tier=orchestrator` return control to the orchestrator to run the long build (do NOT background it). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure).
 
 5. **On non-zero exit** — route the failure through the **existing Step 11 per-task triage path**: persist each failing finding to the Q-Gate store (`manage-findings qgate add`) and return the `triage_required` signal to the orchestrator. Do NOT invent a new triage surface — reuse the Step 11 contract verbatim (`producer=build-runner`, `finding_type=verification-failure`).
 

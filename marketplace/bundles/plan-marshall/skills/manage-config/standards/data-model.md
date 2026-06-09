@@ -84,11 +84,13 @@ JSON structure and field definitions for project configuration.
   "skill_domains": {
     "build_map": {
       "python": [
-        { "glob": "marketplace/bundles/**/scripts/*.py", "role": "production", "build_class": "prod-compile" },
-        { "glob": "test/**/test_*.py", "role": "test", "build_class": "test-run" }
+        { "glob": "marketplace/targets/*.py", "role": "production", "build_class": "compile" },
+        { "glob": "marketplace/bundles/pm-dev-java/skills/plan-marshall-plugin/*.py", "role": "production", "build_class": "compile" },
+        { "glob": "marketplace/bundles/plan-marshall/skills/manage-config/scripts/*.py", "role": "production", "build_class": "compile" },
+        { "glob": "test/plan-marshall/manage-config/*.py", "role": "test", "build_class": "module-tests" }
       ],
       "documentation": [
-        { "glob": "marketplace/bundles/**/skills/**/*.md", "role": "documentation", "build_class": "docs-validate" }
+        { "glob": "marketplace/bundles/plan-marshall/skills/manage-config/standards/*.md", "role": "documentation", "build_class": "docs-validate" }
       ]
     },
     "system": {
@@ -171,7 +173,7 @@ The file-to-build contract: a domain-keyed inventory of `{glob, role, build_clas
 
 ### Source, write-once semantics, and fail-closed read
 
-`build_map` is **seeded from the domain extensions**, not hand-authored. Each registered extension's `classify_globs()` supplies its `(glob, role)` inventory, and `classify_build_class(glob, role)` maps each entry to its `build_class`; the aggregator collects these into the `{domain: [{glob, role, build_class}]}` structure. The predicates stay in extension Python — they are **not** migrated into config; `build_map` is the seeded snapshot of their output.
+`build_map` is **seeded from the domain extensions**, not hand-authored, and its globs are **tree-derived (complete-by-construction)**, not author-shipped literals. Each registered extension's `classify_globs()` supplies a portable `(extension, role)` vocabulary (a suffix paired with a location-role heuristic — see [extension-contract.md](../../extension-api/standards/extension-contract.md) § `classify_globs`); the aggregator hands that vocabulary to the `script-shared` tree-deriver, which scans the actual project tree and emits the concrete globs that cover EVERY matching file. `classify_build_class(glob, role)` then stamps each derived entry with its canonical-named `build_class`; the aggregator collects these into the `{domain: [{glob, role, build_class}]}` structure. Because the globs come from the real tree rather than an author's guessed layout, files outside the assumed location (e.g. `marketplace/targets/*.py`, and every `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/*.py`) are caught instead of silently classifying to no build. The deriver emits one flat `{parent_dir}/*{suffix}` glob per directory that contains a matched file — never a recursive `**` form — so the seed is complete-by-construction. The predicates stay in extension Python — they are **not** migrated into config; `build_map` is the seeded snapshot of the deriver's output.
 
 Seeding is **write-once**: an existing `build_map` block is never clobbered by a re-seed, so a correction made directly to the seeded block survives. It is always seeded at `init` / `sync-defaults`; re-seed (preserving the existing seed) via `build-map seed`; read the effective map via `build-map read`. The read **fails closed**: when `skill_domains.build_map` is absent the read returns a structured error rather than an empty map, so a missing seed surfaces instead of silently yielding a no-build. There is no separate override layer; corrections are made directly to the seeded entries.
 
@@ -182,16 +184,20 @@ Seeding is **write-once**: an existing `build_map` block is never clobbered by a
   "skill_domains": {
     "build_map": {
       "python": [
-        { "glob": "marketplace/bundles/**/scripts/*.py", "role": "production", "build_class": "prod-compile" },
-        { "glob": "test/**/test_*.py", "role": "test", "build_class": "test-run" }
+        { "glob": "marketplace/targets/*.py", "role": "production", "build_class": "compile" },
+        { "glob": "marketplace/bundles/pm-dev-java/skills/plan-marshall-plugin/*.py", "role": "production", "build_class": "compile" },
+        { "glob": "marketplace/bundles/plan-marshall/skills/manage-config/scripts/*.py", "role": "production", "build_class": "compile" },
+        { "glob": "test/plan-marshall/manage-config/*.py", "role": "test", "build_class": "module-tests" }
       ],
       "documentation": [
-        { "glob": "marketplace/bundles/**/skills/**/*.md", "role": "documentation", "build_class": "docs-validate" }
+        { "glob": "marketplace/bundles/plan-marshall/skills/manage-config/standards/*.md", "role": "documentation", "build_class": "docs-validate" }
       ]
     }
   }
 }
 ```
+
+The `python`-domain globs above are a representative sample of the tree-derived output — the real seed carries one flat `{parent_dir}/*{suffix}` glob per directory that contains a matched file (the deriver found the `marketplace/targets/`, per-bundle `plan-marshall-plugin/`, and `scripts/` directories in the real tree); they are not literals an author hand-wrote.
 
 ### Fields (per entry)
 
@@ -203,14 +209,14 @@ Seeding is **write-once**: an existing `build_map` block is never clobbered by a
 
 ### build_class enum
 
-Closed five-value set. The single source of truth is `BUILD_CLASSES` in `script-shared`'s extension constants, shared by `ExtensionBase.classify_build_class()`, the domain extensions, and their tests.
+Closed five-value set, **named for the canonical command directly** — the `build_class` value IS the canonical command name, with no name-to-name indirection map. The single source of truth is `BUILD_CLASSES` in `script-shared`'s extension constants, shared by `ExtensionBase.classify_build_class()`, the domain extensions, and their tests.
 
 | `build_class` | Role it attaches to | Derived verification |
 |---------------|---------------------|----------------------|
-| `prod-compile` | production | `compile` for the changed module |
-| `test-run` | test | `test-compile` + `module-tests` for the changed module |
+| `compile` | production | `compile` for the changed module |
+| `module-tests` | test | `test-compile` + `module-tests` for the changed module |
 | `docs-validate` | documentation | `doctor-marketplace quality-gate` (marketplace skill `.md`) / asciidoc validate (other docs) |
-| `build-config-full` | config | `verify` (full reactor for the changed module) |
+| `verify` | config | `verify` (full reactor for the changed module) |
 | `none` | any | No command — a changed set whose only role yields `none` derives no build |
 
 Managed via:

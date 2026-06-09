@@ -243,7 +243,10 @@ automated-review, sonar-roundtrip, lessons-capture, branch-cleanup,
 record-metrics, archive-plan). `pre-push-quality-gate` is a built-in
 default like the rest; its activation is derived from
 `skill_domains.build_map` — it activates whenever the live footprint
-touches a glob registered in the build_map.
+touches a glob registered in the build_map. Those globs are
+tree-derived from each extension's `classify_globs()` vocabulary
+(complete-by-construction over the real tree), not author-shipped
+static literals.
 
 Steps that are **meta-project-only** — e.g. running the multi-target
 generator and pushing the host plugin cache — are NOT in

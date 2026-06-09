@@ -7,6 +7,7 @@ and error handling used by all command modules.
 
 import json
 from pathlib import Path
+from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
 from file_ops import (  # type: ignore[import-not-found]
@@ -350,36 +351,55 @@ def get_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
 
 
 def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
-    """Walk every registered extension and aggregate its (glob, role, build_class).
+    """Aggregate the tree-derived ``(glob, role, build_class)`` build map per domain.
 
-    For each discovered extension, calls ``classify_globs()`` to learn the
-    domain's (glob, role) inventory and ``classify_build_class(glob, role)`` per
-    entry to derive the build_class. Extensions with no classify override
-    contribute an empty list (the base ``classify_globs()`` default), so they are
-    skipped — the resulting map only carries domains that own file types.
+    Seeds the build map from the REAL project tree rather than from each
+    domain's assumed directory layout. The portable ``(suffix, role_heuristic)``
+    vocabulary each extension declares via ``classify_globs()`` is handed to the
+    ``script-shared`` base-lib tree-deriver (``derive_globs_from_tree``, reached
+    via the ``extension_discovery.derive_build_map_globs`` bridge), which scans
+    the project tree ONCE and emits the concrete ``(glob, role)`` globs that
+    cover EVERY matching file. Because the globs come from the real tree, a
+    production ``.py`` file outside ``scripts/`` (e.g.
+    ``marketplace/targets/generate.py`` or any
+    ``*/skills/plan-marshall-plugin/extension.py``) is caught — it exists in the
+    tree, not because an author guessed a glob. Each derived ``(glob, role)``
+    pair is then stamped with its domain's ``classify_build_class(glob, role)``.
 
     Returns:
         A dict keyed by domain-key with a list of ``{glob, role, build_class}``
         dicts as values. Domains contributing no globs are omitted entirely.
     """
-    from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
+    from extension_discovery import (  # type: ignore[import-not-found]
+        derive_build_map_globs,
+        discover_all_extensions,
+    )
 
-    aggregated: dict[str, list[dict[str, str]]] = {}
-    for entry in discover_all_extensions():
+    extensions = discover_all_extensions()
+
+    # Map each domain key to the extension module that owns it, so the
+    # build_class stamp below queries the right domain's classifier. The deriver
+    # keys its output by domain key (its tie-break mirrors _safe_domain_key), so
+    # an identical first-domain-key lookup recovers the owning module.
+    module_by_domain: dict[str, Any] = {}
+    for entry in extensions:
         ext = entry.get('module')
         if ext is None:
             continue
-        try:
-            inventory = ext.classify_globs()
-        except Exception:
-            continue
-        if not inventory:
-            continue
         domain_key = _safe_domain_key(ext)
-        if not domain_key:
+        if domain_key and domain_key not in module_by_domain:
+            module_by_domain[domain_key] = ext
+
+    project_root = get_tracked_config_dir().parent
+    derived = derive_build_map_globs(project_root, extensions)
+
+    aggregated: dict[str, list[dict[str, str]]] = {}
+    for domain_key, entries in derived.items():
+        ext = module_by_domain.get(domain_key)
+        if ext is None:
             continue
         domain_entries: list[dict[str, str]] = []
-        for glob, role in inventory:
+        for glob, role in entries:
             try:
                 build_class = ext.classify_build_class(glob, role)
             except Exception:

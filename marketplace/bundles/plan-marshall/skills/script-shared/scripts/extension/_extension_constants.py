@@ -51,14 +51,17 @@ ALL_CANONICAL_COMMANDS = [
 # domain extension attaches to each path it claims via classify_paths(). It is
 # the second leg of the file-to-build contract: classify_paths() maps a path to
 # a file role; classify_build_class() maps the (path, role) pair to one of the
-# closed values below. Downstream consumers (manage-execution-manifest,
+# closed values below. The build_class NAMES the canonical command directly —
+# the closed set equals the verification-command vocabulary, so a build_class of
+# 'compile' resolves to `architecture resolve --command compile` with no
+# name-to-name indirection. Downstream consumers (manage-execution-manifest,
 # phase-4-plan) read the build_class to derive the verification command set for
 # a changed-artifact list without re-deriving the file type.
 
-BUILD_CLASS_PROD_COMPILE = 'prod-compile'
-BUILD_CLASS_TEST_RUN = 'test-run'
+BUILD_CLASS_PROD_COMPILE = 'compile'
+BUILD_CLASS_TEST_RUN = 'module-tests'
 BUILD_CLASS_DOCS_VALIDATE = 'docs-validate'
-BUILD_CLASS_BUILD_CONFIG_FULL = 'build-config-full'
+BUILD_CLASS_BUILD_CONFIG_FULL = 'verify'
 BUILD_CLASS_NONE = 'none'
 
 BUILD_CLASSES = frozenset(
@@ -70,8 +73,49 @@ BUILD_CLASSES = frozenset(
         BUILD_CLASS_NONE,
     }
 )
-"""Closed set of build_class values. The single source of truth shared by
-ExtensionBase.classify_build_class(), domain extensions, and their tests."""
+"""Closed set of build_class values — equal to the canonical verification-command
+vocabulary (`compile` / `module-tests` / `verify` / `docs-validate` / `none`).
+The single source of truth shared by ExtensionBase.classify_build_class(),
+domain extensions, and their tests."""
+
+
+# =============================================================================
+# build_map Vocabulary Role Heuristics
+# =============================================================================
+#
+# The portable (suffix, role_heuristic) vocabulary an extension declares via
+# classify_globs(). The role heuristic decides a matched file's role from WHERE
+# it sits in the project tree (the *-by-location heuristics) or directly from its
+# suffix (the suffix-direct heuristics). The base-lib tree-deriver
+# (derive_globs_from_tree) owns the location predicates that turn a *-by-location
+# heuristic into a concrete role for a given path. The resolved role is one of the
+# same four file roles classify_paths() uses: production / test / documentation /
+# config.
+
+ROLE_HEURISTIC_PRODUCTION_BY_LOCATION = 'production-by-location'
+ROLE_HEURISTIC_TEST_BY_LOCATION = 'test-by-location'
+ROLE_HEURISTIC_DOCUMENTATION = 'documentation'
+ROLE_HEURISTIC_CONFIG = 'config'
+
+ROLE_HEURISTICS = frozenset(
+    {
+        ROLE_HEURISTIC_PRODUCTION_BY_LOCATION,
+        ROLE_HEURISTIC_TEST_BY_LOCATION,
+        ROLE_HEURISTIC_DOCUMENTATION,
+        ROLE_HEURISTIC_CONFIG,
+    }
+)
+"""Closed set of role-heuristic names. The single source of truth shared by
+ExtensionBase.classify_globs() / derive_globs_from_tree(), the domain extension
+vocabularies, and their tests."""
+
+# Resolved role each heuristic maps to (the four classify_paths() roles).
+HEURISTIC_TO_ROLE = {
+    ROLE_HEURISTIC_PRODUCTION_BY_LOCATION: 'production',
+    ROLE_HEURISTIC_TEST_BY_LOCATION: 'test',
+    ROLE_HEURISTIC_DOCUMENTATION: 'documentation',
+    ROLE_HEURISTIC_CONFIG: 'config',
+}
 
 
 # =============================================================================

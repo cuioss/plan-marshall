@@ -122,19 +122,14 @@ _HINT_ORCHESTRATOR: str = 'Exceeds Bash ceiling; orchestrator-tier only'
 # Build-class → command derivation (derive-verification)
 # =============================================================================
 #
-# The build_class → architecture-resolvable command map. Each value is the
-# ordered list of ``architecture resolve --command`` verbs the deriver runs
-# per affected module for that build_class. ``docs-validate`` and ``none`` are
-# NOT architecture-resolved (a docs validation gate is a fixed plugin-doctor /
-# asciidoc notation, and ``none`` derives nothing), so they are absent from
-# this map and handled explicitly in the deriver. The single source of truth
-# for this table is ``manage-architecture/standards/resolve-command.md`` §
+# The build_class IS the canonical ``architecture resolve --command`` verb: a
+# ``compile``/``module-tests``/``verify`` build_class resolves directly to the
+# command of the same name (no indirection map). ``docs-validate`` and ``none``
+# are NOT architecture-resolved (a docs validation gate is a fixed plugin-doctor
+# / asciidoc notation, and ``none`` derives nothing), so the deriver handles
+# those two explicitly. The single source of truth for this contract is
+# ``manage-architecture/standards/resolve-command.md`` §
 # "Build-class → verification command".
-_BUILD_CLASS_RESOLVE_COMMANDS: dict[str, list[str]] = {
-    'prod-compile': ['compile'],
-    'test-run': ['test-compile', 'module-tests'],
-    'build-config-full': ['verify'],
-}
 
 # Marketplace skill markdown bodies validate through the scoped plugin-doctor
 # quality-gate (rule-complete, CI-equivalent). Other documentation validates
@@ -1370,6 +1365,26 @@ def _marketplace_skill_dir(path: str) -> str:
     return str(Path(path).parent)
 
 
+def _resolve_verbs_for_build_class(build_class: str) -> list[str]:
+    """Return the ``architecture resolve --command`` verbs for a build_class.
+
+    The ``build_class`` names the canonical command directly, so it resolves as
+    itself — except ``module-tests``, whose test gate is the two-rung ladder
+    ``test-compile`` **+** ``module-tests`` (compile the tests, then run them).
+    ``docs-validate`` and ``none`` are handled by the deriver before this is
+    reached and yield an empty verb list here. The single source of truth for
+    this mapping is ``manage-architecture/standards/resolve-command.md`` §
+    "Build-class → verification command".
+    """
+    if build_class == 'compile':
+        return ['compile']
+    if build_class == 'module-tests':
+        return ['test-compile', 'module-tests']
+    if build_class == 'verify':
+        return ['verify']
+    return []
+
+
 def cmd_derive_verification(args) -> dict:
     """CLI handler for ``derive-verification`` — the single deterministic deriver.
 
@@ -1418,7 +1433,7 @@ def cmd_derive_verification(args) -> dict:
                 commands.append({'build_class': build_class, 'path': path, **docs_cmd})
             continue
 
-        resolve_verbs = _BUILD_CLASS_RESOLVE_COMMANDS.get(build_class)
+        resolve_verbs = _resolve_verbs_for_build_class(build_class)
         if not resolve_verbs:
             # Unknown build_class (should never happen — closed enum). Skip
             # rather than crash; the unclaimed/unknown surface below records it.
