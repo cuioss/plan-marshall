@@ -35,6 +35,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from _analyze_allowed_tools_drift import analyze_allowed_tools_drift
 from _analyze_argument_naming import analyze_argument_naming
 from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
 from _analyze_bash_fence_inline_code_exemption import (
@@ -53,6 +54,7 @@ from _analyze_manage_invocation import (
 from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
+from _analyze_self_declared_rule_compliance import analyze_self_declared_rule_compliance
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
 from _analyze_simplicity import scan_simplicity
 from _analyze_test_conventions import (
@@ -413,6 +415,30 @@ def cmd_analyze(args) -> dict:
     lesson_id_issues = analyze_lesson_id_in_skill_prose(marketplace_root)
     all_issues.extend(lesson_id_issues)
     total_issues += len(lesson_id_issues)
+
+    # Marketplace-wide allowed-tools-body-drift rule. Unconditionally active —
+    # flags any skill/agent/command whose body invokes a tool absent from a
+    # declared, non-empty allowed-tools/tools frontmatter list. Skills that
+    # omit the declaration entirely are NOT flagged (the "inherit all tools"
+    # default; the fabricated unsupported-skill-tools-field rule stays retired).
+    # Scans *.md under each bundle's {skills,agents,commands} tree PLUS the
+    # project-local .claude/skills/** tree (derived internally from
+    # marketplace_root). Analyzer is regex-cheap.
+    allowed_tools_drift_issues = analyze_allowed_tools_drift(marketplace_root)
+    all_issues.extend(allowed_tools_drift_issues)
+    total_issues += len(allowed_tools_drift_issues)
+
+    # Marketplace-wide skill-self-declared-rule-violation rule. Unconditionally
+    # active — flags a SKILL.md that declares a flat-numbering / no-sub-numbering
+    # rule in its own body yet uses sub-numbered (1a/3a/5a-style) step headings
+    # in that same body. Self-referential: a file that uses sub-numbering
+    # WITHOUT declaring such a rule is NOT flagged (not a global numbering ban).
+    # Scans SKILL.md under each bundle's {skills,agents,commands} tree PLUS the
+    # project-local .claude/skills/** tree (derived internally from
+    # marketplace_root). Analyzer is regex-cheap.
+    self_declared_rule_issues = analyze_self_declared_rule_compliance(marketplace_root)
+    all_issues.extend(self_declared_rule_issues)
+    total_issues += len(self_declared_rule_issues)
 
     # Marketplace-wide no-historical-prose-in-skills rule. Unconditionally
     # active — detects historical/transitional narrative (driving-lesson
@@ -781,6 +807,33 @@ def cmd_quality_gate(args) -> dict:
     all_issues.extend(lesson_id_findings)
     rule_summaries.append(
         {'rule': 'analyze_lesson_id_in_skill_prose', 'findings': len(lesson_id_findings)}
+    )
+
+    # allowed-tools-body-drift — flags body-invoked tools absent from a
+    # declared non-empty allowed-tools/tools frontmatter list. Scans *.md under
+    # each bundle's {skills,agents,commands} tree PLUS the project-local
+    # .claude/skills/** tree (derived internally). Findings carry absolute file
+    # paths, so _scoped's path filter applies uniformly under --paths.
+    allowed_tools_drift_findings = _scoped(analyze_allowed_tools_drift(marketplace_root))
+    all_issues.extend(allowed_tools_drift_findings)
+    rule_summaries.append(
+        {'rule': 'analyze_allowed_tools_drift', 'findings': len(allowed_tools_drift_findings)}
+    )
+
+    # skill-self-declared-rule-violation — flags a SKILL.md that declares a
+    # flat-numbering / no-sub-numbering rule in its body yet uses sub-numbered
+    # step headings in that same body. Self-referential (a file that uses
+    # sub-numbering without declaring such a rule is not flagged). Scans
+    # SKILL.md under each bundle's {skills,agents,commands} tree PLUS the
+    # project-local .claude/skills/** tree (derived internally). Findings carry
+    # absolute file paths, so _scoped's path filter applies uniformly under --paths.
+    self_declared_rule_findings = _scoped(analyze_self_declared_rule_compliance(marketplace_root))
+    all_issues.extend(self_declared_rule_findings)
+    rule_summaries.append(
+        {
+            'rule': 'analyze_self_declared_rule_compliance',
+            'findings': len(self_declared_rule_findings),
+        }
     )
 
     historical_prose_findings = _scoped(analyze_historical_prose_in_skills(marketplace_root))
