@@ -139,6 +139,7 @@ def validate_status(data: Any) -> list[str]:
     errors.extend(_check_field(data, 'current_phase', str))
     errors.extend(_check_field(data, 'phases', list))
     errors.extend(_check_max_length(data, 'plan_id', MAX_PLAN_ID_LENGTH))
+    errors.extend(_check_max_length(data, 'current_phase', MAX_PHASE_NAME_LENGTH))
     errors.extend(_check_max_items(data, 'phases', MAX_PHASES_ITEMS))
     if 'phases' in data and isinstance(data['phases'], list):
         for i, phase in enumerate(data['phases']):
@@ -174,6 +175,7 @@ def validate_task(data: Any) -> list[str]:
     errors.extend(_check_field(data, 'title', str))
     errors.extend(_check_field(data, 'status', str))
     errors.extend(_check_field(data, 'steps', list))
+    errors.extend(_check_max_length(data, 'task_id', MAX_HASH_ID_LENGTH))
     errors.extend(_check_max_length(data, 'title', MAX_TITLE_LENGTH))
     errors.extend(_check_enum(data, 'status', TASK_STATUS_VALUES))
     errors.extend(_check_max_items(data, 'steps', MAX_STEPS_ITEMS))
@@ -185,6 +187,7 @@ def validate_task(data: Any) -> list[str]:
             errors.extend(_check_no_extra_keys(step, STEP_ALLOWED_KEYS, f'steps[{i}]'))
             errors.extend(_check_field(step, 'id', str))
             errors.extend(_check_field(step, 'title', str))
+            errors.extend(_check_max_length(step, 'id', MAX_HASH_ID_LENGTH))
             errors.extend(_check_max_length(step, 'title', MAX_TITLE_LENGTH))
     return errors
 

@@ -134,7 +134,11 @@ def _scan_file(path: Path, marketplace_root: Path) -> list[dict]:
 def _scoped_markdown(marketplace_root: Path) -> list[Path]:
     """Enumerate every ``*.md`` under each bundle's component subtrees."""
     targets: list[Path] = []
-    for bundle_dir in sorted(marketplace_root.iterdir()):
+    try:
+        bundle_dirs = sorted(marketplace_root.iterdir())
+    except OSError:
+        return targets
+    for bundle_dir in bundle_dirs:
         if not bundle_dir.is_dir():
             continue
         if not (bundle_dir / '.claude-plugin' / 'plugin.json').is_file():
@@ -142,7 +146,10 @@ def _scoped_markdown(marketplace_root: Path) -> list[Path]:
         for sub in _COMPONENT_DIRS:
             sub_dir = bundle_dir / sub
             if sub_dir.is_dir():
-                targets.extend(sorted(sub_dir.rglob('*.md')))
+                try:
+                    targets.extend(sorted(sub_dir.rglob('*.md')))
+                except OSError:
+                    continue
     return targets
 
 

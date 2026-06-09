@@ -112,13 +112,21 @@ def _recipe_skill_dirs(marketplace_root: Path) -> list[Path]:
     is ``marketplace/bundles``, so two parents up is the repo root).
     """
     dirs: list[Path] = []
-    for bundle_dir in sorted(marketplace_root.iterdir()):
+    try:
+        bundle_dirs = sorted(marketplace_root.iterdir())
+    except OSError:
+        bundle_dirs = []
+    for bundle_dir in bundle_dirs:
         if not bundle_dir.is_dir():
             continue
         skills_dir = bundle_dir / 'skills'
         if not skills_dir.is_dir():
             continue
-        for skill_dir in sorted(skills_dir.glob('recipe-*')):
+        try:
+            recipe_dirs = sorted(skills_dir.glob('recipe-*'))
+        except OSError:
+            continue
+        for skill_dir in recipe_dirs:
             if skill_dir.is_dir():
                 dirs.append(skill_dir)
 
@@ -126,7 +134,11 @@ def _recipe_skill_dirs(marketplace_root: Path) -> list[Path]:
     # <repo>/marketplace/bundles, so repo_root = marketplace_root.parent.parent.
     claude_skills = marketplace_root.parent.parent / '.claude' / 'skills'
     if claude_skills.is_dir():
-        for skill_dir in sorted(claude_skills.glob('recipe-*')):
+        try:
+            claude_recipe_dirs = sorted(claude_skills.glob('recipe-*'))
+        except OSError:
+            claude_recipe_dirs = []
+        for skill_dir in claude_recipe_dirs:
             if skill_dir.is_dir():
                 dirs.append(skill_dir)
     return dirs

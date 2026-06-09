@@ -170,7 +170,11 @@ def _scan_bundle(bundle_dir: Path) -> list[dict]:
     # user-invocable: true skills are required to register.
     skills_dir = bundle_dir / 'skills'
     if skills_dir.is_dir():
-        for skill_md in sorted(skills_dir.glob('*/SKILL.md')):
+        try:
+            skill_mds = sorted(skills_dir.glob('*/SKILL.md'))
+        except OSError:
+            skill_mds = []
+        for skill_md in skill_mds:
             skill_dir = skill_md.parent
             rel = f'skills/{skill_dir.name}'
             if rel in declared:
@@ -186,7 +190,11 @@ def _scan_bundle(bundle_dir: Path) -> list[dict]:
         sub_dir = bundle_dir / sub
         if not sub_dir.is_dir():
             continue
-        for md_file in sorted(sub_dir.glob('*.md')):
+        try:
+            md_files = sorted(sub_dir.glob('*.md'))
+        except OSError:
+            continue
+        for md_file in md_files:
             rel = f'{sub}/{md_file.name}'
             if rel in declared:
                 continue
@@ -210,7 +218,11 @@ def analyze_plugin_json_orphans(marketplace_root: Path) -> list[dict]:
         A list of ``plugin-json-orphan-component`` finding dicts.
     """
     findings: list[dict] = []
-    for bundle_dir in sorted(marketplace_root.iterdir()):
+    try:
+        bundle_dirs = sorted(marketplace_root.iterdir())
+    except OSError:
+        return findings
+    for bundle_dir in bundle_dirs:
         if not bundle_dir.is_dir():
             continue
         if not (bundle_dir / '.claude-plugin' / 'plugin.json').is_file():

@@ -137,7 +137,11 @@ def analyze_declared_vs_disk(marketplace_root: Path) -> list[dict]:
         an empty list when no plugin.json files exist under the root.
     """
     findings: list[dict] = []
-    for plugin_json in sorted(marketplace_root.rglob('.claude-plugin/plugin.json')):
+    try:
+        plugin_jsons = sorted(marketplace_root.rglob('.claude-plugin/plugin.json'))
+    except OSError:
+        return findings
+    for plugin_json in plugin_jsons:
         if plugin_json.is_file():
             findings.extend(_scan_plugin_json(plugin_json))
     return findings

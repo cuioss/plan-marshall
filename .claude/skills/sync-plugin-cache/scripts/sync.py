@@ -240,9 +240,12 @@ def _relative_file_map(root: Path) -> dict[str, Path]:
     if not root.is_dir():
         return {}
     file_map: dict[str, Path] = {}
-    for path in root.rglob('*'):
-        if path.is_file() and not path.is_symlink():
-            file_map[path.relative_to(root).as_posix()] = path
+    try:
+        for path in root.rglob('*'):
+            if path.is_file() and not path.is_symlink():
+                file_map[path.relative_to(root).as_posix()] = path
+    except OSError:
+        return file_map
     return file_map
 
 
