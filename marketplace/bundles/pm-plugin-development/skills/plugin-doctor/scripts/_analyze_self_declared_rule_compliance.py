@@ -296,9 +296,12 @@ def _skill_source_targets(marketplace_root: Path) -> list[Path]:
             sub_dir = bundle_dir / sub
             if not sub_dir.is_dir():
                 continue
-            for src in sorted(sub_dir.rglob('SKILL.md')):
-                if src.is_file():
-                    results.append(src)
+            try:
+                for src in sorted(sub_dir.rglob('SKILL.md')):
+                    if src.is_file():
+                        results.append(src)
+            except OSError:
+                continue
     return results
 
 
