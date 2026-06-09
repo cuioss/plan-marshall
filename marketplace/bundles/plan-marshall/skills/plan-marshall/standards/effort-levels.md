@@ -17,14 +17,14 @@ The level palette is intentionally small and ordinal — `low → medium → hig
 | `high` | `sonnet` | `high` | High-effort Sonnet — Sonnet's top tier. |
 | `xhigh` | `opus` | `medium` | Opus with medium effort — fills the Sonnet-high → Opus-high cost/quality gap for tasks that need Opus-class reasoning but not maximum thinking. |
 | `xxhigh` | `opus` | `high` | High-effort Opus — Opus's standard top tier. |
-| `max` | `opus` | `xhigh` | **Opus-4.7-only.** Build-time guard refuses emission when the resolved canonical alias does not accept `effort: xhigh`. The absolute capability ceiling. |
+| `max` | `opus` | `xhigh` | **Opus-4.8-only.** Build-time guard refuses emission when the resolved canonical alias does not accept `effort: xhigh`. The absolute capability ceiling. |
 | `inherit` | (unset) | (unset) | Sentinel: dispatch the canonical no-suffix variant; runtime inherits the parent session's model. |
 
 The model column lists **aliases** (`opus`, `sonnet`, `haiku`), not version-pinned IDs. See [Aliases, not IDs](#aliases-not-ids) below for rationale.
 
 ## Aliases, not IDs
 
-The level table maps to model **aliases** (`opus`, `sonnet`, `haiku`) rather than version-pinned IDs (e.g., `claude-opus-4-7`). Rationale:
+The level table maps to model **aliases** (`opus`, `sonnet`, `haiku`) rather than version-pinned IDs (e.g., `claude-opus-4-8`). Rationale:
 
 - **Resilience to model rotation**: code.claude.com rotates the alias targets at the runtime; pinning to an ID in the schema would force a marketplace-wide edit on every model release.
 - **User override compatibility**: the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable accepts aliases and overrides the variant's pinned model at session start. Authors authoring against aliases get the same override semantics users expect.
@@ -34,7 +34,7 @@ The only place pinned IDs are written is the build-time guard for `max`: the map
 
 ## The `max` Guard
 
-`max` resolves to `(opus, xhigh)`. The `xhigh` effort value is currently only accepted by Opus 4.7. When a user configures a role to `max` AND the resolved alias does not accept `xhigh`, the build target:
+`max` resolves to `(opus, xhigh)`. The `xhigh` effort value is currently only accepted by Opus 4.8. When a user configures a role to `max` AND the resolved alias does not accept `xhigh`, the build target:
 
 1. **Refuses to emit** the `{name}-max.md` variant.
 2. **Emits a build warning** naming the canonical, the requested level, and the missing capability.

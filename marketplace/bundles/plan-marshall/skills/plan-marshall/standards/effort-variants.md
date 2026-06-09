@@ -60,7 +60,7 @@ The plan-wide `plan.effort` is a single string.
 
 ## Build-Time `max` Guard
 
-`max` resolves to `(opus, xhigh)`, which is **Opus-4.7-only**. The target's build-time emitter inspects the canonical agent's resolved Opus alias capability flags and refuses to emit the `execution-context-max.md` variant when the alias does not advertise `effort: xhigh` support. The emitter logs a build-time warning naming the canonical and the missing capability.
+`max` resolves to `(opus, xhigh)`, which is **Opus-4.8-only**. The target's build-time emitter inspects the canonical agent's resolved Opus alias capability flags and refuses to emit the `execution-context-max.md` variant when the alias does not advertise `effort: xhigh` support. The emitter logs a build-time warning naming the canonical and the missing capability.
 
 At runtime: a dispatch site whose resolver returns `execution-context-max` against a target where the variant was skipped will fail with `Agent type not found` from Claude Code's plugin loader. The resolver does not know the emitter skipped a variant — the contract is one-way (build → registry). Operators see this only via build logs.
 
@@ -84,7 +84,7 @@ A restart **is** required when `target/claude/` is regenerated (e.g., when the v
 
 | Document | Content |
 |----------|---------|
-| [`effort-levels.md`](effort-levels.md) | Level → `(model, effort)` primitive binding. The `max` Opus-4.7-only contract is specified there. |
+| [`effort-levels.md`](effort-levels.md) | Level → `(model, effort)` primitive binding. The `max` Opus-4.8-only contract is specified there. |
 | [`effort-roles.md`](effort-roles.md) | Role registry — phase-scoped sub-keys, the workflow doc each binds to, dispatch-site usage. |
 | [`ext-point-dynamic-level-executor.md`](../../extension-api/standards/ext-point-dynamic-level-executor.md) | Variant-emission contract — what the build target produces from each role-eligible canonical. |
 | [`ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md) | Workflow-doc contract — what the dispatched `execution-context` agent executes. |

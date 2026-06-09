@@ -58,7 +58,7 @@ def mapping_path(tmp_path: Path) -> Path:
                 'tool_permissions': {},
                 'model_map': {
                     'opus': {
-                        'id': 'claude-opus-4-7',
+                        'id': 'claude-opus-4-8',
                         'supports_effort': ['medium', 'high', 'xhigh'],
                     },
                     'sonnet': {
@@ -187,7 +187,7 @@ def test_render_variant_xhigh_uses_opus_medium():
 
 
 def test_render_variant_max_uses_opus_xhigh():
-    """`max` resolves to `(opus, xhigh)` — Opus-4.7-only top tier."""
+    """`max` resolves to `(opus, xhigh)` — Opus-4.8-only top tier."""
     fm, body = parse_frontmatter(
         f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
     )
