@@ -177,6 +177,14 @@ class Extension(ExtensionBase):
                 'default_change_type': 'tech_debt',
                 'scope': 'codebase_wide',
             },
+            {
+                'key': 'verify-ascii-diagrams',
+                'name': 'Verify ASCII Diagrams',
+                'description': 'Verify and fix alignment of ASCII box diagrams across .md and .adoc files',
+                'skill': 'pm-documents:recipe-verify-ascii-diagrams',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
         ]
 
     def discover_modules(self, project_root: str) -> list:

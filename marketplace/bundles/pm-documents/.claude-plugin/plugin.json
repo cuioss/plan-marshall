@@ -26,6 +26,8 @@
     "./skills/plan-marshall-plugin",
     "./skills/recipe-doc-verify",
     "./skills/recipe-verify-architecture-diagrams",
+    "./skills/recipe-verify-ascii-diagrams",
+    "./skills/ref-ascii-diagrams",
     "./skills/ref-asciidoc",
     "./skills/ref-documentation",
     "./skills/ref-narrative-styles",
