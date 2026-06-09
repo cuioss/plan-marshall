@@ -10,8 +10,7 @@ in the same file.
 
 Why only the numbering-discipline class
 ---------------------------------------
-The lesson that motivated this analyzer (2026-06-05-11-001, consolidated into
-2026-06-05-10-002) identifies the numbering-discipline rule as the ONE
+The numbering-discipline rule is the ONE
 self-referential rule class that is regex-checkable. Non-regex-checkable
 self-rule classes (e.g. tone, structure, naming) deliberately stay out of
 scope — they have no deterministic surfacer and forcing them into a heuristic
