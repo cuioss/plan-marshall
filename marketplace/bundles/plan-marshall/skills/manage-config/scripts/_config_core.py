@@ -67,11 +67,10 @@ def save_config(config: dict) -> None:
     """Save config to marshal.json with ordered keys."""
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    # Canonical key order for marshal.json. The dissolved/relocated top-level
-    # blocks (ci, ceremony_policy, build_map, build_map_overrides) are gone:
-    # ci/ceremony-policy config was distributed back into its owning phase
-    # blocks, and build_map lives nested under skill_domains. The order lists
-    # every surviving top-level key alphabetically.
+    # Canonical key order for marshal.json. Several legacy top-level blocks were
+    # dissolved or relocated: their config was distributed back into the owning
+    # phase blocks, and the build map now lives nested under skill_domains. The
+    # order lists every surviving top-level key alphabetically.
     key_order = [
         'extension_defaults',
         'plan',
