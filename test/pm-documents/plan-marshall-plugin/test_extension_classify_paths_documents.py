@@ -129,3 +129,38 @@ def test_classify_globs_does_not_return_literal_path_globs():
 def test_classify_globs_is_nonempty():
     """The documentation domain owns doc file types, so the vocabulary is non-empty."""
     assert _ext.classify_globs()
+
+
+# =============================================================================
+# provides_recipes() registration
+# =============================================================================
+
+
+def _recipe_by_key(key: str) -> dict | None:
+    for recipe in _ext.provides_recipes():
+        if recipe['key'] == key:
+            return recipe
+    return None
+
+
+def test_provides_recipes_includes_verify_ascii_diagrams():
+    """The verify-ascii-diagrams recipe is registered with the correct skill
+    notation and default change type."""
+    recipe = _recipe_by_key('verify-ascii-diagrams')
+    assert recipe is not None, 'verify-ascii-diagrams recipe not registered'
+    assert recipe['skill'] == 'pm-documents:recipe-verify-ascii-diagrams'
+    assert recipe['default_change_type'] == 'tech_debt'
+    assert recipe['scope'] == 'codebase_wide'
+
+
+def test_provides_recipes_registers_all_three_documentation_recipes():
+    """All three documentation recipes are registered by key."""
+    keys = {recipe['key'] for recipe in _ext.provides_recipes()}
+    assert keys == {'doc-verify', 'verify-architecture-diagrams', 'verify-ascii-diagrams'}
+
+
+def test_provides_recipes_entries_have_required_fields():
+    """Every recipe entry carries the full ext-point-recipe field set."""
+    required = {'key', 'name', 'description', 'skill', 'default_change_type', 'scope'}
+    for recipe in _ext.provides_recipes():
+        assert required.issubset(recipe.keys()), f'missing fields in {recipe.get("key")}'
