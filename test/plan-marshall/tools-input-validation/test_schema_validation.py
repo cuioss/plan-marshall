@@ -2,6 +2,11 @@
 """Tests for schema_validation.py shared module."""
 
 from schema_validation import (  # type: ignore[import-not-found]I001
+    MAX_MESSAGE_LENGTH,
+    MAX_PHASES_ITEMS,
+    MAX_PLAN_ID_LENGTH,
+    MAX_STEPS_ITEMS,
+    MAX_TITLE_LENGTH,
     validate_assessment,
     validate_finding,
     validate_references,
@@ -22,7 +27,7 @@ class TestValidateStatus:
             'plan_id': 'my-plan',
             'current_phase': 'phase-1-init',
             'phases': [
-                {'name': 'phase-1-init', 'status': 'completed'},
+                {'name': '1-init', 'status': 'completed'},
             ],
         }
         assert validate_status(data) == []
@@ -69,10 +74,107 @@ class TestValidateStatus:
         data = {
             'plan_id': 'p',
             'current_phase': 'x',
-            'phases': [{'name': 'init'}],
+            'phases': [{'name': '1-init'}],
         }
         errors = validate_status(data)
         assert "Missing required field: 'status'" in errors
+
+    # --- New constraint coverage: additionalProperties: false ----------------
+
+    def test_extra_top_level_key_rejected(self):
+        """A key outside STATUS_ALLOWED_KEYS is rejected (additionalProperties: false)."""
+        data = {
+            'plan_id': 'p',
+            'current_phase': '1-init',
+            'phases': [],
+            'unexpected_key': 'value',
+        }
+        errors = validate_status(data)
+        assert "Unexpected field in status.json: 'unexpected_key'" in errors
+
+    def test_known_optional_keys_allowed(self):
+        """Known-optional keys (title, metadata, ...) do not trip the extra-key gate."""
+        data = {
+            'plan_id': 'p',
+            'current_phase': '1-init',
+            'phases': [{'name': '1-init', 'status': 'pending'}],
+            'title': 'My plan',
+            'short_description': 'desc',
+            'created': '2026-01-01',
+            'updated': '2026-01-02',
+            'metadata': {'use_worktree': True},
+        }
+        assert validate_status(data) == []
+
+    # --- New constraint coverage: maxLength ----------------------------------
+
+    def test_plan_id_exceeds_max_length(self):
+        data = {
+            'plan_id': 'p' * (MAX_PLAN_ID_LENGTH + 1),
+            'current_phase': '1-init',
+            'phases': [],
+        }
+        errors = validate_status(data)
+        assert any('plan_id' in e and 'max length' in e for e in errors)
+
+    def test_plan_id_at_max_length_ok(self):
+        data = {
+            'plan_id': 'p' * MAX_PLAN_ID_LENGTH,
+            'current_phase': '1-init',
+            'phases': [],
+        }
+        assert validate_status(data) == []
+
+    # --- New constraint coverage: maxItems -----------------------------------
+
+    def test_phases_exceeds_max_items(self):
+        data = {
+            'plan_id': 'p',
+            'current_phase': '1-init',
+            'phases': [{'name': '1-init', 'status': 'pending'}] * (MAX_PHASES_ITEMS + 1),
+        }
+        errors = validate_status(data)
+        assert any('phases' in e and 'max items' in e for e in errors)
+
+    # --- New constraint coverage: enum (phase status) ------------------------
+
+    def test_phase_status_invalid_enum(self):
+        data = {
+            'plan_id': 'p',
+            'current_phase': '1-init',
+            'phases': [{'name': '1-init', 'status': 'bogus'}],
+        }
+        errors = validate_status(data)
+        assert any("Field 'status' must be one of" in e for e in errors)
+
+    def test_phase_status_valid_enum_values(self):
+        for value in ('pending', 'in_progress', 'done', 'blocked', 'completed', 'skipped'):
+            data = {
+                'plan_id': 'p',
+                'current_phase': '1-init',
+                'phases': [{'name': '1-init', 'status': value}],
+            }
+            assert validate_status(data) == []
+
+    # --- New constraint coverage: pattern (phase name) -----------------------
+
+    def test_phase_name_invalid_pattern(self):
+        data = {
+            'plan_id': 'p',
+            'current_phase': '1-init',
+            'phases': [{'name': 'init', 'status': 'pending'}],
+        }
+        errors = validate_status(data)
+        assert any("Field 'name' does not match required pattern" in e for e in errors)
+
+    def test_phase_name_valid_pattern_values(self):
+        for value in ('1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'):
+            data = {
+                'plan_id': 'p',
+                'current_phase': value,
+                'phases': [{'name': value, 'status': 'pending'}],
+            }
+            assert validate_status(data) == []
 
 
 # =============================================================================
@@ -97,6 +199,29 @@ class TestValidateReferences:
     def test_wrong_type_plan_id(self):
         errors = validate_references({'plan_id': None})
         assert "Field 'plan_id' should be str, got NoneType" in errors
+
+    # --- New constraint coverage --------------------------------------------
+
+    def test_extra_key_rejected(self):
+        errors = validate_references({'plan_id': 'p', 'nope': 1})
+        assert "Unexpected field in references.json: 'nope'" in errors
+
+    def test_known_optional_keys_allowed(self):
+        data = {
+            'plan_id': 'p',
+            'branch': 'feature/p',
+            'base_branch': 'main',
+            'domains': ['plan-marshall'],
+            'scope_estimate': 'small',
+            'track': 'standard',
+            'affected_files': ['a.py'],
+            'worktree_path': '/tmp/wt',
+        }
+        assert validate_references(data) == []
+
+    def test_plan_id_exceeds_max_length(self):
+        errors = validate_references({'plan_id': 'p' * (MAX_PLAN_ID_LENGTH + 1)})
+        assert any('plan_id' in e and 'max length' in e for e in errors)
 
 
 # =============================================================================
@@ -124,7 +249,6 @@ class TestValidateTask:
 
     def test_missing_all_required(self):
         errors = validate_task({})
-        assert len(errors) == 4
         assert "Missing required field: 'task_id'" in errors
         assert "Missing required field: 'title'" in errors
         assert "Missing required field: 'status'" in errors
@@ -150,8 +274,10 @@ class TestValidateTask:
         errors = validate_task(data)
         assert "Missing required field: 'title'" in errors
 
-    def test_extra_fields_ignored(self):
-        """Extra fields should not cause errors."""
+    # --- New constraint coverage: additionalProperties: false ----------------
+
+    def test_extra_top_level_key_rejected(self):
+        """Extra top-level keys are now rejected (additionalProperties: false)."""
         data = {
             'task_id': 'T1',
             'title': 'T',
@@ -159,7 +285,99 @@ class TestValidateTask:
             'steps': [],
             'extra_stuff': True,
         }
+        errors = validate_task(data)
+        assert "Unexpected field in task: 'extra_stuff'" in errors
+
+    def test_known_optional_keys_allowed(self):
+        """Known-optional task keys do not trip the extra-key gate."""
+        data = {
+            'task_id': 'T1',
+            'title': 'T',
+            'status': 'pending',
+            'steps': [
+                {'id': 's1', 'title': 'Step', 'number': 1, 'target': 'a.py',
+                 'status': 'pending', 'intent': 'write', 'outcome': 'done'},
+            ],
+            'number': 1,
+            'domain': 'plan-marshall',
+            'profile': 'implementation',
+            'skills': ['s'],
+            'origin': 'plan',
+            'deliverable': 1,
+            'depends_on': [],
+            'description': 'd',
+            'current_step': 1,
+            'verification': {},
+            'metadata': {},
+        }
         assert validate_task(data) == []
+
+    def test_extra_step_key_rejected(self):
+        """Extra keys inside a step are rejected (additionalProperties: false)."""
+        data = {
+            'task_id': 'T1',
+            'title': 'T',
+            'status': 'pending',
+            'steps': [{'id': 's1', 'title': 'Step', 'rogue': 1}],
+        }
+        errors = validate_task(data)
+        assert "Unexpected field in steps[0]: 'rogue'" in errors
+
+    # --- New constraint coverage: maxLength ----------------------------------
+
+    def test_title_exceeds_max_length(self):
+        data = {
+            'task_id': 'T1',
+            'title': 't' * (MAX_TITLE_LENGTH + 1),
+            'status': 'pending',
+            'steps': [],
+        }
+        errors = validate_task(data)
+        assert any("Field 'title'" in e and 'max length' in e for e in errors)
+
+    def test_step_title_exceeds_max_length(self):
+        data = {
+            'task_id': 'T1',
+            'title': 'T',
+            'status': 'pending',
+            'steps': [{'id': 's1', 'title': 't' * (MAX_TITLE_LENGTH + 1)}],
+        }
+        errors = validate_task(data)
+        assert any("Field 'title'" in e and 'max length' in e for e in errors)
+
+    # --- New constraint coverage: maxItems -----------------------------------
+
+    def test_steps_exceeds_max_items(self):
+        data = {
+            'task_id': 'T1',
+            'title': 'T',
+            'status': 'pending',
+            'steps': [{'id': 's', 'title': 't'}] * (MAX_STEPS_ITEMS + 1),
+        }
+        errors = validate_task(data)
+        assert any("Field 'steps'" in e and 'max items' in e for e in errors)
+
+    # --- New constraint coverage: enum (task status) -------------------------
+
+    def test_status_invalid_enum(self):
+        data = {
+            'task_id': 'T1',
+            'title': 'T',
+            'status': 'bogus',
+            'steps': [],
+        }
+        errors = validate_task(data)
+        assert any("Field 'status' must be one of" in e for e in errors)
+
+    def test_status_valid_enum_values(self):
+        for value in ('pending', 'in_progress', 'done', 'blocked', 'failed', 'completed'):
+            data = {
+                'task_id': 'T1',
+                'title': 'T',
+                'status': value,
+                'steps': [],
+            }
+            assert validate_task(data) == []
 
 
 # =============================================================================
@@ -256,3 +474,24 @@ class TestValidateFinding:
         }
         errors = validate_finding(data)
         assert "Field 'hash_id' should be str, got int" in errors
+
+    # --- New constraint coverage: maxLength ----------------------------------
+
+    def test_message_exceeds_max_length(self):
+        data = {
+            'hash_id': 'h',
+            'type': 'sonar',
+            'severity': 'MAJOR',
+            'message': 'm' * (MAX_MESSAGE_LENGTH + 1),
+        }
+        errors = validate_finding(data)
+        assert any("Field 'message'" in e and 'max length' in e for e in errors)
+
+    def test_message_at_max_length_ok(self):
+        data = {
+            'hash_id': 'h',
+            'type': 'sonar',
+            'severity': 'MAJOR',
+            'message': 'm' * MAX_MESSAGE_LENGTH,
+        }
+        assert validate_finding(data) == []

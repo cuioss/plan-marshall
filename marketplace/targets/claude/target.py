@@ -36,6 +36,7 @@ from marketplace.targets.claude.plugin_json_gen import generate_plugin_json
 from marketplace.targets.claude.source_fingerprint import (
     FingerprintError,
     compute_source_tree_fingerprint,
+    hash_objects,
 )
 
 # Sentinel file written at the end of every successful emit. The
@@ -49,6 +50,47 @@ EMIT_MARKER_FILENAME = '.emit-marker.json'
 # same path.
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_VALIDATE_TARGET_DIR = _PROJECT_ROOT / 'target' / 'claude'
+
+
+def _compute_emit_file_hashes(output_dir: Path) -> dict[str, str]:
+    """Compute a per-file git blob-hash manifest of the emitted tree.
+
+    Walks every regular (non-symlink) file under ``output_dir`` — the
+    emitted ``target/claude/`` tree — and returns a mapping of
+    ``output_dir``-relative POSIX path to the file's git blob SHA. The
+    sentinel file (``.emit-marker.json``) is excluded because the
+    manifest is written INTO that file, so it cannot enumerate itself.
+
+    Hashing delegates to the shared ``hash_objects`` primitive
+    (``git hash-object --stdin-paths``) so the emit-time manifest and the
+    sync-time staleness guard compute byte-identical SHAs. The files are
+    passed to ``git hash-object`` by ABSOLUTE path: ``git hash-object``
+    resolves a relative pathspec against the enclosing repo's worktree
+    root, not against the ``-C`` directory, so a relative path breaks when
+    ``output_dir`` happens to live inside a git repo (which the real
+    ``target/claude/`` always does). Absolute paths sidestep that
+    resolution entirely and work whether or not ``output_dir`` is inside a
+    work tree. ``git hash-object`` reads arbitrary worktree bytes
+    regardless of whether the paths are tracked, so it works on the
+    gitignored ``target/claude/`` tree and on synthetic non-repo fixtures
+    alike. The returned mapping is keyed by ``output_dir``-relative POSIX
+    path. Returns an empty mapping when ``output_dir`` holds no eligible
+    files.
+    """
+    rel_paths: list[str] = []
+    abs_paths: list[str] = []
+    for path in sorted(output_dir.rglob('*')):
+        if not path.is_file() or path.is_symlink():
+            continue
+        rel = path.relative_to(output_dir).as_posix()
+        if rel == EMIT_MARKER_FILENAME:
+            continue
+        rel_paths.append(rel)
+        abs_paths.append(str(path.resolve()))
+    if not rel_paths:
+        return {}
+    shas = hash_objects(output_dir, abs_paths)
+    return dict(zip(rel_paths, shas, strict=True))
 
 
 class ClaudeTarget(TargetBase):
@@ -156,9 +198,27 @@ class ClaudeTarget(TargetBase):
             fingerprint = compute_source_tree_fingerprint(repo_root)
         except FingerprintError:
             fingerprint = None
-        marker_payload: dict[str, str | None] = {
+
+        # Per-file hash manifest of the emitted tree. Computed BEFORE the
+        # marker is written so the walk never observes (and never needs to
+        # exclude) a partially-written sentinel; ``_compute_emit_file_hashes``
+        # excludes the sentinel filename unconditionally as the structural
+        # backstop. The manifest is the source of truth the sync staleness
+        # guard hashes against — every entry pins a live ``target/claude/``
+        # file by its git blob SHA, so a downstream mutation, deletion, or
+        # stray extra file is diagnosable by path without re-deriving a
+        # source counterpart (``target/claude/`` is transformed generator
+        # output, not a raw mirror of ``marketplace/bundles/``). A hashing
+        # fault degrades to an empty manifest rather than aborting the emit.
+        try:
+            file_hashes = _compute_emit_file_hashes(output_dir)
+        except FingerprintError:
+            file_hashes = {}
+
+        marker_payload: dict[str, object] = {
             'emit_completed_at': datetime.now(timezone.utc).isoformat(),
             'source_tree_fingerprint': fingerprint,
+            'file_hashes': file_hashes,
         }
         marker_path = output_dir / EMIT_MARKER_FILENAME
         marker_path.write_text(

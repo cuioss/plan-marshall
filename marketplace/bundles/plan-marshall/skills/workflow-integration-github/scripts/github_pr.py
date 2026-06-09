@@ -158,6 +158,35 @@ def _is_obvious_noise(body: str) -> bool:
 # COMMENTS-STAGE SUBCOMMAND (producer-side fetch + filter + store)
 # ============================================================================
 
+# Matches the ``comment_id: <value>`` line written into every pr-comment
+# finding's ``detail`` block by cmd_comments_stage.
+_COMMENT_ID_DETAIL = re.compile(r'^comment_id:\s*(?P<id>.+?)\s*$', re.MULTILINE)
+
+
+def _existing_pr_comment_ids(query_findings, plan_id: str) -> set[str]:
+    """Return the set of comment_id values already stored as pr-comment findings.
+
+    Each pr-comment finding embeds its source ``comment_id`` on a
+    ``comment_id: <value>`` line inside its ``detail`` block. Reconstructing the
+    set from the persisted findings (across all resolution states) lets the
+    producer skip a thread_id-less comment that was already staged in a prior
+    finalize iteration, closing the cross-iteration phantom loop.
+
+    Args:
+        query_findings: The ``_findings_core.query_findings`` callable.
+        plan_id: Plan identifier whose findings store is queried.
+
+    Returns:
+        Set of comment_id strings already present in the pr-comment store.
+    """
+    result = query_findings(plan_id, finding_type='pr-comment')
+    comment_ids: set[str] = set()
+    for finding in result.get('findings') or []:
+        match = _COMMENT_ID_DETAIL.search(finding.get('detail') or '')
+        if match:
+            comment_ids.add(match.group('id'))
+    return comment_ids
+
 
 def cmd_comments_stage(args):
     """Producer-side: fetch + pre-filter + write one finding per surviving comment.
@@ -174,6 +203,7 @@ def cmd_comments_stage(args):
     from _findings_core import (  # type: ignore[import-not-found]
         add_finding,
         add_qgate_finding,
+        query_findings,
     )
 
     pr_number: int = args.pr_number
@@ -186,8 +216,19 @@ def cmd_comments_stage(args):
     raw_comments: list[dict] = fetch_result.get('comments') or []
     count_fetched = len(raw_comments)
 
+    # Cross-iteration phantom-loop guard: ``review_body`` comments carry no
+    # ``thread_id``, so a resolution from a prior finalize iteration cannot be
+    # matched back to the comment on the next fetch. Without a ``comment_id``
+    # dedup the resolved comment re-enters as a fresh pending finding every
+    # time HEAD advances, producing an endless finalize loop. Build the set of
+    # ``comment_id`` values already recorded as ``pr-comment`` findings
+    # (regardless of resolution state) and skip any thread_id-less comment
+    # whose id is already present.
+    existing_comment_ids = _existing_pr_comment_ids(query_findings, plan_id)
+
     stored_hashes: list[str] = []
     skipped_noise = 0
+    skipped_duplicate = 0
     store_failures: list[str] = []
 
     for comment in raw_comments:
@@ -208,6 +249,16 @@ def cmd_comments_stage(args):
         path = comment.get('path') or None
         line = comment.get('line') or None
         comment_id = comment.get('id') or 'unknown'
+
+        # Pre-filter 3: cross-iteration dedup for thread_id-less comments
+        # (``review_body`` / issue-comment kinds). A comment_id already
+        # staged in a prior iteration MUST NOT re-surface as a new pending
+        # finding when HEAD advances. Comments that carry a thread_id are
+        # matched back via their thread on the next fetch, so they do not
+        # need this guard.
+        if not thread_id and comment_id in existing_comment_ids:
+            skipped_duplicate += 1
+            continue
 
         # Build a stable, deterministic title that disambiguates same-author
         # comments on the same file. The full body and provider metadata go in
@@ -252,7 +303,10 @@ def cmd_comments_stage(args):
             store_failures.append(comment_id)
 
     count_stored = len(stored_hashes)
-    expected_stored = count_fetched - skipped_noise
+    # Duplicates skipped by the cross-iteration guard are legitimate non-stores,
+    # so they drop out of expected_stored alongside the noise skips — otherwise
+    # every deduped comment would spuriously trip the producer-mismatch Q-Gate.
+    expected_stored = count_fetched - skipped_noise - skipped_duplicate
 
     qgate_hash: str | None = None
     if count_stored != expected_stored:
@@ -282,6 +336,7 @@ def cmd_comments_stage(args):
         'plan_id': plan_id,
         'count_fetched': count_fetched,
         'count_skipped_noise': skipped_noise,
+        'count_skipped_duplicate': skipped_duplicate,
         'count_stored': count_stored,
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,

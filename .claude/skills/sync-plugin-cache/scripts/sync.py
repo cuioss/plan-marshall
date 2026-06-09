@@ -24,6 +24,23 @@ import the helper from
 ``marketplace.targets.claude.source_fingerprint`` so the fingerprint
 algorithm cannot drift between emit and sync.
 
+The sentinel fingerprint is supplemented by a file-level content-hash
+check (``_file_level_drift``): the emitter records a per-file hash
+manifest of the emitted tree in the sentinel's ``file_hashes`` field, and
+the guard re-hashes each live file under ``target/claude/`` and compares
+it to the manifest. A manifest entry whose live file is gone (missing) or
+hashes differently (diverged), or a live target file absent from the
+manifest (extra), is named by path in the refusal message — turning an
+opaque single-digest mismatch into a per-file diagnosis. The manifest is
+the comparison baseline (not the raw ``marketplace/bundles/`` source)
+because ``target/claude/`` is transformed generator output — expanded
+agent variants, a variant-aware ``plugin.json``, a top-level
+``marketplace.json`` — with no verbatim source counterpart. The check
+reuses the shared ``hash_objects`` primitive so the manifest and the
+live re-hash compute identically, hashing the gitignored
+``target/claude/`` tree directly via ``git hash-object`` (which reads
+arbitrary worktree bytes regardless of tracking).
+
 Outputs a TOON document on stdout:
 
     status: success | partial | error
@@ -110,6 +127,29 @@ def _import_source_fingerprint():  # type: ignore[no-untyped-def]
     return compute_source_tree_fingerprint, FingerprintError
 
 
+def _import_hash_objects():  # type: ignore[no-untyped-def]
+    """Import the shared per-file blob-hash helper.
+
+    Resolves the project root the same way as
+    :func:`_import_source_fingerprint` (script location -> four parents
+    up) and returns the ``hash_objects`` primitive plus its
+    ``FingerprintError`` type. ``hash_objects`` hashes arbitrary worktree
+    bytes via ``git hash-object --stdin-paths`` regardless of whether the
+    paths are tracked — so it works on the gitignored ``target/claude/``
+    tree as well as the tracked ``marketplace/bundles/`` source.
+    """
+    script_path = Path(__file__).resolve()
+    repo_root = script_path.parents[4]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    from marketplace.targets.claude.source_fingerprint import (  # noqa: E402
+        FingerprintError,
+        hash_objects,
+    )
+
+    return hash_objects, FingerprintError
+
+
 DEFAULT_CACHE_ROOT = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
 TARGET_SUBDIR = Path('target') / 'claude'
 MARKETPLACE_SUBDIR = Path('marketplace') / 'bundles'
@@ -188,6 +228,104 @@ def _is_bundle_dir(path: Path) -> bool:
     return path.is_dir() and (path / '.claude-plugin' / 'plugin.json').is_file()
 
 
+def _relative_file_map(root: Path) -> dict[str, Path]:
+    """Map every regular file under ``root`` to its ``root``-relative POSIX path.
+
+    The map key is the path relative to ``root`` rendered with forward
+    slashes so the source and target trees compare identically across
+    platforms. Symlinks and non-regular entries are skipped — only the
+    file bytes that ``rsync`` would mirror participate in the drift
+    comparison. Returns an empty map when ``root`` is not a directory.
+    """
+    if not root.is_dir():
+        return {}
+    file_map: dict[str, Path] = {}
+    try:
+        for path in root.rglob('*'):
+            if path.is_file() and not path.is_symlink():
+                file_map[path.relative_to(root).as_posix()] = path
+    except OSError:
+        return file_map
+    return file_map
+
+
+def _file_level_drift(source_root: Path, file_hashes: dict[str, str]) -> str | None:
+    """Return a human-readable reason naming per-file target drift, else None.
+
+    Supplements the single ``source_tree_fingerprint`` sentinel with
+    per-file granularity by comparing the emitted ``target/claude/`` tree
+    against the per-file hash manifest the emitter recorded in the
+    sentinel (``file_hashes`` — keyed by ``source_root``-relative POSIX
+    path). ``target/claude/`` is TRANSFORMED generator output (expanded
+    agent variants, a variant-aware ``plugin.json``, a top-level
+    ``marketplace.json``), not a raw mirror of ``marketplace/bundles/`` —
+    so the manifest, not the raw source tree, is the only correct
+    comparison baseline. Three drift classes are detected and the specific
+    offending paths are named in the refusal message:
+
+    * **missing** — a manifest entry has no corresponding live file
+      (an emitted file was deleted after the emit).
+    * **diverged** — a manifest entry's live file hashes differently than
+      recorded (the file's bytes were mutated after the emit).
+    * **extra** — a live ``target/claude/`` file is absent from the
+      manifest (a stray artefact appeared after the emit). The sentinel
+      itself (``.emit-marker.json``) is always excluded — it carries the
+      manifest and so can never be one of its own entries.
+
+    Hashing delegates to the shared ``hash_objects`` primitive
+    (``git hash-object``) so the live hashes are byte-identical to the
+    manifest the emitter wrote with the same primitive; the live files are
+    passed by ABSOLUTE path because ``git hash-object`` resolves a relative
+    pathspec against the enclosing repo's worktree root (not the ``-C``
+    directory), which would break when ``target/claude/`` lives inside a
+    git repo — as it always does in production. ``git hash-object`` reads
+    arbitrary worktree bytes and therefore works on the gitignored
+    ``target/claude/`` tree. Returns ``None`` when every manifest entry
+    matches its live file and the tree carries no extra file. A clean
+    import / hashing failure degrades to ``None`` (the sentinel fingerprint
+    check remains the primary guard) rather than blocking sync on an
+    environmental fault.
+    """
+    live_files = _relative_file_map(source_root)
+    live_files.pop(EMIT_MARKER_FILENAME, None)
+
+    missing = sorted(rel for rel in file_hashes if rel not in live_files)
+    extra = sorted(rel for rel in live_files if rel not in file_hashes)
+
+    try:
+        hash_objects, _FingerprintError = _import_hash_objects()
+    except ImportError:
+        return None
+
+    common = sorted(set(file_hashes) & set(live_files))
+    diverged: list[str] = []
+    if common:
+        abs_paths = [str(live_files[rel].resolve()) for rel in common]
+        try:
+            live_shas = hash_objects(source_root, abs_paths)
+        except _FingerprintError:
+            return None
+        for rel, live_sha in zip(common, live_shas, strict=True):
+            if live_sha != file_hashes[rel]:
+                diverged.append(rel)
+
+    if not (missing or extra or diverged):
+        return None
+
+    parts: list[str] = []
+    if missing:
+        parts.append(f'missing from target: {", ".join(missing)}')
+    if extra:
+        parts.append(f'extra in target: {", ".join(extra)}')
+    if diverged:
+        parts.append(f'content diverged: {", ".join(diverged)}')
+    return (
+        'staleness_guard: target/claude/ drifted from its emit manifest at file level — '
+        + '; '.join(parts)
+        + f'. {_regenerate_hint()}'
+    )
+
+
 def _staleness_guard(source_root: Path, marketplace_root: Path) -> str | None:
     """Return a human-readable reason when source is missing/stale, else None.
 
@@ -205,6 +343,17 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> str | None:
        ``marketplace.targets.claude.source_fingerprint``) must match the
        sentinel's stored fingerprint. Mismatch -> source drifted since
        the last emit; refuse so callers regenerate before sync.
+    5. File-level content-hash check (``_file_level_drift``): every file
+       under ``target/claude/`` is compared against the per-file hash
+       manifest the emitter recorded in the sentinel's ``file_hashes``
+       field. A manifest entry whose live file is gone (missing) or hashes
+       differently (diverged), or a live target file absent from the
+       manifest (extra), is named in the refusal message. This supplements
+       the single-sentinel fingerprint with per-file granularity so a
+       localized target drift is reported by path rather than as an opaque
+       digest mismatch. The manifest — not the raw ``marketplace/bundles/``
+       tree — is the comparison baseline because ``target/claude/`` is
+       transformed generator output, not a verbatim source mirror.
     """
     if not source_root.is_dir():
         return f'source root not found: {source_root}. {_regenerate_hint()}'
@@ -263,6 +412,12 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> str | None:
             'staleness_guard: source tree changed since last emit — '
             f're-run finalize-step-deploy-target. {_regenerate_hint()}'
         )
+
+    file_hashes = sentinel.get('file_hashes')
+    if isinstance(file_hashes, dict):
+        file_drift = _file_level_drift(source_root, file_hashes)
+        if file_drift is not None:
+            return file_drift
 
     return None
 

@@ -187,3 +187,49 @@ def test_generator_returns_success_with_emitted_count(fixture_marketplace: Path,
     written = list(output_dir.rglob('*'))
     files_only = [p for p in written if p.is_file()]
     assert len(files_only) > 0, 'generator must emit at least one file for a non-empty bundle'
+
+
+def test_emit_marker_carries_file_hash_manifest(fixture_marketplace: Path, tmp_path: Path):
+    """A successful emit writes a ``file_hashes`` manifest into the sentinel.
+
+    The manifest pins every emitted file (keyed by output-root-relative
+    POSIX path, excluding the sentinel itself) so the sync staleness guard
+    can diagnose per-file drift against transformed generator output without
+    re-deriving a raw source counterpart. The manifest must cover exactly the
+    emitted regular files minus ``.emit-marker.json``.
+    """
+    output_dir = tmp_path / 'out'
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_GENERATE_PY),
+            '--target', 'claude',
+            '--output', str(output_dir),
+            '--marketplace-dir', str(fixture_marketplace),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, f'generator exit={result.returncode}, stderr={result.stderr}'
+
+    marker_path = output_dir / '.emit-marker.json'
+    assert marker_path.is_file(), 'emit must write the .emit-marker.json sentinel'
+    marker = json.loads(marker_path.read_text(encoding='utf-8'))
+
+    file_hashes = marker.get('file_hashes')
+    assert isinstance(file_hashes, dict), 'sentinel must carry a file_hashes manifest'
+    assert file_hashes, 'manifest must be non-empty for a non-empty bundle'
+    # The sentinel never lists itself.
+    assert '.emit-marker.json' not in file_hashes
+    # Every SHA is a 40-char git blob hex digest.
+    assert all(len(sha) == 40 for sha in file_hashes.values())
+
+    # The manifest keys are exactly the emitted regular files minus the sentinel.
+    emitted_rel = {
+        p.relative_to(output_dir).as_posix()
+        for p in output_dir.rglob('*')
+        if p.is_file() and not p.is_symlink()
+    }
+    emitted_rel.discard('.emit-marker.json')
+    assert set(file_hashes) == emitted_rel

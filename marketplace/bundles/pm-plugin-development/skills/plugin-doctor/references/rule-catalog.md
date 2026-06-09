@@ -711,6 +711,104 @@ The ack tag must match `^ack-[a-z0-9_-]+$`. The slug after `ack-` must be non-em
 
 ---
 
+## Rule Pack: Reference-resolution
+
+Five rules that catch gaps between what the marketplace *declares* and what is *discoverable on disk*. Each gap resolves to a dead reference at runtime: a missing component, an unresolvable `Skill:` directive, a drifted notation segment, an undeclared component, or an undiscoverable recipe. **Activation**: unconditionally active under `doctor-marketplace.py analyze` (each analyzer is a cheap json / regex / filesystem pass over the bundle tree). NOT included in `quality-gate`. `notation-bundle-skill-drift` rides the existing per-skill `notation-staleness` integration in `_doctor_analysis.py`; the other four are marketplace-wide passes wired into `cmd_analyze`.
+
+### declared-component-vs-disk
+
+**Rule ID**: `declared-component-vs-disk`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_declared_vs_disk.py`
+
+**Scope**: every bundle's `.claude-plugin/plugin.json` under the marketplace tree.
+
+**Intent**: Forward manifest-integrity check. For each component declared in a bundle's `plugin.json` (`agents` / `commands` / `skills` arrays), the corresponding file must exist on disk — `./skills/{skill}` resolves to `{bundle}/skills/{skill}/SKILL.md`, `./agents/{agent}.md` and `./commands/{command}.md` resolve to the named markdown file. A declared entry whose target file is missing is a dead manifest reference: the plugin loader fails to load the component.
+
+**Detection**: Pure static analysis — `json.loads` each `plugin.json`, resolve each entry to its on-disk anchor, and `is_file()`-check it. Malformed manifests are skipped silently (the `invalid-yaml` / structural rules cover them).
+
+**Recommended fix**: Either restore the missing file or remove the stale entry from `plugin.json`. Run `/marshall-steward` after bundle changes.
+
+**Suppression mechanism**: None — a declared-but-missing component is a hard breakage.
+
+---
+
+### plugin-json-orphan-component
+
+**Rule ID**: `plugin-json-orphan-component`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_plugin_json.py`
+
+**Scope**: every bundle's `skills/*/SKILL.md`, `agents/*.md`, and `commands/*.md` under the marketplace tree.
+
+**Intent**: Reverse manifest-integrity check (the bidirectional complement of `declared-component-vs-disk`). An on-disk component that ships but is NOT declared in its bundle's `plugin.json` is invisible to the plugin loader. The check honours the marketplace registration convention: user-invocable skills (`user-invocable: true`) MUST register, so an undeclared one is a real orphan; script-only / context-loaded / extension-implementor skills (`user-invocable: false`) are legitimately unregistered and therefore exempt. Agents and commands always register, so any undeclared `agents/*.md` / `commands/*.md` is an orphan with no frontmatter exemption.
+
+**Detection**: Pure static analysis — `json.loads` each `plugin.json` into the declared set (normalising the leading `./`), enumerate on-disk components, and report each one absent from the declared set. SKILL.md orphans are filtered to `user-invocable: true` via a frontmatter scan.
+
+**Severity**: `warning` (advisory) — a missing registration degrades discoverability rather than breaking a resolving reference.
+
+**Recommended fix**: Add the on-disk component's `./skills/{skill}` / `./agents/{file}.md` / `./commands/{file}.md` entry to its bundle's `plugin.json`. If a skill is deliberately script-only, set `user-invocable: false` in its frontmatter so the rule exempts it.
+
+**Suppression mechanism**: Set `user-invocable: false` on a deliberately-unregistered skill (no exemption channel for agents / commands).
+
+---
+
+### skill-notation-unresolved
+
+**Rule ID**: `skill-notation-unresolved`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_skill_notation.py`
+
+**Scope**: every `*.md` under `marketplace/bundles/*/{skills,agents,commands}/`.
+
+**Intent**: A `Skill: {bundle}:{skill}` directive whose target skill directory `bundles/{bundle}/skills/{skill}/` does not exist is a dead reference — the dispatcher cannot load it, and the workflow that depends on it silently misfires. The rule validates the two-segment bundle-prefixed directive form; the bare single-segment form and project-local `.claude/skills` references are out of scope.
+
+**Detection**: Pure static analysis — line-anchored regex extraction of `Skill: {bundle}:{skill}` tokens, then a filesystem check that the skill directory resolves. To avoid false positives on incidental colon-joined tokens, the rule only evaluates a directive whose `{bundle}` is a real bundle on disk (carries a `.claude-plugin/plugin.json`).
+
+**Recommended fix**: Correct the directive's bundle / skill segment to a skill directory that exists.
+
+**Suppression mechanism**: None — an unresolvable `Skill:` directive is a hard breakage.
+
+---
+
+### notation-bundle-skill-drift
+
+**Rule ID**: `notation-bundle-skill-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_notation_staleness.py` (emitted alongside `notation-staleness` from the same scan).
+
+**Scope**: per-skill — `SKILL.md` plus every `*.md` under `standards/`, `references/`, `workflow/`, `recipes/`, plus every `*.py` under `scripts/` (same surface as `notation-staleness`).
+
+**Intent**: Where `notation-staleness` validates only the third (script) segment of a `{bundle}:{skill}:{script}` notation, this rule validates the FIRST and SECOND segments — the `{bundle}` directory and the `{skill}` directory must resolve on disk. The drift is only evaluated for notations anchored to the executor invocation prefix (`python3 .plan/execute-script.py {notation}`), because a bare three-segment token whose bundle / skill is unknown is indistinguishable from an incidental colon-joined token (URL, timestamp, prose). Anchoring on the executor prefix removes that ambiguity.
+
+**Detection**: Pure static analysis — a second regex (`execute-script\.py\s+{notation}`) extracts executor-anchored notations; the bundle segment is checked for a real `bundles/{bundle}/.claude-plugin/plugin.json`, then the skill segment for a real `bundles/{bundle}/skills/{skill}/` directory. The first failing segment is reported.
+
+**Canonical hint**: `details.canonical_hint` names which segment (bundle or skill) failed to resolve so the fix can be applied mechanically.
+
+**Recommended fix**: Correct the failing notation segment (`details.reason` distinguishes `bundle_dir_missing` from `skill_dir_missing`) to a real bundle / skill name.
+
+**Suppression mechanism**: None — a non-resolving notation is a hard breakage.
+
+---
+
+### recipe-missing-implements
+
+**Rule ID**: `recipe-missing-implements`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_frontmatter.py`
+
+**Scope**: every `recipe-*` skill `SKILL.md` under BOTH `marketplace/bundles/*/skills/recipe-*` AND the project-local `.claude/skills/recipe-*` tree.
+
+**Intent**: Recipe skills are recipe-extension-point implementors; the `extension-api` discovery layer resolves them via the `implements:` frontmatter field. A `recipe-*` skill whose `SKILL.md` omits `implements:` (or declares a divergent value) is invisible to recipe discovery and cannot be offered via `/plan-marshall action=recipe`. The canonical value is `implements: plan-marshall:extension-api/standards/ext-point-recipe` (see `plan-marshall:extension-api/standards/ext-point-recipe.md` § Implementor Frontmatter).
+
+**Detection**: Pure static analysis — enumerate every `recipe-*` skill directory across both trees, parse the leading frontmatter, and compare the `implements:` value to the required notation. `details.reason` distinguishes `implements_missing` from `implements_divergent`.
+
+**Recommended fix**: Add (or correct) `implements: plan-marshall:extension-api/standards/ext-point-recipe` in the recipe skill's `SKILL.md` frontmatter.
+
+**Suppression mechanism**: None — declare the canonical `implements:` value.
+
+---
+
 ## Provenance Contract for New Rules
 
 Every rule emitted by plugin-doctor must have a documented provenance entry before merge. This contract is enforced by the regression tests in `test/pm-plugin-development/plugin-doctor/test_rule_provenance_table.py`.

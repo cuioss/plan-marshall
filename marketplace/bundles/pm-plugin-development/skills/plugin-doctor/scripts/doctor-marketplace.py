@@ -41,6 +41,8 @@ from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_sk
 from _analyze_bash_fence_inline_code_exemption import (
     analyze_bash_fence_inline_code_exemption,
 )
+from _analyze_declared_vs_disk import analyze_declared_vs_disk
+from _analyze_frontmatter import analyze_frontmatter
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
 from _analyze_manage_invocation import (
@@ -51,12 +53,14 @@ from _analyze_manage_invocation import (
     derive_script_tree,
     scan_manage_invocation,
 )
+from _analyze_plugin_json import analyze_plugin_json_orphans
 from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
 from _analyze_self_declared_rule_compliance import analyze_self_declared_rule_compliance
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
 from _analyze_simplicity import scan_simplicity
+from _analyze_skill_notation import analyze_skill_notation
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
     analyze_unique_fixture_basenames,
@@ -468,6 +472,35 @@ def cmd_analyze(args) -> dict:
     role_field_issues = analyze_role_field(marketplace_root)
     all_issues.extend(role_field_issues)
     total_issues += len(role_field_issues)
+
+    # Marketplace-wide reference-resolution rule cluster. Unconditionally
+    # active — each analyzer is a cheap json/regex/filesystem pass over the
+    # bundle tree, and each catches a class of declared-vs-discoverable drift
+    # that resolves to a dead reference at runtime:
+    #   - declared-component-vs-disk: plugin.json declares a component whose
+    #     file is missing on disk (forward manifest check).
+    #   - plugin-json-orphan-component: an on-disk user-invocable skill / agent
+    #     / command is not declared in its bundle's plugin.json (reverse
+    #     manifest check; advisory warning severity).
+    #   - skill-notation-unresolved: a `Skill: {bundle}:{skill}` directive
+    #     references a skill directory that does not exist.
+    #   - recipe-missing-implements: a recipe-* skill omits / diverges from the
+    #     `implements: …ext-point-recipe` frontmatter recipe discovery needs.
+    declared_vs_disk_issues = analyze_declared_vs_disk(marketplace_root)
+    all_issues.extend(declared_vs_disk_issues)
+    total_issues += len(declared_vs_disk_issues)
+
+    plugin_json_orphan_issues = analyze_plugin_json_orphans(marketplace_root)
+    all_issues.extend(plugin_json_orphan_issues)
+    total_issues += len(plugin_json_orphan_issues)
+
+    skill_notation_issues = analyze_skill_notation(marketplace_root)
+    all_issues.extend(skill_notation_issues)
+    total_issues += len(skill_notation_issues)
+
+    frontmatter_issues = analyze_frontmatter(marketplace_root)
+    all_issues.extend(frontmatter_issues)
+    total_issues += len(frontmatter_issues)
 
     # Marketplace-wide resolver-matrix-coverage rule. Unconditionally active —
     # AST scan over scripts is cheap and the rule emits ``tip``-severity

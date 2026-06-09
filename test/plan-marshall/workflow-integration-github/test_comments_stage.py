@@ -311,6 +311,148 @@ class TestCommentsStage:
         assert qf['source'] == 'qgate'
         assert qf['type'] == 'pr-comment'
 
+    def test_stage_review_body_no_thread_id_dedups_across_iterations(self, plan_context):
+        """A review_body comment (no thread_id) staged once must NOT re-surface
+        as a second finding on a subsequent fetch of the same comment.
+
+        Regression for the cross-iteration phantom loop: review_body / issue
+        comments carry no thread_id, so a resolution from a prior finalize
+        iteration cannot be matched back on the next fetch. Without comment_id
+        dedup, the same comment re-enters as a fresh pending finding every time
+        HEAD advances, producing an endless finalize loop. The producer-side
+        guard skips a thread_id-less comment whose comment_id is already in the
+        pr-comment store, counting it as count_skipped_duplicate.
+        """
+        # Same review_body comment seen on both fetches: substantive (survives
+        # the noise pre-filter), no thread_id, stable comment_id.
+        comment = {
+            'id': 'RB1',
+            'kind': 'review_body',
+            'author': 'reviewer',
+            'body': 'The error handling here drops the original exception context.',
+            'path': '',
+            'line': 0,
+            'thread_id': '',
+        }
+
+        plan_context.plan_dir_for('gh-pr-stage-dedup')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': [comment],
+                'total': 1,
+                'unresolved': 1,
+            }
+            # Iteration 1 — first fetch stores the comment.
+            result_1 = cmd_comments_stage(_stage_make_args(128, 'gh-pr-stage-dedup'))
+            # Iteration 2 — HEAD advanced; the identical comment is fetched
+            # again but must be deduped, not re-stored.
+            result_2 = cmd_comments_stage(_stage_make_args(128, 'gh-pr-stage-dedup'))
+
+        # First pass: stored, no dedup, no producer mismatch.
+        assert result_1['status'] == 'success'
+        assert result_1['count_fetched'] == 1
+        assert result_1['count_skipped_noise'] == 0
+        assert result_1['count_skipped_duplicate'] == 0
+        assert result_1['count_stored'] == 1
+        assert result_1['producer_mismatch_hash_id'] is None
+
+        # Second pass: deduped by comment_id (no thread_id), nothing stored,
+        # and the dedup is accounted for in expected_stored so NO spurious
+        # producer-mismatch Q-Gate finding is raised.
+        assert result_2['status'] == 'success'
+        assert result_2['count_fetched'] == 1
+        assert result_2['count_skipped_noise'] == 0
+        assert result_2['count_skipped_duplicate'] == 1
+        assert result_2['count_stored'] == 0
+        assert result_2['producer_mismatch_hash_id'] is None
+
+        # The store holds exactly ONE pr-comment finding — no phantom duplicate.
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        q = query_findings('gh-pr-stage-dedup', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        stored = q['findings'][0]
+        assert 'comment_id: RB1' in stored['detail']
+        assert 'kind: review_body' in stored['detail']
+
+    def test_stage_new_comment_id_still_stored_on_second_iteration(self, plan_context):
+        """A genuinely new review_body comment_id IS stored on a later fetch.
+
+        The cross-iteration dedup must not over-reach: a thread_id-less comment
+        whose comment_id has NOT been staged before is a real new comment and
+        must produce a fresh finding even after a prior iteration already
+        stored a different comment.
+        """
+        first = {
+            'id': 'RB1',
+            'kind': 'review_body',
+            'author': 'reviewer',
+            'body': 'The error handling here drops the original exception context.',
+            'path': '',
+            'line': 0,
+            'thread_id': '',
+        }
+        second = {
+            'id': 'RB2',
+            'kind': 'review_body',
+            'author': 'reviewer',
+            'body': 'This new comment flags a different concern about retries.',
+            'path': '',
+            'line': 0,
+            'thread_id': '',
+        }
+
+        plan_context.plan_dir_for('gh-pr-stage-newid')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            # Iteration 1 — only the first comment exists.
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': [first],
+                'total': 1,
+                'unresolved': 1,
+            }
+            result_1 = cmd_comments_stage(_stage_make_args(129, 'gh-pr-stage-newid'))
+
+            # Iteration 2 — both the old comment (deduped) and a brand-new
+            # comment (RB2) are fetched. RB2 must be stored.
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': [first, second],
+                'total': 2,
+                'unresolved': 2,
+            }
+            result_2 = cmd_comments_stage(_stage_make_args(129, 'gh-pr-stage-newid'))
+
+        assert result_1['count_stored'] == 1
+        assert result_1['count_skipped_duplicate'] == 0
+
+        # Second pass: RB1 deduped, RB2 stored — no producer mismatch.
+        assert result_2['status'] == 'success'
+        assert result_2['count_fetched'] == 2
+        assert result_2['count_skipped_noise'] == 0
+        assert result_2['count_skipped_duplicate'] == 1
+        assert result_2['count_stored'] == 1
+        assert result_2['producer_mismatch_hash_id'] is None
+
+        # The store now holds exactly TWO findings — RB1 (from iter 1) and RB2.
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        q = query_findings('gh-pr-stage-newid', finding_type='pr-comment')
+        assert q['filtered_count'] == 2
+        stored_ids = {
+            m.group('id')
+            for m in (
+                github_pr._COMMENT_ID_DETAIL.search(f['detail'] or '')
+                for f in q['findings']
+            )
+            if m
+        }
+        assert stored_ids == {'RB1', 'RB2'}
+
 
 # =============================================================================
 # CLI plumbing — main() and --project-dir
