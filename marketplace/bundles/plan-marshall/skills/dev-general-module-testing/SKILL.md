@@ -1,6 +1,6 @@
 ---
 name: dev-general-module-testing
-description: Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, property-based testing, test doubles, and determinism
+description: Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, property-based testing, test doubles, determinism, constructed-argv assertion at the lowest subprocess primitive, and real-resolver E2E testing for path-resolver/create side effects
 user-invocable: false
 ---
 
@@ -56,5 +56,5 @@ def test_discount_applied_for_premium_user():
 
 | Standard | Purpose |
 |----------|---------|
-| testing-methodology.md | AAA pattern, test structure, naming, organization, property-based testing, test doubles, determinism, foundation-utility CLI testing (cross-references plugin-doctor test-conventions rules) |
+| testing-methodology.md | AAA pattern, test structure, naming, organization, property-based testing, test doubles, determinism, foundation-utility CLI testing, constructed-argv assertion at the lowest subprocess primitive, real-resolver E2E testing for path-resolver/create side effects (cross-references plugin-doctor test-conventions rules) |
 | testing-coverage.md | Coverage requirements, corner cases, boundary testing |

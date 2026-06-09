@@ -341,3 +341,48 @@ Foundation utilities — argument-parser wrappers, identifier validators, format
 The three corresponding `pm-plugin-development:plugin-doctor` rules — [`unique-fixture-basenames`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#unique-fixture-basenames), [`subprocess-pythonpath`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#subprocess-pythonpath), and [`identifier-validator-corpus`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#identifier-validator-corpus) — enforce these recommendations as build-failing lints across the `test/` tree. A developer hitting one of those lints can read the rationale here; a developer reading this section discovers the enforcement that catches drift.
 
 See the corresponding plugin-doctor rules linked above for the canonical enforcement rationale.
+
+## Assert the Constructed Argv at the Lowest Subprocess Primitive
+
+**Trigger**: A code path under test builds a subprocess command line — assembling a list of program name, subcommands, and flags — and then hands it to a process launcher. The unit under test is *which* command gets built (the argument surface: correct flag names, required flags present, no undeclared flag), not the behavior of the launched process. The seductive shortcut is to stub a high-level wrapper that takes an *already-assembled* command and asserts on the wrapper's return value, leaving the argv-assembly logic itself unobserved.
+
+A stub placed **above** argv assembly is blind to a malformed argv: it receives whatever list the assembler produced, ignores its contents, and returns a canned success. Every assertion downstream passes — yet a misspelled flag, a missing required flag, or a flag the callee never declared has been silently constructed. In production, the callee receives that malformed argv and degrades through a default branch, a `None` path, or an argument-parser rejection that the caller swallows. The test suite stays green because the test never inspected the bytes that actually flow to the subprocess. The failure surfaces only at runtime, against the real callee, long after the green suite "proved" the wiring.
+
+**Durable rule**: when the contract under test is the constructed command line, stub **only the lowest subprocess primitive** — the process launcher itself (e.g. `subprocess.run` / `subprocess.Popen` in Python, the `exec`/`spawn` family in other runtimes) — capture the exact argument vector it was called with, and assert that vector against the callee's declared argument surface:
+
+* **Every flag name is present and spelled exactly as the callee declares it.** A flag the caller renames or paraphrases is the single most common silent-degrade defect; assert the literal names, not a substring or a count.
+* **Every required flag is present.** Assert presence of each mandatory flag, not merely that the argv is non-empty.
+* **No undeclared flag is present.** An extra flag the callee does not accept is rejected at parse time in production; assert the argv carries nothing outside the declared surface.
+
+```
+# Stub ONLY the launcher; capture and assert the argv it received.
+captured = []
+stub(process_launcher) returns success, recording its argv into `captured`
+
+result = unit_under_test(inputs)
+
+argv = captured.single_call.argv
+assert argv contains "--required-flag"          # required flag present
+assert argv contains exactly the declared flags  # no undeclared flag
+assert "--reqired-flag" not in argv               # misspelling would be caught here
+```
+
+Do NOT stub a higher-level "run this assembled command" wrapper when the thing under test is the assembly. Such a stub receives the malformed argv, ignores it, and reports success — the exact blind spot this rule exists to close.
+
+This is universal subprocess-wiring methodology. It is the **complementary lens** to the "Foundation utilities — tests against the CLI" section above: that section drives the real downstream argument-parser entry point to catch integration-plumbing rot; this section captures the argv at the launch boundary to catch assembly-side defects before the command ever reaches a parser. Apply both where a primitive both *builds* and *launches* subprocess command lines.
+
+## Require a Real-Resolver End-to-End Test for Path-Resolver and Create Side Effects
+
+**Trigger**: The code under test performs filesystem-shaped side effects through path resolvers — creating a directory tree, moving or relocating files, establishing symlinks, or running multi-step lifecycle machinery whose post-operation code reads back the on-disk state the create step produced. The fast unit-test instinct is to mock the resolvers and hand-build a partial directory tree that *looks like* what the create step would have produced, then exercise the post-operation code against that fake.
+
+A fake resolver that stages a partial tree reproduces the **shape** the post-operation code expects, not the **real on-disk state** the real create operation produces. Real create operations have interacting side effects that a hand-built fixture never reproduces: a blanket symlink that collides with a granular directory move; a created resource whose object store or metadata directory changes what a later walk sees; ordering between a move and a resolve that only manifests when both run for real. Because the fake skips the real side-effect interaction, the failing path is never exercised and the suite stays green — while production hits the collision the moment a real resource exists on disk.
+
+**Durable rule**: for any path-resolver, create, move, symlink, or lifecycle machinery, ship **at least one end-to-end test that uses the real create operation and the real resolvers with no mocked resolvers**. The real resource — with its real side effects — must exist on disk during the test, and the post-operation code must read it back from the real on-disk state:
+
+* **Use the real create/move/symlink operation**, not a hand-built fixture that mimics its output. The interaction between side effects is precisely what a fake omits.
+* **Use the real resolvers**, not stubs that return pre-baked paths. A stubbed resolver cannot collide with a real side effect.
+* **Let the real resource live on disk** in a temporary sandbox, run the full operation against it, then assert the post-operation state from what is actually there.
+
+**Review tell**: the test module names the path resolvers *only in mock setup* and never lets a real created resource — with its real side effects — exist on disk. A suite that mocks every resolver for a create-and-read lifecycle is asserting against its own fixture, not against the machinery.
+
+This E2E requirement is adjacent to two existing real-on-disk isolation concerns: "Compose Isolation, Don't Impose It" (above) governs how such a test isolates the global resolution state it mutates, and "Bound Per-Test Guard Traversal by the Test's Own Footprint" (above) governs the cost of any guard that walks the real tree the test creates. Read all three together when adding a real-resource lifecycle test.
