@@ -46,6 +46,7 @@ from _findings_core import (
     promote_finding,
     query_assessments,
     query_findings,
+    query_findings_unified,
     query_qgate_findings,
     resolve_finding,
     resolve_qgate_finding,
@@ -83,7 +84,8 @@ def cmd_query(args: argparse.Namespace) -> dict:
     if args.promoted is not None:
         promoted = args.promoted.lower() in ('true', '1', 'yes')
 
-    return query_findings(
+    query_fn = query_findings_unified if getattr(args, 'include_qgate', False) else query_findings
+    return query_fn(
         plan_id=args.plan_id,
         finding_type=args.type,
         resolution=args.resolution,
@@ -234,6 +236,12 @@ def main() -> int:
     query_parser.add_argument('--resolution', choices=RESOLUTIONS, help='Filter by resolution')
     query_parser.add_argument('--promoted', help='Filter by promoted (true/false)')
     query_parser.add_argument('--file-pattern', help='Glob pattern for file_path')
+    query_parser.add_argument(
+        '--include-qgate',
+        action='store_true',
+        dest='include_qgate',
+        help='Merge pending per-phase Q-Gate findings into the result set',
+    )
     query_parser.set_defaults(func=cmd_query)
 
     # get

@@ -87,10 +87,10 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   [--file-path PATH] [--line N] [--component C] \
   [--module M] [--rule R] [--severity S]
 
-# List findings
+# List findings (per-plan; add --include-qgate to merge pending Q-Gate findings)
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   list --plan-id {plan_id} [--type T] [--resolution R] \
-  [--promoted BOOL] [--file-pattern PATTERN]
+  [--promoted BOOL] [--file-pattern PATTERN] [--include-qgate]
 
 # Get single finding
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
@@ -104,6 +104,12 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to {promoted_to}
 ```
+
+#### Unified read surface (`--include-qgate`)
+
+By default `list` returns only the per-plan findings store (the per-type `{type}.jsonl` files). Passing `--include-qgate` merges the **pending** per-phase Q-Gate findings — across every phase in the Q-Gate phase set — into the same result set, so a caller can retrieve both the per-plan findings and the in-flight Q-Gate findings in a single read. Only Q-Gate records whose `resolution == 'pending'` are merged; resolved Q-Gate findings are never surfaced through this read. The `--type` and `--file-pattern` filters apply to both slices for parity; the `--resolution` and `--promoted` filters apply to the per-plan slice only (the Q-Gate slice is implicitly `pending`).
+
+The merged response is shape-compatible with the default `list` output and adds three provenance markers — `qgate_included: true`, `plan_count`, and `qgate_count` — so consumers can tell how many findings came from each store (see **Output Format** below). The unified query is the read surface `verification-feedback.md` and `triage.md` consume for the per-plan finding sweep. See the `## Canonical invocations` → `list` section below for the authoritative `--include-qgate` argparse surface.
 
 ### Q-Gate Commands
 
@@ -201,6 +207,22 @@ a3f2c1,bug,Null check missing,pending
 b4e3d2,sonar-issue,TODO comment,fixed
 ```
 
+**Unified query response** (`list --include-qgate`): same shape as the default query response, plus three provenance markers — `qgate_included`, `plan_count`, and `qgate_count`. The `findings` array is the per-plan slice followed by the merged pending Q-Gate slice. `total_count` is the full universe of both slices (the entire per-plan store plus every pending Q-Gate record across phases, before `--type`/`--file-pattern` narrowing); `filtered_count` is the post-narrowing union actually returned in `findings`.
+
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+qgate_included: true
+plan_count: 12
+qgate_count: 3
+total_count: 33
+filtered_count: 15
+
+findings[15]{hash_id,type,title,resolution}:
+a3f2c1,bug,Null check missing,pending
+b4e3d2,sonar-issue,TODO comment,fixed
+```
+
 ## Integration
 
 ### Producers
@@ -270,7 +292,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ad
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
   --plan-id PLAN_ID \
   [--type TYPE_CSV] [--resolution RESOLUTION] [--promoted {true|false}] \
-  [--file-pattern PATTERN]
+  [--file-pattern PATTERN] [--include-qgate]
 ```
 
 ### get
