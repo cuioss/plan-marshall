@@ -31,8 +31,10 @@ Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand i
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
-  --plan-id {plan_id} --type {finding_type} --resolution pending
+  --plan-id {plan_id} --type {finding_type} --resolution pending --include-qgate
 ```
+
+This is the unified read surface — see `manage-findings` Canonical invocations → `list`. `--include-qgate` merges the **pending** per-phase Q-Gate slice into the per-plan slice so the per-finding triage loop sweeps both stores in one read (the `verification-failure` / `quality-gate-failure` producers in phase-5-execute write to the Q-Gate store).
 
 This is **by-reference** — the store is the single source of truth. Loop-back re-entry sees only findings still `pending`; the orchestrator's earlier query is just a gate-keeping count.
 

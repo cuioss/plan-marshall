@@ -48,11 +48,11 @@ Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand i
 
 ### Branch: `producer=build-runner` | `sonar` | `pr-comment` (store-only query)
 
-The orchestrator has already populated the store via the mechanical producer (log parse, Sonar fetch, PR comments fetch). Verify the gate count and continue:
+The orchestrator has already populated the store via the mechanical producer (log parse, Sonar fetch, PR comments fetch). Verify the gate count and continue — the `--include-qgate` flag merges the pending per-phase Q-Gate findings into the per-plan read so the sweep is a single unified query (see `manage-findings` Canonical invocations → `list`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
-  --plan-id {plan_id} --type {finding_type} --resolution pending
+  --plan-id {plan_id} --type {finding_type} --resolution pending --include-qgate
 ```
 
 `{finding_type}` per producer:
@@ -139,11 +139,11 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
 
    The producer writes one `sonar-issue` finding per surviving issue to the store. If Sonar MCP is unavailable, log "Sonar skipped — MCP not connected" and continue.
 
-After all three producer surfaces have run, query the store for the union:
+After all three producer surfaces have run, query the store for the union — `--include-qgate` merges the pending per-phase Q-Gate findings into the per-plan read so the union is a single unified query (see `manage-findings` Canonical invocations → `list`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
-  --plan-id {plan_id} --resolution pending
+  --plan-id {plan_id} --resolution pending --include-qgate
 ```
 
 If empty, return `status: success`, `display_detail: "PR #{pr_number} clean — nothing to triage"`. Otherwise continue to Step 2.

@@ -233,6 +233,74 @@ def query_findings(
     }
 
 
+def query_findings_unified(
+    plan_id: str,
+    finding_type: str | None = None,
+    resolution: str | None = None,
+    promoted: bool | None = None,
+    file_pattern: str | None = None,
+) -> dict[str, Any]:
+    """Query the per-plan findings store merged with pending per-phase Q-Gate findings.
+
+    Returns the union of:
+    - the per-PLAN findings (via `query_findings`, honouring the same
+      type/resolution/promoted/file_pattern filters), and
+    - the PENDING Q-Gate findings across every phase in `QGATE_PHASES`, with the
+      same `finding_type` / `file_pattern` filters applied for parity.
+
+    Only Q-Gate records whose `resolution == 'pending'` are merged — resolved
+    Q-Gate findings are never surfaced through this read. The per-plan slice keeps
+    its own `resolution` filter semantics (the caller's `resolution` arg passes
+    through to `query_findings`).
+
+    The result is TOON-friendly and shape-compatible with `query_findings` plus
+    provenance markers: `qgate_included: true`, `plan_count`, and `qgate_count`.
+    """
+    plan_result = query_findings(
+        plan_id,
+        finding_type=finding_type,
+        resolution=resolution,
+        promoted=promoted,
+        file_pattern=file_pattern,
+    )
+    plan_findings = plan_result['findings']
+
+    type_filter = {t.strip() for t in finding_type.split(',')} if finding_type else None
+
+    qgate_findings: list[dict[str, Any]] = []
+    qgate_total = 0
+    for phase in QGATE_PHASES:
+        records = query_qgate_findings(plan_id, phase, resolution='pending')['findings']
+        qgate_total += len(records)
+        qgate_findings.extend(
+            _filter_records(
+                records,
+                type_filter=type_filter,
+                file_pattern=file_pattern,
+            )
+        )
+
+    merged = plan_findings + qgate_findings
+
+    # `total_count` spans the full universe of both slices symmetrically: the
+    # entire per-plan store (`plan_result['total_count']`, pre-narrowing) plus
+    # every pending Q-Gate record across phases (`qgate_total`, before the
+    # type/file_pattern narrowing). `filtered_count` is the post-narrowing union.
+    # Counting only the filtered Q-Gate slice into `total_count` would mix the
+    # plan slice's unfiltered total with the Q-Gate slice's filtered count.
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'qgate_included': True,
+        'plan_count': len(plan_findings),
+        'qgate_count': len(qgate_findings),
+        'total_count': plan_result['total_count'] + qgate_total,
+        'filtered_count': len(merged),
+        'findings': merged,
+        'file_paths': list({r.get('file_path') for r in merged if r.get('file_path')}),
+    }
+
+
 def get_finding(plan_id: str, hash_id: str) -> dict[str, Any]:
     """Get a single finding by hash_id, scanning all per-type files."""
     for path in _list_finding_files(plan_id):
