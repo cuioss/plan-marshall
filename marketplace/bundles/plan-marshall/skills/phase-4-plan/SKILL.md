@@ -569,9 +569,47 @@ This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUS
 - `scope_estimate` — read from `manage-references get --field scope_estimate` (deliverables 2 / 3 wire this in earlier in the plan lifecycle).
 - `recipe_key` — OPTIONAL override only. The composer reads `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) on its own, so lesson- and recipe-derived plans select the `recipe` rule even when this flag is omitted. Pass `--recipe-key` only to force a recipe rule that status metadata does not already imply.
 - `affected_files_count` — `manage-references get --field affected_files`, count entries.
-- `phase-5-steps` candidate — `manage-config plan phase-5-execute get --field steps` value, comma-joined.
-- `phase-6-steps` candidate — `manage-config plan phase-6-finalize get --field steps` value, comma-joined.
-- `commit_strategy` — read from `manage-config plan phase-5-execute get --field commit_strategy`. One of `per_plan|per_deliverable|none`. Forwarded to `compose --commit-strategy` so the manifest's `commit_strategy_none` pre-filter can omit `commit-push` when the value is `none`. Omit the flag when the field is unset; the composer defaults to `per_plan`.
+- `phase-5-steps` candidate (`{p5_csv}`) — read via the bash call below, comma-join the returned `steps` list.
+- `phase-6-steps` candidate (`{p6_csv}`) — read via the bash call below, comma-join the returned `steps` list.
+- `commit_strategy` — read via the bash call below, from the `commit_strategy` field; omit `--commit-strategy` on `compose` when the field is absent (defaults to `per_plan`).
+
+**Read manifest inputs** (run before compose; do NOT skip or improvise alternative reads):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
+  --plan-id {plan_id} --field track
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
+  --plan-id {plan_id} --field scope_estimate
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
+  --plan-id {plan_id} --field affected_files
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute get --field steps
+```
+
+Parse `value` as a list and comma-join to produce `{p5_csv}`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize get --field steps
+```
+
+Parse `value` as a list and comma-join to produce `{p6_csv}`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute get --field commit_strategy
+```
+
+Parse `value` as `{commit_strategy}` — omit `--commit-strategy` on `compose` when the field is absent.
 
 **Compose**:
 
