@@ -884,3 +884,17 @@ def test_read_json_valid_content_round_trips(tmp_path):
     valid.write_text('{"key": "value"}', encoding='utf-8')
 
     assert read_json(valid) == {'key': 'value'}
+
+
+def test_read_json_unreadable_path_degrades_to_supplied_default(tmp_path):
+    """An unreadable path (e.g. a directory) degrades to the supplied default.
+
+    Regression: read_json previously only caught json.JSONDecodeError; an OSError
+    (IsADirectoryError is a subclass) from read_text on a directory path would
+    propagate uncaught. The hardened guard now catches OSError too, so all I/O
+    failure modes degrade deterministically to default.
+    """
+    directory = tmp_path / 'dir.json'
+    directory.mkdir()
+
+    assert read_json(directory, default=[]) == []

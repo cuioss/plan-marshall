@@ -467,4 +467,13 @@ def merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
         )
 
     # Deep-copy the seed so the caller never mutates the persisted block.
-    return {domain: [dict(entry) for entry in entries] for domain, entries in seed.items()}
+    # Wrap in try/except to surface partially corrupt entries (e.g. {'python': None}
+    # or {'python': 'not a list'}) as a structured BuildMapMissingError instead of
+    # an untyped TypeError from the inner list comprehension.
+    try:
+        return {domain: [dict(entry) for entry in entries] for domain, entries in seed.items()}
+    except (TypeError, ValueError) as exc:
+        raise BuildMapMissingError(
+            'skill_domains.build_map is corrupt. Run `manage-config build-map seed` '
+            'or re-run /marshall-steward to seed it.'
+        ) from exc

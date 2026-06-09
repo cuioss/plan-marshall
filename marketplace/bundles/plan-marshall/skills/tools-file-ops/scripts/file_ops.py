@@ -556,17 +556,17 @@ def get_marshal_path() -> Path:
 
 
 def read_json(path: str | Path, default: Any = None) -> Any:
-    """Read and parse a JSON file, returning default if not found or corrupt.
+    """Read and parse a JSON file, returning default if not found or unreadable.
 
     Args:
         path: Path to JSON file
         default: Value to return if file doesn't exist (default: empty dict)
 
     Returns:
-        Parsed JSON content, or default if the file does not exist or contains
-        unparseable JSON. Corrupt/malformed content degrades to default — the
-        same deterministic degradation as the not-found case — rather than
-        raising json.JSONDecodeError.
+        Parsed JSON content, or default if the file does not exist, is
+        unreadable (e.g. a directory, permission denied), or contains
+        unparseable JSON. All failure modes degrade deterministically to
+        default rather than raising.
     """
     if default is None:
         default = {}
@@ -575,7 +575,7 @@ def read_json(path: str | Path, default: Any = None) -> Any:
         return default
     try:
         return json.loads(p.read_text(encoding='utf-8'))
-    except json.JSONDecodeError:
+    except (OSError, json.JSONDecodeError):
         return default
 
 
