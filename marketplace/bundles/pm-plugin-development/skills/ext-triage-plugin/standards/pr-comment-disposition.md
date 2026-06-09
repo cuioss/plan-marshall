@@ -28,6 +28,7 @@ Concrete violations of marketplace plugin standards (see `pm-plugin-development:
 | Tool-name casing wrong in adapter target | Frontmatter declares `read`/`write` (OpenCode form) instead of `Read`/`Write` (Claude form) for source files | `plugin-architecture` (Multi-Assistant Support) |
 | Hard-coded build command in script | Script invokes `./pw`, `mvn`, `npm`, `gradle` directly instead of resolving via `manage-architecture:architecture resolve` | `dev-agent-behavior-rules` Hard Rules |
 | Direct `gh` / `glab` call in script | Script uses CLI directly instead of `tools-integration-ci:ci` abstraction | `dev-agent-behavior-rules` Hard Rules |
+| Missing error-handling envelope on a newly-authored I/O / external-input boundary, or missing `isinstance` guard on an externally-sourced dict input | Unguarded `json.loads` on an external file (crashes on corrupt content); `.attr` / `.items()` on a value sourced from external config without a type check (crashes `AttributeError` on a corrupt non-dict) | `dev-agent-behavior-rules` Principle 7 carve-out + `dev-general-code-quality` #minimum-viable-code |
 | Test missing for new script | New script under `marketplace/bundles/*/skills/*/scripts/` has no corresponding test in `test/` | `plugin-script-architecture` (Testing) |
 | Script test bypasses executor | Test calls script via `PYTHONPATH=... python3 path/to/script.py` instead of via `execute-script.py` | `dev-agent-behavior-rules` (no smoke-tests via PYTHONPATH) |
 | Component name not kebab-case | File or skill name uses `camelCase` or `snake_case` instead of project's kebab-case | `plugin-architecture` (Naming) |
@@ -61,6 +62,8 @@ Decline the suggestion with the corresponding template. Always reply before reso
 | Suggestion reintroduces direct `gh`/`glab` after migration to `tools-integration-ci` | `Plan migrates CI calls through `tools-integration-ci:ci` abstraction. Direct `gh`/`glab` is the anti-pattern this PR removes (see feedback_ci_abstraction_over_gh).` |
 
 ### Scope Out of Bounds
+
+**Exclusion (load-bearing):** the "Scope Out of Bounds" category may NOT be applied to a finding on a file this PR modified. A finding on a PR-touched file is in-scope **by definition** — a missing boundary-envelope or input type-guard on a line this PR authored or changed is a FIX-Eligible finding (see the boundary-envelope row above), never a Scope-Out reply. "Scope Out of Bounds" applies only to findings whose subject is a file or component this PR does not touch.
 
 | Trigger | Reply Template |
 |---------|----------------|

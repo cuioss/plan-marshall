@@ -78,7 +78,7 @@ At command start, emit the following banner verbatim to the user:
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `seed-blocking-finding-types` for the wizard's blocking-partition seed step and `check-branch-naming` for the project.working_prefixes presence/drift surfacing |
+| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `seed-blocking-finding-types` for the wizard's blocking-partition seed step and `check-working-prefixes` for the project.working_prefixes presence/drift surfacing |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
 
@@ -343,7 +343,7 @@ CI-triggered, so a `docs/`-prefixed branch makes its PR structurally unmergeable
 a workflow push trigger.
 
 **Missing-default / drift detection.** When the wizard runs against an existing
-project, `determine_mode.py check-branch-naming` compares the live
+project, `determine_mode.py check-working-prefixes` compares the live
 `marshal.json::project["working_prefixes"]` list against
 `DEFAULT_PROJECT['working_prefixes']`. It surfaces `missing` when the key is
 entirely absent, or a drift signal when a default entry is missing, so the wizard
@@ -360,7 +360,7 @@ genuine absence or a missing default entry is surfaced.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode \
-  check-branch-naming
+  check-working-prefixes
 ```
 
 **Output (TOON)** when the list is present and current (or operator-customized):

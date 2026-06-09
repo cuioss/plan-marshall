@@ -33,6 +33,7 @@ Concrete violations of OCI container standards (see `pm-dev-oci:oci-standards`, 
 | Image not signed | Missing Cosign signature in supply-chain pipeline | `oci-security` (Image Signing) |
 | SBOM missing | Production image without Syft-generated SBOM in CI | `oci-security` (SBOM) |
 | Multi-platform omission | Image declared for `linux/amd64,linux/arm64` only builds `amd64` | `oci-standards` (Multi-Platform Builds) |
+| Missing boundary envelope on a newly-authored external-input boundary, or missing validation guard on externally-sourced build input | `RUN` that consumes an unvalidated `ARG` / `--build-arg` (e.g. unchecked URL or version fetched and executed) without a checksum/validation step; entrypoint script that reads an external env/config value and `eval`s or dereferences it without a guard | central FIX row — see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (boundary-envelope row) |
 
 ## REPLY-AND-RESOLVE Categories
 
@@ -58,6 +59,8 @@ Decline the suggestion with the corresponding template. Always reply before reso
 | Bot suggests dropping multi-stage to "simplify" Dockerfile on a plan reducing image size | `Plan migrates to multi-stage to remove build deps from runtime image. Single-stage would reintroduce the bloat the plan eliminates.` |
 
 ### Scope Out of Bounds
+
+**Exclusion (load-bearing):** "Scope Out of Bounds" may NOT be applied to a finding on a file this PR modified — such a finding is in-scope **by definition** and is a FIX-Eligible boundary-envelope finding (see the boundary-envelope row above), never a Scope-Out reply. For the canonical exclusion wording see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (Scope Out of Bounds exclusion).
 
 | Trigger | Reply Template |
 |---------|----------------|

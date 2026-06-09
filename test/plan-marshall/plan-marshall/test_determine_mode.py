@@ -21,11 +21,11 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward'
 from _config_defaults import DEFAULT_PROJECT  # type: ignore[import-not-found]  # noqa: E402
 from determine_mode import (  # type: ignore[import-not-found]  # noqa: E402
     check_docs,
-    cmd_check_branch_naming,
     cmd_check_docs,
+    cmd_check_working_prefixes,
     cmd_fix_docs,
     cmd_mode,
-    detect_branch_naming_drift,
+    detect_working_prefixes_drift,
     determine_mode,
     fix_docs,
 )
@@ -445,7 +445,7 @@ def test_blocking_type_callable_names_registry_lists_both_thunks():
 
 
 # =============================================================================
-# check-branch-naming subcommand (project.working_prefixes presence/drift)
+# check-working-prefixes subcommand (project.working_prefixes presence/drift)
 # =============================================================================
 
 
@@ -461,8 +461,8 @@ def _write_marshal(plan_dir, config: dict) -> None:
     (plan_dir / 'marshal.json').write_text(json.dumps(config, indent=2), encoding='utf-8')
 
 
-class TestCheckBranchNamingSubcommand:
-    """Test the 'check-branch-naming' subcommand and its detector."""
+class TestCheckWorkingPrefixesSubcommand:
+    """Test the 'check-working-prefixes' subcommand and its detector."""
 
     def test_present_and_current_not_flagged(self, tmp_path):
         """A marshal.json whose project.working_prefixes equals the default returns ok."""
@@ -471,7 +471,7 @@ class TestCheckBranchNamingSubcommand:
         _write_marshal(plan_dir, {'project': {'working_prefixes': copy.deepcopy(_DEFAULT_WORKING_PREFIXES)}})
 
         # Act
-        result = cmd_check_branch_naming(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
 
         # Assert
         assert result == {'status': 'ok'}
@@ -483,7 +483,7 @@ class TestCheckBranchNamingSubcommand:
         _write_marshal(plan_dir, {'project': {'default_base_branch': 'main'}})
 
         # Act
-        result = cmd_check_branch_naming(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
 
         # Assert
         assert result['status'] == 'missing'
@@ -498,7 +498,7 @@ class TestCheckBranchNamingSubcommand:
         _write_marshal(plan_dir, {'project': {'working_prefixes': superset}})
 
         # Act
-        result = cmd_check_branch_naming(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
 
         # Assert — additions are honoured (non-clobbering)
         assert result == {'status': 'ok'}
@@ -511,7 +511,7 @@ class TestCheckBranchNamingSubcommand:
         _write_marshal(plan_dir, {'project': {'working_prefixes': drifted}})
 
         # Act
-        result = cmd_check_branch_naming(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
 
         # Assert — working_prefixes drifted
         assert result['status'] == 'missing'
@@ -525,31 +525,31 @@ class TestCheckBranchNamingSubcommand:
         plan_dir.mkdir(parents=True)
 
         # Act
-        result = cmd_check_branch_naming(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
 
         # Assert
         assert result == {'status': 'ok'}
 
     def test_detect_returns_structured_outcome_for_absent(self, tmp_path):
-        """detect_branch_naming_drift returns the absent outcome with working_prefixes key."""
+        """detect_working_prefixes_drift returns the absent outcome with working_prefixes key."""
         # Arrange
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {}})
 
         # Act
-        result = detect_branch_naming_drift(plan_dir)
+        result = detect_working_prefixes_drift(plan_dir)
 
         # Assert
         assert result == {'outcome': 'absent', 'missing_keys': ['working_prefixes']}
 
     def test_cli_plumbing_emits_toon(self, tmp_path):
-        """check-branch-naming via subprocess emits valid TOON for the absent case."""
+        """check-working-prefixes via subprocess emits valid TOON for the absent case."""
         # Arrange
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {}})
 
         # Act
-        result = run_script(SCRIPT_PATH, 'check-branch-naming', '--plan-dir', str(plan_dir))
+        result = run_script(SCRIPT_PATH, 'check-working-prefixes', '--plan-dir', str(plan_dir))
 
         # Assert — exit 0 and TOON colon-space key-value lines
         assert result.success, f'Script failed: {result.stderr}'

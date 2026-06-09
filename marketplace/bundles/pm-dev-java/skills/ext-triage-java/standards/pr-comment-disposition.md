@@ -27,6 +27,7 @@ Concrete violations of Java standards (see `pm-dev-java:java-core`, `pm-dev-java
 | JavaDoc gaps | Missing `@param`/`@return` on public API, `@throws` not declared | `javadoc` |
 | Logging | `e.printStackTrace()`, `System.out.println` in production, missing log on caught exception | `cui-logging` (when CUI), `java-core` (otherwise) |
 | Cognitive complexity | Method exceeds threshold AND suggestion proposes a clean extraction | `severity.md` (Cognitive Complexity table) |
+| Missing boundary envelope on a newly-authored I/O / external-input boundary, or missing input type-guard on externally-sourced data | Unguarded deserialization (`ObjectMapper.readValue`) on external content without try/catch; `.get(...)`/field access on a value parsed from external input without a null/type check (NPE / `ClassCastException` on malformed input) | central FIX row — see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (boundary-envelope row) |
 
 ## REPLY-AND-RESOLVE Categories
 
@@ -49,6 +50,8 @@ Decline the suggestion with the corresponding template. Always reply before reso
 | Suggestion replaces CUI logger with SLF4J/JUL | `Module enforces CUI logging standards (`cui-logging`). SLF4J/JUL imports are blocked by ArchUnit; CuiLogger is the required logger.` |
 
 ### Scope Out of Bounds
+
+**Exclusion (load-bearing):** "Scope Out of Bounds" may NOT be applied to a finding on a file this PR modified — such a finding is in-scope **by definition** and is a FIX-Eligible boundary-envelope finding (see the boundary-envelope row above), never a Scope-Out reply. For the canonical exclusion wording see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (Scope Out of Bounds exclusion).
 
 | Trigger | Reply Template |
 |---------|----------------|

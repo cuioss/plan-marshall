@@ -469,6 +469,17 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files open-in-
 | manage-tasks | tasks/*.toon | N/A (use manage-tasks) |
 | manage-files | any other file | Generic read/write/list |
 
+### No path-resolution verb
+
+`manage-files` has **no `resolve-path` verb** of its own — it exposes only the generic file operations listed under **Operations** above. Callers needing a *resolved absolute path* to a plan document MUST use the owning typed skill, not `manage-files`:
+
+- **Solution-outline path** → `plan-marshall:manage-solution-outline:manage-solution-outline resolve-path`
+- **Request-document path** → `plan-marshall:manage-plan-documents:manage-plan-documents request path`
+
+A `manage-files resolve-path` call does not exist in the argparse surface and will be rejected with `exit_code: 2` (`argparse_rejection`). Route path resolution through the owning script above.
+
+The broader class of caller-drift `argparse_rejection` failures (invented or paraphrased `manage-*` subcommands and flags) is remediated by the [`pm-plugin-development:recipe-fix-argparse-rejection`](../../../pm-plugin-development/skills/recipe-fix-argparse-rejection/SKILL.md) corpus — no bespoke per-call guard is added here.
+
 ## Related
 
 - `manage-plan-documents` — Typed plan document operations (request.md)

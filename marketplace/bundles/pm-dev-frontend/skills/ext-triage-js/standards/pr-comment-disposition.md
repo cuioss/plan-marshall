@@ -33,6 +33,7 @@ Concrete violations of frontend standards (see `pm-dev-frontend:javascript`, `pm
 | Stylelint `error` | Invalid property, duplicate selector, !important in non-utility layer | `lint-config` |
 | Jest test correctness | Missing `expect.assertions(N)` on async test, `done` callback misuse, snapshot drift not reviewed | `jest-testing` |
 | Mock leakage | `jest.fn()` not reset between tests, global `fetch` patched without restore | `jest-testing` |
+| Missing boundary envelope on a newly-authored I/O / external-input boundary, or missing type/shape guard on externally-sourced data | Unguarded `JSON.parse` on a fetch/`localStorage` payload (throws on malformed input); property access on a value from an external API response without a presence/`typeof` check (`TypeError` on a corrupt shape) | central FIX row — see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (boundary-envelope row) |
 
 ## REPLY-AND-RESOLVE Categories
 
@@ -57,6 +58,8 @@ Decline the suggestion with the corresponding template. Always reply before reso
 | Bot suggests SCSS/LESS feature on a project migrated to native CSS | `Plan migrates styles to native CSS (nesting, layers, custom properties). SCSS-only features are intentionally out of scope.` |
 
 ### Scope Out of Bounds
+
+**Exclusion (load-bearing):** "Scope Out of Bounds" may NOT be applied to a finding on a file this PR modified — such a finding is in-scope **by definition** and is a FIX-Eligible boundary-envelope finding (see the boundary-envelope row above), never a Scope-Out reply. For the canonical exclusion wording see `../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (Scope Out of Bounds exclusion).
 
 | Trigger | Reply Template |
 |---------|----------------|

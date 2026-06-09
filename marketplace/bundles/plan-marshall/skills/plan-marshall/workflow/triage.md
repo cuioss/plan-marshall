@@ -219,6 +219,8 @@ Scope-deviation detection signals (the LLM checks these against the loaded plan 
 - The required fix would introduce a new domain to the plan's `domains[]` set.
 - The finding's body explicitly references a refactor / restructure / migration that the plan did not authorise.
 
+This *plan-scope* deviation guard is distinct from the *PR-touched-file* in-scope rule: a finding on a file the PR modified is in-scope by definition and MUST NOT be dispositioned "out of scope" — see the Scope-Out exclusion in [`ext-triage-plugin/standards/pr-comment-disposition.md`](../../../../pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md). The first signal above already excludes such findings (a PR-touched file is under a claimed module), so this guard never escalates a PR-touched-file finding as a deviation.
+
 ## Step 7: Loop-back signalling and granularity classification
 
 `loop_back_needed: true` when any decision in any group resolved to FIX OR when any group deferred via overflow. The orchestrator handles the actual re-fire (the manifest dispatcher in phase-5-execute / phase-6-finalize re-enters the calling step on next phase entry; HEAD-dependent steps in phase-6-finalize already track this via `--head-at-completion`). This workflow does NOT call `manage-status set-phase` directly — that is the calling manifest step's responsibility.
