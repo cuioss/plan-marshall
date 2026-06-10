@@ -192,7 +192,14 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     tmp_path = path.with_name(f'{path.name}.{os.getpid()}.tmp')
     fd = os.open(str(tmp_path), os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o644)
     try:
-        os.write(fd, json.dumps(data, indent=2).encode('utf-8'))
+        # POSIX permits os.write to perform a partial write, so a single call
+        # does not guarantee the whole buffer reaches the file for larger
+        # payloads. Loop until every byte is written before fsync, otherwise the
+        # committed state file would be silently truncated.
+        payload = json.dumps(data, indent=2).encode('utf-8')
+        while payload:
+            written = os.write(fd, payload)
+            payload = payload[written:]
         os.fsync(fd)
     finally:
         os.close(fd)

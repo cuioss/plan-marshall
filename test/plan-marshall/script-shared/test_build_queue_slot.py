@@ -155,8 +155,8 @@ def test_admitted_immediately_does_not_set_waiting_token(monkeypatch):
 
 
 def test_blocked_then_admitted_polls_and_runs(monkeypatch):
-    """A blocked acquire surfaces the waiting token, sleeps (mocked), re-polls,
-    and admits on the second poll."""
+    """A blocked acquire surfaces the waiting token, sleeps (mocked), re-polls
+    WITHOUT releasing, and admits on the second poll."""
     double = _QueueDouble(
         [
             {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-A'},
@@ -174,10 +174,38 @@ def test_blocked_then_admitted_polls_and_runs(monkeypatch):
     assert tokens.set_states == ['build-waiting', 'building']
     assert bqs._ICON_BUILD_WAITING in tokens.pushed_icons
     assert bqs._ICON_BUILDING in tokens.pushed_icons
-    # The superseded blocked id was released before re-polling, and the final
-    # admitted id released in the finally.
-    assert 'P:uuid-A' in double.released_ids
-    assert 'P:uuid-B' in double.released_ids
+    # The blocked id is NOT released before re-polling — re-poll is idempotent so
+    # the plan keeps its FIFO position. Only the final admitted id is released in
+    # the finally.
+    assert 'P:uuid-A' not in double.released_ids
+    assert double.released_ids == ['P:uuid-B']
+
+
+def test_blocked_poll_loop_never_releases_to_preserve_fifo(monkeypatch):
+    """FIFO-preservation across retries: while blocked, the wrapper re-polls
+    acquire WITHOUT ever releasing the queued id, so the plan's waiting entry
+    keeps its FIFO position. The release-in-loop (which shuffled the plan to the
+    back of the queue on every poll) is gone — only the FINAL queued id is
+    released, in the finally / exhaustion path."""
+    double = _QueueDouble(
+        [
+            {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-A'},
+            {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-A'},
+            {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-A'},
+            {'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-A'},
+        ]
+    )
+    _install_queue(monkeypatch, double)
+
+    with build_queue_slot('P'):
+        pass
+
+    # Three blocked re-polls before admission, but ZERO releases happened inside
+    # the loop — the plan never gave up its queue position. The only release is
+    # the final cleanup of the admitted id in the finally.
+    assert double.released_ids == ['P:uuid-A']
+    # Four acquire calls total (initial + three retries) all for the same plan.
+    assert double.acquire_calls == ['P', 'P', 'P', 'P']
 
 
 def test_sleep_called_once_per_retry(monkeypatch):

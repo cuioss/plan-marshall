@@ -393,8 +393,11 @@ class TestPyprojectCmdRunQueueBlockedThenAdmitted:
         assert tokens.set_states == ['build-waiting', 'building']
         assert bqs._ICON_BUILD_WAITING in tokens.pushed_icons
         assert bqs._ICON_BUILDING in tokens.pushed_icons
-        assert 'P:uuid-A' in double.released_ids
-        assert 'P:uuid-B' in double.released_ids
+        # The blocked id is NOT released before re-polling — re-poll is idempotent
+        # so the plan keeps its FIFO position. Only the final admitted id is
+        # released in the finally.
+        assert 'P:uuid-A' not in double.released_ids
+        assert double.released_ids == ['P:uuid-B']
 
     def test_blocked_then_admitted_sleeps_once_per_retry(self, monkeypatch):
         sleeps: list[int] = []

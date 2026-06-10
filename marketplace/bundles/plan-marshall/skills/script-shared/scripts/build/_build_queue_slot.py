@@ -17,11 +17,13 @@ Behaviour:
   acquire``. On ``admitted`` it best-effort sets the ``building`` title-token
   (🔨) and yields so the caller runs the build. On ``blocked`` it best-effort
   sets the ``build-waiting`` title-token (🕐), sleeps ``_WAIT_SECONDS`` and
-  re-polls, up to ``build_queue.max_retries`` (default 10 from marshal.json).
-  Whether the slot is admitted or the retries are exhausted, the held / queued
-  admission id is ALWAYS released and the title-token ALWAYS cleared in a
-  ``finally`` block, so the queue never leaks a slot or a waiting entry and the
-  terminal-title state never gets stuck.
+  re-polls ``acquire`` WITHOUT releasing first, up to ``build_queue.max_retries``
+  (default 10 from marshal.json). Because ``run_acquire`` is idempotent for an
+  already-queued ``plan_id``, the plan KEEPS its FIFO position across retries
+  rather than being shuffled to the back. Whether the slot is admitted or the
+  retries are exhausted, the held / queued admission id is ALWAYS released and
+  the title-token ALWAYS cleared in a ``finally`` block, so the queue never leaks
+  a slot or a waiting entry and the terminal-title state never gets stuck.
 * **Retries exhausted → BuildQueueTimeout.** When the build is still blocked
   after the final retry the queued id is released (cleanup) and
   :class:`BuildQueueTimeout` is raised, carrying a structured "try again later"
@@ -278,11 +280,16 @@ def _push_title_token(plan_id: str, icon: str) -> None:
 def _wait_for_admission(plan_id: str, max_retries: int) -> str:
     """Acquire a slot, polling while blocked, and return the admitted id.
 
-    Sets the ``build-waiting`` token (🕐) on each blocked poll and releases the
-    superseded blocked id before re-polling so the FIFO waiting queue never
-    accumulates stale entries for this plan. Raises :class:`BuildQueueTimeout`
-    when still blocked after ``max_retries`` re-polls (the final blocked id is
-    released first).
+    Sets the ``build-waiting`` token (🕐) on each blocked poll and re-polls
+    ``acquire`` WITHOUT releasing first. Because ``run_acquire`` is idempotent
+    for an already-queued ``plan_id`` — it reuses the existing waiting entry in
+    place rather than appending a new one — the plan KEEPS its FIFO position
+    across every retry. Releasing-then-re-acquiring (the prior behaviour) pushed
+    the plan to the back of the waiting queue on each poll, defeating FIFO; that
+    release is therefore gone from the loop. Raises :class:`BuildQueueTimeout`
+    when still blocked after ``max_retries`` re-polls (the final queued id IS
+    released first, as cleanup, so an exhausted plan does not leak a waiting
+    entry).
     """
     result = _acquire(plan_id)
     if result.get('status') != 'success':
@@ -301,9 +308,9 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
 
     for _ in range(max_retries):
         time.sleep(_WAIT_SECONDS)
-        # Drop the prior blocked entry before re-polling so the waiting queue
-        # does not accumulate one stale entry per retry for this plan.
-        _release(plan_id, admission_id)
+        # Re-poll WITHOUT releasing — run_acquire is idempotent for an
+        # already-queued plan_id, so the waiting entry keeps its FIFO position
+        # in place instead of being shuffled to the back on each retry.
         result = _acquire(plan_id)
         if result.get('status') != 'success':
             raise RuntimeError(

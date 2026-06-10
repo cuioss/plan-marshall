@@ -15,19 +15,27 @@ queue.
 
 It exposes two actions:
 
-  * ``acquire`` — generate an admission id ``{plan_id}:{uuid4}`` and, under the
-    serialized read-modify-write: prune any dead active holders (their plan dir
-    lives in NEITHER the main checkout NOR the holder's worktree — the shared
-    :func:`_locks_core.holder_is_dead` predicate), then if ``len(active) <
-    max_slots`` append ``{id, ts}`` to ``active`` → ``admission: admitted``;
-    else append ``{id, ts}`` to ``waiting`` → ``admission: blocked``. The script
-    does NOT loop or wait — the wait+retry loop is the build wrapper's
-    responsibility (D6); a ``blocked`` admission is a structured signal the
-    caller re-polls ``acquire`` against, not an error.
+  * ``acquire`` — resolve the admission for ``--plan-id`` **idempotently** under
+    the serialized read-modify-write: prune any dead active holders (their plan
+    dir lives in NEITHER the main checkout NOR the holder's worktree — the shared
+    :func:`_locks_core.holder_is_dead` predicate), then — if the plan already
+    holds an ``active`` slot OR already has a ``waiting`` entry — REUSE that
+    existing id without creating a duplicate (the waiting entry KEEPS its FIFO
+    position, and is promoted to ``active`` only when a freed slot makes it
+    eligible). Only a plan with no existing entry gets a fresh id
+    ``{plan_id}:{uuid4}`` and is appended to ``active`` → ``admission: admitted``
+    (slot free) or to the back of ``waiting`` → ``admission: blocked`` (at
+    capacity). The script does NOT loop or wait — the wait+retry loop is the
+    build wrapper's responsibility (D6); because re-polling ``acquire`` is
+    idempotent, the wrapper re-polls WITHOUT releasing first, so a ``blocked``
+    plan retains its FIFO place rather than being shuffled to the back. A
+    ``blocked`` admission is a structured signal the caller re-polls against, not
+    an error.
   * ``release`` — remove ``--id`` from ``active`` (and defensively from
     ``waiting``), FIFO-promote the oldest waiting entry (by admit-``ts``) into
-    the freed slot when capacity allows, and append an id+timestamp entry to the
-    ``run_log``.
+    the freed slot when capacity allows, and — only on a real release — append an
+    id+timestamp entry to the ``run_log``, pruning it to the most recent 100
+    entries so ``build-queue.json`` stays bounded.
 
 **Main-anchored resolution — via the single sanctioned utility (ADR-002):** the
 queue file always resolves against the MAIN checkout regardless of the caller's
@@ -167,15 +175,27 @@ def _prune_dead_active(active: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def run_acquire(args: Namespace) -> dict[str, Any]:
-    """Acquire a build slot for ``--plan-id`` (admit or enqueue).
+    """Acquire a build slot for ``--plan-id`` (admit or enqueue), idempotently.
 
-    Generates an admission id ``{plan_id}:{uuid4}`` and, under the serialized
-    read-modify-write, prunes dead active holders, then admits the id when a slot
-    is free (``len(active) < max_slots``) or appends it to the FIFO waiting queue
-    otherwise. Returns ``admission: admitted`` (with the freshly-claimed slot) or
-    ``admission: blocked`` (queued behind the waiting entries ahead of it). The
-    script never loops — a ``blocked`` result is a structured signal the build
-    wrapper re-polls against, not an error.
+    Under the serialized read-modify-write, prunes dead active holders, then
+    resolves the admission for ``plan_id`` **idempotently**:
+
+    * If ``plan_id`` already holds an ``active`` slot, its existing id is returned
+      with ``admission: admitted`` — no new entry, no slot double-claim.
+    * If ``plan_id`` already has a ``waiting`` entry, that entry KEEPS its FIFO
+      position (it is NOT re-appended to the back). When a slot has since freed up
+      and the entry is now within the first ``max_slots - len(active)`` waiting
+      entries by admit-``ts``, it is promoted to ``active`` → ``admission:
+      admitted`` (reusing its existing id); otherwise it stays ``blocked`` with
+      the same id.
+    * Only when ``plan_id`` has NO existing entry is a fresh admission id
+      ``{plan_id}:{uuid4}`` generated and admitted (slot free) or enqueued at the
+      back of the FIFO waiting queue (at capacity).
+
+    Idempotence is the FIFO-preservation guarantee: the build wrapper re-polls
+    ``acquire`` while blocked WITHOUT releasing first, so a queued plan retains its
+    place rather than being shuffled to the back on every poll. A ``blocked``
+    result is a structured signal the wrapper re-polls against, not an error.
     """
     plan_id: str = args.plan_id
     try:
@@ -184,7 +204,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         return make_error(str(exc), code=ErrorCode.NOT_FOUND, plan_id=plan_id)
 
     max_slots = _resolve_max_slots()
-    entry_id = f'{plan_id}:{uuid.uuid4()}'
+    new_entry_id = f'{plan_id}:{uuid.uuid4()}'
     ts = time.time()
     outcome: dict[str, Any] = {}
 
@@ -193,13 +213,44 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         waiting = _entry_list(state, 'waiting')
         run_log = _entry_list(state, 'run_log')
 
-        entry = {'id': entry_id, 'plan_id': plan_id, 'ts': ts}
+        # Idempotent fast-path: a plan already holding an active slot keeps it.
+        existing_active = next((e for e in active if e.get('plan_id') == plan_id), None)
+        if existing_active is not None:
+            outcome['id'] = existing_active['id']
+            outcome['admission'] = 'admitted'
+            outcome['active_count'] = len(active)
+            outcome['waiting_count'] = len(waiting)
+            return {'active': active, 'waiting': waiting, 'run_log': run_log}
+
+        # Idempotent re-poll: a plan already in the waiting queue keeps its FIFO
+        # position. Promote it ONLY when a slot has freed up AND it is within the
+        # available-slot prefix of the FIFO-ordered (by admit-ts) waiting queue —
+        # never re-append to the back.
+        existing_waiting = next((e for e in waiting if e.get('plan_id') == plan_id), None)
+        if existing_waiting is not None:
+            free = max_slots - len(active)
+            promotable = sorted(waiting, key=lambda e: e.get('ts', 0.0))[:max(free, 0)]
+            if any(e['id'] == existing_waiting['id'] for e in promotable):
+                waiting = [e for e in waiting if e['id'] != existing_waiting['id']]
+                active.append(existing_waiting)
+                outcome['admission'] = 'admitted'
+            else:
+                outcome['admission'] = 'blocked'
+            outcome['id'] = existing_waiting['id']
+            outcome['active_count'] = len(active)
+            outcome['waiting_count'] = len(waiting)
+            return {'active': active, 'waiting': waiting, 'run_log': run_log}
+
+        # First acquire for this plan: admit when a slot is free, else enqueue at
+        # the back of the FIFO waiting queue.
+        entry = {'id': new_entry_id, 'plan_id': plan_id, 'ts': ts}
         if len(active) < max_slots:
             active.append(entry)
             outcome['admission'] = 'admitted'
         else:
             waiting.append(entry)
             outcome['admission'] = 'blocked'
+        outcome['id'] = new_entry_id
         outcome['active_count'] = len(active)
         outcome['waiting_count'] = len(waiting)
         return {'active': active, 'waiting': waiting, 'run_log': run_log}
@@ -209,7 +260,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     return {
         'status': 'success',
         'plan_id': plan_id,
-        'id': entry_id,
+        'id': outcome['id'],
         'admission': outcome['admission'],
         'max_slots': max_slots,
         'active_count': outcome['active_count'],
@@ -224,9 +275,12 @@ def run_release(args: Namespace) -> dict[str, Any]:
     Removes ``--id`` from ``active`` (and defensively from ``waiting``, so a
     release of a still-queued id is benign), then — when a slot is now free —
     FIFO-promotes the oldest waiting entry (by admit-``ts``) into ``active`` and
-    records it as the ``promoted`` id. Appends an id+timestamp entry to the
-    ``run_log``. Releasing an id that is not present is an idempotent no-op
-    success (``action: noop``) so a crashed-and-retried release does not error.
+    records it as the ``promoted`` id. On a real release (the id was actually
+    present), appends an id+timestamp entry to the ``run_log`` and prunes it to
+    the most recent 100 entries so ``build-queue.json`` stays bounded; a no-op
+    release of an absent id leaves the ``run_log`` untouched. Releasing an id
+    that is not present is an idempotent no-op success (``action: noop``) so a
+    crashed-and-retried release does not error.
     """
     plan_id: str = args.plan_id
     target_id: str = args.id
@@ -261,7 +315,14 @@ def run_release(args: Namespace) -> dict[str, Any]:
             promoted = oldest['id']
         outcome['promoted'] = promoted
 
-        run_log.append({'id': target_id, 'plan_id': plan_id, 'ts': time.time()})
+        # Append to the run_log ONLY on a real release (the id was actually
+        # present in active/waiting), so a no-op release of an absent id does not
+        # accrete a stale entry, then prune to the most recent 100 entries — the
+        # log is a bounded audit tail, not an unbounded history, so build-queue.json
+        # cannot grow without limit across a long-lived cluster.
+        if removed:
+            run_log.append({'id': target_id, 'plan_id': plan_id, 'ts': time.time()})
+            run_log = run_log[-100:]
         outcome['active_count'] = len(active)
         outcome['waiting_count'] = len(waiting)
         return {'active': active, 'waiting': waiting, 'run_log': run_log}

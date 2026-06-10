@@ -221,6 +221,141 @@ class TestRelease:
         rel = build_queue.run_release(Namespace(plan_id='plan-a', id=acq['id']))
         assert rel['promoted'] is None
 
+    def test_noop_release_does_not_append_run_log_entry(self, isolated_base: dict) -> None:
+        """A no-op release (the id was NOT present in active/waiting) leaves the
+        run_log untouched — only a REAL release accretes an audit entry, so an
+        absent-id retry storm cannot grow build-queue.json without bound."""
+        # One real release seeds the log with a single entry.
+        acq = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+        build_queue.run_release(Namespace(plan_id='plan-a', id=acq['id']))
+        seeded = _read_queue(isolated_base['queue_path'])['run_log']
+        assert [e['id'] for e in seeded] == [acq['id']]
+
+        # A no-op release of an absent id is a success but appends nothing.
+        rel = build_queue.run_release(Namespace(plan_id='plan-a', id='plan-a:ghost-uuid'))
+        assert rel['action'] == 'noop'
+
+        after = _read_queue(isolated_base['queue_path'])['run_log']
+        assert [e['id'] for e in after] == [acq['id']], after
+
+    def test_run_log_is_pruned_to_most_recent_100_entries(self, isolated_base: dict) -> None:
+        """The run_log is a bounded audit tail: after each real release it is
+        pruned to the most recent 100 entries, so a long-lived cluster cannot let
+        build-queue.json grow indefinitely. Across 150 real releases the log holds
+        exactly the last 100 ids in append order (the oldest 50 are dropped)."""
+        released_ids: list[str] = []
+        for i in range(150):
+            plan = f'plan-{i}'
+            acq = build_queue.run_acquire(Namespace(plan_id=plan))
+            build_queue.run_release(Namespace(plan_id=plan, id=acq['id']))
+            released_ids.append(acq['id'])
+
+        run_log = _read_queue(isolated_base['queue_path'])['run_log']
+        assert len(run_log) == 100
+        # The retained window is the most recent 100 releases, in append order.
+        assert [e['id'] for e in run_log] == released_ids[-100:]
+
+
+# =============================================================================
+# Idempotent acquire — FIFO position preserved across re-polls (b8c531 / e738fe)
+# =============================================================================
+
+
+class TestIdempotentAcquire:
+    def test_re_acquire_active_holder_reuses_id_without_new_entry(self, isolated_base: dict) -> None:
+        """A plan already holding an active slot re-acquires its SAME id with no
+        duplicate active entry — acquire is idempotent for an active holder."""
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        first = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+        assert first['admission'] == 'admitted'
+
+        second = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+        assert second['admission'] == 'admitted'
+        assert second['id'] == first['id']
+        assert second['active_count'] == 1
+
+        state = _read_queue(isolated_base['queue_path'])
+        assert [e['id'] for e in state['active']] == [first['id']]
+        assert state['waiting'] == []
+
+    def test_re_acquire_blocked_plan_keeps_fifo_position(self, isolated_base: dict) -> None:
+        """The FIFO-preservation guarantee: a blocked plan that re-polls acquire
+        KEEPS its waiting entry in place (same id, same FIFO position) instead of
+        being shuffled to the back of the queue on each poll."""
+        _set_max_slots(isolated_base['base'], 1)
+        # plan-held fills the single slot; plan-w1 then plan-w2 queue behind it.
+        for name in ('plan-held', 'plan-w1', 'plan-w2'):
+            _make_live_plan(isolated_base['base'], name)
+        build_queue.run_acquire(Namespace(plan_id='plan-held'))
+        w1 = build_queue.run_acquire(Namespace(plan_id='plan-w1'))
+        w2 = build_queue.run_acquire(Namespace(plan_id='plan-w2'))
+        assert w1['admission'] == 'blocked'
+        assert w2['admission'] == 'blocked'
+
+        # plan-w1 re-polls while still blocked — it must NOT move behind plan-w2.
+        re_w1 = build_queue.run_acquire(Namespace(plan_id='plan-w1'))
+        assert re_w1['admission'] == 'blocked'
+        assert re_w1['id'] == w1['id']
+        assert re_w1['waiting_count'] == 2
+
+        state = _read_queue(isolated_base['queue_path'])
+        # The waiting order is unchanged: plan-w1 still ahead of plan-w2.
+        assert [e['id'] for e in state['waiting']] == [w1['id'], w2['id']]
+
+    def test_re_acquire_blocked_plan_admitted_when_slot_frees(self, isolated_base: dict) -> None:
+        """Once the holder releases, the oldest waiting plan's next re-poll is
+        admitted (reusing its existing id) — the re-poll promotes the FIFO head
+        without a release-then-re-acquire round trip."""
+        _set_max_slots(isolated_base['base'], 1)
+        for name in ('plan-held', 'plan-w1', 'plan-w2'):
+            _make_live_plan(isolated_base['base'], name)
+        held = build_queue.run_acquire(Namespace(plan_id='plan-held'))
+        w1 = build_queue.run_acquire(Namespace(plan_id='plan-w1'))
+        w2 = build_queue.run_acquire(Namespace(plan_id='plan-w2'))
+
+        # The holder releases. FIFO-promote moves plan-w1 into the freed slot.
+        build_queue.run_release(Namespace(plan_id='plan-held', id=held['id']))
+
+        # plan-w1 re-polls and finds itself already promoted to active (the
+        # release promoted it); its id is unchanged and it is admitted.
+        re_w1 = build_queue.run_acquire(Namespace(plan_id='plan-w1'))
+        assert re_w1['admission'] == 'admitted'
+        assert re_w1['id'] == w1['id']
+
+        # plan-w2 re-polls but the slot is taken by plan-w1 → still blocked.
+        re_w2 = build_queue.run_acquire(Namespace(plan_id='plan-w2'))
+        assert re_w2['admission'] == 'blocked'
+        assert re_w2['id'] == w2['id']
+
+    def test_re_acquire_non_head_waiter_stays_blocked_when_one_slot_frees(
+        self, isolated_base: dict
+    ) -> None:
+        """FIFO order is honoured when a single slot frees: only the oldest
+        waiting plan is promotable. A non-head waiter that re-polls stays blocked
+        even though a slot is free, because an earlier waiter holds priority."""
+        _set_max_slots(isolated_base['base'], 2)
+        for name in ('plan-h1', 'plan-h2', 'plan-w1', 'plan-w2'):
+            _make_live_plan(isolated_base['base'], name)
+        h1 = build_queue.run_acquire(Namespace(plan_id='plan-h1'))
+        build_queue.run_acquire(Namespace(plan_id='plan-h2'))
+        w1 = build_queue.run_acquire(Namespace(plan_id='plan-w1'))
+        w2 = build_queue.run_acquire(Namespace(plan_id='plan-w2'))
+        assert w1['admission'] == 'blocked'
+        assert w2['admission'] == 'blocked'
+
+        # Free exactly ONE slot by releasing plan-h1. The release already
+        # FIFO-promotes plan-w1, so plan-w1 is now active. plan-w2 re-polls: only
+        # one slot total is free-able and it went to plan-w1 → plan-w2 blocked.
+        build_queue.run_release(Namespace(plan_id='plan-h1', id=h1['id']))
+        re_w2 = build_queue.run_acquire(Namespace(plan_id='plan-w2'))
+        assert re_w2['admission'] == 'blocked'
+        assert re_w2['id'] == w2['id']
+
+        state = _read_queue(isolated_base['queue_path'])
+        active_plans = {e['plan_id'] for e in state['active']}
+        assert active_plans == {'plan-h2', 'plan-w1'}
+        assert [e['id'] for e in state['waiting']] == [w2['id']]
+
 
 # =============================================================================
 # Corrupt / missing file resilience

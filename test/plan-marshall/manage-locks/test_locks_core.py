@@ -172,6 +172,20 @@ def test_atomic_write_leaves_no_temp_file(tmp_path):
     assert leftovers == []
 
 
+def test_atomic_write_large_payload_round_trips_without_truncation(tmp_path):
+    # POSIX permits os.write to return a partial count, so a single os.write
+    # call does not guarantee the whole buffer reaches the file for a large
+    # payload. The write-loop must keep writing until every byte is flushed —
+    # a large state dict (well past any single-write boundary) must round-trip
+    # intact, never truncated to a parse error or a short read.
+    path = tmp_path / 'state.json'
+    large_state = {'slots': {f'plan-{i:05d}': {'pid': i, 'note': 'x' * 64} for i in range(5000)}}
+
+    _atomic_write_json(path, large_state)
+
+    assert json.loads(path.read_text(encoding='utf-8')) == large_state
+
+
 # =============================================================================
 # _acquire_guard — free / stale-reclamation / timeout
 # =============================================================================
