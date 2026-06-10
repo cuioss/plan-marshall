@@ -1,13 +1,13 @@
 ---
 name: ext-self-review-plan-marshall
-description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter) for pre-submission structural self-review.
+description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims) for pre-submission structural self-review.
 user-invocable: false
 implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing
 ---
 
 # Self-Review Candidate Surfacing — plan-marshall domain
 
-**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the nine structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift) against a bounded surface, not an unbounded read of the whole diff.
+**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the twelve structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check) against a bounded surface, not an unbounded read of the whole diff.
 
 ## Enforcement
 
@@ -48,7 +48,7 @@ The marker is a pure structural signal — no LLM call is added to the surface s
 
 ## Subcommand: `surface`
 
-Surfaces twelve candidate lists from the worktree's staged diff against the base branch.
+Surfaces fifteen candidate lists from the worktree's staged diff against the base branch.
 
 ### Inputs
 
@@ -82,7 +82,10 @@ counts:
   source_of_truth: N11
   same_document_consistency: N12
   description_vs_body: N13
-  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13
+  unguarded_boundaries: N14
+  count_prose: N15
+  touched_claims: N16
+  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16
 
 regexes[N1]{file,line,pattern}:
   {repo-relative-path},{line},{regex-pattern-string}
@@ -122,9 +125,18 @@ same_document_consistency[N12]{file,line,keyword,text}:
 
 description_vs_body[N13]{file,line,key,description}:
   {repo-relative-path},{line},{description|summary},{frontmatter-description-text}
+
+unguarded_boundaries[N14]{file,line,boundary,guarded}:
+  {repo-relative-path},{line},{boundary-call-kind},false
+
+count_prose[N15]{file,line,text}:
+  {repo-relative-skill-md-path},{line},{matched-count-prose-line}
+
+touched_claims[N16]{file,line,text}:
+  {repo-relative-path},{line},{added-line-text}
 ```
 
-> The `total` count covers the ten line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`) only. `contract_sources` and `schema_bearing_files` are review-anchor categories with their own counts; they are not summed into `total` because each modified file contributes at most one `contract_sources` entry whose payload is references rather than candidates. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
+> The `total` count covers the twelve line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`) only. `contract_sources`, `schema_bearing_files`, and `count_prose` are review-anchor categories with their own counts; they are not summed into `total` — `contract_sources` and `schema_bearing_files` because each modified file contributes at most one entry whose payload is references rather than candidates, and `count_prose` because it anchors a sibling-SKILL.md re-check rather than flagging an added line. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
 
 ### Detection Rules
 
@@ -172,6 +184,12 @@ description_vs_body[N13]{file,line,key,description}:
 
 12. **Description-vs-body frontmatter** — surfaces one candidate per modified `.md` file that carries a frontmatter `description:` (or `summary:`) key in its post-image AND has at least one added line in the document body (any added line below the closing frontmatter `---` delimiter). A pure frontmatter-only edit, or a `.md` with no frontmatter description, surfaces nothing. The frontmatter description summarizes the document's model; when the body changes, the description may now describe a model the body no longer implements. Each entry carries `file`, `line` (the frontmatter description line in the post-image), `key` (`description` or `summary`), and `description` (the description value, truncated to 200 characters). The cognitive review's check 9 reads the description against the changed body and surfaces a drift when they diverge.
 
+13. **Lone unguarded boundaries** — added `.py` lines opening a `subprocess.*` call (`run`, `Popen`, `check_output`, `call`, `check_call`) or a file-I/O call (`open(`, `Path.read_text`/`write_text`/`read_bytes`/`write_bytes`) that is **unguarded**. A `subprocess.*` call is unguarded when `check=True` is absent on the same line; a file-I/O call has no `check` kwarg and is always unguarded by that criterion. The second condition is that there is no enclosing `try:` block in the same function — tracked by a per-file walk that opens an "inside try" window at a `try:` opener and closes it at the next `def`/`class` header (a `try` cannot span a function boundary). Network calls (`socket.`, `urllib.`, `http.client.`) are out of scope and never matched, and the existing sibling-envelope unguarded-pair detection is a separate concern not re-implemented here. Each entry carries `file`, `line`, `boundary` (the matched call kind, e.g. `subprocess.run` or `open`), and `guarded` (always `false` for a surfaced entry). The cognitive review's check 10 decides whether the missing guard is a real defect.
+
+14. **Stale count-prose** — for each modified file nested inside a skill directory (the nearest ancestor containing `SKILL.md`), every `SKILL.md` in that same skill directory is scanned for count-prose: a digit OR an English number word (`one`..`twenty`) immediately adjacent to one of the cardinality nouns `operation`, `field`, `step`, `rule`, `command`. The list is a **review anchor** (excluded from `total`), not a line-level defect flag — it surfaces every count phrase that may have gone stale because a sibling file in the directory changed. Each entry carries `file` (the SKILL.md path), `line` (the matched line, 1-based), and `text` (the truncated matched line), deduplicated per `(file, line)`. The cognitive review's check 11 re-counts the referent and surfaces a drift when the prose number no longer matches.
+
+15. **Near-identical-hunk touched claims** — for each adjacent removed/added (`-`/`+`) line pair within a hunk, both lines are tokenized; the pair fires when the two token sequences are equal in length AND differ in exactly one position (a single-token swap). The `+` line is surfaced so the cognitive pass re-verifies the REST of the line's claims, not just the swapped token. A whitespace-only difference (identical token sequences) and a multi-token difference are both excluded. Each entry carries `file`, `line` (the `+` line's post-image line number), and `text` (the truncated `+` line). The cognitive review's check 12 re-checks the surfaced line's surviving claims.
+
 ### Errors
 
 | Condition | Output |
@@ -205,6 +223,9 @@ This script is a **worktree-scoped (Bucket B)** script (per `tools-script-execut
 - Source-of-truth duplicate detection: the same UPPER_SNAKE_CASE constant assigned divergent literals across two files surfaces a candidate (positive); the same constant assigned identical values, or declared in a single file, surfaces nothing (negative)
 - Same-document normative-directive detection: an added `.md` line carrying a normative keyword (MUST/NEVER/etc.) surfaces a candidate (positive); a non-normative added line, or an added `.py` line, surfaces nothing (negative)
 - Description-vs-body detection: a modified `.md` with a frontmatter `description`/`summary` key AND an added body line surfaces a candidate (positive); a pure frontmatter-only edit, or a `.md` with no frontmatter description, surfaces nothing (negative)
+- Lone-unguarded-boundary detection: a `subprocess.run(...)` with no `check=True` outside a `try`, and a file-I/O call (`open(...)`, `Path.read_text(...)`) outside a `try`, each surface a candidate (positive); the same calls with `check=True` or inside a `try/except` in the same function surface nothing; a `def` header resets the try-window across functions; network calls (`urllib`, `socket`) surface nothing (out of scope)
+- Stale count-prose detection: a modified sibling file plus a SKILL.md whose prose carries `twelve fields` / `5 rules` surfaces those count-prose lines (positive); a digit NOT adjacent to a cardinality noun surfaces nothing; a modified file outside any skill directory surfaces nothing; the same skill dir reached via two modified siblings deduplicates per `(file, line)`
+- Near-identical-hunk touched-claim detection: the diff-pair walk (`_iter_changed_line_pairs`) yields `(file, post_line, removed, added)` for adjacent `-`/`+` pairs and ignores unpaired lines and context-broken pairs; a `-`/`+` pair differing by exactly one token surfaces the `+` line as a `touched_claim` (positive); a many-token difference, an identical pair, and a differing-token-count pair each surface nothing (negative)
 
 ## Canonical invocations
 

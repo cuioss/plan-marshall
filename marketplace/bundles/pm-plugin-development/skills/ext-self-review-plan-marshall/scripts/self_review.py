@@ -2,11 +2,12 @@
 """Deterministic candidate surfacing for the pre-submission-self-review finalize step.
 
 Reads the worktree's diff against the base branch, scans added lines in modified
-files, and emits twelve candidate lists (regexes, user-facing strings, markdown
+files, and emits fifteen candidate lists (regexes, user-facing strings, markdown
 sections, symmetric-pair functions, flag-guard pairs, contract sources,
 schema-bearing files, keep-identifier markers, producer-consumer pairs,
 source-of-truth duplicates, same-document normative directives, description-vs-body
-frontmatter) as TOON for the LLM cognitive review pass to consume.
+frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk
+touched claims) as TOON for the LLM cognitive review pass to consume.
 
 Storage: stateless — reads the worktree diff and derives the plan footprint
 live from the worktree (``compute-footprint``: ``{base}...HEAD`` ∪ porcelain).
@@ -169,6 +170,48 @@ _FRONTMATTER_DESCRIPTION = re.compile(
     r'^(description|summary)\s*:\s*(.+?)\s*$'
 )
 
+# Lone-unguarded-boundary detection (Facet 1).
+# Recognizes an added ``.py`` line that opens a subprocess or file-I/O boundary
+# call. ``subprocess.*`` calls (run/Popen/check_output/call/check_call) and the
+# file-I/O calls (``open(``, ``Path.read_text``/``write_text``/``read_bytes``/
+# ``write_bytes``) are the in-scope boundaries. Network calls (``socket.``,
+# ``urllib.``, ``http.client.``) are deliberately OUT of scope and not matched.
+_SUBPROCESS_BOUNDARY = re.compile(
+    r'\bsubprocess\.(run|Popen|check_output|call|check_call)\s*\('
+)
+_FILE_IO_BOUNDARY = re.compile(
+    r'(?:\bopen\s*\(|\.(?:read_text|write_text|read_bytes|write_bytes)\s*\()'
+)
+# ``check=True`` keyword that guards a subprocess call against a silent failure.
+_CHECK_TRUE_KWARG = re.compile(r'\bcheck\s*=\s*True\b')
+# A line that opens a ``try:`` block — the enclosing-guard signal for Facet 1.
+_TRY_OPENER = re.compile(r'^\s*try\s*:')
+# A function/class definition header — the function-boundary signal that resets
+# the "are we inside a try block?" state for Facet 1.
+_DEF_OR_CLASS_HEADER = re.compile(r'^\s*(?:async\s+def|def|class)\s+\w+')
+
+# Count-prose-staleness detection (Facet 2).
+# A digit OR an English number word immediately adjacent to one of the
+# cardinality nouns. The cognitive review re-checks the number's correctness
+# after a sibling file in the same skill directory changed.
+_NUMBER_WORDS = (
+    'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|'
+    'thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty'
+)
+_CARDINALITY_NOUNS = 'operations?|fields?|steps?|rules?|commands?'
+# Number (digit or word) directly before a cardinality noun: ``twelve fields``,
+# ``5 rules``, ``nine checks`` are matched; a digit not adjacent to a noun is not.
+_COUNT_PROSE = re.compile(
+    rf'(?i)\b(?:\d+|{_NUMBER_WORDS})\s+(?:{_CARDINALITY_NOUNS})\b'
+)
+
+# Near-identical-hunk touched-claim detection (Facet 3).
+# Tokenizer that splits a line into word/identifier/number/punctuation tokens.
+# Two lines that tokenize identically except for exactly one differing token are
+# a single-token swap — the ``+`` line is surfaced so the cognitive pass
+# re-verifies the REST of the line's claims, not just the swapped token.
+_TOKENIZE = re.compile(r'\w+|[^\w\s]')
+
 
 # =============================================================================
 # Helpers
@@ -296,6 +339,58 @@ def _iter_added_lines(diff_text: str) -> list[tuple[str, int, str]]:
             continue
         if raw.startswith('\\'):
             continue
+    return out
+
+
+def _iter_changed_line_pairs(diff_text: str) -> list[tuple[str, int, str, str]]:
+    """Yield ``(file_path, post_image_line_no, removed, added)`` for adjacent
+    ``-``/``+`` pairs within a hunk.
+
+    A pair is a removed line immediately followed by an added line in the same
+    hunk. The ``post_image_line_no`` is the added line's post-image line number.
+    Unpaired ``+`` lines (an addition not preceded by a removal) and unpaired
+    ``-`` lines (a removal not followed by an addition) are ignored — only the
+    one-for-one swap shape Facet 3 cares about is yielded. ``_iter_added_lines``
+    is intentionally left untouched (other detectors depend on its added-only
+    shape); this helper is the removed-line-aware companion.
+    """
+    out: list[tuple[str, int, str, str]] = []
+    current_file: str | None = None
+    post_line = 0
+    pending_removed: str | None = None
+    for raw in diff_text.splitlines():
+        m_file = _FILE_HEADER.match(raw)
+        if m_file is not None:
+            current_file = m_file.group(1)
+            post_line = 0
+            pending_removed = None
+            continue
+        m_hunk = _HUNK_HEADER.match(raw)
+        if m_hunk is not None:
+            post_line = int(m_hunk.group(1))
+            pending_removed = None
+            continue
+        if current_file is None:
+            continue
+        if raw.startswith('+++') or raw.startswith('---'):
+            continue
+        if raw.startswith('-'):
+            pending_removed = raw[1:]
+            continue
+        if raw.startswith('+'):
+            content = raw[1:]
+            if pending_removed is not None:
+                out.append((current_file, post_line, pending_removed, content))
+            pending_removed = None
+            post_line += 1
+            continue
+        if raw.startswith(' '):
+            pending_removed = None
+            post_line += 1
+            continue
+        if raw.startswith('\\'):
+            continue
+        pending_removed = None
     return out
 
 
@@ -1092,6 +1187,216 @@ def _detect_description_vs_body(
     return out
 
 
+def _detect_unguarded_boundaries(
+    added: list[tuple[str, int, str]], project_dir: Path | None = None
+) -> list[dict[str, Any]]:
+    """Detect an added subprocess/file-I/O boundary call with no guard (Facet 1).
+
+    Scans added ``.py`` lines for a boundary call and surfaces it when BOTH
+    hold:
+
+    1. the call is unguarded — for a ``subprocess.*`` call, ``check=True`` is
+       absent on the same line; a file-I/O call (``open(``,
+       ``Path.read_text``/``write_text``/``read_bytes``/``write_bytes``) is
+       always treated as unguarded by criterion 1 since it has no ``check``
+       kwarg; AND
+    2. there is no enclosing ``try`` block in the same function — tracked by a
+       per-file walk that opens an "inside try" window at a ``try:`` opener and
+       closes it at the next def/class header.
+
+    When ``project_dir`` is provided the function reads the full post-image of
+    each changed ``.py`` file and walks every line to build accurate
+    try-block / function-boundary state.  This ensures that pre-existing
+    ``try`` blocks and ``def``/``class`` headers — which are absent from the
+    diff's ``added`` lines — are correctly accounted for.  When the file is not
+    present on disk (e.g. in unit tests without a ``project_dir``), the
+    function falls back to scanning only the ``added`` lines, which preserves
+    the original behaviour for test scenarios.
+
+    Network calls (``socket.``, ``urllib.``, ``http.client.``) are out of scope
+    and never matched (their absence from the boundary regexes is the exclusion).
+    The existing sibling-envelope unguarded-pair detection is a separate concern
+    and is not re-implemented here.
+
+    Each entry carries ``file``, ``line``, ``boundary`` (the matched call kind),
+    and ``guarded`` (always ``False`` for a surfaced entry).
+    """
+    out: list[dict[str, Any]] = []
+
+    # Group added lines by file so we can process each file independently.
+    added_by_file: dict[str, dict[int, str]] = {}
+    for path, lineno, content in added:
+        if path.endswith('.py'):
+            added_by_file.setdefault(path, {})[lineno] = content
+
+    for path, added_lines in added_by_file.items():
+        post_image = _read_post_image(project_dir, path) if project_dir is not None else []
+
+        if post_image:
+            # Walk the full post-image so that pre-existing try blocks and
+            # def/class headers outside the diff are properly tracked.
+            inside_try = False
+            for idx, line in enumerate(post_image, start=1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+                if _DEF_OR_CLASS_HEADER.match(line):
+                    inside_try = False
+                    continue
+                if _TRY_OPENER.match(line):
+                    inside_try = True
+                    continue
+                if idx not in added_lines:
+                    continue
+                content = added_lines[idx]
+                sub_match = _SUBPROCESS_BOUNDARY.search(content)
+                if sub_match is not None:
+                    guarded = inside_try or bool(_CHECK_TRUE_KWARG.search(content))
+                    if not guarded:
+                        out.append(
+                            {
+                                'file': path,
+                                'line': idx,
+                                'boundary': f'subprocess.{sub_match.group(1)}',
+                                'guarded': False,
+                            }
+                        )
+                    continue
+                if _FILE_IO_BOUNDARY.search(content) is not None:
+                    if not inside_try:
+                        io_match = _FILE_IO_BOUNDARY.search(content)
+                        token = io_match.group(0).rstrip('(') if io_match is not None else 'file_io'
+                        out.append(
+                            {
+                                'file': path,
+                                'line': idx,
+                                'boundary': token.lstrip('.'),
+                                'guarded': False,
+                            }
+                        )
+        else:
+            # Fallback: no post-image available — scan only the added lines.
+            # A def/class header resets the window (a try cannot span a
+            # function boundary), so the "enclosing try in the SAME function"
+            # rule is honoured within the diff-only subset.
+            inside_try = False
+            for lineno, content in sorted(added_lines.items()):
+                stripped = content.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+                if _DEF_OR_CLASS_HEADER.match(content):
+                    inside_try = False
+                    continue
+                if _TRY_OPENER.match(content):
+                    inside_try = True
+                    continue
+                sub_match = _SUBPROCESS_BOUNDARY.search(content)
+                if sub_match is not None:
+                    guarded = inside_try or bool(_CHECK_TRUE_KWARG.search(content))
+                    if not guarded:
+                        out.append(
+                            {
+                                'file': path,
+                                'line': lineno,
+                                'boundary': f'subprocess.{sub_match.group(1)}',
+                                'guarded': False,
+                            }
+                        )
+                    continue
+                if _FILE_IO_BOUNDARY.search(content) is not None:
+                    if not inside_try:
+                        io_match = _FILE_IO_BOUNDARY.search(content)
+                        token = io_match.group(0).rstrip('(') if io_match is not None else 'file_io'
+                        out.append(
+                            {
+                                'file': path,
+                                'line': lineno,
+                                'boundary': token.lstrip('.'),
+                                'guarded': False,
+                            }
+                        )
+    return out
+
+
+def _detect_count_prose(
+    modified_files: list[str], project_dir: Path
+) -> list[dict[str, Any]]:
+    """Detect count-prose in SKILL.md siblings of modified files (Facet 2).
+
+    For each modified file nested inside a skill directory (reuse
+    ``_find_skill_dir``), scan every ``SKILL.md`` in that same skill directory
+    for count-prose — a digit OR an English number word immediately adjacent to
+    one of the cardinality nouns (``operation``, ``field``, ``step``, ``rule``,
+    ``command``). The cognitive review re-checks that the surfaced number is
+    still correct after a sibling file in the directory changed.
+
+    Each entry carries ``file`` (the SKILL.md path), ``line`` (the matched line
+    number, 1-based), and ``text`` (the truncated matched line). Deduplicated
+    per ``(file, line)``.
+    """
+    skill_dirs: set[Path] = set()
+    for rel in modified_files:
+        modified_path = (project_dir / rel).resolve()
+        try:
+            modified_path.relative_to(project_dir)
+        except ValueError:
+            continue
+        skill_dir = _find_skill_dir(modified_path, project_dir)
+        if skill_dir is not None:
+            skill_dirs.add(skill_dir)
+
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for skill_dir in sorted(skill_dirs):
+        skill_md = skill_dir / 'SKILL.md'
+        if not skill_md.is_file():
+            continue
+        try:
+            text = skill_md.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        rel_md = str(skill_md.relative_to(project_dir))
+        for idx, line in enumerate(text.splitlines(), start=1):
+            if _COUNT_PROSE.search(line) is None:
+                continue
+            key = (rel_md, idx)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({'file': rel_md, 'line': idx, 'text': _truncate(line.strip(), 200)})
+    return out
+
+
+def _detect_touched_claims(
+    pairs: list[tuple[str, int, str, str]],
+) -> list[dict[str, Any]]:
+    """Detect near-identical ``-``/``+`` hunk pairs (Facet 3).
+
+    For each adjacent removed/added line pair, tokenize both lines and fire when
+    they differ by approximately one token: the two token sequences are equal in
+    length AND differ in exactly one position. The ``+`` line is surfaced as a
+    ``touched_claim`` candidate so the cognitive pass re-verifies the REST of the
+    line's claims, not just the swapped token. A whitespace-only difference
+    (identical token sequences) and a many-token difference are both excluded.
+
+    Each entry carries ``file``, ``line`` (the ``+`` line's post-image line
+    number), and ``text`` (the truncated ``+`` line).
+    """
+    out: list[dict[str, Any]] = []
+    for path, lineno, removed, added in pairs:
+        removed_tokens = _TOKENIZE.findall(removed)
+        added_tokens = _TOKENIZE.findall(added)
+        if len(removed_tokens) != len(added_tokens):
+            continue
+        differing = sum(
+            1 for a, b in zip(removed_tokens, added_tokens, strict=True) if a != b
+        )
+        if differing != 1:
+            continue
+        out.append({'file': path, 'line': lineno, 'text': _truncate(added, 200)})
+    return out
+
+
 # =============================================================================
 # Subcommand: surface
 # =============================================================================
@@ -1163,6 +1468,13 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     source_of_truth = _detect_source_of_truth(added)
     same_document = _detect_same_document_consistency(added)
     description_vs_body = _detect_description_vs_body(added, project_dir)
+    unguarded_boundaries = _detect_unguarded_boundaries(added, project_dir)
+    count_prose = _detect_count_prose(modified_files, project_dir)
+    changed_pairs = _iter_changed_line_pairs(diff_text)
+    if modified_files:
+        allowed = set(modified_files)
+        changed_pairs = [pr for pr in changed_pairs if pr[0] in allowed]
+    touched_claims = _detect_touched_claims(changed_pairs)
 
     output = {
         'status': 'success',
@@ -1183,6 +1495,13 @@ def _cmd_surface(args: argparse.Namespace) -> int:
             'source_of_truth': len(source_of_truth),
             'same_document_consistency': len(same_document),
             'description_vs_body': len(description_vs_body),
+            'unguarded_boundaries': len(unguarded_boundaries),
+            'count_prose': len(count_prose),
+            'touched_claims': len(touched_claims),
+            # ``count_prose`` is a review-anchor list (like ``contract_sources``
+            # and ``schema_bearing_files``) and is excluded from ``total``; the
+            # line-level lists ``unguarded_boundaries`` and ``touched_claims``
+            # are included.
             'total': (
                 len(regexes)
                 + len(user_facing)
@@ -1194,6 +1513,8 @@ def _cmd_surface(args: argparse.Namespace) -> int:
                 + len(source_of_truth)
                 + len(same_document)
                 + len(description_vs_body)
+                + len(unguarded_boundaries)
+                + len(touched_claims)
             ),
         },
         'regexes': regexes,
@@ -1209,6 +1530,9 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'source_of_truth': source_of_truth,
         'same_document_consistency': same_document,
         'description_vs_body': description_vs_body,
+        'unguarded_boundaries': unguarded_boundaries,
+        'count_prose': count_prose,
+        'touched_claims': touched_claims,
     }
     output_toon(output)
     return 0
@@ -1228,7 +1552,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_surface = sub.add_parser(
         'surface',
-        help='Emit twelve candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter) from the worktree diff as TOON.',
+        help='Emit fifteen candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims) from the worktree diff as TOON.',
         allow_abbrev=False,
     )
     add_plan_id_arg(p_surface)

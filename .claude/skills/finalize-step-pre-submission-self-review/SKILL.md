@@ -10,7 +10,7 @@ order: 7
 
 ## Purpose
 
-Structural self-review before `commit-push`: catches missing initialization in symmetric save/restore pairs, regex/glob over-fit, ambiguous user-facing wording, duplicate prose sections covering the same contract, and schema/contract drift. The class of defects PR-review bots reliably surface but local quality gates systematically miss.
+Structural self-review before `commit-push`: catches missing initialization in symmetric save/restore pairs, regex/glob over-fit, ambiguous user-facing wording, duplicate prose sections covering the same contract, schema/contract drift, lone unguarded subprocess/file-I/O boundaries, stale count-prose, and near-identical-hunk touched claims. The class of defects PR-review bots reliably surface but local quality gates systematically miss.
 
 This step is **meta-project-only** — registered in the plan-marshall repo's own `marshal.json` because the contract-drift check is load-bearing for the marketplace's own LLM-driven development cycle. Consumer projects rarely benefit (the deterministic helper usually produces a 0-candidate run on application code), so the manifest composer drops the step from `default:` finalize manifests.
 

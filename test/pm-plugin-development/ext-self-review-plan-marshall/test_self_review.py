@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from self_review import (  # type: ignore[import-not-found]
     _detect_contract_sources,
+    _detect_count_prose,
     _detect_description_vs_body,
     _detect_flag_guard_pairs,
     _detect_keep_markers,
@@ -16,10 +17,13 @@ from self_review import (  # type: ignore[import-not-found]
     _detect_same_document_consistency,
     _detect_source_of_truth,
     _detect_symmetric_pairs,
+    _detect_touched_claims,
+    _detect_unguarded_boundaries,
     _detect_user_facing_strings,
     _diff_hunks,
     _find_skill_dir,
     _iter_added_lines,
+    _iter_changed_line_pairs,
     _load_test_tree_blob,
     _name_in_test_blob,
     _resolve_footprint,
@@ -1298,4 +1302,293 @@ class TestDetectDescriptionVsBody:
     def test_skips_non_markdown_files(self, tmp_path: Path):
         added = [('mod.py', 5, 'some code')]
         out = _detect_description_vs_body(added, tmp_path)
+        assert out == []
+
+
+# =============================================================================
+# Test: _detect_unguarded_boundaries (Facet 1)
+# =============================================================================
+
+
+class TestDetectUnguardedBoundaries:
+    def test_subprocess_without_check_outside_try_surfaces_candidate(self):
+        added = [
+            ('mod.py', 10, 'def run():'),
+            ('mod.py', 11, '    subprocess.run(["ls"])'),
+        ]
+        out = _detect_unguarded_boundaries(added)
+        assert len(out) == 1
+        entry = out[0]
+        assert entry['file'] == 'mod.py'
+        assert entry['line'] == 11
+        assert entry['boundary'] == 'subprocess.run'
+        assert entry['guarded'] is False
+
+    def test_subprocess_with_check_true_surfaces_nothing(self):
+        added = [
+            ('mod.py', 10, 'def run():'),
+            ('mod.py', 11, '    subprocess.run(["ls"], check=True)'),
+        ]
+        out = _detect_unguarded_boundaries(added)
+        assert out == []
+
+    def test_subprocess_inside_try_surfaces_nothing(self):
+        added = [
+            ('mod.py', 10, 'def run():'),
+            ('mod.py', 11, '    try:'),
+            ('mod.py', 12, '        subprocess.run(["ls"])'),
+        ]
+        out = _detect_unguarded_boundaries(added)
+        assert out == []
+
+    def test_open_call_outside_try_surfaces_candidate(self):
+        added = [
+            ('mod.py', 20, 'def load():'),
+            ('mod.py', 21, '    fh = open("data.txt")'),
+        ]
+        out = _detect_unguarded_boundaries(added)
+        assert len(out) == 1
+        assert out[0]['boundary'] == 'open'
+        assert out[0]['guarded'] is False
+
+    def test_path_read_text_outside_try_surfaces_candidate(self):
+        added = [
+            ('mod.py', 30, 'def load():'),
+            ('mod.py', 31, '    body = path.read_text()'),
+        ]
+        out = _detect_unguarded_boundaries(added)
+        assert len(out) == 1
+        assert out[0]['boundary'] == 'read_text'
+
+    def test_file_io_inside_try_surfaces_nothing(self):
+        added = [
+            ('mod.py', 40, 'def load():'),
+            ('mod.py', 41, '    try:'),
+            ('mod.py', 42, '        fh = open("data.txt")'),
+        ]
+        out = _detect_unguarded_boundaries(added)
+        assert out == []
+
+    def test_def_header_resets_try_window(self):
+        # The try in the first function must NOT guard the open() in the second.
+        added = [
+            ('mod.py', 10, 'def first():'),
+            ('mod.py', 11, '    try:'),
+            ('mod.py', 12, '        pass'),
+            ('mod.py', 13, 'def second():'),
+            ('mod.py', 14, '    fh = open("data.txt")'),
+        ]
+        out = _detect_unguarded_boundaries(added)
+        assert len(out) == 1
+        assert out[0]['line'] == 14
+        assert out[0]['boundary'] == 'open'
+
+    def test_urllib_network_call_surfaces_nothing(self):
+        added = [
+            ('mod.py', 10, 'def fetch():'),
+            ('mod.py', 11, '    resp = urllib.request.urlopen("http://x")'),
+        ]
+        out = _detect_unguarded_boundaries(added)
+        assert out == []
+
+    def test_socket_network_call_surfaces_nothing(self):
+        added = [
+            ('mod.py', 10, 'def connect():'),
+            ('mod.py', 11, '    s = socket.socket()'),
+        ]
+        out = _detect_unguarded_boundaries(added)
+        assert out == []
+
+    def test_skips_non_python_files(self):
+        added = [('doc.md', 5, 'subprocess.run(["ls"])')]
+        out = _detect_unguarded_boundaries(added)
+        assert out == []
+
+    def test_subprocess_inside_existing_try_block_surfaces_nothing(self, tmp_path: Path):
+        # The try block is NOT part of the diff (pre-existing) — only the
+        # subprocess.run line is added.  Without post-image walking this case
+        # was incorrectly flagged as unguarded.
+        mod_py = tmp_path / 'mod.py'
+        mod_py.write_text(
+            'def run():\n'
+            '    try:\n'
+            '        pass\n'
+            '        subprocess.run(["ls"])\n'
+        )
+        added = [('mod.py', 4, '        subprocess.run(["ls"])')]
+        out = _detect_unguarded_boundaries(added, tmp_path)
+        assert out == []
+
+    def test_subprocess_outside_try_with_project_dir_surfaces_candidate(self, tmp_path: Path):
+        # Confirm that the post-image path still surfaces genuinely unguarded
+        # calls when project_dir is provided.
+        mod_py = tmp_path / 'mod.py'
+        mod_py.write_text(
+            'def run():\n'
+            '    subprocess.run(["ls"])\n'
+        )
+        added = [('mod.py', 2, '    subprocess.run(["ls"])')]
+        out = _detect_unguarded_boundaries(added, tmp_path)
+        assert len(out) == 1
+        assert out[0]['line'] == 2
+        assert out[0]['boundary'] == 'subprocess.run'
+
+
+# =============================================================================
+# Test: _detect_count_prose (Facet 2)
+# =============================================================================
+
+
+class TestDetectCountProse:
+    @staticmethod
+    def _build_skill(root: Path, skill_md_body: str) -> Path:
+        """Lay down a skill directory with a SKILL.md and a sibling script."""
+        project = root / 'project'
+        skill = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill'
+        (skill / 'scripts').mkdir(parents=True)
+        (skill / 'SKILL.md').write_text(skill_md_body)
+        (skill / 'scripts' / 'mod.py').write_text('')
+        return project
+
+    def test_count_prose_surfaces_word_and_digit_counts(self, tmp_path: Path):
+        body = (
+            '---\n'
+            'name: my-skill\n'
+            '---\n'
+            '# My Skill\n'
+            'Emit twelve fields from the parsed input.\n'
+            'There are 5 rules enforced.\n'
+        )
+        project = self._build_skill(tmp_path, body)
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
+        out = _detect_count_prose([rel], project)
+        texts = [e['text'] for e in out]
+        assert any('twelve fields' in t for t in texts)
+        assert any('5 rules' in t for t in texts)
+        # Every entry points at the SKILL.md path.
+        for entry in out:
+            assert entry['file'] == 'marketplace/bundles/b1/skills/my-skill/SKILL.md'
+
+    def test_digit_not_adjacent_to_cardinality_noun_surfaces_nothing(self, tmp_path: Path):
+        body = (
+            '---\n'
+            'name: my-skill\n'
+            '---\n'
+            '# My Skill\n'
+            'This skill is version 3 and was built in 2026.\n'
+        )
+        project = self._build_skill(tmp_path, body)
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
+        out = _detect_count_prose([rel], project)
+        assert out == []
+
+    def test_modified_file_outside_skill_dir_surfaces_nothing(self, tmp_path: Path):
+        project = tmp_path / 'project'
+        project.mkdir()
+        (project / 'README.md').write_text('Three steps are required.\n')
+        rel = 'README.md'
+        out = _detect_count_prose([rel], project)
+        assert out == []
+
+    def test_deduplicates_per_file_line(self, tmp_path: Path):
+        # The same skill dir reached via two modified siblings yields each
+        # count-prose line exactly once.
+        body = (
+            '---\n'
+            'name: my-skill\n'
+            '---\n'
+            '# My Skill\n'
+            'Nine steps in the workflow.\n'
+        )
+        project = self._build_skill(tmp_path, body)
+        skill = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill'
+        (skill / 'scripts' / 'other.py').write_text('')
+        rels = [
+            'marketplace/bundles/b1/skills/my-skill/scripts/mod.py',
+            'marketplace/bundles/b1/skills/my-skill/scripts/other.py',
+        ]
+        out = _detect_count_prose(rels, project)
+        matched = [e for e in out if 'Nine steps' in e['text']]
+        assert len(matched) == 1
+
+
+# =============================================================================
+# Test: _iter_changed_line_pairs (Facet 3 diff walk)
+# =============================================================================
+
+
+class TestIterChangedLinePairs:
+    def test_yields_adjacent_removed_added_pair(self):
+        diff = (
+            '+++ b/foo.py\n'
+            '@@ -1,3 +1,3 @@\n'
+            ' kept_one\n'
+            '-old_line\n'
+            '+new_line\n'
+            ' kept_two\n'
+        )
+        pairs = _iter_changed_line_pairs(diff)
+        assert pairs == [('foo.py', 2, 'old_line', 'new_line')]
+
+    def test_ignores_unpaired_added_line(self):
+        diff = (
+            '+++ b/foo.py\n'
+            '@@ -1,2 +1,3 @@\n'
+            ' kept_one\n'
+            '+lone_addition\n'
+            ' kept_two\n'
+        )
+        pairs = _iter_changed_line_pairs(diff)
+        assert pairs == []
+
+    def test_ignores_unpaired_removed_line(self):
+        diff = (
+            '+++ b/foo.py\n'
+            '@@ -1,3 +1,2 @@\n'
+            ' kept_one\n'
+            '-lone_removal\n'
+            ' kept_two\n'
+        )
+        pairs = _iter_changed_line_pairs(diff)
+        assert pairs == []
+
+    def test_context_line_breaks_pending_removal(self):
+        # A removal followed by a context line (not an addition) is not a pair.
+        diff = (
+            '+++ b/foo.py\n'
+            '@@ -1,3 +1,3 @@\n'
+            '-removed_first\n'
+            ' context_between\n'
+            '+added_later\n'
+        )
+        pairs = _iter_changed_line_pairs(diff)
+        assert pairs == []
+
+
+# =============================================================================
+# Test: _detect_touched_claims (Facet 3)
+# =============================================================================
+
+
+class TestDetectTouchedClaims:
+    def test_single_token_swap_surfaces_added_line(self):
+        pairs = [('foo.py', 5, 'count is twelve here', 'count is fifteen here')]
+        out = _detect_touched_claims(pairs)
+        assert len(out) == 1
+        assert out[0] == {'file': 'foo.py', 'line': 5, 'text': 'count is fifteen here'}
+
+    def test_many_token_difference_surfaces_nothing(self):
+        pairs = [('foo.py', 5, 'the old line entirely', 'a completely different sentence')]
+        out = _detect_touched_claims(pairs)
+        assert out == []
+
+    def test_identical_lines_surface_nothing(self):
+        pairs = [('foo.py', 5, 'same content', 'same content')]
+        out = _detect_touched_claims(pairs)
+        assert out == []
+
+    def test_differing_token_count_surfaces_nothing(self):
+        # Lines that tokenize to different lengths are not a single-token swap.
+        pairs = [('foo.py', 5, 'two words', 'two extra words here')]
+        out = _detect_touched_claims(pairs)
         assert out == []
