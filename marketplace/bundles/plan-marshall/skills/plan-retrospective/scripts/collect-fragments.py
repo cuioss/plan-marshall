@@ -266,7 +266,15 @@ def _domain_aspect_keys() -> set[str]:
 
     extensions = discover_all_extensions()
     aspects = get_retrospective_aspects_from_extensions(extensions)
-    return {a['aspect'] for a in aspects if a.get('aspect')}
+    try:
+        return {a['aspect'] for a in aspects if a.get('aspect')}
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError(
+            'Domain-contributed retrospective aspects are malformed: expected a '
+            "list of dicts each carrying an 'aspect' key, but encountered a "
+            f'partially corrupt structure (None, non-dict entry, or wrong value '
+            f'type) while building the aspect-key set: {exc}'
+        ) from exc
 
 
 def _registerable_aspect_keys() -> set[str]:
