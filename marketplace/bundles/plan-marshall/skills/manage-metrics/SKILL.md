@@ -48,18 +48,19 @@ Record phase end timestamp with optional token data from Task agent notification
 
 **Idempotency**: Calling `end-phase` multiple times for the same phase replaces the previous end data (does not accumulate).
 
-**Accumulator fallback**: When any of `--total-tokens`, `--tool-uses`, or `--duration-ms` is omitted, `end-phase` reads `work/metrics-accumulator-{phase}.toon` (written by `accumulate-agent-usage`) and uses its running totals for the missing fields. Explicitly passed flags always win over accumulator values. Phases that ran without any agent dispatch (no accumulator file, no flags) are recorded with timestamps only — same behaviour as before.
+**Accumulator fallback**: When any of `--total-tokens`, `--tool-uses`, `--duration-ms`, or `--retrospective-tokens` is omitted, `end-phase` reads `work/metrics-accumulator-{phase}.toon` (written by `accumulate-agent-usage`) and uses its running totals for the missing fields. Explicitly passed flags always win over accumulator values. Phases that ran without any agent dispatch (no accumulator file, no flags) are recorded with timestamps only — same behaviour as before. The `retrospective_tokens` field is carried alongside the others: the finalize retrospective step seeds it via `accumulate-agent-usage --retrospective-tokens`, and `end-phase` reads it back here so `[6-finalize].retrospective_tokens` is recorded without an explicit flag at the `end-phase` call site.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-phase \
   --plan-id {plan_id} --phase {phase} \
-  [--total-tokens N] [--duration-ms N] [--tool-uses N]
+  [--total-tokens N] [--duration-ms N] [--tool-uses N] [--retrospective-tokens N]
 ```
 
 **Parameters:**
 - `--total-tokens` — Total tokens from Task agent `<usage>` tag (optional, non-negative integer)
 - `--duration-ms` — Agent-reported duration in milliseconds from Task agent `<usage>` tag. This is the agent's self-reported time, separate from wall-clock duration computed from start/end timestamps. (optional)
 - `--tool-uses` — Tool use count from Task agent `<usage>` tag (optional)
+- `--retrospective-tokens` — Tokens attributable to the plan-retrospective dispatch within this phase window, recorded as the `retrospective_tokens` sub-field (optional; the explicit override for the accumulator-carried value the finalize retrospective step seeds)
 
 **Token data sources**: Task agents (spawned via Agent tool) report usage in `<usage>` XML tags upon completion. These contain `total_tokens`, `duration_ms`, and optionally `tool_uses`. The orchestrator may forward each return's totals via the optional flags above, or rely on `accumulate-agent-usage` to persist them on disk between agent dispatches (recommended for `phase-5-execute` and `phase-6-finalize` — see below).
 
@@ -159,7 +160,7 @@ shape.
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} \
   --prev-phase {prev} --next-phase {next} \
-  [--total-tokens N] [--duration-ms N] [--tool-uses N]
+  [--total-tokens N] [--duration-ms N] [--tool-uses N] [--retrospective-tokens N]
 ```
 
 **Parameters:**
@@ -168,6 +169,9 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phas
 - `--total-tokens`, `--duration-ms`, `--tool-uses` — optional, forwarded
   verbatim to the `end-phase` step. Omit when the closing phase ran in main
   context (no agent `<usage>` data to record).
+- `--retrospective-tokens` — optional, recorded as the closing phase's
+  `retrospective_tokens` sub-field; the explicit override for the
+  accumulator-carried value.
 
 **Output:**
 ```toon
@@ -188,9 +192,10 @@ prefer it over a manual `end-phase` + `start-phase` + `generate` sequence
 whenever the caller knows the exact `prev → next` transition.
 
 `phase-boundary` shares the same accumulator-fallback semantics as
-`end-phase`: when `--total-tokens` / `--tool-uses` / `--duration-ms` are
-omitted, the closing phase row is filled from `work/metrics-accumulator-{prev_phase}.toon`
-if the file exists. Explicit flags always override accumulator values.
+`end-phase`: when `--total-tokens` / `--tool-uses` / `--duration-ms` /
+`--retrospective-tokens` are omitted, the closing phase row is filled from
+`work/metrics-accumulator-{prev_phase}.toon` if the file exists. Explicit
+flags always override accumulator values.
 
 ### accumulate-agent-usage
 
@@ -203,16 +208,17 @@ across context compactions and inline-only step runs.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accumulate-agent-usage \
   --plan-id {plan_id} --phase {phase} \
-  [--total-tokens N] [--tool-uses N] [--duration-ms N]
+  [--total-tokens N] [--tool-uses N] [--duration-ms N] [--retrospective-tokens N]
 ```
 
 **Parameters:**
 - `--phase` — Phase being accumulated (must be a valid phase name).
 - `--total-tokens`, `--tool-uses`, `--duration-ms` — Subagent `<usage>` values to add to the running totals (each optional). Pass the values parsed from the agent's returned `<usage>...</usage>` block.
+- `--retrospective-tokens` — Tokens attributable to the plan-retrospective dispatch to add to the running `retrospective_tokens` total (optional). Forwarded by `phase-6-finalize` ONLY when the just-returned dispatched step is the opt-in retrospective step — this is the producer side of the `retrospective_tokens` attribution that `end-phase` / `phase-boundary` read back from the accumulator.
 
 **Behaviour:**
 - Reads `.plan/plans/{plan_id}/work/metrics-accumulator-{phase}.toon`, initialising it when absent.
-- Sums any provided flags into the existing totals and increments the `samples` counter.
+- Sums any provided flags into the existing totals (including `retrospective_tokens`) and increments the `samples` counter.
 - Writes the file back atomically. The on-disk file is the only source of truth — the call is idempotent across context compactions.
 - `cmd_end_phase` and `cmd_phase_boundary` read the same file when their corresponding flags are omitted.
 
@@ -224,6 +230,7 @@ phase: 6-finalize
 total_tokens: 84211
 tool_uses: 38
 duration_ms: 412390
+retrospective_tokens: 31200
 samples: 4
 accumulator_file: work/metrics-accumulator-6-finalize.toon
 ```
@@ -368,7 +375,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics star
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-phase \
   --plan-id PLAN_ID --phase PHASE \
-  [--total-tokens N] [--duration-ms N] [--tool-uses N]
+  [--total-tokens N] [--duration-ms N] [--tool-uses N] [--retrospective-tokens N]
 ```
 
 ### generate
@@ -390,7 +397,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics prin
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id PLAN_ID --prev-phase PHASE --next-phase PHASE \
-  [--total-tokens N] [--duration-ms N] [--tool-uses N]
+  [--total-tokens N] [--duration-ms N] [--tool-uses N] [--retrospective-tokens N]
 ```
 
 ### accumulate-agent-usage
@@ -398,7 +405,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phas
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accumulate-agent-usage \
   --plan-id PLAN_ID --phase PHASE \
-  [--total-tokens N] [--tool-uses N] [--duration-ms N]
+  [--total-tokens N] [--tool-uses N] [--duration-ms N] [--retrospective-tokens N]
 ```
 
 ### record-dispatch-boundary
@@ -444,7 +451,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enri
 |--------|-----------|---------|
 | `plan-marshall:plan-marshall` orchestrator | start-phase, end-phase, phase-boundary | Record phase timing at boundaries |
 | `plan-marshall:phase-5-execute` SKILL.md | accumulate-agent-usage | Persist per-task agent `<usage>` totals after each `execute-task` return |
-| `plan-marshall:phase-6-finalize` SKILL.md | accumulate-agent-usage | Persist per-step agent `<usage>` totals after each Task-agent return |
+| `plan-marshall:phase-6-finalize` SKILL.md | accumulate-agent-usage | Persist per-step agent `<usage>` totals after each Task-agent return; forwards `--retrospective-tokens` for the opt-in retrospective step (producer side of the `retrospective_tokens` attribution) |
 | Phase agents (via Task tool) | end-phase (with token args) | Pass `<usage>` tag data after agent completion (alternative to accumulator path) |
 
 ### Consumers

@@ -832,6 +832,15 @@ FOR each step_id in manifest.phase_6.steps:
 
       The script reads `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` (initialising it on first call), sums in the supplied values, increments the `samples` counter, and writes the file back. Inline steps and timed-out steps skip this call — the timeout path's cost is captured by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`. Step 5b runs at most once per dispatched agent return; do NOT also append the totals to a model-context variable.
 
+      **Retrospective-tokens forwarding (producer side)**: when — and ONLY when — the just-returned dispatched step is the opt-in **retrospective** step (`plan-marshall:plan-retrospective`, dispatched under `phase-6-finalize --role post-run-review`), ALSO pass `--retrospective-tokens {total_tokens}` on the SAME `accumulate-agent-usage` call. The retrospective dispatches inside the `6-finalize` phase window, so its `<usage>` `total_tokens` IS the full retrospective spend; forwarding it here is the producer side of the `retrospective_tokens` attribution that `default:record-metrics`'s `end-phase` reads back from the accumulator (no `--retrospective-tokens` flag is added at the `end-phase` call site — it picks the value up from this accumulator). For the retrospective step the combined call is:
+
+         python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accumulate-agent-usage \
+           --plan-id {plan_id} --phase 6-finalize \
+           --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms} \
+           --retrospective-tokens {total_tokens}
+
+      No other finalize step forwards `--retrospective-tokens` — every non-retrospective dispatched step omits it so the accumulator's `retrospective_tokens` total stays equal to the retrospective spend alone.
+
   5c. Record dispatch-boundary row for the just-returned step (per-step, only when 5b also ran):
       Apply the SAME gate as 5b — fire only when the step ran as a Task agent and did NOT time out. Inline-only steps (commit-push, architecture-refresh, branch-cleanup, record-metrics, archive-plan, project:finalize-step-deploy-target, project:finalize-step-sync-plugin-cache) skip this call uniformly, mirroring the 5b gate. The call fires per-step — once for each dispatched finalize step return — NOT once per phase entry.
 

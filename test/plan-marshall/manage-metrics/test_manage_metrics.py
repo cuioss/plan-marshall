@@ -48,6 +48,7 @@ def _ns_end_phase(
     total_tokens: int | None = None,
     duration_ms: int | None = None,
     tool_uses: int | None = None,
+    retrospective_tokens: int | None = None,
 ) -> Namespace:
     """Build Namespace for end-phase command."""
     return Namespace(
@@ -56,6 +57,7 @@ def _ns_end_phase(
         total_tokens=total_tokens,
         duration_ms=duration_ms,
         tool_uses=tool_uses,
+        retrospective_tokens=retrospective_tokens,
         command='end-phase',
         func=cmd_end_phase,
     )
@@ -77,6 +79,7 @@ def _ns_accumulate(
     total_tokens: int | None = None,
     tool_uses: int | None = None,
     duration_ms: int | None = None,
+    retrospective_tokens: int | None = None,
 ) -> Namespace:
     """Build Namespace for accumulate-agent-usage command."""
     return Namespace(
@@ -85,6 +88,7 @@ def _ns_accumulate(
         total_tokens=total_tokens,
         tool_uses=tool_uses,
         duration_ms=duration_ms,
+        retrospective_tokens=retrospective_tokens,
         command='accumulate-agent-usage',
         func=cmd_accumulate_agent_usage,
     )
@@ -727,6 +731,183 @@ class TestEndPhaseAccumulatorFallback:
         assert 'total_tokens' not in metrics
 
 
+class TestRetrospectiveTokensAccumulatorCarry:
+    """retrospective_tokens flows accumulate-agent-usage → accumulator file → end-phase / phase-boundary.
+
+    Anchored to lesson 2026-06-08-19-003: the plan-retrospective dispatches under
+    `--phase phase-6-finalize`, so its spend is otherwise folded silently into the
+    [6-finalize] total. The finalize retrospective step seeds the per-phase
+    accumulator with `accumulate-agent-usage --retrospective-tokens`; the
+    end-of-phase recorder (cmd_end_phase / cmd_phase_boundary) then reads it back
+    as a fallback when its own explicit flag is omitted. These assertions cover
+    the full producer (accumulate) → recorder (end-phase / phase-boundary) carry.
+    """
+
+    def test_accumulate_records_retrospective_tokens(self, plan_context):
+        """accumulate-agent-usage --retrospective-tokens lands in the accumulator file and result."""
+        result = cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-accum-create', '6-finalize', total_tokens=10000, retrospective_tokens=4000)
+        )
+        assert result['status'] == 'success'
+        assert result['retrospective_tokens'] == 4000
+        assert result['total_tokens'] == 10000
+
+        acc_path = (
+            plan_context.plan_dir_for('retro-accum-create') / 'work' / 'metrics-accumulator-6-finalize.toon'
+        )
+        content = acc_path.read_text()
+        assert 'retrospective_tokens: 4000' in content
+
+    def test_accumulate_sums_retrospective_tokens_across_calls(self, plan_context):
+        """Repeated retrospective_tokens contributions sum like the other accumulator fields."""
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-accum-sum', '6-finalize', retrospective_tokens=1500)
+        )
+        result = cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-accum-sum', '6-finalize', retrospective_tokens=2500)
+        )
+        assert result['retrospective_tokens'] == 4000
+
+    def test_accumulate_omitted_retrospective_tokens_stays_zero(self, plan_context):
+        """A call without --retrospective-tokens leaves the running total at zero."""
+        result = cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-accum-omit', '6-finalize', total_tokens=500)
+        )
+        assert result['retrospective_tokens'] == 0
+
+    def test_end_phase_reads_retrospective_tokens_from_accumulator(self, plan_context):
+        """end-phase without --retrospective-tokens pulls it from the accumulator file."""
+        cmd_start_phase(_ns_start_phase('retro-ep-fallback', '6-finalize'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-ep-fallback', '6-finalize', total_tokens=8000, retrospective_tokens=3000)
+        )
+        _pin_start_time_to_past('retro-ep-fallback', '6-finalize')
+
+        result = cmd_end_phase(_ns_end_phase('retro-ep-fallback', '6-finalize'))
+
+        assert result['status'] == 'success'
+        assert result['retrospective_tokens'] == 3000
+        metrics = (
+            plan_context.plan_dir_for('retro-ep-fallback') / 'work' / 'metrics.toon'
+        ).read_text()
+        assert 'retrospective_tokens: 3000' in metrics
+
+    def test_end_phase_explicit_retrospective_tokens_overrides_accumulator(self, plan_context):
+        """An explicit --retrospective-tokens flag wins over the accumulator value."""
+        cmd_start_phase(_ns_start_phase('retro-ep-override', '6-finalize'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-ep-override', '6-finalize', retrospective_tokens=999)
+        )
+        _pin_start_time_to_past('retro-ep-override', '6-finalize')
+
+        result = cmd_end_phase(
+            _ns_end_phase('retro-ep-override', '6-finalize', retrospective_tokens=5000)
+        )
+
+        assert result['retrospective_tokens'] == 5000
+        metrics = (
+            plan_context.plan_dir_for('retro-ep-override') / 'work' / 'metrics.toon'
+        ).read_text()
+        assert 'retrospective_tokens: 5000' in metrics
+
+    def test_end_phase_no_accumulator_no_flag_omits_retrospective_tokens(self, plan_context):
+        """Without an accumulator value and without the flag, the field never appears."""
+        cmd_start_phase(_ns_start_phase('retro-ep-absent', '6-finalize'))
+        result = cmd_end_phase(_ns_end_phase('retro-ep-absent', '6-finalize', total_tokens=1000))
+
+        assert result['status'] == 'success'
+        assert 'retrospective_tokens' not in result
+        metrics = (
+            plan_context.plan_dir_for('retro-ep-absent') / 'work' / 'metrics.toon'
+        ).read_text()
+        assert 'retrospective_tokens' not in metrics
+
+    def test_end_phase_zero_accumulator_omits_retrospective_tokens(self, plan_context):
+        """When the accumulator carries retrospective_tokens=0, end-phase omits the field.
+
+        The documentation states the field should be absent when no retrospective ran.
+        A zero accumulator value must not be written (it is indistinguishable from
+        'no retrospective ran').
+        """
+        cmd_start_phase(_ns_start_phase('retro-ep-zero', '6-finalize'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-ep-zero', '6-finalize', total_tokens=5000, retrospective_tokens=0)
+        )
+        _pin_start_time_to_past('retro-ep-zero', '6-finalize')
+
+        result = cmd_end_phase(_ns_end_phase('retro-ep-zero', '6-finalize'))
+
+        assert result['status'] == 'success'
+        assert 'retrospective_tokens' not in result
+        metrics = (
+            plan_context.plan_dir_for('retro-ep-zero') / 'work' / 'metrics.toon'
+        ).read_text()
+        assert 'retrospective_tokens' not in metrics
+
+    def test_phase_boundary_reads_retrospective_tokens_from_accumulator(self, plan_context):
+        """phase-boundary closes the prev phase reading retrospective_tokens from its accumulator."""
+        cmd_start_phase(_ns_start_phase('retro-pb-fallback', '6-finalize'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-pb-fallback', '6-finalize', total_tokens=7000, retrospective_tokens=2200)
+        )
+        _pin_start_time_to_past('retro-pb-fallback', '6-finalize')
+
+        result = manage_metrics.cmd_phase_boundary(
+            _ns_phase_boundary('retro-pb-fallback', prev_phase='6-finalize', next_phase='6-finalize')
+        )
+
+        assert result['status'] == 'success'
+        metrics = (
+            plan_context.plan_dir_for('retro-pb-fallback') / 'work' / 'metrics.toon'
+        ).read_text()
+        assert 'retrospective_tokens: 2200' in metrics
+
+    def test_phase_boundary_explicit_retrospective_tokens_overrides_accumulator(self, plan_context):
+        """An explicit --retrospective-tokens flag on phase-boundary wins over the accumulator."""
+        cmd_start_phase(_ns_start_phase('retro-pb-override', '5-execute'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-pb-override', '5-execute', retrospective_tokens=111)
+        )
+        _pin_start_time_to_past('retro-pb-override', '5-execute')
+
+        result = manage_metrics.cmd_phase_boundary(
+            _ns_phase_boundary(
+                'retro-pb-override',
+                prev_phase='5-execute',
+                next_phase='6-finalize',
+                retrospective_tokens=6000,
+            )
+        )
+
+        assert result['status'] == 'success'
+        metrics = (
+            plan_context.plan_dir_for('retro-pb-override') / 'work' / 'metrics.toon'
+        ).read_text()
+        assert 'retrospective_tokens: 6000' in metrics
+
+    def test_phase_boundary_zero_accumulator_omits_retrospective_tokens(self, plan_context):
+        """When the accumulator carries retrospective_tokens=0, phase-boundary omits the field.
+
+        Symmetric with test_end_phase_zero_accumulator_omits_retrospective_tokens: a zero
+        accumulator value must not be written to the closed phase row.
+        """
+        cmd_start_phase(_ns_start_phase('retro-pb-zero', '6-finalize'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-pb-zero', '6-finalize', total_tokens=4000, retrospective_tokens=0)
+        )
+        _pin_start_time_to_past('retro-pb-zero', '6-finalize')
+
+        result = manage_metrics.cmd_phase_boundary(
+            _ns_phase_boundary('retro-pb-zero', prev_phase='6-finalize', next_phase='6-finalize')
+        )
+
+        assert result['status'] == 'success'
+        metrics = (
+            plan_context.plan_dir_for('retro-pb-zero') / 'work' / 'metrics.toon'
+        ).read_text()
+        assert 'retrospective_tokens' not in metrics
+
+
 class TestClampWorkedToWall:
     """Direct, timing-independent coverage of _clamp_worked_to_wall.
 
@@ -1268,6 +1449,7 @@ def _ns_phase_boundary(
     total_tokens: int | None = None,
     tool_uses: int | None = None,
     duration_ms: int | None = None,
+    retrospective_tokens: int | None = None,
 ) -> Namespace:
     """Build Namespace for phase-boundary command."""
     return Namespace(
@@ -1277,6 +1459,7 @@ def _ns_phase_boundary(
         total_tokens=total_tokens,
         tool_uses=tool_uses,
         duration_ms=duration_ms,
+        retrospective_tokens=retrospective_tokens,
         command='phase-boundary',
         func=manage_metrics.cmd_phase_boundary,
     )

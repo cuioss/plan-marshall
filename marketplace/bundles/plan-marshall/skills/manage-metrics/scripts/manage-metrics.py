@@ -19,7 +19,7 @@ Usage:
 
     Accumulate per-phase subagent usage on disk:
         python3 manage-metrics.py accumulate-agent-usage --plan-id <id> --phase <phase> \
-            [--total-tokens N] [--tool-uses N] [--duration-ms N]
+            [--total-tokens N] [--tool-uses N] [--duration-ms N] [--retrospective-tokens N]
 
     Enrich from JSONL transcript (per-phase subagent <usage>):
         python3 manage-metrics.py enrich --plan-id <id> --session-id <sid>
@@ -132,7 +132,7 @@ def _read_accumulator(plan_id: str, phase: str) -> dict[str, int]:
             continue
         key, _, raw_val = stripped.partition(':')
         key = key.strip()
-        if key not in {'total_tokens', 'tool_uses', 'duration_ms', 'samples'}:
+        if key not in {'total_tokens', 'tool_uses', 'duration_ms', 'samples', 'retrospective_tokens'}:
             continue
         try:
             result[key] = int(raw_val.strip())
@@ -150,6 +150,7 @@ def _write_accumulator(plan_id: str, phase: str, totals: dict[str, int]) -> None
         f'total_tokens: {totals["total_tokens"]}',
         f'tool_uses: {totals["tool_uses"]}',
         f'duration_ms: {totals["duration_ms"]}',
+        f'retrospective_tokens: {totals["retrospective_tokens"]}',
         f'samples: {totals["samples"]}',
         f'updated: {now_utc_iso()}',
     ]
@@ -388,9 +389,12 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
     # window. The retrospective dispatches under `--phase phase-6-finalize`, so
     # its spend is otherwise folded into the `[6-finalize]` total with no
     # separator. The audit's three metrics-related checks read this field to
-    # exclude deliberate-analysis spend; older metrics files simply lack it.
-    retrospective_tokens = getattr(args, 'retrospective_tokens', None)
-    if retrospective_tokens is not None:
+    # exclude deliberate-analysis spend; plans archived before the producer
+    # wiring landed simply lack it. The explicit `--retrospective-tokens` flag
+    # is the override; absent it the value is read back from the accumulator
+    # that the finalize retrospective step seeded via accumulate-agent-usage.
+    retrospective_tokens = _resolve_token_field(args.retrospective_tokens, accumulator, 'retrospective_tokens')
+    if retrospective_tokens:
         phase_data['retrospective_tokens'] = retrospective_tokens
 
     data['updated'] = now
@@ -406,7 +410,7 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
         result['duration_seconds'] = phase_data['duration_seconds']
     if total_tokens is not None:
         result['total_tokens'] = total_tokens
-    if retrospective_tokens is not None:
+    if retrospective_tokens:
         result['retrospective_tokens'] = retrospective_tokens
     if accumulator and args.total_tokens is None:
         result['accumulator_used'] = True
@@ -919,9 +923,11 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
         prev_data['tool_uses'] = tool_uses
 
     # Plan-retrospective spend attribution on the phase being closed (symmetric
-    # with cmd_end_phase). Default-absent: older metrics files lack the field.
-    retrospective_tokens = getattr(args, 'retrospective_tokens', None)
-    if retrospective_tokens is not None:
+    # with cmd_end_phase). Explicit `--retrospective-tokens` overrides; absent it
+    # the value is read back from the closing phase's accumulator. Default-absent:
+    # plans archived before the producer wiring landed lack the field.
+    retrospective_tokens = _resolve_token_field(args.retrospective_tokens, accumulator, 'retrospective_tokens')
+    if retrospective_tokens:
         prev_data['retrospective_tokens'] = retrospective_tokens
 
     # Step 2: start the next phase (mirrors cmd_start_phase semantics).
@@ -995,6 +1001,7 @@ def cmd_accumulate_agent_usage(args: argparse.Namespace) -> dict:
         'total_tokens': int(existing.get('total_tokens', 0)),
         'tool_uses': int(existing.get('tool_uses', 0)),
         'duration_ms': int(existing.get('duration_ms', 0)),
+        'retrospective_tokens': int(existing.get('retrospective_tokens', 0)),
         'samples': int(existing.get('samples', 0)),
     }
     if args.total_tokens is not None:
@@ -1003,6 +1010,8 @@ def cmd_accumulate_agent_usage(args: argparse.Namespace) -> dict:
         totals['tool_uses'] += args.tool_uses
     if args.duration_ms is not None:
         totals['duration_ms'] += args.duration_ms
+    if args.retrospective_tokens is not None:
+        totals['retrospective_tokens'] += args.retrospective_tokens
     totals['samples'] += 1
 
     _write_accumulator(plan_id, phase, totals)
@@ -1014,6 +1023,7 @@ def cmd_accumulate_agent_usage(args: argparse.Namespace) -> dict:
         'total_tokens': totals['total_tokens'],
         'tool_uses': totals['tool_uses'],
         'duration_ms': totals['duration_ms'],
+        'retrospective_tokens': totals['retrospective_tokens'],
         'samples': totals['samples'],
         'accumulator_file': str(_accumulator_path(plan_id, phase).relative_to(get_plan_dir(plan_id))),
     }
@@ -1456,6 +1466,16 @@ def main() -> int:
     acc.add_argument('--total-tokens', type=int, default=None, help='Subagent total_tokens to add to the running total')
     acc.add_argument('--tool-uses', type=int, default=None, help='Subagent tool_uses to add to the running total')
     acc.add_argument('--duration-ms', type=int, default=None, help='Subagent duration_ms to add to the running total')
+    acc.add_argument(
+        '--retrospective-tokens',
+        type=int,
+        default=None,
+        help=(
+            'Tokens attributable to the plan-retrospective dispatch to add to the running '
+            'retrospective_tokens total (forwarded only when the just-returned step is the '
+            'opt-in retrospective step; cmd_end_phase / cmd_phase_boundary read it back as a fallback)'
+        ),
+    )
     acc.set_defaults(func=cmd_accumulate_agent_usage)
 
     # record-dispatch-boundary

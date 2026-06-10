@@ -24,10 +24,16 @@ phase section. A phase whose entire spend is retrospective
 (`effective_tokens == 0`) is dropped from the phase count, so `tokens_per_phase`
 reflects implementation phases only.
 
-**Best-effort degrade**: archived plans predating the `retrospective_tokens`
-attribution carry no such field, so their effective tokens equal the raw
-`total_tokens` and the exclusion is a no-op — the series and regression behave
-exactly as before the change, with no crash and no negative values.
+**Best-effort degrade**: the producer wiring that populates `retrospective_tokens`
+(the finalize retrospective step forwarding its `<usage>` total through the
+`6-finalize` accumulator, which `end-phase` reads back) landed only when this
+attribution was wired — before it, NO plan ever recorded the field. Archived plans
+from before the wiring carry no `retrospective_tokens`, so their effective tokens
+equal the raw `total_tokens` and the exclusion is a no-op (no crash, no negative
+values). Only plans archived after the wiring, whose opt-in retrospective step
+actually ran, carry the attributed value and have real retrospective spend
+excluded from the series and regression. The exclusion is therefore live only
+going forward, not for the existing archived corpus.
 
 ## Chronological ordering
 

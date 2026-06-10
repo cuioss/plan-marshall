@@ -116,6 +116,7 @@ def _ns_end_phase(plan_id: str, phase: str, total_tokens: int | None = None) -> 
         total_tokens=total_tokens,
         duration_ms=None,
         tool_uses=None,
+        retrospective_tokens=None,
         command='end-phase',
         func=cmd_end_phase,
     )
