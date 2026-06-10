@@ -121,7 +121,8 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     cwd; every other resolution in the codebase is uniform cwd-relative. New
     cross-session shared state MUST route through this function rather than
     re-implementing git-common-dir resolution. The bounded exception set is
-    exactly: ``merge.lock``, ``run-configuration.json``, ``lessons-learned``.
+    exactly: ``merge.lock``, ``run-configuration.json``, ``lessons-learned``,
+    ``build-queue.json``.
 
     Resolution precedence:
 

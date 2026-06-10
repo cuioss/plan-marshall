@@ -464,6 +464,27 @@ class TestResolveMainAnchoredPath:
         assert resolved == main_base / 'merge.lock'
         assert resolved != worktree / '.plan' / 'local' / 'merge.lock'
 
+    def test_resolve_main_anchored_path_resolves_build_queue_fourth_corpus(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: the build queue is the FOURTH ADR-002 bounded-exception corpus
+        # (merge.lock, run-configuration.json, lessons-learned, build-queue.json).
+        # It must resolve main-anchored through the single sanctioned utility,
+        # regardless of caller cwd — same contract as merge.lock.
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        main_base.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        # Act: resolve the build-queue corpus under the override.
+        resolved = resolve_main_anchored_path('build-queue.json')
+
+        # Assert: lands under the override base, NOT the worktree-relative path.
+        assert resolved == main_base / 'build-queue.json'
+        assert resolved != worktree / '.plan' / 'local' / 'build-queue.json'
+
     def test_resolve_main_anchored_path_resolves_to_main_from_worktree_cwd(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -187,7 +187,7 @@ If you discover issues or improvements during execution, record them:
 
 ## Terminal Title Integration
 
-The plan-marshall hooks can drive a live session-tab title (plan + phase + status icon). The writer side publishes `{plan_dir}/title-body.txt` on every status mutation — no user configuration is required. The reader side is implemented per-target by the platform runtime (`session render-title` operation); see `plan-marshall:platform-runtime` for the reader contract.
+The plan-marshall hooks can drive a live session-tab title (plan + phase + lock/build glyph + status icon) — no user configuration is required. The title is a three-way split: `manage-status` persists `current_phase`, `short_description`, and `title_token` into `status.json` (the single source of persisted title state); the pure `manage-terminal-title` composer renders the `{icon} {glyph} {body}` string; and the platform runtime reads `status.json` and emits per target (`session render-title` operation). See `manage-terminal-title/standards/terminal-title-architecture.md` for the end-to-end architecture and `plan-marshall:platform-runtime` for the emit contract.
 
 ## Session ID Resolver
 

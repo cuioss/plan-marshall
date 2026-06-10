@@ -428,6 +428,10 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "temp_on_maintenance": true
     }
   },
+  "build_queue": {
+    "max_slots": 5,
+    "max_retries": 10
+  },
   "plan": {
     "phase-1-init": {
       "branch_strategy": "feature",
@@ -495,6 +499,17 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 | `auto_merge_after_ci` | `true` | Auto-merge the PR after CI passes. |
 
 **Access shape.** Read/write each knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate` or `plan phase-6-finalize get --field finalize_without_asking`. See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
+
+### Build-Queue Settings
+
+The `build_queue` block is a top-level marshal.json section (peer to `plan` and `system`, not under `plan.*`) because the build queue is a project-wide, cross-plan resource — every session bounds its concurrent builds against the same shared queue. Both keys are seeded into a fresh marshal.json by `init` and back-filled into existing projects by `sync-defaults`.
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `max_slots` | `5` | Number of concurrent build admissions the cross-session build queue grants before further requests are enqueued FIFO. Read by the build-queue admission primitive (`plan-marshall:manage-locks:build_queue`) via `build_queue.max_slots`; a missing block, missing key, or non-positive value falls back to `5`. |
+| `max_retries` | `10` | Number of times the build wrapper re-polls a `blocked` admission before giving up. |
+
+Edit both keys directly in marshal.json — they are operator-visible JSON integers at the top level.
 
 ---
 

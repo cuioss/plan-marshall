@@ -61,6 +61,7 @@ def _mock_runtime() -> MagicMock:
     rt.project_install_hook.return_value = toon_success("project install-hook")
     rt.session_capture.return_value = toon_success("session capture")
     rt.session_render_title.return_value = toon_success("session render-title")
+    rt.session_push_title_token.return_value = toon_success("session push-title-token")
     rt.permission_configure.return_value = toon_success("permission configure")
     rt.permission_analyze.return_value = toon_success("permission analyze")
     rt.permission_fix.return_value = toon_success("permission fix")
@@ -136,6 +137,7 @@ class TestBuildOperation:
         """All documented operation groups produce two-part identifiers."""
         groups = [
             ("session", "render-title"),
+            ("session", "push-title-token"),
             ("permission", "configure"),
             ("permission", "analyze"),
             ("permission", "fix"),
@@ -411,6 +413,17 @@ class TestDispatch:
         """session render-title --statusline forwards statusline=True."""
         _dispatch(rt, "session render-title", ["--statusline"])
         rt.session_render_title.assert_called_once_with(statusline=True)
+
+    # ---- session push-title-token --------------------------------------------
+
+    def test_dispatch_session_push_title_token(self, rt):
+        """session push-title-token forwards --plan-id and --icon to runtime."""
+        _dispatch(
+            rt,
+            "session push-title-token",
+            ["--plan-id", "my-plan", "--icon", "⏳"],
+        )
+        rt.session_push_title_token.assert_called_once_with("my-plan", "⏳")
 
     # ---- permission configure -------------------------------------------------
 

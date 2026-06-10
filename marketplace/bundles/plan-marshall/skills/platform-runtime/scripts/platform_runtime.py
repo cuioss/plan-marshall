@@ -12,6 +12,7 @@ Operations:
     project install-hook    --target <settings-file-path>
     session capture         --plan-id <id>
     session render-title    (no arguments)
+    session push-title-token --plan-id <id>  --icon <glyph>
     permission configure    --scope project|global  --permissions <p1> [<p2> ...]
     permission analyze      --scope global|project|both  --checks <c1>[,<c2>]  [--marshal <path>]
     permission fix          --scope project|global  --operation <op>  [--permissions <p> ...] [--dry-run]
@@ -276,6 +277,16 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         return runtime.session_render_title(statusline=ns.statusline)
 
     # ------------------------------------------------------------------
+    # session push-title-token
+    # ------------------------------------------------------------------
+    if operation == "session push-title-token":
+        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime session push-title-token")
+        p.add_argument("--plan-id", required=True)
+        p.add_argument("--icon", required=True)
+        ns = p.parse_args(remaining)
+        return runtime.session_push_title_token(ns.plan_id, ns.icon)
+
+    # ------------------------------------------------------------------
     # permission configure
     # ------------------------------------------------------------------
     if operation == "permission configure":
@@ -411,7 +422,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "unknown_operation",
         f"Unknown operation {operation!r}; "
         "valid operations: project initial-setup, project install-hook, "
-        "session capture, session render-title, "
+        "session capture, session render-title, session push-title-token, "
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "
         "permission web-analyze, permission web-apply, "

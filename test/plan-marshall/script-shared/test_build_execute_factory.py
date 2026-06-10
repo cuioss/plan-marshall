@@ -6,10 +6,23 @@ the full command_args (including module scope) is normalized, so that
 full-scope and module-scoped invocations of the same executable produce
 distinct keys. This isolates adaptive-timeout learning per scope and
 prevents cross-scope run-config key collisions.
+
+Also covers the D6 build-queue integration at the factory ``cmd_run`` wrap
+site: ``cmd_run`` runs ``execute_direct`` inside ``build_queue_slot(plan_id)``,
+so the build participates in the cluster queue only when a ``plan_id`` is set.
+The integration tests drive ``cmd_run`` end-to-end through the REAL
+``build_queue_slot`` context manager (with the queue ``_acquire`` / ``_release``
+and title-token seams mocked on the ``_build_queue_slot`` module) and assert the
+four admission paths: admitted-once, blocked-then-admitted, max-retries-exhausted
+(structured ``queue_saturated`` error, build NOT run), and plan_id-absent
+(pure passthrough, zero queue/token interaction).
 """
 
 import argparse
 
+import _build_execute_factory as factory
+import _build_queue_slot as bqs
+import pytest
 from _build_cli import (
     add_check_warnings_subparser,
     add_coverage_subparser,
@@ -18,6 +31,7 @@ from _build_cli import (
     add_run_subparser,
     register_standard_subparsers,
 )
+from _build_execute import CaptureStrategy
 from _build_execute_factory import default_command_key_fn
 
 
@@ -340,3 +354,263 @@ class TestRegisterStandardSubparsersPlanIdPropagation:
         )
         assert ns.plan_id == 'task-routing-canonical'
         assert ns.project_dir == '/plan/wt'
+
+
+# =============================================================================
+# D6: Build-queue integration at the factory cmd_run wrap site
+# =============================================================================
+#
+# These tests drive the factory's generated ``cmd_run`` end-to-end through the
+# REAL ``build_queue_slot`` context manager. The queue acquire/release seam
+# (``_acquire`` / ``_release_raw``) and the three best-effort title-token seams
+# are mocked on the ``_build_queue_slot`` module, so the slot's admit / wait /
+# release behaviour is exercised exactly as it runs in production while the
+# build itself is replaced by a recorder. ``time.sleep`` is patched to a no-op
+# (autouse) so the 60s blocked-poll wait is never actually slept.
+
+
+class _QueueDouble:
+    """Scriptable acquire/release double installed over ``_build_queue_slot``'s
+    ``_acquire`` / ``_release_raw`` seams. Acquire responses are popped
+    left-to-right (the last repeats); every release is recorded."""
+
+    def __init__(self, acquire_responses: list[dict]):
+        self._acquire_responses = list(acquire_responses)
+        self.acquire_calls: list[str] = []
+        self.release_calls: list[tuple[str, str]] = []
+
+    def acquire(self, plan_id: str) -> dict:
+        self.acquire_calls.append(plan_id)
+        if not self._acquire_responses:
+            return {'status': 'error', 'error': 'no scripted acquire response'}
+        return self._acquire_responses.pop(0) if len(self._acquire_responses) > 1 else self._acquire_responses[0]
+
+    def release(self, plan_id: str, admission_id: str) -> dict:
+        self.release_calls.append((plan_id, admission_id))
+        return {'status': 'success', 'action': 'released'}
+
+    @property
+    def released_ids(self) -> list[str]:
+        return [aid for _plan, aid in self.release_calls]
+
+
+class _TokenRecorder:
+    """Records the title-token set/clear/push calls on the ``_build_queue_slot``
+    module so the integration tests can assert the building / build-waiting
+    states were surfaced via the real slot."""
+
+    def __init__(self):
+        self.set_states: list[str] = []
+        self.cleared: int = 0
+        self.pushed_icons: list[str] = []
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(bqs, '_set_title_token', lambda _p, state: self.set_states.append(state))
+        monkeypatch.setattr(bqs, '_clear_title_token', lambda _p: self._inc_clear())
+        monkeypatch.setattr(bqs, '_push_title_token', lambda _p, icon: self.pushed_icons.append(icon))
+
+    def _inc_clear(self) -> None:
+        self.cleared += 1
+
+
+class _ExecRecorder:
+    """Records whether (and with what args) the factory's build body ran.
+
+    The factory closure calls the module-level ``execute_direct_base`` to run
+    the actual build. Patching ``factory.execute_direct_base`` with this
+    recorder lets the integration tests assert the build ran exactly once
+    (admitted paths) or never (saturation path) without spawning a real
+    subprocess. The returned ``DirectCommandResult`` is a minimal success
+    envelope so ``cmd_run_common`` (also stubbed below) is never reached on its
+    parse path."""
+
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 0,
+            'log_file': '',
+            'command': 'pw verify',
+        }
+
+    @property
+    def ran(self) -> bool:
+        return len(self.calls) > 0
+
+
+@pytest.fixture(autouse=True)
+def _no_sleep(monkeypatch: pytest.MonkeyPatch):
+    """Never actually sleep 60s in a unit test — patch the slot's time.sleep."""
+    monkeypatch.setattr(bqs.time, 'sleep', lambda _s: None)
+
+
+def _make_config() -> factory.ExecuteConfig:
+    """A minimal config whose wrapper resolution never touches the filesystem."""
+    return factory.ExecuteConfig(
+        tool_name='python',
+        unix_wrapper='pw',
+        windows_wrapper='pw.bat',
+        system_fallback='pwx',
+        capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+        build_command_fn=factory.default_build_command_fn,
+        scope_fn=lambda _a: 'default',
+        command_key_fn=factory.default_command_key_fn,
+        wrapper_resolve_fn=lambda _project_dir: 'pw',
+    )
+
+
+def _install(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble):
+    """Install the queue double + token recorder + exec recorder, and stub
+    ``cmd_run_common`` to a no-op (it is downstream of the slot and not under
+    test here). Returns (cmd_run, exec_recorder, token_recorder)."""
+    monkeypatch.setattr(bqs, '_acquire', double.acquire)
+    monkeypatch.setattr(bqs, '_release_raw', double.release)
+    tokens = _TokenRecorder()
+    tokens.install(monkeypatch)
+
+    exec_recorder = _ExecRecorder()
+    monkeypatch.setattr(factory, 'execute_direct_base', exec_recorder)
+    # cmd_run_common runs AFTER the slot closes; stub it so the test does not
+    # depend on the formatter / findings-store path.
+    monkeypatch.setattr(factory, 'cmd_run_common', lambda **_kwargs: 0)
+
+    _execute_direct, cmd_run = factory.create_execute_handlers(_make_config(), lambda *_a, **_k: ([], None, 'SUCCESS'))
+    return cmd_run, exec_recorder, tokens
+
+
+class TestFactoryCmdRunQueueAdmitted:
+    """Admitted-immediately: the build runs once inside the slot, the slot is
+    released, and the title-token is cleared."""
+
+    def test_admitted_runs_build_once_inside_slot(self, monkeypatch):
+        double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
+        cmd_run, exec_recorder, tokens = _install(monkeypatch, double)
+
+        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+
+        assert rc == 0
+        # Build ran exactly once, inside the admitted slot.
+        assert exec_recorder.ran is True
+        assert len(exec_recorder.calls) == 1
+        # The held admission id was released and the token cleared in the finally.
+        assert 'P:uuid-1' in double.released_ids
+        assert tokens.set_states == ['building']
+        assert tokens.cleared == 1
+
+    def test_admitted_does_not_set_waiting_token(self, monkeypatch):
+        double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
+        cmd_run, _exec, tokens = _install(monkeypatch, double)
+
+        cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+
+        assert 'build-waiting' not in tokens.set_states
+
+
+class TestFactoryCmdRunQueueBlockedThenAdmitted:
+    """Blocked-then-admitted: the first poll is blocked (waiting token set, 🕐
+    pushed, sleep mocked), a later poll admits, and only then does the build
+    run."""
+
+    def test_blocked_then_admitted_waits_then_runs(self, monkeypatch):
+        double = _QueueDouble(
+            [
+                {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-A'},
+                {'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-B'},
+            ]
+        )
+        cmd_run, exec_recorder, tokens = _install(monkeypatch, double)
+
+        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+
+        assert rc == 0
+        # The build still ran exactly once, only after admission.
+        assert len(exec_recorder.calls) == 1
+        # Waiting state surfaced on the blocked poll, then building.
+        assert tokens.set_states == ['build-waiting', 'building']
+        assert bqs._ICON_BUILD_WAITING in tokens.pushed_icons
+        assert bqs._ICON_BUILDING in tokens.pushed_icons
+        # The blocked id is NOT released before re-polling — re-poll is idempotent
+        # so the plan keeps its FIFO position. Only the final admitted id is
+        # released in the finally.
+        assert 'P:uuid-A' not in double.released_ids
+        assert double.released_ids == ['P:uuid-B']
+
+    def test_blocked_then_admitted_sleeps_once_per_retry(self, monkeypatch):
+        sleeps: list[int] = []
+        monkeypatch.setattr(bqs.time, 'sleep', lambda s: sleeps.append(s))
+        double = _QueueDouble(
+            [
+                {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-A'},
+                {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-B'},
+                {'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-C'},
+            ]
+        )
+        cmd_run, exec_recorder, _tokens = _install(monkeypatch, double)
+
+        cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+
+        # Two blocked polls before admission → two 60s sleeps; build ran once.
+        assert sleeps == [bqs._WAIT_SECONDS, bqs._WAIT_SECONDS]
+        assert len(exec_recorder.calls) == 1
+
+
+class TestFactoryCmdRunQueueSaturated:
+    """Max-retries-exhausted: the queue stays blocked past max_retries, so
+    cmd_run returns the structured ``queue_saturated`` error, releases the
+    queued id, and NEVER runs the build."""
+
+    def test_saturation_returns_structured_error_without_running_build(self, monkeypatch, capsys):
+        monkeypatch.setattr(bqs, '_resolve_max_retries', lambda: 2)
+        double = _QueueDouble([{'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-X'}])
+        cmd_run, exec_recorder, _tokens = _install(monkeypatch, double)
+
+        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+
+        # Non-zero exit, structured queue_saturated error, build NEVER ran.
+        assert rc == 1
+        assert exec_recorder.ran is False
+        out = capsys.readouterr().out
+        assert factory.ERROR_QUEUE_SATURATED in out
+        assert 'try again later' in out
+        assert 'P' in out
+        # The final queued id was released as cleanup before the timeout raise.
+        assert 'P:uuid-X' in double.released_ids
+
+
+class TestFactoryCmdRunPlanIdAbsentPassthrough:
+    """plan_id-absent: pure passthrough — the build runs with ZERO queue/token
+    interaction (the backward-compatibility guarantee for plan-less builds)."""
+
+    @pytest.mark.parametrize('plan_id', [None, ''])
+    def test_no_plan_id_runs_build_with_no_queue_interaction(self, monkeypatch, plan_id):
+        double = _QueueDouble([])  # any acquire would record a call
+        cmd_run, exec_recorder, tokens = _install(monkeypatch, double)
+
+        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id=plan_id, format='toon'))
+
+        assert rc == 0
+        # Build ran unchanged.
+        assert len(exec_recorder.calls) == 1
+        # No queue interaction at all.
+        assert double.acquire_calls == []
+        assert double.release_calls == []
+        # No title-token interaction at all.
+        assert tokens.set_states == []
+        assert tokens.cleared == 0
+        assert tokens.pushed_icons == []
+
+    def test_missing_plan_id_attr_is_passthrough(self, monkeypatch):
+        """A Namespace with no plan_id attribute at all (getattr default None)
+        is also a pure passthrough."""
+        double = _QueueDouble([])
+        cmd_run, exec_recorder, _tokens = _install(monkeypatch, double)
+
+        rc = cmd_run(argparse.Namespace(command_args='verify', format='toon'))
+
+        assert rc == 0
+        assert len(exec_recorder.calls) == 1
+        assert double.acquire_calls == []

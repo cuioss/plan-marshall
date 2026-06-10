@@ -26,6 +26,7 @@ for _ancestor in Path(__file__).resolve().parents:
     if _ancestor.name == "skills" and (_ancestor.parent / ".claude-plugin" / "plugin.json").is_file():
         for _lib in (
             "ref-toon-format",
+            "manage-terminal-title",
             "tools-file-ops",
             "tools-permission-doctor",
             "tools-permission-fix",
@@ -37,6 +38,7 @@ for _ancestor in Path(__file__).resolve().parents:
                 sys.path.append(_lib_path)
         break
 
+from manage_terminal_title import _compose_body, compose  # type: ignore[import-not-found]  # noqa: E402
 from runtime_base import Runtime, toon_error, toon_noop, toon_success  # type: ignore[import-not-found]  # noqa: E402
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
@@ -113,43 +115,10 @@ _RENDER_TRIGGER_EVENTS: tuple[str, ...] = (
     "Stop",
 )
 
-# Canonical terminal-title icon palette. The renderer maps each hook event (and,
-# for tool-scoped events, the tool name) to one of three glyphs:
-#   ➤  active / in-progress
-#   ?  waiting on user input ("needs attention")
-#   ✓  done
-_ICON_ACTIVE = "➤"
-_ICON_WAITING = "?"
-_ICON_DONE = "✓"
-
-
-def _resolve_icon(hook_event_name: str | None, tool_name: str | None) -> str:
-    """Map a hook event (+ tool name) to the canonical terminal-title icon.
-
-    Palette:
-
-    - ``UserPromptSubmit`` → ``➤``
-    - ``Notification`` → ``?`` (canonical "needs attention")
-    - ``PreToolUse`` with ``tool_name == "AskUserQuestion"`` → ``?``
-    - ``PostToolUse`` with ``tool_name == "AskUserQuestion"`` → ``➤``
-    - ``PostToolUse`` with any other tool (e.g. ``Bash``) → ``➤``
-    - ``Stop`` → ``✓``
-    - ``SessionStart`` → ``➤``
-    - Unknown / missing event → ``➤`` (defensive default)
-
-    The function never raises; callers pass best-effort values parsed from the
-    hook stdin payload and rely on the defensive default for any unmapped or
-    missing input.
-    """
-    if hook_event_name == "Stop":
-        return _ICON_DONE
-    if hook_event_name == "Notification":
-        return _ICON_WAITING
-    if hook_event_name == "PreToolUse" and tool_name == "AskUserQuestion":
-        return _ICON_WAITING
-    # UserPromptSubmit, SessionStart, PostToolUse (any tool), and every
-    # unknown/missing event fall through to the active default.
-    return _ICON_ACTIVE
+# The terminal-title icon palette and body-format logic now live in the
+# ``manage-terminal-title`` library skill (consumed via ``compose`` above). This
+# module is the resolve+read+emit layer only: it reads ``status.json`` and emits
+# the OSC/statusLine bytes the composer returns.
 
 
 # Required render-trigger entries inspected by the ``display`` health check, in
@@ -567,18 +536,18 @@ def _read_active_plan(session_id: str) -> str | None:
         return None
 
 
-def _resolve_archived_title_body(plan_id: str) -> Path | None:
-    """Resolve the archived ``title-body.txt`` for a plan, or ``None``.
+def _resolve_archived_status_json(plan_id: str) -> Path | None:
+    """Resolve the archived ``status.json`` for a plan, or ``None``.
 
     Once a plan is archived, the live ``.plan/local/plans/{plan_id}/`` directory
     is gone — ``cmd_archive`` moved it to
-    ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/``. The writer published
-    the Completed body into the directory before the move, so the archived body
-    lives at ``archived-plans/{YYYY-MM-DD}-{plan_id}/title-body.txt``.
+    ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/``. ``status.json`` is the
+    SINGLE source of persisted title state, so the archived state lives at
+    ``archived-plans/{YYYY-MM-DD}-{plan_id}/status.json``.
 
-    Globs ``archived-plans/*-{plan_id}/title-body.txt`` (the ``*`` matches the
+    Globs ``archived-plans/*-{plan_id}/status.json`` (the ``*`` matches the
     ``YYYY-MM-DD`` date prefix) and returns the first regular file found, or
-    ``None`` when no archived body exists. The returned path's parent name must
+    ``None`` when no archived state exists. The returned path's parent name must
     end with the exact ``-{plan_id}`` suffix to avoid a prefix collision between
     similarly named plans.
     """
@@ -587,12 +556,56 @@ def _resolve_archived_title_body(plan_id: str) -> Path | None:
         return None
     suffix = f"-{plan_id}"
     try:
-        for candidate in sorted(archived_base.glob(f"*-{plan_id}/title-body.txt"), reverse=True):
+        for candidate in sorted(archived_base.glob(f"*-{plan_id}/status.json"), reverse=True):
             if candidate.is_file() and candidate.parent.name.endswith(suffix):
                 return candidate
     except OSError:
         return None
     return None
+
+
+def _read_title_state(plan_id: str) -> dict[str, Any] | None:
+    """Read the title state for *plan_id* from ``status.json``, or ``None``.
+
+    Reads the live plan dir's ``status.json``
+    (``<_PLAN_DIR_NAME>/local/plans/{plan_id}/status.json``) first; on absence,
+    falls back to the archived ``status.json`` resolved via
+    :func:`_resolve_archived_status_json`.
+
+    Returns a ``{current_phase, short_description, title_token}`` state dict (the
+    inputs :func:`manage_terminal_title.compose` consumes), reading
+    ``current_phase`` from the top-level field and ``short_description`` /
+    ``title_token`` from wherever they live in the status structure. Returns
+    ``None`` when neither the live nor the archived file is present or readable.
+
+    ``current_phase`` is sourced from the status ``current_phase`` field;
+    ``short_description`` and ``title_token`` are best-effort (a status.json
+    lacking them yields a state dict with those keys absent, which the composer
+    handles).
+    """
+    live_path = Path(_PLAN_DIR_NAME) / "local" / "plans" / plan_id / "status.json"
+    if live_path.is_file():
+        status_path: Path | None = live_path
+    else:
+        status_path = _resolve_archived_status_json(plan_id)
+    if status_path is None:
+        return None
+
+    status_data = _read_json(status_path)
+    if status_data is None:
+        return None
+
+    state: dict[str, Any] = {}
+    current_phase = status_data.get("current_phase")
+    if isinstance(current_phase, str):
+        state["current_phase"] = current_phase
+    short_description = status_data.get("short_description")
+    if isinstance(short_description, str):
+        state["short_description"] = short_description
+    title_token = status_data.get("title_token")
+    if isinstance(title_token, str):
+        state["title_token"] = title_token
+    return state
 
 
 def _manage_status_store_session(plan_id: str, session_id: str) -> bool:
@@ -1119,44 +1132,47 @@ class ClaudeRuntime(Runtime):
         )
 
     def session_render_title(self, statusline: bool = False) -> str:
-        """5-step read + OSC emit for the terminal title.
+        """Resolve session → plan, read ``status.json``, compose, and emit.
 
         Both invocation modes share one stdout contract: stdout carries the
         exact bytes Claude Code's host parser consumes, and **nothing else**.
         Mixed payloads — JSON envelope plus a TOON success/noop row glued to
         it, or TOON noop instead of empty output — violate the contract and
         are dropped by the host parser (see ``hook-authoring-guide.md`` §
-        "Hook output contract"). Observability TOON rows go to **stderr**
-        when the caller passes ``--verbose-stderr`` via env (today: always on
-        in tests, off in production hook invocations).
+        "Hook output contract").
 
         Hook mode (``statusline=False``):
           - Success: write the JSON envelope to stdout, return "".
           - Noop: write nothing to stdout, return "".
         statusLine mode (``statusline=True``):
-          - Success: write plain ``{icon} {title_body}`` to stdout, return "".
+          - Success: write plain ``{composed}`` to stdout, return "".
           - Noop: write nothing to stdout, return "".
+
+        The title state (``current_phase``, ``short_description``,
+        ``title_token``) is read from ``status.json`` — the SINGLE source of
+        persisted title state — and the body-format + glyph vocabulary + icon
+        palette live in the ``manage-terminal-title`` composer
+        (:func:`manage_terminal_title.compose`), consumed via import. This
+        module is the resolve+read+emit layer only; it owns neither the icon
+        palette nor the body format. The ✅ terminal-icon override for
+        ``complete``/``archived`` phases is applied inside ``compose``.
 
         Hook-mode envelope (Step 5) carries two reader channels in one JSON
         object. ``terminalSequence`` (the OSC-0 escape) is emitted for every
-        event and is byte-for-byte identical regardless of the new field.
-        ``hookSpecificOutput.sessionTitle`` — the web/desktop session-title
-        channel, equivalent to ``/rename`` and UI-only — is emitted ONLY for
-        the two events Claude Code supports it on:
+        event. ``hookSpecificOutput.sessionTitle`` — the web/desktop
+        session-title channel, equivalent to ``/rename`` and UI-only — is
+        emitted ONLY for the two events Claude Code supports it on:
 
           - ``UserPromptSubmit``; and
           - ``SessionStart`` when ``source ∈ {"startup", "resume"}`` (the
             ``"clear"`` and ``"compact"`` sources do NOT support it).
 
-        For every other event (Notification, Stop, PreToolUse, PostToolUse,
-        PostToolUse:Bash) the envelope stays exactly ``{"terminalSequence":
+        For every other event the envelope stays exactly ``{"terminalSequence":
         osc_seq}`` and never carries a stray ``sessionTitle``. The
-        ``sessionTitle`` body is the bare ``title_body`` (the
-        ``pm:{phase}[:{short}]`` string) WITHOUT the icon glyph, because the
-        web title channel is static per-prompt text and cannot carry the live
-        ➤/?/✓ status icon. The field is purely additive: older hosts that do
-        not recognise it ignore it, so the terminal title keeps working with no
-        host-version probe. A missing or malformed ``hook_event_name`` /
+        ``sessionTitle`` body is the bare ``pm:{phase}[:{short}]`` body (via
+        :func:`manage_terminal_title._compose_body`) WITHOUT the icon glyph,
+        because the web title channel is static per-prompt text and cannot carry
+        the live status icon. A missing or malformed ``hook_event_name`` /
         ``source`` omits ``sessionTitle`` and still emits ``terminalSequence``
         (best-effort/no-raise contract).
 
@@ -1174,48 +1190,29 @@ class ClaudeRuntime(Runtime):
         if not plan_id:
             return ""
 
-        # Step 3: Resolve plan_id → title body via title-body.txt.
-        #
-        # Live path first; on absence, fall back to the archived path. The
-        # writer publishes the Completed body into the plan directory before
-        # archiving (``cmd_archive`` → ``_publish_completed_title_body``), so
-        # ``shutil.move`` carries it into
-        # ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/title-body.txt``.
-        # See ``ref-workflow-architecture/standards/terminal-title-architecture.md``
-        # (title-body lifecycle, archived-path fallback).
-        live_path = Path(_PLAN_DIR_NAME) / "local" / "plans" / plan_id / "title-body.txt"
-        if live_path.is_file():
-            title_body_path = live_path
-        else:
-            archived_path = _resolve_archived_title_body(plan_id)
-            if archived_path is None:
-                return ""
-            title_body_path = archived_path
-
-        try:
-            title_body = title_body_path.read_text(encoding="utf-8").strip()
-        except OSError:
+        # Step 3: Resolve plan_id → title state via status.json (live first,
+        # archived status.json glob fallback). status.json is the SINGLE source
+        # of persisted title state — title-body.txt is no longer read anywhere.
+        state = _read_title_state(plan_id)
+        if state is None:
             return ""
 
-        if not title_body:
-            return ""
-
-        # Step 4: Pick platform icon (Claude Code palette).
+        # Step 4: Parse the hook event (hook mode only) and compose the title.
         #
-        # statusLine mode receives no hook stdin payload, so it keeps the
-        # static active icon. Hook mode reads the JSON payload Claude Code
-        # writes to stdin and maps ``hook_event_name`` + ``tool_name`` through
-        # the canonical palette. The parse is best-effort: missing, empty, or
-        # malformed stdin defaults to the active icon and never raises (the
-        # renderer's no-op contract is "write nothing on failure").
+        # statusLine mode receives no hook stdin payload, so it composes with
+        # event=None (the composer applies the active icon for non-terminal
+        # phases and the ✅ override for terminal ones). Hook mode reads the
+        # JSON payload Claude Code writes to stdin and passes the event +
+        # tool_name to the composer. The parse is best-effort: missing, empty,
+        # or malformed stdin yields event=None and never raises.
         #
         # The parsed ``hook_event_name`` and ``source`` are also retained for
-        # Step 5's conditional ``sessionTitle`` emit (see the gating predicate
-        # there). Both default to None so a missing/malformed payload omits
-        # ``sessionTitle`` and still emits ``terminalSequence``.
-        icon = _ICON_ACTIVE
+        # Step 5's conditional ``sessionTitle`` emit. Both default to None so a
+        # missing/malformed payload omits ``sessionTitle`` and still emits
+        # ``terminalSequence``.
         hook_event_name: str | None = None
         source: str | None = None
+        tool_name: str | None = None
         if not statusline:
             try:
                 raw_payload = sys.stdin.read() if not sys.stdin.isatty() else ""
@@ -1223,24 +1220,27 @@ class ClaudeRuntime(Runtime):
                 if isinstance(payload, dict):
                     hook_event_name = payload.get("hook_event_name")
                     source = payload.get("source")
-                    icon = _resolve_icon(
-                        hook_event_name,
-                        payload.get("tool_name"),
-                    )
+                    tool_name = payload.get("tool_name")
             except (OSError, ValueError):
-                icon = _ICON_ACTIVE
+                hook_event_name = None
+                source = None
+                tool_name = None
+
+        composed = compose(state, hook_event_name, tool_name=tool_name)
+        if not composed:
+            return ""
 
         # Step 5: Emit the title. Both modes write to stdout and return "".
         if statusline:
             try:
-                sys.stdout.write(f"{icon} {title_body}")
+                sys.stdout.write(composed)
                 sys.stdout.flush()
             except OSError:
                 pass
             return ""
 
         try:
-            osc_seq = f"\x1b]0;{icon} {title_body}\x07"
+            osc_seq = f"\x1b]0;{composed}\x07"
             envelope: dict[str, Any] = {"terminalSequence": osc_seq}
             # Conditional web/desktop session-title channel: emit
             # ``hookSpecificOutput.sessionTitle`` (icon-free body) ONLY for the
@@ -1251,15 +1251,60 @@ class ClaudeRuntime(Runtime):
                 hook_event_name == "SessionStart" and source in ("startup", "resume")
             )
             if emit_session_title:
-                envelope["hookSpecificOutput"] = {
-                    "hookEventName": hook_event_name,
-                    "sessionTitle": title_body,
-                }
+                bare_body = _compose_body(state)
+                if bare_body:
+                    envelope["hookSpecificOutput"] = {
+                        "hookEventName": hook_event_name,
+                        "sessionTitle": bare_body,
+                    }
             sys.stdout.write(json.dumps(envelope))
             sys.stdout.flush()
         except OSError:
             pass
         return ""
+
+    def session_push_title_token(self, plan_id: str, icon: str) -> str:
+        """Push a live terminal title for *plan_id* directly to ``/dev/tty``.
+
+        Reads the plan's title state from ``status.json`` via
+        :func:`_read_title_state`, composes the ``'{icon} {glyph} {body}'``
+        string via :func:`manage_terminal_title.compose` (with *icon* as the
+        push-mode icon override and ``event=None``), and writes the OSC escape
+        (``\\x1b]0;{composed}\\x07``) directly to ``/dev/tty``.
+
+        Best-effort: a silent no-op (``pushed: false``) when the state is
+        absent / unrenderable or when ``/dev/tty`` is not openable (CI,
+        background, no controlling terminal). Never raises.
+
+        Returns a success TOON noting whether the push reached a TTY.
+        """
+        state = _read_title_state(plan_id)
+        if state is None:
+            return toon_success(
+                "session push-title-token",
+                {"plan_id": plan_id, "pushed": False, "reason": "no_title_state"},
+            )
+
+        composed = compose(state, None, icon_override=icon)
+        if not composed:
+            return toon_success(
+                "session push-title-token",
+                {"plan_id": plan_id, "pushed": False, "reason": "no_title_state"},
+            )
+
+        pushed = False
+        try:
+            with open("/dev/tty", "w", encoding="utf-8") as tty:
+                tty.write(f"\x1b]0;{composed}\x07")
+                tty.flush()
+            pushed = True
+        except OSError:
+            pushed = False
+
+        return toon_success(
+            "session push-title-token",
+            {"plan_id": plan_id, "pushed": pushed},
+        )
 
     # ------------------------------------------------------------------
     # Permission operations

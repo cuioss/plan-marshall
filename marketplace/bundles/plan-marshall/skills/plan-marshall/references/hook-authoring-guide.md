@@ -37,4 +37,4 @@ Treat exit code and stderr as necessary but insufficient evidence. The terminal 
 
 ## Worked example
 
-The `plan-marshall:platform-runtime` skill provides the canonical hook-driven implementation for this repository. The `SessionStart` hook calls `session capture` (which reads `$CLAUDE_CODE_SESSION_ID` and stores it in `status.json`), and the `UserPromptSubmit` pre-prompt JS calls `session render-title` (which reads `title-body.txt` and emits the OSC title sequence). Both are built on top of the contract described here.
+The `plan-marshall:platform-runtime` skill provides the canonical hook-driven implementation for this repository. The `SessionStart` hook calls `session capture` (which reads `$CLAUDE_CODE_SESSION_ID` and stores it in `status.json`), and the `UserPromptSubmit` pre-prompt JS calls `session render-title` (which reads the title state from `status.json`, composes it via the `manage-terminal-title` composer, and emits the OSC title sequence). Both are built on top of the contract described here.

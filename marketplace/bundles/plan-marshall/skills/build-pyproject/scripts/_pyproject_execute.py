@@ -24,11 +24,13 @@ from _build_execute import CaptureStrategy
 from _build_execute import detect_wrapper as _detect_wrapper
 from _build_execute_factory import (
     ExecuteConfig,
+    _emit_queue_timeout,
     compute_command_key,
     create_execute_handlers,
     default_build_command_fn,
     default_command_key_fn,
 )
+from _build_queue_slot import BuildQueueTimeout, build_queue_slot
 from _build_result import DirectCommandResult
 from _build_shared import DEFAULT_BUILD_TIMEOUT, cmd_run_common
 from _pyproject_cmd_parse import parse_log
@@ -152,12 +154,23 @@ def cmd_run(args) -> int:
     command_args = args.command_args
     command_key = compute_command_key(_CONFIG, command_args)
     timeout_seconds = getattr(args, 'timeout', None) or _CONFIG.default_timeout
-    result = execute_direct(
-        args=command_args,
-        command_key=command_key,
-        default_timeout=timeout_seconds,
-        project_dir=project_dir,
-    )
+
+    # Acquire a build-queue slot when a plan_id is set; NO-OP passthrough
+    # otherwise (plan-less builds run unchanged). The slot wraps the full
+    # self-heal sequence — one build, including its one-shot retry, holds one
+    # slot — and is released + the title-token cleared in the manager's finally.
+    plan_id = getattr(args, 'plan_id', None)
+    try:
+        with build_queue_slot(plan_id):
+            result = execute_direct(
+                args=command_args,
+                command_key=command_key,
+                default_timeout=timeout_seconds,
+                project_dir=project_dir,
+            )
+    except BuildQueueTimeout as exc:
+        return _emit_queue_timeout(_CONFIG.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
+
     return cmd_run_common(
         result=result,
         parser_fn=parse_log,

@@ -11,8 +11,6 @@ from _handshake_commands import cmd_verify  # type: ignore[import-not-found]
 from _invariants import _BLOCKING_BOUNDARIES  # type: ignore[import-not-found]
 from _short_description import derive_short_description  # type: ignore[import-not-found]
 from _status_core import (
-    _publish_completed_title_body,
-    _publish_title_body,
     get_archive_dir,
     get_status_path,
     log_entry,
@@ -124,12 +122,6 @@ def cmd_create(args: argparse.Namespace) -> dict:
         status['metadata'] = {'use_worktree': False}
 
     write_status(args.plan_id, status)
-    # Title-body publication hook — recompute pm:{phase}[:{short_description}]
-    # from the just-written status and persist to ``{plan_dir}/title-body.txt``
-    # so per-target session renderers can read it without re-deriving plan
-    # state. Writer-side publication; reader is cluster-01 ``session
-    # render-title``.
-    _publish_title_body(get_plan_dir(args.plan_id), status)
 
     result: dict[str, Any] = {
         'status': 'success',
@@ -209,10 +201,6 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
         status['current_phase'] = 'complete'
 
     write_status(args.plan_id, status)
-    # Title-body publication hook — covers the in_progress advance and the
-    # all-phases-done sentinel branch (where ``current_phase`` becomes
-    # ``complete`` and the helper deletes the file instead of writing it).
-    _publish_title_body(get_plan_dir(args.plan_id), status)
 
     result: dict[str, Any] = {'status': 'success', 'plan_id': args.plan_id, 'completed_phase': args.completed}
     if next_phase:
@@ -277,16 +265,6 @@ def cmd_archive(args: argparse.Namespace) -> dict | None:
         metadata = status.setdefault('metadata', {})
         metadata['archived_reason'] = reason
     write_status(args.plan_id, status)
-    # Title-body publication hook — archive is the one terminal transition that
-    # PUBLISHES a body rather than deleting it. Write the non-deletable
-    # ``pm:Completed:{short_description}`` body to the live plan-dir BEFORE
-    # ``shutil.move`` so the Completed body travels into the archive directory
-    # with the moved plan. The per-target reader resolves it from
-    # ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/title-body.txt`` via
-    # the archived-path fallback once the live plan path is gone. See
-    # ``ref-workflow-architecture/standards/terminal-title-architecture.md``
-    # (title-body lifecycle, archived-path fallback).
-    _publish_completed_title_body(plan_dir, status)
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(plan_dir), str(archive_path))

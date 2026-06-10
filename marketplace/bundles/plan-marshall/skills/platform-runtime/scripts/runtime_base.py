@@ -184,7 +184,8 @@ class Runtime(ABC):
     def session_render_title(self, statusline: bool = False) -> str:
         """Render the current plan title in the terminal.
 
-        Resolves session → plan → body using the internal 5-step contract and
+        Resolves session → plan, reads the title state from ``status.json``,
+        composes the title via the ``manage-terminal-title`` composer, and
         emits the platform-appropriate sequence.
 
         Args:
@@ -196,6 +197,34 @@ class Runtime(ABC):
 
         Returns:
             Serialized TOON string (success or no-op).
+        """
+
+    @abstractmethod
+    def session_push_title_token(self, plan_id: str, icon: str) -> str:
+        """Push a live terminal title for *plan_id* directly to ``/dev/tty``.
+
+        Resolves the plan's title state from ``status.json``, composes the
+        ``'{icon} {glyph} {body}'`` string via the ``manage-terminal-title``
+        composer (with *icon* as the push-mode icon override), and writes the
+        OSC escape (``\\x1b]0;{composed}\\x07``) directly to ``/dev/tty``.
+
+        This is push-mode emission for blocking callers (e.g. a lock/build
+        acquire wait) that need the title refreshed without a hook firing.
+
+        On Claude: best-effort — silent no-op when ``/dev/tty`` is not openable
+        (CI / background / no controlling terminal); never raises.
+
+        On OpenCode: returns ``no-op`` (no plugin-driven terminal-title channel).
+
+        Args:
+            plan_id: Plan identifier whose ``status.json`` supplies the title
+                state.
+            icon: The push-mode icon glyph that overrides the event-resolved
+                icon for non-terminal phases.
+
+        Returns:
+            Serialized TOON string (success or no-op) noting whether the push
+            reached a TTY.
         """
 
     # ------------------------------------------------------------------

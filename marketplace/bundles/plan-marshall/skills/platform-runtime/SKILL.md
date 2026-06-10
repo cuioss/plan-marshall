@@ -6,7 +6,7 @@ user-invocable: false
 
 # Platform Runtime Skill
 
-Script-based platform abstraction that routes 14 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
+Script-based platform abstraction that routes 15 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
 
 ## Enforcement
 
@@ -26,7 +26,7 @@ Script-based platform abstraction that routes 14 goal-based operations to the co
 
 ## What This Skill Provides
 
-Fourteen operations covering the full platform lifecycle:
+Fifteen operations covering the full platform lifecycle:
 
 | Operation | Purpose |
 |-----------|---------|
@@ -40,6 +40,7 @@ Fourteen operations covering the full platform lifecycle:
 | `permission web-analyze` | Read-only analysis of WebFetch/webfetch domain permissions |
 | `permission web-apply` | Add or remove web domain permissions |
 | `session render-title` | Emit OSC title sequence from writer artifact; no-op on OpenCode |
+| `session push-title-token` | Parse `--plan-id` and `--icon`, emit OSC escape to `/dev/tty` (Claude); no-op on OpenCode |
 | `metrics capture` | Record token consumption for a planning phase |
 | `subagent dispatch` | Return platform-specific subagent invocation parameters |
 | `health-check` | Verify platform integration |
@@ -123,8 +124,13 @@ Platform-runtime operations satisfy: "Would this differ between Claude Code and 
 | Platform-specific subagent invocation | `manage-metrics` (metrics storage) |
 | Platform health verification | `tools-script-executor` (executor regeneration) |
 
-The `session render-title` reader is one half of the terminal-title writer/reader
-split — the `manage-status` writer publishes the `title-body.txt` artifact this
-operation resolves. See `ref-workflow-architecture/standards/terminal-title-architecture.md`
-for the canonical end-to-end architecture: writer, reader, session-plan binding,
-title-body lifecycle, output channels, platform abstraction, and the 3-icon palette.
+The `session render-title` and `session push-title-token` operations are the
+resolve + emit layer of the terminal-title three-way split. They resolve
+session → plan, read the title state from `status.json` (live first, archived
+fallback), call the pure `manage-terminal-title` composer, and emit per platform
+(OSC / statusLine / web sessionTitle, plus the `/dev/tty` push). `status.json` is
+the single source of persisted title state — there is no `title-body.txt`
+artifact. See `manage-terminal-title/standards/terminal-title-architecture.md` for
+the canonical end-to-end architecture: state (`manage-status`), composer
+(`manage-terminal-title`), resolve+emit (`platform-runtime`), session-plan
+binding, output channels, platform abstraction, and the glyph + icon vocabulary.

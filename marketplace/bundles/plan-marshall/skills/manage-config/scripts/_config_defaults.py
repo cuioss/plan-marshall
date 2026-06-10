@@ -368,6 +368,18 @@ BUILD_SYSTEM_DEFAULTS = {
     'npm': {'skill': 'plan-marshall:plan-marshall-plugin'},
 }
 
+# Build-queue defaults (`build_queue.*` in marshal.json — top-level block).
+# `max_slots` is the number of concurrent build admissions the cross-session
+# build queue grants before enqueuing further requests; the build-queue
+# admission primitive (`plan-marshall:manage-locks:build_queue`) reads it via
+# `build_queue.max_slots`, falling back to 5 when the block or key is absent.
+# `max_retries` is the number of times the build wrapper re-polls a `blocked`
+# admission before giving up. Both keys live at the marshal.json top level (not
+# under `plan.*`) because the build queue is a project-wide, cross-plan
+# resource. Registering them here makes the queue bounds operator-visible and
+# editable directly in marshal.json.
+DEFAULT_BUILD_QUEUE = {'max_slots': 5, 'max_retries': 10}
+
 
 def get_default_config() -> dict:
     """Get complete default marshal.json configuration.
@@ -398,6 +410,7 @@ def get_default_config() -> dict:
         'providers': [],
         'project': copy.deepcopy(DEFAULT_PROJECT),
         'skill_domains': {'system': system_domain},
+        'build_queue': copy.deepcopy(DEFAULT_BUILD_QUEUE),
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
         'plan': {
             'open_in_ide': DEFAULT_OPEN_IN_IDE,

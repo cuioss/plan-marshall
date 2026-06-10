@@ -28,7 +28,6 @@ Load specific standards on-demand based on what aspect you need to understand.
 | [glossary.md](standards/glossary.md) | Terminology definitions | plan_id, phase, profile, module, domain, deliverable, task, finding, TOON |
 | [phase-lifecycle.md](standards/phase-lifecycle.md) | Phase lifecycle patterns | Entry protocol, completion protocol, enforcement template, error convention |
 | [skill-inventory.md](standards/skill-inventory.md) | Complete skill inventory | 49 skills: registration status, categories, naming convention |
-| [terminal-title-architecture.md](standards/terminal-title-architecture.md) | Terminal-title writer/reader split | `manage-status` writer (`_render_title_body`/`_publish_title_body` → `title-body.txt`), `platform-runtime` reader (`session_render_title`: session → active-plan → title-body → `{icon} {body}`), title-body lifecycle incl. archive + Completed body, OSC-hook vs statusLine channels, claude-vs-opencode abstraction, canonical 3-icon palette (➤ / ? / ✓) |
 
 The data-layer and manage-contract standards above define the cwd-agnostic Bucket A contract for `manage-*` scripts. See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (the complementary Bucket B `--plan-id` contract for working-tree-bound scripts).
 

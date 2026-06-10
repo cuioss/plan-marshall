@@ -870,3 +870,109 @@ def test_committed_marshal_json_round_trips_through_save_config_unchanged(tmp_pa
 
     # Assert — key order is unchanged by the round-trip
     assert after == before
+
+
+# =============================================================================
+# build_queue.* top-level config keys (D10)
+# =============================================================================
+#
+# DEFAULT_BUILD_QUEUE seeds the cross-session build-queue admission bounds at the
+# marshal.json top level (not under plan.*) because the build queue is a
+# project-wide, cross-plan resource. `max_slots` defaults to 5 (concurrent build
+# admissions before enqueue) and `max_retries` defaults to 10 (blocked-admission
+# re-polls). These tests pin the defaults surfaced by get_default_config() and
+# prove that an explicit marshal.json value overrides each default via
+# load_config().
+
+
+def test_default_build_queue_declares_max_slots_5_and_max_retries_10():
+    """DEFAULT_BUILD_QUEUE must declare max_slots=5 and max_retries=10."""
+    # Arrange
+    build_queue = _config_defaults_mod.DEFAULT_BUILD_QUEUE
+
+    # Act / Assert
+    assert 'max_slots' in build_queue, (
+        'max_slots must be schema-registered in DEFAULT_BUILD_QUEUE'
+    )
+    assert build_queue['max_slots'] == 5, (
+        'build_queue.max_slots default must be 5 (concurrent build admissions)'
+    )
+    assert 'max_retries' in build_queue, (
+        'max_retries must be schema-registered in DEFAULT_BUILD_QUEUE'
+    )
+    assert build_queue['max_retries'] == 10, (
+        'build_queue.max_retries default must be 10 (blocked-admission re-polls)'
+    )
+
+
+def test_get_default_config_surfaces_build_queue_max_slots_default_5():
+    """get_default_config() must surface build_queue.max_slots == 5 when unconfigured.
+
+    The build_queue block lives at the marshal.json top level (cross-plan
+    resource), not under plan.*.
+    """
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    assert 'build_queue' in config, (
+        'build_queue must be a top-level block in get_default_config()'
+    )
+    assert config['build_queue'].get('max_slots') == 5
+
+
+def test_get_default_config_surfaces_build_queue_max_retries_default_10():
+    """get_default_config() must surface build_queue.max_retries == 10 when unconfigured."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    assert 'build_queue' in config, (
+        'build_queue must be a top-level block in get_default_config()'
+    )
+    assert config['build_queue'].get('max_retries') == 10
+
+
+def test_marshal_build_queue_max_slots_override_wins(plan_context, monkeypatch):
+    """An explicit marshal.json build_queue.max_slots overrides the default of 5.
+
+    Seeds a fresh marshal.json (which carries the default build_queue block),
+    rewrites build_queue.max_slots to a custom value, and proves load_config()
+    reads the override back rather than the 5 default. The importlib-loaded
+    `_config_core_mod` is a distinct module object from the conftest-imported
+    `_config_core` that plan_context monkeypatches, so MARSHAL_PATH must be
+    redirected on `_config_core_mod` itself for its load_config() to resolve the
+    fixture marshal.json.
+    """
+    # Arrange — fresh marshal.json with the seeded default block
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    monkeypatch.setattr(_config_core_mod, 'MARSHAL_PATH', marshal_path)
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert config['build_queue']['max_slots'] == 5  # precondition: seeded default
+
+    # Act — write a custom max_slots override into the persisted config
+    config['build_queue']['max_slots'] = 12
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+    reloaded = _config_core_mod.load_config()
+
+    # Assert — load_config surfaces the override, not the 5 default
+    assert reloaded['build_queue']['max_slots'] == 12
+
+
+def test_marshal_build_queue_max_retries_override_wins(plan_context, monkeypatch):
+    """An explicit marshal.json build_queue.max_retries overrides the default of 10."""
+    # Arrange — fresh marshal.json with the seeded default block
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    monkeypatch.setattr(_config_core_mod, 'MARSHAL_PATH', marshal_path)
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert config['build_queue']['max_retries'] == 10  # precondition: seeded default
+
+    # Act — write a custom max_retries override into the persisted config
+    config['build_queue']['max_retries'] = 3
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+    reloaded = _config_core_mod.load_config()
+
+    # Assert — load_config surfaces the override, not the 10 default
+    assert reloaded['build_queue']['max_retries'] == 3
