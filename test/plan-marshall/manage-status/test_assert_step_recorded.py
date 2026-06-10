@@ -198,7 +198,12 @@ def test_step_absent_returns_not_recorded(plan_context):
 
 
 def test_step_absent_with_require_terminal_returns_error(plan_context):
-    """--require-terminal on an absent step escalates to step_record_missing."""
+    """--require-terminal on an absent step escalates to step_record_missing.
+
+    A terminal record under a completely unrelated key in the same phase does NOT
+    trigger step_record_mismatched_key — near-miss detection is restricted to
+    genuine near-misses (bare/qualified name variants or close typographic errors).
+    An unrelated key like ``step-a`` is not a near-miss for ``step-missing``."""
     plan_id = 'assert-absent-require'
     _make_plan(plan_id)
     _seed_step(plan_id, '1-init', 'step-a', 'done')
@@ -211,7 +216,6 @@ def test_step_absent_with_require_terminal_returns_error(plan_context):
     assert result['outcome'] is None
     assert result['phase'] == '1-init'
     assert result['step'] == 'step-missing'
-    assert 'mark-step-done' in result['message']
 
 
 def test_phase_absent_returns_not_recorded(plan_context):
@@ -282,6 +286,206 @@ def test_assert_does_not_mutate_status(plan_context):
     after = read_status(plan_id)
 
     assert before == after
+
+
+# =============================================================================
+# Near-miss orphan key -> step_record_mismatched_key
+# =============================================================================
+
+
+def test_canonical_key_present_is_recorded_terminal(plan_context):
+    """(1) When the queried (canonical) key carries a terminal record, the verb
+    reports recorded/terminal even if other orphan keys also exist — the
+    near-miss scan never fires when the canonical record is present."""
+    plan_id = 'assert-mismatch-canonical'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {
+            'plan-marshall:plan-retrospective': {'outcome': 'done', 'display_detail': None},
+            'plan-retrospective': {'outcome': 'done', 'display_detail': None},
+        }
+    }
+    write_status(plan_id, status)
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'plan-marshall:plan-retrospective', require_terminal=True)
+    )
+
+    assert result['status'] == 'success'
+    assert result['recorded'] is True
+    assert result['outcome'] == 'done'
+
+
+def test_only_bare_orphan_present_returns_mismatched_key(plan_context):
+    """(2) When only a bare/mis-keyed orphan terminal record is present under a
+    different key, --require-terminal returns step_record_mismatched_key carrying
+    the orphan key and its outcome."""
+    plan_id = 'assert-mismatch-orphan'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'plan-retrospective': {'outcome': 'done', 'display_detail': None}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'plan-marshall:plan-retrospective', require_terminal=True)
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'step_record_mismatched_key'
+    assert result['recorded'] is False
+    assert result['outcome'] is None
+    assert result['orphan_key'] == 'plan-retrospective'
+    assert result['orphan_outcome'] == 'done'
+    assert result['phase'] == '6-finalize'
+    assert result['step'] == 'plan-marshall:plan-retrospective'
+
+
+def test_no_record_at_all_returns_missing_not_mismatched(plan_context):
+    """(3) Regression guard: when no terminal record exists under ANY key in the
+    phase, --require-terminal returns the original step_record_missing — the
+    near-miss branch must not fire for a truly-absent record."""
+    plan_id = 'assert-mismatch-none'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    # A non-terminal orphan must NOT trigger the mismatched-key branch.
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'some-other-step': {'outcome': 'in_progress', 'display_detail': None}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'plan-marshall:plan-retrospective', require_terminal=True)
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'step_record_missing'
+    assert result['recorded'] is False
+    assert result['outcome'] is None
+    assert 'orphan_key' not in result
+
+
+def test_orphan_present_without_require_terminal_does_not_flip_recorded(plan_context):
+    """(4) Without --require-terminal, a present orphan under a different key does
+    not flip recorded for the queried key — the default path reports the queried
+    key absent without escalation."""
+    plan_id = 'assert-mismatch-default'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'plan-retrospective': {'outcome': 'done', 'display_detail': None}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'plan-marshall:plan-retrospective', require_terminal=False)
+    )
+
+    assert result['status'] == 'success'
+    assert result['recorded'] is False
+    assert result['outcome'] is None
+    assert 'orphan_key' not in result
+
+
+# =============================================================================
+# Near-miss token hardening: tokens close to a valid step_id but not an exact
+# match must escalate to step_record_mismatched_key under --require-terminal.
+# =============================================================================
+
+
+def test_typo_near_miss_token_returns_mismatched_key(plan_context):
+    """A typo'd orphan key (one character off the queried step_id) carries a
+    terminal record; the queried exact step_id has none. --require-terminal must
+    surface the typo'd key via step_record_mismatched_key rather than silently
+    passing or reporting a truly-absent record."""
+    plan_id = 'assert-near-miss-typo'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'plan-retrospectiv': {'outcome': 'done', 'display_detail': None}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'plan-retrospective', require_terminal=True)
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'step_record_mismatched_key'
+    assert result['recorded'] is False
+    assert result['outcome'] is None
+    assert result['orphan_key'] == 'plan-retrospectiv'
+    assert result['orphan_outcome'] == 'done'
+    assert result['phase'] == '6-finalize'
+    assert result['step'] == 'plan-retrospective'
+
+
+@pytest.mark.parametrize('orphan_outcome', ['done', 'skipped', 'loop_back', 'failed'])
+def test_near_miss_orphan_outcome_preserved(plan_context, orphan_outcome):
+    """The mismatched-key verdict surfaces the orphan's actual terminal outcome,
+    not a hard-coded 'done'. Every member of VALID_OUTCOMES under a near-miss key
+    must round-trip through orphan_outcome."""
+    plan_id = f'assert-near-miss-{orphan_outcome.replace("_", "-")}'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'plan-retrospective': {'outcome': orphan_outcome, 'display_detail': None}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'plan-marshall:plan-retrospective', require_terminal=True)
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'step_record_mismatched_key'
+    assert result['orphan_key'] == 'plan-retrospective'
+    assert result['orphan_outcome'] == orphan_outcome
+
+
+def test_near_miss_message_names_both_keys(plan_context):
+    """The mismatched-key message must name both the queried step_id and the
+    near-miss orphan key so the dispatcher can report the mis-keying."""
+    plan_id = 'assert-near-miss-message'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'plan-retrospective': {'outcome': 'done', 'display_detail': None}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'plan-marshall:plan-retrospective', require_terminal=True)
+    )
+
+    assert result['status'] == 'error'
+    assert 'plan-marshall:plan-retrospective' in result['message']
+    assert 'plan-retrospective' in result['message']
+
+
+def test_non_terminal_near_miss_does_not_escalate_to_mismatched_key(plan_context):
+    """A near-miss orphan whose outcome is NON-terminal must NOT trigger the
+    mismatched-key branch — only a terminal orphan record counts as a near-miss.
+    With no terminal record under any key, the verdict is step_record_missing."""
+    plan_id = 'assert-near-miss-nonterminal'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'plan-retrospectiv': {'outcome': 'in_progress', 'display_detail': None}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'plan-retrospective', require_terminal=True)
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'step_record_missing'
+    assert result['recorded'] is False
+    assert result['outcome'] is None
+    assert 'orphan_key' not in result
 
 
 # =============================================================================

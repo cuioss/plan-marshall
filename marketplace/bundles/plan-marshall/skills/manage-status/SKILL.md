@@ -415,7 +415,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert
 - `--plan-id` (required): Plan identifier
 - `--phase` (required): Phase name (e.g., `6-finalize`)
 - `--step` (required): Step identifier within the phase
-- `--require-terminal` (optional): Escalate a missing terminal record to `status: error, error: step_record_missing` instead of returning `recorded: false`. The post-dispatch guard passes this flag so a missing record is a branchable failure verdict rather than a soft boolean.
+- `--require-terminal` (optional): Escalate a missing terminal record to a `status: error` verdict instead of returning `recorded: false`. Two error branches are distinguished: `step_record_mismatched_key` when the queried step has no record BUT a terminal record exists under a different (near-miss) key in the same phase — the dispatched step recorded under the wrong key; `step_record_missing` when no terminal record exists under any key in the phase. The post-dispatch guard passes this flag so a missing record is a branchable failure verdict rather than a soft boolean.
 
 **Output — recorded** (TOON):
 ```toon
@@ -447,6 +447,20 @@ step: ci-verify
 recorded: false
 outcome: null
 message: No terminal record for step 'ci-verify' in phase '6-finalize': the dispatched step returned without recording a mark-step-done outcome (expected one of ['done', 'skipped', 'loop_back', 'failed']).
+```
+
+**Output — mismatched key under `--require-terminal`** (TOON): the queried step has no record, but a terminal record exists under a near-miss key in the same phase.
+```toon
+status: error
+plan_id: my-feature
+error: step_record_mismatched_key
+phase: 6-finalize
+step: plan-marshall:plan-retrospective
+recorded: false
+outcome: null
+orphan_key: plan-retrospective
+orphan_outcome: done
+message: No terminal record for step 'plan-marshall:plan-retrospective' in phase '6-finalize', but a terminal record exists under the near-miss key 'plan-retrospective' (outcome 'done'). The dispatched step recorded its mark-step-done outcome under the wrong key — expected the queried step name 'plan-marshall:plan-retrospective'.
 ```
 
 ### get-context
@@ -791,7 +805,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `title-token set` | `--plan-id --state {lock-waiting\|lock-owned\|build-waiting\|building}` | Write the field-only `status.title_token` state marker. No rendering — `manage-terminal-title` owns title composition + glyph vocabulary. |
 | `title-token clear` | `--plan-id` | Remove the `status.title_token` field (idempotent — no-op when already absent). |
 | `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target) in `metadata.phase_steps` |
-| `assert-step-recorded` | `--plan-id --phase --step [--require-terminal]` | Read-only verdict: reports `recorded: true` iff a terminal `metadata.phase_steps[phase][step]` outcome exists. The phase-6-finalize post-dispatch guard. With `--require-terminal`, a missing record returns `error: step_record_missing`. Zero writes. |
+| `assert-step-recorded` | `--plan-id --phase --step [--require-terminal]` | Read-only verdict: reports `recorded: true` iff a terminal `metadata.phase_steps[phase][step]` outcome exists. The phase-6-finalize post-dispatch guard. With `--require-terminal`, a near-miss orphan record under a different key returns `error: step_record_mismatched_key` (carrying `orphan_key`); a truly-absent record returns `error: step_record_missing`. Zero writes. |
 | `get-context` | `--plan-id` | Get combined status context |
 | `get-worktree-path` | `--plan-id` | Resolve persisted worktree path (returns empty string when `use_worktree==false`) |
 | `list` | `[--filter PHASE]` | Discover all plans across the main checkout and its worktrees (each entry tagged `location: current`/`worktree`), optionally filtered by phase |
@@ -1001,7 +1015,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `invalid_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` value not in `5-execute`/`6-finalize`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
 | `unexpected_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` supplied alongside an outcome other than `loop_back`. The flag is FORBIDDEN on `done`/`skipped`/`failed` outcomes. |
 | `dirty_worktree_done_refused` | 1 | `mark-step-done`: `--outcome=done` for a step in `MAY_MUTATE_WORKTREE_STEPS` (`automated-review`/`sonar-roundtrip`/`finalize-step-simplify`) while the resolved worktree is dirty (`git status --porcelain` non-empty). Re-issue as `--outcome loop_back --loop-back-target 6-finalize` (inline replay) or `--loop-back-target 5-execute` (fix-task rollback). |
-| `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists for the named phase step (the dispatched step returned without recording a `mark-step-done` outcome). Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
+| `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists under any key for the named phase (the dispatched step returned without recording a `mark-step-done` outcome). Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
+| `step_record_mismatched_key` | 0 | `assert-step-recorded --require-terminal`: the queried step has no terminal record, but a near-miss orphan terminal record exists under a different key in the same phase (the dispatched step recorded under the wrong key — e.g. a bare skill name instead of its fully-qualified manifest `step_id`). Carries `orphan_key` and `orphan_outcome`. Exit code is 0 — the guard branches on the TOON `error` field. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |
 
 ---
