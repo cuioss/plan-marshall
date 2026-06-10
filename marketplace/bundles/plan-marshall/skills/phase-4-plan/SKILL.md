@@ -431,8 +431,9 @@ To prevent compound-word mis-interpretation (e.g. `check-coverage` being describ
 
 1. The handler calls `scan_lesson_id_tokens(title + ' ' + description)` from `tools-input-validation` to extract every embedded lesson-ID token.
 2. The handler calls `verify_lesson_ids_exist(tokens)` to check each token against the live `manage-lessons list` inventory (the same inventory the runtime live-anchor discipline uses).
-3. On ANY unresolved token, the entire write batch is aborted atomically — no `TASK-NNN.json` file is created, the on-disk state is untouched, and the response is the error payload described below.
-4. The handler does NOT auto-rewrite descriptions to drop the offending IDs and does NOT downgrade the failure to a soft warning. A reference miss is a hard error so the plan can be corrected before execution.
+3. **Plan-dir artifact exemption** — for any token NOT present in the active inventory, the handler ALSO checks whether the plan's own converted source lesson exists on disk at `.plan/local/plans/{plan_id}/lesson-{id}.md`. A token that resolves to such a plan-dir artifact is a legitimate reference — a lesson the plan itself converted lives in the plan directory even after it has left the active inventory — so it is dropped from the unresolved set and the write proceeds. Resolution is therefore two-tier: a token resolves when it is present in the active inventory OR when its `lesson-{id}.md` artifact exists under the plan directory.
+4. On ANY token unresolved in BOTH tiers (absent from the active inventory AND with no `lesson-{id}.md` artifact in the plan directory), the entire write batch is aborted atomically — no `TASK-NNN.json` file is created, the on-disk state is untouched, and the response is the error payload described below.
+5. The handler does NOT auto-rewrite descriptions to drop the offending IDs and does NOT downgrade the failure to a soft warning. A reference miss in both tiers is a hard error so the plan can be corrected before execution.
 
 **Failure mode** — On an unresolved reference, both `commit-add` and `batch-add` return the canonical TOON error payload:
 
@@ -449,9 +450,9 @@ message: "Task references lesson IDs that do not exist in the live manage-lesson
 
 `task_index` is the zero-based index of the offending task in the batch (`0` for `commit-add`, which always writes a single task). `unresolved_ids` carries the deduplicated, sorted list of unresolved tokens.
 
-**Recovery procedure** — When a write fails with `validation_error: lesson_id_not_found`:
+**Recovery procedure** — When a write fails with `validation_error: lesson_id_not_found`. The recovery below applies only to IDs that are unresolved in BOTH tiers — absent from the active inventory AND with no `lesson-{id}.md` artifact under the plan directory; an ID that resolves to a plan-dir converted source lesson never reaches this failure path:
 
-1. Inspect `unresolved_ids` in the error payload to identify which lesson IDs are unknown to the inventory.
+1. Inspect `unresolved_ids` in the error payload to identify which lesson IDs are unknown to BOTH the active inventory and the plan directory.
 2. Decide per ID: either (a) **create the lesson** via `manage-lessons add` if the reference was meant to point to a real (but not-yet-allocated) lesson — first running the canonical three-gate lesson-creation policy in [`../manage-lessons/standards/lesson-creation-policy.md`](../manage-lessons/standards/lesson-creation-policy.md) (Gate 1 dedup, Gate 2 active-plan check, Gate 3 create) so the recovery create-path is consistent with the policy — or (b) **drop the ID from the task description** and reword the narrative as a query against the live inventory (e.g., "archive any lessons matching component=X and category=resolved") so the task does not depend on a phantom ID.
 3. Re-stage the corrected task batch (re-write the `tasks-batch.json` staging file) and re-invoke `batch-add --tasks-file PATH`. The atomic-write contract guarantees the previous failed attempt left no on-disk state behind, so the retry starts from a clean tasks directory.
 4. NEVER bypass the validation by editing `TASK-NNN.json` files directly or by passing `--no-validate`-style flags — no such bypass exists, and the validation is the only point in the plan lifecycle that catches lesson-ID drift before tasks reach phase-5-execute.

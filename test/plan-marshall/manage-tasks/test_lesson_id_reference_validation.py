@@ -177,6 +177,18 @@ def _make_inventory_stub(present_ids):
     return _stub
 
 
+def _seed_plan_dir_lesson(plan_dir, lesson_id, body='# converted lesson\n'):
+    """Seed a plan-dir converted-lesson artifact at
+    ``{plan_dir}/lesson-{lesson_id}.md`` — the tier-2 resolution path
+    ``_scan_unresolved_lesson_ids`` consults via ``get_plan_dir(plan_id)``.
+
+    A token whose artifact exists here is a legitimate reference even when the
+    active manage-lessons inventory reports it absent."""
+    path = plan_dir / f'lesson-{lesson_id}.md'
+    path.write_text(body, encoding='utf-8')
+    return path
+
+
 @pytest.fixture(autouse=True)
 def short_circuit_anchor(monkeypatch):
     """Bypass the runtime regex anchor for every test in this module.
@@ -452,5 +464,109 @@ def test_batch_add_phantom_in_title_only_aborts(plan_context, patch_inventory):
     assert result['unresolved_ids'] == [PHANTOM_IDS[1]]
 
     task_dir = plan_context.plan_dir_for('lesson-ref-batch-title') / 'tasks'
+    if task_dir.exists():
+        assert list(task_dir.glob('TASK-*.json')) == []
+
+
+# =============================================================================
+# Case (f) — plan-dir converted-lesson artifact is the tier-2 exemption.
+#
+# A lesson ID absent from the active inventory but present on disk at
+# ``{plan_dir}/lesson-{id}.md`` resolves and the write proceeds. A token
+# absent from BOTH tiers still hard-fails with the unchanged
+# ``lesson_id_not_found`` payload. (Covers the TASK-003 exemption added to
+# ``_scan_unresolved_lesson_ids``.)
+# =============================================================================
+
+
+def test_commit_add_plan_dir_artifact_exempts_inventory_miss(plan_context, patch_inventory):
+    """A token the inventory reports ABSENT but whose converted artifact
+    exists in the plan dir is exempted — it does NOT appear in the
+    unresolved list and commit-add succeeds."""
+    # Inventory knows only the real IDs; the exempt token is NOT among them.
+    patch_inventory(REAL_LESSON_IDS)
+    exempt_id = PHANTOM_IDS[0]
+
+    plan_dir = plan_context.plan_dir_for('lesson-ref-plandir-exempt')
+    # Seed the tier-2 artifact under get_plan_dir(plan_id) — the inventory
+    # verifier reports this id absent, so only the on-disk artifact can resolve it.
+    _seed_plan_dir_lesson(plan_dir, exempt_id)
+
+    body = _toon_task_body(
+        title='Apply converted lesson',
+        description=f'Per lesson {exempt_id}: this lesson was converted into this plan.',
+    )
+    _seed_pending(plan_dir, body)
+
+    result = cmd_commit_add(_commit_ns('lesson-ref-plandir-exempt'))
+
+    assert result['status'] == 'success'
+    assert result['file'] == 'TASK-001.json'
+    assert (plan_dir / 'tasks' / 'TASK-001.json').is_file()
+
+
+def test_batch_add_plan_dir_artifact_exempts_inventory_miss(plan_context, patch_inventory):
+    """The batch path honours the same tier-2 exemption: an entry citing an
+    inventory-absent id whose plan-dir artifact exists does NOT abort the
+    batch, and all TASK files are written."""
+    patch_inventory(REAL_LESSON_IDS)
+    exempt_id = PHANTOM_IDS[0]
+
+    plan_dir = plan_context.plan_dir_for('lesson-ref-batch-plandir-exempt')
+    _seed_plan_dir_lesson(plan_dir, exempt_id)
+
+    entries = [
+        _entry(
+            title='Inventory-resolved task',
+            description=f'See {REAL_LESSON_IDS[0]}.',
+            steps=['src/A.java'],
+        ),
+        _entry(
+            title='Plan-dir-exempt task',
+            description=f'Cites converted lesson {exempt_id} (absent from inventory, present on disk).',
+            steps=['src/B.java'],
+        ),
+    ]
+
+    result = cmd_batch_add(_batch_ns('lesson-ref-batch-plandir-exempt', tasks_json=json.dumps(entries)))
+
+    assert result['status'] == 'success'
+    assert result['tasks_created'] == 2
+    files = sorted(
+        (plan_context.plan_dir_for('lesson-ref-batch-plandir-exempt') / 'tasks').glob('TASK-*.json')
+    )
+    assert [f.name for f in files] == ['TASK-001.json', 'TASK-002.json']
+
+
+def test_commit_add_absent_from_both_tiers_still_hard_fails(plan_context, patch_inventory):
+    """Regression guard: a token absent from BOTH the active inventory AND
+    the plan dir still hard-fails with the unchanged
+    ``lesson_id_not_found`` payload. The tier-2 exemption must not weaken
+    the genuine-miss path."""
+    patch_inventory(REAL_LESSON_IDS)
+    missing_id = PHANTOM_IDS[0]
+
+    plan_dir = plan_context.plan_dir_for('lesson-ref-both-tiers-miss')
+    # Seed an UNRELATED artifact to prove the exemption matches by exact id,
+    # not by "any lesson-*.md exists in the plan dir".
+    _seed_plan_dir_lesson(plan_dir, PHANTOM_IDS[1])
+
+    body = _toon_task_body(
+        title='Bad task',
+        description=f'Cites {missing_id}, which exists in neither inventory nor plan dir.',
+    )
+    _seed_pending(plan_dir, body)
+
+    result = cmd_commit_add(_commit_ns('lesson-ref-both-tiers-miss'))
+
+    # Unchanged hard-fail payload contract.
+    assert result['status'] == 'error'
+    assert result['error'] == 'validation_error'
+    assert result['validation_error'] == 'lesson_id_not_found'
+    assert result['unresolved_ids'] == [missing_id]
+    assert result['task_index'] == 0
+    assert missing_id in result['message']
+
+    task_dir = plan_dir / 'tasks'
     if task_dir.exists():
         assert list(task_dir.glob('TASK-*.json')) == []
