@@ -7,9 +7,7 @@ import argparse
 from typing import Any
 
 from _status_core import (
-    TITLE_BODY_FILENAME,
-    TITLE_BODY_TERMINAL_PHASES,
-    _publish_title_body,
+    TITLE_TOKEN_STATES,
     _try_read_status_json,
     get_plans_dir,
     log_entry,
@@ -21,7 +19,7 @@ from constants import (  # type: ignore[import-not-found]
     PHASE_STATUS_DONE,
     PHASE_STATUS_IN_PROGRESS,
 )
-from file_ops import get_plan_dir, get_worktree_root  # type: ignore[import-not-found]
+from file_ops import get_worktree_root  # type: ignore[import-not-found]
 from marketplace_paths import PLAN_DIR_NAME  # type: ignore[import-not-found]
 
 # Metadata fields that are semantically boolean. The ``metadata --set`` CLI
@@ -51,24 +49,10 @@ def _coerce_metadata_value(field: str, raw_value: Any) -> Any:
 
 
 def cmd_read(args: argparse.Namespace) -> dict | None:
-    """Read plan status.
-
-    Cold-bootstrap branch: when ``title-body.txt`` is absent for an active
-    (non-terminal) plan, the read handler republishes it from the in-memory
-    status dict. This covers fresh tabs / processes that opened after the
-    writer's last successful publish — the next read self-heals the
-    artifact without requiring a state mutation.
-    """
+    """Read plan status."""
     status = require_status(args)
     if status is None:
         return None
-
-    current_phase = status.get('current_phase')
-    if current_phase and current_phase not in TITLE_BODY_TERMINAL_PHASES:
-        plan_dir = get_plan_dir(args.plan_id)
-        title_body_path = plan_dir / TITLE_BODY_FILENAME
-        if not title_body_path.is_file():
-            _publish_title_body(plan_dir, status)
 
     return {'status': 'success', 'plan_id': args.plan_id, 'plan': status}
 
@@ -98,10 +82,6 @@ def cmd_set_phase(args: argparse.Namespace) -> dict | None:
             phase['status'] = PHASE_STATUS_IN_PROGRESS
 
     write_status(args.plan_id, status)
-    # Title-body publication hook — set-phase is a phase mutator and must
-    # republish the writer-side title-body artifact so per-target session
-    # renderers see the new phase without re-reading status.json.
-    _publish_title_body(get_plan_dir(args.plan_id), status)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Phase: {previous} -> {args.phase}')
 
     return {'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous}
@@ -212,6 +192,56 @@ def cmd_metadata(args: argparse.Namespace) -> dict | None:
             'error': 'missing_operation',
             'message': 'Either --get or --set is required',
         }
+
+
+def cmd_title_token(args: argparse.Namespace) -> dict | None:
+    """Set or clear the field-only ``title_token`` marker in status.json.
+
+    The title token is a bare state string (one of ``TITLE_TOKEN_STATES``)
+    written into ``status.title_token``. manage-status performs NO rendering
+    — the composition (glyph vocabulary + ``{icon} {body}`` assembly) lives in
+    ``manage-terminal-title``. This verb only persists the state so the
+    per-target renderer can read it.
+
+    - ``set`` writes ``status.title_token = {state}`` (``--state`` required,
+      validated against ``TITLE_TOKEN_STATES``).
+    - ``clear`` removes the ``title_token`` field when present (idempotent —
+      a no-op when already absent).
+    """
+    status = require_status(args)
+    if status is None:
+        return None
+
+    if args.token_verb == 'set':
+        state = args.state
+        if state not in TITLE_TOKEN_STATES:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_title_token_state',
+                'message': f'Invalid title-token state: {state}',
+                'valid_states': sorted(TITLE_TOKEN_STATES),
+            }
+        status['title_token'] = state
+        write_status(args.plan_id, status)
+        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Title token: {state}')
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'title_token': state,
+        }
+
+    # clear
+    previous = status.pop('title_token', None)
+    if previous is not None:
+        write_status(args.plan_id, status)
+        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Title token cleared (was: {previous})')
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'title_token': None,
+        'cleared': previous is not None,
+    }
 
 
 def cmd_get_context(args: argparse.Namespace) -> dict | None:

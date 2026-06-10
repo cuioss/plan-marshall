@@ -32,10 +32,43 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
+import json  # noqa: E402
+
 from _build_execute import BuildCommandFn, CaptureStrategy, ScopeFn, execute_direct_base  # noqa: E402
 from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
+from _build_queue_slot import BuildQueueTimeout, build_queue_slot  # noqa: E402
 from _build_result import DirectCommandResult  # noqa: E402
 from _build_shared import cmd_run_common  # noqa: E402
+from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+
+# Error type emitted when the build queue is saturated past max_retries.
+ERROR_QUEUE_SATURATED = 'queue_saturated'
+
+
+def _emit_queue_timeout(tool_name: str, command_args: str, output_format: str, exc: BuildQueueTimeout) -> int:
+    """Render a structured 'try again later' error when no slot was admitted.
+
+    The build never ran — the queue stayed saturated past ``max_retries`` — so
+    this returns an exit code of 1 (the build did not complete) and prints an
+    error envelope the orchestrator can branch on without a log file. The
+    envelope is serialized with the generic TOON/JSON serializer (not the
+    build-result formatter, which filters to known build fields and would drop
+    the queue-specific ``message`` / ``plan_id`` / ``max_retries`` keys).
+    """
+    output = {
+        'status': 'error',
+        'error': ERROR_QUEUE_SATURATED,
+        'message': str(exc),
+        'tool': tool_name,
+        'command': command_args,
+        'max_retries': exc.max_retries,
+        'plan_id': exc.plan_id,
+    }
+    if output_format == 'json':
+        print(json.dumps(output, indent=2))
+    else:
+        print(serialize_toon(output))
+    return 1
 
 
 def default_command_key_fn(command_args: str) -> str:
@@ -220,14 +253,22 @@ def create_execute_handlers(
         # Optional working_dir support
         working_dir = getattr(args, 'working_dir', None) if config.supports_working_dir else None
 
-        result = execute_direct(
-            args=command_args,
-            command_key=command_key,
-            default_timeout=timeout_seconds,
-            project_dir=project_dir,
-            env_vars=env_vars,
-            working_dir=working_dir,
-        )
+        # Acquire a build-queue slot when a plan_id is set; NO-OP passthrough
+        # otherwise (plan-less builds run unchanged). The slot is released and
+        # the title-token cleared in the context manager's finally.
+        plan_id = getattr(args, 'plan_id', None)
+        try:
+            with build_queue_slot(plan_id):
+                result = execute_direct(
+                    args=command_args,
+                    command_key=command_key,
+                    default_timeout=timeout_seconds,
+                    project_dir=project_dir,
+                    env_vars=env_vars,
+                    working_dir=working_dir,
+                )
+        except BuildQueueTimeout as exc:
+            return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
 
         return cmd_run_common(
             result=result,

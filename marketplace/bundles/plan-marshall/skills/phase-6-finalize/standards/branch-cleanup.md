@@ -340,19 +340,19 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ##### Acquire the cross-plan merge-lock (auto path only)
 
-The auto path is ALWAYS lock-coordinated: because auto-merge serializes through the cross-plan merge-lock, concurrent plans can never race on the merge-to-main critical section, which is precisely what makes auto-merge a safe default. BEFORE the merge, acquire the lock. `acquire` is BLOCKING — the 5-minute poll loop lives inside the Python script (`time.sleep`), NOT a Bash loop — so call it with a Bash tool timeout of ~360000ms (6 minutes) to cover the 5-minute internal poll plus margin:
+The auto path is ALWAYS lock-coordinated: because auto-merge serializes through the unified merge-lock, concurrent plans can never race on the merge-to-main critical section, which is precisely what makes auto-merge a safe default. BEFORE the merge, acquire the lock. `acquire` is BLOCKING — the poll loop lives inside the Python script (`time.sleep`), NOT a Bash loop — and `--timeout 300` sets the 5-minute Pre-Merge Gate window (the file primitive's own default is the shorter 30s used by `integrate_into_main`'s inner mutex). Call it with a Bash tool timeout of ~360000ms (6 minutes) to cover the 5-minute internal poll plus margin (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock acquire`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock acquire \
-  --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
+  --plan-id {plan_id} --timeout 300
 ```
 
 **Bash tool timeout**: 360000ms (6-minute safety net for the 5-minute internal poll window).
 
 Parse the TOON output:
 
-- `status: acquired` → this plan holds the merge-lock. Proceed to **Merge PR (if not yet merged)** below.
-- `status: blocked` → the poll window elapsed while another plan held the lock. The script returns `blocking_plan_id` and does NOT issue `AskUserQuestion` — the orchestrator owns the escalation. Issue:
+- `status: success` (`action: acquired`) → this plan holds the merge-lock (the lock file was created via `O_EXCL`, or a dead holder's lock was reclaimed with `reclaimed: true`). Proceed to **Merge PR (if not yet merged)** below.
+- `status: blocked` → the poll window elapsed while a LIVE holder held the lock. The script returns `blocking_plan_id` (and `poll_window_seconds`) and does NOT issue `AskUserQuestion` — the orchestrator owns the escalation. `blocked` is distinct from a hard `status: error` (a resolution failure), which must be surfaced verbatim and aborted, NOT routed to the escalation prompt. Issue:
 
   ```
   AskUserQuestion:
@@ -363,7 +363,7 @@ Parse the TOON output:
           **Blocking plan**: {blocking_plan_id}
           **This plan**: {plan_id}
 
-          The cross-plan merge-lock serializes the merge-to-main critical
+          The unified merge-lock serializes the merge-to-main critical
           section. {blocking_plan_id} acquired it first and has not yet
           released. The 5-minute poll window elapsed without the lock
           freeing.
@@ -375,11 +375,11 @@ Parse the TOON output:
         multiSelect: false
   ```
 
-  On **Wait and retry**, re-run the `merge-lock acquire` call above. On **Skip merge**, set `{merge_consent} = deferred` and follow the same skip path as the interactive "No, skip merge" branch.
+  On **Wait and retry**, re-run the `merge_lock acquire` call above. On **Skip merge**, set `{merge_consent} = deferred` and follow the same skip path as the interactive "No, skip merge" branch.
 
 Then proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the auto-merge fallback path remains active on a branch-protection error.
 
-> **Sync note**: the `merge-lock` verb is a new `manage-status` subcommand. After this plan merges, the `finalize-step-sync-plugin-cache` step syncs the plugin cache and regenerates the executor against main (after the cache sync), so the new notation resolves.
+> **Sync note**: the merge-lock is the unified `plan-marshall:manage-locks:merge_lock` primitive (the file-based `O_EXCL` mutex). After this plan merges, the `finalize-step-sync-plugin-cache` step syncs the plugin cache and regenerates the executor against main (after the cache sync), so the notation resolves.
 
 #### Interactive merge prompt (`auto_merge_after_ci == false`)
 
@@ -525,14 +525,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 #### Release the cross-plan merge-lock (auto path only)
 
-**Only if the merge-lock was acquired on the auto path** (`{auto_merge_after_ci} == true` and `merge-lock acquire` returned `status: acquired`). The release fires AFTER `switch-and-pull` has pulled the merge commit into the base branch — the merge-to-main critical section is now complete, so the marker can be freed for the next plan:
+**Only if the merge-lock was acquired on the auto path** (`{auto_merge_after_ci} == true` and `merge_lock acquire` returned `status: success` / `action: acquired`). The release fires AFTER `switch-and-pull` has pulled the merge commit into the base branch — the merge-to-main critical section is now complete, so the lock file can be freed for the next plan (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock release`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock release \
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
   --plan-id {plan_id}
 ```
 
-`release` is idempotent (`released: false` when no marker was present), so a re-entry that already released the lock is a safe no-op. The `false`/prompt opt-out path never acquires the lock and therefore never releases it.
+`release` is idempotent and foreign-safe (`action: noop` when the lock is already free or held by another plan — it never removes a foreign holder's lock), so a re-entry that already released the lock is a safe no-op. The `false`/prompt opt-out path never acquires the lock and therefore never releases it.
 
 Delete the local feature branch and prune the now-stale remote-tracking ref via `prune-local-and-remote-ref` (see `workflow-integration-git` Canonical invocations → `prune-local-and-remote-ref`). The verb encapsulates the `show-ref` guard and `update-ref -d` so the remote-tracking ref is only deleted when it exists:
 

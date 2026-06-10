@@ -413,9 +413,14 @@ message: --scope must be 'project' or 'global'; got 'both'
 
 ### `session render-title`
 
-Emit the current plan title as an OSC terminal title sequence. Takes no arguments; all resolution is internal.
+Resolve session → plan, read the title state from `status.json` (live first,
+archived fallback), compose via the pure `manage-terminal-title` composer, and
+emit the result. Hook mode emits a JSON envelope (`terminalSequence` for every
+event, plus a gated web/desktop `sessionTitle`); statusLine mode (`--statusline`)
+emits plain `{icon} {glyph} {body}` text. All session → plan resolution is
+internal; the only argument is the optional mode flag.
 
-**Arguments**: _(none)_
+**Arguments**: `--statusline` _(optional — selects statusLine output mode instead of the hook JSON envelope)_
 
 **Success (Claude)**:
 ```toon
@@ -442,12 +447,12 @@ reason: no active plan registered for this session
 alternative: start a plan phase so manage-status can register the session
 ```
 
-**No-op (Claude — no title body)**:
+**No-op (Claude — no title state)**:
 ```toon
 status: no-op
 operation: session render-title
-reason: no plan-title to render; writer has determined the plan is in a terminal or archived state
-alternative: the title will resume when manage-status publishes a new title-body.txt
+reason: no plan-title to render; status.json has an empty or missing current_phase
+alternative: the title will resume on the next mutation that writes current_phase to status.json
 ```
 
 **No-op (OpenCode)**:
@@ -455,6 +460,39 @@ alternative: the title will resume when manage-status publishes a new title-body
 status: no-op
 operation: session render-title
 reason: OpenCode has no plugin-driven terminal-title hook (issue anomalyco/opencode#8619)
+alternative: Use OpenCode's built-in TUI status surface for plan visibility
+```
+
+---
+
+### `session push-title-token`
+
+Parse `--plan-id` and `--icon`, emit the OSC escape sequence directly to `/dev/tty` to push the current title-token state into the terminal title (Claude). No-op on OpenCode. Router-dispatched in `platform_runtime.py`, abstract in `runtime_base.py`, concrete in `claude_runtime.py` (writes OSC sequence to `/dev/tty`) and `opencode_runtime.py` (returns no-op).
+
+**Arguments**: `--plan-id <id>` (required), `--icon <icon>` (required)
+
+**Success (Claude — push reached TTY)**:
+```toon
+status: success
+operation: session push-title-token
+plan_id: my-plan
+pushed: true
+```
+
+**Success (Claude — silent no-op, TTY not openable or no title state)**:
+```toon
+status: success
+operation: session push-title-token
+plan_id: my-plan
+pushed: false
+reason: no_title_state
+```
+
+**No-op (OpenCode)**:
+```toon
+status: no-op
+operation: session push-title-token
+reason: OpenCode has no plugin-driven terminal-title hook; OSC escape push not supported
 alternative: Use OpenCode's built-in TUI status surface for plan visibility
 ```
 

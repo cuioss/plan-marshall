@@ -9,10 +9,11 @@ finalize integration step of the move-based, cwd-pinned hermetic worktree model
 (``prepare_execute.py``) and runs while the worktree is STILL PRESENT — branch
 cleanup removes the worktree AFTER this script returns. In one call it:
 
-  1. **ACQUIRES** the cooperative merge lock (delegating to the D15 ``merge_lock``
-     script — atomic ``O_EXCL`` create, holder = this ``plan_id``, simple-backoff
-     retry, minimal stale reclamation). The merge lock is the SINGLE deliberate
-     main-anchored exception to cwd-relative resolution (ADR-002).
+  1. **ACQUIRES** the cooperative merge lock (delegating to the unified
+     ``plan-marshall:manage-locks:merge_lock`` script — atomic ``O_EXCL`` create,
+     holder = this ``plan_id``, simple-backoff retry, plan-liveness stale
+     reclamation). The merge lock is the SINGLE deliberate main-anchored
+     exception to cwd-relative resolution (ADR-002).
   2. **FOLDS** the plan's OWN global logs (only logs generated for this plan,
      currently resident in the worktree's ``.plan/local/logs/``) into the plan
      directory (``.plan/local/plans/{plan_id}/logs/``) BEFORE move-back so the
@@ -57,7 +58,7 @@ worktree) is a no-op success.
 
 See the TOCTOU / check-then-act mitigation menu in
 ``dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``
-and the lock-correctness notes in ``merge_lock.py``.
+and the lock-correctness notes in ``manage-locks/scripts/merge_lock.py``.
 """
 
 from __future__ import annotations
@@ -89,13 +90,18 @@ from triage_helpers import (  # type: ignore[import-not-found]
 )
 
 # ---------------------------------------------------------------------------
-# Sibling-script delegation (kebab-case filenames → importlib by file path)
+# Cross-skill script delegation (kebab-case filenames → importlib by file path)
 # ---------------------------------------------------------------------------
 # merge_lock.py is loaded by file path so this script reuses the SINGLE owner of
-# lock logic (merge_lock) rather than re-implementing it.
+# lock logic (the unified manage-locks merge mutex) rather than re-implementing
+# it. The unified merge_lock now lives under manage-locks/scripts/ (reconciled
+# from the former workflow-integration-git copy + the status-marker scan), so the
+# load path resolves a sibling skill's scripts dir, not this skill's own.
 
 _THIS_DIR = Path(__file__).resolve().parent
-_MERGE_LOCK_PATH = _THIS_DIR / 'merge_lock.py'
+_MERGE_LOCK_PATH = (
+    _THIS_DIR.parent.parent / 'manage-locks' / 'scripts' / 'merge_lock.py'
+)
 
 
 def _load_module_by_path(name: str, path: Path) -> Any:

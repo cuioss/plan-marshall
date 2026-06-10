@@ -6,18 +6,27 @@ terminal tab shows the active plan-marshall plan, phase, and a live status
 icon for the Claude Code session running in it. The same body also drives the
 Claude Code statusLine inside the TUI.
 
-Terminal-title configuration is split across two surfaces, both shipped with the
-plan-marshall bundle:
+Terminal-title configuration is a three-way split across surfaces shipped with
+the plan-marshall bundle:
 
-- **Writer** — `manage-status` mutation paths publish `{plan_dir}/title-body.txt`
-  whenever phase, short_description, or archive lifecycle changes. No user
-  configuration is required to enable it. See
-  [`../../manage-status/standards/status-lifecycle.md` § Title-Body Artifact](../../manage-status/standards/status-lifecycle.md)
-  for the publication contract.
-- **Reader** — the per-target `session render-title` operation (implemented in
-  `plan-marshall:platform-runtime`) composes `{icon} {body}` from the active
-  plan's `title-body.txt` and forwards the resulting OSC sequence (hook mode)
-  or plain text (statusLine mode) to the controlling terminal.
+- **State** — `manage-status` persists `current_phase`, `short_description`, and
+  the `title_token` field into `status.json` (the single source of persisted
+  title state) on the relevant mutation paths. No user configuration is required.
+  See
+  [`../../manage-status/standards/status-lifecycle.md` § Title Token](../../manage-status/standards/status-lifecycle.md)
+  for the state contract.
+- **Composer** — the pure `plan-marshall:manage-terminal-title` library owns the
+  `compose(state, event)` function plus the glyph and icon vocabulary; it is
+  imported by the resolve+emit layer.
+- **Resolve + emit** — the per-target `session render-title` operation
+  (implemented in `plan-marshall:platform-runtime`) reads the title state from
+  `status.json`, composes `{icon} {glyph} {body}` via the composer, and forwards
+  the resulting OSC sequence (hook mode) or plain text (statusLine mode) to the
+  controlling terminal.
+
+See
+[`../../manage-terminal-title/standards/terminal-title-architecture.md`](../../manage-terminal-title/standards/terminal-title-architecture.md)
+for the full end-to-end architecture.
 
 The remaining wiring is the set of hook entries that drive the reader on every
 render-trigger event. **Action A** installs those entries into

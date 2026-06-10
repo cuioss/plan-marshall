@@ -39,7 +39,6 @@ from claude_runtime import (  # type: ignore[import-not-found]
     _HOOK_COMMAND,
     _RENDER_HOOK_COMMAND,
     _STATUSLINE_COMMAND,
-    _resolve_icon,
 )
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
@@ -672,38 +671,85 @@ class TestInstallTerminalTitleHooks:
 
 
 # =============================================================================
-# 4b. session_render_title --statusline mode
+# 4b. session_render_title --statusline mode (status.json source)
 # =============================================================================
+#
+# The renderer now reads title state from status.json (current_phase,
+# short_description, title_token) and delegates composition to the
+# manage-terminal-title composer. The composed body for current_phase=X +
+# short_description=Y is ``pm:X:Y`` (the composer's body format). With no
+# title_token, the composed title is ``{icon} pm:X:Y`` (no glyph).
+
+
+def _write_status_json(
+    tmp_path: Path,
+    *,
+    session_id: str,
+    plan_id: str,
+    current_phase: str | None = "5-execute",
+    short_description: str | None = "my-task",
+    title_token: str | None = None,
+    archived: bool = False,
+    date_prefix: str = "2026-05-29",
+) -> None:
+    """Materialize the session-cache pointer + a plan ``status.json`` on disk.
+
+    Writes the active-plan pointer for *session_id* → *plan_id*, then a
+    ``status.json`` containing the title-state fields. When *archived* is True
+    the status.json lands under ``archived-plans/{date_prefix}-{plan_id}/``;
+    otherwise under the live ``plans/{plan_id}/`` dir. A ``None`` field is
+    omitted from the JSON so the absent-field paths can be exercised.
+    """
+    cache_dir = tmp_path / "sessions" / session_id
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+
+    status: dict[str, Any] = {}
+    if current_phase is not None:
+        status["current_phase"] = current_phase
+    if short_description is not None:
+        status["short_description"] = short_description
+    if title_token is not None:
+        status["title_token"] = title_token
+
+    if archived:
+        status_dir = (
+            tmp_path / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
+        )
+    else:
+        status_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+    status_dir.mkdir(parents=True, exist_ok=True)
+    (status_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
+
+
+def _redirect_render_env(tmp_path: Path, monkeypatch, session_id: str) -> None:
+    """Redirect the renderer's module constants + env at *session_id*."""
+    import claude_runtime as _cr
+
+    monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+    monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+    monkeypatch.chdir(tmp_path)
 
 
 class TestSessionRenderTitleStatusline:
     """Tests for ClaudeRuntime.session_render_title(statusline=True).
 
-    Covers plain-text emission on the success branch (no JSON envelope) and the
-    no-op branches (missing session-id / no active plan / missing title-body)
-    which must still write nothing on stdout in statusline mode.
+    Covers plain-text emission of the composer output on the success branch (no
+    JSON envelope) and the no-op branches (missing session-id / no active plan /
+    missing status.json) which must still write nothing on stdout in statusline
+    mode.
     """
 
     def test_statusline_emits_plain_text_on_success(self, rt, tmp_path, monkeypatch, capsys):
-        """In statusline mode, success branch writes plain ``{icon} {title_body}`` — no JSON envelope, no OSC, no TOON tail."""
-        import claude_runtime as _cr
-
+        """In statusline mode, success branch writes plain ``{composed}`` — no JSON envelope, no OSC, no TOON tail."""
         session_id = "sess-statusline-ok"
         plan_id = "active-plan"
-        title_body = "phase-5-execute | my-task"
-
-        cache_dir = tmp_path / "sessions" / session_id
-        cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
-
-        plan_titles_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
-        plan_titles_dir.mkdir(parents=True)
-        (plan_titles_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
-
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
-        monkeypatch.chdir(tmp_path)
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id=plan_id,
+            current_phase="5-execute", short_description="my-task",
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
 
         capsys.readouterr()  # discard prior capture
         # Function MUST return empty string in statusline mode so the caller's
@@ -712,31 +758,22 @@ class TestSessionRenderTitleStatusline:
         assert returned == ""
 
         captured = capsys.readouterr().out
-        # Plain text — no JSON envelope, no OSC escape sequence, no TOON.
-        assert captured == f"➤ {title_body}"
+        # Plain text — composer output (active icon, no glyph) — no JSON
+        # envelope, no OSC escape sequence, no TOON.
+        assert captured == "➤ pm:5-execute:my-task"
         assert "terminalSequence" not in captured
         assert "\x1b]0;" not in captured
         assert "status:" not in captured
 
     def test_default_mode_emits_only_json_envelope(self, rt, tmp_path, monkeypatch, capsys):
         """Hook mode (statusline=False) success: stdout contains ONLY the JSON envelope — no TOON tail, function returns ""."""
-        import claude_runtime as _cr
-
         session_id = "sess-envelope-mode"
         plan_id = "active-plan"
-        title_body = "phase-1 | foo"
-
-        cache_dir = tmp_path / "sessions" / session_id
-        cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
-        plan_titles_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
-        plan_titles_dir.mkdir(parents=True)
-        (plan_titles_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
-
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
-        monkeypatch.chdir(tmp_path)
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id=plan_id,
+            current_phase="1-init", short_description="foo",
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
 
         capsys.readouterr()
         # Function MUST return empty string so the wrapper main() does not
@@ -748,9 +785,27 @@ class TestSessionRenderTitleStatusline:
         captured = capsys.readouterr().out
         # Stdout MUST be parseable as a single JSON object with no trailing bytes.
         payload = json.loads(captured)
-        assert payload["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
+        assert payload["terminalSequence"] == "\x1b]0;➤ pm:1-init:foo\x07"
         # No TOON success/noop row glued to the envelope.
         assert "status:" not in captured
+
+    def test_title_token_glyph_prepended_in_composed_title(self, rt, tmp_path, monkeypatch, capsys):
+        """A status.json title_token renders its glyph between the icon and body via the composer."""
+        session_id = "sess-glyph"
+        plan_id = "glyph-plan"
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id=plan_id,
+            current_phase="5-execute", short_description="locked-task",
+            title_token="lock-owned",
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=True)
+        assert returned == ""
+        captured = capsys.readouterr().out
+        # 🔒 is the lock-owned glyph (owned by the D12 composer).
+        assert captured == "➤ \U0001f512 pm:5-execute:locked-task"
 
     def test_statusline_missing_session_id_writes_nothing(self, rt, monkeypatch, capsys):
         """statusline noop: missing $CLAUDE_CODE_SESSION_ID — nothing written to stdout, empty return."""
@@ -772,12 +827,12 @@ class TestSessionRenderTitleStatusline:
         assert rt.session_render_title(statusline=True) == ""
         assert capsys.readouterr().out == ""
 
-    def test_statusline_missing_title_body_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
-        """statusline noop: session resolves to plan but title-body.txt is missing — empty return."""
+    def test_statusline_missing_status_json_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+        """statusline noop: session resolves to plan but status.json is missing — empty return."""
         import claude_runtime as _cr
 
-        session_id = "sess-no-title"
-        plan_id = "plan-no-title"
+        session_id = "sess-no-status"
+        plan_id = "plan-no-status"
         cache_dir = tmp_path / "sessions" / session_id
         cache_dir.mkdir(parents=True)
         (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
@@ -808,12 +863,12 @@ class TestSessionRenderTitleStatusline:
         assert rt.session_render_title(statusline=False) == ""
         assert capsys.readouterr().out == ""
 
-    def test_hook_mode_missing_title_body_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
-        """Hook mode noop (title-body.txt missing): empty stdout, empty return."""
+    def test_hook_mode_missing_status_json_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+        """Hook mode noop (status.json missing): empty stdout, empty return."""
         import claude_runtime as _cr
 
-        session_id = "sess-no-title-body"
-        plan_id = "plan-no-title"
+        session_id = "sess-no-status-json"
+        plan_id = "plan-no-status"
         cache_dir = tmp_path / "sessions" / session_id
         cache_dir.mkdir(parents=True)
         (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
@@ -822,6 +877,20 @@ class TestSessionRenderTitleStatusline:
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.chdir(tmp_path)
+
+        capsys.readouterr()
+        assert rt.session_render_title(statusline=False) == ""
+        assert capsys.readouterr().out == ""
+
+    def test_hook_mode_empty_current_phase_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+        """status.json without current_phase → composer returns None → no-op (empty stdout)."""
+        session_id = "sess-no-phase"
+        plan_id = "plan-no-phase"
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id=plan_id,
+            current_phase=None, short_description="orphan",
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
 
         capsys.readouterr()
         assert rt.session_render_title(statusline=False) == ""
@@ -866,70 +935,56 @@ class TestSessionCapture:
 
 
 # ---------------------------------------------------------------------------
-# session_render_title matrix scaffolding
+# session_render_title matrix scaffolding (status.json source)
 # ---------------------------------------------------------------------------
 #
-# The post-Deliverable-2 hook chain resolves a terminal title across an
-# ordered partial-order resolver of four input tiers, each of which may
-# yield one of three outcomes (hit / miss / stale).  The matrix below
-# encodes every {tier × outcome} cell exactly once.
+# The renderer resolves a terminal title across three input tiers, each of
+# which may yield one of three outcomes (hit / miss / stale). The matrix below
+# encodes every {tier × outcome} cell exactly once. The renderer now reads the
+# title state from ``status.json`` (current_phase / short_description /
+# title_token) and delegates composition to the manage-terminal-title composer,
+# so each ``hit`` cell asserts the composer output ``pm:{phase}:{short}``.
 #
 # Input-tier definitions (in resolver order):
 #   1. plan_id-only       — $CLAUDE_CODE_SESSION_ID is present in the env.
 #                           hit   = valid session-id string is exported.
 #                           miss  = env var is unset entirely.
-#                           stale = env var is present but the empty string
-#                                   (a hook fired with no payload).
+#                           stale = env var is present but the empty string.
 #   2. title-from-status  — Session cache resolves to a plan via the
-#                           ``$_SESSION_CACHE_BASE/{session}/active-plan``
-#                           pointer file.
+#                           ``$_SESSION_CACHE_BASE/{session}/active-plan`` file.
 #                           hit   = pointer file exists with a plan id.
 #                           miss  = pointer file is absent.
-#                           stale = pointer file exists but is empty
-#                                   (manage-status cleared but did not delete).
-#   3. branch-from-git    — Plan dir resolves to a non-empty
-#                           ``title-body.txt`` (the rendered title body).
-#                           hit   = title-body.txt exists with content.
-#                           miss  = title-body.txt is absent.
-#                           stale = title-body.txt exists but is empty
-#                                   (writer published an empty file because
-#                                   the plan is in a terminal/archived state).
-#   4. fallback           — Final emission branch when every resolver tier
-#                           upstream produced a hit; the helper writes the
-#                           OSC envelope and returns ``success``.
-#                           hit   = full chain resolves and stdout receives
-#                                   the JSON envelope.
-#                           miss  = upstream tier produced a miss
-#                                   (no fallback hit reached).
-#                           stale = upstream tier produced a stale value
-#                                   (no fallback hit reached; renderer
-#                                   reports no-op without writing stdout).
+#                           stale = pointer file exists but is empty.
+#   3. status-from-plan   — Plan dir resolves to a ``status.json`` carrying a
+#                           non-empty ``current_phase``.
+#                           hit   = status.json exists with current_phase.
+#                           miss  = status.json is absent.
+#                           stale = status.json exists but has no current_phase
+#                                   (composer returns None → no-op).
 #
-# Production-dominant cell (named below):  TIER ``branch-from-git`` × HIT.
-# That is the cell exercised on the developer's machine on every hook fire
-# during normal plan execution — main session at repo root, populated
-# session cache, non-empty title-body.txt.  Documented inline so future
-# editors see it before running tests.
+# Production-dominant cell (named below):  TIER ``status-from-plan`` × HIT.
+# That is the cell exercised on every hook fire during normal plan execution —
+# main session at repo root, populated session cache, status.json with a live
+# phase. Documented inline so future editors see it before running tests.
 #
-# Cross-tab isolation cells:  The two ``branch-from-git`` × ``hit`` rows
-# (``branch-from-git-hit-session-A`` and ``branch-from-git-hit-session-B``)
-# exercise two distinct session ids (sess-tab-A, sess-tab-B) each pointing
-# at distinct plan dirs (plan-tab-A, plan-tab-B).  Each cell asserts that
-# the OSC envelope embeds the partner session's title-body, proving per-
-# session state isolation across the resolver chain.
+# Cross-tab isolation cells:  The two ``status-from-plan`` × ``hit`` rows
+# (``status-from-plan-hit-session-A`` and ``status-from-plan-hit-session-B``)
+# exercise two distinct session ids each pointing at distinct plan dirs. Each
+# cell asserts the OSC envelope embeds the partner session's composed body,
+# proving per-session state isolation.
 
 # Matrix cell schema:
-#   id           — pytest parametrize id (kebab-case)
-#   tier         — one of {plan_id-only, title-from-status, branch-from-git,
-#                          fallback}
-#   outcome      — one of {hit, miss, stale}
-#   session_id   — env value to export (None ⇒ delenv)
-#   plan_id      — active-plan pointer content (None ⇒ no file written;
-#                  "" ⇒ empty pointer)
-#   title_body   — title-body.txt content (None ⇒ no file;
-#                  "" ⇒ empty file)
-#   expected     — "success" or "no-op"
-#   emits_stdout — True iff stdout receives the JSON envelope
+#   id            — pytest parametrize id (kebab-case)
+#   tier          — one of {plan_id-only, title-from-status, status-from-plan}
+#   outcome       — one of {hit, miss, stale}
+#   session_id    — env value to export (None ⇒ delenv)
+#   plan_id       — active-plan pointer content (None ⇒ no file written;
+#                   "" ⇒ empty pointer)
+#   current_phase — status.json current_phase (None ⇒ no status.json written;
+#                   "" ⇒ status.json present but current_phase empty/absent)
+#   short_desc    — status.json short_description
+#   expected_body — composed body asserted in the OSC payload (None for no-op)
+#   emits_stdout  — True iff stdout receives the JSON envelope
 
 
 _RENDER_MATRIX = [
@@ -940,8 +995,9 @@ _RENDER_MATRIX = [
         "outcome": "hit",
         "session_id": "sess-tier1-hit",
         "plan_id": "tier1-hit-plan",
-        "title_body": "phase-5-execute | t1-hit",
-        "expected": "success",
+        "current_phase": "5-execute",
+        "short_desc": "t1-hit",
+        "expected_body": "pm:5-execute:t1-hit",
         "emits_stdout": True,
     },
     {
@@ -950,8 +1006,9 @@ _RENDER_MATRIX = [
         "outcome": "miss",
         "session_id": None,  # env unset
         "plan_id": None,
-        "title_body": None,
-        "expected": "no-op",
+        "current_phase": None,
+        "short_desc": None,
+        "expected_body": None,
         "emits_stdout": False,
     },
     {
@@ -960,8 +1017,9 @@ _RENDER_MATRIX = [
         "outcome": "stale",
         "session_id": "",  # env present but empty
         "plan_id": None,
-        "title_body": None,
-        "expected": "no-op",
+        "current_phase": None,
+        "short_desc": None,
+        "expected_body": None,
         "emits_stdout": False,
     },
     # ─── Tier 2: title-from-status ───────────────────────────────────────
@@ -971,8 +1029,9 @@ _RENDER_MATRIX = [
         "outcome": "hit",
         "session_id": "sess-tier2-hit",
         "plan_id": "tier2-hit-plan",
-        "title_body": "phase-3-outline | t2-hit",
-        "expected": "success",
+        "current_phase": "3-outline",
+        "short_desc": "t2-hit",
+        "expected_body": "pm:3-outline:t2-hit",
         "emits_stdout": True,
     },
     {
@@ -981,8 +1040,9 @@ _RENDER_MATRIX = [
         "outcome": "miss",
         "session_id": "sess-tier2-miss",
         "plan_id": None,  # no active-plan pointer
-        "title_body": None,
-        "expected": "no-op",
+        "current_phase": None,
+        "short_desc": None,
+        "expected_body": None,
         "emits_stdout": False,
     },
     {
@@ -991,85 +1051,59 @@ _RENDER_MATRIX = [
         "outcome": "stale",
         "session_id": "sess-tier2-stale",
         "plan_id": "",  # empty pointer file
-        "title_body": None,
-        "expected": "no-op",
+        "current_phase": None,
+        "short_desc": None,
+        "expected_body": None,
         "emits_stdout": False,
     },
-    # ─── Tier 3: branch-from-git ─────────────────────────────────────────
-    # PRODUCTION-DOMINANT CELL — main session at repo root + worktree
-    # active + populated session cache + non-empty title-body.txt + phase
-    # running + UserPromptSubmit trigger.  This is the cell that fires on
-    # every hook during normal plan execution.  Do NOT remove or rename
-    # without auditing every other test that references this naming.
+    # ─── Tier 3: status-from-plan ────────────────────────────────────────
+    # PRODUCTION-DOMINANT CELL — main session at repo root + worktree active +
+    # populated session cache + status.json with a live phase + UserPromptSubmit
+    # trigger. This is the cell that fires on every hook during normal plan
+    # execution. Do NOT remove or rename without auditing every other test that
+    # references this naming.
     {
-        "id": "branch-from-git-hit-session-A",  # PRODUCTION-DOMINANT (session A)
-        "tier": "branch-from-git",
+        "id": "status-from-plan-hit-session-A",  # PRODUCTION-DOMINANT (session A)
+        "tier": "status-from-plan",
         "outcome": "hit",
         "session_id": "sess-tab-A",
         "plan_id": "plan-tab-A",
-        "title_body": "phase-5-execute | session-A-task",
-        "expected": "success",
+        "current_phase": "5-execute",
+        "short_desc": "session-A-task",
+        "expected_body": "pm:5-execute:session-A-task",
         "emits_stdout": True,
     },
     {
-        "id": "branch-from-git-hit-session-B",  # cross-tab isolation partner
-        "tier": "branch-from-git",
+        "id": "status-from-plan-hit-session-B",  # cross-tab isolation partner
+        "tier": "status-from-plan",
         "outcome": "hit",
         "session_id": "sess-tab-B",
         "plan_id": "plan-tab-B",
-        "title_body": "phase-3-outline | session-B-task",
-        "expected": "success",
+        "current_phase": "3-outline",
+        "short_desc": "session-B-task",
+        "expected_body": "pm:3-outline:session-B-task",
         "emits_stdout": True,
     },
     {
-        "id": "branch-from-git-miss",
-        "tier": "branch-from-git",
+        "id": "status-from-plan-miss",
+        "tier": "status-from-plan",
         "outcome": "miss",
         "session_id": "sess-tier3-miss",
         "plan_id": "tier3-miss-plan",
-        "title_body": None,  # no title-body.txt
-        "expected": "no-op",
+        "current_phase": None,  # no status.json
+        "short_desc": None,
+        "expected_body": None,
         "emits_stdout": False,
     },
     {
-        "id": "branch-from-git-stale",
-        "tier": "branch-from-git",
+        "id": "status-from-plan-stale",
+        "tier": "status-from-plan",
         "outcome": "stale",
         "session_id": "sess-tier3-stale",
         "plan_id": "tier3-stale-plan",
-        "title_body": "",  # empty title-body.txt
-        "expected": "no-op",
-        "emits_stdout": False,
-    },
-    # ─── Tier 4: fallback (final emission branch) ────────────────────────
-    {
-        "id": "fallback-hit",
-        "tier": "fallback",
-        "outcome": "hit",
-        "session_id": "sess-fallback-hit",
-        "plan_id": "fallback-hit-plan",
-        "title_body": "phase-1-init | fallback-emit",
-        "expected": "success",
-        "emits_stdout": True,
-    },
-    {
-        "id": "fallback-miss",
-        "tier": "fallback",
-        "outcome": "miss",
-        "session_id": None,  # upstream miss prevents fallback reach
-        "plan_id": None,
-        "title_body": None,
-        "expected": "no-op",
-        "emits_stdout": False,
-    },
-    {
-        "id": "fallback-stale",
-        "tier": "fallback",
-        "outcome": "stale",
-        "session_id": "sess-fallback-stale",
-        "plan_id": "fallback-stale-plan",
-        "title_body": "",  # upstream stale prevents fallback emit
-        "expected": "no-op",
+        "current_phase": "",  # status.json present but no current_phase
+        "short_desc": "orphan",
+        "expected_body": None,
         "emits_stdout": False,
     },
 ]
@@ -1080,9 +1114,9 @@ def _arrange_render_cell(
 ) -> None:
     """Materialize the on-disk + env state for one matrix cell.
 
-    Writes session cache pointer + plan title-body.txt according to the
-    cell's ``plan_id`` / ``title_body`` values, then redirects module-
-    level constants and exports ``$CLAUDE_CODE_SESSION_ID`` per the cell.
+    Writes the session cache pointer + plan ``status.json`` according to the
+    cell's ``plan_id`` / ``current_phase`` / ``short_desc`` values, then
+    redirects module-level constants and exports ``$CLAUDE_CODE_SESSION_ID``.
     """
     import claude_runtime as _cr
 
@@ -1106,31 +1140,36 @@ def _arrange_render_cell(
         cache_dir.mkdir(parents=True, exist_ok=True)
         (cache_dir / "active-plan").write_text(plan_pointer, encoding="utf-8")
 
-    title_body = cell["title_body"]
-    # Only materialize title-body.txt when we have a non-empty plan
-    # pointer to anchor the path.  An empty pointer would yield
-    # ``.plan/local/plans//title-body.txt`` which is incoherent.
-    if title_body is not None and plan_pointer:
-        plan_titles_dir = tmp_path / ".plan" / "local" / "plans" / plan_pointer
-        plan_titles_dir.mkdir(parents=True, exist_ok=True)
-        (plan_titles_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
+    current_phase = cell["current_phase"]
+    # Only materialize status.json when we have a non-empty plan pointer to
+    # anchor the path. ``current_phase is None`` means "no status.json"; an
+    # empty-string current_phase means "status.json present but unrenderable".
+    if current_phase is not None and plan_pointer:
+        plan_dir = tmp_path / ".plan" / "local" / "plans" / plan_pointer
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        status: dict[str, Any] = {}
+        if current_phase:
+            status["current_phase"] = current_phase
+        if cell["short_desc"] is not None:
+            status["short_description"] = cell["short_desc"]
+        (plan_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
 
 
 class TestSessionRenderTitle:
     """Matrix-parametrized tests for ClaudeRuntime.session_render_title.
 
     Single parametrized class covering every {input-tier × hit/miss/stale}
-    cell of the post-Deliverable-2 hook chain.  See ``_RENDER_MATRIX``
-    above for the cell definitions and the production-dominant /
-    cross-tab-isolation annotations.
+    cell of the status.json-driven hook chain. See ``_RENDER_MATRIX`` above for
+    the cell definitions and the production-dominant / cross-tab-isolation
+    annotations.
 
-    The four input tiers are:
+    The three input tiers are:
       - plan_id-only        — $CLAUDE_CODE_SESSION_ID present in env
       - title-from-status   — active-plan pointer resolves a plan
-      - branch-from-git     — title-body.txt resolves to non-empty content
-      - fallback            — final emission branch (OSC envelope write)
+      - status-from-plan    — status.json carries a non-empty current_phase
 
-    Each tier yields one of three outcomes: hit, miss, stale.
+    Each tier yields one of three outcomes: hit, miss, stale. Each ``hit`` cell
+    asserts the OSC payload carries the composer output ``{icon} {expected_body}``.
     """
 
     @pytest.mark.parametrize(
@@ -1159,10 +1198,10 @@ class TestSessionRenderTitle:
         )
 
         if cell["emits_stdout"]:
-            # Success branch emits the JSON envelope; assert OSC payload
-            # references the expected title body for this cell.
+            # Success branch emits the JSON envelope; assert the OSC payload
+            # carries the composer output (active icon, no glyph) for this cell.
             payload = json.loads(captured)
-            expected_osc = f"\x1b]0;➤ {cell['title_body']}\x07"
+            expected_osc = f"\x1b]0;➤ {cell['expected_body']}\x07"
             assert payload["terminalSequence"] == expected_osc, (
                 f"cell {cell['id']!r}: OSC payload mismatch"
             )
@@ -1180,17 +1219,17 @@ class TestSessionRenderTitle:
         self, rt, tmp_path, monkeypatch, capsys
     ):
         """The two production-dominant cells (session A and session B) must
-        resolve to distinct title bodies — proving per-session state
+        resolve to distinct composed bodies — proving per-session state
         isolation across the resolver chain.
 
         Both sessions are arranged simultaneously; the renderer is invoked
         once per session and each invocation MUST observe only its own
-        session's title body.
+        session's status.json.
         """
         import claude_runtime as _cr
 
-        cell_a = next(c for c in _RENDER_MATRIX if c["id"] == "branch-from-git-hit-session-A")
-        cell_b = next(c for c in _RENDER_MATRIX if c["id"] == "branch-from-git-hit-session-B")
+        cell_a = next(c for c in _RENDER_MATRIX if c["id"] == "status-from-plan-hit-session-A")
+        cell_b = next(c for c in _RENDER_MATRIX if c["id"] == "status-from-plan-hit-session-B")
 
         monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
@@ -1203,78 +1242,76 @@ class TestSessionRenderTitle:
             (cache_dir / "active-plan").write_text(cell["plan_id"], encoding="utf-8")
             plan_dir = tmp_path / ".plan" / "local" / "plans" / cell["plan_id"]
             plan_dir.mkdir(parents=True)
-            (plan_dir / "title-body.txt").write_text(cell["title_body"], encoding="utf-8")
+            (plan_dir / "status.json").write_text(
+                json.dumps(
+                    {
+                        "current_phase": cell["current_phase"],
+                        "short_description": cell["short_desc"],
+                    }
+                ),
+                encoding="utf-8",
+            )
 
-        # Session A invocation — must see session A's title body only.
+        # Session A invocation — must see session A's composed body only.
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", cell_a["session_id"])
         capsys.readouterr()
         returned_a = rt.session_render_title()
         captured_a = capsys.readouterr().out
         assert returned_a == ""
         payload_a = json.loads(captured_a)
-        assert cell_a["title_body"] in payload_a["terminalSequence"]
-        assert cell_b["title_body"] not in captured_a
+        assert cell_a["expected_body"] in payload_a["terminalSequence"]
+        assert cell_b["expected_body"] not in captured_a
 
-        # Session B invocation — must see session B's title body only.
+        # Session B invocation — must see session B's composed body only.
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", cell_b["session_id"])
         capsys.readouterr()
         returned_b = rt.session_render_title()
         captured_b = capsys.readouterr().out
         assert returned_b == ""
         payload_b = json.loads(captured_b)
-        assert cell_b["title_body"] in payload_b["terminalSequence"]
-        assert cell_a["title_body"] not in captured_b
+        assert cell_b["expected_body"] in payload_b["terminalSequence"]
+        assert cell_a["expected_body"] not in captured_b
 
 
 # =============================================================================
-# 3b. _resolve_icon — canonical terminal-title icon palette (D1)
+# 3b. composer-import wiring — claude_runtime delegates to manage-terminal-title
 # =============================================================================
 
 
-class TestResolveIcon:
-    """Tests for the module-level _resolve_icon helper covering every palette row.
+class TestComposerImportWiring:
+    """Assert claude_runtime imports the manage-terminal-title composer and no
+    longer owns the icon palette / body format (moved to D12).
 
-    Palette (see claude_runtime._resolve_icon):
-      - UserPromptSubmit → ➤
-      - Notification → ?
-      - PreToolUse + AskUserQuestion → ?
-      - PostToolUse + AskUserQuestion → ➤
-      - PostToolUse + Bash (or any other tool) → ➤
-      - Stop → ✓
-      - SessionStart → ➤
-      - unknown / missing event, missing tool → ➤ (defensive default)
+    The body-format, glyph-prepend, and ✅ terminal-override assertions live in
+    D12's ``test_manage_terminal_title.py`` (pure composer). These tests assert
+    only the resolve+read+emit wiring: that ``claude_runtime`` imports
+    ``compose`` and that the removed helpers are gone.
     """
 
-    @pytest.mark.parametrize(
-        ("hook_event_name", "tool_name", "expected"),
-        [
-            ("UserPromptSubmit", None, "➤"),
-            ("Notification", None, "?"),
-            ("PreToolUse", "AskUserQuestion", "?"),
-            ("PostToolUse", "AskUserQuestion", "➤"),
-            ("PostToolUse", "Bash", "➤"),
-            ("PostToolUse", "Read", "➤"),  # any other tool → active
-            ("Stop", None, "✓"),
-            ("SessionStart", None, "➤"),
-        ],
-    )
-    def test_palette_rows(self, hook_event_name, tool_name, expected):
-        """Each canonical palette row maps to its expected icon."""
-        assert _resolve_icon(hook_event_name, tool_name) == expected
+    def test_claude_runtime_imports_compose(self):
+        """claude_runtime exposes the imported composer (consumed, not reimplemented)."""
+        import claude_runtime as _cr
 
-    @pytest.mark.parametrize(
-        ("hook_event_name", "tool_name"),
-        [
-            (None, None),  # missing event
-            ("UnknownEvent", None),  # unmapped event
-            ("PreToolUse", None),  # PreToolUse without AskUserQuestion tool
-            ("PreToolUse", "Bash"),  # PreToolUse with a non-Ask tool
-            ("", ""),  # empty strings
-        ],
-    )
-    def test_defensive_default_for_unmapped_input(self, hook_event_name, tool_name):
-        """Unknown / missing / partial input falls back to the active icon, never raises."""
-        assert _resolve_icon(hook_event_name, tool_name) == "➤"
+        assert _cr.compose is not None
+        # The composer is the manage-terminal-title module's function.
+        assert _cr.compose.__module__ == "manage_terminal_title"
+
+    def test_icon_palette_removed_from_claude_runtime(self):
+        """The icon palette + _resolve_icon moved to manage-terminal-title (D12)."""
+        import claude_runtime as _cr
+
+        assert not hasattr(_cr, "_resolve_icon")
+        assert not hasattr(_cr, "_ICON_ACTIVE")
+        assert not hasattr(_cr, "_ICON_WAITING")
+        assert not hasattr(_cr, "_ICON_DONE")
+
+    def test_title_body_resolver_replaced_by_status_json(self):
+        """The title-body.txt archived resolver is replaced by the status.json one."""
+        import claude_runtime as _cr
+
+        assert not hasattr(_cr, "_resolve_archived_title_body")
+        assert hasattr(_cr, "_resolve_archived_status_json")
+        assert hasattr(_cr, "_read_title_state")
 
 
 # =============================================================================
@@ -1293,21 +1330,14 @@ class TestSessionRenderTitleStateAwareIcon:
 
     @staticmethod
     def _arrange(tmp_path, monkeypatch, *, session_id="sess-icon", plan_id="icon-plan",
-                 title_body="phase-5-execute | icon-task"):
-        import claude_runtime as _cr
-
-        cache_dir = tmp_path / "sessions" / session_id
-        cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
-        plan_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
-        plan_dir.mkdir(parents=True)
-        (plan_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
-
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
-        monkeypatch.chdir(tmp_path)
-        return title_body
+                 current_phase="5-execute", short_description="icon-task"):
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id=plan_id,
+            current_phase=current_phase, short_description=short_description,
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        # The composed body the renderer emits for this fixture.
+        return f"pm:{current_phase}:{short_description}"
 
     @pytest.mark.parametrize(
         ("payload", "expected_icon"),
@@ -1324,10 +1354,10 @@ class TestSessionRenderTitleStateAwareIcon:
     def test_hook_mode_icon_from_stdin_payload(
         self, payload, expected_icon, rt, tmp_path, monkeypatch, capsys
     ):
-        """The OSC envelope embeds the icon resolved from the stdin hook payload."""
+        """The OSC envelope embeds the icon the composer resolves from the stdin hook event."""
         from io import StringIO
 
-        title_body = self._arrange(tmp_path, monkeypatch)
+        body = self._arrange(tmp_path, monkeypatch)
         monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
 
         capsys.readouterr()
@@ -1336,7 +1366,7 @@ class TestSessionRenderTitleStateAwareIcon:
 
         assert returned == ""
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;{expected_icon} {title_body}\x07"
+        assert envelope["terminalSequence"] == f"\x1b]0;{expected_icon} {body}\x07"
 
     @pytest.mark.parametrize("stdin_text", ["", "   ", "not-json{", "[1, 2, 3]"])
     def test_hook_mode_defensive_default_on_bad_stdin(
@@ -1345,7 +1375,7 @@ class TestSessionRenderTitleStateAwareIcon:
         """Empty / whitespace / malformed / non-dict stdin defaults to ➤ and never raises."""
         from io import StringIO
 
-        title_body = self._arrange(tmp_path, monkeypatch)
+        body = self._arrange(tmp_path, monkeypatch)
         monkeypatch.setattr("sys.stdin", StringIO(stdin_text))
 
         capsys.readouterr()
@@ -1354,7 +1384,7 @@ class TestSessionRenderTitleStateAwareIcon:
 
         assert returned == ""
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
+        assert envelope["terminalSequence"] == f"\x1b]0;➤ {body}\x07"
 
     def test_statusline_mode_keeps_active_icon_without_reading_stdin(
         self, rt, tmp_path, monkeypatch, capsys
@@ -1362,7 +1392,7 @@ class TestSessionRenderTitleStateAwareIcon:
         """statusLine mode never consults stdin — it always emits the active icon."""
         from io import StringIO
 
-        title_body = self._arrange(tmp_path, monkeypatch)
+        body = self._arrange(tmp_path, monkeypatch)
         # Even with a Stop payload on stdin, statusLine mode keeps ➤.
         monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"hook_event_name": "Stop"})))
 
@@ -1371,7 +1401,7 @@ class TestSessionRenderTitleStateAwareIcon:
         captured = capsys.readouterr().out
 
         assert returned == ""
-        assert captured == f"➤ {title_body}"
+        assert captured == f"➤ {body}"
 
 
 # =============================================================================
@@ -1399,21 +1429,14 @@ class TestSessionRenderTitleSessionTitleEmit:
 
     @staticmethod
     def _arrange(tmp_path, monkeypatch, *, session_id="sess-title", plan_id="title-plan",
-                 title_body="pm:5-execute:title-task"):
-        import claude_runtime as _cr
-
-        cache_dir = tmp_path / "sessions" / session_id
-        cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
-        plan_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
-        plan_dir.mkdir(parents=True)
-        (plan_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
-
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
-        monkeypatch.chdir(tmp_path)
-        return title_body
+                 current_phase="5-execute", short_description="title-task"):
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id=plan_id,
+            current_phase=current_phase, short_description=short_description,
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        # The composed (bare) body the sessionTitle channel carries.
+        return f"pm:{current_phase}:{short_description}"
 
     def test_user_prompt_submit_emits_session_title(
         self, rt, tmp_path, monkeypatch, capsys
@@ -1554,16 +1577,18 @@ class TestSessionRenderTitleSessionTitleEmit:
         assert "{" not in captured  # no JSON envelope
 
     def test_empty_title_body_emits_nothing(self, rt, tmp_path, monkeypatch, capsys):
-        """(f) Empty title body is a no-op even for a supporting event — nothing on stdout."""
+        """(f) Empty/unrenderable state is a no-op even for a supporting event — nothing on stdout."""
         from io import StringIO
 
-        self._arrange(
+        # status.json present but with no current_phase → composer returns None.
+        _write_status_json(
             tmp_path,
-            monkeypatch,
             session_id="sess-empty-title",
             plan_id="empty-title-plan",
-            title_body="",
+            current_phase=None,
+            short_description=None,
         )
+        _redirect_render_env(tmp_path, monkeypatch, "sess-empty-title")
         monkeypatch.setattr(
             "sys.stdin", StringIO(json.dumps({"hook_event_name": "UserPromptSubmit"}))
         )
@@ -1582,15 +1607,16 @@ class TestSessionRenderTitleSessionTitleEmit:
 
 
 class TestSessionRenderTitleArchivedFallback:
-    """Tests for the archived-path fallback branch of session_render_title (D3).
+    """Tests for the archived-status.json fallback branch of session_render_title.
 
     Once a plan is archived, the live ``.plan/local/plans/{plan_id}/`` directory
-    is gone — ``cmd_archive`` published the ``pm:Completed:{short}`` body into the
-    directory before ``shutil.move`` carried it to
-    ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/title-body.txt``. The
-    reader falls back to that archived path when the live path is absent, and the
-    ``✓`` icon pairs with the Completed body via the existing ``Stop``-event
-    ``_resolve_icon`` mapping (no icon-logic change).
+    is gone — ``cmd_archive`` moved it (status.json included) to
+    ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/``. status.json is the
+    SINGLE source of persisted title state, so the reader falls back to the
+    archived ``status.json`` when the live one is absent. A terminal phase
+    (``complete``/``archived``) composes the ✅ Completed title via the
+    manage-terminal-title composer (the ✅ override itself is asserted in D12's
+    pure-composer tests); these tests assert the resolve+read+emit wiring.
     """
 
     @staticmethod
@@ -1600,16 +1626,18 @@ class TestSessionRenderTitleArchivedFallback:
         *,
         session_id="sess-archived",
         plan_id="archived-plan",
-        archived_body="pm:Completed:consolidate-terminal-docs",
+        archived_phase="complete",
+        archived_short="consolidate-terminal-docs",
         date_prefix="2026-05-29",
         write_live=False,
-        live_body="pm:5-execute:active-body",
+        live_phase="5-execute",
+        live_short="active-body",
     ):
         """Materialize an archived plan (and optionally a live plan) on disk.
 
-        Always writes the session-cache pointer and the archived
-        ``title-body.txt``. When ``write_live`` is True, also writes the live
-        ``.plan/local/plans/{plan_id}/title-body.txt`` so the live-path-wins
+        Always writes the session-cache pointer and the archived ``status.json``.
+        When ``write_live`` is True, also writes the live
+        ``.plan/local/plans/{plan_id}/status.json`` so the live-path-wins
         precedence can be exercised.
         """
         import claude_runtime as _cr
@@ -1622,24 +1650,37 @@ class TestSessionRenderTitleArchivedFallback:
             tmp_path / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
         )
         archived_dir.mkdir(parents=True)
-        (archived_dir / "title-body.txt").write_text(archived_body, encoding="utf-8")
+        archived_status: dict[str, Any] = {}
+        if archived_phase:
+            archived_status["current_phase"] = archived_phase
+        if archived_short is not None:
+            archived_status["short_description"] = archived_short
+        (archived_dir / "status.json").write_text(json.dumps(archived_status), encoding="utf-8")
 
         if write_live:
             live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
             live_dir.mkdir(parents=True)
-            (live_dir / "title-body.txt").write_text(live_body, encoding="utf-8")
+            (live_dir / "status.json").write_text(
+                json.dumps(
+                    {"current_phase": live_phase, "short_description": live_short}
+                ),
+                encoding="utf-8",
+            )
 
         monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.chdir(tmp_path)
 
-    def test_falls_back_to_archived_body_when_live_absent(
+    def test_falls_back_to_archived_status_when_live_absent(
         self, rt, tmp_path, monkeypatch, capsys
     ):
-        """Live path absent → reader globs the archived path and emits the Completed body."""
-        archived_body = "pm:Completed:consolidate-terminal-docs"
-        self._arrange(tmp_path, monkeypatch, archived_body=archived_body)
+        """Live status.json absent → reader globs the archived status.json and composes the Completed title.
+
+        A ``complete`` phase forces the ✅ terminal icon inside the composer
+        regardless of the (absent) hook event.
+        """
+        self._arrange(tmp_path, monkeypatch, archived_short="consolidate-terminal-docs")
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
@@ -1647,23 +1688,20 @@ class TestSessionRenderTitleArchivedFallback:
 
         assert returned == ""
         envelope = json.loads(captured)
-        # No hook stdin payload → defensive default active icon, but the BODY
-        # must come from the archived Completed file.
-        assert envelope["terminalSequence"] == f"\x1b]0;➤ {archived_body}\x07"
+        # Terminal phase → ✅ override + Completed body, both owned by the composer.
+        assert envelope["terminalSequence"] == "\x1b]0;✅ pm:Completed:consolidate-terminal-docs\x07"
 
-    def test_completed_body_pairs_with_done_icon_on_stop(
+    def test_terminal_icon_overrides_stop_event_from_archived_status(
         self, rt, tmp_path, monkeypatch, capsys
     ):
-        """A Stop hook payload over an archived Completed body emits ``✓ pm:Completed:{short}``.
+        """Even a Stop hook payload over an archived terminal status emits the ✅ override.
 
-        This is the canonical completed-state title: the ``✓`` icon resolves
-        through the existing ``Stop``-event ``_resolve_icon`` path and pairs with
-        the Completed body read from the archived fallback.
+        The composer's terminal-phase ✅ override wins over the ✓ Stop-event icon
+        for a finished plan.
         """
         from io import StringIO
 
-        archived_body = "pm:Completed:consolidate-terminal-docs"
-        self._arrange(tmp_path, monkeypatch, archived_body=archived_body)
+        self._arrange(tmp_path, monkeypatch, archived_short="consolidate-terminal-docs")
         monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"hook_event_name": "Stop"})))
 
         capsys.readouterr()
@@ -1672,41 +1710,38 @@ class TestSessionRenderTitleArchivedFallback:
 
         assert returned == ""
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;✓ {archived_body}\x07"
+        assert envelope["terminalSequence"] == "\x1b]0;✅ pm:Completed:consolidate-terminal-docs\x07"
 
-    def test_statusline_mode_emits_completed_body_from_archived_path(
+    def test_statusline_mode_emits_completed_title_from_archived_status(
         self, rt, tmp_path, monkeypatch, capsys
     ):
-        """statusLine mode reads the archived Completed body and emits plain ``➤ {body}``."""
-        archived_body = "pm:Completed:consolidate-terminal-docs"
-        self._arrange(tmp_path, monkeypatch, archived_body=archived_body)
+        """statusLine mode reads the archived terminal status and emits the composed ✅ Completed title."""
+        self._arrange(tmp_path, monkeypatch, archived_short="consolidate-terminal-docs")
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=True)
         captured = capsys.readouterr().out
 
         assert returned == ""
-        # statusLine mode never consults stdin → keeps the active icon, body
-        # sourced from the archived fallback.
-        assert captured == f"➤ {archived_body}"
+        assert captured == "✅ pm:Completed:consolidate-terminal-docs"
 
-    def test_live_path_wins_over_archived_when_both_present(
+    def test_live_status_wins_over_archived_when_both_present(
         self, rt, tmp_path, monkeypatch, capsys
     ):
-        """When both the live and archived bodies exist, the LIVE body is emitted.
+        """When both the live and archived status.json exist, the LIVE state is composed.
 
-        The fallback is strictly a live-path-absent branch — a live
-        title-body.txt must take precedence so an in-flight re-run of a
-        previously archived plan_id never surfaces the stale Completed body.
+        The fallback is strictly a live-status-absent branch — a live status.json
+        must take precedence so an in-flight re-run of a previously archived
+        plan_id never surfaces the stale Completed title.
         """
-        live_body = "pm:5-execute:active-body"
-        archived_body = "pm:Completed:stale-completed-body"
         self._arrange(
             tmp_path,
             monkeypatch,
-            archived_body=archived_body,
+            archived_phase="complete",
+            archived_short="stale-completed-body",
             write_live=True,
-            live_body=live_body,
+            live_phase="5-execute",
+            live_short="active-body",
         )
 
         capsys.readouterr()
@@ -1715,14 +1750,14 @@ class TestSessionRenderTitleArchivedFallback:
 
         assert returned == ""
         envelope = json.loads(captured)
-        assert live_body in envelope["terminalSequence"]
-        assert archived_body not in captured
+        assert "pm:5-execute:active-body" in envelope["terminalSequence"]
+        assert "Completed" not in captured
 
-    def test_empty_archived_body_writes_nothing(
+    def test_empty_archived_status_writes_nothing(
         self, rt, tmp_path, monkeypatch, capsys
     ):
-        """An archived title-body.txt that exists but is empty → no-op (empty stdout)."""
-        self._arrange(tmp_path, monkeypatch, archived_body="")
+        """An archived status.json with no current_phase → composer returns None → no-op."""
+        self._arrange(tmp_path, monkeypatch, archived_phase="", archived_short=None)
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
@@ -1734,10 +1769,10 @@ class TestSessionRenderTitleArchivedFallback:
     def test_no_live_and_no_archived_writes_nothing(
         self, rt, tmp_path, monkeypatch, capsys
     ):
-        """Neither live nor archived body present → no-op (empty stdout, empty return)."""
+        """Neither live nor archived status.json present → no-op (empty stdout, empty return)."""
         import claude_runtime as _cr
 
-        session_id = "sess-no-bodies"
+        session_id = "sess-no-status"
         plan_id = "ghost-plan"
         cache_dir = tmp_path / "sessions" / session_id
         cache_dir.mkdir(parents=True)
@@ -1758,31 +1793,31 @@ class TestSessionRenderTitleArchivedFallback:
         assert captured == ""
 
 
-class TestResolveArchivedTitleBody:
-    """Tests for the module-level _resolve_archived_title_body helper (D3).
+class TestResolveArchivedStatusJson:
+    """Tests for the module-level _resolve_archived_status_json helper.
 
-    Resolves ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/title-body.txt``
-    by globbing ``*-{plan_id}/title-body.txt``. The matched parent name must end
+    Resolves ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/status.json``
+    by globbing ``*-{plan_id}/status.json``. The matched parent name must end
     with the exact ``-{plan_id}`` suffix to defeat a prefix collision between
     similarly named plans.
     """
 
-    def test_resolves_archived_body_for_dated_dir(self, tmp_path, monkeypatch):
-        """Returns the archived title-body.txt path under {date}-{plan_id}/."""
+    def test_resolves_archived_status_for_dated_dir(self, tmp_path, monkeypatch):
+        """Returns the archived status.json path under {date}-{plan_id}/."""
         import claude_runtime as _cr
 
         plan_id = "my-plan"
         archived_dir = tmp_path / ".plan" / "local" / "archived-plans" / f"2026-05-29-{plan_id}"
         archived_dir.mkdir(parents=True)
-        body_path = archived_dir / "title-body.txt"
-        body_path.write_text("pm:Completed:my-plan-short\n", encoding="utf-8")
+        status_path = archived_dir / "status.json"
+        status_path.write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
 
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.chdir(tmp_path)
 
-        resolved = _cr._resolve_archived_title_body(plan_id)
+        resolved = _cr._resolve_archived_status_json(plan_id)
         assert resolved is not None
-        assert resolved.resolve() == body_path.resolve()
+        assert resolved.resolve() == status_path.resolve()
 
     def test_returns_none_when_archived_base_absent(self, tmp_path, monkeypatch):
         """No archived-plans/ directory at all → None (not an error)."""
@@ -1791,7 +1826,7 @@ class TestResolveArchivedTitleBody:
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.chdir(tmp_path)
 
-        assert _cr._resolve_archived_title_body("anything") is None
+        assert _cr._resolve_archived_status_json("anything") is None
 
     def test_does_not_match_unrelated_plan_dir(self, tmp_path, monkeypatch):
         """The ``*-{plan_id}`` glob must not resolve a directory for a different
@@ -1803,13 +1838,13 @@ class TestResolveArchivedTitleBody:
 
         other_dir = tmp_path / ".plan" / "local" / "archived-plans" / "2026-05-29-superplan"
         other_dir.mkdir(parents=True)
-        (other_dir / "title-body.txt").write_text("pm:Completed:super\n", encoding="utf-8")
+        (other_dir / "status.json").write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
 
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.chdir(tmp_path)
 
         # Only the unrelated -superplan dir exists → no resolution for 'plan'.
-        assert _cr._resolve_archived_title_body("plan") is None
+        assert _cr._resolve_archived_status_json("plan") is None
 
     def test_resolves_exact_plan_when_sibling_prefixed_dir_present(self, tmp_path, monkeypatch):
         """With both a ``{date}-superplan`` archive and a ``{date}-plan`` archive
@@ -1819,19 +1854,292 @@ class TestResolveArchivedTitleBody:
 
         other_dir = tmp_path / ".plan" / "local" / "archived-plans" / "2026-05-29-superplan"
         other_dir.mkdir(parents=True)
-        (other_dir / "title-body.txt").write_text("pm:Completed:super\n", encoding="utf-8")
+        (other_dir / "status.json").write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
 
         exact_dir = tmp_path / ".plan" / "local" / "archived-plans" / "2026-05-30-plan"
         exact_dir.mkdir(parents=True)
-        exact_body = exact_dir / "title-body.txt"
-        exact_body.write_text("pm:Completed:plan-short\n", encoding="utf-8")
+        exact_status = exact_dir / "status.json"
+        exact_status.write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
 
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.chdir(tmp_path)
 
-        resolved = _cr._resolve_archived_title_body("plan")
+        resolved = _cr._resolve_archived_status_json("plan")
         assert resolved is not None
-        assert resolved.resolve() == exact_body.resolve()
+        assert resolved.resolve() == exact_status.resolve()
+
+
+# =============================================================================
+# 3e. _read_title_state — status.json reader (live + archived fallback)
+# =============================================================================
+
+
+class TestReadTitleState:
+    """Tests for the module-level _read_title_state helper.
+
+    Reads the title-state fields (current_phase, short_description, title_token)
+    from the live ``status.json`` first, falling back to the archived one.
+    """
+
+    def test_reads_live_status_fields(self, tmp_path, monkeypatch):
+        """Returns the {current_phase, short_description, title_token} dict from the live status.json."""
+        import claude_runtime as _cr
+
+        plan_id = "live-plan"
+        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir.mkdir(parents=True)
+        (live_dir / "status.json").write_text(
+            json.dumps(
+                {
+                    "current_phase": "5-execute",
+                    "short_description": "do-work",
+                    "title_token": "lock-owned",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        state = _cr._read_title_state(plan_id)
+        assert state == {
+            "current_phase": "5-execute",
+            "short_description": "do-work",
+            "title_token": "lock-owned",
+        }
+
+    def test_falls_back_to_archived_status(self, tmp_path, monkeypatch):
+        """Live status.json absent → reads the archived status.json."""
+        import claude_runtime as _cr
+
+        plan_id = "arch-plan"
+        archived_dir = tmp_path / ".plan" / "local" / "archived-plans" / f"2026-05-29-{plan_id}"
+        archived_dir.mkdir(parents=True)
+        (archived_dir / "status.json").write_text(
+            json.dumps({"current_phase": "complete", "short_description": "done-task"}),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        state = _cr._read_title_state(plan_id)
+        assert state == {"current_phase": "complete", "short_description": "done-task"}
+
+    def test_returns_none_when_no_status_anywhere(self, tmp_path, monkeypatch):
+        """Neither live nor archived status.json present → None."""
+        import claude_runtime as _cr
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        assert _cr._read_title_state("ghost") is None
+
+    def test_omits_absent_optional_fields(self, tmp_path, monkeypatch):
+        """A status.json with only current_phase yields a dict without the optional keys."""
+        import claude_runtime as _cr
+
+        plan_id = "minimal-plan"
+        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir.mkdir(parents=True)
+        (live_dir / "status.json").write_text(
+            json.dumps({"current_phase": "1-init"}), encoding="utf-8"
+        )
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        state = _cr._read_title_state(plan_id)
+        assert state == {"current_phase": "1-init"}
+
+
+# =============================================================================
+# 3f. session_push_title_token — live /dev/tty push (push-mode)
+# =============================================================================
+
+
+class TestSessionPushTitleToken:
+    """Tests for ClaudeRuntime.session_push_title_token.
+
+    Reads the plan's status.json, composes via the manage-terminal-title
+    composer with the push icon override, and writes the OSC escape to
+    ``/dev/tty``. Best-effort: a silent no-op when state is absent or
+    ``/dev/tty`` is not openable; never raises.
+    """
+
+    @staticmethod
+    def _write_live_status(tmp_path, monkeypatch, plan_id, *, current_phase="5-execute",
+                           short_description="push-task", title_token=None):
+        import claude_runtime as _cr
+
+        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir.mkdir(parents=True)
+        status: dict[str, Any] = {"current_phase": current_phase}
+        if short_description is not None:
+            status["short_description"] = short_description
+        if title_token is not None:
+            status["title_token"] = title_token
+        (live_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+    def test_push_with_tty_writes_osc_escape(self, rt, tmp_path, monkeypatch):
+        """When /dev/tty is openable, the composed OSC escape is written and pushed: true is reported."""
+        plan_id = "push-plan"
+        self._write_live_status(
+            tmp_path, monkeypatch, plan_id,
+            current_phase="5-execute", short_description="push-task",
+            title_token="lock-owned",
+        )
+
+        written: list[str] = []
+
+        class _FakeTTY:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc):
+                return False
+
+            def write(self_inner, text):
+                written.append(text)
+
+            def flush(self_inner):
+                pass
+
+        real_open = open
+
+        def _fake_open(path, *args, **kwargs):
+            if path == "/dev/tty":
+                return _FakeTTY()
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", _fake_open)
+
+        result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
+        assert result["status"] == "success"
+        assert result["pushed"] is True
+        # The push icon override + lock-owned glyph (🔒) + body, composed by D12.
+        assert written == ["\x1b]0;⏳ \U0001f512 pm:5-execute:push-task\x07"]
+
+    def test_push_without_tty_is_silent_noop(self, rt, tmp_path, monkeypatch):
+        """When /dev/tty cannot be opened, the push is a silent no-op (pushed: false) and never raises."""
+        plan_id = "push-no-tty"
+        self._write_live_status(tmp_path, monkeypatch, plan_id)
+
+        real_open = open
+
+        def _fake_open(path, *args, **kwargs):
+            if path == "/dev/tty":
+                raise OSError("no controlling terminal")
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", _fake_open)
+
+        result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
+        assert result["status"] == "success"
+        assert result["pushed"] is False
+
+    def test_push_with_no_status_state_is_noop(self, rt, tmp_path, monkeypatch):
+        """No status.json for the plan → pushed: false, /dev/tty never touched."""
+        import claude_runtime as _cr
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        opened: list[str] = []
+        real_open = open
+
+        def _fake_open(path, *args, **kwargs):
+            opened.append(str(path))
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", _fake_open)
+
+        result = _parsed(rt.session_push_title_token("ghost-plan", "⏳"))
+        assert result["status"] == "success"
+        assert result["pushed"] is False
+        assert "/dev/tty" not in opened
+
+    def test_push_with_unrenderable_state_is_noop(self, rt, tmp_path, monkeypatch):
+        """status.json present but with no current_phase → composer returns None →
+        pushed: false, /dev/tty never touched.
+
+        This exercises the second falsy-guard branch in session_push_title_token:
+        _read_title_state returns a non-None dict (it carries short_description),
+        but compose() returns None because current_phase is absent. The push must
+        be a silent no-op without ever opening /dev/tty (distinct from the
+        state-is-None branch, where _read_title_state itself returns None).
+        """
+        import claude_runtime as _cr
+
+        plan_id = "unrenderable-plan"
+        # status.json with short_description but NO current_phase. _read_title_state
+        # returns {"short_description": ...} (non-None); compose() returns None.
+        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir.mkdir(parents=True)
+        (live_dir / "status.json").write_text(
+            json.dumps({"short_description": "orphan-no-phase"}), encoding="utf-8"
+        )
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        opened: list[str] = []
+        real_open = open
+
+        def _fake_open(path, *args, **kwargs):
+            opened.append(str(path))
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", _fake_open)
+
+        result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
+        assert result["status"] == "success"
+        assert result["pushed"] is False
+        assert "/dev/tty" not in opened
+
+    def test_push_osc_format_correctness(self, rt, tmp_path, monkeypatch):
+        """The pushed bytes are exactly ``\\x1b]0;{composed}\\x07`` (no extra framing)."""
+        plan_id = "push-fmt"
+        self._write_live_status(
+            tmp_path, monkeypatch, plan_id,
+            current_phase="3-outline", short_description="fmt", title_token=None,
+        )
+
+        written: list[str] = []
+
+        class _FakeTTY:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc):
+                return False
+
+            def write(self_inner, text):
+                written.append(text)
+
+            def flush(self_inner):
+                pass
+
+        real_open = open
+
+        def _fake_open(path, *args, **kwargs):
+            if path == "/dev/tty":
+                return _FakeTTY()
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", _fake_open)
+
+        rt.session_push_title_token(plan_id, "🔨")
+        assert len(written) == 1
+        out = written[0]
+        assert out.startswith("\x1b]0;")
+        assert out.endswith("\x07")
+        # No glyph (no title_token) → ``{icon} {body}`` only.
+        assert out == "\x1b]0;🔨 pm:3-outline:fmt\x07"
 
 
 # =============================================================================

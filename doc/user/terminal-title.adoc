@@ -10,9 +10,9 @@ xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
 Operational guidance for the per-session terminal-title indicator that Plan Marshall configures via `/marshall-steward` → Configuration → Terminal title.
 
-The wizard wires hooks and a `statusLine` entry into `./.claude/settings.local.json` so each Claude Code session tab shows `➤` (active), `?` (waiting), or `✓` (done) followed by the active plan and phase. It also sets `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` to stop Claude Code's built-in OSC emitter from clobbering the title on every render cycle.
+The wizard wires hooks and a `statusLine` entry into `./.claude/settings.local.json` so each Claude Code session tab shows a process icon — `➤` (active), `?` (waiting), `✓` (done), or `✅` (plan complete/archived) — optionally a lock/build glyph (`⏳` lock-waiting, `🔒` lock-owned, `🕐` build-waiting, `🔨` building), followed by the active plan and phase. It also sets `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` to stop Claude Code's built-in OSC emitter from clobbering the title on every render cycle.
 
-The canonical icon palette and the full writer/reader architecture live in xref:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/terminal-title-architecture.md[terminal-title-architecture.md].
+The canonical icon palette, glyph vocabulary, and the full three-way (state / composer / resolve+emit) architecture live in xref:../../marketplace/bundles/plan-marshall/skills/manage-terminal-title/standards/terminal-title-architecture.md[terminal-title-architecture.md].
 
 iTerm2, Ghostty, Kitty, and Terminal.app pick up the OSC-set title automatically and need no additional configuration. **VS Code does not** — its integrated terminal ignores OSC title sequences unless you opt in. **JetBrains IDEs do not either** — and unlike VS Code, no client-side setting fixes it.
 

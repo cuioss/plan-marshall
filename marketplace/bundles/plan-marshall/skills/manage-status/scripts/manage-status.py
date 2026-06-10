@@ -39,16 +39,12 @@ from _cmd_lifecycle import (
     verify_blocks_transition,
 )
 from _cmd_mark_step import VALID_LOOP_BACK_TARGETS, cmd_mark_step_done
-from _cmd_merge_lock import (
-    cmd_merge_lock_acquire,
-    cmd_merge_lock_check,
-    cmd_merge_lock_release,
-)
 from _cmd_planning_lane import (
     cmd_planning_lane_escalate,
     cmd_planning_lane_route,
 )
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
+from _status_core import TITLE_TOKEN_STATES
 from _status_query import (
     cmd_get_context,
     cmd_get_worktree_path,
@@ -58,6 +54,7 @@ from _status_query import (
     cmd_progress,
     cmd_read,
     cmd_set_phase,
+    cmd_title_token,
     cmd_update_phase,
 )
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
@@ -147,6 +144,44 @@ def main() -> int:
     add_field_arg(metadata_parser)
     metadata_parser.add_argument('--value', help='Metadata field value (required for --set)')
     metadata_parser.set_defaults(func=cmd_metadata)
+
+    # title-token (set | clear)
+    title_token_parser = subparsers.add_parser(
+        'title-token',
+        help='Set or clear the field-only title_token marker in status.json (no rendering)',
+        description=(
+            'Write or remove the bare title_token state string in '
+            'status.title_token. manage-status performs NO rendering — the '
+            'composition (glyph vocabulary + {icon} {body} assembly) lives in '
+            'manage-terminal-title. This verb only persists the state so the '
+            'per-target renderer can read it.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    title_token_subparsers = title_token_parser.add_subparsers(dest='token_verb', required=True)
+
+    title_token_set_parser = title_token_subparsers.add_parser(
+        'set',
+        help='Write status.title_token = {state}',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(title_token_set_parser)
+    title_token_set_parser.add_argument(
+        '--state',
+        required=True,
+        choices=sorted(TITLE_TOKEN_STATES),
+        help='Title-token state to persist into status.title_token.',
+    )
+    title_token_set_parser.set_defaults(func=cmd_title_token)
+
+    title_token_clear_parser = title_token_subparsers.add_parser(
+        'clear',
+        help='Remove the status.title_token field (idempotent)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(title_token_clear_parser)
+    title_token_clear_parser.set_defaults(func=cmd_title_token)
 
     # get-context
     get_context_parser = subparsers.add_parser('get-context', help='Get combined status context', allow_abbrev=False)
@@ -391,52 +426,6 @@ def main() -> int:
         help='Persist the overall confidence to status.metadata.confidence.',
     )
     aggregate_confidence_parser.set_defaults(func=cmd_aggregate_confidence)
-
-    # merge-lock — cross-plan merge-coordination mutex (acquire/check/release).
-    merge_lock_parser = subparsers.add_parser(
-        'merge-lock',
-        help='Cross-plan merge-coordination mutex (acquire/check/release)',
-        description=(
-            "Acquire, check, or release the cross-plan merge-lock that "
-            "serializes the merge-to-main critical section across "
-            "concurrently-finalizing plans. The marker is stored under "
-            "status.metadata.merging_on_main (plus merge_lock_acquired_at) "
-            "of the acquiring plan. 'acquire' is BLOCKING: it polls "
-            "(Python time.sleep, 5-minute window) until the lock frees or "
-            "the window elapses, returning status: acquired or status: "
-            "blocked with blocking_plan_id. 'check' is a non-blocking read "
-            "(status: free | held). 'release' clears this plan's marker "
-            "idempotently. AskUserQuestion is never issued here — the "
-            "orchestrator owns the timeout escalation."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        allow_abbrev=False,
-    )
-    merge_lock_subparsers = merge_lock_parser.add_subparsers(dest='merge_lock_verb', required=True)
-
-    merge_lock_acquire_parser = merge_lock_subparsers.add_parser(
-        'acquire',
-        help='Blocking acquire of the merge-lock (5-minute poll window)',
-        allow_abbrev=False,
-    )
-    add_plan_id_arg(merge_lock_acquire_parser)
-    merge_lock_acquire_parser.set_defaults(func=cmd_merge_lock_acquire)
-
-    merge_lock_check_parser = merge_lock_subparsers.add_parser(
-        'check',
-        help='Non-blocking read of the current merge-lock holder',
-        allow_abbrev=False,
-    )
-    add_plan_id_arg(merge_lock_check_parser)
-    merge_lock_check_parser.set_defaults(func=cmd_merge_lock_check)
-
-    merge_lock_release_parser = merge_lock_subparsers.add_parser(
-        'release',
-        help="Idempotently clear this plan's merge-lock marker",
-        allow_abbrev=False,
-    )
-    add_plan_id_arg(merge_lock_release_parser)
-    merge_lock_release_parser.set_defaults(func=cmd_merge_lock_release)
 
     # planning-lane (route | escalate)
     planning_lane_parser = subparsers.add_parser(

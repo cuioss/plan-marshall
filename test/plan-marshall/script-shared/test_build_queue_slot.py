@@ -1,0 +1,382 @@
+# ruff: noqa: I001
+#!/usr/bin/env python3
+"""Tests for ``script-shared/scripts/build/_build_queue_slot.py`` (D6).
+
+The build-queue slot wrapper participates in the cluster build queue ONLY when a
+``plan_id`` is set; with no plan_id it is a pure no-op passthrough so plan-less
+builds run completely unchanged. These tests cover:
+
+* **No-op passthrough** — falsy plan_id yields immediately with ZERO queue /
+  token interaction (the backward-compatibility guarantee).
+* **Admit-immediately** — an ``admitted`` acquire sets the ``building`` token,
+  pushes 🔨, runs the body, and releases + clears in the ``finally``.
+* **Block-then-admit** — a ``blocked`` acquire sets the ``build-waiting`` token,
+  pushes 🕐, sleeps (mocked to 0), re-polls, and admits on a later poll.
+* **Retries exhausted** — staying ``blocked`` past ``max_retries`` releases the
+  queued id and raises :class:`BuildQueueTimeout`.
+* **Always-release** — the slot is released and the token cleared even when the
+  wrapped body raises.
+* **Best-effort tokens** — a title-token / push failure never affects the
+  build outcome.
+* **max_retries resolution** — read from marshal.json with a 10 fallback.
+* **_emit_queue_timeout** — renders a structured ``queue_saturated`` error.
+
+The queue acquire/release seam (``_acquire`` / ``_release_raw``) and the three
+best-effort title-token seams are mocked directly, so the tests are independent
+of whether the queue is reached by a file-path import or the executor. Every
+wait-loop test patches ``time.sleep`` to a no-op so the 60s wait is never slept.
+"""
+
+from __future__ import annotations
+
+import argparse
+
+import pytest
+
+import _build_queue_slot as bqs
+from _build_queue_slot import BuildQueueTimeout, build_queue_slot
+
+
+class _QueueDouble:
+    """Scriptable acquire/release double installed over the ``_acquire`` and
+    ``_release_raw`` seams. Acquire responses are popped left-to-right (the last
+    repeats); every release is recorded."""
+
+    def __init__(self, acquire_responses: list[dict]):
+        self._acquire_responses = list(acquire_responses)
+        self.acquire_calls: list[str] = []
+        self.release_calls: list[tuple[str, str]] = []
+
+    def acquire(self, plan_id: str) -> dict:
+        self.acquire_calls.append(plan_id)
+        if not self._acquire_responses:
+            return {'status': 'error', 'error': 'no scripted acquire response'}
+        return self._acquire_responses.pop(0) if len(self._acquire_responses) > 1 else self._acquire_responses[0]
+
+    def release(self, plan_id: str, admission_id: str) -> dict:
+        self.release_calls.append((plan_id, admission_id))
+        return {'status': 'success', 'action': 'released'}
+
+    @property
+    def released_ids(self) -> list[str]:
+        return [aid for _plan, aid in self.release_calls]
+
+
+class _TokenRecorder:
+    """Records the title-token set/clear/push calls."""
+
+    def __init__(self):
+        self.set_states: list[str] = []
+        self.cleared: int = 0
+        self.pushed_icons: list[str] = []
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(bqs, '_set_title_token', lambda _p, state: self.set_states.append(state))
+        monkeypatch.setattr(bqs, '_clear_title_token', lambda _p: self._inc_clear())
+        monkeypatch.setattr(bqs, '_push_title_token', lambda _p, icon: self.pushed_icons.append(icon))
+
+    def _inc_clear(self) -> None:
+        self.cleared += 1
+
+
+@pytest.fixture(autouse=True)
+def _no_sleep(monkeypatch: pytest.MonkeyPatch):
+    """Never actually sleep 60s in a unit test — patch time.sleep to a no-op."""
+    monkeypatch.setattr(bqs.time, 'sleep', lambda _s: None)
+
+
+def _install_queue(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble) -> _TokenRecorder:
+    monkeypatch.setattr(bqs, '_acquire', double.acquire)
+    monkeypatch.setattr(bqs, '_release_raw', double.release)
+    tokens = _TokenRecorder()
+    tokens.install(monkeypatch)
+    return tokens
+
+
+# =============================================================================
+# No-op passthrough — the backward-compatibility guarantee
+# =============================================================================
+
+
+@pytest.mark.parametrize('plan_id', [None, ''])
+def test_no_plan_id_is_pure_noop(monkeypatch, plan_id):
+    """A falsy plan_id yields with ZERO queue/token interaction — plan-less
+    builds run completely unchanged."""
+    double = _QueueDouble([])
+    tokens = _install_queue(monkeypatch, double)
+
+    ran = False
+    with build_queue_slot(plan_id):
+        ran = True
+
+    assert ran is True
+    assert double.acquire_calls == []
+    assert double.release_calls == []
+    assert tokens.set_states == []
+    assert tokens.cleared == 0
+
+
+# =============================================================================
+# Admit-immediately
+# =============================================================================
+
+
+def test_admitted_runs_body_and_releases(monkeypatch):
+    """An ``admitted`` acquire sets the building token, runs the body, then
+    releases the slot and clears the token in the finally."""
+    double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
+    tokens = _install_queue(monkeypatch, double)
+
+    ran = False
+    with build_queue_slot('P'):
+        ran = True
+
+    assert ran is True
+    assert 'P:uuid-1' in double.released_ids
+    assert tokens.set_states == ['building']
+    assert tokens.pushed_icons == [bqs._ICON_BUILDING]
+    assert tokens.cleared == 1
+
+
+def test_admitted_immediately_does_not_set_waiting_token(monkeypatch):
+    """When admitted on the first poll, the build-waiting token is never set."""
+    double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
+    tokens = _install_queue(monkeypatch, double)
+
+    with build_queue_slot('P'):
+        pass
+
+    assert 'build-waiting' not in tokens.set_states
+
+
+# =============================================================================
+# Block-then-admit
+# =============================================================================
+
+
+def test_blocked_then_admitted_polls_and_runs(monkeypatch):
+    """A blocked acquire surfaces the waiting token, sleeps (mocked), re-polls,
+    and admits on the second poll."""
+    double = _QueueDouble(
+        [
+            {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-A'},
+            {'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-B'},
+        ]
+    )
+    tokens = _install_queue(monkeypatch, double)
+
+    ran = False
+    with build_queue_slot('P'):
+        ran = True
+
+    assert ran is True
+    # build-waiting token set + 🕐 pushed on the blocked poll, then building.
+    assert tokens.set_states == ['build-waiting', 'building']
+    assert bqs._ICON_BUILD_WAITING in tokens.pushed_icons
+    assert bqs._ICON_BUILDING in tokens.pushed_icons
+    # The superseded blocked id was released before re-polling, and the final
+    # admitted id released in the finally.
+    assert 'P:uuid-A' in double.released_ids
+    assert 'P:uuid-B' in double.released_ids
+
+
+def test_sleep_called_once_per_retry(monkeypatch):
+    """time.sleep fires exactly once between each blocked poll and the re-poll."""
+    sleeps: list[int] = []
+    monkeypatch.setattr(bqs.time, 'sleep', lambda s: sleeps.append(s))
+    double = _QueueDouble(
+        [
+            {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-A'},
+            {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-B'},
+            {'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-C'},
+        ]
+    )
+    _install_queue(monkeypatch, double)
+
+    with build_queue_slot('P'):
+        pass
+
+    # Two blocked polls before admission → two sleeps, each the 60s constant.
+    assert sleeps == [bqs._WAIT_SECONDS, bqs._WAIT_SECONDS]
+
+
+# =============================================================================
+# Retries exhausted
+# =============================================================================
+
+
+def test_retries_exhausted_raises_and_releases(monkeypatch):
+    """Staying blocked past max_retries releases the queued id and raises
+    BuildQueueTimeout — the body never runs."""
+    monkeypatch.setattr(bqs, '_resolve_max_retries', lambda: 2)
+    double = _QueueDouble([{'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-X'}])
+    _install_queue(monkeypatch, double)
+
+    ran = False
+    with pytest.raises(BuildQueueTimeout) as excinfo:
+        with build_queue_slot('P'):
+            ran = True
+
+    assert ran is False
+    assert excinfo.value.plan_id == 'P'
+    assert excinfo.value.max_retries == 2
+    # The final queued id was released as cleanup.
+    assert 'P:uuid-X' in double.released_ids
+
+
+def test_acquire_error_is_hard_failure(monkeypatch):
+    """An acquire that cannot reach the queue is a hard failure (not best-effort)
+    — the build must never silently bypass the concurrency limiter."""
+    double = _QueueDouble([{'status': 'error', 'error': 'queue unreachable'}])
+    _install_queue(monkeypatch, double)
+
+    with pytest.raises(RuntimeError, match='queue unreachable'):
+        with build_queue_slot('P'):
+            pass
+
+
+# =============================================================================
+# Always-release on body exception
+# =============================================================================
+
+
+def test_body_exception_still_releases_and_clears(monkeypatch):
+    """A body that raises still releases the slot and clears the token."""
+    double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
+    tokens = _install_queue(monkeypatch, double)
+
+    with pytest.raises(ValueError, match='boom'):
+        with build_queue_slot('P'):
+            raise ValueError('boom')
+
+    assert 'P:uuid-1' in double.released_ids
+    assert tokens.cleared == 1
+
+
+# =============================================================================
+# Best-effort tokens never affect the build outcome
+# =============================================================================
+
+
+def test_token_set_failure_does_not_break_build(monkeypatch):
+    """A title-token set whose underlying executor call raises is swallowed —
+    the build still runs and releases cleanly."""
+    double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
+    monkeypatch.setattr(bqs, '_acquire', double.acquire)
+    monkeypatch.setattr(bqs, '_release_raw', double.release)
+
+    # Make the underlying token channel raise; the best-effort wrappers must
+    # swallow it (this exercises the real _set_title_token/_push wrappers).
+    def _raising_run_executor(*_a, **_k):
+        raise OSError('tty gone')
+
+    monkeypatch.setattr(bqs, '_run_executor', _raising_run_executor)
+
+    ran = False
+    with build_queue_slot('P'):
+        ran = True
+
+    assert ran is True
+    assert 'P:uuid-1' in double.released_ids
+
+
+def test_release_failure_is_logged_not_raised(monkeypatch):
+    """A release that fails is logged at WARNING but never raises — the build
+    has already finished."""
+    double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
+    _install_queue(monkeypatch, double)
+    # Override release to report an error.
+    monkeypatch.setattr(bqs, '_release_raw', lambda _p, _i: {'status': 'error', 'error': 'queue gone'})
+
+    # Should not raise despite the release error.
+    with build_queue_slot('P'):
+        pass
+
+
+# =============================================================================
+# max_retries resolution from marshal.json
+# =============================================================================
+
+
+class TestResolveMaxRetries:
+    def test_default_when_block_absent(self, monkeypatch):
+        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {})
+        assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
+
+    def test_honors_configured_value(self, monkeypatch):
+        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {'build_queue': {'max_retries': 7}})
+        assert bqs._resolve_max_retries() == 7
+
+    def test_non_positive_falls_back(self, monkeypatch):
+        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {'build_queue': {'max_retries': 0}})
+        assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
+
+    def test_bool_value_falls_back(self, monkeypatch):
+        # bool is an int subclass — must NOT be accepted as a retry count.
+        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {'build_queue': {'max_retries': True}})
+        assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
+
+    def test_non_dict_config_falls_back(self, monkeypatch):
+        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: ['not', 'a', 'dict'])
+        assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
+
+
+# =============================================================================
+# _emit_queue_timeout structured error
+# =============================================================================
+
+
+def test_emit_queue_timeout_renders_structured_error(capsys):
+    """The factory's queue-timeout emitter prints a structured queue_saturated
+    error and returns a non-zero exit code (the build did not run)."""
+    from _build_execute_factory import ERROR_QUEUE_SATURATED, _emit_queue_timeout
+
+    exc = BuildQueueTimeout('P', 10)
+    rc = _emit_queue_timeout('python', 'module-tests plan-marshall', 'toon', exc)
+
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert ERROR_QUEUE_SATURATED in out
+    assert 'try again later' in out
+    assert 'P' in out
+
+
+def test_factory_cmd_run_emits_timeout_on_saturation(monkeypatch, capsys):
+    """End-to-end through the factory cmd_run: a saturated queue yields the
+    structured queue_saturated error without ever running execute_direct."""
+    import _build_execute_factory as factory
+    from _build_execute import CaptureStrategy
+
+    config = factory.ExecuteConfig(
+        tool_name='python',
+        unix_wrapper='pw',
+        windows_wrapper='pw.bat',
+        system_fallback='pwx',
+        capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+        build_command_fn=factory.default_build_command_fn,
+        scope_fn=lambda a: 'default',
+        command_key_fn=factory.default_command_key_fn,
+    )
+
+    def _fake_parse_log(_log):  # pragma: no cover - never reached on saturation
+        return ([], None, 'SUCCESS')
+
+    _execute_direct, cmd_run = factory.create_execute_handlers(config, _fake_parse_log)
+
+    def _saturated(plan_id):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _cm():
+            raise factory.BuildQueueTimeout(plan_id, 10)
+            yield  # pragma: no cover
+
+        return _cm()
+
+    monkeypatch.setattr(factory, 'build_queue_slot', _saturated)
+
+    args = argparse.Namespace(command_args='module-tests', plan_id='P', format='toon')
+    rc = cmd_run(args)
+
+    assert rc == 1
+    assert factory.ERROR_QUEUE_SATURATED in capsys.readouterr().out

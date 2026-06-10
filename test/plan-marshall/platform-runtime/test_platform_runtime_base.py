@@ -132,6 +132,7 @@ def _make_partial_runtime(**overrides):
         "project_install_hook",
         "session_capture",
         "session_render_title",
+        "session_push_title_token",
         "permission_configure",
         "permission_analyze",
         "permission_fix",
@@ -149,7 +150,7 @@ def _make_partial_runtime(**overrides):
 
 
 class _ConcreteRuntime(Runtime):
-    """Minimal concrete subclass that implements all 14 abstract methods."""
+    """Minimal concrete subclass that implements all 15 abstract methods."""
 
     def project_initial_setup(self, project_dir: str, target: str) -> str:
         return toon_success("project initial-setup")
@@ -167,6 +168,9 @@ class _ConcreteRuntime(Runtime):
 
     def session_render_title(self, statusline: bool = False) -> str:
         return toon_success("session render-title")
+
+    def session_push_title_token(self, plan_id: str, icon: str) -> str:
+        return toon_success("session push-title-token")
 
     def permission_configure(self, scope: str, permissions: list) -> str:
         return toon_success("permission configure")
@@ -204,6 +208,7 @@ ALL_ABSTRACT_METHODS = [
     "project_install_hook",
     "session_capture",
     "session_render_title",
+    "session_push_title_token",
     "permission_configure",
     "permission_analyze",
     "permission_fix",
@@ -217,16 +222,16 @@ ALL_ABSTRACT_METHODS = [
 ]
 
 
-def test_runtime_has_14_abstract_methods():
-    """Runtime ABC exposes exactly 14 abstract methods."""
+def test_runtime_has_15_abstract_methods():
+    """Runtime ABC exposes exactly 15 abstract methods."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
-    assert len(abstract_methods) == 14, (
-        f"Expected 14 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
+    assert len(abstract_methods) == 15, (
+        f"Expected 15 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
     )
 
 
 def test_all_expected_methods_are_abstract():
-    """Each of the 14 documented operations is abstract on Runtime."""
+    """Each of the 15 documented operations is abstract on Runtime."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
     for method in ALL_ABSTRACT_METHODS:
         assert method in abstract_methods, (
@@ -252,7 +257,7 @@ def test_subclass_missing_one_method_raises(missing_method: str):
 
 
 def test_concrete_subclass_can_be_instantiated():
-    """A subclass implementing all 14 methods can be instantiated without error."""
+    """A subclass implementing all 15 methods can be instantiated without error."""
     runtime = _ConcreteRuntime()
     assert isinstance(runtime, Runtime)
 
@@ -271,6 +276,7 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.project_install_hook(".claude/settings.local.json"),
         runtime.session_capture("my-plan"),
         runtime.session_render_title(),
+        runtime.session_push_title_token("my-plan", "⏳"),
         runtime.permission_configure("project", ["Read(**)"]),
         runtime.permission_analyze("both", ["all"], None),
         runtime.permission_fix("project", "normalize", [], False),
@@ -283,7 +289,7 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.health_check("all"),
     ]
 
-    assert len(outputs) == 14, "Expected output for each of the 14 methods"
+    assert len(outputs) == 15, "Expected output for each of the 15 methods"
     for output in outputs:
         result = parse_toon(output)
         assert result.get("status") == "success", (

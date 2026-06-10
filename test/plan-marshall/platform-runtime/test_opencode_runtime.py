@@ -151,6 +151,25 @@ def test_session_render_title_noop_fields(runtime: OpenCodeRuntime) -> None:
 
 
 # =============================================================================
+# 4b. session_push_title_token — always no-op
+# =============================================================================
+
+
+def test_session_push_title_token_is_noop(runtime: OpenCodeRuntime) -> None:
+    """session_push_title_token returns no-op because OpenCode has no push channel."""
+    result = _parse(runtime.session_push_title_token("my-plan", "⏳"))
+    assert result["status"] == "no-op"
+    assert result["operation"] == "session push-title-token"
+
+
+def test_session_push_title_token_noop_fields(runtime: OpenCodeRuntime) -> None:
+    """session_push_title_token no-op includes reason and alternative."""
+    result = _parse(runtime.session_push_title_token("my-plan", "⏳"))
+    assert "reason" in result
+    assert "alternative" in result
+
+
+# =============================================================================
 # 5. permission_configure
 # =============================================================================
 
