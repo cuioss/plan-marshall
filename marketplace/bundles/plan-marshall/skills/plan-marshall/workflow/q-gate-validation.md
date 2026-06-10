@@ -383,7 +383,7 @@ Verify that every `python3 .plan/execute-script.py {notation} {subcommand} [args
    ```
 4. Diff the cited subcommand and flags against the parsed help output. A flag counts as **undeclared only when it is absent from BOTH the leaf subcommand help AND every ancestor parser in the notation's command chain, AND it is not an executor-stripped flag** — argparse resolves flags up the full parser chain, so a flag declared on a parent command (or at the top level) is valid even though it does not appear in the leaf subcommand's help. Before emitting an undeclared-flag finding, probe each ancestor parser's help along the command chain, from the leaf's parent up to the top-level notation. For a multi-level invocation such as `manage-config plan phase-2-refine get`, probe — in addition to the leaf help from step 3 — the intermediate parents and the top-level parser:
    ```text
-   {notation} {parent_subcommand}   (help)
+   {notation} {subcommand_prefix}   (help)
    {notation}                       (help)
    ```
    That chain expands to the phase-level, plan-level, and top-level help for the example notation. Additionally, the executor (`.plan/execute-script.py`) consumes and strips its own audit-plan-id flag BEFORE argv reaches the target script's argparse, so that flag appears in NO parser's help at any chain level yet is always valid — treat it (alongside any other executor-level flag) as a known non-finding regardless of the probe results. Emit a finding per undeclared subcommand and per flag that is missing from the leaf AND every ancestor parser AND is not an executor-stripped flag.
