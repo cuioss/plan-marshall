@@ -271,8 +271,7 @@ def _derive_failure_detail(stdout: str, stderr: str) -> str:
         try:
             parsed = parse_toon(stdout_clean)
             if (
-                isinstance(parsed, dict)
-                and parsed.get('status') == 'error'
+                parsed.get('status') == 'error'
                 and parsed.get('message')
             ):
                 detail = str(parsed['message']).strip()
