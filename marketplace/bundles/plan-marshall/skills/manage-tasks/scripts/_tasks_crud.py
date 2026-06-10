@@ -115,9 +115,27 @@ def _lesson_id_validation_error(unresolved_ids: list[str], task_index: int) -> d
     }
 
 
-def _scan_unresolved_lesson_ids(title: str, description: str) -> list[str]:
+def _scan_unresolved_lesson_ids(title: str, description: str, plan_id: str) -> list[str]:
     """Return the deduplicated list of lesson-ID tokens cited in title or
-    description that DO NOT resolve against the live manage-lessons inventory.
+    description that DO NOT resolve under either of two tiers.
+
+    Resolution is two-tier:
+
+      1. **Active inventory** — the token is present in the live
+         ``manage-lessons`` inventory (``verify_lesson_ids_exist``). This is
+         the original, primary check.
+      2. **Plan-dir converted artifact** — for any token NOT present in the
+         active inventory, the token ALSO resolves when the plan's own
+         converted source lesson exists on disk at
+         ``.plan/local/plans/{plan_id}/lesson-{token}.md``. A lesson that the
+         plan itself converted lives in the plan directory and is therefore a
+         legitimate reference even though it is no longer in the active
+         inventory — such tokens are dropped from the unresolved list so the
+         write proceeds.
+
+    A token absent from BOTH tiers is genuinely unresolved and remains in the
+    returned list, so the caller hard-fails it with
+    ``validation_error: lesson_id_not_found`` exactly as before.
 
     Returns an empty list when no lesson-ID-shaped tokens are present (the
     common case) — this short-circuits the inventory subprocess call so
@@ -133,7 +151,18 @@ def _scan_unresolved_lesson_ids(title: str, description: str) -> list[str]:
     if not tokens:
         return []
     presence = verify_lesson_ids_exist(tokens)
-    return [tok for tok, present in presence.items() if not present]
+    plan_dir = get_plan_dir(plan_id)
+    unresolved: list[str] = []
+    for tok, present in presence.items():
+        if present:
+            continue
+        # Tier 2: the token resolves against the plan's own converted source
+        # lesson artifact. Such a token is legitimate even though it is absent
+        # from the active inventory.
+        if (plan_dir / f'lesson-{tok}.md').exists():
+            continue
+        unresolved.append(tok)
+    return unresolved
 
 
 def cmd_prepare_add(args) -> dict:
@@ -196,7 +225,7 @@ def cmd_commit_add(args) -> dict:
     # the entire write — no TASK-NNN.json is created and the scratch file
     # is preserved so the caller can correct the description and retry.
     try:
-        unresolved = _scan_unresolved_lesson_ids(parsed['title'], parsed['description'])
+        unresolved = _scan_unresolved_lesson_ids(parsed['title'], parsed['description'], args.plan_id)
     except (LessonInventoryUnavailable, LessonRegexAnchoringError) as e:
         return output_error(f'Lesson-ID reference validation failed: {e}', error_code='validation_error')
     if unresolved:
@@ -505,7 +534,7 @@ def cmd_batch_add(args) -> dict:
     # offending entry without re-running the rest of the validation manually.
     for i, parsed in enumerate(normalized):
         try:
-            unresolved = _scan_unresolved_lesson_ids(parsed['title'], parsed['description'])
+            unresolved = _scan_unresolved_lesson_ids(parsed['title'], parsed['description'], args.plan_id)
         except (LessonInventoryUnavailable, LessonRegexAnchoringError) as e:
             return output_error(
                 f'Lesson-ID reference validation failed for batch entry [{i}]: {e}',

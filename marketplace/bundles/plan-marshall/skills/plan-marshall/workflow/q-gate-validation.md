@@ -381,7 +381,20 @@ Verify that every `python3 .plan/execute-script.py {notation} {subcommand} [args
    ```bash
    python3 .plan/execute-script.py {notation} {subcommand} --help
    ```
-4. Diff the cited subcommand and flags against the parsed help output. Emit a finding per undeclared subcommand and per missing `--flag`.
+4. Diff the cited subcommand and flags against the parsed help output. A flag counts as **undeclared only when it is absent from BOTH the leaf subcommand help AND every ancestor parser in the notation's command chain, AND it is not an executor-stripped flag** — argparse resolves flags up the full parser chain, so a flag declared on a parent command (or at the top level) is valid even though it does not appear in the leaf subcommand's help. Before emitting an undeclared-flag finding, probe each ancestor parser's help along the command chain, from the leaf's parent up to the top-level notation. For a multi-level invocation such as `manage-config plan phase-2-refine get`, probe — in addition to the leaf help from step 3 — the intermediate parents and the top-level parser:
+   ```text
+   {notation} {parent_subcommand}   (help)
+   {notation}                       (help)
+   ```
+   That chain expands to the phase-level, plan-level, and top-level help for the example notation. Additionally, the executor (`.plan/execute-script.py`) consumes and strips its own audit-plan-id flag BEFORE argv reaches the target script's argparse, so that flag appears in NO parser's help at any chain level yet is always valid — treat it (alongside any other executor-level flag) as a known non-finding regardless of the probe results. Emit a finding per undeclared subcommand and per flag that is missing from the leaf AND every ancestor parser AND is not an executor-stripped flag.
+
+**Worked false-positive (full-chain resolution)**: Outline cites the invocation
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-2-refine get --field compatibility --audit-plan-id X
+   ```
+
+   A naive probe of only the leaf help shows only the field flag, so a leaf-only diff would emit a spurious undeclared-flag finding for the audit-plan-id flag. Two independent reasons make it valid. First, the audit-plan-id flag is an **executor-stripped flag** the executor removes before argparse ever sees it, so it never appears in any help output. Second, the analogous parent-chain case is a top-level flag declared on the `manage-architecture` notation rather than on its `resolve` leaf — probing only the leaf help would falsely flag a flag that the top-level help declares. In both cases: silent pass — no finding. A validator that probed only the leaf help would have produced a false positive.
 
 **Finding emission template**:
 
@@ -523,7 +536,15 @@ Verify, for lesson-derived plans, that every concrete code claim in the source l
    - File path → `manage-files exists --plan-id {plan_id} --file {path}` or `architecture find --pattern {basename}`
    - Profile→target mapping → query `manage-config plan {phase} get` or grep architecture
    - Function/symbol name → `architecture find --pattern {name}` then `Read` the matched file
-   - Argument shape → `python3 .plan/execute-script.py {notation} --help`
+   - Argument shape → resolve the flag against the **full parser chain**, not just one parser level. Probe the leaf subcommand help AND every ancestor parser in the notation's command chain (the leaf's parent up to the top-level notation), because argparse resolves flags up the full chain — a flag declared on a parent command or at the top level is valid even though it is absent from the leaf subcommand's help; additionally, executor-stripped flags (e.g. the audit-plan-id flag, which `.plan/execute-script.py` consumes before argv reaches argparse) appear in NO parser's help yet are always valid. Probe the leaf, each parent, and the top-level notation help in turn. Classify the argument-shape claim as `invalid` only when the cited flag is absent from the leaf AND every ancestor parser AND is not an executor-stripped flag.
+
+     **Worked false-positive (full-chain resolution)**: a lesson narrative cites the invocation
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-2-refine get --field compatibility --audit-plan-id X
+     ```
+
+     Probing only the leaf help shows only the field flag, so a leaf-only check would mark the claim `invalid` spuriously for the audit-plan-id flag. That flag is an executor-stripped flag (removed before argparse sees it), so it appears in no help output yet is always valid; the analogous parent-chain case is a top-level flag declared on the `manage-architecture` notation rather than its `resolve` leaf — probing the full chain reveals it. Classify `valid`, emit no finding.
    - Behavioral assertion → `Read` the cited file/region and reason about current behavior
 4. Classify each claim as: `valid` (narrative matches code), `stale` (code has moved but the underlying intent remains valid), or `invalid` (code never matched the narrative). Emit a finding per `stale` or `invalid` claim.
 
