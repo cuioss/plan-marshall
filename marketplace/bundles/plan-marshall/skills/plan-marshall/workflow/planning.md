@@ -167,7 +167,7 @@ Continue to the **Metrics** fused-call below.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level ERROR \
+  work --plan-id {plan_id:-none} --level ERROR \
   --message "[CRITICAL] (plan-marshall:plan-marshall) Init contract violation — phase-1-init dispatched edits to the main checkout: {offending_signal}"
 ```
 
@@ -175,7 +175,7 @@ Return:
 
 ```toon
 status: error
-error_type: init_contract_violation
+error: init_contract_violation
 display_detail: "init dispatched edits to main checkout"
 plan_id: {plan_id}
 offending_signal: {offending_signal}
