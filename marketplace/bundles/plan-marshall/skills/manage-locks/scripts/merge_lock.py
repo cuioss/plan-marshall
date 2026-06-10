@@ -68,11 +68,25 @@ and ``tools-script-executor/standards/cwd-policy.md`` for the contract.
 check-then-act (does-the-lock-exist → create it) collapsed into a single atomic
 ``os.open(..., O_CREAT | O_EXCL | O_WRONLY)``: two sessions racing to create the
 same path — exactly one wins (the other gets ``FileExistsError`` and retries).
-Stale reclamation is itself a check-then-act (decide-holder-is-dead → remove →
-recreate) and re-verifies atomically by removing the stale file and immediately
-re-attempting the ``O_EXCL`` create; if a third session won the race in between,
-the reclaiming session loses cleanly and retries. See the TOCTOU / check-then-act
-mitigation menu in
+Stale reclamation is itself a check-then-act (decide-holder-is-dead → evict →
+recreate) whose eviction step must arbitrate on the SPECIFIC observed stale file,
+not the bare path. :func:`_reclaim_stale_lock` claims that specific file by
+``os.rename``-ing it aside to a per-reclaimer unique sidecar
+(``{lock}.reclaim.{pid}.{uuid}``) — a target only this reclaimer names — then
+re-confirms the renamed-away content is exactly the dead holder it decided to
+evict AND that the holder is still dead. A concurrent reclaimer that already
+swapped a LIVE holder into the path before this rename is caught by that
+re-confirmation: the sidecar is ``os.replace``-d back to restore the live holder
+and the reclaimer loses cleanly (returns the loss signal and retries). When the
+path is already gone (a racing reclaimer claimed it a beat earlier) the rename
+fails with ``FileNotFoundError`` and the reclaimer falls through to retry. Only on
+a confirmed dead-holder match does the reclaimer unlink the sidecar and
+``O_EXCL``-recreate the lock for itself. This eviction-of-the-observed-file
+arbitration closes the former blind-``os.unlink(path)`` window, where a reclaimer
+could remove a live holder a concurrent reclaimer had just installed and both
+acquirers would then recreate and win — a silent double-grant of the ``k=1``
+mutex. See the TOCTOU / check-then-act mitigation menu (option (c), atomic
+primitive) in
 ``dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``.
 
 **Title-token surface (best-effort, OUTSIDE the atomic window).** ``acquire`` and
@@ -123,6 +137,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
@@ -219,6 +234,69 @@ def _try_atomic_create(lock_path: Path, holder: str) -> bool:
     finally:
         os.close(fd)
     return True
+
+
+def _reclaim_stale_lock(lock_path: Path, observed_holder: str, new_holder: str) -> bool:
+    """Atomically reclaim a stale lock by evicting the SPECIFIC observed file.
+
+    The reclaim eviction must arbitrate on the exact stale file the caller
+    decided to evict, never the bare path — otherwise a concurrent reclaimer that
+    installs a LIVE holder at the path between the liveness decision and the
+    eviction would be silently evicted, and both acquirers would recreate and win
+    (a double-grant of the ``k=1`` mutex). This helper closes that window:
+
+    1. ``os.rename`` the lock file aside to a per-reclaimer unique sidecar
+       (``{lock_path}.reclaim.{pid}.{uuid}``) — a target only this reclaimer
+       names. The rename atomically claims the specific file currently at the
+       path. ``FileNotFoundError`` / ``OSError`` (a racing reclaimer swapped or
+       removed it first) → return False to retry.
+    2. Read the renamed-away content and confirm it is exactly ``observed_holder``
+       AND that the holder is still dead. If the file at the path had changed to a
+       live (or different) holder before our rename, ``os.replace`` the sidecar
+       back to restore it intact and return False (lose cleanly, retry).
+    3. On a confirmed dead-holder match, unlink the sidecar and ``O_EXCL``-recreate
+       the lock for ``new_holder``. The recreate uses ``O_EXCL`` so that even after
+       the path was freed, a third reclaimer racing the now-empty path is still
+       arbitrated by the kernel — exactly one ``O_EXCL`` create wins. Return its
+       result (False on ``EEXIST`` → fall through to retry).
+
+    Returns True only when this reclaimer atomically evicted the observed dead
+    holder AND recreated the lock for ``new_holder``; False on every loss/retry
+    path. Restoring the sidecar (step 2) is best-effort-correct: a failure to
+    restore leaves the sidecar on disk but never grants this reclaimer the lock.
+    """
+    sidecar = lock_path.with_name(f'{lock_path.name}.reclaim.{os.getpid()}.{uuid.uuid4().hex}')
+    try:
+        os.rename(str(lock_path), str(sidecar))
+    except FileNotFoundError:
+        # The path was already swapped or removed by a racing reclaimer — this
+        # reclaimer did not claim the observed file. Lose cleanly and retry.
+        return False
+
+    # The observed file is now ours (at the sidecar). Confirm it is exactly the
+    # dead holder we decided to evict, and that the holder is still dead.
+    renamed_holder = _read_holder(sidecar)
+    if renamed_holder != observed_holder or not holder_is_dead(renamed_holder):
+        # The file at the path had changed to a different / now-live holder before
+        # our rename claimed it. Restore it intact so the live holder keeps its
+        # lock, then lose cleanly.
+        try:
+            os.replace(str(sidecar), str(lock_path))
+        except OSError:
+            # Best-effort restore: a concurrent reclaimer already recreated the
+            # path, so the sidecar is now stale. Drop it and lose either way.
+            try:
+                os.unlink(str(sidecar))
+            except OSError:
+                pass
+        return False
+
+    # Confirmed dead-holder match — drop the sidecar and recreate the lock for us.
+    try:
+        os.unlink(str(sidecar))
+    except OSError:
+        pass
+    return _try_atomic_create(lock_path, new_holder)
 
 
 # ---------------------------------------------------------------------------
@@ -390,40 +468,35 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         # The lock is held — inspect the holder for stale reclamation.
         holder = _read_holder(lock_path)
         if holder_is_dead(holder):
-            # Capture the reclaimed-from holder before the stale file is removed
+            # Capture the reclaimed-from holder before the stale file is evicted
             # so the `reclaimed` [LOCK] event can correlate it.
             reclaimed_from = holder
-            # Reclaim: remove the stale file and immediately re-attempt the
-            # O_EXCL create. If a third session won the race in between, our
-            # create loses cleanly (EEXIST) and we fall through to retry.
-            try:
-                os.unlink(str(lock_path))
-            except OSError:
-                # Someone else already removed/replaced it — fall through to retry.
-                pass
-            else:
+            # Reclaim atomically: evict the SPECIFIC observed stale file (rename
+            # aside → re-confirm dead holder → O_EXCL recreate). A concurrent
+            # reclaimer that installed a live holder in between is caught and its
+            # file restored; on any loss this reclaimer falls through to retry.
+            if _reclaim_stale_lock(lock_path, reclaimed_from, plan_id):
                 reclaimed = True
-                if _try_atomic_create(lock_path, plan_id):
-                    # Reclaimed — surface `lock-owned` (🔒), AFTER the atomic
-                    # re-create succeeded (TOCTOU window already closed).
-                    _surface_lock_owned(plan_id, set_title_token)
-                    # [LOCK] `reclaimed` — best-effort, after the re-create,
-                    # OUTSIDE the O_EXCL window; carry the reclaimed-from holder.
-                    log_lock_event(
-                        'merge',
-                        'reclaimed',
-                        lock_id=plan_id,
-                        lock_file=_LOCK_FILENAME,
-                        reclaimed_from=reclaimed_from or None,
-                    )
-                    return {
-                        'status': 'success',
-                        'plan_id': plan_id,
-                        'action': 'acquired',
-                        'lock_path': str(lock_path),
-                        'holder': plan_id,
-                        'reclaimed': True,
-                    }
+                # Reclaimed — surface `lock-owned` (🔒), AFTER the atomic
+                # re-create succeeded (TOCTOU window already closed).
+                _surface_lock_owned(plan_id, set_title_token)
+                # [LOCK] `reclaimed` — best-effort, after the re-create,
+                # OUTSIDE the O_EXCL window; carry the reclaimed-from holder.
+                log_lock_event(
+                    'merge',
+                    'reclaimed',
+                    lock_id=plan_id,
+                    lock_file=_LOCK_FILENAME,
+                    reclaimed_from=reclaimed_from or None,
+                )
+                return {
+                    'status': 'success',
+                    'plan_id': plan_id,
+                    'action': 'acquired',
+                    'lock_path': str(lock_path),
+                    'holder': plan_id,
+                    'reclaimed': True,
+                }
 
         if time.monotonic() >= deadline:
             # The wait budget elapsed against a LIVE holder. Return a structured
