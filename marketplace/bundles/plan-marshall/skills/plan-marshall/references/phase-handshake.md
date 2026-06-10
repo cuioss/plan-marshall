@@ -121,7 +121,7 @@ Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples. The para
 | `phase_steps_complete` | always (no-op when phase has no declaration) | See [resolution rule](#phase_steps_complete-resolution) | `blocking_at_every_boundary` | silently skipped intra-phase steps |
 | `task_graph_valid` | always | adjacency graph from `manage-tasks read` (cycle / dangling detection) | `blocking_at_every_boundary` | broken task graph blocking transition |
 | `pending_findings_by_type` | always | per-type breakdown from `manage-findings list --type T --resolution pending` for every known type, serialized as `"build-error=N,test-failure=N,..."` | `blocking_at_every_boundary` | retrospective view of the queue at every boundary |
-| `pending_findings_blocking_count` | always | sum of pending counts across the **per-phase** `blocking_finding_types` partition (see [resolution rule](#pending_findings_blocking_count-resolution)) | `blocking_at_every_boundary` | phase advance with blocking-type findings still pending |
+| `pending_findings_blocking_count` | always | sum of pending counts across the **hardcoded ACTIONABLE** finding-type set (see [resolution rule](#pending_findings_blocking_count-resolution)) | `blocking_at_every_boundary` | phase advance with actionable findings still pending |
 
 ### Blocking classification
 
@@ -194,14 +194,14 @@ The phase skill MUST either call `manage-status mark-step-done` for each unrecor
 
 ### `pending_findings_blocking_count` resolution
 
-The blocking-finding invariant is a **per-phase** partition: each phase decides which finding types — out of the 12-type taxonomy in `tools-file-ops/scripts/constants.py` — count as blockers for advancing past that phase. The partition lives in `marshal.json` at `plan.phase-{phase}.blocking_finding_types` (a list of finding-type strings).
+The blocking-finding invariant uses a **fixed, hardcoded** actionable-vs-knowledge rule defined as a constant in `plan-marshall/scripts/_invariants.py` — there is no per-phase configuration partition and no `marshal.json` key. Out of the 12-type taxonomy in `tools-file-ops/scripts/constants.py`, the **ACTIONABLE** set — `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate`, `pr-comment` — counts as blockers; the **KNOWLEDGE** set — `insight`, `tip`, `best-practice`, `improvement` — never blocks. This is not a naive "any pending finding blocks" rule: knowledge types are excluded by the fixed actionable-set membership test.
 
 **Resolution rule:**
 
-1. Read `plan.phase-{phase}.blocking_finding_types` via `manage-config plan phase-{phase} get --field blocking_finding_types`. If the slot is unset, no types are considered blocking and the column captures `0`.
-2. For each configured blocking type `T`, query the count of `pending` findings via `manage-findings list --plan-id X --type T --resolution pending` and sum the per-type `filtered_count` values.
+1. The actionable finding-type set is the hardcoded constant in `_invariants.py`; no `marshal.json` read occurs. Knowledge types are never counted.
+2. For each actionable type `T`, query the count of `pending` findings via `manage-findings list --plan-id X --type T --resolution pending` and sum the per-type `filtered_count` values. The `qgate` actionable entry is routed through the aggregated per-phase qgate query (see [qgate aggregation contract](../../ref-workflow-architecture/standards/findings-pipeline.md#qgate-aggregation-contract)).
 3. The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`. Only `pending` contributes to the count.
-4. The companion `pending_findings_by_type` row captures the count for **every** known type — independent of the phase's blocking partition — so retrospective analysis sees the full queue regardless of what each phase chose to gate on.
+4. The companion `pending_findings_by_type` row captures the count for **every** known type — independent of the actionable set — so retrospective analysis sees the full queue regardless of which types gate the boundary.
 
 **Capture-time behavior:**
 
@@ -214,14 +214,15 @@ error: blocking_findings_present
 plan_id: X
 phase: 6-finalize
 blocking_count: 2
-blocking_types[5]:
+blocking_types[6]:
   - build-error
   - test-failure
   - lint-issue
   - sonar-issue
   - qgate
-per_type{build-error,test-failure,lint-issue,sonar-issue,qgate}:
-  0,1,0,1,0
+  - pr-comment
+per_type{build-error,test-failure,lint-issue,sonar-issue,qgate,pr-comment}:
+  0,1,0,1,0,0
 message: "pending_findings_blocking_count failed for phase '6-finalize': ..."
 ```
 
@@ -239,13 +240,13 @@ Every other capture point (phases `1-init` through `5-execute`, plus finalize su
 
 **Verify-time behavior:** if the observed re-capture raises `BlockingFindingsPresent`, `cmd_verify` surfaces it as a `drift` on the `pending_findings_blocking_count` column with an `blocking(count=...,blocking_types=...,per_type=...)` observed value. `--strict` turns this into a non-zero exit so the caller stops the boundary advance.
 
-**Default seed:** `marshall-steward` writes the default partition into each phase slot on first wizard run (idempotent — only writes when `blocking_finding_types` is absent):
+**Fixed actionable-vs-knowledge classification** (hardcoded in `_invariants.py`; not configurable, not seeded into `marshal.json`):
 
-| Block at every phase boundary | Block only inside `6-finalize` | Never block (long-lived knowledge types) |
-|---|---|---|
-| `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate` | `pr-comment` | `insight`, `tip`, `best-practice`, `improvement` |
+| ACTIONABLE (block when pending at a guarded boundary) | KNOWLEDGE (never block) |
+|---|---|
+| `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate`, `pr-comment` | `insight`, `tip`, `best-practice`, `improvement` |
 
-Projects override by editing `marshal.json` directly. See `marshall-steward/scripts/determine_mode.py::seed_blocking_finding_types` for the seed implementation.
+`pr-comment` is in the actionable set but, because the only guarded boundaries are the three finalize boundaries (below), it can only block once a PR exists. See `plan-marshall/scripts/_invariants.py` for the hardcoded set.
 
 ### Adding a new invariant
 

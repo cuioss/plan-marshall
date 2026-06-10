@@ -108,30 +108,35 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() vocabulary (build_map seed source)
+# classify_globs() explicit routes (build_map seed source)
 # =============================================================================
 #
-# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
-# consumed by the script-shared tree-deriver — NOT literal path-globs. The
-# `.java` suffix is declared under both production-by-location and
-# test-by-location (the deriver splits them via the src/test convention); the
-# Maven/Gradle build descriptors are declared by exact basename under config.
+# classify_globs() returns explicit (pattern, role) routes — single-* fnmatch
+# globs paired with a resolved role. The src/main and src/test Maven-Gradle
+# convention splits production from test by location: */src/main/*.java covers
+# the nested-module layout and src/main/*.java the repo-root layout. The
+# Maven/Gradle build descriptors are claimed by exact basename under config.
 
-_ROLE_HEURISTICS = frozenset(
-    {'production-by-location', 'test-by-location', 'documentation', 'config'}
-)
+_BUILD_MAP_ROLES = frozenset({'production', 'test', 'documentation', 'config'})
 
 
-def test_classify_globs_declares_java_under_both_location_heuristics():
-    """The .java suffix appears under both production-by-location and test-by-location."""
-    vocabulary = _ext.classify_globs()
-    assert ('.java', 'production-by-location') in vocabulary
-    assert ('.java', 'test-by-location') in vocabulary
+def test_classify_globs_declares_production_java_routes():
+    """The src/main routes (nested + repo-root) are explicit production globs."""
+    routes = _ext.classify_globs()
+    assert ('*/src/main/*.java', 'production') in routes
+    assert ('src/main/*.java', 'production') in routes
+
+
+def test_classify_globs_declares_test_java_routes():
+    """The src/test routes (nested + repo-root) are explicit test globs."""
+    routes = _ext.classify_globs()
+    assert ('*/src/test/*.java', 'test') in routes
+    assert ('src/test/*.java', 'test') in routes
 
 
 def test_classify_globs_declares_build_descriptor_basenames():
     """The Maven/Gradle build descriptors are declared by exact basename under config."""
-    vocabulary = _ext.classify_globs()
+    routes = _ext.classify_globs()
     for descriptor in (
         'pom.xml',
         'build.gradle',
@@ -139,22 +144,34 @@ def test_classify_globs_declares_build_descriptor_basenames():
         'settings.gradle',
         'settings.gradle.kts',
     ):
-        assert (descriptor, 'config') in vocabulary
+        assert (descriptor, 'config') in routes
 
 
-def test_classify_globs_uses_only_role_heuristic_names():
-    """Every vocabulary tuple's second element is a role-heuristic name."""
-    for _suffix, role_heuristic in _ext.classify_globs():
-        assert role_heuristic in _ROLE_HEURISTICS
+def test_classify_globs_uses_only_resolved_roles():
+    """Every route's second element is one of the four resolved build_map roles."""
+    for _pattern, role in _ext.classify_globs():
+        assert role in _BUILD_MAP_ROLES
 
 
-def test_classify_globs_does_not_return_literal_path_globs():
-    """The vocabulary carries bare suffixes/basenames, not the old src/main literal globs."""
-    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
-    for stale in ('**/src/main/**/*.java', 'src/main/**/*.java', '**/src/test/**/*.java'):
-        assert stale not in suffixes
+def test_classify_globs_uses_single_star_fnmatch_globs():
+    """Routes are single-* fnmatch globs, never the old recursive ** src/main forms.
+
+    Regression guard: the old by-location heuristic vocabulary (bare `.java`
+    suffix + `production-by-location`) and recursive `**/src/main/**/*.java`
+    globs are gone — explicit single-* routes replace them.
+    """
+    for pattern, _role in _ext.classify_globs():
+        assert '**' not in pattern, f'route {pattern!r} must use single-* fnmatch, not **'
+
+
+def test_classify_globs_production_route_covers_nested_module_source():
+    """The */src/main/*.java route matches a nested-module production source."""
+    import fnmatch
+    prod = [p for p, r in _ext.classify_globs() if r == 'production']
+    sample = 'module-a/src/main/java/com/example/Foo.java'
+    assert any(fnmatch.fnmatch(sample, p) for p in prod)
 
 
 def test_classify_globs_is_nonempty():
-    """The java domain owns buildable file types, so the vocabulary is non-empty."""
+    """The java domain owns buildable file types, so the route set is non-empty."""
     assert _ext.classify_globs()

@@ -78,7 +78,7 @@ At command start, emit the following banner verbatim to the user:
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `seed-blocking-finding-types` for the wizard's blocking-partition seed step and `check-working-prefixes` for the project.working_prefixes presence/drift surfacing |
+| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-working-prefixes` for the project.working_prefixes presence/drift surfacing |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
 
@@ -221,6 +221,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `wizard-flow.md` | First-run wizard steps 1-15 (bootstrap 1-4, configuration 5 onwards) | mode=wizard or --wizard flag |
 | `provider-setup.md` | Provider discovery/activation, CI detection, credential setup (extracted from wizard-flow.md) | Linked from `wizard-flow.md` (provider/CI/credential steps) |
 | `architecture-setup.md` | Extension defaults, module discovery, build commands, Maven profiles, LLM analysis + architecture_refresh tier knobs (extracted from wizard-flow.md) | Linked from `wizard-flow.md` Step 8 |
+| `build-map-setup.md` | Build-map seed/read workflow — `skill_domains.build_map` file-to-build contract, write-once seed, menu re-seed operation | Linked from `wizard-flow.md` Step 8b and `menu-configuration.md` (Project Structure) |
 | `skill-domains-setup.md` | Skill-domain configuration, profile activation, execute-task/recipe registration (extracted from wizard-flow.md) | Linked from `wizard-flow.md` Step 9 |
 | `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
@@ -265,66 +266,9 @@ the wizard can prompt the user to add it. This protects existing
 projects from quietly missing newly-added consumer-applicable defaults
 when their `marshal.json` predates the additions.
 
-## Blocking-Finding Partition Seed (Wizard Step)
+## Blocking-Finding Classification (fixed rule — no wizard seed)
 
-After `marshal.json` is initialised the wizard seeds a default per-phase **blocking-finding partition** into each phase slot. The partition drives the `pending_findings_blocking_count` invariant in `phase-handshake` (see [`plan-marshall:plan-marshall/references/phase-handshake.md`](../plan-marshall/references/phase-handshake.md)) — it determines which finding types refuse the phase boundary advance when their `pending` count is non-zero.
-
-**Wizard step** (runs once on first-run wizard, after `marshal.json` exists):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode \
-  seed-blocking-finding-types
-```
-
-**Effect on `marshal.json`**: writes `plan.phase-{phase}.blocking_finding_types` for every phase slot whose key is currently absent. Phase slots that already declare `blocking_finding_types` are left untouched — the seed never clobbers a user customisation.
-
-**Default partition:**
-
-| Phase slot | Default `blocking_finding_types` |
-|------------|----------------------------------|
-| `phase-1-init` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate"]` |
-| `phase-2-refine` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate"]` |
-| `phase-3-outline` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate"]` |
-| `phase-4-plan` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate"]` |
-| `phase-5-execute` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate"]` |
-| `phase-6-finalize` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate", "pr-comment"]` |
-
-**Rationale:**
-
-- **Block at every phase boundary**: `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate` — these are correctness gates that must clear before any phase advances.
-- **Block only inside `6-finalize`**: `pr-comment` — PR review feedback is only meaningful once a PR exists, which happens during finalize.
-- **Never block** (omitted from every partition): `insight`, `tip`, `best-practice`, `improvement` — long-lived knowledge types that accumulate across plans and should not gate an active boundary.
-
-**Idempotency contract:** the seed is safe to re-run. Each subsequent invocation skips every phase whose `blocking_finding_types` key is already present (status `unchanged`). Projects override the defaults by editing `marshal.json` directly; the seed will never overwrite a manual edit.
-
-**Output (TOON)** when at least one phase was newly written:
-
-```toon
-status	success
-seed_status	seeded
-seeded_count	6
-skipped_count	0
-seeded	phase-1-init,phase-2-refine,phase-3-outline,phase-4-plan,phase-5-execute,phase-6-finalize
-```
-
-When every phase already has the key:
-
-```toon
-status	success
-seed_status	unchanged
-seeded_count	0
-skipped_count	6
-skipped	phase-1-init,phase-2-refine,phase-3-outline,phase-4-plan,phase-5-execute,phase-6-finalize
-```
-
-When `marshal.json` is missing:
-
-```toon
-status	success
-seed_status	missing_marshal
-seeded_count	0
-skipped_count	0
-```
+The blocking-finding gate is governed by a **fixed, hardcoded** actionable-vs-knowledge rule in `plan-marshall/scripts/_invariants.py` — there is **no** per-phase configuration partition, no `marshal.json` key, and no wizard seed step. **ACTIONABLE** types (`build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate`, `pr-comment`) block when `pending` at a guarded boundary; **KNOWLEDGE** types (`insight`, `tip`, `best-practice`, `improvement`) never block. The wizard does not write any blocking-finding configuration. See [`plan-marshall:plan-marshall/references/phase-handshake.md`](../plan-marshall/references/phase-handshake.md) § `pending_findings_blocking_count` resolution for the full rule.
 
 ## Branch-Naming Surfacing (project.working_prefixes)
 
@@ -492,12 +436,6 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode fi
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-structure [--plan-dir PLAN_DIR]
-```
-
-### determine_mode — seed-blocking-finding-types
-
-```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode seed-blocking-finding-types [--plan-dir PLAN_DIR]
 ```
 
 ### determine_mode — check-missing-finalize-steps

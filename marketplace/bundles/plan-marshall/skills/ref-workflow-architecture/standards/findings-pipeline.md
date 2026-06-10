@@ -175,19 +175,18 @@ The smart-grouping algorithm the triage workflow uses (pre-group by `(domain, ru
 
 ## Invariant Gate
 
-The `pending_findings_blocking_count` invariant in [`plan-marshall/scripts/_invariants.py`](../../plan-marshall/scripts/_invariants.py) raises `BlockingFindingsPresent` at guarded boundaries when any blocking-type finding is in `pending` resolution.
+The `pending_findings_blocking_count` invariant in [`plan-marshall/scripts/_invariants.py`](../../plan-marshall/scripts/_invariants.py) raises `BlockingFindingsPresent` at guarded boundaries when any **actionable** finding is in `pending` resolution.
 
-### Per-phase blocking partition
+### Actionable vs knowledge finding types (fixed rule)
 
-The blocking partition lives in `marshal.json` under `plan.phase-{phase}.blocking_finding_types` (a list of finding-type strings). The default partition is seeded by `marshall-steward/scripts/determine_mode.py::seed_blocking_finding_types`:
+The blocking rule is a **fixed, hardcoded** distinction between two classes of finding type — there is no per-phase configuration partition and no `marshal.json` seed. The set lives as a hardcoded constant in `_invariants.py`:
 
-| Included in blocking partition for all phases | Included only inside `6-finalize` | Never included (long-lived knowledge types) |
+| Class | Finding types | Blocking behaviour |
 |---|---|---|
-| `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate` | `pr-comment` | `insight`, `tip`, `best-practice`, `improvement` |
+| **ACTIONABLE** | `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate`, `pr-comment` | Block when `pending` at the guarded boundary — these are correctness / review gates that must clear before the boundary advances. |
+| **KNOWLEDGE** | `insight`, `tip`, `best-practice`, `improvement` | **Never block** — long-lived knowledge types that accumulate across plans. They are excluded by the fixed rule regardless of pending count. |
 
-Partition membership is per-phase configuration; whether a non-zero pending count actually *raises* `BlockingFindingsPresent` is a separate concern controlled by [Guarded boundaries](#guarded-boundaries). Captures at non-guarded phases read these rows passively without raising.
-
-Projects override by editing `marshal.json` directly; the seed only writes when the slot is absent (idempotent).
+This is **not** a naive "any pending finding blocks" rule: knowledge types are excluded by the fixed actionable-set membership test. Whether a non-zero actionable pending count actually *raises* `BlockingFindingsPresent` is a separate concern controlled by [Guarded boundaries](#guarded-boundaries) — captures at non-guarded phases read the count passively without raising. The actionable-vs-knowledge classification is not configurable and is not seeded into `marshal.json`.
 
 ### Guarded boundaries
 
@@ -201,7 +200,7 @@ Every other phase capture reads the `pending_findings_blocking_count` row passiv
 
 ### qgate aggregation contract
 
-Q-Gate findings live in `qgate-{phase}.jsonl` rather than the canonical `findings/{type}.jsonl` layout — the `qgate` blocking type therefore cannot be reached via the canonical `manage-findings list --type qgate` path (`query_findings` iterates only `FINDING_TYPES`, which excludes `qgate`). The blocking-count helper routes the `qgate` partition entry through `_query_pending_qgate_count_aggregated` which loops `QGATE_PHASES` and sums each per-phase `qgate list --phase {p} --resolution pending` result. Producer-mismatch findings filed by `add_qgate_finding(...)` from `github_pr.py` / `gitlab_pr.py` / `sonar.py` / `_build_shared.py` therefore block the boundary regardless of which phase they were filed under.
+Q-Gate findings live in `qgate-{phase}.jsonl` rather than the canonical `findings/{type}.jsonl` layout — the `qgate` actionable type therefore cannot be reached via the canonical `manage-findings list --type qgate` path (`query_findings` iterates only `FINDING_TYPES`, which excludes `qgate`). The blocking-count helper routes the `qgate` actionable entry through `_query_pending_qgate_count_aggregated` which loops `QGATE_PHASES` and sums each per-phase `qgate list --phase {p} --resolution pending` result. Producer-mismatch findings filed by `add_qgate_finding(...)` from `github_pr.py` / `gitlab_pr.py` / `sonar.py` / `_build_shared.py` therefore block the boundary regardless of which phase they were filed under.
 
 For the full invariant capture / verify mechanics, the row schema, and the structured error envelope: [`plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md).
 

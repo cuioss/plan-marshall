@@ -127,48 +127,68 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() vocabulary (build_map seed source)
+# classify_globs() explicit routes (build_map seed source)
 # =============================================================================
 #
-# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
-# consumed by the script-shared tree-deriver — NOT literal path-globs.
-# Marketplace skill markdown is plain `.md` under the documentation heuristic;
-# the deriver scans the tree and emits the concrete marketplace-anchored globs.
-# The longest-glob-wins overlap with pm-documents is resolved by the seed
-# aggregator's specificity comparison, not by this vocabulary.
+# classify_globs() returns explicit (pattern, role) routes — the concrete
+# marketplace-anchored globs covering skill markdown (SKILL.md plus the
+# workflow / standards / references subtrees), all under the documentation role.
+# A single * spans / under fnmatch.fnmatch (the downstream
+# manage-execution-manifest matcher), so marketplace/bundles/*/skills/*/standards/*.md
+# covers every standards markdown beneath any bundle's skills. These routes are
+# deliberately more specific than pm-documents's broad *.md route, so the seed
+# aggregator's longest-glob-wins comparison routes the overlap here.
 
-_ROLE_HEURISTICS = frozenset(
-    {'production-by-location', 'test-by-location', 'documentation', 'config'}
-)
-
-
-def test_classify_globs_declares_md_under_documentation():
-    """The plugin-dev vocabulary is a single .md / documentation entry."""
-    assert _ext.classify_globs() == [('.md', 'documentation')]
+_BUILD_MAP_ROLES = frozenset({'production', 'test', 'documentation', 'config'})
 
 
-def test_classify_globs_uses_only_role_heuristic_names():
-    """Every vocabulary tuple's second element is a role-heuristic name."""
-    for _suffix, role_heuristic in _ext.classify_globs():
-        assert role_heuristic in _ROLE_HEURISTICS
+def test_classify_globs_declares_marketplace_anchored_skill_routes():
+    """The plugin-dev routes are the concrete marketplace-anchored skill-markdown globs."""
+    routes = _ext.classify_globs()
+    assert ('marketplace/bundles/*/skills/*/SKILL.md', 'documentation') in routes
+    assert ('marketplace/bundles/*/skills/*/workflow/*.md', 'documentation') in routes
+    assert ('marketplace/bundles/*/skills/*/standards/*.md', 'documentation') in routes
+    assert ('marketplace/bundles/*/skills/*/references/*.md', 'documentation') in routes
 
 
-def test_classify_globs_does_not_return_marketplace_anchored_literal_globs():
-    """The vocabulary carries a bare `.md` suffix, not the old marketplace-anchored globs.
+def test_classify_globs_uses_only_resolved_roles():
+    """Every route's second element is one of the four resolved build_map roles."""
+    for _pattern, role in _ext.classify_globs():
+        assert role in _BUILD_MAP_ROLES
 
-    Regression guard: the old literal globs
-    (`marketplace/bundles/*/skills/*/SKILL.md`, etc.) are gone — the tree-deriver
-    now produces those concrete globs from the real tree, so the vocabulary only
-    declares the portable `.md` / documentation pair.
+
+def test_classify_globs_claims_only_documentation_role():
+    """The plugin-dev domain declares only documentation routes."""
+    roles = {role for _, role in _ext.classify_globs()}
+    assert roles == {'documentation'}
+
+
+def test_classify_globs_does_not_return_bare_suffix_vocabulary():
+    """The routes carry concrete marketplace-anchored globs, not the old bare-suffix pair.
+
+    Regression guard for the build_map redesign: the old portable
+    `('.md', 'documentation')` by-location vocabulary is gone — explicit
+    marketplace-anchored routes replace it, declared more specifically than
+    pm-documents's broad *.md route so longest-glob-wins routes the overlap here.
     """
-    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
-    for stale in (
-        'marketplace/bundles/*/skills/*/SKILL.md',
-        'marketplace/bundles/*/skills/*/standards/*.md',
-    ):
-        assert stale not in suffixes
+    patterns = {pattern for pattern, _ in _ext.classify_globs()}
+    assert '.md' not in patterns
+
+
+def test_classify_globs_uses_single_star_fnmatch_globs():
+    """Routes are single-* fnmatch globs, never recursive ** forms."""
+    for pattern, _role in _ext.classify_globs():
+        assert '**' not in pattern, f'route {pattern!r} must use single-* fnmatch, not **'
+
+
+def test_classify_globs_skill_route_covers_deep_standards_md():
+    """The standards route matches a real bundle's standards markdown."""
+    import fnmatch
+    docs = [p for p, r in _ext.classify_globs() if r == 'documentation']
+    sample = 'marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/workflow.md'
+    assert any(fnmatch.fnmatch(sample, p) for p in docs)
 
 
 def test_classify_globs_is_nonempty():
-    """The plugin-dev domain owns marketplace skill markdown, so the vocabulary is non-empty."""
+    """The plugin-dev domain owns marketplace skill markdown, so the route set is non-empty."""
     assert _ext.classify_globs()

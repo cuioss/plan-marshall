@@ -112,58 +112,71 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() vocabulary (build_map seed source)
+# classify_globs() explicit routes (build_map seed source)
 # =============================================================================
 #
-# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
-# consumed by the script-shared tree-deriver — NOT literal path-globs. The
-# heuristic name decides the resolved role from where each matching file sits
-# in the real tree.
+# classify_globs() returns explicit (pattern, role) routes — single-* fnmatch
+# globs paired with a resolved role (production / test / config). A single *
+# spans / under fnmatch.fnmatch (the downstream manage-execution-manifest
+# matcher), so marketplace/bundles/*.py covers every production .py anywhere
+# beneath marketplace/bundles/. The git-tracked completeness validator reports
+# any tracked .py these routes forgot.
 
-_ROLE_HEURISTICS = frozenset(
-    {'production-by-location', 'test-by-location', 'documentation', 'config'}
-)
+_BUILD_MAP_ROLES = frozenset({'production', 'test', 'documentation', 'config'})
 
 
-def test_classify_globs_returns_portable_py_vocabulary():
-    """The python vocabulary declares .py under both production and test heuristics."""
-    vocabulary = _ext.classify_globs()
-    assert ('.py', 'production-by-location') in vocabulary
-    assert ('.py', 'test-by-location') in vocabulary
+def test_classify_globs_declares_production_py_roots():
+    """The python routes enumerate the four production .py roots as explicit globs."""
+    routes = _ext.classify_globs()
+    assert ('build.py', 'production') in routes
+    assert ('.claude/skills/*.py', 'production') in routes
+    assert ('marketplace/bundles/*.py', 'production') in routes
+    assert ('marketplace/targets/*.py', 'production') in routes
+
+
+def test_classify_globs_declares_test_route():
+    """Test .py is claimed by the explicit test/*.py route."""
+    assert ('test/*.py', 'test') in _ext.classify_globs()
 
 
 def test_classify_globs_declares_config_basenames():
-    """Config files are declared by exact basename under the config heuristic."""
-    vocabulary = _ext.classify_globs()
-    assert ('pyproject.toml', 'config') in vocabulary
-    assert ('uv.lock', 'config') in vocabulary
-    assert ('marshal.json', 'config') in vocabulary
+    """Config files are declared by exact basename under the config role."""
+    routes = _ext.classify_globs()
+    assert ('pyproject.toml', 'config') in routes
+    assert ('uv.lock', 'config') in routes
+    assert ('marshal.json', 'config') in routes
 
 
-def test_classify_globs_uses_only_role_heuristic_names():
-    """Every vocabulary tuple's second element is a role-heuristic name.
+def test_classify_globs_uses_only_resolved_roles():
+    """Every route's second element is one of the four resolved build_map roles."""
+    for _pattern, role in _ext.classify_globs():
+        assert role in _BUILD_MAP_ROLES
 
-    The vocabulary uses heuristic names (production-by-location etc.), never the
-    resolved roles (production/test) — the deriver resolves the heuristic per
-    file from its tree location.
+
+def test_classify_globs_uses_single_star_fnmatch_globs():
+    """Routes are single-* fnmatch globs, never recursive ** forms.
+
+    Regression guard for the build_map redesign: the old by-location heuristic
+    vocabulary (bare `.py` suffix + `production-by-location`) and recursive `**`
+    globs are gone — explicit single-* routes replace them so the route seeds
+    directly without a tree scan.
     """
-    for _suffix, role_heuristic in _ext.classify_globs():
-        assert role_heuristic in _ROLE_HEURISTICS
+    for pattern, _role in _ext.classify_globs():
+        assert '**' not in pattern, f'route {pattern!r} must use single-* fnmatch, not **'
 
 
-def test_classify_globs_does_not_return_literal_path_globs():
-    """The vocabulary must NOT carry the old scripts/-anchored literal globs.
+def test_classify_globs_marketplace_route_covers_extension_py():
+    """The marketplace/bundles/*.py production route matches a deep extension.py.
 
-    Regression guard for the build_map redesign: literal author-layout globs
-    (`scripts/*.py`, `**/scripts/**/*.py`) are gone — the suffix `.py` plus a
-    location heuristic replaces them so the tree-deriver finds production files
-    wherever they actually live.
+    Confirms the single-* span across / — the route that fixes the build_map
+    redesign's central regression (production .py outside scripts/).
     """
-    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
-    for stale in ('scripts/*.py', '**/scripts/**/*.py', 'scripts/**/*.py', 'test/**/*.py'):
-        assert stale not in suffixes
+    import fnmatch
+    prod = [p for p, r in _ext.classify_globs() if r == 'production']
+    sample = 'marketplace/bundles/pm-dev-python/skills/plan-marshall-plugin/extension.py'
+    assert any(fnmatch.fnmatch(sample, p) for p in prod)
 
 
 def test_classify_globs_is_nonempty():
-    """The python domain owns buildable file types, so the vocabulary is non-empty."""
+    """The python domain owns buildable file types, so the route set is non-empty."""
     assert _ext.classify_globs()

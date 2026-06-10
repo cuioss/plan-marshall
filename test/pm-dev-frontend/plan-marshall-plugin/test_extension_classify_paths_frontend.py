@@ -108,52 +108,67 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() vocabulary (build_map seed source)
+# classify_globs() explicit routes (build_map seed source)
 # =============================================================================
 #
-# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
-# consumed by the script-shared tree-deriver — NOT literal path-globs. Each
-# JS/TS suffix is declared under BOTH production-by-location and
-# test-by-location; the deriver splits them per file via the .spec./.test.
-# infix and the test-root convention.
+# classify_globs() returns explicit (pattern, role) routes — single-* fnmatch
+# globs paired with a resolved role. For each JS/TS suffix the domain declares
+# a broad production route (e.g. *.js, where a single * spans /) plus the more-
+# specific colocated-test routes (*.spec.js / *.test.js). The seed aggregator's
+# longest-glob-wins specificity routes a .spec./.test. file to test even though
+# the broad production glob also matches it. Config files are exact basenames.
 
-_ROLE_HEURISTICS = frozenset(
-    {'production-by-location', 'test-by-location', 'documentation', 'config'}
-)
+_BUILD_MAP_ROLES = frozenset({'production', 'test', 'documentation', 'config'})
 
 
-def test_classify_globs_declares_each_js_ts_suffix_under_both_location_heuristics():
-    """Each JS/TS suffix appears under production-by-location AND test-by-location."""
-    vocabulary = _ext.classify_globs()
+def test_classify_globs_declares_each_js_ts_suffix_as_production():
+    """Each JS/TS suffix is declared as a broad production route."""
+    routes = _ext.classify_globs()
     for ext in ('.js', '.mjs', '.ts', '.tsx', '.jsx'):
-        assert (ext, 'production-by-location') in vocabulary
-        assert (ext, 'test-by-location') in vocabulary
+        assert (f'*{ext}', 'production') in routes
+
+
+def test_classify_globs_declares_colocated_test_routes():
+    """The .spec./.test. infix forms per suffix are declared as test routes."""
+    routes = _ext.classify_globs()
+    assert ('*.spec.js', 'test') in routes
+    assert ('*.test.js', 'test') in routes
+    assert ('*.spec.ts', 'test') in routes
+    assert ('*.test.tsx', 'test') in routes
 
 
 def test_classify_globs_declares_config_basenames():
     """The JS toolchain config files are declared by exact basename under config."""
-    vocabulary = _ext.classify_globs()
-    assert ('package.json', 'config') in vocabulary
-    assert ('tsconfig.json', 'config') in vocabulary
+    routes = _ext.classify_globs()
+    assert ('package.json', 'config') in routes
+    assert ('tsconfig.json', 'config') in routes
 
 
-def test_classify_globs_uses_only_role_heuristic_names():
-    """Every vocabulary tuple's second element is a role-heuristic name."""
-    for _suffix, role_heuristic in _ext.classify_globs():
-        assert role_heuristic in _ROLE_HEURISTICS
+def test_classify_globs_uses_only_resolved_roles():
+    """Every route's second element is one of the four resolved build_map roles."""
+    for _pattern, role in _ext.classify_globs():
+        assert role in _BUILD_MAP_ROLES
 
 
-def test_classify_globs_does_not_return_literal_path_globs():
-    """The vocabulary carries bare suffixes, not the old synthesized literal globs.
+def test_classify_globs_uses_single_star_fnmatch_globs():
+    """Routes are single-* fnmatch globs, never recursive ** forms.
 
-    Regression guard: the old `*.js` / `*.spec.*.js` / `eslint.config.*` literal
-    globs are gone — bare suffixes plus a location heuristic replace them.
+    Regression guard: the old by-location heuristic vocabulary (bare `.js`
+    suffix + `production-by-location`) and the malformed `*.spec.*.js` double-*
+    forms are gone — clean single-* routes replace them.
     """
-    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
-    for stale in ('*.js', '*.tsx', '*.spec.*.js', '*.test.*.ts', 'eslint.config.*'):
-        assert stale not in suffixes
+    for pattern, _role in _ext.classify_globs():
+        assert '**' not in pattern, f'route {pattern!r} must use single-* fnmatch, not **'
+        assert pattern.count('*') <= 1, f'route {pattern!r} must carry at most one *'
+
+
+def test_classify_globs_production_route_covers_nested_source():
+    """The broad *.js production route matches a nested-directory source (single * spans /)."""
+    import fnmatch
+    prod = [p for p, r in _ext.classify_globs() if r == 'production']
+    assert any(fnmatch.fnmatch('src/components/foo.js', p) for p in prod)
 
 
 def test_classify_globs_is_nonempty():
-    """The frontend domain owns buildable file types, so the vocabulary is non-empty."""
+    """The frontend domain owns buildable file types, so the route set is non-empty."""
     assert _ext.classify_globs()

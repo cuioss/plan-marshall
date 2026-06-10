@@ -321,11 +321,12 @@ def ext_defaults_list(project_dir: str = '.') -> dict:
 #
 # The skill_domains.build_map block in marshal.json is the file-to-build
 # contract: a per-domain inventory of {glob, role, build_class} entries seeded
-# from every registered extension's classify_globs() + classify_build_class().
-# It is the user-adaptable persistence layer for what each domain's predicates
-# compute in Python. The build_map lives under skill_domains (its owning block)
-# and is required and always seeded — there is no separate override layer; user
-# corrections are made directly to the seeded entries.
+# from every registered extension's explicit (pattern, role) routes
+# (classify_globs()) + classify_build_class(). It is the user-adaptable
+# persistence layer for what each domain's predicates compute in Python. The
+# build_map lives under skill_domains (its owning block) and is required and
+# always seeded — there is no separate override layer; user corrections are made
+# directly to the seeded entries.
 
 
 class BuildMapMissingError(Exception):
@@ -351,24 +352,25 @@ def get_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
 
 
 def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
-    """Aggregate the tree-derived ``(glob, role, build_class)`` build map per domain.
+    """Aggregate the ``(glob, role, build_class)`` build map per domain from routes.
 
-    Seeds the build map from the REAL project tree rather than from each
-    domain's assumed directory layout. The portable ``(suffix, role_heuristic)``
-    vocabulary each extension declares via ``classify_globs()`` is handed to the
-    ``script-shared`` base-lib tree-deriver (``derive_globs_from_tree``, reached
-    via the ``extension_discovery.derive_build_map_globs`` bridge), which scans
-    the project tree ONCE and emits the concrete ``(glob, role)`` globs that
-    cover EVERY matching file. Because the globs come from the real tree, a
-    production ``.py`` file outside ``scripts/`` (e.g.
-    ``marketplace/targets/generate.py`` or any
-    ``*/skills/plan-marshall-plugin/extension.py``) is caught — it exists in the
-    tree, not because an author guessed a glob. Each derived ``(glob, role)``
-    pair is then stamped with its domain's ``classify_build_class(glob, role)``.
+    Seeds the build map from each domain's explicit ``(pattern, role)`` routes.
+    Every extension declares its routes via ``classify_globs()``; the
+    ``script-shared`` route collector (``derive_globs_from_tree``, reached via the
+    ``extension_discovery.derive_build_map_globs`` bridge) gathers those routes
+    verbatim, keyed by domain — it no longer scans the tree to enumerate one glob
+    per directory. A route's single-``*`` fnmatch pattern can span ``/`` (e.g.
+    ``marketplace/targets/*.py`` covers ``marketplace/targets/generate.py`` and any
+    nested file, and ``marketplace/bundles/*.py`` covers every
+    ``*/skills/plan-marshall-plugin/extension.py``), so a compact route set covers
+    files outside the obvious roots. Each collected ``(glob, role)`` route is then
+    stamped with its domain's ``classify_build_class(glob, role)``. Completeness is
+    a separate concern: ``validate_tree_completeness`` scans git-tracked source
+    files and flags any tracked ``.py`` no declared route covers.
 
     Returns:
         A dict keyed by domain-key with a list of ``{glob, role, build_class}``
-        dicts as values. Domains contributing no globs are omitted entirely.
+        dicts as values. Domains contributing no routes are omitted entirely.
     """
     from extension_discovery import (  # type: ignore[import-not-found]
         derive_build_map_globs,

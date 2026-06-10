@@ -240,18 +240,25 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return the Java domain's portable (suffix, role_heuristic) vocabulary.
+        """Return the Java domain's explicit ``(pattern, role)`` build_map routes.
 
-        Production and test Java share the ``.java`` suffix; the deriver's
-        location predicate splits them via the ``src/test`` (``test`` segment)
-        convention — ``.java`` under a test root is test, elsewhere production.
-        The Maven / Gradle build descriptors are claimed by exact basename under
-        ``config``. See the base classify_globs() contract for the tree-deriver
-        wiring.
+        Each route is a single-``*`` fnmatch glob paired with a resolved role.
+        Patterns are matched with ``fnmatch.fnmatch`` by the downstream
+        ``manage-execution-manifest`` consumer, where a single ``*`` spans ``/``,
+        so the ``src/main`` / ``src/test`` Maven-Gradle convention splits
+        production from test by location: ``*/src/main/*.java`` covers every
+        production source under any module's ``src/main`` tree (the leading
+        ``*/`` admits the nested-module layout) and ``src/main/*.java`` covers the
+        repo-root single-module layout; the parallel ``src/test`` routes claim
+        test sources. The Maven / Gradle build descriptors are claimed by exact
+        basename under ``config``. See the base classify_globs() contract for the
+        route-collection wiring.
         """
         return [
-            ('.java', 'production-by-location'),
-            ('.java', 'test-by-location'),
+            ('*/src/main/*.java', 'production'),
+            ('src/main/*.java', 'production'),
+            ('*/src/test/*.java', 'test'),
+            ('src/test/*.java', 'test'),
             ('pom.xml', 'config'),
             ('build.gradle', 'config'),
             ('build.gradle.kts', 'config'),

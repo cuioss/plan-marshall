@@ -64,14 +64,24 @@ class PhaseStepsIncomplete(Exception):
 
 class BlockingFindingsPresent(Exception):
     """Raised by ``_capture_pending_findings_blocking_count`` when capturing
-    at a guarded phase boundary while one or more *blocking-type* findings
+    at a guarded phase boundary while one or more *actionable-type* findings
     remain in ``pending`` resolution.
 
-    The blocking-type partition is read from ``marshal.json`` at
-    ``plan.phase-{phase}.blocking_finding_types`` (a list of finding-type
-    strings). Resolutions counting as "resolved" are ``fixed``,
-    ``suppressed``, ``accepted``, ``taken_into_account``; only ``pending``
-    counts toward the block.
+    The actionable-vs-knowledge partition is a FIXED, hardcoded rule (see
+    :data:`_ACTIONABLE_FINDING_TYPES`) — NOT a per-phase ``marshal.json``
+    config slot. ACTIONABLE types (``build-error``, ``test-failure``,
+    ``lint-issue``, ``sonar-issue``, ``qgate``, ``pr-comment``) block when
+    pending; KNOWLEDGE types (``insight``, ``tip``, ``best-practice``,
+    ``improvement``) are NEVER counted. This is NOT naive
+    "any pending finding blocks": knowledge types are excluded by the fixed
+    rule. Resolutions counting as "resolved" are ``fixed``, ``suppressed``,
+    ``accepted``, ``taken_into_account``; only ``pending`` counts toward the
+    block.
+
+    The ``blocking_types`` attribute carries the hardcoded actionable set so
+    the structured TOON error payload (``error: blocking_findings_present``)
+    surfaces which finding types are gated, preserving the consumer envelope
+    contract in ``_handshake_commands.py``.
 
     Guarded boundaries (where this exception fires):
 
@@ -990,6 +1000,28 @@ _PENDING_FINDING_TYPES: tuple[str, ...] = (
 # capture the row passively (read-only — see capture function).
 _BLOCKING_BOUNDARIES: frozenset[str] = frozenset({'6-finalize'})
 
+# FIXED, hardcoded actionable-vs-knowledge partition (user-approved; replaces
+# the per-phase ``marshal.json`` ``blocking_finding_types`` config slot and the
+# ``determine_mode`` partition import). ACTIONABLE finding types block when
+# ``pending``; the KNOWLEDGE types (``insight``, ``tip``, ``best-practice``,
+# ``improvement``) are NEVER counted. This is NOT naive "any pending finding
+# blocks" — knowledge types are excluded by this fixed rule, which is the
+# lifecycle guard the blocking gate requires. The set lives here so the
+# invariant is self-sufficient: no config read, no cross-module import.
+#
+# ``qgate`` is in the set but lives in per-phase ``findings/qgate-{phase}.jsonl``
+# files rather than the canonical per-type ``findings/{type}.jsonl`` layout, so
+# it is counted via :func:`_query_pending_qgate_count_aggregated` (the qgate
+# aggregation path) instead of the generic per-type query.
+_ACTIONABLE_FINDING_TYPES: tuple[str, ...] = (
+    'build-error',
+    'test-failure',
+    'lint-issue',
+    'sonar-issue',
+    'qgate',
+    'pr-comment',
+)
+
 
 def _query_pending_count_for_type(plan_id: str, finding_type: str) -> int | None:
     """Return the count of ``pending`` findings for ``finding_type``.
@@ -1099,47 +1131,6 @@ def _query_pending_qgate_count_aggregated(plan_id: str) -> int | None:
     return total
 
 
-def _read_blocking_finding_types(plan_id: str, phase: str) -> list[str] | None:
-    """Read ``plan.phase-{phase}.blocking_finding_types`` from ``marshal.json``.
-
-    Uses ``manage-config plan phase-{phase} get --field blocking_finding_types``.
-    Returns ``None`` when the field is absent or cannot be parsed — callers
-    treat ``None`` as "no blocking partition configured for this phase, so
-    nothing blocks". An empty list explicitly configures "no blocking
-    types" and is returned as ``[]``.
-    """
-    stdout = _run_script(
-        [
-            'plan-marshall:manage-config:manage-config',
-            'plan',
-            f'phase-{phase}',
-            'get',
-            '--field',
-            'blocking_finding_types',
-            '--audit-plan-id',
-            plan_id,
-        ]
-    )
-    if stdout is None:
-        return None
-    try:
-        parsed = parse_toon(stdout)
-    except Exception:
-        return None
-    raw = parsed.get('value')
-    if raw is None:
-        return None
-    # ``manage-config`` serializes lists as TOON arrays which ``parse_toon``
-    # decodes to Python lists. Tolerate the comma-separated string fallback
-    # for robustness.
-    if isinstance(raw, list):
-        return [str(item) for item in raw if str(item)]
-    if isinstance(raw, str):
-        items = [item.strip() for item in raw.split(',') if item.strip()]
-        return items
-    return None
-
-
 def _capture_pending_findings_by_type(
     plan_id: str,
     _metadata: dict[str, Any],
@@ -1172,63 +1163,27 @@ def _capture_pending_findings_by_type(
     return ','.join(parts)
 
 
-def _resolve_blocking_callable_registry() -> dict[str, Callable[[str, str], int | None]]:
-    """Return the per-type query callable mapping merged from determine_mode.
-
-    Reads ``_GLOBAL_BLOCKING_TYPES`` and ``_FINALIZE_BLOCKING_TYPES`` from
-    ``marshall-steward:scripts/determine_mode.py`` and resolves each entry's
-    callable thunk to the corresponding concrete query helper defined in
-    this module. The two registered thunks (``_generic_query_thunk`` and
-    ``_qgate_aggregated_query_thunk``) short-circuit to
-    :func:`_query_pending_count_for_type` and
-    :func:`_query_pending_qgate_count_aggregated` respectively, avoiding a
-    second executor hop through the thunk's lazy import path.
-
-    Returns an empty dict on import failure so the caller falls back to the
-    generic per-type query (matches the prior single-helper behaviour for
-    storage-canonical types).
-    """
-    try:
-        from determine_mode import (  # type: ignore[import-not-found]
-            _FINALIZE_BLOCKING_TYPES,
-            _GLOBAL_BLOCKING_TYPES,
-            BLOCKING_TYPE_CALLABLE_NAMES,
-            GENERIC_PENDING_QUERY,
-            QGATE_AGGREGATED_QUERY,
-        )
-    except ImportError:
-        return {}
-
-    # Resolve each thunk to its concrete helper so the dispatcher avoids the
-    # thunk's lazy-import bounce on every call.
-    concrete: dict[str, Callable[[str, str], int | None]] = {}
-
-    def _resolve(thunk: Callable[[str, str], int | None]) -> Callable[[str, str], int | None]:
-        name = BLOCKING_TYPE_CALLABLE_NAMES.get(thunk)
-        if name == GENERIC_PENDING_QUERY:
-            return _query_pending_count_for_type
-        if name == QGATE_AGGREGATED_QUERY:
-            return lambda plan_id, _ft: _query_pending_qgate_count_aggregated(plan_id)
-        return thunk  # Fallback — preserves caller signature.
-
-    merged: dict[str, Callable[[str, str], int | None]] = dict(_GLOBAL_BLOCKING_TYPES)
-    merged.update(_FINALIZE_BLOCKING_TYPES)
-    for finding_type, thunk in merged.items():
-        concrete[finding_type] = _resolve(thunk)
-    return concrete
-
-
 def _capture_pending_findings_blocking_count(
     plan_id: str,
     _metadata: dict[str, Any],
     phase: str,
 ) -> Any:
-    """Sum of pending findings whose type is *blocking* for ``phase``.
+    """Sum of pending findings whose type is in the FIXED *actionable* set.
 
-    Reads the per-phase ``blocking_finding_types`` partition from
-    ``marshal.json``; if the slot is unset, no types are considered
-    blocking for that phase and the count is ``0``. Otherwise, sums the
-    pending counts across every configured blocking type.
+    Applies the hardcoded actionable-vs-knowledge rule
+    (:data:`_ACTIONABLE_FINDING_TYPES`) — NOT a per-phase ``marshal.json``
+    config partition. ACTIONABLE types (``build-error``, ``test-failure``,
+    ``lint-issue``, ``sonar-issue``, ``qgate``, ``pr-comment``) count toward
+    the block when ``pending``; KNOWLEDGE types (``insight``, ``tip``,
+    ``best-practice``, ``improvement``) are NEVER counted. This is NOT naive
+    "any pending finding blocks": knowledge types are excluded by the fixed
+    rule.
+
+    Each actionable type is counted via :func:`_query_pending_count_for_type`
+    (the per-type JSONL query), except ``qgate`` which lives in per-phase
+    ``findings/qgate-{phase}.jsonl`` files and is summed via
+    :func:`_query_pending_qgate_count_aggregated` (the qgate aggregation
+    path is preserved verbatim).
 
     At a *guarded boundary* (``phase`` in :data:`_BLOCKING_BOUNDARIES`),
     a non-zero count raises :class:`BlockingFindingsPresent` so
@@ -1241,29 +1196,16 @@ def _capture_pending_findings_blocking_count(
     underlying queries — matches the other captures' "not applicable"
     contract and keeps the column empty in stored rows.
     """
-    blocking_types = _read_blocking_finding_types(plan_id, phase)
-    if blocking_types is None:
-        # No partition configured for this phase → nothing blocks; record 0.
-        return 0
-    if not blocking_types:
-        return 0
-
-    callable_registry = _resolve_blocking_callable_registry()
     per_type: dict[str, int] = {}
     total = 0
-    for finding_type in blocking_types:
-        query_fn = callable_registry.get(finding_type)
-        if query_fn is None:
-            # Type is configured to block but no callable is registered for
-            # its storage shape. Fall back to the generic per-type query —
-            # this preserves backward-compatibility for storage-canonical
-            # types added centrally without a determine_mode.py update.
-            query_fn = _query_pending_count_for_type
-        count = query_fn(plan_id, finding_type)
+    for finding_type in _ACTIONABLE_FINDING_TYPES:
+        if finding_type == 'qgate':
+            count = _query_pending_qgate_count_aggregated(plan_id)
+        else:
+            count = _query_pending_count_for_type(plan_id, finding_type)
         if count is None:
             # Partial query failure — fall back to "not applicable" rather
-            # than under-counting and silently letting a transition
-            # advance.
+            # than under-counting and silently letting a transition advance.
             return None
         per_type[finding_type] = count
         total += count
@@ -1273,7 +1215,7 @@ def _capture_pending_findings_blocking_count(
             phase=phase,
             blocking_count=total,
             per_type=per_type,
-            blocking_types=list(blocking_types),
+            blocking_types=list(_ACTIONABLE_FINDING_TYPES),
         )
     return total
 

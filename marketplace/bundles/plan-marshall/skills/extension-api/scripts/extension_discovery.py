@@ -223,25 +223,31 @@ def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[
 def derive_build_map_globs(
     project_root: Path, extensions: list[dict[str, Any]] | None = None
 ) -> dict[str, list[tuple[str, str]]]:
-    """Derive the tree-complete ``(glob, role)`` build_map inventory per domain.
+    """Collect each domain's explicit ``(pattern, role)`` build_map routes.
 
-    Bridges extension discovery to the ``script-shared`` base-lib tree-deriver
-    (``derive_globs_from_tree``). Each registered extension declares a portable
-    ``(suffix, role_heuristic)`` vocabulary via ``classify_globs()``; the
-    deriver scans the actual ``project_root`` tree and emits the concrete globs
-    that cover EVERY matching file. The build_map seed aggregator
-    (``manage-config``) consumes this output to stamp each entry's
-    canonical-named ``build_class``.
+    Bridges extension discovery to the ``script-shared`` base-lib route collector
+    (``derive_globs_from_tree``). Each registered extension declares its build_map
+    as explicit ``(pattern, role)`` routes via ``classify_globs()`` — an
+    fnmatch-style glob (e.g. ``marketplace/bundles/*.py``) paired with one of the
+    four resolved roles (``production`` / ``test`` / ``documentation`` /
+    ``config``). The collector gathers those declared routes verbatim, keyed by
+    each extension's domain key; it no longer scans the ``project_root`` tree to
+    enumerate one glob per directory (``project_root`` is accepted for signature
+    parity only). Tree completeness is a SEPARATE concern handled by
+    ``validate_tree_completeness``, which reports any git-tracked source file no
+    declared route covers. The build_map seed aggregator (``manage-config``)
+    consumes this output to stamp each entry's canonical-named ``build_class``.
 
     Args:
-        project_root: Project root the deriver scans for matching files.
+        project_root: Project root (accepted for signature parity with the
+            completeness validator; route collection does not read the tree).
         extensions: Optional pre-discovered extension list (from
             ``discover_all_extensions()``). When omitted, all extensions are
             discovered here.
 
     Returns:
-        A dict keyed by domain-key with a list of de-duplicated ``(glob, role)``
-        tuples. Domains that contribute no globs are omitted.
+        A dict keyed by domain-key with a list of de-duplicated ``(pattern, role)``
+        tuples. Domains that declare no routes are omitted.
     """
     from extension_base import derive_globs_from_tree  # type: ignore[import-not-found]
 

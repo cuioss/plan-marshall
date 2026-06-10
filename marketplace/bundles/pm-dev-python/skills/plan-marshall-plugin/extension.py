@@ -174,17 +174,27 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return the python domain's portable (suffix, role_heuristic) vocabulary.
+        """Return the python domain's explicit ``(pattern, role)`` build_map routes.
 
-        Production and test python share the ``.py`` suffix; the deriver's
-        location predicate splits them — ``.py`` outside a test root is
-        production, ``.py`` under a test root is test. The config files are
-        claimed by exact basename. See the base classify_globs() contract for the
-        tree-deriver wiring.
+        Each route is a single-``*`` fnmatch glob paired with a resolved role
+        (``production`` / ``test`` / ``config``). Patterns are matched with
+        ``fnmatch.fnmatch`` by the downstream ``manage-execution-manifest``
+        consumer, where a single ``*`` spans ``/`` — so ``marketplace/bundles/*.py``
+        covers every production ``.py`` anywhere beneath ``marketplace/bundles/``
+        and ``test/*.py`` covers every test module beneath ``test/``. The
+        production routes enumerate the four roots a plan-marshall ``.py`` can live
+        under (``build.py`` at the repo root, ``.claude/skills/``,
+        ``marketplace/bundles/``, ``marketplace/targets/``); the git-tracked
+        completeness validator (``validate_tree_completeness``) reports any tracked
+        ``.py`` these routes forgot. Config files are claimed by exact basename.
+        See the base classify_globs() contract for the route-collection wiring.
         """
         return [
-            ('.py', 'production-by-location'),
-            ('.py', 'test-by-location'),
+            ('build.py', 'production'),
+            ('.claude/skills/*.py', 'production'),
+            ('marketplace/bundles/*.py', 'production'),
+            ('marketplace/targets/*.py', 'production'),
+            ('test/*.py', 'test'),
             ('pyproject.toml', 'config'),
             ('uv.lock', 'config'),
             ('marshal.json', 'config'),

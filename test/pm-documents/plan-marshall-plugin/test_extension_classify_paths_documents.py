@@ -87,47 +87,58 @@ def test_every_claimed_path_yields_a_build_class_in_the_closed_set():
 
 
 # =============================================================================
-# classify_globs() vocabulary (build_map seed source)
+# classify_globs() explicit routes (build_map seed source)
 # =============================================================================
 #
-# classify_globs() now returns the portable (suffix, role_heuristic) vocabulary
-# consumed by the script-shared tree-deriver — NOT literal path-globs. Each doc
-# suffix is declared under the location-agnostic `documentation` heuristic.
+# classify_globs() returns explicit (pattern, role) routes — one broad per-
+# suffix glob (*.md / *.adoc / *.asciidoc) under the documentation role. A
+# single * spans / under fnmatch.fnmatch (the downstream
+# manage-execution-manifest matcher), so *.md covers every markdown file
+# anywhere in the tree. The longest-glob-wins overlap with pm-plugin-development's
+# more-specific marketplace-skill routes is resolved by the seed aggregator.
 
-_ROLE_HEURISTICS = frozenset(
-    {'production-by-location', 'test-by-location', 'documentation', 'config'}
-)
-
-
-def test_classify_globs_declares_each_doc_suffix_under_documentation():
-    """Each documentation suffix is declared under the documentation heuristic."""
-    vocabulary = _ext.classify_globs()
-    assert ('.md', 'documentation') in vocabulary
-    assert ('.adoc', 'documentation') in vocabulary
-    assert ('.asciidoc', 'documentation') in vocabulary
+_BUILD_MAP_ROLES = frozenset({'production', 'test', 'documentation', 'config'})
 
 
-def test_classify_globs_uses_only_role_heuristic_names():
-    """Every vocabulary tuple's second element is a role-heuristic name."""
-    for _suffix, role_heuristic in _ext.classify_globs():
-        assert role_heuristic in _ROLE_HEURISTICS
+def test_classify_globs_declares_each_doc_suffix_as_documentation():
+    """Each documentation suffix is declared as a broad *.suffix documentation route."""
+    routes = _ext.classify_globs()
+    assert ('*.md', 'documentation') in routes
+    assert ('*.adoc', 'documentation') in routes
+    assert ('*.asciidoc', 'documentation') in routes
 
 
-def test_classify_globs_claims_only_documentation_heuristic():
-    """The documents vocabulary uses only the documentation heuristic."""
-    heuristics = {heuristic for _, heuristic in _ext.classify_globs()}
-    assert heuristics == {'documentation'}
+def test_classify_globs_uses_only_resolved_roles():
+    """Every route's second element is one of the four resolved build_map roles."""
+    for _pattern, role in _ext.classify_globs():
+        assert role in _BUILD_MAP_ROLES
 
 
-def test_classify_globs_does_not_return_literal_path_globs():
-    """The vocabulary carries bare suffixes, not the old `*.md` synthesized globs."""
-    suffixes = {suffix for suffix, _ in _ext.classify_globs()}
-    for stale in ('*.md', '*.adoc', '*.asciidoc'):
-        assert stale not in suffixes
+def test_classify_globs_claims_only_documentation_role():
+    """The documents domain declares only documentation routes."""
+    roles = {role for _, role in _ext.classify_globs()}
+    assert roles == {'documentation'}
+
+
+def test_classify_globs_uses_single_star_fnmatch_globs():
+    """Routes are single-* fnmatch globs, never recursive ** forms.
+
+    Regression guard: the old by-location heuristic vocabulary (bare `.md`
+    suffix + `documentation` heuristic) is gone — explicit *.md routes replace it.
+    """
+    for pattern, _role in _ext.classify_globs():
+        assert '**' not in pattern, f'route {pattern!r} must use single-* fnmatch, not **'
+
+
+def test_classify_globs_md_route_covers_nested_markdown():
+    """The broad *.md documentation route matches a nested-directory markdown file."""
+    import fnmatch
+    docs = [p for p, r in _ext.classify_globs() if r == 'documentation']
+    assert any(fnmatch.fnmatch('doc/developer/build.md', p) for p in docs)
 
 
 def test_classify_globs_is_nonempty():
-    """The documentation domain owns doc file types, so the vocabulary is non-empty."""
+    """The documentation domain owns doc file types, so the route set is non-empty."""
     assert _ext.classify_globs()
 
 
