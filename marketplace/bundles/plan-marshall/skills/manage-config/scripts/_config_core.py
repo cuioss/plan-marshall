@@ -455,8 +455,8 @@ def _applicable_domain_keys(project_root: Path, module_by_domain: dict[str, Any]
         discovered = discover_project_modules(project_root)
     except Exception:
         return set()
-    modules = discovered.get('modules', {}) if isinstance(discovered, dict) else {}
-    if not modules:
+    modules = discovered.get('modules') if isinstance(discovered, dict) else None
+    if not isinstance(modules, dict) or not modules:
         return set()
 
     applicable: set[str] = set()
@@ -519,8 +519,8 @@ def seed_build_map_into(config: dict, force: bool = False) -> dict:
         skill_domains = {}
         config['skill_domains'] = skill_domains
 
-    if 'build_map' in skill_domains and not force:
-        existing: dict = skill_domains['build_map']
+    existing = skill_domains.get('build_map')
+    if isinstance(existing, dict) and not force:
         return {'action': 'preserved', 'build_map': existing, 'domain_count': len(existing)}
 
     action = 're-derived' if 'build_map' in skill_domains else 'seeded'
