@@ -4,7 +4,7 @@
 
 ## Overview
 
-Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying twelve candidate sub-lists for the LLM cognitive review pass to consume.
+Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying fifteen candidate sub-lists for the LLM cognitive review pass to consume.
 
 The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Consumer projects (Java, frontend, application code) MAY contribute their own implementor by following the contract below.
 
@@ -32,7 +32,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 | Subcommand | Description |
 |------------|-------------|
-| `surface` | Emit the twelve candidate sub-lists from the worktree diff as TOON. |
+| `surface` | Emit the fifteen candidate sub-lists from the worktree diff as TOON. |
 
 ## Runtime Invocation Contract
 
@@ -52,7 +52,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 ### Post-Conditions
 
-- TOON to stdout carrying the twelve candidate sub-lists below (some MAY be empty).
+- TOON to stdout carrying the fifteen candidate sub-lists below (some MAY be empty).
 - Non-zero exit on git-unavailable, base-branch-missing, or plan-not-found.
 
 ### Output Schema
@@ -76,7 +76,10 @@ counts:
   source_of_truth: N11
   same_document_consistency: N12
   description_vs_body: N13
-  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13
+  unguarded_boundaries: N14
+  count_prose: N15
+  touched_claims: N16
+  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16
 
 regexes[N1]{file,line,pattern}:
   ...
@@ -117,13 +120,22 @@ same_document_consistency[N12]{file,line,keyword,text}:
 
 description_vs_body[N13]{file,line,key,description}:
   ...
+
+unguarded_boundaries[N14]{file,line,boundary,guarded}:
+  ...
+
+count_prose[N15]{file,line,text}:
+  ...
+
+touched_claims[N16]{file,line,text}:
+  ...
 ```
 
-The `total` count covers the ten line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`) only. `contract_sources` and `schema_bearing_files` are review-anchor categories not summed into `total`; `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` and likewise does not contribute.
+The `total` count covers the twelve line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`) only. `contract_sources`, `schema_bearing_files`, and `count_prose` are review-anchor categories not summed into `total`; `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` and likewise does not contribute.
 
 ### Required Candidate Sub-Lists
 
-All twelve keys MUST appear in the output (possibly with empty payloads). The nine LLM cognitive checks consume:
+All fifteen keys MUST appear in the output (possibly with empty payloads). The twelve LLM cognitive checks consume:
 
 | Sub-list | Purpose | Consumed By |
 |----------|---------|-------------|
@@ -139,12 +151,15 @@ All twelve keys MUST appear in the output (possibly with empty payloads). The ni
 | `source_of_truth` | The same UPPER_SNAKE_CASE constant bound to divergent literals across two declared SoT files | Check 7 (source-of-truth drift) |
 | `same_document_consistency` | Added RFC-2119 normative directives, surfaced for sibling-contradiction review (Mode-2: an added normative line MUST surface a candidate, never an empty surface) | Check 8 (same-document contradiction) |
 | `description_vs_body` | A modified `.md` whose frontmatter `description`/`summary` may describe a model the changed body no longer implements | Check 9 (description-vs-body drift) |
+| `unguarded_boundaries` | Added `subprocess.*` / file-I/O calls with no `check=True` and no enclosing `try/except` in the same function | Check 10 (lone unguarded boundary) |
+| `count_prose` | Count-prose (a digit or number word adjacent to a cardinality noun) in every `SKILL.md` of a modified file's skill directory, for count-correctness re-check | Check 11 (stale count-prose) |
+| `touched_claims` | The `+` line of a `-`/`+` hunk pair differing by exactly one token, surfaced for whole-line claim re-verification | Check 12 (touched-claim re-check) |
 
-Each entry MUST carry `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — these are the only fields the LLM cognitive review consumes for navigation (the `source_of_truth` entry is the documented exception: it carries `name`/`files`/`values` rather than a single `file`/`line`). Additional per-domain sub-lists beyond the twelve canonical keys are allowed and ignored by the nine canonical checks.
+Each entry MUST carry `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — these are the only fields the LLM cognitive review consumes for navigation (the `source_of_truth` entry is the documented exception: it carries `name`/`files`/`values` rather than a single `file`/`line`). The `count_prose`, `unguarded_boundaries`, and `touched_claims` entries all carry `file`+`line`. Additional per-domain sub-lists beyond the fifteen canonical keys are allowed and ignored by the twelve canonical checks.
 
 ### Detection Rules (Plan-Marshall Domain Reference)
 
-The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) (twelve numbered detection rules covering regex literals, user-facing strings, markdown headings, symmetric-pair function names, flag-guard pairs, contract-source skills, schema-bearing markdown files, `self-review: keep <id>` HTML-comment markers (the literal `keep`-marker syntax is specified verbatim in the implementor's § Keep-Identifier Markers), producer-consumer pairs, source-of-truth duplicates, same-document normative directives, and description-vs-body frontmatter). Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
+The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) (fifteen numbered detection rules covering regex literals, user-facing strings, markdown headings, symmetric-pair function names, flag-guard pairs, contract-source skills, schema-bearing markdown files, `self-review: keep <id>` HTML-comment markers (the literal `keep`-marker syntax is specified verbatim in the implementor's § Keep-Identifier Markers), producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone unguarded boundaries, stale count-prose, and near-identical-hunk touched claims). Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
 
 ## Failure Mode Contract
 
