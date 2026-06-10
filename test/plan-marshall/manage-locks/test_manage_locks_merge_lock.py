@@ -413,6 +413,190 @@ class TestStaleReclamation:
 
 
 # =============================================================================
+# _reclaim_stale_lock — atomic eviction of the OBSERVED stale file (deterministic
+# in-process unit; pins the atomicity contract the concurrency tests exercise only
+# stochastically)
+# =============================================================================
+
+
+class TestReclaimStaleLockHelper:
+    """The reclaim eviction arbitrates on the SPECIFIC observed stale file, not the
+    bare path: it renames the file aside to a per-reclaimer unique sidecar,
+    re-confirms the renamed-away content is exactly the dead holder it decided to
+    evict, and only then O_EXCL-recreates. The former blind ``os.unlink(path)``
+    would evict whatever lived at the path — including a live holder a concurrent
+    reclaimer had just installed — and let two acquirers both win. These
+    deterministic units pin both branches: confirmed-dead reclaim, and the
+    abort/restore branch when the path's holder changed to a live holder between
+    observation and reclaim."""
+
+    def test_reclaim_succeeds_for_observed_dead_holder(self, isolated_base: dict) -> None:
+        """A lock file recording a dead holder (no live plan dir) is atomically
+        reclaimed: the helper returns True, the dead file is gone, and the lock
+        file now records the new holder."""
+        lock_path = isolated_base['lock_path']
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # 'dead-holder' has no plan dir under <base>/plans → dead.
+        lock_path.write_text('dead-holder\n', encoding='utf-8')
+
+        won = merge_lock._reclaim_stale_lock(lock_path, 'dead-holder', 'plan-b')
+
+        assert won is True
+        # The lock now records the reclaiming holder.
+        assert lock_path.read_text(encoding='utf-8').strip() == 'plan-b'
+        # No reclaim sidecar left behind.
+        siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
+        assert siblings == [], siblings
+
+    def test_reclaim_aborts_and_restores_when_holder_became_live(
+        self, isolated_base: dict
+    ) -> None:
+        """The abort/restore branch: the file at the path changed to a LIVE holder
+        between the liveness observation and the reclaim. The helper renames it
+        aside, finds the renamed-away content is NOT the observed dead holder (it
+        is a live holder), restores the file intact via ``os.replace``, and returns
+        False — the live holder's lock survives unchanged and this reclaimer loses."""
+        base = isolated_base['base']
+        lock_path = isolated_base['lock_path']
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # The file at the path is now a LIVE holder (its plan dir exists), even
+        # though the reclaimer OBSERVED a dead holder ('dead-holder') a beat earlier.
+        _make_live_plan(base, 'live-winner')
+        lock_path.write_text('live-winner\n', encoding='utf-8')
+
+        won = merge_lock._reclaim_stale_lock(lock_path, 'dead-holder', 'plan-b')
+
+        assert won is False
+        # The live holder's lock file is restored intact — never evicted.
+        assert lock_path.is_file()
+        assert lock_path.read_text(encoding='utf-8').strip() == 'live-winner'
+        # The sidecar was replaced back, not left dangling.
+        siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
+        assert siblings == [], siblings
+
+    def test_reclaim_aborts_and_restores_when_holder_changed_to_other_dead(
+        self, isolated_base: dict
+    ) -> None:
+        """The observed-file arbitration also loses when the path's content changed
+        to a DIFFERENT holder (even another dead one) before the rename — the
+        renamed-away content must equal the SPECIFIC observed holder. A mismatch
+        restores the file and returns False rather than stealing a slot the
+        reclaimer never observed."""
+        lock_path = isolated_base['lock_path']
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # The file is a different (also dead) holder than the one observed.
+        lock_path.write_text('other-dead\n', encoding='utf-8')
+
+        won = merge_lock._reclaim_stale_lock(lock_path, 'dead-holder', 'plan-b')
+
+        assert won is False
+        # The file is restored intact (the different holder), not reclaimed.
+        assert lock_path.read_text(encoding='utf-8').strip() == 'other-dead'
+        siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
+        assert siblings == [], siblings
+
+    def test_reclaim_drops_sidecar_and_loses_when_restore_replace_raises(
+        self, isolated_base: dict
+    ) -> None:
+        """The abort/restore branch when ``os.replace`` ITSELF raises: the helper
+        observed a dead holder, renamed the file aside, then found the renamed-away
+        content was NOT the observed dead holder — so it tries to restore the file
+        via ``os.replace``, but that restore raises (a concurrent reclaimer already
+        recreated the path). The helper must drop the now-stale sidecar via
+        ``os.unlink`` and still lose cleanly with ``False`` — never granting this
+        reclaimer the lock. This pins the best-effort-restore sub-branch the other
+        abort tests (where ``os.replace`` succeeds) leave unexercised."""
+        base = isolated_base['base']
+        lock_path = isolated_base['lock_path']
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # The file at the path is a LIVE holder (its plan dir exists) — different
+        # from the observed dead holder, so the helper enters the restore branch.
+        _make_live_plan(base, 'live-winner')
+        lock_path.write_text('live-winner\n', encoding='utf-8')
+
+        # Make the restore os.replace raise, simulating a concurrent reclaimer
+        # having recreated the path before this loser could restore it.
+        unlinked: list[str] = []
+        real_unlink = merge_lock.os.unlink
+
+        def _raising_replace(_src: str, _dst: str) -> None:
+            raise OSError('restore target busy')
+
+        def _recording_unlink(target: str) -> None:
+            unlinked.append(target)
+            real_unlink(target)
+
+        mp = pytest.MonkeyPatch()
+        mp.setattr(merge_lock.os, 'replace', _raising_replace)
+        mp.setattr(merge_lock.os, 'unlink', _recording_unlink)
+        try:
+            won = merge_lock._reclaim_stale_lock(lock_path, 'dead-holder', 'plan-b')
+        finally:
+            mp.undo()
+
+        # The reclaimer lost cleanly despite the restore failing.
+        assert won is False
+        # The now-stale sidecar was dropped via os.unlink (best-effort cleanup),
+        # so no reclaim sidecar lingers on disk.
+        assert len(unlinked) == 1, unlinked
+        assert Path(unlinked[0]).name.startswith(f'{lock_path.name}.reclaim.')
+        siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
+        assert siblings == [], siblings
+
+    def test_reclaim_returns_false_when_path_already_gone(self, isolated_base: dict) -> None:
+        """When a racing reclaimer already swapped/removed the file, the rename
+        fails (the path is gone) and the helper loses cleanly with False — no
+        sidecar, no recreate, fall through to retry."""
+        lock_path = isolated_base['lock_path']
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # No file at the path — simulates a racing reclaimer having claimed it.
+        assert not lock_path.exists()
+
+        won = merge_lock._reclaim_stale_lock(lock_path, 'dead-holder', 'plan-b')
+
+        assert won is False
+        assert not lock_path.exists()
+        siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
+        assert siblings == [], siblings
+
+    def test_reclaim_uses_unique_sidecar_per_reclaimer(self, isolated_base: dict) -> None:
+        """The sidecar target is a per-reclaimer unique name (``{lock}.reclaim.{pid}.{uuid}``)
+        — a path only this reclaimer names, so two concurrent reclaimers never
+        collide on the rename target. Exercised by confirming the rename target
+        carries the pid and a uuid hex suffix during a successful reclaim (the
+        sidecar is consumed by the time the helper returns, so assert via a wrapped
+        ``os.rename`` seam)."""
+        import os as _os
+
+        lock_path = isolated_base['lock_path']
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path.write_text('dead-holder\n', encoding='utf-8')
+
+        rename_targets: list[str] = []
+        real_rename = _os.rename
+
+        def _recording_rename(src: str, dst: str) -> None:
+            rename_targets.append(dst)
+            real_rename(src, dst)
+
+        mp = pytest.MonkeyPatch()
+        mp.setattr(merge_lock.os, 'rename', _recording_rename)
+        try:
+            won = merge_lock._reclaim_stale_lock(lock_path, 'dead-holder', 'plan-b')
+        finally:
+            mp.undo()
+
+        assert won is True
+        # The (single) rename targeted a unique sidecar carrying pid + a hex uuid.
+        assert len(rename_targets) == 1, rename_targets
+        target_name = Path(rename_targets[0]).name
+        assert target_name.startswith(f'{lock_path.name}.reclaim.{_os.getpid()}.')
+        # The uuid suffix is 32 hex chars.
+        suffix = target_name.rsplit('.', 1)[-1]
+        assert len(suffix) == 32 and all(c in '0123456789abcdef' for c in suffix)
+
+
+# =============================================================================
 # §5 (iv) — dead-holder reclaim WITHOUT evicting a live holder, under REAL
 # spawned-process contention (the make-or-break liveness-under-races property)
 # =============================================================================
@@ -537,6 +721,85 @@ class TestConcurrentReclamation:
         # Every blocked contender names the live holder as the blocker.
         for p in blocked:
             assert p['blocking_plan_id'] == 'live-holder', p
+
+    def test_concurrent_reclaim_admits_exactly_one_across_repeated_trials(
+        self, isolated_base: dict
+    ) -> None:
+        """Hardened regression for the stale-reclaim TOCTOU double-grant (D1 fix).
+
+        The single-shot ``test_concurrent_acquire_against_dead_holder_admits_exactly_one_reclaimer``
+        exercises the dead-holder N-way race ONCE — it catches the double-grant
+        only when that one trial happens to hit the narrow interleave window.
+        Before the D1 atomic-eviction fix the race could produce TWO winners
+        (the canonical ``assert 2 == 1`` failure) whenever two reclaimers both
+        decided the holder dead and the second's blind ``os.unlink(path)`` evicted
+        the first's freshly-installed LIVE holder. Under repetition that flake
+        surfaces reliably.
+
+        This test re-runs the SAME dead-holder reclaim race under repeated trials,
+        re-staging the dead holder and the live contender plan dirs per trial, and
+        asserts on EVERY trial that EXACTLY ONE acquirer wins and the remaining
+        ``n-1`` block — turning the stochastic single-shot check into a
+        deterministic-under-repetition regression guard that fails reliably if the
+        TOCTOU hole regresses. It runs under ``PLAN_BASE_DIR`` isolation (no
+        contention for the real ``.plan/merge.lock``) and is stable under
+        ``pytest-xdist`` ``-n auto``.
+        """
+        base = isolated_base['base']
+        lock_path = isolated_base['lock_path']
+        env_overrides = {'PLAN_BASE_DIR': str(base)}
+
+        n = 8
+        trials = 20
+
+        # Live contender plan dirs are stable across trials — staged once. Once
+        # one contender reclaims, the rest find a LIVE holder and serialize.
+        for i in range(n):
+            _make_live_plan(base, f'reclaim-{i}')
+
+        def _acquire(i: int):
+            return run_script(
+                SCRIPT_PATH,
+                'acquire',
+                '--plan-id',
+                f'reclaim-{i}',
+                '--timeout',
+                '2',
+                env_overrides=env_overrides,
+                timeout=30,
+            )
+
+        for trial in range(trials):
+            # Re-stage the DEAD holder for this trial: a lock file whose holder has
+            # NO live plan dir → reclaimable by construction. Each trial starts from
+            # the same dead-holder-held state the race must arbitrate.
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            lock_path.write_text('dead-holder\n', encoding='utf-8')
+
+            with ThreadPoolExecutor(max_workers=n) as pool:
+                results = list(pool.map(_acquire, range(n)))
+
+            parsed = [parse_toon(r.stdout) for r in results]
+            winners = [p for p in parsed if p.get('status') == 'success']
+            blocked = [p for p in parsed if p.get('status') == 'blocked']
+
+            # The make-or-break invariant on EVERY trial: exactly one winner, the
+            # rest blocked — never the ``assert 2 == 1`` double-grant. The trial
+            # index is folded into the assertion message so a regression names the
+            # offending trial.
+            assert len(winners) == 1, (trial, parsed)
+            assert len(blocked) == n - 1, (trial, parsed)
+            # The lock file records the single winner, and the dead holder is gone.
+            recorded = lock_path.read_text(encoding='utf-8').strip()
+            assert recorded == winners[0]['holder'], (trial, recorded, winners)
+            assert recorded != 'dead-holder', (trial, recorded)
+            # Every blocked acquirer names the single winner as the live blocker.
+            for p in blocked:
+                assert p['blocking_plan_id'] == winners[0]['holder'], (trial, p)
+
+            # Release the winner's lock so the next trial starts from a clean
+            # dead-holder-held state rather than the prior winner's live lock.
+            merge_lock.run_release(Namespace(plan_id=winners[0]['holder']))
 
 
 # =============================================================================
