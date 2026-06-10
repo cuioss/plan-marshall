@@ -237,7 +237,7 @@ Detect downstream consumers of a skill that is being deleted but that remain har
 **Activation condition**: Runs only when the deliverable's `affected_files` contains at least one path matching `marketplace/bundles/*/skills/{name}/**` or `.claude/skills/{name}/**` AND the deliverable is a deletion (detected via `change_type: tech_debt` OR explicit deletion language in the deliverable's `Change per file` field, e.g., "delete", "remove", "drop", `git rm`). If neither condition is met, skip this check and continue to the next deliverable.
 
 **Per-skill-directory loop**: For each deleted skill directory inferred from `affected_files`, derive:
-- `{skill_dir}` — the root skill directory, e.g., `.claude/skills/verify-workflow` or `marketplace/bundles/plan-marshall/skills/phase-3-outline`
+- `{skill_dir}` — the root skill directory, e.g., `.claude/skills/{name}` or `marketplace/bundles/plan-marshall/skills/phase-3-outline`
 - `{bundle}` — the bundle segment when the path is under `marketplace/bundles/{bundle}/skills/`, otherwise empty
 - `{skill_name}` — the final path segment of `{skill_dir}`
 
@@ -288,7 +288,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --audit-plan-id {plan_id}
 ```
 
-**Worked example**: Plan `plan-retrospective-opt-in-audit` Deliverable 4 listed every file under `.claude/skills/verify-workflow/` for deletion. Pattern A run against the worktree produced `test/verify-workflow/conftest.py:12` loading `scripts/verify-structure.py` via `spec_from_file_location`. `test/verify-workflow/` was not listed as an affected file of any deliverable in the outline, so the suppression rule did not apply and a Q-Gate finding would now be emitted — blocking phase-3-outline until the outline adds `test/verify-workflow/` to the deletion deliverable (or adds a follow-up deliverable that removes it). With this check in place, task 10 (holistic `module-tests`) would never have hit the `FileNotFoundError` at pytest collection time.
+**Worked example**: A deletion deliverable lists every file under `.claude/skills/{name}/` for removal. Pattern A run against the worktree produces `test/{name}/conftest.py:12` loading `scripts/{some-script}.py` via `spec_from_file_location`. `test/{name}/` is not listed as an affected file of any deliverable in the outline, so the suppression rule does not apply and a Q-Gate finding is emitted — blocking phase-3-outline until the outline adds `test/{name}/` to the deletion deliverable (or adds a follow-up deliverable that removes it). Without this check, the orphaned conftest survives the outline and the failure surfaces only later, as a `FileNotFoundError` at pytest collection time during a holistic `module-tests` run.
 
 #### 2.9 Consumer Sweep Completeness Check
 

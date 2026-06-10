@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Collect and classify artifacts present in a plan directory.
 
-Ported and adapted from ``.claude/skills/verify-workflow/scripts/collect-artifacts.py``.
 Supports two modes:
 
 - ``live``: resolve the plan directory from ``--plan-id`` using

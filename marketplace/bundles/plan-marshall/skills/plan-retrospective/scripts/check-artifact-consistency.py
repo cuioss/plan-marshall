@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Check cross-artifact consistency for a plan.
 
-Merges the novel structural checks from
-``.claude/skills/verify-workflow/scripts/verify-structure.py`` into a single
-retrospective aspect script.
+Runs the structural consistency checks for a single retrospective aspect.
 
 Checks performed:
 - ``solution_outline_sections`` — required sections (``summary``, ``overview``,

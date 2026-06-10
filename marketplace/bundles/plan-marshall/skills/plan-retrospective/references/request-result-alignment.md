@@ -18,9 +18,9 @@ status: success
 plan_id: {plan_id}
 goals[*]{text,status,evidence}:
   "Add opt-in retrospective skill",fulfilled,"SKILL.md + 12 refs + 5 scripts present"
-  "Absorb verify-workflow scripts",partial,"collect-plan-artifacts.py ported; verify-structure.py pending"
+  "Add rate-limit middleware",partial,"handler.py done; config wiring pending"
 gaps[*]{goal,reason}:
-  "Absorb verify-workflow scripts","deliverable 4 not executed in this run"
+  "Add rate-limit middleware","deliverable 4 not executed in this run"
 scope_creep[*]{detail}:
   ...
 findings[*]{severity,message}:
