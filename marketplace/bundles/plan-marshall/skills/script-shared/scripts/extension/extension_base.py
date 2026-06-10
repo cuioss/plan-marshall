@@ -147,12 +147,12 @@ def _list_tracked_files(project_root: str) -> list[str]:
         completed = subprocess.run(
             ['git', '-C', project_root, 'ls-files', '-z'],
             capture_output=True,
-            text=True,
             check=True,
         )
     except (OSError, subprocess.CalledProcessError):
         return []
-    rel_paths = [p.replace('\\', '/') for p in completed.stdout.split('\0') if p]
+    decoded = completed.stdout.decode('utf-8', errors='replace')
+    rel_paths = [p.replace('\\', '/') for p in decoded.split('\0') if p]
     return sorted(rel_paths)
 
 
