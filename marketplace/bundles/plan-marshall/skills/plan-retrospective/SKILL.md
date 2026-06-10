@@ -255,7 +255,7 @@ In non-interactive finalize-step mode, emit lessons automatically only when conf
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step plan-retrospective --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step plan-marshall:plan-retrospective --outcome done \
   --display-detail "{N} findings across {M} aspects"
 ```
 
