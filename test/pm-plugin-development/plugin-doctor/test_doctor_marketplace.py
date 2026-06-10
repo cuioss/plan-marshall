@@ -1533,6 +1533,48 @@ def test_quality_gate_manage_invocation_drift_fails(tmp_path):
 
 
 # =============================================================================
+# Quality-gate scan_finalize_step_token registration (deliverable D2)
+# =============================================================================
+#
+# cmd_quality_gate must register scan_finalize_step_token in its rule list so
+# the finalize-step-token-mismatch rule runs as part of every quality-gate
+# sweep. A refactor that dropped the rule from cmd_quality_gate (or never wired
+# it) would let a drifted ``mark-step-done --step`` token reach main silently —
+# exactly the PR #629 handshake-loop regression class. The observable
+# registration signal is the scan_finalize_step_token entry in rules_run; the
+# rule's own detection behaviour is pinned in test_analyze_finalize_step_token.py.
+
+
+def test_quality_gate_registers_scan_finalize_step_token(tmp_path):
+    """quality-gate enumerates scan_finalize_step_token in rules_run.
+
+    Runs the gate over a clean fixture (no finalize-step skills → zero
+    findings) and asserts the rule is registered. The clean fixture keeps the
+    test about registration, not detection — detection is covered by the
+    scanner's own test module.
+    """
+    temp_root = _build_clean_fixture(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        'quality-gate',
+        env_overrides={
+            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
+            'PLAN_BASE_DIR': str(temp_root / '.plan'),
+            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
+        },
+    )
+    assert result.returncode == 0, (
+        f'Expected exit 0 on clean fixture, got {result.returncode}: {result.stderr}'
+    )
+
+    data = parse_output(result)
+    rules = {entry['rule'] for entry in data['rules_run']}
+    assert 'scan_finalize_step_token' in rules, (
+        f'scan_finalize_step_token must appear in rules_run, got: {data["rules_run"]}'
+    )
+
+
+# =============================================================================
 # --rules opt-in flag tests (replaces PM_ARGUMENT_NAMING_ENABLED env-var gate)
 # =============================================================================
 #
