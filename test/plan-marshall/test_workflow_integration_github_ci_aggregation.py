@@ -140,6 +140,98 @@ def test_classify_case_insensitive_normalisation():
 
 
 # =============================================================================
+# _normalize_conclusion — null-state bucket fallback
+# =============================================================================
+#
+# When the raw ``state`` field is null/empty, ``_normalize_conclusion`` falls
+# back to the ``bucket`` field (``gh pr checks --json bucket``) and maps it to
+# a canonical conclusion via ``_BUCKET_TO_CONCLUSION``:
+#
+#     pass     → SUCCESS
+#     fail     → FAILURE
+#     cancel   → CANCELLED
+#     skipping → SKIPPED
+#     pending  → ''        (genuine wait)
+#
+# A present, non-null ``state`` always wins over ``bucket`` (no regression).
+# An absent or unrecognised bucket keeps the empty-string wait result.
+
+
+def _check_with_bucket(state, bucket: str, name: str = 'check') -> dict:
+    """Build a check row whose conclusion is carried in ``bucket``.
+
+    ``state`` is passed verbatim so callers can supply ``None``/``''`` to
+    exercise the null-state fallback, or a real conclusion to assert that
+    ``state`` still wins over ``bucket``.
+    """
+    return {
+        'name': name,
+        'state': state,
+        'bucket': bucket,
+        'link': '',
+        'startedAt': '',
+        'completedAt': '',
+        'workflow': '',
+    }
+
+
+def test_normalize_null_state_falls_back_to_fail_bucket():
+    """state=null with bucket=fail resolves to the FAILURE conclusion."""
+    assert github_ops._normalize_conclusion(_check_with_bucket(None, 'fail')) == 'FAILURE'
+
+
+def test_normalize_null_state_falls_back_to_cancel_bucket():
+    """state=null with bucket=cancel resolves to the CANCELLED conclusion."""
+    assert github_ops._normalize_conclusion(_check_with_bucket(None, 'cancel')) == 'CANCELLED'
+
+
+def test_normalize_null_state_falls_back_to_pass_bucket():
+    """state=null with bucket=pass resolves to the SUCCESS conclusion."""
+    assert github_ops._normalize_conclusion(_check_with_bucket(None, 'pass')) == 'SUCCESS'
+
+
+def test_normalize_null_state_falls_back_to_skipping_bucket():
+    """state=null with bucket=skipping resolves to the SKIPPED conclusion."""
+    assert github_ops._normalize_conclusion(_check_with_bucket(None, 'skipping')) == 'SKIPPED'
+
+
+def test_normalize_empty_state_falls_back_to_bucket():
+    """An empty-string state (not just None) also triggers the bucket fallback."""
+    assert github_ops._normalize_conclusion(_check_with_bucket('', 'fail')) == 'FAILURE'
+
+
+def test_normalize_null_state_pending_bucket_stays_wait():
+    """bucket=pending is a genuine wait — maps to the empty-string wait result."""
+    assert github_ops._normalize_conclusion(_check_with_bucket(None, 'pending')) == ''
+
+
+def test_normalize_null_state_unknown_bucket_stays_wait():
+    """An unrecognised bucket keeps the empty-string wait result."""
+    assert github_ops._normalize_conclusion(_check_with_bucket(None, 'mystery')) == ''
+
+
+def test_normalize_null_state_absent_bucket_stays_wait():
+    """No state and no bucket key at all resolves to the empty-string wait result."""
+    assert github_ops._normalize_conclusion({'name': 'x'}) == ''
+
+
+def test_normalize_state_wins_over_bucket_no_regression():
+    """A non-null state is authoritative — bucket is ignored when state is present."""
+    # state=SUCCESS with a conflicting bucket=fail must still resolve to SUCCESS.
+    assert github_ops._normalize_conclusion(_check_with_bucket('SUCCESS', 'fail')) == 'SUCCESS'
+
+
+def test_normalize_state_failure_wins_over_pass_bucket_no_regression():
+    """A non-null FAILURE state is authoritative over a conflicting bucket=pass."""
+    assert github_ops._normalize_conclusion(_check_with_bucket('FAILURE', 'pass')) == 'FAILURE'
+
+
+def test_normalize_lowercase_state_upper_cased_no_regression():
+    """A present lowercase state is upper-cased, never routed through the bucket."""
+    assert github_ops._normalize_conclusion(_check_with_bucket('success', 'fail')) == 'SUCCESS'
+
+
+# =============================================================================
 # _derive_overall_status — mixed-fixture aggregation
 # =============================================================================
 

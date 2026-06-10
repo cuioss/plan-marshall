@@ -1066,19 +1066,44 @@ _CONCLUSION_FAILING: frozenset[str] = frozenset(
 )
 _CONCLUSION_WAIT: frozenset[str] = frozenset({'IN_PROGRESS', 'QUEUED', 'PENDING', ''})
 
+# GitHub ``bucket`` field (``gh pr checks --json bucket``) → canonical
+# conclusion fallback. The ``bucket`` vocabulary is
+# ``pass | fail | pending | skipping | cancel``. Only consulted when the raw
+# ``state`` field is null/empty — a workflow-level check that has concluded
+# (e.g. a skipped reusable workflow, or a timed-out/errored run) can arrive
+# from ``gh pr checks`` carrying its outcome in ``bucket`` while ``state`` is
+# null. ``pending`` maps to the empty string (genuine wait); an absent or
+# unrecognised bucket also keeps the empty-string wait result.
+_BUCKET_TO_CONCLUSION: dict[str, str] = {
+    'pass': 'SUCCESS',
+    'fail': 'FAILURE',
+    'cancel': 'CANCELLED',
+    'skipping': 'SKIPPED',
+    'pending': '',
+}
+
 
 def _normalize_conclusion(check: dict) -> str:
     """Return the canonical upper-case conclusion for a check row.
 
-    Reads the raw ``state`` field from ``gh pr checks --json state``. Missing
-    or null values are normalised to the empty string, which the partition
+    Reads the raw ``state`` field from ``gh pr checks --json state``. When
+    ``state`` is null/empty, falls back to the ``bucket`` field (``gh pr
+    checks --json bucket``), mapping it to a canonical conclusion via
+    ``_BUCKET_TO_CONCLUSION`` (``pass`` → ``SUCCESS``, ``fail`` → ``FAILURE``,
+    ``cancel`` → ``CANCELLED``, ``skipping`` → ``SKIPPED``, ``pending`` →
+    ``''``). This corrects the spurious wait-state for checks whose outcome
+    is carried only in ``bucket`` (a workflow-level skipped/timed-out run). An
+    absent or unrecognised bucket keeps the empty string, which the partition
     table treats as a wait-state.
     """
 
     raw = check.get('state')
-    if raw is None:
+    if raw is not None and str(raw) != '':
+        return str(raw).upper()
+    bucket = check.get('bucket')
+    if bucket is None:
         return ''
-    return str(raw).upper()
+    return _BUCKET_TO_CONCLUSION.get(str(bucket).lower(), '')
 
 
 def _extract_run_id_from_link(link: str | None) -> str:
