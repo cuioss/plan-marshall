@@ -822,6 +822,28 @@ class TestRetrospectiveTokensAccumulatorCarry:
         ).read_text()
         assert 'retrospective_tokens' not in metrics
 
+    def test_end_phase_zero_accumulator_omits_retrospective_tokens(self, plan_context):
+        """When the accumulator carries retrospective_tokens=0, end-phase omits the field.
+
+        The documentation states the field should be absent when no retrospective ran.
+        A zero accumulator value must not be written (it is indistinguishable from
+        'no retrospective ran').
+        """
+        cmd_start_phase(_ns_start_phase('retro-ep-zero', '6-finalize'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-ep-zero', '6-finalize', total_tokens=5000, retrospective_tokens=0)
+        )
+        _pin_start_time_to_past('retro-ep-zero', '6-finalize')
+
+        result = cmd_end_phase(_ns_end_phase('retro-ep-zero', '6-finalize'))
+
+        assert result['status'] == 'success'
+        assert 'retrospective_tokens' not in result
+        metrics = (
+            plan_context.plan_dir_for('retro-ep-zero') / 'work' / 'metrics.toon'
+        ).read_text()
+        assert 'retrospective_tokens' not in metrics
+
     def test_phase_boundary_reads_retrospective_tokens_from_accumulator(self, plan_context):
         """phase-boundary closes the prev phase reading retrospective_tokens from its accumulator."""
         cmd_start_phase(_ns_start_phase('retro-pb-fallback', '6-finalize'))
@@ -862,6 +884,28 @@ class TestRetrospectiveTokensAccumulatorCarry:
             plan_context.plan_dir_for('retro-pb-override') / 'work' / 'metrics.toon'
         ).read_text()
         assert 'retrospective_tokens: 6000' in metrics
+
+    def test_phase_boundary_zero_accumulator_omits_retrospective_tokens(self, plan_context):
+        """When the accumulator carries retrospective_tokens=0, phase-boundary omits the field.
+
+        Symmetric with test_end_phase_zero_accumulator_omits_retrospective_tokens: a zero
+        accumulator value must not be written to the closed phase row.
+        """
+        cmd_start_phase(_ns_start_phase('retro-pb-zero', '6-finalize'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('retro-pb-zero', '6-finalize', total_tokens=4000, retrospective_tokens=0)
+        )
+        _pin_start_time_to_past('retro-pb-zero', '6-finalize')
+
+        result = manage_metrics.cmd_phase_boundary(
+            _ns_phase_boundary('retro-pb-zero', prev_phase='6-finalize', next_phase='6-finalize')
+        )
+
+        assert result['status'] == 'success'
+        metrics = (
+            plan_context.plan_dir_for('retro-pb-zero') / 'work' / 'metrics.toon'
+        ).read_text()
+        assert 'retrospective_tokens' not in metrics
 
 
 class TestClampWorkedToWall:

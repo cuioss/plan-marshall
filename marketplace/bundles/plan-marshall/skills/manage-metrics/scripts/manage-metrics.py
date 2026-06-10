@@ -394,7 +394,7 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
     # is the override; absent it the value is read back from the accumulator
     # that the finalize retrospective step seeded via accumulate-agent-usage.
     retrospective_tokens = _resolve_token_field(args.retrospective_tokens, accumulator, 'retrospective_tokens')
-    if retrospective_tokens is not None:
+    if retrospective_tokens:
         phase_data['retrospective_tokens'] = retrospective_tokens
 
     data['updated'] = now
@@ -410,7 +410,7 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
         result['duration_seconds'] = phase_data['duration_seconds']
     if total_tokens is not None:
         result['total_tokens'] = total_tokens
-    if retrospective_tokens is not None:
+    if retrospective_tokens:
         result['retrospective_tokens'] = retrospective_tokens
     if accumulator and args.total_tokens is None:
         result['accumulator_used'] = True
@@ -927,7 +927,7 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
     # the value is read back from the closing phase's accumulator. Default-absent:
     # plans archived before the producer wiring landed lack the field.
     retrospective_tokens = _resolve_token_field(args.retrospective_tokens, accumulator, 'retrospective_tokens')
-    if retrospective_tokens is not None:
+    if retrospective_tokens:
         prev_data['retrospective_tokens'] = retrospective_tokens
 
     # Step 2: start the next phase (mirrors cmd_start_phase semantics).
