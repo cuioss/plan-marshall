@@ -247,13 +247,12 @@ def test_self_heal_passthrough_on_success(tmp_path):
 #
 # These tests drive the pyproject ``cmd_run`` end-to-end through the REAL
 # ``build_queue_slot`` context manager. The queue acquire/release seam
-# (``_acquire`` / ``_release_raw``) and the three best-effort title-token seams
-# are mocked on the ``_build_queue_slot`` module, so the slot's admit / wait /
-# release behaviour is exercised exactly as in production while the build itself
-# (the module-level ``execute_direct`` self-heal wrapper) is replaced by a
-# recorder and ``cmd_run_common`` (downstream of the slot) is stubbed to a
-# no-op. ``time.sleep`` is patched to a no-op so the 60s blocked-poll wait is
-# never actually slept.
+# (``_acquire`` / ``_release_raw``) is mocked on the ``_build_queue_slot``
+# module, so the slot's admit / wait / release behaviour is exercised exactly as
+# in production while the build itself (the module-level ``execute_direct``
+# self-heal wrapper) is replaced by a recorder and ``cmd_run_common`` (downstream
+# of the slot) is stubbed to a no-op. ``time.sleep`` is patched to a no-op so the
+# 60s blocked-poll wait is never actually slept.
 
 
 class _QueueDouble:
@@ -279,24 +278,6 @@ class _QueueDouble:
     @property
     def released_ids(self) -> list[str]:
         return [aid for _plan, aid in self.release_calls]
-
-
-class _TokenRecorder:
-    """Records the title-token set/clear/push calls on the ``_build_queue_slot``
-    module."""
-
-    def __init__(self):
-        self.set_states: list[str] = []
-        self.cleared: int = 0
-        self.pushed_icons: list[str] = []
-
-    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(bqs, '_set_title_token', lambda _p, state: self.set_states.append(state))
-        monkeypatch.setattr(bqs, '_clear_title_token', lambda _p: self._inc_clear())
-        monkeypatch.setattr(bqs, '_push_title_token', lambda _p, icon: self.pushed_icons.append(icon))
-
-    def _inc_clear(self) -> None:
-        self.cleared += 1
 
 
 class _ExecRecorder:
@@ -333,26 +314,24 @@ def _no_sleep_queue(monkeypatch: pytest.MonkeyPatch):
 
 
 def _install_queue(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble):
-    """Install the queue double + token recorder + exec recorder, and stub
-    ``cmd_run_common`` to a no-op. Returns (exec_recorder, token_recorder)."""
+    """Install the queue double + exec recorder, and stub ``cmd_run_common`` to a
+    no-op. Returns the exec_recorder."""
     monkeypatch.setattr(bqs, '_acquire', double.acquire)
     monkeypatch.setattr(bqs, '_release_raw', double.release)
-    tokens = _TokenRecorder()
-    tokens.install(monkeypatch)
 
     exec_recorder = _ExecRecorder()
     monkeypatch.setattr(_pyproject_execute_mod, 'execute_direct', exec_recorder)
     monkeypatch.setattr(_pyproject_execute_mod, 'cmd_run_common', lambda **_kwargs: 0)
-    return exec_recorder, tokens
+    return exec_recorder
 
 
 class TestPyprojectCmdRunQueueAdmitted:
-    """Admitted-immediately: the build runs once inside the slot, the slot is
-    released, and the title-token cleared."""
+    """Admitted-immediately: the build runs once inside the slot and the slot is
+    released."""
 
     def test_admitted_runs_build_once_inside_slot(self, monkeypatch):
         double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
-        exec_recorder, tokens = _install_queue(monkeypatch, double)
+        exec_recorder = _install_queue(monkeypatch, double)
 
         rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
 
@@ -360,22 +339,11 @@ class TestPyprojectCmdRunQueueAdmitted:
         assert exec_recorder.ran is True
         assert len(exec_recorder.calls) == 1
         assert 'P:uuid-1' in double.released_ids
-        assert tokens.set_states == ['building']
-        assert tokens.cleared == 1
-
-    def test_admitted_does_not_set_waiting_token(self, monkeypatch):
-        double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
-        _exec, tokens = _install_queue(monkeypatch, double)
-
-        cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
-
-        assert 'build-waiting' not in tokens.set_states
 
 
 class TestPyprojectCmdRunQueueBlockedThenAdmitted:
-    """Blocked-then-admitted: the first poll is blocked (waiting token set, 🕐
-    pushed, sleep mocked), a later poll admits, and only then does the build
-    run."""
+    """Blocked-then-admitted: the first poll is blocked (sleep mocked), a later
+    poll admits, and only then does the build run."""
 
     def test_blocked_then_admitted_waits_then_runs(self, monkeypatch):
         double = _QueueDouble(
@@ -384,15 +352,12 @@ class TestPyprojectCmdRunQueueBlockedThenAdmitted:
                 {'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-B'},
             ]
         )
-        exec_recorder, tokens = _install_queue(monkeypatch, double)
+        exec_recorder = _install_queue(monkeypatch, double)
 
         rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
 
         assert rc == 0
         assert len(exec_recorder.calls) == 1
-        assert tokens.set_states == ['build-waiting', 'building']
-        assert bqs._ICON_BUILD_WAITING in tokens.pushed_icons
-        assert bqs._ICON_BUILDING in tokens.pushed_icons
         # The blocked id is NOT released before re-polling — re-poll is idempotent
         # so the plan keeps its FIFO position. Only the final admitted id is
         # released in the finally.
@@ -409,7 +374,7 @@ class TestPyprojectCmdRunQueueBlockedThenAdmitted:
                 {'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-C'},
             ]
         )
-        exec_recorder, _tokens = _install_queue(monkeypatch, double)
+        exec_recorder = _install_queue(monkeypatch, double)
 
         cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
 
@@ -425,7 +390,7 @@ class TestPyprojectCmdRunQueueSaturated:
     def test_saturation_returns_structured_error_without_running_build(self, monkeypatch, capsys):
         monkeypatch.setattr(bqs, '_resolve_max_retries', lambda: 2)
         double = _QueueDouble([{'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-X'}])
-        exec_recorder, _tokens = _install_queue(monkeypatch, double)
+        exec_recorder = _install_queue(monkeypatch, double)
 
         rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
 
@@ -440,13 +405,13 @@ class TestPyprojectCmdRunQueueSaturated:
 
 
 class TestPyprojectCmdRunPlanIdAbsentPassthrough:
-    """plan_id-absent: pure passthrough — the build runs with ZERO queue/token
+    """plan_id-absent: pure passthrough — the build runs with ZERO queue
     interaction (the backward-compatibility guarantee for plan-less builds)."""
 
     @pytest.mark.parametrize('plan_id', [None, ''])
     def test_no_plan_id_runs_build_with_no_queue_interaction(self, monkeypatch, plan_id):
         double = _QueueDouble([])
-        exec_recorder, tokens = _install_queue(monkeypatch, double)
+        exec_recorder = _install_queue(monkeypatch, double)
 
         rc = cmd_run(argparse.Namespace(command_args='verify', plan_id=plan_id, format='toon'))
 
@@ -454,15 +419,12 @@ class TestPyprojectCmdRunPlanIdAbsentPassthrough:
         assert len(exec_recorder.calls) == 1
         assert double.acquire_calls == []
         assert double.release_calls == []
-        assert tokens.set_states == []
-        assert tokens.cleared == 0
-        assert tokens.pushed_icons == []
 
     def test_missing_plan_id_attr_is_passthrough(self, monkeypatch):
         """A Namespace with no plan_id attribute at all (getattr default None)
         is also a pure passthrough."""
         double = _QueueDouble([])
-        exec_recorder, _tokens = _install_queue(monkeypatch, double)
+        exec_recorder = _install_queue(monkeypatch, double)
 
         rc = cmd_run(argparse.Namespace(command_args='verify', format='toon'))
 

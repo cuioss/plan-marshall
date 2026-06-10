@@ -52,4 +52,4 @@ When new builds stop being admitted, work through these steps in order:
 == Concept Crossover
 
 * xref:../concepts/parallelism-and-locking.adoc[Parallelism and Locking] for the merge mutex, the build-queue limiter, the self-healing reaper, and the `[LOCK]` log.
-* xref:terminal-title.adoc[Terminal Title] for the ⏳/🔒/🕐/🔨 coordination glyphs that show lock and build state in the session tab.
+* xref:terminal-title.adoc[Terminal Title] for the ⏳/🔒 lock-coordination glyphs that show lock state in the session tab.

@@ -2,29 +2,29 @@
 #!/usr/bin/env python3
 """Tests for ``script-shared/scripts/build/_build_queue_slot.py`` (D6).
 
-The build-queue slot wrapper participates in the cluster build queue ONLY when a
-``plan_id`` is set; with no plan_id it is a pure no-op passthrough so plan-less
+The build-queue slot wrapper is a pure concurrency limiter: it participates in
+the cluster build queue ONLY when a ``plan_id`` is set, and writes no
+terminal-title state. With no plan_id it is a pure no-op passthrough so plan-less
 builds run completely unchanged. These tests cover:
 
-* **No-op passthrough** — falsy plan_id yields immediately with ZERO queue /
-  token interaction (the backward-compatibility guarantee).
-* **Admit-immediately** — an ``admitted`` acquire sets the ``building`` token,
-  pushes 🔨, runs the body, and releases + clears in the ``finally``.
-* **Block-then-admit** — a ``blocked`` acquire sets the ``build-waiting`` token,
-  pushes 🕐, sleeps (mocked to 0), re-polls, and admits on a later poll.
+* **No-op passthrough** — falsy plan_id yields immediately with ZERO queue
+  interaction (the backward-compatibility guarantee).
+* **Admit-immediately** — an ``admitted`` acquire runs the body and releases the
+  slot in the ``finally``.
+* **Block-then-admit** — a ``blocked`` acquire sleeps (mocked to 0), re-polls,
+  and admits on a later poll.
 * **Retries exhausted** — staying ``blocked`` past ``max_retries`` releases the
   queued id and raises :class:`BuildQueueTimeout`.
-* **Always-release** — the slot is released and the token cleared even when the
-  wrapped body raises.
-* **Best-effort tokens** — a title-token / push failure never affects the
-  build outcome.
+* **Always-release** — the slot is released even when the wrapped body raises.
+* **No title-token machinery** — the queue exposes none of the
+  ``_set_title_token`` / ``_clear_title_token`` / ``_push_title_token`` symbols.
 * **max_retries resolution** — read from marshal.json with a 10 fallback.
 * **_emit_queue_timeout** — renders a structured ``queue_saturated`` error.
 
-The queue acquire/release seam (``_acquire`` / ``_release_raw``) and the three
-best-effort title-token seams are mocked directly, so the tests are independent
-of whether the queue is reached by a file-path import or the executor. Every
-wait-loop test patches ``time.sleep`` to a no-op so the 60s wait is never slept.
+The queue acquire/release seam (``_acquire`` / ``_release_raw``) is mocked
+directly, so the tests are independent of whether the queue is reached by a
+file-path import or the executor. Every wait-loop test patches ``time.sleep`` to
+a no-op so the 60s wait is never slept.
 """
 
 from __future__ import annotations
@@ -62,35 +62,15 @@ class _QueueDouble:
         return [aid for _plan, aid in self.release_calls]
 
 
-class _TokenRecorder:
-    """Records the title-token set/clear/push calls."""
-
-    def __init__(self):
-        self.set_states: list[str] = []
-        self.cleared: int = 0
-        self.pushed_icons: list[str] = []
-
-    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(bqs, '_set_title_token', lambda _p, state: self.set_states.append(state))
-        monkeypatch.setattr(bqs, '_clear_title_token', lambda _p: self._inc_clear())
-        monkeypatch.setattr(bqs, '_push_title_token', lambda _p, icon: self.pushed_icons.append(icon))
-
-    def _inc_clear(self) -> None:
-        self.cleared += 1
-
-
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch: pytest.MonkeyPatch):
     """Never actually sleep 60s in a unit test — patch time.sleep to a no-op."""
     monkeypatch.setattr(bqs.time, 'sleep', lambda _s: None)
 
 
-def _install_queue(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble) -> _TokenRecorder:
+def _install_queue(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble) -> None:
     monkeypatch.setattr(bqs, '_acquire', double.acquire)
     monkeypatch.setattr(bqs, '_release_raw', double.release)
-    tokens = _TokenRecorder()
-    tokens.install(monkeypatch)
-    return tokens
 
 
 # =============================================================================
@@ -100,10 +80,10 @@ def _install_queue(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble) -> _To
 
 @pytest.mark.parametrize('plan_id', [None, ''])
 def test_no_plan_id_is_pure_noop(monkeypatch, plan_id):
-    """A falsy plan_id yields with ZERO queue/token interaction — plan-less
-    builds run completely unchanged."""
+    """A falsy plan_id yields with ZERO queue interaction — plan-less builds run
+    completely unchanged."""
     double = _QueueDouble([])
-    tokens = _install_queue(monkeypatch, double)
+    _install_queue(monkeypatch, double)
 
     ran = False
     with build_queue_slot(plan_id):
@@ -112,8 +92,19 @@ def test_no_plan_id_is_pure_noop(monkeypatch, plan_id):
     assert ran is True
     assert double.acquire_calls == []
     assert double.release_calls == []
-    assert tokens.set_states == []
-    assert tokens.cleared == 0
+
+
+# =============================================================================
+# No title-token machinery — pure concurrency limiter
+# =============================================================================
+
+
+def test_queue_exposes_no_title_token_symbols():
+    """The build queue is a pure concurrency limiter and writes no terminal-title
+    state — none of the title-token seams exist on the module."""
+    assert not hasattr(bqs, '_set_title_token')
+    assert not hasattr(bqs, '_push_title_token')
+    assert not hasattr(bqs, '_clear_title_token')
 
 
 # =============================================================================
@@ -122,10 +113,10 @@ def test_no_plan_id_is_pure_noop(monkeypatch, plan_id):
 
 
 def test_admitted_runs_body_and_releases(monkeypatch):
-    """An ``admitted`` acquire sets the building token, runs the body, then
-    releases the slot and clears the token in the finally."""
+    """An ``admitted`` acquire runs the body, then releases the slot in the
+    finally."""
     double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
-    tokens = _install_queue(monkeypatch, double)
+    _install_queue(monkeypatch, double)
 
     ran = False
     with build_queue_slot('P'):
@@ -133,20 +124,6 @@ def test_admitted_runs_body_and_releases(monkeypatch):
 
     assert ran is True
     assert 'P:uuid-1' in double.released_ids
-    assert tokens.set_states == ['building']
-    assert tokens.pushed_icons == [bqs._ICON_BUILDING]
-    assert tokens.cleared == 1
-
-
-def test_admitted_immediately_does_not_set_waiting_token(monkeypatch):
-    """When admitted on the first poll, the build-waiting token is never set."""
-    double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
-    tokens = _install_queue(monkeypatch, double)
-
-    with build_queue_slot('P'):
-        pass
-
-    assert 'build-waiting' not in tokens.set_states
 
 
 # =============================================================================
@@ -155,25 +132,21 @@ def test_admitted_immediately_does_not_set_waiting_token(monkeypatch):
 
 
 def test_blocked_then_admitted_polls_and_runs(monkeypatch):
-    """A blocked acquire surfaces the waiting token, sleeps (mocked), re-polls
-    WITHOUT releasing, and admits on the second poll."""
+    """A blocked acquire sleeps (mocked), re-polls WITHOUT releasing, and admits
+    on the second poll."""
     double = _QueueDouble(
         [
             {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-A'},
             {'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-B'},
         ]
     )
-    tokens = _install_queue(monkeypatch, double)
+    _install_queue(monkeypatch, double)
 
     ran = False
     with build_queue_slot('P'):
         ran = True
 
     assert ran is True
-    # build-waiting token set + 🕐 pushed on the blocked poll, then building.
-    assert tokens.set_states == ['build-waiting', 'building']
-    assert bqs._ICON_BUILD_WAITING in tokens.pushed_icons
-    assert bqs._ICON_BUILDING in tokens.pushed_icons
     # The blocked id is NOT released before re-polling — re-poll is idempotent so
     # the plan keeps its FIFO position. Only the final admitted id is released in
     # the finally.
@@ -263,49 +236,47 @@ def test_acquire_error_is_hard_failure(monkeypatch):
             pass
 
 
+def test_acquire_error_mid_wait_releases_queued_id(monkeypatch):
+    """A hard acquire failure DURING the retry loop releases the already-queued
+    admission id instead of leaking it. The wait runs OUTSIDE build_queue_slot's
+    finally, so _wait_for_admission must release the queued waiting entry itself
+    on any non-return exit — otherwise the slot leaks until reaped."""
+    monkeypatch.setattr(bqs, '_resolve_max_retries', lambda: 3)
+    double = _QueueDouble([
+        {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-Q'},
+        {'status': 'error', 'error': 'queue vanished mid-wait'},
+    ])
+    _install_queue(monkeypatch, double)
+
+    with pytest.raises(RuntimeError, match='queue vanished mid-wait'):
+        with build_queue_slot('P'):
+            pass
+
+    # The queued waiting entry from the initial blocked acquire was released as
+    # cleanup before the RuntimeError propagated — no leaked waiting slot.
+    assert 'P:uuid-Q' in double.released_ids
+
+
 # =============================================================================
 # Always-release on body exception
 # =============================================================================
 
 
-def test_body_exception_still_releases_and_clears(monkeypatch):
-    """A body that raises still releases the slot and clears the token."""
+def test_body_exception_still_releases(monkeypatch):
+    """A body that raises still releases the slot in the finally."""
     double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
-    tokens = _install_queue(monkeypatch, double)
+    _install_queue(monkeypatch, double)
 
     with pytest.raises(ValueError, match='boom'):
         with build_queue_slot('P'):
             raise ValueError('boom')
 
     assert 'P:uuid-1' in double.released_ids
-    assert tokens.cleared == 1
 
 
 # =============================================================================
-# Best-effort tokens never affect the build outcome
+# Release best-effort behaviour
 # =============================================================================
-
-
-def test_token_set_failure_does_not_break_build(monkeypatch):
-    """A title-token set whose underlying executor call raises is swallowed —
-    the build still runs and releases cleanly."""
-    double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
-    monkeypatch.setattr(bqs, '_acquire', double.acquire)
-    monkeypatch.setattr(bqs, '_release_raw', double.release)
-
-    # Make the underlying token channel raise; the best-effort wrappers must
-    # swallow it (this exercises the real _set_title_token/_push wrappers).
-    def _raising_run_executor(*_a, **_k):
-        raise OSError('tty gone')
-
-    monkeypatch.setattr(bqs, '_run_executor', _raising_run_executor)
-
-    ran = False
-    with build_queue_slot('P'):
-        ran = True
-
-    assert ran is True
-    assert 'P:uuid-1' in double.released_ids
 
 
 def test_release_failure_is_logged_not_raised(monkeypatch):

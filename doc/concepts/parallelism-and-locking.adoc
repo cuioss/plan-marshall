@@ -8,7 +8,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Several plans can be in flight at once — each in its own worktree on its own feature branch (see xref:branches-and-worktrees.adoc[Branches and Worktrees]) — so the only state they contend for is the shared underlying repository and Plan Marshall's own main-anchored coordination files. Two cooperative locks serialize the moments where that shared state actually matters: the *merge mutex* serializes the merge-to-`main` boundary, and the *build-queue limiter* caps how many builds run at once across the cluster. Both are file-based, both anchor to the main checkout regardless of which worktree the caller is pinned to, and both sit on one shared, TOCTOU-safe read-modify-write core. A self-healing reaper, a main-anchored event log, and a set of terminal-title glyphs make the live state observable and keep a crashed session from wedging the system.
+Several plans can be in flight at once — each in its own worktree on its own feature branch (see xref:branches-and-worktrees.adoc[Branches and Worktrees]) — so the only state they contend for is the shared underlying repository and Plan Marshall's own main-anchored coordination files. Two cooperative locks serialize the moments where that shared state actually matters: the *merge mutex* serializes the merge-to-`main` boundary, and the *build-queue limiter* caps how many builds run at once across the cluster. Both are file-based, both anchor to the main checkout regardless of which worktree the caller is pinned to, and both sit on one shared, TOCTOU-safe read-modify-write core. A self-healing reaper, a main-anchored event log, and a pair of lock-state terminal-title glyphs make the live state observable and keep a crashed session from wedging the system.
 
 == Merge Mutex
 
@@ -26,7 +26,7 @@ A build whose process is hard-killed — a `SIGKILL` that bypasses the normal re
 
 == Terminal-Title Glyphs
 
-While a plan waits on or holds one of these locks, its terminal title carries a coordination glyph so the live state is visible at a glance: ⏳ lock-waiting, 🔒 lock-owned, 🕐 build-waiting, 🔨 building. A finished plan holds no live lock or build state, so its title never shows a coordination glyph. The glyph vocabulary and the title-composition pipeline are documented in xref:../user/terminal-title.adoc[User Guide › Terminal Title].
+While a plan waits on or holds the merge mutex, its terminal title carries a lock-coordination glyph so the live state is visible at a glance: ⏳ lock-waiting, 🔒 lock-owned. The build-queue limiter is a pure concurrency limiter and writes no title glyph. A finished plan holds no live lock state, so its title never shows a coordination glyph. The glyph vocabulary and the title-composition pipeline are documented in xref:../user/terminal-title.adoc[User Guide › Terminal Title].
 
 == Main-Anchored Lock Log
 

@@ -1,7 +1,7 @@
 # Terminal-Title Architecture
 
 Single canonical reference for the terminal-title feature: how a plan's phase,
-short description, and lock/build coordination state reach the terminal title
+short description, and lock coordination state reach the terminal title
 bar. The architecture is a **three-way split** across `status.json` (the single
 source of persisted title state) and three skills, each owning exactly one
 concern:
@@ -32,7 +32,7 @@ STATE (manage-status)            COMPOSER (manage-terminal-title)   RESOLVE+EMIT
 │   writes status.title_   │     │     pm:{phase}[:{short}]     │  │  2. session cache → plan_id          │
 │   token (NO rendering)    │     │     pm:Completed[:{short}]   │  │  3. _read_title_state(plan_id):      │
 └────────────┬─────────────┘     │  2. TITLE_TOKEN_GLYPHS[token]│  │     a. live status.json              │
-             │ writes            │     ⏳/🔒/🕐/🔨 (active phase)│  │     b. archived status.json glob     │
+             │ writes            │     ⏳/🔒 (active phase)      │  │     b. archived status.json glob     │
              ▼                   │  3. resolve_icon(event)      │  │  4. compose(state, event)  ──────────┤
    status.json                  │     ➤/?/✓, ✅ terminal       │  │  5. emit per platform:               │
    (current_phase,              │        override               │  │     OSC terminalSequence (every event)│
@@ -56,7 +56,7 @@ belongs entirely to the composer.
 |-------|------------|------|
 | `current_phase` | the plan lifecycle commands (`transition`, etc.) | The active phase name (`5-execute`, `complete`, `archived`, …) |
 | `short_description` | plan metadata setters | The optional short title-body name token |
-| `title_token` | `manage-status title-token set\|clear` | The bare lock/build coordination state string (no glyph) |
+| `title_token` | `manage-status title-token set\|clear` | The bare lock coordination state string (no glyph) |
 
 ### The `title-token` verb
 
@@ -64,7 +64,7 @@ The `title-token` subcommand is the single writer of the `title_token` field:
 
 - `title-token set --plan-id {id} --state {state}` writes `status.title_token`
   to the bare state string. `{state}` is validated against `TITLE_TOKEN_STATES`
-  = `{lock-waiting, lock-owned, build-waiting, building}`.
+  = `{lock-waiting, lock-owned}`.
 - `title-token clear --plan-id {id}` removes the `title_token` field
   (idempotent).
 
@@ -82,10 +82,9 @@ before moving the plan directory:
 2. Sets `current_phase = 'complete'` when every phase is done.
 3. Pops the `title_token` field (`status.pop('title_token', None)`) — an
    archived plan has no live session driving its terminal title, so any
-   in-flight token (`lock-waiting` / `lock-owned` / `build-waiting` /
-   `building`) left behind would persist a stale lock/build glyph in the
-   archived snapshot. The pop is token-agnostic: it covers all four
-   `TITLE_TOKEN_STATES` values with a single operation.
+   in-flight token (`lock-waiting` / `lock-owned`) left behind would persist a
+   stale lock glyph in the archived snapshot. The pop is token-agnostic: it
+   covers every `TITLE_TOKEN_STATES` value with a single operation.
 
 After writing the mutated `status.json` back to the live plan directory,
 `cmd_archive` moves the **entire plan directory** to
@@ -121,11 +120,11 @@ composes `'{icon} {glyph} {body}'` from three independent inputs:
   for terminal phases (`complete` / `archived`); `None` only when `current_phase`
   is empty/missing (the true no-op). A terminal phase renders the Completed body,
   not `None`, so a finished plan still shows in the title.
-- **Glyph** — the `title_token` lock/build-state glyph (⏳ `lock-waiting`,
-  🔒 `lock-owned`, 🕐 `build-waiting`, 🔨 `building`), prepended when the field is
-  set for an active phase; omitted when no `title_token` is present, and also
-  omitted for terminal phases (`complete` / `archived`) regardless of the
-  persisted token — a finished plan holds no live lock/build state.
+- **Glyph** — the `title_token` lock-state glyph (⏳ `lock-waiting`,
+  🔒 `lock-owned`), prepended when the field is set for an active phase; omitted
+  when no `title_token` is present, and also omitted for terminal phases
+  (`complete` / `archived`) regardless of the persisted token — a finished plan
+  holds no live lock state.
 - **Icon** — the process icon from the hook event (➤ active / ? waiting /
   ✓ done), with a **terminal-state override to ✅** (`_ICON_TERMINAL`, U+2705)
   for `complete` / `archived` phases regardless of the event or `icon_override`.
@@ -166,7 +165,7 @@ body format (both live in the composer it imports).
 ### `session push-title-token` — direct `/dev/tty` push
 
 `session_push_title_token(plan_id, icon)` is the live-push path used by the lock
-/ build coordination machinery. It reads the plan's title state from
+coordination machinery. It reads the plan's title state from
 `status.json` via `_read_title_state`, composes via `compose(state, None,
 icon_override=icon)`, and writes the OSC escape (`\x1b]0;{composed}\x07`) directly
 to `/dev/tty`. It is best-effort — a silent no-op (`pushed: false`) when the
