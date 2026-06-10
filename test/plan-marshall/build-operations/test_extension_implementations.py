@@ -826,6 +826,36 @@ def test_applies_to_module_null_safe(bundle: str, case_id: str, module_data: dic
         assert key in result, f'{bundle}: result missing key {key!r} for malformed case {case_id!r}'
 
 
+@pytest.mark.parametrize('bundle', NULL_GUARD_BUNDLES)
+def test_applies_to_module_null_safe_with_build_systems(bundle: str) -> None:
+    """applies_to_module() does not raise when build_systems are present but other fields are null.
+
+    Exercises the code paths that run when a module *is* applicable by
+    build-system signal but has None values for metadata, dependencies, paths,
+    and other discovered fields.  These paths were not covered by
+    _MALFORMED_MODULE_DATA (which always omits build_systems to keep the
+    applicable=False assertion uniform).  The test only asserts that the call
+    does not raise -- the return value is well-formed by the result-keys check.
+    """
+    ext = load_extension(bundle)
+    module_data = {
+        'build_systems': ['maven', 'gradle', 'npm', 'python', 'marshall-plugin', 'documentation'],
+        'metadata': None,
+        'dependencies': None,
+        'paths': None,
+    }
+    try:
+        result = ext.applies_to_module(module_data)
+    except Exception as err:
+        raise AssertionError(
+            f'{bundle}: applies_to_module() raised {type(err).__name__} when build_systems are '
+            f'present but other fields are null: {err}'
+        ) from err
+
+    for key in _REQUIRED_RESULT_KEYS:
+        assert key in result, f'{bundle}: result missing key {key!r} for build_systems-present null case'
+
+
 # =============================================================================
 # Profile Applicability Tests (signal detection + active_profiles)
 # =============================================================================
