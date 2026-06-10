@@ -9,7 +9,7 @@ OpenCode form (skill/agent/command).
 ``{"id": "<unprefixed-model-id>", "supports_effort": ["medium", "high",
 ...]}``. The OpenCode emitter consumes ``id`` and prepends
 ``OPENCODE_MODEL_PREFIX``; the ``supports_effort`` array is consumed by
-the Claude target's ``variant_emitter.supports_xhigh_effort`` build-time
+the Claude target's ``variant_emitter.supports_effort`` build-time
 guard.
 
 Validation contract:
@@ -33,7 +33,7 @@ from pathlib import Path
 # ["medium", "high", ...]}``. The emitter prepends this prefix to the
 # resolved ``id`` so the configured ``opencode.json`` references resolve
 # through OpenCode's provider system. The ``supports_effort`` array is
-# consumed by the Claude target's ``variant_emitter.supports_xhigh_effort``
+# consumed by the Claude target's ``variant_emitter.supports_effort``
 # guard — the OpenCode adapter itself only consumes ``id``.
 OPENCODE_MODEL_PREFIX = 'anthropic/'
 
@@ -58,7 +58,7 @@ def load_mapping(config_dir: Path) -> dict[str, dict]:
     tool name → OpenCode permission) and ``model_map`` (Claude alias →
     ``{"id": "<unprefixed-model-id>", "supports_effort": [...]}`` object).
     The ``id`` is prefixed by the OpenCode emitter; the ``supports_effort``
-    array is consumed by the Claude target's xhigh capability guard.
+    array is consumed by the Claude target's per-effort capability guard.
     """
     mapping_path = config_dir / 'mapping.json'
     if not mapping_path.exists():

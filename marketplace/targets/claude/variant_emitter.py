@@ -3,17 +3,20 @@
 Detects canonical agents that declare ``implements:
 plan-marshall:extension-api/standards/ext-point-dynamic-level-executor``
 in their YAML frontmatter and emits one variant agent file per ordinal
-level (``low``, ``medium``, ``high``, ``xhigh``, ``xxhigh``, ``max``)
-plus the canonical no-suffix file (with ``implements:`` and ``levels:``
-stripped).
+level (``level-1``, ``level-2``, ``level-3``, ``level-4``, ``level-5``,
+``level-6``, ``level-7``) plus the canonical no-suffix file (with
+``implements:`` and ``levels:`` stripped).
 
 The level → ``(model, effort)`` primitive binding is the canonical
 table from ``plan-marshall:plan-marshall/standards/effort-levels.md``.
-The ``max`` build-time guard reads
+The build-time guard reads
 ``marketplace/targets/opencode/mapping.json`` to decide whether the
-resolved model alias accepts ``effort: xhigh``; when it does not, the
-``max`` variant is skipped (the canonical falls back to ``inherit``
-at runtime).
+resolved model alias accepts the level's effort. The guard fires for
+any alias-capability-gated effort (those in ``ALIAS_GATED_EFFORTS`` —
+``xhigh`` and ``max``); when the alias does not accept the requested
+effort, that level's variant is skipped (the canonical falls back to
+``inherit`` at runtime). Efforts that are universally available
+(``medium``, ``high``, and the effort-less haiku tier) are never gated.
 
 SESSION RESTART REQUIRED for emitted variants
 ---------------------------------------------
@@ -47,13 +50,21 @@ EXTENSION_POINT = 'plan-marshall:extension-api/standards/ext-point-dynamic-level
 
 # Single source of truth: keep in lock-step with effort-levels.md.
 LEVEL_TABLE: dict[str, dict[str, str | None]] = {
-    'low': {'model': 'haiku', 'effort': None},
-    'medium': {'model': 'sonnet', 'effort': 'medium'},
-    'high': {'model': 'sonnet', 'effort': 'high'},
-    'xhigh': {'model': 'opus', 'effort': 'medium'},
-    'xxhigh': {'model': 'opus', 'effort': 'high'},
-    'max': {'model': 'opus', 'effort': 'xhigh'},
+    'level-1': {'model': 'haiku', 'effort': None},
+    'level-2': {'model': 'sonnet', 'effort': 'medium'},
+    'level-3': {'model': 'sonnet', 'effort': 'high'},
+    'level-4': {'model': 'opus', 'effort': 'medium'},
+    'level-5': {'model': 'opus', 'effort': 'high'},
+    'level-6': {'model': 'opus', 'effort': 'xhigh'},
+    'level-7': {'model': 'fable', 'effort': 'max'},
 }
+
+# Effort values whose emission is gated by per-alias capability — a variant
+# at one of these efforts is emitted only when the resolved model alias's
+# ``supports_effort`` array (in ``mapping.json``) advertises the effort.
+# Efforts outside this set (``medium``, ``high``, and the effort-less haiku
+# tier) are universally available and never gated.
+ALIAS_GATED_EFFORTS: frozenset[str] = frozenset({'xhigh', 'max'})
 
 @dataclass(frozen=True)
 class Frontmatter:
@@ -187,9 +198,9 @@ def selected_levels(frontmatter: Frontmatter) -> list[str]:
     """Return the list of levels to emit for this canonical.
 
     When ``levels:`` is present, only listed levels are emitted (filtered
-    against the known palette). When absent, all six levels are emitted
-    in canonical order (``low``, ``medium``, ``high``, ``xhigh``,
-    ``xxhigh``, ``max``).
+    against the known palette). When absent, all seven levels are emitted
+    in canonical order (``level-1``, ``level-2``, ``level-3``,
+    ``level-4``, ``level-5``, ``level-6``, ``level-7``).
     """
     if frontmatter.levels is None:
         return list(LEVEL_TABLE.keys())
@@ -306,24 +317,24 @@ def _load_mapping(mapping_path: Path) -> dict:
     return parsed
 
 
-def supports_xhigh_effort(model_alias: str, mapping_path: Path) -> bool:
-    """Read ``mapping.json::model_map`` and decide whether the alias accepts ``xhigh``.
+def supports_effort(model_alias: str, effort: str, mapping_path: Path) -> bool:
+    """Read ``mapping.json::model_map`` and decide whether the alias accepts ``effort``.
 
     Inspects ``mapping.json::model_map[model_alias].supports_effort`` and
-    returns ``True`` iff the array contains ``'xhigh'``. When the mapping
-    file is missing, malformed, or the alias is absent / lacks the
-    ``supports_effort`` shape, returns ``False`` — the conservative
-    refuse-emit so we never silently emit unsupported variants.
+    returns ``True`` iff the array contains the requested ``effort`` value.
+    When the mapping file is missing, malformed, or the alias is absent /
+    lacks the ``supports_effort`` shape, returns ``False`` — the
+    conservative refuse-emit so we never silently emit unsupported variants.
     """
     mapping = _load_mapping(mapping_path)
     model_map = mapping.get('model_map', {})
     entry = model_map.get(model_alias)
     if not isinstance(entry, dict):
         return False
-    supports_effort = entry.get('supports_effort', [])
-    if not isinstance(supports_effort, list):
+    supported = entry.get('supports_effort', [])
+    if not isinstance(supported, list):
         return False
-    return 'xhigh' in supports_effort
+    return effort in supported
 
 
 @dataclass
@@ -366,14 +377,16 @@ def emit_variants_for_agent(
 
     for level in levels:
         primitive = LEVEL_TABLE[level]
-        if primitive['effort'] == 'xhigh':
+        effort = primitive['effort']
+        if effort in ALIAS_GATED_EFFORTS:
             alias = primitive['model']
             assert alias is not None
-            if not supports_xhigh_effort(alias, mapping_path):
+            assert effort is not None
+            if not supports_effort(alias, effort, mapping_path):
                 skipped.append(
                     (
                         level,
-                        f"alias '{alias}' does not accept effort: xhigh — "
+                        f"alias '{alias}' does not accept effort: {effort} — "
                         'falling back to canonical (inherit) at runtime',
                     )
                 )

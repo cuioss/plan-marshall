@@ -13,7 +13,7 @@ implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-execut
 
 # Execution Context
 
-Single generic dispatcher for every `Task:` invocation in the plan-marshall workflow. Loads foundational practices, loads caller-specified skills, then drives the caller-specified workflow (or inline instructions) to completion. The model/effort pinning lives in the variant frontmatter (`execution-context-{low|medium|high|xhigh|xxhigh}` — emitted by the build target). The workflow doc, skill prerequisites, and plan context flow through the `Task:` prompt body as runtime inputs.
+Single generic dispatcher for every `Task:` invocation in the plan-marshall workflow. Loads foundational practices, loads caller-specified skills, then drives the caller-specified workflow (or inline instructions) to completion. The model/effort pinning lives in the variant frontmatter (`execution-context-{level-1|level-2|level-3|level-4|level-5|level-6|level-7}` — emitted by the build target). The workflow doc, skill prerequisites, and plan context flow through the `Task:` prompt body as runtime inputs.
 
 ## Input — Prompt-Body Contract
 

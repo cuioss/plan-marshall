@@ -25,7 +25,7 @@ The simplest case: a phase whose role key is flat (`phase-2-refine`), one dispat
 
 ### Setup
 - `{plan_id}` = `lesson-2026-05-11-foo`
-- `marshal.json`: `"models": {"default": "medium", "roles": {"phase-2-refine": "high", ...}}`
+- `marshal.json`: `"models": {"default": "level-2", "roles": {"phase-2-refine": "level-3", ...}}`
 
 ### Trace
 
@@ -43,8 +43,8 @@ Returns:
 ```toon
 status: success
 role: phase-2-refine
-level: high
-target: execution-context-high
+level: level-3
+target: execution-context-level-3
 ```
 
 **Post-resolve dispatch log** (between resolve and dispatch, per [`dispatch-logging.md`](dispatch-logging.md) § "Emission contract"):
@@ -52,7 +52,7 @@ target: execution-context-high
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id lesson-2026-05-11-foo --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target=execution-context-high level=high role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id=lesson-2026-05-11-foo"
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target=execution-context-level-3 level=level-3 role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id=lesson-2026-05-11-foo"
 ```
 
 **Step 4 (orchestrator constructs prompt body):**
@@ -71,7 +71,7 @@ WORKTREE: --plan-id lesson-2026-05-11-foo
 **Step 5 (dispatch):**
 
 ```
-Task: plan-marshall:execution-context-high
+Task: plan-marshall:execution-context-level-3
   prompt: <the block above, verbatim>
 ```
 
@@ -155,7 +155,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   effort resolve-target --phase phase-6-finalize --role verification-feedback
 ```
 
-Returns `target: execution-context-high`.
+Returns `target: execution-context-level-3`.
 
 **Step 4 (prompt body — no findings list inline):**
 
@@ -171,7 +171,7 @@ caller_phase: phase-6-finalize
 WORKTREE: --plan-id feature-jwt-auth
 ```
 
-**Step 5 (dispatch):** `Task: plan-marshall:execution-context-high` with the block above.
+**Step 5 (dispatch):** `Task: plan-marshall:execution-context-level-3` with the block above.
 
 **Step 6 (subagent body — smart-grouping algorithm):**
 
@@ -252,7 +252,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   effort resolve-target --phase phase-6-finalize
 ```
 
-Returns `target: execution-context-medium`.
+Returns `target: execution-context-level-2`.
 
 **Step 4 (prompt body, parameterised per module):**
 
@@ -272,7 +272,7 @@ Two more identical prompts for `auth-jwt` and `auth-tests`, only the `module` fi
 
 **Step 5 (dispatch — three concurrent `Task:` calls):**
 
-The orchestrator issues all three `Task: plan-marshall:execution-context-medium` calls in a single batch (parallel fan-out). Each subagent runs in its own envelope, isolated from the others. The host platform may rate-limit parallel `Task:` calls; the dispatcher falls back to sequential if rate-limited.
+The orchestrator issues all three `Task: plan-marshall:execution-context-level-2` calls in a single batch (parallel fan-out). Each subagent runs in its own envelope, isolated from the others. The host platform may rate-limit parallel `Task:` calls; the dispatcher falls back to sequential if rate-limited.
 
 **Step 6 (per subagent — same workflow, different `module` input):**
 

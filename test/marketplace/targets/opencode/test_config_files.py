@@ -53,10 +53,19 @@ class TestMappingJsonSchema:
 
     def test_canonical_model_aliases_present(self, opencode_config_dir: Path):
         data = load_mapping(opencode_config_dir)
-        # The three Claude aliases must each resolve to a model entry with an id.
-        for alias in ('opus', 'sonnet', 'haiku'):
+        # The four Claude aliases must each resolve to a model entry with an id.
+        for alias in ('opus', 'sonnet', 'haiku', 'fable'):
             assert alias in data['model_map'], f'missing alias: {alias}'
             assert data['model_map'][alias]['id'], f'{alias} entry missing id'
+
+    def test_fable_alias_resolves_to_claude_fable_5_with_max(self, opencode_config_dir: Path):
+        """`fable` is the new top-tier alias: id ``claude-fable-5`` and
+        ``supports_effort`` advertising ``max`` (what lets the per-alias-effort
+        guard emit the top level)."""
+        data = load_mapping(opencode_config_dir)
+        fable = data['model_map']['fable']
+        assert fable['id'] == 'claude-fable-5'
+        assert 'max' in fable['supports_effort']
 
     def test_canonical_tools_mapped(self, opencode_config_dir: Path):
         data = load_mapping(opencode_config_dir)

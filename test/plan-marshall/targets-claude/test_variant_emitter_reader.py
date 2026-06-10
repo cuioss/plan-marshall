@@ -50,7 +50,8 @@ FORBIDDEN_TOOLS = {'Write', 'Edit', 'Bash', 'Skill', 'AskUserQuestion', 'Task'}
 
 @pytest.fixture()
 def mapping_path(tmp_path: Path) -> Path:
-    """Fixture mapping.json: opus accepts xhigh so all six levels emit."""
+    """Fixture mapping.json: opus accepts xhigh and fable accepts max so all
+    seven levels emit."""
     path = tmp_path / 'mapping.json'
     path.write_text(
         json.dumps(
@@ -60,6 +61,7 @@ def mapping_path(tmp_path: Path) -> Path:
                     'opus': {'id': 'claude-opus-4-7', 'supports_effort': ['medium', 'high', 'xhigh']},
                     'sonnet': {'id': 'claude-sonnet-4-6', 'supports_effort': ['medium', 'high']},
                     'haiku': {'id': 'claude-haiku-4-5', 'supports_effort': []},
+                    'fable': {'id': 'claude-fable-5', 'supports_effort': ['medium', 'high', 'xhigh', 'max']},
                 },
             }
         ),
@@ -129,7 +131,7 @@ def test_reader_emits_all_default_levels(tmp_path: Path, mapping_path: Path):
 def test_reader_default_levels_match_canonical_selection(tmp_path: Path, mapping_path: Path):
     frontmatter = _read_frontmatter(READER_CANONICAL.read_text(encoding='utf-8'))
     assert frontmatter is not None
-    # No levels: whitelist → all six.
+    # No levels: whitelist → all seven.
     assert selected_levels(frontmatter) == list(LEVEL_TABLE.keys())
 
 

@@ -12,7 +12,7 @@ implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-execut
 
 # Execution Context Reader
 
-The read-only ingestion dispatcher for untrusted external content. It is the first hop in the reader/orchestrator/writer isolation model (see `plan-marshall:untrusted-ingestion`). It runs the caller-specified workflow (or inline instructions) under a **restricted, read-only tool surface** and emits ONLY a candidate struct for the declared schema. The model/effort pinning lives in the variant frontmatter (`execution-context-reader-{low|medium|high|xhigh|xxhigh}` — emitted by the build target). It is the second implementor of `ext-point-dynamic-level-executor`, and the implementor of the **read-only tool-surface lever** (distinct from the level/effort lever the write-capable `execution-context` rides — see ADR-003).
+The read-only ingestion dispatcher for untrusted external content. It is the first hop in the reader/orchestrator/writer isolation model (see `plan-marshall:untrusted-ingestion`). It runs the caller-specified workflow (or inline instructions) under a **restricted, read-only tool surface** and emits ONLY a candidate struct for the declared schema. The model/effort pinning lives in the variant frontmatter (`execution-context-reader-{level-1|level-2|level-3|level-4|level-5|level-6|level-7}` — emitted by the build target). It is the second implementor of `ext-point-dynamic-level-executor`, and the implementor of the **read-only tool-surface lever** (distinct from the level/effort lever the write-capable `execution-context` rides — see ADR-003).
 
 ## Tool Surface — Read-Only by Construction
 

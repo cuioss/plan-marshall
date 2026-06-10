@@ -34,11 +34,12 @@ import json
 from pathlib import Path
 
 from marketplace.targets.claude.variant_emitter import (
+    ALIAS_GATED_EFFORTS,
     LEVEL_TABLE,
     is_role_eligible,
     parse_frontmatter,
     selected_levels,
-    supports_xhigh_effort,
+    supports_effort,
 )
 
 # Top-level fields that are preserved verbatim from the committed plugin.json.
@@ -77,8 +78,9 @@ def _expanded_agent_entries(agents_dir: Path, mapping_path: Path = _OPENCODE_MAP
     For each agent file:
     - If the file declares the dynamic-level-executor extension point,
       emit one entry per selected level plus the canonical no-suffix
-      entry. The ``max`` entry is suppressed when the resolved alias
-      cannot accept ``effort: xhigh`` (mirrors the build-time skip in
+      entry. A level whose effort is alias-capability-gated (any effort
+      in ``ALIAS_GATED_EFFORTS``) is suppressed when the resolved alias
+      cannot accept that effort (mirrors the build-time skip in
       ``variant_emitter``).
     - Otherwise, emit a single entry for the agent's filename.
 
@@ -100,13 +102,16 @@ def _expanded_agent_entries(agents_dir: Path, mapping_path: Path = _OPENCODE_MAP
         base_name = frontmatter.name or path.stem
         # Canonical (inherit) entry.
         entries.append(f'./agents/{base_name}.md')
-        # Per-level variants (with max guard for opus, xhigh).
+        # Per-level variants (with per-alias-effort guard — see
+        # ALIAS_GATED_EFFORTS; mirrors variant_emitter.emit_variants_for_agent).
         for level in selected_levels(frontmatter):
             primitive = LEVEL_TABLE[level]
-            if primitive['effort'] == 'xhigh':
+            effort = primitive['effort']
+            if effort in ALIAS_GATED_EFFORTS:
                 alias = primitive['model']
                 assert alias is not None
-                if not supports_xhigh_effort(alias, mapping_path):
+                assert effort is not None
+                if not supports_effort(alias, effort, mapping_path):
                     continue
             entries.append(f'./agents/{base_name}-{level}.md')
     return sorted(entries)

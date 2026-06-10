@@ -74,12 +74,12 @@ def test_high_end_preset_is_class_attribute() -> None:
 
 def test_get_economic_returns_economic_preset() -> None:
     result = mp.EffortPresets.get('economic')
-    assert result['default'] == 'medium'
+    assert result['default'] == 'level-2'
 
 
 def test_get_balanced_returns_balanced_preset() -> None:
     result = mp.EffortPresets.get('balanced')
-    assert result['default'] == 'high'
+    assert result['default'] == 'level-3'
     # BALANCED is stored in literal-expanded form: every KNOWN_ROLES phase
     # carries an explicit entry that mirrors the on-disk shape produced by
     # apply-preset balanced after _expand_phase_effort. The wizard's
@@ -95,62 +95,63 @@ def test_get_balanced_returns_balanced_preset() -> None:
         'phase-5-execute',
         'phase-6-finalize',
     }
-    assert result['roles']['phase-1-init'] == 'high'
-    assert result['roles']['phase-2-refine'] == 'high'
-    assert result['roles']['phase-3-outline'] == 'xhigh'
-    assert result['roles']['phase-4-plan'] == 'high'
+    assert result['roles']['phase-1-init'] == 'level-3'
+    assert result['roles']['phase-2-refine'] == 'level-3'
+    assert result['roles']['phase-3-outline'] == 'level-4'
+    assert result['roles']['phase-4-plan'] == 'level-3'
     assert result['roles']['phase-5-execute'] == {
-        'default': 'xhigh',
-        'verification-feedback': 'high',
+        'default': 'level-4',
+        'verification-feedback': 'level-3',
     }
     assert result['roles']['phase-6-finalize'] == {
-        'default': 'high',
-        'verification-feedback': 'high',
-        'post-run-review': 'xhigh',
+        'default': 'level-3',
+        'verification-feedback': 'level-3',
+        'post-run-review': 'level-4',
     }
 
 
 def test_get_high_end_with_hyphen_returns_high_end_preset() -> None:
     result = mp.EffortPresets.get('high-end')
-    assert result['default'] == 'high'
-    # HIGH_END pushes phase-5-execute.default up to xhigh — the per-task
+    assert result['default'] == 'level-3'
+    # HIGH_END pushes phase-5-execute.default up to level-4 — the per-task
     # implementation tier for the upper-tier preset.
-    assert result['roles']['phase-5-execute']['default'] == 'xhigh'
+    assert result['roles']['phase-5-execute']['default'] == 'level-4'
 
 
 def test_get_high_end_uppercase_underscore_resolves() -> None:
     result = mp.EffortPresets.get('HIGH_END')
-    assert result['default'] == 'high'
+    assert result['default'] == 'level-3'
 
 
 def test_get_high_end_lowercase_underscore_resolves() -> None:
     result = mp.EffortPresets.get('high_end')
-    assert result['default'] == 'high'
+    assert result['default'] == 'level-3'
 
 
 def test_get_mixed_case_resolves() -> None:
     # Sanity: arbitrary case spellings should still resolve.
     result = mp.EffortPresets.get('High-End')
-    assert result['default'] == 'high'
+    assert result['default'] == 'level-3'
 
 
-def test_high_end_contains_no_xxhigh_anywhere() -> None:
+def test_high_end_contains_no_level_5_anywhere() -> None:
     # Structural guard: HIGH_END is the upper tier, NOT a maximum-cost
-    # tier. ``xxhigh`` requires opus-4.7-only and is reserved for explicit
-    # per-phase opt-in, never as a preset default. Any future edit that
-    # re-introduces ``xxhigh`` into HIGH_END must fail this test.
+    # tier. ``level-5`` ((opus, high)) is reserved for explicit per-phase
+    # opt-in as a cost/intensity policy choice, never a preset default.
+    # Any future edit that re-introduces ``level-5`` into HIGH_END must
+    # fail this test.
     preset = mp.EffortPresets.get('high-end')
-    assert preset['default'] != 'xxhigh'
+    assert preset['default'] != 'level-5'
     for group, group_value in preset['roles'].items():
         if isinstance(group_value, str):
-            assert group_value != 'xxhigh', (
-                f"HIGH_END role '{group}' carries forbidden level 'xxhigh'"
+            assert group_value != 'level-5', (
+                f"HIGH_END role '{group}' carries forbidden level 'level-5'"
             )
         else:
             for subkey, level in group_value.items():
-                assert level != 'xxhigh', (
+                assert level != 'level-5', (
                     f"HIGH_END role '{group}.{subkey}' carries forbidden "
-                    "level 'xxhigh'"
+                    "level 'level-5'"
                 )
 
 
@@ -207,6 +208,15 @@ def test_local_allowed_levels_matches_cmd_models_allowed_levels() -> None:
     # Drift guard: the duplicated ALLOWED_LEVELS tuple in effort_presets.py
     # must stay in lock-step with _cmd_effort.ALLOWED_LEVELS.
     assert mp.ALLOWED_LEVELS == cmd_effort.ALLOWED_LEVELS
+
+
+def test_allowed_levels_is_numeric_palette() -> None:
+    # Pin the breaking rename: ALLOWED_LEVELS is the numeric level-N palette
+    # plus the special non-numeric `inherit` sentinel. No old token remains.
+    assert mp.ALLOWED_LEVELS == (
+        'level-1', 'level-2', 'level-3', 'level-4',
+        'level-5', 'level-6', 'level-7', 'inherit',
+    )
 
 
 # =============================================================================
@@ -325,13 +335,15 @@ def test_preset_ladder_is_monotonic() -> None:
     """Structural guard: ECONOMIC <= BALANCED <= HIGH_END at every slot.
 
     Walks the union of phase/role slots across the three presets and
-    asserts the ladder monotonicity on the ordinal scale ``(low, medium,
-    high, xhigh, xxhigh, max)``. Empty preset cells bubble through the
-    preset's own ``default`` per the resolver's polymorphic-value rule.
-    Any future preset edit that softens the ladder at any slot must
-    fail this test.
+    asserts the ladder monotonicity on the ordinal scale ``(level-1,
+    level-2, level-3, level-4, level-5, level-6, level-7)``. Empty preset
+    cells bubble through the preset's own ``default`` per the resolver's
+    polymorphic-value rule. Any future preset edit that softens the ladder
+    at any slot must fail this test.
     """
-    ordinal: tuple[str, ...] = ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'max')
+    ordinal: tuple[str, ...] = (
+        'level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7'
+    )
     rank = {level: idx for idx, level in enumerate(ordinal)}
 
     presets = {

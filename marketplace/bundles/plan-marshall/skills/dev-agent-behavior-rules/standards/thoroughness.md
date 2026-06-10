@@ -6,7 +6,7 @@ Coverage is a two-dial contract — **scope** (where the boundary is drawn) and 
 
 **Effort** and **thoroughness** are orthogonal dials. Conflating them is the failure this standard exists to prevent.
 
-- **Effort** is *compute-per-item*: the model tier the harness selects for a dispatch (`low` … `xxhigh`). It is deterministic and harness-selected — the agent does not choose it. A higher effort tier reasons harder about each item it looks at.
+- **Effort** is *compute-per-item*: the model tier the harness selects for a dispatch (`level-1` … `level-7`). It is deterministic and harness-selected — the agent does not choose it. A higher effort tier reasons harder about each item it looks at.
 - **Thoroughness** is *coverage breadth + relationship-tracing depth*: how many in-scope items are actually examined, and how far the relationships radiating from each change are traced. It is behavioral and agent-self-policed — the agent decides, on each item, whether to read it in full, sample it, or skip it, and whether to trace its neighbors.
 
 Raising effort does **NOT** raise thoroughness. A maximum-effort agent that reads one file in three and traces no relationships is doing shallow work with a strong model. The two dials must be set independently: effort governs the quality of reasoning applied to each examined item; thoroughness governs which items are examined and how their relations are followed.

@@ -16,18 +16,19 @@ The configuration lives in `.plan/marshal.json`. No Claude Code restart is neede
 [#level-palette]
 == The level palette
 
-Six ordinal tiers plus a sentinel. The build emits one `execution-context-{level}` agent variant per tier; the resolver picks which one each dispatch calls.
+Seven ordinal tiers plus a sentinel. The build emits one `execution-context-{level}` agent variant per tier; the resolver picks which one each dispatch calls.
 
 [cols="1,1,1,3", options="header"]
 |===
 | Level | Model | Effort | When to use
 
-| `low` | Haiku | (n/a) | Mechanical work: log scrubbing, simple lookups, deterministic transforms.
-| `medium` | Sonnet | medium | Routine code edits, doc updates. Sensible plan-wide default.
-| `high` | Sonnet | high | Analytical work: triage, validation, multi-file reasoning.
-| `xhigh` | Opus | medium | Opus reasoning without max thinking — fills the Sonnet-high → Opus-high cost/quality gap.
-| `xxhigh` | Opus | high | High-effort Opus — today's standard Opus top tier.
-| `max` | Opus | xhigh | Top tier (Opus-4.8-only). Build-time guard skips emission when the resolved alias does not accept `effort: xhigh`.
+| `level-1` | Haiku | (n/a) | Mechanical work: log scrubbing, simple lookups, deterministic transforms.
+| `level-2` | Sonnet | medium | Routine code edits, doc updates. Sensible plan-wide default.
+| `level-3` | Sonnet | high | Analytical work: triage, validation, multi-file reasoning.
+| `level-4` | Opus | medium | Opus reasoning without max thinking — fills the Sonnet-high → Opus-high cost/quality gap.
+| `level-5` | Opus | high | High-effort Opus — Opus's standard top tier.
+| `level-6` | Opus | xhigh | Extra-high-effort Opus. Build-time guard skips emission when the resolved alias does not accept `effort: xhigh`.
+| `level-7` | Fable | max | Absolute top tier. Build-time guard skips emission when the resolved alias does not accept `effort: max`.
 | `inherit` | (parent) | (parent) | Sentinel: dispatch the canonical no-suffix variant, inheriting whatever the parent session uses.
 |===
 
@@ -61,9 +62,9 @@ Don't tune individual sub-keys until you've tried a preset. Three are bundled an
 |===
 | Preset | Profile
 
-| `economic` | Cost-optimised. Default `medium`. The three analytical phases (`phase-2-refine`, `phase-3-outline`, `phase-4-plan`) plus the `verification-feedback` workflow on phase-5-execute and phase-6-finalize are bumped to `high`. `post-run-review` stays `medium`.
-| `balanced` | Middle of the road. Default `high`. Lifts `phase-3-outline`, `phase-5-execute.default`, and `phase-6-finalize.post-run-review` to `xhigh`; `verification-feedback` stays at `high`.
-| `high-end` | Upper-tier. Default `high`. Every analytical / `verification-feedback` / `post-run-review` slot (including `phase-5-execute.default`) is `xhigh`. **No slot is `xxhigh` or `max`** — those tiers require explicit per-phase opt-in.
+| `economic` | Cost-optimised. Default `level-2`. The three analytical phases (`phase-2-refine`, `phase-3-outline`, `phase-4-plan`) plus the `verification-feedback` workflow on phase-5-execute and phase-6-finalize are bumped to `level-3`. `post-run-review` stays `level-2`.
+| `balanced` | Middle of the road. Default `level-3`. Lifts `phase-3-outline`, `phase-5-execute.default`, and `phase-6-finalize.post-run-review` to `level-4`; `verification-feedback` stays at `level-3`.
+| `high-end` | Upper-tier. Default `level-3`. Every analytical / `verification-feedback` / `post-run-review` slot (including `phase-5-execute.default`) is `level-4`. **No slot is `level-5` or higher** — those tiers require explicit per-phase opt-in.
 |===
 
 Apply via the wizard:
@@ -91,12 +92,12 @@ If presets don't fit, edit `marshal.json` directly. The `plan.<phase>.effort` fi
 ----
 {
   "plan": {
-    "effort": "medium",                          // plan-wide fallback
-    "phase-3-outline": { "effort": "high" },     // string form — applies to everything under phase-3-outline
+    "effort": "level-2",                            // plan-wide fallback
+    "phase-3-outline": { "effort": "level-3" },     // string form — applies to everything under phase-3-outline
     "phase-5-execute": {
-      "effort": {                                // object form — per-sub-key overrides
-        "default": "high",
-        "verification-feedback": "xxhigh"
+      "effort": {                                   // object form — per-sub-key overrides
+        "default": "level-3",
+        "verification-feedback": "level-5"
       }
     }
   }
@@ -112,7 +113,7 @@ The `effort` block is **opt-in**: when absent entirely, every subagent inherits 
 A project author wants:
 
 * Research at the absolute top tier in phase-3-outline.
-* Q-Gate checks (phase-3 and phase-4) on Sonnet-high (`high`).
+* Q-Gate checks (phase-3 and phase-4) on Sonnet-high (`level-3`).
 * Verification triage on Sonnet-high in both phase-5 and phase-6.
 * Everything else on the default.
 
@@ -120,21 +121,21 @@ A project author wants:
 ----
 {
   "plan": {
-    "effort": "medium",
+    "effort": "level-2",
     "phase-3-outline": {
       "effort": {
-        "default": "high",
-        "research": "max"
+        "default": "level-3",
+        "research": "level-7"
       }
     },
-    "phase-4-plan": { "effort": "high" },
+    "phase-4-plan": { "effort": "level-3" },
     "phase-5-execute": {
-      "effort": { "verification-feedback": "high" }
+      "effort": { "verification-feedback": "level-3" }
     },
     "phase-6-finalize": {
       "effort": {
-        "default": "medium",
-        "verification-feedback": "high"
+        "default": "level-2",
+        "verification-feedback": "level-3"
       }
     }
   }
@@ -143,16 +144,16 @@ A project author wants:
 
 After saving:
 
-* Q-Gate dispatches from phase-3-outline hit `execution-context-high` via the phase-3 `default` slot. Phase-4 Q-Gate dispatches hit `execution-context-high` via the bare-string at `phase-4-plan.effort`.
-* `--phase phase-5-execute --role verification-feedback` dispatches hit `execution-context-high`.
-* `--phase phase-6-finalize --role verification-feedback` dispatches hit `execution-context-high`.
-* Other phase-6-finalize dispatches (create-pr, pre-submission-self-review, post-run-review) hit `execution-context-medium` via the phase-6 `default` slot.
-* Everything else (phase-1-init, phase-2-refine, phase-5-execute body) hits `execution-context-medium` via the plan-wide fallback.
+* Q-Gate dispatches from phase-3-outline hit `execution-context-level-3` via the phase-3 `default` slot. Phase-4 Q-Gate dispatches hit `execution-context-level-3` via the bare-string at `phase-4-plan.effort`.
+* `--phase phase-5-execute --role verification-feedback` dispatches hit `execution-context-level-3`.
+* `--phase phase-6-finalize --role verification-feedback` dispatches hit `execution-context-level-3`.
+* Other phase-6-finalize dispatches (create-pr, pre-submission-self-review, post-run-review) hit `execution-context-level-2` via the phase-6 `default` slot.
+* Everything else (phase-1-init, phase-2-refine, phase-5-execute body) hits `execution-context-level-2` via the plan-wide fallback.
 
 [#research-tier]
 == Research-tier note
 
-The `research` workflow is bound under each phase's sub-key, not as its own group. It inherits the calling phase's `default` unless you set `<phase>.research` explicitly. To push research to the top tier across the most common research entry point (outline), pin `phase-3-outline.research = max` — but note this is an explicit per-phase opt-in; none of the three presets does it for you.
+The `research` workflow is bound under each phase's sub-key, not as its own group. It inherits the calling phase's `default` unless you set `<phase>.research` explicitly. To push research to the top tier across the most common research entry point (outline), pin `phase-3-outline.research = level-7` — but note this is an explicit per-phase opt-in; none of the three presets does it for you.
 
 For *standalone* `/research` outside any plan (no `--phase` flag), the dispatch resolves via `--default` (`plan.effort` → `inherit`). Bump `plan.effort` to raise every standalone research run.
 
@@ -164,16 +165,16 @@ For *standalone* `/research` outside any plan (no `--phase` flag), the dispatch 
 Check, in order:
 
 1. **Spelling.** Role keys are kebab-case and match the SKILL.md name exactly (`phase-6-finalize.verification-feedback`, not `phase_6.verification_feedback`, not the bare `phase-6-finalize`).
-2. **Level value.** Valid: `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, `inherit`. Case-sensitive.
+2. **Level value.** Valid: `level-1`, `level-2`, `level-3`, `level-4`, `level-5`, `level-6`, `level-7`, `inherit`. Case-sensitive.
 3. **Target rebuilt.** For meta-project developers only: if you changed variant frontmatter, `target/claude/` needs regenerating. Consumer projects don't have this concern — the variants are static and only the resolver selection changes.
 
-=== `max` isn't running on Opus
+=== `level-6` / `level-7` isn't running on the expected model
 
-`max` resolves to `(opus, xhigh)`, which is Opus-4.8-only. When the build target can't emit that variant (the resolved alias does not accept `effort: xhigh`), it skips emission and the dispatch falls back to the canonical no-suffix variant, which inherits the parent session's model. Check `.plan/logs/` for the build warning.
+`level-6` resolves to `(opus, xhigh)` and `level-7` resolves to `(fable, max)` — both are alias-capability-gated. When the build target can't emit that variant (the resolved alias does not accept the level's effort), it skips emission and the dispatch falls back to the canonical no-suffix variant, which inherits the parent session's model. Check `.plan/logs/` for the build warning.
 
 === Wizard refuses my level value
 
-Valid levels are listed above. Typos (`hi`, `High`, `MAX`) are refused at save time, by design.
+Valid levels are listed above. Typos (`lvl-3`, `Level-3`, `LEVEL-7`) are refused at save time, by design.
 
 === Configured level visible but the subagent runs on the wrong model
 
@@ -188,7 +189,7 @@ unset CLAUDE_CODE_SUBAGENT_MODEL
 
 * xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection] — the three-layer overview (levels, roles, variants)
 * xref:../concepts/execution-context.adoc[Concepts › Execution Context] — what the `execution-context-{level}` agent does at dispatch time
-* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — resolver contract & spec (precise resolution rules, env-var override, build-time `max` guard)
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — resolver contract & spec (precise resolution rules, env-var override, build-time alias-capability guard)
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`] — full role registry (sub-key → workflow doc → dispatch site)
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`] — canonical level → `(model, effort)` primitive binding
 * link:../../marketplace/bundles/plan-marshall/skills/marshall-steward/standards/effort-menu.md[`effort-menu.md`] — wizard preset-picker contract

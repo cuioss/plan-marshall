@@ -28,6 +28,10 @@
     "haiku": {
       "id": "claude-haiku-4-5-20251001",
       "supports_effort": []
+    },
+    "fable": {
+      "id": "claude-fable-5",
+      "supports_effort": ["medium", "high", "xhigh", "max"]
     }
   }
 }
