@@ -857,7 +857,7 @@ qgate_pending_count: {count}
 
 ```toon
 status: error
-error_type: {solution_read_failed|assessment_read_failed|request_read_failed}
+error: {solution_read_failed|assessment_read_failed|request_read_failed}
 message: {human readable error}
 context:
   plan_id: {plan_id}

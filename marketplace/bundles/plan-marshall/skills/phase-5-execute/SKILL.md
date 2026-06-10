@@ -448,7 +448,7 @@ Inlined flow:
 
    ```toon
    status: error
-   error_type: baseline_drift
+   error: baseline_drift
    divergent_commits: {divergent_commits}
    upstream_commit_count: {upstream_commit_count}
    conflict_count: {conflict_count}

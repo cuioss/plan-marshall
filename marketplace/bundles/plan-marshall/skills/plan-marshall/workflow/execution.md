@@ -179,8 +179,8 @@ to the agent's terminal payload (text + structured TOON return):
 | `task_complete_returned_verbatim` | The agent returned the bare `task_complete` payload from `execute-task` verbatim, without wrapping it in a phase-5-execute terminal payload. (Implies the agent skipped the loop's bookkeeping after a single task.) |
 | `voluntary_checkpoint` | The agent emitted any of "Returning control to orchestrator", "progress checkpoint", "partial-completion handoff", or returned a non-error payload while pending tasks remain in the queue. **See "B7 — voluntary_checkpoint no-progress reclassification" below for the deterministic predicate that reclassifies a sub-class of voluntary_checkpoint returns as `error`.** |
 | `harness_cancellation` | The dispatch ended with a host-platform cancellation marker (timeout, context-window limit, etc.). |
-| `error` | The agent returned a structured error payload via the skill's Error Handling section (including the pending-task-drift fatal error), EXCLUDING the `error_type: baseline_drift` discriminator below. |
-| `baseline_drift` | The agent returned `status: error, error_type: baseline_drift` from phase-5-execute Step 3 because `baseline-reconcile` reported `conflict_count > 0` (non-zero overlap between upstream commits and the worktree's in-flight changes). Triggers the **Baseline drift recovery (non-zero overlap)** sub-section below. The zero-overlap case (`conflict_count == 0`) NEVER reaches this branch — phase-5-execute self-absorbs it internally via the metadata-only contract documented in `phase-5-execute/standards/sync-with-main.md` § "Self-absorption contract", then continues its task loop without returning. |
+| `error` | The agent returned a structured error payload via the skill's Error Handling section (including the pending-task-drift fatal error), EXCLUDING the `error: baseline_drift` discriminator below. |
+| `baseline_drift` | The agent returned `status: error, error: baseline_drift` from phase-5-execute Step 3 because `baseline-reconcile` reported `conflict_count > 0` (non-zero overlap between upstream commits and the worktree's in-flight changes). Triggers the **Baseline drift recovery (non-zero overlap)** sub-section below. The zero-overlap case (`conflict_count == 0`) NEVER reaches this branch — phase-5-execute self-absorbs it internally via the metadata-only contract documented in `phase-5-execute/standards/sync-with-main.md` § "Self-absorption contract", then continues its task loop without returning. |
 | `clean_exit_queue_empty` | Canonical value for clean exits where the loop drove to completion AND `manage-tasks loop-exit-guard` confirmed the pending queue is empty. The orchestrator MUST classify clean exits as `clean_exit_queue_empty`, NEVER fall back to a non-canonical value — missing or unrecognised causes are recorder-level script errors (the recorder no longer accepts the legacy `unknown` fallback). |
 
 **Script-level pending-count enforcement**: before classifying any return as `clean_exit_queue_empty`, the orchestrator MUST call `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks loop-exit-guard --plan-id {plan_id}` and confirm it returns `status: success` with `pending_count: 0`. `status: continue` forces re-dispatch — the orchestrator is forbidden from softening this signal. See `manage-tasks/SKILL.md` § "Loop-Exit Guard".
@@ -314,7 +314,7 @@ This dispatch lives in the main-context orchestrator so every cross-envelope `Ta
 
 ### Baseline drift recovery (non-zero overlap)
 
-**Trigger**: the just-returned execution-context dispatch is classified `termination-cause == baseline_drift`. The agent's structured error payload carries `error_type: baseline_drift` plus `divergent_commits`, `upstream_commit_count`, and `conflict_count > 0`.
+**Trigger**: the just-returned execution-context dispatch is classified `termination-cause == baseline_drift`. The agent's structured error payload carries `error: baseline_drift` plus `divergent_commits`, `upstream_commit_count`, and `conflict_count > 0`.
 
 **Why this branch handles only non-zero overlap**: phase-5-execute Step 3 invokes `baseline-reconcile` to obtain a deterministic `conflict_count`. When `conflict_count == 0`, phase-5-execute self-absorbs the drift internally — it writes `worktree_sha` + `main_sha` into `status.metadata`, emits a single decision-log entry, and continues its task loop without returning. The orchestrator therefore sees the structured drift TOON ONLY when the upstream commits touch files that overlap with the worktree's in-flight changes, which is exactly the case where the request narrative + outline + tasks may no longer be valid against the new baseline. Re-cycling through phase-2-refine is the canonical absorption path for this case.
 
@@ -353,7 +353,7 @@ Return the orchestrator-level error TOON and STOP:
 
 ```toon
 status: error
-error_type: drift_loop_cap_exceeded
+error: drift_loop_cap_exceeded
 display_detail: "drift loop cap exceeded after 3 consecutive recoveries"
 plan_id: {plan_id}
 ```

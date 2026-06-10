@@ -67,6 +67,7 @@ from _analyze_test_conventions import (
     analyze_validator_regex_vs_corpus,
 )
 from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
+from _analyze_workflow_doc_toon_error_field import analyze_workflow_doc_toon_error_field
 from _cmd_apply import apply_single_fix, load_templates
 from _cmd_extension import validate_extension_contracts
 from _doctor_analysis import analyze_component, scan_argparse_safety
@@ -396,6 +397,16 @@ def cmd_analyze(args) -> dict:
     tmp_redirect_issues = analyze_tmp_redirect_in_skills(marketplace_root)
     all_issues.extend(tmp_redirect_issues)
     total_issues += len(tmp_redirect_issues)
+
+    # Marketplace-wide WORKFLOW_DOC_TOON_ERROR_FIELD rule. Unconditionally
+    # active — flags the non-canonical ``error_type`` key inside fenced
+    # ``toon`` workflow/agent error blocks in plan-marshall skill markdown.
+    # The canonical error-envelope discriminator field is ``error`` (see
+    # plan-marshall workflow/planning.md). Also wired into quality-gate
+    # below — the normalization sweep guarantees zero residual findings.
+    workflow_toon_error_field_issues = analyze_workflow_doc_toon_error_field(marketplace_root)
+    all_issues.extend(workflow_toon_error_field_issues)
+    total_issues += len(workflow_toon_error_field_issues)
 
     # Marketplace-wide bash-fence-inline-code-exemption rule. Unconditionally
     # active — reintroduction guard that flags any analyzer module scanning
@@ -823,6 +834,22 @@ def cmd_quality_gate(args) -> dict:
     all_issues.extend(shell_substitution_findings)
     rule_summaries.append(
         {'rule': 'analyze_shell_substitution_in_skills', 'findings': len(shell_substitution_findings)}
+    )
+
+    # WORKFLOW_DOC_TOON_ERROR_FIELD — flags the non-canonical ``error_type`` key
+    # inside fenced ``toon`` workflow/agent error blocks in plan-marshall skill
+    # markdown. Quality-gate-active: the normalization sweep that established the
+    # canonical ``error`` discriminator eliminated every fenced-TOON ``error_type``
+    # key, so the post-sweep tree produces zero residual findings.
+    workflow_toon_error_field_findings = _scoped(
+        analyze_workflow_doc_toon_error_field(marketplace_root)
+    )
+    all_issues.extend(workflow_toon_error_field_findings)
+    rule_summaries.append(
+        {
+            'rule': 'analyze_workflow_doc_toon_error_field',
+            'findings': len(workflow_toon_error_field_findings),
+        }
     )
 
     # bash-chain-shapes and tmp-redirect are intentionally NOT in quality-gate —

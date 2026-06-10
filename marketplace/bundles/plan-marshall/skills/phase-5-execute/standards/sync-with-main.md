@@ -63,7 +63,7 @@ Catch the recurring failure mode where a long-running execute phase is interrupt
 
    ```toon
    status: error
-   error_type: baseline_drift
+   error: baseline_drift
    divergent_commits: {divergent_commits}
    upstream_commit_count: {upstream_commit_count}
    conflict_count: {conflict_count}
@@ -72,7 +72,7 @@ Catch the recurring failure mode where a long-running execute phase is interrupt
 
    The orchestrator's drift-recovery branch (`plan-marshall/workflow/execution.md` § "Baseline drift recovery (non-zero overlap)") re-dispatches phase-2-refine via the standard envelope, where the iterate-to-confidence loop absorbs the overlap. ABORT the phase. Do NOT enter the task loop. Do NOT auto-merge. Do NOT auto-rebase.
 
-The structured drift TOON is load-bearing — it is the orchestrator's signal to invoke the drift-recovery branch. Returning a generic `status: error` without the `error_type: baseline_drift` discriminator causes the orchestrator to treat the failure as a generic agent error instead of a recoverable baseline drift.
+The structured drift TOON is load-bearing — it is the orchestrator's signal to invoke the drift-recovery branch. Returning a generic `status: error` without the `error: baseline_drift` discriminator causes the orchestrator to treat the failure as a generic agent error instead of a recoverable baseline drift.
 
 ## Self-absorption contract
 

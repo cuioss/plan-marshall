@@ -331,6 +331,37 @@ Seven forward-looking lint rules.
 
 ---
 
+## Rule Pack: Workflow-doc TOON error-field invariant
+
+**Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode AND included in `quality-gate`. Unlike the bash chain-shape pack, the marketplace tree carries zero residual findings (the normalization sweep that established the canonical `error:` discriminator eliminated every fenced-TOON `error_type` key), so the rule enforces at quality-gate level on day one.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `WORKFLOW_DOC_TOON_ERROR_FIELD` | Detect the non-canonical `error_type` key inside fenced ` ```toon ` workflow/agent error blocks in plan-marshall skill/agent/command markdown — the canonical error-envelope discriminator field is `error` | Detection scope is fenced ` ```toon ` blocks only; the key must be at the start of a TOON line (after leading whitespace). Inline `{status: error, error_type: ...}` brace shorthands, prose `error_type:` references outside any fence, and `error_type` keys inside non-`toon` fences are out of scope by design | None — rename the key to `error`; for a two-key block carrying both a category and a human-readable message, demote the message to `display_detail` |
+
+### WORKFLOW_DOC_TOON_ERROR_FIELD
+
+**Rule ID**: `WORKFLOW_DOC_TOON_ERROR_FIELD`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_workflow_doc_toon_error_field.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/{skills,agents,commands}/`.
+
+**Intent**: Enforce the canonical error-envelope contract established at `plan-marshall/skills/plan-marshall/workflow/planning.md`, where an agent/workflow error TOON block uses `error:` as the category discriminator (with the human-readable message carried by `display_detail:`). Some workflow and agent docs drifted to `error_type:` for the discriminator. Because the orchestrator and the execution-context dispatcher branch on the field name they read out of the TOON block, the drifted key silently desynchronises the read-side match. This rule prevents the drift class from recurring after the normalization sweep.
+
+**Detection logic**: Builds a fence map of every fenced block whose info-string is `toon`. Within each fenced TOON block, flags any line whose TOON key is `error_type` — both the colon-style (`error_type:`) and the tab-style (`error_type\t`) forms, since TOON blocks may use either key/value separator. The key must appear at the start of a TOON line (after leading whitespace); anchoring at the line start is what excludes inline brace shorthands.
+
+**Permitted contexts**:
+1. **Inline brace shorthands** — `{status: error, error_type: ...}` table shorthands are not flagged; the key is embedded mid-line in a brace expression, not at the start of a TOON line.
+2. **Prose references** — `error_type:` mentions in narrative or log-message text live outside any `toon` fence and are not scanned.
+3. **Non-`toon` fences** — `error_type` keys inside a `python`, `json`, or other non-`toon` fence are not workflow/agent error TOON blocks and are not flagged.
+
+**Recommended fix**: Rename the `error_type` key to `error`. For a two-key block carrying BOTH a category discriminator AND a human-readable message, rename the discriminator to `error` and demote the message line to `display_detail` (matching the canonical `error:` + `display_detail:` envelope shape).
+
+**Suppression mechanism**: None — rename the key. If the occurrence is genuinely documentary (a doc naming the forbidden pattern), move it outside the `toon` fence (e.g. into prose or a `text` fence) so the structural exemption applies.
+
+---
+
 ## Rule Pack: Script-call drift
 
 | Rule ID | Intent | False-positive policy | Suppression |
