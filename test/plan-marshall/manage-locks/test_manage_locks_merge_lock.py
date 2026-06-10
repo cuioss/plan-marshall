@@ -67,6 +67,24 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-locks', 'merge_lock.py')
 
 merge_lock = load_script_module('plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_under_test')
 
+# The shared core owns the [LOCK]-log resolver and the best-effort emission
+# swallow. ``merge_lock`` does ``from _locks_core import log_lock_event``, so the
+# function closes over the _locks_core module that ``merge_lock`` imported — that
+# SAME module instance is recovered from the function's ``__globals__`` (NOT a
+# fresh ``load_script_module`` copy, which would be a different instance whose
+# patches ``merge_lock`` never sees).
+import sys as _sys  # noqa: E402
+
+_locks_core = _sys.modules[merge_lock.log_lock_event.__module__]
+
+
+def _read_lock_log() -> str:
+    """Read the main-anchored [LOCK] log, '' when no emission landed yet."""
+    log_path = _locks_core._resolve_lock_log_path()
+    if not log_path.exists():
+        return ''
+    return log_path.read_text(encoding='utf-8')
+
 
 # =============================================================================
 # Fixtures
@@ -809,6 +827,117 @@ class TestTitleTokenSurface:
 
 
 # =============================================================================
+# Title-token suppression contract (set_title_token=False)
+# =============================================================================
+
+
+class TestTitleTokenSuppression:
+    """The ``set_title_token`` parameter gates the entire title-token surface so the
+    move-back merge lock (a brief, finalize-internal mutex) never flashes a spurious
+    glyph into the terminal title. ``set_title_token=False`` suppresses ALL three
+    title surfaces — ``lock-owned`` (🔒), ``lock-waiting`` (⏳), and the release
+    clear — while the default (``set_title_token`` absent, or ``True``) preserves the
+    full surface. These tests assert BOTH halves of the contract through the same
+    ``_TokenRecorder`` seam ``TestTitleTokenSurface`` uses."""
+
+    def test_acquire_suppresses_lock_owned_when_set_title_token_false(
+        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
+    ) -> None:
+        """A fresh acquire with ``set_title_token=False`` surfaces NO token — the
+        🔒 ``lock-owned`` glyph never reaches the title even though the lock is held."""
+        result = merge_lock.run_acquire(
+            Namespace(plan_id='plan-a', timeout=5.0, set_title_token=False)
+        )
+        assert result['status'] == 'success'
+        assert result['action'] == 'acquired'
+        # No state set, no icon pushed — the title surface is fully suppressed.
+        assert _stub_title_tokens.set_states == []
+        assert _stub_title_tokens.pushed_icons == []
+
+    def test_acquire_suppresses_lock_owned_on_reclaim_when_set_title_token_false(
+        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
+    ) -> None:
+        """The reclaim path also honors suppression — a reclaimed acquire with
+        ``set_title_token=False`` surfaces no 🔒 token."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-dead', timeout=5.0))
+        _stub_title_tokens.set_states.clear()
+        _stub_title_tokens.pushed_icons.clear()
+
+        result = merge_lock.run_acquire(
+            Namespace(plan_id='plan-b', timeout=5.0, set_title_token=False)
+        )
+        assert result['reclaimed'] is True
+        assert _stub_title_tokens.set_states == []
+        assert _stub_title_tokens.pushed_icons == []
+
+    def test_blocked_acquire_suppresses_lock_waiting_when_set_title_token_false(
+        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
+    ) -> None:
+        """A blocked acquire against a live holder with ``set_title_token=False``
+        surfaces no ⏳ ``lock-waiting`` token despite sleeping through backoff polls."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        _stub_title_tokens.set_states.clear()
+        _stub_title_tokens.pushed_icons.clear()
+
+        result = merge_lock.run_acquire(
+            Namespace(plan_id='plan-b', timeout=0.6, set_title_token=False)
+        )
+        assert result['status'] == 'blocked'
+        assert _stub_title_tokens.set_states == []
+        assert _stub_title_tokens.pushed_icons == []
+
+    def test_release_suppresses_clear_when_set_title_token_false(
+        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
+    ) -> None:
+        """A release with ``set_title_token=False`` clears NO token — there was never
+        a token set by the suppressed acquire, so there is nothing to clear."""
+        merge_lock.run_acquire(
+            Namespace(plan_id='plan-a', timeout=5.0, set_title_token=False)
+        )
+        _stub_title_tokens.cleared.clear()
+
+        result = merge_lock.run_release(
+            Namespace(plan_id='plan-a', set_title_token=False)
+        )
+        assert result['action'] == 'released'
+        assert _stub_title_tokens.cleared == []
+
+    def test_release_noop_suppresses_clear_when_set_title_token_false(
+        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
+    ) -> None:
+        """The already-free / foreign-holder noop release paths also honor
+        suppression — ``set_title_token=False`` clears no token on the noop path."""
+        result = merge_lock.run_release(
+            Namespace(plan_id='plan-a', set_title_token=False)
+        )
+        assert result['action'] == 'noop'
+        assert _stub_title_tokens.cleared == []
+
+    def test_acquire_default_still_surfaces_token(
+        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
+    ) -> None:
+        """The default (``set_title_token`` absent → True) preserves the full surface —
+        a default acquire still surfaces the 🔒 ``lock-owned`` token."""
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        assert result['status'] == 'success'
+        assert _stub_title_tokens.set_states == ['lock-owned']
+        assert _stub_title_tokens.pushed_icons == [merge_lock._ICON_LOCK_OWNED]
+
+    def test_release_default_still_clears_token(
+        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
+    ) -> None:
+        """The default (``set_title_token`` absent → True) preserves the release
+        clear — a default release still clears the title token."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        _stub_title_tokens.cleared.clear()
+
+        result = merge_lock.run_release(Namespace(plan_id='plan-a'))
+        assert result['action'] == 'released'
+        assert _stub_title_tokens.cleared == ['plan-a']
+
+
+# =============================================================================
 # CLI argparse plumbing
 # =============================================================================
 
@@ -828,3 +957,188 @@ class TestCli:
         result = run_script(SCRIPT_PATH, 'release')
         assert result.returncode != 0
         assert '--plan-id' in result.stderr or '--plan-id' in result.stdout
+
+    def test_acquire_accepts_no_title_token_flag(self, isolated_base: dict) -> None:
+        """The ``--no-title-token`` flag is a valid acquire argument (it maps to
+        ``set_title_token=False``) — argparse accepts it and the acquire succeeds."""
+        env_overrides = {'PLAN_BASE_DIR': str(isolated_base['base'])}
+        result = run_script(
+            SCRIPT_PATH, 'acquire', '--plan-id', 'plan-a', '--no-title-token',
+            env_overrides=env_overrides,
+        )
+        assert result.returncode == 0, result.stderr
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'success'
+        assert parsed['action'] == 'acquired'
+
+    def test_release_accepts_no_title_token_flag(self, isolated_base: dict) -> None:
+        """The ``--no-title-token`` flag is a valid release argument matching a
+        ``--no-title-token`` acquire — argparse accepts it and the release succeeds."""
+        env_overrides = {'PLAN_BASE_DIR': str(isolated_base['base'])}
+        run_script(
+            SCRIPT_PATH, 'acquire', '--plan-id', 'plan-a', '--no-title-token',
+            env_overrides=env_overrides,
+        )
+        result = run_script(
+            SCRIPT_PATH, 'release', '--plan-id', 'plan-a', '--no-title-token',
+            env_overrides=env_overrides,
+        )
+        assert result.returncode == 0, result.stderr
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'success'
+        assert parsed['action'] == 'released'
+
+
+# =============================================================================
+# [LOCK] event emission (best-effort, OUTSIDE the O_EXCL window)
+# =============================================================================
+
+
+class TestLockEventEmission:
+    """Each merge-lock lifecycle point emits a ``[LOCK]`` event into the SINGLE
+    main-anchored global lock-event log via the shared
+    :func:`_locks_core.log_lock_event`: ``acquired`` on a fresh O_EXCL create,
+    ``reclaimed`` on a stale-reclaim re-create (carrying the reclaimed-from
+    holder), ``blocked`` on a live-holder timeout (carrying holder/waiter), and
+    ``released`` on the real os.unlink. ``check`` and the foreign / already-free
+    release noops emit nothing. Every emission is best-effort and OUTSIDE the
+    atomic window — a logging failure never breaks the lock action.
+
+    The ``isolated_base`` fixture stages PLAN_BASE_DIR at ``<tmp>/main/.plan/local``
+    so the lock-event log resolves to the per-test ``<tmp>/main/.plan/logs`` dir."""
+
+    def test_acquire_emits_lock_acquired(self, isolated_base: dict) -> None:
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+
+        content = _read_lock_log()
+        # lock_id is the holder plan_id; the family is `merge`.
+        assert '[LOCK] (merge:acquired) plan-a' in content
+
+    def test_reclaim_emits_lock_reclaimed_with_reclaimed_from(self, isolated_base: dict) -> None:
+        """A reclaim of a dead holder's lock emits ``reclaimed`` carrying the
+        reclaimed-from holder for correlation."""
+        # plan-dead acquires but never gets a plan dir → dead → reclaimable.
+        merge_lock.run_acquire(Namespace(plan_id='plan-dead', timeout=5.0))
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        assert result['reclaimed'] is True
+
+        content = _read_lock_log()
+        assert '[LOCK] (merge:reclaimed) plan-b' in content
+        # The reclaimed-from holder is carried as a correlation field.
+        assert 'reclaimed_from: plan-dead' in content
+
+    def test_blocked_timeout_emits_lock_blocked_with_holder_and_waiter(
+        self, isolated_base: dict
+    ) -> None:
+        """A wait-budget timeout against a LIVE holder emits ``blocked`` carrying
+        the blocking holder and the waiter."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-live', timeout=5.0))
+        _make_live_plan(isolated_base['base'], 'plan-live')
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.3))
+        assert result['status'] == 'blocked'
+
+        content = _read_lock_log()
+        assert '[LOCK] (merge:blocked) plan-b' in content
+        assert 'holder: plan-live' in content
+        assert 'waiter: plan-b' in content
+
+    def test_release_emits_lock_released(self, isolated_base: dict) -> None:
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        result = merge_lock.run_release(Namespace(plan_id='plan-a'))
+        assert result['action'] == 'released'
+
+        content = _read_lock_log()
+        assert '[LOCK] (merge:released) plan-a' in content
+
+    def test_check_emits_no_lock_event(self, isolated_base: dict) -> None:
+        """``check`` is a non-mutating read — it changes no ownership and emits
+        nothing into the lock-event timeline."""
+        merge_lock.run_check(Namespace(plan_id='plan-a'))
+
+        assert _read_lock_log() == ''
+
+    def test_already_free_release_emits_no_lock_event(self, isolated_base: dict) -> None:
+        """An already-free release noop removed no lock this caller held — it
+        emits nothing (only the real ``released`` branch emits)."""
+        result = merge_lock.run_release(Namespace(plan_id='plan-a'))
+        assert result['action'] == 'noop'
+
+        assert '[LOCK] (merge:released)' not in _read_lock_log()
+
+    def test_foreign_holder_release_emits_no_lock_event(self, isolated_base: dict) -> None:
+        """A foreign-holder release noop leaves the lock intact and changes no
+        ownership — it emits no ``released`` event."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+
+        result = merge_lock.run_release(Namespace(plan_id='plan-b'))
+        assert result['action'] == 'noop'
+
+        content = _read_lock_log()
+        # plan-a's acquire emitted; plan-b's foreign-holder noop did NOT emit a
+        # released event.
+        assert '[LOCK] (merge:released)' not in content
+
+    def test_lock_event_lands_in_main_anchored_log_not_worktree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The [LOCK] event lands in the MAIN-anchored global log even when cwd is
+        pinned to a worktree — asserted via the PLAN_BASE_DIR override, not a
+        worktree path. A worktree-relative .plan/logs dir must hold no lock log."""
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        (main_base / 'plans').mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+
+        content = _read_lock_log()
+        assert '[LOCK] (merge:acquired) plan-a' in content
+        # No lock-event log under the worktree-relative .plan/logs.
+        assert not (worktree / '.plan' / 'logs').exists()
+
+    def test_log_failure_never_breaks_acquire(
+        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A [LOCK]-emission failure NEVER aborts the lock acquire — the emission
+        is best-effort, with the swallow try/except INSIDE ``log_lock_event``
+        itself. Make the REAL ``log_lock_event``'s internal resolver raise (the
+        seam ``_resolve_lock_log_path`` on the shared core) and assert the
+        function swallows it and the acquire still succeeds with the lock file
+        created. Patching the bare ``log_lock_event`` name would (correctly) NOT
+        be swallowed — the call sites invoke it directly — so the realistic
+        failure is one inside the helper's own try/except."""
+        def _raising_resolver() -> object:
+            raise OSError('log dir gone')
+
+        monkeypatch.setattr(_locks_core, '_resolve_lock_log_path', _raising_resolver)
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'acquired'
+        assert isolated_base['lock_path'].is_file()
+
+    def test_log_failure_never_breaks_release(
+        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Symmetric on the RELEASE side: a [LOCK]-emission failure (the real
+        helper's internal resolver raising, swallowed by its own try/except)
+        NEVER aborts the lock release — the lock file is still removed."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        assert isolated_base['lock_path'].is_file()
+
+        def _raising_resolver() -> object:
+            raise OSError('log dir gone')
+
+        monkeypatch.setattr(_locks_core, '_resolve_lock_log_path', _raising_resolver)
+
+        result = merge_lock.run_release(Namespace(plan_id='plan-a'))
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'released'
+        assert not isolated_base['lock_path'].exists()

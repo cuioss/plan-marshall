@@ -16,7 +16,9 @@ Composition has three independent inputs:
 * **Body** — ``pm:{phase}[:{short}]`` for active phases, and the Completed body
   for terminal phases (``complete`` / ``archived``). See :func:`_compose_body`.
 * **Glyph** — the ``title_token`` lock/build state glyph (⏳/🔒/🕐/🔨), prepended
-  when set. See :data:`TITLE_TOKEN_GLYPHS`.
+  when set for an active phase. Suppressed for terminal phases regardless of the
+  persisted token state — a finished plan holds no live lock/build state. See
+  :data:`TITLE_TOKEN_GLYPHS`.
 * **Icon** — the process icon resolved from the hook event (➤ active / ? waiting
   / ✓ done), with a terminal-state override to ✅ (:data:`_ICON_TERMINAL`) for a
   finished plan regardless of which event fired. See :func:`resolve_icon` and
@@ -53,9 +55,10 @@ TITLE_TOKEN_GLYPHS: dict[str, str] = {
 
 # --- Terminal phases --------------------------------------------------------
 #
-# Phases for which the plan is finished: the icon is forced to ✅ and the body is
-# the Completed body (never ``None``), so a finished plan always renders with the
-# terminal icon and never the ➤/? process icons.
+# Phases for which the plan is finished: the icon is forced to ✅, the body is
+# the Completed body (never ``None``), and the title_token glyph is suppressed,
+# so a finished plan always renders with the terminal icon, never the ➤/?
+# process icons, and never a lock/build glyph.
 _TERMINAL_PHASES: frozenset[str] = frozenset({"complete", "archived"})
 
 # Body prefix for an active phase and the Completed terminal body, respectively.
@@ -153,8 +156,9 @@ def compose(
 
     Returns:
         The composed ``'{icon} {glyph} {body}'`` string (glyph omitted when no
-        ``title_token`` is set), or ``None`` when the body is ``None`` (true
-        no-op — empty/missing ``current_phase``).
+        ``title_token`` is set, and always omitted for terminal phases), or
+        ``None`` when the body is ``None`` (true no-op — empty/missing
+        ``current_phase``).
 
     Icon selection:
 
@@ -164,22 +168,39 @@ def compose(
       appear for a finished plan.
     - Otherwise the icon is ``icon_override`` when given, else
       :func:`resolve_icon`\\(``event``, ``tool_name``).
+
+    Glyph selection:
+
+    - When ``current_phase`` is terminal (``complete`` / ``archived``), the
+      ``title_token`` glyph is suppressed regardless of the persisted token
+      state — a finished plan holds no live lock/build state, so it renders NO
+      glyph for any of the four :data:`TITLE_TOKEN_GLYPHS` states (⏳/🔒/🕐/🔨).
+      The suppression is token-agnostic by construction.
+    - Otherwise (active phase) the glyph for the persisted ``title_token`` is
+      prepended when set.
     """
     body = _compose_body(state_dict)
     if body is None:
         return None
 
     phase = state_dict.get("current_phase")
-    if isinstance(phase, str) and phase in _TERMINAL_PHASES:
+    is_terminal = isinstance(phase, str) and phase in _TERMINAL_PHASES
+    if is_terminal:
         icon = _ICON_TERMINAL
     elif icon_override is not None:
         icon = icon_override
     else:
         icon = resolve_icon(event, tool_name)
 
-    token = state_dict.get("title_token")
-    glyph = TITLE_TOKEN_GLYPHS.get(token) if isinstance(token, str) else None
+    # A finished plan holds no live lock/build state, so the title_token glyph
+    # is suppressed for terminal phases. The suppression is at the glyph-prepend,
+    # making it token-agnostic: all four TITLE_TOKEN_GLYPHS states (⏳/🔒/🕐/🔨)
+    # are uniformly suppressed for a terminal plan. The glyph only renders for
+    # active phases.
+    if not is_terminal:
+        token = state_dict.get("title_token")
+        glyph = TITLE_TOKEN_GLYPHS.get(token) if isinstance(token, str) else None
+        if glyph:
+            return f"{icon} {glyph} {body}"
 
-    if glyph:
-        return f"{icon} {glyph} {body}"
     return f"{icon} {body}"

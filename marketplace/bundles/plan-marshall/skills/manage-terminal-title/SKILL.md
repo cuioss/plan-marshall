@@ -73,8 +73,15 @@ The `title_token` lock/build-state glyph, prepended when the field is set:
 | `building` | 🔨 |
 
 `manage-status` persists only the bare state string in the `title_token` field;
-this map is the single owner of the state→glyph rendering. When no `title_token`
-is set the glyph segment is omitted (`'{icon} {body}'`).
+this map is the single owner of the state→glyph rendering. The glyph is omitted
+(`'{icon} {body}'`) in two cases:
+
+- No `title_token` is set in the plan state.
+- `current_phase` is a terminal phase (`complete` / `archived`) — a finished
+  plan holds no live lock/build state, so the glyph is suppressed regardless of
+  any persisted `title_token` value. The suppression is token-agnostic: all four
+  `TITLE_TOKEN_GLYPHS` states (⏳/🔒/🕐/🔨) are uniformly suppressed for a
+  terminal plan.
 
 ### Icon (`resolve_icon` + terminal override)
 

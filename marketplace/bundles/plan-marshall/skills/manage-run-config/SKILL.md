@@ -18,6 +18,7 @@ Run configuration handling for persistent command configuration storage.
 - Timeout and warning operations use the noun-verb pattern (e.g., `timeout get`, `warning add`)
 - Cleanup operations use `cleanup` and `cleanup-status` subcommands
 - Architecture-refresh operations use the noun-verb pattern (`architecture-refresh get-tier-0`, `architecture-refresh set-tier-0`, etc.)
+- Build-queue-limit operations use the noun-verb pattern (`build-queue-limit get`, `build-queue-limit set`)
 
 ## Run Configuration Structure
 
@@ -41,6 +42,9 @@ Run configuration handling for persistent command configuration storage.
   "architecture_refresh": {
     "tier_0": "enabled",
     "tier_1": "prompt"
+  },
+  "build_queue": {
+    "upper_limit_seconds": 600
   },
   "ci": {
     "authenticated_tools": [],
@@ -68,6 +72,8 @@ See [standards/run-config-standard.md](standards/run-config-standard.md) for com
 | architecture-refresh set-tier-0 | `plan-marshall:manage-run-config:run_config architecture-refresh set-tier-0` |
 | architecture-refresh get-tier-1 | `plan-marshall:manage-run-config:run_config architecture-refresh get-tier-1` |
 | architecture-refresh set-tier-1 | `plan-marshall:manage-run-config:run_config architecture-refresh set-tier-1` |
+| build-queue-limit get | `plan-marshall:manage-run-config:run_config build-queue-limit get` |
+| build-queue-limit set | `plan-marshall:manage-run-config:run_config build-queue-limit set` |
 | cleanup | `plan-marshall:manage-run-config:run_config cleanup` |
 | cleanup-status | `plan-marshall:manage-run-config:run_config cleanup-status` |
 
@@ -165,6 +171,21 @@ Allowed values:
 
 Invalid values surface the standard `status: error, error: invalid_value, allowed: [...]` contract.
 
+### build-queue-limit get / set
+
+Manage the adaptive `build_queue.upper_limit_seconds` knob consumed by `build_queue.validate_lock_queue` — the self-healing build-queue stale reaper. The limit is the per-build held-duration ceiling the reaper measures against: an active slot is reaped once its age exceeds `2 ×` this limit. It defaults to and floors at 600 s (10 min), is capped at a 3600 s (1 h) ceiling, and is monotonic-up but clamped — `build_queue` `release` grows it toward the longest observed real build held-duration so a legitimately long build is never falsely reaped, while the ceiling prevents a single anomalously long hold from ratcheting it beyond an hour. The knob lives under a `build_queue` block in the main-anchored `run-configuration.json`, so reads/writes resolve against the main checkout regardless of caller cwd.
+
+```bash
+# Read the current limit (default/floor 600 s, always clamped to [600, 3600])
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit get
+
+# Set the limit explicitly (positive int seconds; clamped to [600, 3600])
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit set \
+  --value 1800
+```
+
+A non-positive `--value` surfaces the standard `status: error, error: invalid_value` contract; a value outside `[600, 3600]` is clamped (not rejected) on write.
+
 ### cleanup / cleanup-status
 
 Directory cleanup using retention settings from marshal.json.
@@ -203,6 +224,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 | `marshall-steward` | architecture-refresh set-tier-0/1 | Persist user-selected tier knobs from setup/maintenance wizard |
 | Build skills | timeout set | Update timeouts after command execution |
 | Build skills | warning add | Register acceptable warning patterns |
+| `manage-locks` `build_queue` release | build-queue-limit set | Persist the clamped adaptive upper limit from the released entry's held duration |
 
 ### Consumers
 
@@ -211,6 +233,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 | Build skills | timeout get | Read timeout values for command execution |
 | Build skills | warning list | Filter build warnings against accepted patterns |
 | `phase-6-finalize` architecture-refresh step | architecture-refresh get-tier-0/1 | Read tier knobs to decide deterministic refresh / LLM re-enrichment behaviour |
+| `manage-locks` `build_queue` acquire/release | build-queue-limit get | Read the adaptive upper limit to compute the `2 ×` stale-reclaim threshold |
 
 ---
 
@@ -273,6 +296,17 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config archi
 
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config architecture-refresh set-tier-1 \
   --value {prompt,auto,disabled}
+```
+
+### build-queue-limit
+
+`build-queue-limit` carries the nested sub-verbs `get` and `set`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit get
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit set \
+  --value VALUE
 ```
 
 ### cleanup

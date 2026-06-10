@@ -865,3 +865,71 @@ class TestRunConfigMainAnchoring:
         # Assert: the write landed under MAIN's base, NOT the worktree.
         assert (main_base / 'run-configuration.json').is_file()
         assert not (worktree / '.plan' / 'local' / 'run-configuration.json').exists()
+
+
+# =============================================================================
+# Build-queue-limit knob — main-anchored round-trip (deliverable 5)
+# =============================================================================
+
+
+class TestBuildQueueLimitMainAnchoring:
+    """The build_queue.upper_limit_seconds knob round-trips MAIN-anchored: the
+    adaptive stale-reclaim limit is a cross-session corpus, so a write/read issued
+    from a worktree cwd must land on (and read from) the MAIN checkout's
+    run-configuration.json — never the worktree-relative copy.
+
+    The reaper in build_queue.py reads this limit, and the release-time
+    adaptive-limit recompute writes it; both run with cwd pinned to a worktree
+    under ADR-002, so the main-anchored round-trip is the load-bearing property.
+    """
+
+    def test_build_queue_limit_round_trips_main_anchored_from_worktree_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: PLAN_BASE_DIR main stand-in; cwd pinned into a worktree dir
+        # with its own .plan/local — the main-anchored resolver must win over cwd.
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        main_base.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+        import file_ops  # type: ignore[import-not-found]
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        # Act: write the limit from the worktree cwd, then read it back.
+        run_config._write_build_queue_upper_limit(1800)
+        read_back = run_config._read_build_queue_upper_limit()
+
+        # Assert: the write landed on MAIN's run-configuration.json (NOT the
+        # worktree-relative copy) and the read resolves the same main-anchored file.
+        assert read_back == 1800
+        main_config = main_base / 'run-configuration.json'
+        assert main_config.is_file()
+        assert json.loads(main_config.read_text())['build_queue']['upper_limit_seconds'] == 1800
+        assert not (worktree / '.plan' / 'local' / 'run-configuration.json').exists()
+
+    def test_build_queue_limit_write_clamps_then_round_trips_main_anchored(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: same worktree-cwd / main-anchored setup as above.
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        main_base.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+        import file_ops  # type: ignore[import-not-found]
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        # Act: write an above-ceiling value — the clamp pins it to 3600 on main.
+        run_config._write_build_queue_upper_limit(99999)
+
+        # Assert: the persisted (and read-back) value is the 3600 s ceiling,
+        # stored on MAIN, never higher.
+        assert run_config._read_build_queue_upper_limit() == 3600
+        main_config = main_base / 'run-configuration.json'
+        assert json.loads(main_config.read_text())['build_queue']['upper_limit_seconds'] == 3600
+        assert not (worktree / '.plan' / 'local' / 'run-configuration.json').exists()

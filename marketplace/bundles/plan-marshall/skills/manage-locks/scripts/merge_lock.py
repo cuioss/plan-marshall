@@ -89,6 +89,21 @@ and ``lock-waiting`` is set once before the wait loop sleeps (it never runs
 between the holder-read and the re-create). This guarantees the token surface
 does not widen the kernel race the lock's correctness depends on.
 
+**[LOCK] observability (best-effort, OUTSIDE the atomic window).** Each merge-lock
+lifecycle point emits a ``[LOCK]`` event through the shared
+:func:`_locks_core.log_lock_event` helper into the SINGLE main-anchored global
+lock-event log: ``acquired`` after a fresh ``O_EXCL`` create succeeds,
+``reclaimed`` after a stale-reclaim re-create succeeds (carrying the reclaimed-from
+holder), ``blocked`` on the wait-budget timeout against a LIVE holder (carrying
+the blocking holder / waiter correlation), and ``released`` after the real
+``os.unlink`` (the ``action: released`` branch ONLY — never the foreign/already-free
+noops, which changed no ownership). ``check`` is a non-mutating read and emits
+nothing. The ``lock_id`` is the holder ``plan_id``. Like the title-token surface,
+every emission is best-effort, placed OUTSIDE the ``O_EXCL`` check-then-act
+window, and unconditional (the ``[LOCK]`` timeline always records, independent of
+the ``set_title_token`` opt-out) — a logging failure can never affect lock
+acquisition or release.
+
 **Two invocation channels, by registration status (mirrors D6).** The two
 best-effort title-token operations live in executor-registered skills
 (``manage-status`` and ``platform-runtime``) whose multi-module layouts make a
@@ -112,7 +127,7 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from _locks_core import holder_is_dead  # type: ignore[import-not-found]
+from _locks_core import holder_is_dead, log_lock_event  # type: ignore[import-not-found]
 from file_ops import get_executor_path  # type: ignore[import-not-found]
 from marketplace_paths import (  # type: ignore[import-not-found]
     resolve_main_anchored_path,
@@ -263,6 +278,21 @@ def _clear_title_token(plan_id: str) -> None:
         logger.debug('title-token clear for %s failed: %s', plan_id, exc)
 
 
+def _surface_lock_cleared(plan_id: str, set_title_token: bool = True) -> None:
+    """Best-effort: clear the merge-lock title token for ``plan_id``.
+
+    When ``set_title_token`` is False the clear is suppressed entirely — the
+    move-back merge lock never set a token, so there is nothing to clear and no
+    title write should fire. Mirrors the gating in :func:`_surface_lock_owned` /
+    :func:`_surface_lock_waiting` so all three title surfaces share one
+    suppression contract while the underlying ``_clear_title_token`` seam keeps
+    its single-argument signature.
+    """
+    if not set_title_token:
+        return
+    _clear_title_token(plan_id)
+
+
 def _push_title_token(plan_id: str, icon: str) -> None:
     """Best-effort ``platform_runtime session push-title-token --icon {icon}``."""
     try:
@@ -273,23 +303,31 @@ def _push_title_token(plan_id: str, icon: str) -> None:
         logger.debug('push-title-token(%s) for %s failed: %s', icon, plan_id, exc)
 
 
-def _surface_lock_owned(plan_id: str) -> None:
+def _surface_lock_owned(plan_id: str, set_title_token: bool = True) -> None:
     """Best-effort: surface the ``lock-owned`` state (🔒) for ``plan_id``.
 
     Called only AFTER the atomic ``O_EXCL`` create has already succeeded — the
     lock is held, so the TOCTOU window is closed and these writes cannot widen it.
+    When ``set_title_token`` is False the surface is suppressed entirely (no
+    glyph reaches the terminal title) — the move-back merge lock uses this so the
+    brief integration lock does not flash a spurious 🔒 into the title.
     """
+    if not set_title_token:
+        return
     _set_title_token(plan_id, _STATE_LOCK_OWNED)
     _push_title_token(plan_id, _ICON_LOCK_OWNED)
 
 
-def _surface_lock_waiting(plan_id: str) -> None:
+def _surface_lock_waiting(plan_id: str, set_title_token: bool = True) -> None:
     """Best-effort: surface the ``lock-waiting`` state (⏳) for ``plan_id``.
 
     Called once before the wait loop sleeps against a LIVE holder — it never runs
     inside the holder-read → re-create check-then-act, so it cannot widen the
-    O_EXCL race.
+    O_EXCL race. When ``set_title_token`` is False the surface is suppressed
+    entirely (no glyph reaches the terminal title).
     """
+    if not set_title_token:
+        return
     _set_title_token(plan_id, _STATE_LOCK_WAITING)
     _push_title_token(plan_id, _ICON_LOCK_WAITING)
 
@@ -317,6 +355,9 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     # `or` (which would treat 0 as "unset" and block for the full default).
     timeout_val = getattr(args, 'timeout', None)
     timeout: float = timeout_val if timeout_val is not None else _DEFAULT_TIMEOUT_SECONDS
+    # Default True preserves the title-token surface; callers (the move-back
+    # merge lock) pass set_title_token=False to suppress the spurious glyph.
+    set_title_token: bool = getattr(args, 'set_title_token', True)
 
     try:
         lock_path = _resolve_main_lock_path()
@@ -333,7 +374,10 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         if _try_atomic_create(lock_path, plan_id):
             # Lock held — surface `lock-owned` (🔒). Best-effort, AFTER the atomic
             # create succeeded, so the TOCTOU window is already closed.
-            _surface_lock_owned(plan_id)
+            _surface_lock_owned(plan_id, set_title_token)
+            # [LOCK] `acquired` — best-effort, after the atomic create, OUTSIDE
+            # the O_EXCL window; unconditional (independent of set_title_token).
+            log_lock_event('merge', 'acquired', lock_id=plan_id, lock_file=_LOCK_FILENAME)
             return {
                 'status': 'success',
                 'plan_id': plan_id,
@@ -346,6 +390,9 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         # The lock is held — inspect the holder for stale reclamation.
         holder = _read_holder(lock_path)
         if holder_is_dead(holder):
+            # Capture the reclaimed-from holder before the stale file is removed
+            # so the `reclaimed` [LOCK] event can correlate it.
+            reclaimed_from = holder
             # Reclaim: remove the stale file and immediately re-attempt the
             # O_EXCL create. If a third session won the race in between, our
             # create loses cleanly (EEXIST) and we fall through to retry.
@@ -359,7 +406,16 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
                 if _try_atomic_create(lock_path, plan_id):
                     # Reclaimed — surface `lock-owned` (🔒), AFTER the atomic
                     # re-create succeeded (TOCTOU window already closed).
-                    _surface_lock_owned(plan_id)
+                    _surface_lock_owned(plan_id, set_title_token)
+                    # [LOCK] `reclaimed` — best-effort, after the re-create,
+                    # OUTSIDE the O_EXCL window; carry the reclaimed-from holder.
+                    log_lock_event(
+                        'merge',
+                        'reclaimed',
+                        lock_id=plan_id,
+                        lock_file=_LOCK_FILENAME,
+                        reclaimed_from=reclaimed_from or None,
+                    )
                     return {
                         'status': 'success',
                         'plan_id': plan_id,
@@ -375,6 +431,16 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
             # orchestrator escalation (AskUserQuestion Wait-and-retry / Skip)
             # still fires. `--timeout 0` non-blocking try lands here immediately
             # on a held lock, with no sleep.
+            # [LOCK] `blocked` — best-effort, on the timeout return; carry the
+            # blocking holder / waiter correlation (holder=blocking, waiter=self).
+            log_lock_event(
+                'merge',
+                'blocked',
+                lock_id=plan_id,
+                lock_file=_LOCK_FILENAME,
+                holder=holder or None,
+                waiter=plan_id,
+            )
             return {
                 'status': 'blocked',
                 'plan_id': plan_id,
@@ -386,7 +452,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         # runs OUTSIDE the check-then-act (after the deadline check, before the
         # sleep), so it never widens the O_EXCL race the lock depends on.
         if not waiting_surfaced:
-            _surface_lock_waiting(plan_id)
+            _surface_lock_waiting(plan_id, set_title_token)
             waiting_surfaced = True
         time.sleep(_BACKOFF_SECONDS)
 
@@ -431,6 +497,10 @@ def run_release(args: Namespace) -> dict[str, Any]:
     mid-merge and retried does not error on the second release.
     """
     plan_id: str = args.plan_id
+    # Default True preserves the title-token clear; callers (the move-back merge
+    # lock) pass set_title_token=False — they never set a token, so there is
+    # nothing to clear.
+    set_title_token: bool = getattr(args, 'set_title_token', True)
 
     try:
         lock_path = _resolve_main_lock_path()
@@ -440,7 +510,7 @@ def run_release(args: Namespace) -> dict[str, Any]:
     if not lock_path.exists():
         # Already free — this caller holds no lock, so clear any stale
         # `lock-owned` token (best-effort). Mirrors the idempotent-release noop.
-        _clear_title_token(plan_id)
+        _surface_lock_cleared(plan_id, set_title_token)
         return {
             'status': 'success',
             'plan_id': plan_id,
@@ -454,7 +524,7 @@ def run_release(args: Namespace) -> dict[str, Any]:
         # Do not remove a foreign holder's lock — release is scoped to the
         # caller. Report a no-op so a crashed-and-retried release is benign.
         # This caller does not hold the lock, so clear its own stale token.
-        _clear_title_token(plan_id)
+        _surface_lock_cleared(plan_id, set_title_token)
         return {
             'status': 'success',
             'plan_id': plan_id,
@@ -475,7 +545,11 @@ def run_release(args: Namespace) -> dict[str, Any]:
         )
     # Lock removed — clear the `lock-owned` token (best-effort, after removal so
     # the token never lingers past the lock it represents).
-    _clear_title_token(plan_id)
+    _surface_lock_cleared(plan_id, set_title_token)
+    # [LOCK] `released` — best-effort, after the real os.unlink; this is the only
+    # release branch that changed ownership (the noop/foreign branches above do
+    # not emit, since they removed no lock this caller held).
+    log_lock_event('merge', 'released', lock_id=plan_id, lock_file=_LOCK_FILENAME)
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -517,6 +591,12 @@ Examples:
                         'type': float,
                         'help': f'Max seconds to wait for the lock (default: {_DEFAULT_TIMEOUT_SECONDS})',
                     },
+                    {
+                        'flags': ['--no-title-token'],
+                        'dest': 'set_title_token',
+                        'action': 'store_false',
+                        'help': 'Suppress the terminal-title glyph surface (no ⏳/🔒 reaches the title)',
+                    },
                 ],
             },
             {
@@ -542,6 +622,12 @@ Examples:
                         'dest': 'plan_id',
                         'required': True,
                         'help': 'Holder source — the plan_id releasing the lock (mandatory)',
+                    },
+                    {
+                        'flags': ['--no-title-token'],
+                        'dest': 'set_title_token',
+                        'action': 'store_false',
+                        'help': 'Suppress the terminal-title glyph clear (matches a --no-title-token acquire)',
                     },
                 ],
             },

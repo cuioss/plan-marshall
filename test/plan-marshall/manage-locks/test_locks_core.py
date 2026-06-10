@@ -40,6 +40,8 @@ rmw_json = _mod.rmw_json
 _read_json_or_empty = _mod._read_json_or_empty
 _acquire_guard = _mod._acquire_guard
 _atomic_write_json = _mod._atomic_write_json
+log_lock_event = _mod.log_lock_event
+_resolve_lock_log_path = _mod._resolve_lock_log_path
 
 
 # =============================================================================
@@ -410,3 +412,164 @@ def test_rmw_json_blocks_until_guard_released(tmp_path, monkeypatch):
     assert release_done.is_set()
     assert result == {'after': 'release'}
     assert not guard.exists()
+
+
+# =============================================================================
+# [LOCK] event emission — log_lock_event + _resolve_lock_log_path
+# =============================================================================
+#
+# These tests stage their OWN isolated main-anchored base under tmp_path (the
+# same `tmp_path/main/.plan/local` PLAN_BASE_DIR pattern the merge_lock /
+# build_queue suites use). The autouse `plan_context` redirect points
+# PLAN_BASE_DIR at the shared `tmp_path`, whose `.parent/logs` dir would be
+# shared across tests — so a per-test isolated base is required for the
+# exact-content assertions below to be deterministic under `-n auto`.
+
+
+def _lock_log_base(tmp_path, monkeypatch):
+    """Stage an isolated PLAN_BASE_DIR; return (base, lock_log_path).
+
+    Under PLAN_BASE_DIR the [LOCK] log resolves to
+    ``<base>.parent / logs / lock-{date}.log`` (i.e. ``<tmp>/main/.plan/logs``),
+    unique per test so the append/content assertions are deterministic.
+    """
+    base = tmp_path / 'main' / '.plan' / 'local'
+    base.mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    return base, _resolve_lock_log_path()
+
+
+def test_resolve_lock_log_path_is_main_anchored(tmp_path, monkeypatch):
+    # The lock-event log lives under the MAIN-anchored .plan/logs dir, derived
+    # from <PLAN_BASE_DIR>.parent / logs / lock-{date}.log — NOT a worktree path.
+    base, log_path = _lock_log_base(tmp_path, monkeypatch)
+
+    assert log_path.parent == base.parent / 'logs'
+    assert log_path.name.startswith('lock-')
+    assert log_path.name.endswith('.log')
+
+
+def test_resolve_lock_log_path_ignores_worktree_cwd(tmp_path, monkeypatch):
+    # Pinning cwd into a worktree fixture does NOT redirect the lock-event log to
+    # a worktree-relative path — it stays the single main-anchored timeline.
+    base, _ = _lock_log_base(tmp_path, monkeypatch)
+    worktree = tmp_path / 'worktrees' / 'some-plan'
+    (worktree / '.plan' / 'local').mkdir(parents=True)
+    monkeypatch.chdir(worktree)
+
+    log_path = _resolve_lock_log_path()
+
+    assert log_path.parent == base.parent / 'logs'
+    assert (worktree / '.plan' / 'logs') != log_path.parent
+
+
+def test_log_lock_event_appends_lock_tagged_line(tmp_path, monkeypatch):
+    _, log_path = _lock_log_base(tmp_path, monkeypatch)
+
+    log_lock_event('merge', 'acquired', lock_id='plan-a')
+
+    content = log_path.read_text(encoding='utf-8')
+    # The bracketed [LOCK] tag + (family:event) + lock_id are on the header line,
+    # carrying the standard [ts] [LEVEL] [hash] prefix.
+    assert '[LOCK] (merge:acquired) plan-a' in content
+    assert '[INFO]' in content
+
+
+def test_log_lock_event_records_each_lifecycle_event(tmp_path, monkeypatch):
+    # acquire / blocked / release / stale-reclaim for both primitives all land
+    # in the SINGLE main-anchored timeline.
+    _, log_path = _lock_log_base(tmp_path, monkeypatch)
+
+    log_lock_event('merge', 'acquired', lock_id='m-1')
+    log_lock_event('merge', 'blocked', lock_id='m-2', holder='m-1', waiter='m-2')
+    log_lock_event('merge', 'released', lock_id='m-1')
+    log_lock_event('merge', 'reclaimed', lock_id='m-3', reclaimed_from='m-dead')
+    log_lock_event('build', 'acquired', lock_id='b-1:uuid', active_count=1, waiting_count=0)
+    log_lock_event('build', 'blocked', lock_id='b-2:uuid', waiter='b-2', active_count=1, waiting_count=1)
+    log_lock_event('build', 'released', lock_id='b-1:uuid', active_count=0, waiting_count=0)
+    log_lock_event('build', 'reaped-stale', lock_id='b-3:uuid')
+
+    content = log_path.read_text(encoding='utf-8')
+    assert '[LOCK] (merge:acquired) m-1' in content
+    assert '[LOCK] (merge:blocked) m-2' in content
+    assert '[LOCK] (merge:released) m-1' in content
+    assert '[LOCK] (merge:reclaimed) m-3' in content
+    assert '[LOCK] (build:acquired) b-1:uuid' in content
+    assert '[LOCK] (build:blocked) b-2:uuid' in content
+    assert '[LOCK] (build:released) b-1:uuid' in content
+    assert '[LOCK] (build:reaped-stale) b-3:uuid' in content
+
+
+def test_log_lock_event_includes_correlation_fields(tmp_path, monkeypatch):
+    _, log_path = _lock_log_base(tmp_path, monkeypatch)
+
+    log_lock_event('merge', 'blocked', lock_id='m-2', holder='m-1', waiter='m-2')
+
+    content = log_path.read_text(encoding='utf-8')
+    # Correlation fields are appended as indented lines under the header.
+    assert 'holder: m-1' in content
+    assert 'waiter: m-2' in content
+
+
+def test_log_lock_event_reaped_stale_is_warning_level(tmp_path, monkeypatch):
+    # The reaped-stale event is logged at WARNING; every other event is INFO.
+    _, log_path = _lock_log_base(tmp_path, monkeypatch)
+
+    log_lock_event('build', 'reaped-stale', lock_id='b-stale:uuid')
+
+    content = log_path.read_text(encoding='utf-8')
+    assert '[WARNING]' in content
+    assert '[LOCK] (build:reaped-stale) b-stale:uuid' in content
+
+
+def test_log_lock_event_other_events_are_info_level(tmp_path, monkeypatch):
+    # Every non-reaped-stale event is INFO — never WARNING.
+    _, log_path = _lock_log_base(tmp_path, monkeypatch)
+
+    log_lock_event('merge', 'acquired', lock_id='m-info')
+
+    content = log_path.read_text(encoding='utf-8')
+    assert '[INFO]' in content
+    assert '[WARNING]' not in content
+
+
+def test_log_lock_event_appends_not_overwrites(tmp_path, monkeypatch):
+    # A second emission appends to the SAME log file; the first line survives.
+    _, log_path = _lock_log_base(tmp_path, monkeypatch)
+
+    log_lock_event('merge', 'acquired', lock_id='first')
+    log_lock_event('merge', 'released', lock_id='first')
+
+    content = log_path.read_text(encoding='utf-8')
+    assert '[LOCK] (merge:acquired) first' in content
+    assert '[LOCK] (merge:released) first' in content
+
+
+def test_log_lock_event_swallows_resolution_failure(tmp_path, monkeypatch):
+    # A failure ANYWHERE in the emission body (here: the path resolver raising)
+    # is swallowed — log_lock_event is best-effort and MUST NOT raise into the
+    # lock action it observes.
+    _lock_log_base(tmp_path, monkeypatch)
+
+    def _boom() -> object:
+        raise RuntimeError('resolution failed')
+
+    monkeypatch.setattr(_mod, '_resolve_lock_log_path', _boom)
+
+    # No exception propagates.
+    log_lock_event('merge', 'acquired', lock_id='plan-a')
+
+
+def test_log_lock_event_swallows_unwritable_dir(tmp_path, monkeypatch):
+    # An open() that raises (unwritable dir / encoding error) is swallowed too —
+    # the emission is OUTSIDE the lock's atomic window, so a write failure can
+    # never affect lock correctness.
+    _lock_log_base(tmp_path, monkeypatch)
+
+    def _raising_open(*_a: object, **_k: object) -> object:
+        raise OSError('disk full')
+
+    monkeypatch.setattr('builtins.open', _raising_open)
+
+    # No exception propagates despite the write failing.
+    log_lock_event('merge', 'released', lock_id='plan-a')

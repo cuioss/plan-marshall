@@ -509,8 +509,14 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
         )
 
     # --- Step 1: acquire the cooperative merge lock ------------------------
+    # set_title_token=False suppresses the merge lock's terminal-title glyph
+    # surface (⏳/🔒): the move-back lock is a brief, finalize-internal mutex, so
+    # flashing a lock glyph into the title is spurious noise the user never needs
+    # to see. The token is a display affordance, not a correctness primitive.
     merge_lock = _load_merge_lock()
-    acquire_result = merge_lock.run_acquire(Namespace(plan_id=plan_id, timeout=None))
+    acquire_result = merge_lock.run_acquire(
+        Namespace(plan_id=plan_id, timeout=None, set_title_token=False)
+    )
     if acquire_result.get('status') != 'success':
         # Could not acquire (timeout / resolution failure) — surface verbatim.
         # No lock was acquired, so there is nothing to release.
@@ -519,7 +525,9 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     def _release_and(payload: dict[str, Any]) -> dict[str, Any]:
         """Release the lock (idempotent) and return ``payload`` unchanged."""
         try:
-            merge_lock.run_release(Namespace(plan_id=plan_id))
+            # set_title_token=False mirrors the acquire above — the move-back
+            # lock never set a title token, so there is nothing to clear.
+            merge_lock.run_release(Namespace(plan_id=plan_id, set_title_token=False))
         except Exception:  # noqa: BLE001 - release must never mask the real result
             # Release failure is logged via the lock's own contract on the next
             # acquire's stale-reclamation path; never let it overwrite the

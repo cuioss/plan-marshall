@@ -1,7 +1,10 @@
 = User Guide
 :nofooter:
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
 
 xref:../../README.md[Plan Marshall] » User Guide
 
@@ -15,6 +18,7 @@ Operating Plan Marshall in a target project. If you are working on Plan Marshall
 * xref:configuration.adoc[Configuration] — surface map of every configuration file Plan Marshall touches and what governs each.
 * xref:efforts.adoc[Efforts] — per-role model selection: wizard presets, polymorphic `marshal.json` shape, worked example, troubleshooting.
 * xref:terminal-title.adoc[Terminal Title] — VS Code and IntelliJ-specific integration for the per-session status indicator.
+* xref:parallelism-and-locking.adoc[Parallelism and Locking] — operator guide for running concurrent plans: the build-queue knobs (`max_slots`, `max_retries`, `build_queue_upper_limit`), the main-anchored `[LOCK]` log, and a stuck-queue FAQ.
 
 == Concept Crossover
 
@@ -23,3 +27,4 @@ User-side workflows depend on a small handful of concepts. When something here r
 * xref:../concepts/planning-workflow.adoc[Planning Workflow] for `/plan-marshall` and the six phases.
 * xref:../concepts/execution-context.adoc#per-role-model-selection[Execution Context › Per-Role Model Selection] for the per-role model system referenced from xref:efforts.adoc[Efforts].
 * xref:../concepts/execution-context.adoc[Execution Context] for why effort changes take effect on the next dispatch without a Claude Code restart.
+* xref:../concepts/parallelism-and-locking.adoc[Parallelism and Locking] for the merge mutex and build-queue limiter that serialize concurrent plans, referenced from xref:parallelism-and-locking.adoc[Parallelism and Locking].
