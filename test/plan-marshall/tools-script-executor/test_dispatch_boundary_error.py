@@ -102,6 +102,7 @@ def test_emit_records_script_internal_failure_for_exit_code_1(executor_with_mock
     executor.emit_dispatch_failure_work_log(
         notation=TEST_NOTATION,
         exit_code=1,
+        stdout='',
         stderr=DEFAULT_STDERR,
         script_args=['read', '--plan-id', DEFAULT_PLAN_ID, '--file', 'foo.json'],
         audit_plan_id=None,
@@ -126,7 +127,8 @@ def test_emit_records_script_internal_failure_for_exit_code_1(executor_with_mock
     assert 'failure_kind=script_internal_failure' in message, (
         f'Expected failure_kind=script_internal_failure in: {message!r}'
     )
-    assert DEFAULT_STDERR in message, f'stderr blob missing from message: {message!r}'
+    # With empty stdout, the detail field falls back to stderr (precedence 3).
+    assert f'detail={DEFAULT_STDERR}' in message, f'stderr-derived detail missing from message: {message!r}'
 
 
 def test_emit_records_script_internal_failure_for_unusual_exit_code(executor_with_mock_log_entry):
@@ -140,6 +142,7 @@ def test_emit_records_script_internal_failure_for_unusual_exit_code(executor_wit
     executor.emit_dispatch_failure_work_log(
         notation=TEST_NOTATION,
         exit_code=42,
+        stdout='',
         stderr=DEFAULT_STDERR,
         script_args=['--plan-id', DEFAULT_PLAN_ID],
         audit_plan_id=None,
@@ -177,6 +180,7 @@ def test_emit_records_argparse_rejection_for_exit_code_2(executor_with_mock_log_
     executor.emit_dispatch_failure_work_log(
         notation=TEST_NOTATION,
         exit_code=2,
+        stdout='',
         stderr=argparse_stderr,
         script_args=['read', '--plan-id', DEFAULT_PLAN_ID, '--bogus'],
         audit_plan_id=None,
@@ -227,6 +231,7 @@ def test_emit_suppresses_log_for_manage_logging_recursion_target(executor_with_m
     executor.emit_dispatch_failure_work_log(
         notation=MANAGE_LOGGING_NOTATION,
         exit_code=1,
+        stdout='',
         stderr='manage-logging failed: bad arg',
         script_args=['work', '--plan-id', DEFAULT_PLAN_ID, '--level', 'INFO', '--message', 'x'],
         audit_plan_id=None,
@@ -251,6 +256,7 @@ def test_emit_suppresses_log_for_manage_logging_recursion_even_with_argparse_exi
     executor.emit_dispatch_failure_work_log(
         notation=MANAGE_LOGGING_NOTATION,
         exit_code=2,
+        stdout='',
         stderr="argparse: error",
         script_args=['work', '--plan-id', DEFAULT_PLAN_ID, '--bogus'],
         audit_plan_id=None,
@@ -277,6 +283,7 @@ def test_emit_uses_audit_plan_id_when_script_args_lack_plan_id(executor_with_moc
     executor.emit_dispatch_failure_work_log(
         notation=TEST_NOTATION,
         exit_code=1,
+        stdout='',
         stderr=DEFAULT_STDERR,
         script_args=['read', '--file', 'foo.json'],
         audit_plan_id='audit-fallback-plan',
@@ -301,6 +308,7 @@ def test_emit_drops_entry_when_no_plan_id_available(executor_with_mock_log_entry
     executor.emit_dispatch_failure_work_log(
         notation=TEST_NOTATION,
         exit_code=1,
+        stdout='',
         stderr=DEFAULT_STDERR,
         script_args=['read', '--file', 'foo.json'],
         audit_plan_id=None,
@@ -313,24 +321,26 @@ def test_emit_drops_entry_when_no_plan_id_available(executor_with_mock_log_entry
 
 
 # =============================================================================
-# TESTS: stderr truncation
+# TESTS: detail truncation
 # =============================================================================
 
 
-def test_emit_truncates_long_stderr_to_configured_limit(executor_with_mock_log_entry):
+def test_emit_truncates_long_detail_to_configured_limit(executor_with_mock_log_entry):
     """
-    Stderr blobs longer than ``_DISPATCH_FAILURE_STDERR_LIMIT`` are
+    Detail text longer than ``_DISPATCH_FAILURE_DETAIL_LIMIT`` is
     truncated with the ``...[truncated]`` sentinel so a single failed
-    dispatch can't dominate the plan's work.log.
+    dispatch can't dominate the plan's work.log. Here stdout is empty, so
+    the oversized stderr is the chosen detail stream (precedence 3).
     """
     executor, mock_log_entry = executor_with_mock_log_entry
 
-    limit = executor._DISPATCH_FAILURE_STDERR_LIMIT
+    limit = executor._DISPATCH_FAILURE_DETAIL_LIMIT
     oversized = 'A' * (limit + 200)
 
     executor.emit_dispatch_failure_work_log(
         notation=TEST_NOTATION,
         exit_code=1,
+        stdout='',
         stderr=oversized,
         script_args=['--plan-id', DEFAULT_PLAN_ID],
         audit_plan_id=None,
@@ -338,13 +348,13 @@ def test_emit_truncates_long_stderr_to_configured_limit(executor_with_mock_log_e
 
     assert mock_log_entry.call_count == 1
     message = mock_log_entry.call_args.args[3]
-    assert '...[truncated]' in message, f'Truncation sentinel missing from oversized stderr: {message!r}'
-    # The retained stderr slice should be exactly the configured limit.
-    # The message also embeds non-stderr fragments (notation, exit_code, ...)
+    assert '...[truncated]' in message, f'Truncation sentinel missing from oversized detail: {message!r}'
+    # The retained detail slice should be exactly the configured limit.
+    # The message also embeds non-detail fragments (notation, exit_code, ...)
     # so we assert the slice length indirectly: the run of leading 'A's
     # preceding the sentinel equals ``limit``.
     a_run = 'A' * limit
     assert a_run in message, f'Expected exactly {limit} A characters before the truncation sentinel'
     assert ('A' * (limit + 1)) not in message, (
-        f'stderr appears longer than the configured limit of {limit} characters: {message!r}'
+        f'detail appears longer than the configured limit of {limit} characters: {message!r}'
     )
