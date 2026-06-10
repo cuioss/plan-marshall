@@ -15,20 +15,20 @@ The middle hop (`target/claude/`) is produced by `marketplace/targets/generate.p
 
 == Variant Emission
 
-The Claude-target reader under `marketplace/targets/claude/` walks each bundle. The dispatcher entry point is `emitter.py`; the variant-emission logic (`LEVEL_TABLE`, `emit_variants_for_agent`, the role-eligibility check) lives in the sibling `variant_emitter.py`. For an agent declaring `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`, the emitter produces up to seven files:
+The Claude-target reader under `marketplace/targets/claude/` walks each bundle. The dispatcher entry point is `emitter.py`; the variant-emission logic (`LEVEL_TABLE`, `emit_variants_for_agent`, the role-eligibility check) lives in the sibling `variant_emitter.py`. For an agent declaring `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`, the emitter produces up to eight files:
 
 1. The **canonical** no-suffix file (e.g. `execution-context.md`) with `implements:` and `levels:` stripped. Claude Code dispatches this when the resolver returns `inherit`. The dispatched subagent inherits the parent session's model.
-2. Six **level-suffixed variants** (`execution-context-{low|medium|high|xhigh|xxhigh|max}.md`), each with `model:` and `effort:` baked into the frontmatter from the level → primitive mapping in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`]. The `-max` variant is Opus-4.8-only — the build emitter's guard skips it when the resolved alias does not accept `effort: xhigh`, leaving six files in that case.
+2. Seven **level-suffixed variants** (`execution-context-{level-1|level-2|level-3|level-4|level-5|level-6|level-7}.md`), each with `model:` and `effort:` baked into the frontmatter from the level → primitive mapping in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`]. The `-level-6` and `-level-7` variants are alias-capability-gated — the build emitter's guard skips a variant when the resolved alias does not accept the level's effort (`xhigh` / `max`), leaving fewer files in that case.
 
 `plugin.json` registers every emitted entry so Claude Code's agent registry sees the canonical and each level variant.
 
-The marketplace ships exactly one role-eligible canonical agent: `plan-marshall:execution-context`. Every plan-marshall `Task:` invocation dispatches the canonical or one of the level variants. The workflow body the agent runs is supplied at dispatch time via the `workflow` field in the prompt body, per link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`ext-point-execution-context-workflow.md`].
+The marketplace ships two role-eligible canonical agents: `plan-marshall:execution-context` and `plan-marshall:execution-context-reader`. Every plan-marshall `Task:` invocation dispatches a canonical or one of its level variants. The workflow body the agent runs is supplied at dispatch time via the `workflow` field in the prompt body, per link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`ext-point-execution-context-workflow.md`].
 
 == Adding a Workflow Doc
 
 A new workflow doc lives under `{bundle}:{skill}/workflow/{file}.md` (single-phase consumer) or `plan-marshall/skills/plan-marshall/workflow/{file}.md` (multi-phase / cross-cutting). The doc declares `implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow` in frontmatter and provides at minimum an Inputs table, Workflow steps, and an Output contract (`status` + `display_detail`).
 
-No new agent file is required — the new workflow is dispatched through the existing six `execution-context` variants by calling sites that pass the new workflow's `{bundle}:{skill}/workflow/{file}.md` notation in the `workflow` prompt-body field.
+No new agent file is required — the new workflow is dispatched through the existing seven `execution-context` variants by calling sites that pass the new workflow's `{bundle}:{skill}/workflow/{file}.md` notation in the `workflow` prompt-body field.
 
 == Dispatch-Cost Considerations
 
@@ -62,7 +62,7 @@ This synchronises all bundles from `target/claude/` to `~/.claude/plugins/cache/
 
 == Registered marketplace path
 
-The Claude Code marketplace registration MUST point at `target/claude/`, not at the source `marketplace/` directory. The source `marketplace/bundles/<bundle>/.claude-plugin/plugin.json` declares only the canonical agent files; the build target expands each role-eligible agent into per-level variants (`{name}-low.md` through `{name}-max.md` — six suffix variants, with `-max` build-time-guarded as Opus-4.8-only) under `target/claude/<bundle>/agents/` and emits a variant-aware `plugin.json` plus a top-level `target/claude/.claude-plugin/marketplace.json`. Registering the source path makes Claude Code's plugin loader install only the canonicals, so every dispatch site that resolves to `execution-context-{level}` fails with `Agent type not found`.
+The Claude Code marketplace registration MUST point at `target/claude/`, not at the source `marketplace/` directory. The source `marketplace/bundles/<bundle>/.claude-plugin/plugin.json` declares only the canonical agent files; the build target expands each role-eligible agent into per-level variants (`{name}-level-1.md` through `{name}-level-7.md` — seven suffix variants, with `-level-6` and `-level-7` alias-capability-gated) under `target/claude/<bundle>/agents/` and emits a variant-aware `plugin.json` plus a top-level `target/claude/.claude-plugin/marketplace.json`. Registering the source path makes Claude Code's plugin loader install only the canonicals, so every dispatch site that resolves to `execution-context-{level}` fails with `Agent type not found`.
 
 One-time migration on a developer machine:
 
@@ -70,7 +70,7 @@ One-time migration on a developer machine:
 2. Re-point the marketplace: edit `~/.claude/plugins/known_marketplaces.json` so the `plan-marshall` entry's `source.path` and `installLocation` point at `/path/to/plan-marshall/target/claude` (NOT `.../marketplace`). Alternatively, in-app: `/plugin marketplace remove plan-marshall` then `/plugin marketplace add /path/to/plan-marshall/target/claude`.
 3. Reinstall the plugins so install metadata picks up the variant-aware `plugin.json`: `claude plugin uninstall plan-marshall@plan-marshall && claude plugin install plan-marshall@plan-marshall` (repeat per bundle as needed).
 4. Restart Claude Code or run `/reload-plugins`.
-5. Verify the variants are registered: ask a fresh session to list `plan-marshall:` entries from its available-agents header. Expect canonical + six level variants.
+5. Verify the variants are registered: ask a fresh session to list `plan-marshall:` entries from its available-agents header. Expect canonical + seven level variants.
 
 == Related
 

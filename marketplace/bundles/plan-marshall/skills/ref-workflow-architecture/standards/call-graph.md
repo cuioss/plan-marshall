@@ -9,7 +9,7 @@ Holistic view of every dispatch path in the plan-marshall bundle: orchestrator e
 
 This doc is the **graph** view; the others are the **contract**, **examples**, and **heuristics** views of the same surface.
 
-> **Note on the dispatch target name.** Every dispatch in the graphs below is written as `execution-context` for clarity. The actual `Task:` target on the wire is `execution-context-{level}` where `{level}` ∈ `{low, medium, high, xhigh, xxhigh, max, inherit}` is resolved at dispatch time via `manage-config effort resolve-target --phase <caller-phase> [--role <subkey>]`. The level is a runtime detail (chosen by the role-key registry), not a structural one — so the graphs hide it.
+> **Note on the dispatch target name.** Every dispatch in the graphs below is written as `execution-context` for clarity. The actual `Task:` target on the wire is `execution-context-{level}` where `{level}` ∈ `{level-1, level-2, level-3, level-4, level-5, level-6, level-7, inherit}` is resolved at dispatch time via `manage-config effort resolve-target --phase <caller-phase> [--role <subkey>]`. The level is a runtime detail (chosen by the role-key registry), not a structural one — so the graphs hide it.
 
 Legend (used in every diagram below):
 
@@ -428,7 +428,7 @@ The resolver accepts four lookup forms:
 
 See `../../plan-marshall/standards/effort-roles.md` for the full registry.
 
-Level values resolve to `(model, effort)` per `../../plan-marshall/standards/effort-levels.md` (six tiers: `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, plus the `inherit` sentinel). The graphs above abbreviate the dispatched target to `execution-context`; on the wire it's `execution-context-{level}` with `{level}` filled in by the resolver.
+Level values resolve to `(model, effort)` per `../../plan-marshall/standards/effort-levels.md` (seven tiers: `level-1`, `level-2`, `level-3`, `level-4`, `level-5`, `level-6`, `level-7`, plus the `inherit` sentinel). The graphs above abbreviate the dispatched target to `execution-context`; on the wire it's `execution-context-{level}` with `{level}` filled in by the resolver.
 
 ---
 

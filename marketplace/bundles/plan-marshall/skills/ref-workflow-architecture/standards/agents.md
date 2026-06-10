@@ -136,9 +136,9 @@ The same note fixes the granularity framing. The phase-5-execute dispatch unit i
 │  │                      │   doc (or `instructions`) to completion        │ │
 │  │                      │ • Returns the workflow's declared TOON         │ │
 │  │                      │                                                │ │
-│  │                      │ Six emitted variants per ordinal level         │ │
-│  │                      │ (low/medium/high/xhigh/xxhigh + canonical      │ │
-│  │                      │ inherit) drive every plan-marshall Task:       │ │
+│  │                      │ Seven emitted variants per ordinal level       │ │
+│  │                      │ (level-1…level-7 + canonical inherit) drive    │ │
+│  │                      │ every plan-marshall Task:                      │ │
 │  │                      │ invocation. Dispatch site resolves the         │ │
 │  │                      │ target via `manage-config effort               │ │
 │  │                      │ resolve-target --role <key>`.                  │ │

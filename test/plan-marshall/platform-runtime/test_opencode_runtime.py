@@ -466,7 +466,7 @@ def test_metrics_capture_zero_tokens_succeeds(runtime: OpenCodeRuntime) -> None:
 
 def test_subagent_dispatch_without_prompt_file(runtime: OpenCodeRuntime) -> None:
     """subagent_dispatch without prompt_file succeeds and uses 'task' as OpenCode tool."""
-    result = _parse(runtime.subagent_dispatch("execution-context-high", None, None))
+    result = _parse(runtime.subagent_dispatch("execution-context-level-3", None, None))
     assert result["status"] == "success"
     assert result["operation"] == "subagent dispatch"
     assert result["invocation"]["tool"] == "task"
@@ -482,7 +482,7 @@ def test_subagent_dispatch_with_prompt_file(
 
     result = _parse(
         runtime.subagent_dispatch(
-            "execution-context-high",
+            "execution-context-level-3",
             str(prompt_file),
             {"plan_id": "my-plan"},
         )
@@ -500,7 +500,7 @@ def test_subagent_dispatch_context_substitution(
 
     result = _parse(
         runtime.subagent_dispatch(
-            "execution-context-high",
+            "execution-context-level-3",
             str(prompt_file),
             {"plan_id": "my-plan", "task_number": "7"},
         )
@@ -515,7 +515,7 @@ def test_subagent_dispatch_missing_prompt_file_returns_error(
 ) -> None:
     """subagent_dispatch with a non-existent prompt_file returns error."""
     missing = str(tmp_path / "nonexistent_prompt.md")
-    result = _parse(runtime.subagent_dispatch("execution-context-high", missing, None))
+    result = _parse(runtime.subagent_dispatch("execution-context-level-3", missing, None))
     assert result["status"] == "error"
     assert result["error"] == "prompt_not_found"
 

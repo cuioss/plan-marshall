@@ -10,8 +10,9 @@ The contract pinned here:
   canonical no-suffix file with ``implements:`` and ``levels:`` stripped.
 - ``model:``/``effort:`` is set on variants per the level table; haiku
   variants omit ``effort:``.
-- ``max`` is suppressed when the canonical alias does not accept
-  ``effort: xhigh``.
+- ``level-6`` / ``level-7`` are suppressed when the canonical alias does
+  not accept the level's gated effort (opus-``xhigh`` for ``level-6``,
+  fable-``max`` for ``level-7``).
 - ``model:``/``effort:`` on a canonical with ``implements:`` is a build
   error.
 - Non-eligible agents copy through verbatim (existing emitter contract).
@@ -35,6 +36,7 @@ from marketplace.targets.claude.variant_emitter import (
     parse_frontmatter,
     render_variant,
     selected_levels,
+    supports_effort,
 )
 
 EXTENSION_POINT = (
@@ -50,7 +52,8 @@ def _write(path: Path, content: str) -> Path:
 
 @pytest.fixture()
 def mapping_path(tmp_path: Path) -> Path:
-    """Fixture mapping.json with opus xhigh-capable; sonnet/haiku not."""
+    """Fixture mapping.json with opus xhigh-capable and fable max-capable;
+    sonnet/haiku not. Includes `fable` so the `level-7` top tier emits."""
     path = tmp_path / 'mapping.json'
     path.write_text(
         json.dumps(
@@ -69,12 +72,76 @@ def mapping_path(tmp_path: Path) -> Path:
                         'id': 'claude-haiku-4-5',
                         'supports_effort': [],
                     },
+                    'fable': {
+                        'id': 'claude-fable-5',
+                        'supports_effort': ['medium', 'high', 'xhigh', 'max'],
+                    },
                 },
             }
         ),
         encoding='utf-8',
     )
     return path
+
+
+# =============================================================================
+# supports_effort (per-effort capability guard)
+# =============================================================================
+
+
+@pytest.fixture()
+def mapping_path_with_fable(tmp_path: Path) -> Path:
+    """Fixture mapping.json including the `fable` top-tier alias (supports max)."""
+    path = tmp_path / 'mapping_fable.json'
+    path.write_text(
+        json.dumps(
+            {
+                'tool_permissions': {},
+                'model_map': {
+                    'opus': {
+                        'id': 'claude-opus-4-8',
+                        'supports_effort': ['medium', 'high', 'xhigh'],
+                    },
+                    'sonnet': {
+                        'id': 'claude-sonnet-4-6',
+                        'supports_effort': ['medium', 'high'],
+                    },
+                    'haiku': {
+                        'id': 'claude-haiku-4-5',
+                        'supports_effort': [],
+                    },
+                    'fable': {
+                        'id': 'claude-fable-5',
+                        'supports_effort': ['medium', 'high', 'xhigh', 'max'],
+                    },
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+    return path
+
+
+def test_supports_effort_fable_accepts_max(mapping_path_with_fable: Path):
+    assert supports_effort('fable', 'max', mapping_path_with_fable) is True
+
+
+def test_supports_effort_opus_accepts_xhigh(mapping_path_with_fable: Path):
+    assert supports_effort('opus', 'xhigh', mapping_path_with_fable) is True
+
+
+def test_supports_effort_sonnet_rejects_max(mapping_path_with_fable: Path):
+    assert supports_effort('sonnet', 'max', mapping_path_with_fable) is False
+
+
+def test_supports_effort_refuses_unknown_alias(mapping_path_with_fable: Path):
+    """Conservative refuse-on-missing: an absent alias never accepts any effort."""
+    assert supports_effort('nonexistent', 'medium', mapping_path_with_fable) is False
+
+
+def test_supports_effort_refuses_missing_mapping(tmp_path: Path):
+    """A missing mapping file yields the conservative refuse-emit answer."""
+    assert supports_effort('opus', 'xhigh', tmp_path / 'absent.json') is False
 
 
 # =============================================================================
@@ -88,7 +155,7 @@ def test_parse_frontmatter_extracts_implements_and_levels():
         'name: my-agent\n'
         'tools: Read, Bash\n'
         f'implements: {EXTENSION_POINT}\n'
-        'levels: [high, xxhigh]\n'
+        'levels: [level-3, level-5]\n'
         '---\n'
         'body content\n'
     )
@@ -96,7 +163,7 @@ def test_parse_frontmatter_extracts_implements_and_levels():
     assert fm is not None
     assert fm.name == 'my-agent'
     assert fm.implements == EXTENSION_POINT
-    assert fm.levels == ['high', 'xxhigh']
+    assert fm.levels == ['level-3', 'level-5']
     assert body == 'body content\n'
 
 
@@ -122,18 +189,20 @@ def test_is_role_eligible_false_for_other_extension_point():
     assert not is_role_eligible(fm)
 
 
-def test_selected_levels_default_returns_all_six():
+def test_selected_levels_default_returns_all_seven():
     fm, _ = parse_frontmatter(f'---\nname: x\nimplements: {EXTENSION_POINT}\n---\nbody')
     assert fm is not None
-    assert selected_levels(fm) == ['low', 'medium', 'high', 'xhigh', 'xxhigh', 'max']
+    assert selected_levels(fm) == [
+        'level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7'
+    ]
 
 
 def test_selected_levels_whitelist_filters():
     fm, _ = parse_frontmatter(
-        f'---\nname: x\nimplements: {EXTENSION_POINT}\nlevels: [high, xxhigh]\n---\nbody'
+        f'---\nname: x\nimplements: {EXTENSION_POINT}\nlevels: [level-3, level-5]\n---\nbody'
     )
     assert fm is not None
-    assert selected_levels(fm) == ['high', 'xxhigh']
+    assert selected_levels(fm) == ['level-3', 'level-5']
 
 
 # =============================================================================
@@ -146,55 +215,66 @@ def test_render_variant_haiku_omits_effort():
         f'---\nname: poc-agent\ntools: Read\nimplements: {EXTENSION_POINT}\n---\nbody\n'
     )
     assert fm is not None
-    rendered = render_variant(fm, body, 'low')
-    assert 'name: poc-agent-low' in rendered
+    rendered = render_variant(fm, body, 'level-1')
+    assert 'name: poc-agent-level-1' in rendered
     assert 'model: haiku' in rendered
     assert 'effort:' not in rendered  # haiku does not accept effort
     assert f'implements: {EXTENSION_POINT}' not in rendered
 
 
-def test_render_variant_high_sets_model_and_effort():
+def test_render_variant_level_3_sets_model_and_effort():
     fm, body = parse_frontmatter(
         f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
     )
     assert fm is not None
-    rendered = render_variant(fm, body, 'high')
-    assert 'name: poc-agent-high' in rendered
+    rendered = render_variant(fm, body, 'level-3')
+    assert 'name: poc-agent-level-3' in rendered
     assert 'model: sonnet' in rendered
     assert 'effort: high' in rendered
 
 
-def test_render_variant_xxhigh_uses_opus_high():
-    """`xxhigh` resolves to `(opus, high)` under the rebound palette."""
+def test_render_variant_level_5_uses_opus_high():
+    """`level-5` resolves to `(opus, high)`."""
     fm, body = parse_frontmatter(
         f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
     )
     assert fm is not None
-    rendered = render_variant(fm, body, 'xxhigh')
+    rendered = render_variant(fm, body, 'level-5')
     assert 'model: opus' in rendered
     assert 'effort: high' in rendered
 
 
-def test_render_variant_xhigh_uses_opus_medium():
-    """`xhigh` resolves to `(opus, medium)` under the rebound palette."""
+def test_render_variant_level_4_uses_opus_medium():
+    """`level-4` resolves to `(opus, medium)`."""
     fm, body = parse_frontmatter(
         f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
     )
     assert fm is not None
-    rendered = render_variant(fm, body, 'xhigh')
+    rendered = render_variant(fm, body, 'level-4')
     assert 'model: opus' in rendered
     assert 'effort: medium' in rendered
 
 
-def test_render_variant_max_uses_opus_xhigh():
-    """`max` resolves to `(opus, xhigh)` — Opus-4.8-only top tier."""
+def test_render_variant_level_6_uses_opus_xhigh():
+    """`level-6` resolves to `(opus, xhigh)` — Opus-4.8-only tier."""
     fm, body = parse_frontmatter(
         f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
     )
     assert fm is not None
-    rendered = render_variant(fm, body, 'max')
+    rendered = render_variant(fm, body, 'level-6')
     assert 'model: opus' in rendered
     assert 'effort: xhigh' in rendered
+
+
+def test_render_variant_level_7_uses_fable_max():
+    """`level-7` resolves to `(fable, max)` — the new top tier above Opus."""
+    fm, body = parse_frontmatter(
+        f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
+    )
+    assert fm is not None
+    rendered = render_variant(fm, body, 'level-7')
+    assert 'model: fable' in rendered
+    assert 'effort: max' in rendered
 
 
 # =============================================================================
@@ -202,7 +282,7 @@ def test_render_variant_max_uses_opus_xhigh():
 # =============================================================================
 
 
-def test_emit_variants_default_levels_creates_seven_files(tmp_path: Path, mapping_path: Path):
+def test_emit_variants_default_levels_creates_eight_files(tmp_path: Path, mapping_path: Path):
     src = _write(
         tmp_path / 'src' / 'poc.md',
         f'---\nname: poc\ntools: Read\nimplements: {EXTENSION_POINT}\n---\nbody\n',
@@ -210,9 +290,11 @@ def test_emit_variants_default_levels_creates_seven_files(tmp_path: Path, mappin
     dest = tmp_path / 'out' / 'poc.md'
     result = emit_variants_for_agent(src, dest, mapping_path)
     assert result is not None
-    # canonical + 6 variants
+    # canonical + 7 variants
     assert dest.exists()
-    for level in ['low', 'medium', 'high', 'xhigh', 'xxhigh', 'max']:
+    for level in [
+        'level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7'
+    ]:
         assert (dest.parent / f'poc-{level}.md').exists(), level
     assert sorted(result.variants_emitted) == sorted(LEVEL_TABLE.keys())
     assert result.variants_skipped == []
@@ -221,23 +303,23 @@ def test_emit_variants_default_levels_creates_seven_files(tmp_path: Path, mappin
 def test_emit_variants_with_levels_whitelist(tmp_path: Path, mapping_path: Path):
     src = _write(
         tmp_path / 'src' / 'poc.md',
-        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [high, xxhigh]\n---\nbody\n',
+        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [level-3, level-5]\n---\nbody\n',
     )
     dest = tmp_path / 'out' / 'poc.md'
     result = emit_variants_for_agent(src, dest, mapping_path)
     assert result is not None
     assert dest.exists()  # canonical
-    assert (dest.parent / 'poc-high.md').exists()
-    assert (dest.parent / 'poc-xxhigh.md').exists()
+    assert (dest.parent / 'poc-level-3.md').exists()
+    assert (dest.parent / 'poc-level-5.md').exists()
     # other levels not emitted
-    for omitted in ['low', 'medium', 'xhigh']:
+    for omitted in ['level-1', 'level-2', 'level-4']:
         assert not (dest.parent / f'poc-{omitted}.md').exists()
 
 
 def test_emit_variants_canonical_strips_role_fields(tmp_path: Path, mapping_path: Path):
     src = _write(
         tmp_path / 'src' / 'poc.md',
-        f'---\nname: poc\ntools: Read\nimplements: {EXTENSION_POINT}\nlevels: [high]\n---\nbody\n',
+        f'---\nname: poc\ntools: Read\nimplements: {EXTENSION_POINT}\nlevels: [level-3]\n---\nbody\n',
     )
     dest = tmp_path / 'out' / 'poc.md'
     emit_variants_for_agent(src, dest, mapping_path)
@@ -248,8 +330,12 @@ def test_emit_variants_canonical_strips_role_fields(tmp_path: Path, mapping_path
     assert 'tools: Read' in canonical_text  # other fields preserved
 
 
-def test_emit_variants_skips_max_when_opus_lacks_xhigh(tmp_path: Path):
-    """Opus alias with supports_effort missing `xhigh`: `max` is suppressed."""
+def test_emit_variants_skips_level_6_when_opus_lacks_xhigh(tmp_path: Path):
+    """Opus alias with supports_effort missing `xhigh`: `level-6` is suppressed.
+
+    The fixture also omits a `fable` alias, so `level-7` is suppressed too —
+    the test pins the `level-6` (opus-xhigh) guard specifically.
+    """
     mapping = tmp_path / 'mapping_opus_no_xhigh.json'
     mapping.write_text(
         json.dumps(
@@ -266,31 +352,76 @@ def test_emit_variants_skips_max_when_opus_lacks_xhigh(tmp_path: Path):
     )
     src = _write(
         tmp_path / 'src' / 'poc.md',
-        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [high, xxhigh, max]\n---\nbody\n',
+        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [level-3, level-5, level-6]\n---\nbody\n',
     )
     dest = tmp_path / 'out' / 'poc.md'
     result = emit_variants_for_agent(src, dest, mapping)
     assert result is not None
-    assert (dest.parent / 'poc-high.md').exists()
-    assert (dest.parent / 'poc-xxhigh.md').exists()  # opus-high is fine
-    assert not (dest.parent / 'poc-max.md').exists()
-    skipped_max = [(lvl, reason) for lvl, reason in result.variants_skipped if lvl == 'max']
-    assert skipped_max, 'max should be in variants_skipped'
-    assert 'xhigh' in skipped_max[0][1].lower()
+    assert (dest.parent / 'poc-level-3.md').exists()
+    assert (dest.parent / 'poc-level-5.md').exists()  # opus-high is fine
+    assert not (dest.parent / 'poc-level-6.md').exists()
+    skipped = [(lvl, reason) for lvl, reason in result.variants_skipped if lvl == 'level-6']
+    assert skipped, 'level-6 should be in variants_skipped'
+    assert 'xhigh' in skipped[0][1].lower()
 
 
-def test_emit_variants_emits_max_when_opus_supports_xhigh(tmp_path: Path, mapping_path: Path):
-    """Default fixture: opus supports xhigh, `max` variant is emitted."""
+def test_emit_variants_emits_level_6_when_opus_supports_xhigh(tmp_path: Path, mapping_path: Path):
+    """Default fixture: opus supports xhigh, `level-6` variant is emitted."""
     src = _write(
         tmp_path / 'src' / 'poc.md',
-        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [max]\n---\nbody\n',
+        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [level-6]\n---\nbody\n',
     )
     dest = tmp_path / 'out' / 'poc.md'
     result = emit_variants_for_agent(src, dest, mapping_path)
     assert result is not None
-    assert (dest.parent / 'poc-max.md').exists()
-    assert 'max' in result.variants_emitted
-    assert all(lvl != 'max' for lvl, _reason in result.variants_skipped)
+    assert (dest.parent / 'poc-level-6.md').exists()
+    assert 'level-6' in result.variants_emitted
+    assert all(lvl != 'level-6' for lvl, _reason in result.variants_skipped)
+
+
+def test_emit_variants_emits_level_7_when_fable_supports_max(tmp_path: Path, mapping_path: Path):
+    """Default fixture: fable supports max, `level-7` variant is emitted."""
+    src = _write(
+        tmp_path / 'src' / 'poc.md',
+        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [level-7]\n---\nbody\n',
+    )
+    dest = tmp_path / 'out' / 'poc.md'
+    result = emit_variants_for_agent(src, dest, mapping_path)
+    assert result is not None
+    assert (dest.parent / 'poc-level-7.md').exists()
+    assert 'level-7' in result.variants_emitted
+    assert all(lvl != 'level-7' for lvl, _reason in result.variants_skipped)
+
+
+def test_emit_variants_skips_level_7_when_fable_lacks_max(tmp_path: Path):
+    """Fable alias whose supports_effort omits `max`: `level-7` is suppressed."""
+    mapping = tmp_path / 'mapping_fable_no_max.json'
+    mapping.write_text(
+        json.dumps(
+            {
+                'tool_permissions': {},
+                'model_map': {
+                    'opus': {'id': 'claude-opus-4-8', 'supports_effort': ['medium', 'high', 'xhigh']},
+                    'sonnet': {'id': 'sonnet-x', 'supports_effort': ['medium', 'high']},
+                    'haiku': {'id': 'haiku-y', 'supports_effort': []},
+                    'fable': {'id': 'claude-fable-5', 'supports_effort': ['medium', 'high', 'xhigh']},
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+    src = _write(
+        tmp_path / 'src' / 'poc.md',
+        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [level-6, level-7]\n---\nbody\n',
+    )
+    dest = tmp_path / 'out' / 'poc.md'
+    result = emit_variants_for_agent(src, dest, mapping)
+    assert result is not None
+    assert (dest.parent / 'poc-level-6.md').exists()  # opus-xhigh is fine
+    assert not (dest.parent / 'poc-level-7.md').exists()
+    skipped = [(lvl, reason) for lvl, reason in result.variants_skipped if lvl == 'level-7']
+    assert skipped, 'level-7 should be in variants_skipped'
+    assert 'max' in skipped[0][1].lower()
 
 
 def test_emit_variants_canonical_with_model_raises(tmp_path: Path, mapping_path: Path):
@@ -338,7 +469,7 @@ def _bundle_with_role_agent(bundle_root: Path, name: str = 'demo') -> Path:
     )
     _write(
         bundle / 'agents' / 'role-agent.md',
-        f'---\nname: role-agent\ntools: Read\nimplements: {EXTENSION_POINT}\nlevels: [high, xxhigh]\n---\nbody\n',
+        f'---\nname: role-agent\ntools: Read\nimplements: {EXTENSION_POINT}\nlevels: [level-3, level-5]\n---\nbody\n',
     )
     _write(bundle / 'agents' / 'plain-agent.md', '---\nname: plain-agent\n---\nbody\n')
     return bundle
@@ -356,9 +487,9 @@ def test_emit_bundle_verbatim_routes_role_agents_to_variant_emission(tmp_path: P
     assert f'implements: {EXTENSION_POINT}' not in canonical.read_text(encoding='utf-8')
 
     # Variants exist for whitelisted levels only.
-    assert (out_dir / 'demo' / 'agents' / 'role-agent-high.md').exists()
-    assert (out_dir / 'demo' / 'agents' / 'role-agent-xxhigh.md').exists()
-    assert not (out_dir / 'demo' / 'agents' / 'role-agent-low.md').exists()
+    assert (out_dir / 'demo' / 'agents' / 'role-agent-level-3.md').exists()
+    assert (out_dir / 'demo' / 'agents' / 'role-agent-level-5.md').exists()
+    assert not (out_dir / 'demo' / 'agents' / 'role-agent-level-1.md').exists()
 
     # Plain agent is byte-copied verbatim (no variants).
     plain = out_dir / 'demo' / 'agents' / 'plain-agent.md'
@@ -366,7 +497,7 @@ def test_emit_bundle_verbatim_routes_role_agents_to_variant_emission(tmp_path: P
 
     # The written list mentions variants.
     paths = {str(p) for p in written}
-    assert any('role-agent-high.md' in p for p in paths)
+    assert any('role-agent-level-3.md' in p for p in paths)
 
 
 # =============================================================================
@@ -381,12 +512,12 @@ def test_discover_components_expands_role_agents(tmp_path: Path):
     discovered = discover_components(bundle_dir)
     agents = discovered['agents']
 
-    # Canonical + per-level entries (whitelist [high, xxhigh]); plain unchanged.
+    # Canonical + per-level entries (whitelist [level-3, level-5]); plain unchanged.
     assert './agents/role-agent.md' in agents
-    assert './agents/role-agent-high.md' in agents
-    assert './agents/role-agent-xxhigh.md' in agents
+    assert './agents/role-agent-level-3.md' in agents
+    assert './agents/role-agent-level-5.md' in agents
     assert './agents/plain-agent.md' in agents
-    # Excluded levels: low, medium, xhigh
-    assert './agents/role-agent-low.md' not in agents
+    # Excluded levels: level-1, level-2, level-4
+    assert './agents/role-agent-level-1.md' not in agents
     # Sorted output
     assert agents == sorted(agents)

@@ -291,7 +291,7 @@ manage-config effort read --default
 ```
 
 Walks the documented resolution order and validates the resolved value against
-`ALLOWED_LEVELS` (`low|medium|high|xhigh|xxhigh|max|inherit`). Unknown role
+`ALLOWED_LEVELS` (`level-1|level-2|level-3|level-4|level-5|level-6|level-7|inherit`). Unknown role
 groups produce a warning (not an error) so registry renames do not break
 saved configs.
 
@@ -344,7 +344,7 @@ Success payload:
 ```toon
 status: success
 preset: balanced
-default: medium
+default: level-3
 roles_count: 9
 overrides_count: 5
 ```

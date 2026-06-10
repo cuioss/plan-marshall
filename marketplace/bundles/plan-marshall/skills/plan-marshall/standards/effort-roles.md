@@ -115,7 +115,7 @@ To collapse the per-dispatch-site recipe `level = …; target = canonical if lev
 
 ```bash
 manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback
-# → target: execution-context-high (or "execution-context" when level == inherit)
+# → target: execution-context-level-3 (or "execution-context" when level == inherit)
 ```
 
 ### Resolution order

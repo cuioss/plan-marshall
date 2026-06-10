@@ -210,7 +210,7 @@ def test_apply_preset_economic_writes_expanded_payload(plan_context):
 
     assert result['status'] == 'success'
     assert result['preset'] == 'economic'
-    assert result['default'] == 'medium'
+    assert result['default'] == 'level-2'
     # roles_count reflects the leaf-level EXPANDED set (flat groups
     # contribute 1, nested groups contribute len(subkeys)). Overrides
     # count is the per-leaf override count from the preset payload.
@@ -238,22 +238,22 @@ def test_apply_preset_economic_writes_expanded_payload(plan_context):
                 )
 
     # ECONOMIC carries `phase-6-finalize` as a dict-valued override
-    # ({'verification-feedback': 'high'}); the writer expands the
+    # ({'verification-feedback': 'level-3'}); the writer expands the
     # dict so every sub-key is explicit on disk (overrides win,
-    # missing sub-keys receive the ECONOMIC default of 'medium').
+    # missing sub-keys receive the ECONOMIC default of 'level-2').
     # The resolver returns the sub-key-specific source path because
     # the on-disk phase-6-finalize entry is a dict.
     read_result = cmd_effort(
         Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
     )
     assert read_result['status'] == 'success'
-    assert read_result['level'] == 'high'
+    assert read_result['level'] == 'level-3'
     assert read_result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
 
 
 # =============================================================================
 # (2) apply-preset balanced + models read --role phase-6-finalize.verification-feedback
-#     returns level: high, source: plan.phase-6-finalize.effort.verification-feedback
+#     returns level: level-3, source: plan.phase-6-finalize.effort.verification-feedback
 # =============================================================================
 
 
@@ -266,7 +266,7 @@ def test_apply_preset_balanced_then_read_phase_6_verification_feedback_returns_h
         Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
     )
     assert read_result['status'] == 'success'
-    assert read_result['level'] == 'high'
+    assert read_result['level'] == 'level-3'
     assert read_result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
 
 
@@ -281,17 +281,17 @@ def test_apply_preset_high_end_overwrites_pre_seeded_block(plan_context):
     # per-phase value — the seeded "before" state shouldn't survive
     # under any KNOWN_ROLES key.
     seeded = {
-        'default': 'xxhigh',
+        'default': 'level-5',
         'roles': {
-            'phase-1-init': 'low',
-            'phase-2-refine': 'low',
-            'phase-3-outline': 'low',
-            'phase-4-plan': 'low',
-            'phase-5-execute': {'default': 'low', 'verification-feedback': 'low'},
+            'phase-1-init': 'level-1',
+            'phase-2-refine': 'level-1',
+            'phase-3-outline': 'level-1',
+            'phase-4-plan': 'level-1',
+            'phase-5-execute': {'default': 'level-1', 'verification-feedback': 'level-1'},
             'phase-6-finalize': {
-                'default': 'low',
-                'verification-feedback': 'low',
-                'post-run-review': 'low',
+                'default': 'level-1',
+                'verification-feedback': 'level-1',
+                'post-run-review': 'level-1',
             },
         },
     }
@@ -306,12 +306,12 @@ def test_apply_preset_high_end_overwrites_pre_seeded_block(plan_context):
     assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
 
     # phase-6-finalize.verification-feedback is set to its HIGH_END
-    # override level (no longer 'low').
-    assert on_disk['roles']['phase-6-finalize']['verification-feedback'] == 'xhigh'
+    # override level (no longer 'level-1').
+    assert on_disk['roles']['phase-6-finalize']['verification-feedback'] == 'level-4'
 
     # phase-1-init has no overrides in HIGH_END; it is written as the
-    # global default shorthand ('high').
-    assert on_disk['roles']['phase-1-init'] == 'high'
+    # global default shorthand ('level-3').
+    assert on_disk['roles']['phase-1-init'] == 'level-3'
 
 
 # =============================================================================
@@ -350,7 +350,7 @@ def test_apply_preset_uppercase_underscore_alias_succeeds(plan_context):
     result = cmd_effort_apply_preset(Namespace(preset='HIGH_END'))
 
     assert result['status'] == 'success'
-    assert result['default'] == 'high'
+    assert result['default'] == 'level-3'
 
     on_disk = _read_marshal_models(plan_context.fixture_dir)
     assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
@@ -362,7 +362,7 @@ def test_apply_preset_lowercase_underscore_alias_succeeds(plan_context):
     result = cmd_effort_apply_preset(Namespace(preset='high_end'))
 
     assert result['status'] == 'success'
-    assert result['default'] == 'high'
+    assert result['default'] == 'level-3'
 
     on_disk = _read_marshal_models(plan_context.fixture_dir)
     assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
@@ -409,14 +409,14 @@ def test_apply_preset_round_trip_no_residue(plan_context):
     # ECONOMIC's clean-slate write replaces every per-phase entry
     # with the ECONOMIC payload after writer-expansion: phase-6-finalize
     # is a dict-valued override in ECONOMIC ({'verification-feedback':
-    # 'high'}), so the writer emits a dict with the ECONOMIC default
-    # ('medium') filling every other sub-key.
+    # 'level-3'}), so the writer emits a dict with the ECONOMIC default
+    # ('level-2') filling every other sub-key.
     assert on_disk['roles']['phase-6-finalize'] == {
-        'default': 'medium',
-        'verification-feedback': 'high',
-        'post-run-review': 'medium',
+        'default': 'level-2',
+        'verification-feedback': 'level-3',
+        'post-run-review': 'level-2',
     }
-    # phase-2-refine is bumped to 'high' in both BALANCED and ECONOMIC
+    # phase-2-refine is bumped to 'level-3' in both BALANCED and ECONOMIC
     # (the new ladder pushes the three analytical phases up); the
     # writer keeps the string shorthand for flat-group overrides.
-    assert on_disk['roles']['phase-2-refine'] == 'high'
+    assert on_disk['roles']['phase-2-refine'] == 'level-3'

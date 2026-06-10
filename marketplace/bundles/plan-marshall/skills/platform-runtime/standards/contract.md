@@ -559,7 +559,7 @@ invocation:
   tool: Task
   description: Run phase-3-outline outline
   prompt: ...agent body with context merged...
-  subagent_type: execution-context-high
+  subagent_type: execution-context-level-3
 ```
 
 **Success (OpenCode)**:
@@ -572,7 +572,7 @@ invocation:
   tool: task
   description: Run phase-3-outline outline
   prompt: ...agent body with context merged...
-  subagent_type: execution-context-high
+  subagent_type: execution-context-level-3
 ```
 
 **No-op (unmapped tools)**:

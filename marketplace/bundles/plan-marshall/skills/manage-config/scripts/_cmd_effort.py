@@ -50,10 +50,12 @@ from _config_core import (
 from effort_presets import EffortPresets  # type: ignore[import-not-found]
 
 # Allowed-effort-levels enum, kept in lock-step with effort-levels.md.
-ALLOWED_LEVELS = ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'max', 'inherit')
+ALLOWED_LEVELS = (
+    'level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7', 'inherit'
+)
 
-# No levels are currently reserved. `max` was promoted from reserved-future to
-# live (resolves to opus, xhigh — Opus-4.7-only). Future palette expansion may
+# No levels are currently reserved. `level-7` is the current top tier
+# (resolves to fable, max — sits above Opus). Future palette expansion may
 # repopulate this tuple.
 RESERVED_LEVELS: tuple[str, ...] = ()
 
@@ -100,7 +102,7 @@ def _validate_level(value: str, source: str) -> tuple[bool, str | None]:
         return (
             False,
             f"effort '{value}' at {source} is reserved (future-additive); "
-            f"use 'max' for the current top tier",
+            f"use 'level-7' for the current top tier",
         )
     return (
         False,

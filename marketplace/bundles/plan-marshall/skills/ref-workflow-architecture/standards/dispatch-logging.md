@@ -25,7 +25,7 @@ The five literal field names (`target`, `level`, `role`, `workflow`, `plan_id`) 
 | Field | Value | Source |
 |-------|-------|--------|
 | `target` | The resolved variant agent name (`execution-context-{level}` or canonical `execution-context` for `inherit`) | `effort resolve-target` return value's `target` field |
-| `level` | The effort level the target encodes (`low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, `inherit`) | `effort resolve-target` return value's `level` field |
+| `level` | The effort level the target encodes (`level-1`, `level-2`, `level-3`, `level-4`, `level-5`, `level-6`, `level-7`, `inherit`) | `effort resolve-target` return value's `level` field |
 | `role` | The role-key the caller resolved against (e.g., `phase-2-refine`, `verification-feedback`, `default`) | The `--role` argument the caller passed to `effort resolve-target` |
 | `workflow` | The bundle-prefixed notation of the workflow doc the subagent loads (e.g., `plan-marshall:phase-2-refine/SKILL.md`) | The caller's chosen workflow doc — the same value placed in the prompt body's `workflow:` field |
 | `plan_id` | The plan identifier the dispatch is bound to (or `none` for standalone dispatches outside any plan) | The caller's plan context |
@@ -62,12 +62,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   effort resolve-target --role phase-2-refine
 ```
 
-Extract the `target` and `level` fields from the TOON output (e.g., `target=execution-context-high`, `level=high`). Substitute those values into the post-resolve log line below as `{target}` and `{level}`:
+Extract the `target` and `level` fields from the TOON output (e.g., `target=execution-context-level-3`, `level=level-3`). Substitute those values into the post-resolve log line below as `{target}` and `{level}`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target=execution-context-high level=high role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id={plan_id}"
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target=execution-context-level-3 level=level-3 role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id={plan_id}"
 ```
 
 ```
@@ -89,7 +89,7 @@ The resulting work-log line is fully attributed, machine-parseable, and audit-re
 
 A pre-resolve placeholder line, which carries only the role-key intent and no resolved attribution. The forbidden shape combines a generic `[STATUS]` work-log line emitted BEFORE the resolver runs (carrying only the role key — for example, `[STATUS] (plan-marshall:plan-marshall) About to dispatch execution-context for role <role-key>`) with a subsequent `target=$(... effort resolve-target --role phase-2-refine)` shell-substitution that captures the resolver result into a Bash variable, and finally a `Task: plan-marshall:{target}` dispatch — three separate forbidden patterns layered together. The `target=$(…)` shape is itself a violation of the no-`$()` Bash hard rule documented in `dev-agent-behavior-rules/standards/tool-usage-patterns.md`; the pre-resolve `[STATUS]` line is a violation of this dispatch-logging contract; together they hide the actual dispatched variant from the audit trail.
 
-Failure mode the post-resolve shape prevents: the audit trail can identify only the role-key the caller intended to dispatch under. The actual `target`, `level`, and `workflow` are absent from the log — so the retrospective audit cannot tell whether the dispatch rode `execution-context-high`, `execution-context-medium`, or (worst case) bypassed the dispatcher entirely via `Task: general-purpose`. The shape also uses the generic `[STATUS]` prefix, which collides with phase-progress lines and breaks deterministic grep.
+Failure mode the post-resolve shape prevents: the audit trail can identify only the role-key the caller intended to dispatch under. The actual `target`, `level`, and `workflow` are absent from the log — so the retrospective audit cannot tell whether the dispatch rode `execution-context-level-3`, `execution-context-level-2`, or (worst case) bypassed the dispatcher entirely via `Task: general-purpose`. The shape also uses the generic `[STATUS]` prefix, which collides with phase-progress lines and breaks deterministic grep.
 
 The single canonical `[DISPATCH]` line specified above is the sole permitted dispatch-emission shape. Callers that today emit no dispatch log MUST add one; callers that emit the pre-resolve placeholder MUST replace it with the post-resolve emission.
 

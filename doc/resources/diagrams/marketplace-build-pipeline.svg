@@ -36,7 +36,7 @@
   <text x="82"  y="220" class="item">agents/</text>
   <text x="96"  y="240" class="item">execution-context.md</text>
   <text x="111" y="258" class="col-sub" text-anchor="start">implements: dynamic-level-executor</text>
-  <text x="111" y="274" class="col-sub" text-anchor="start">levels: [low … max]</text>
+  <text x="111" y="274" class="col-sub" text-anchor="start">levels: [level-1 … level-7]</text>
   <text x="82"  y="298" class="item">commands/</text>
   <text x="82"  y="318" class="item">skills/</text>
 
@@ -48,12 +48,12 @@
   <text x="475" y="158" class="item-bold">target/claude/</text>
   <text x="488" y="180" class="item">{bundle}/</text>
   <text x="502" y="200" class="item">.claude-plugin/plugin.json</text>
-  <text x="517" y="216" class="col-sub">(registers 7 agent entries)</text>
+  <text x="517" y="216" class="col-sub">(registers 8 agent entries)</text>
   <text x="502" y="238" class="item">agents/</text>
   <text x="516" y="256" class="item">execution-context.md</text>
-  <text x="516" y="272" class="item">execution-context-low.md</text>
-  <text x="516" y="288" class="item">… -medium · -high · -xhigh</text>
-  <text x="516" y="304" class="item">… -xxhigh · -max</text>
+  <text x="516" y="272" class="item">execution-context-level-1.md</text>
+  <text x="516" y="288" class="item">… -level-2·-level-3·-level-4</text>
+  <text x="516" y="304" class="item">… -level-5·-level-6·-level-7</text>
   <text x="502" y="324" class="item">commands/ ·  skills/</text>
 
   <!-- ============= Stage 3: CACHE — ~/.claude/plugins/cache/ ============= -->
@@ -66,7 +66,7 @@
   <text x="922"  y="200" class="item">{bundle}/</text>
   <text x="936"  y="220" class="item">{version}/</text>
   <text x="950"  y="240" class="item">agents/</text>
-  <text x="965"  y="258" class="col-sub">(canonical + up to 6 variants)</text>
+  <text x="965"  y="258" class="col-sub">(canonical + up to 7 variants)</text>
   <text x="950"  y="280" class="item">commands/ ·  skills/</text>
   <text x="950"  y="300" class="item">.claude-plugin/</text>
   <text x="965"  y="318" class="col-sub">plugin.json</text>

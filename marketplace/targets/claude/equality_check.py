@@ -17,7 +17,8 @@ dynamic-level-executor extension point expand into multiple
 ``plugin.json`` entries (canonical + per-emitted-level). The diff
 naturally surfaces drift when (a) the canonical's ``levels:`` whitelist
 changes without ``plugin.json`` regeneration, (b) the build-time
-``xxhigh`` guard suppresses a previously emitted variant, or (c) a new
+per-alias-effort guard (``level-6`` opus-``xhigh``, ``level-7``
+fable-``max``) suppresses a previously emitted variant, or (c) a new
 canonical adds the ``implements:`` declaration but the emitted
 ``plugin.json`` still lists only the no-suffix entry. Marketplace-json
 drift surfaces when (d) a new plugin is added to or removed from the

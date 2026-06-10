@@ -408,7 +408,7 @@ class OpenCodeRuntime(Runtime):
                     "tool": "task",
                     "description": f"Run {agent}",
                     "prompt": prompt_body,
-                    "subagent_type": "execution-context-high",
+                    "subagent_type": "execution-context-level-3",
                 },
             },
         )

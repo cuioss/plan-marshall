@@ -121,26 +121,26 @@ def test_flat_group_set_returns_role_value(plan_context):
     """Flat phase-N group: bare lookup returns the configured level."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'medium', 'roles': {'phase-2-refine': 'high'}},
+        {'default': 'level-2', 'roles': {'phase-2-refine': 'level-3'}},
     )
     before = _hash_marshal(plan_context.fixture_dir)
 
     result = cmd_effort(_ns(role='phase-2-refine'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'high'
+    assert result['level'] == 'level-3'
     assert result['source'] == 'plan.phase-2-refine.effort'
     assert _hash_marshal(plan_context.fixture_dir) == before
 
 
 def test_flat_group_unset_with_default_returns_default(plan_context):
     """Flat group absent: falls through to effort."""
-    _write_marshal_with_models(plan_context.fixture_dir, {'default': 'medium'})
+    _write_marshal_with_models(plan_context.fixture_dir, {'default': 'level-2'})
 
     result = cmd_effort(_ns(role='phase-2-refine'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'medium'
+    assert result['level'] == 'level-2'
     assert result['source'] == 'plan.effort'
 
 
@@ -175,15 +175,15 @@ def test_dotted_lookup_returns_subkey_value(plan_context):
     _write_marshal_with_models(
         plan_context.fixture_dir,
         {
-            'default': 'medium',
-            'roles': {'phase-6-finalize': {'verification-feedback': 'high'}},
+            'default': 'level-2',
+            'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}},
         },
     )
 
     result = cmd_effort(_ns(role='phase-6-finalize.verification-feedback'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'high'
+    assert result['level'] == 'level-3'
     assert result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
 
 
@@ -192,10 +192,10 @@ def test_dotted_lookup_subkey_unset_walks_to_default_slot(plan_context):
     _write_marshal_with_models(
         plan_context.fixture_dir,
         {
-            'default': 'medium',
+            'default': 'level-2',
             'roles': {'phase-6-finalize': {
-                'default': 'low',
-                'verification-feedback': 'high',
+                'default': 'level-1',
+                'verification-feedback': 'level-3',
             }},
         },
     )
@@ -203,7 +203,7 @@ def test_dotted_lookup_subkey_unset_walks_to_default_slot(plan_context):
     result = cmd_effort(_ns(role='phase-6-finalize.post-run-review'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'low'
+    assert result['level'] == 'level-1'
     assert result['source'] == 'plan.phase-6-finalize.effort.default'
 
 
@@ -211,13 +211,13 @@ def test_dotted_lookup_subkey_unset_no_default_slot_falls_to_models_default(plan
     """Subkey absent + no in-group `default` slot: falls through to effort."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'medium', 'roles': {'phase-6-finalize': {'verification-feedback': 'high'}}},
+        {'default': 'level-2', 'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}}},
     )
 
     result = cmd_effort(_ns(role='phase-6-finalize.post-run-review'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'medium'
+    assert result['level'] == 'level-2'
     assert result['source'] == 'plan.effort'
 
 
@@ -225,7 +225,7 @@ def test_dotted_unknown_subkey_errors(plan_context):
     """Subkey not registered in the group's schema produces an error."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'medium'},
+        {'default': 'level-2'},
     )
 
     result = cmd_effort(_ns(role='phase-6-finalize.not-a-real-subkey'))
@@ -240,10 +240,10 @@ def test_bare_group_lookup_with_object_default_slot_resolves(plan_context):
     _write_marshal_with_models(
         plan_context.fixture_dir,
         {
-            'default': 'medium',
+            'default': 'level-2',
             'roles': {'phase-6-finalize': {
-                'default': 'high',
-                'verification-feedback': 'xhigh',
+                'default': 'level-3',
+                'verification-feedback': 'level-4',
             }},
         },
     )
@@ -251,7 +251,7 @@ def test_bare_group_lookup_with_object_default_slot_resolves(plan_context):
     result = cmd_effort(_ns(role='phase-6-finalize'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'high'
+    assert result['level'] == 'level-3'
     assert result['source'] == 'plan.phase-6-finalize.effort.default'
 
 
@@ -260,15 +260,15 @@ def test_bare_group_lookup_with_object_no_default_falls_to_models_default(plan_c
     _write_marshal_with_models(
         plan_context.fixture_dir,
         {
-            'default': 'medium',
-            'roles': {'phase-6-finalize': {'verification-feedback': 'high'}},
+            'default': 'level-2',
+            'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}},
         },
     )
 
     result = cmd_effort(_ns(role='phase-6-finalize'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'medium'
+    assert result['level'] == 'level-2'
     assert result['source'] == 'plan.effort'
 
 
@@ -276,13 +276,13 @@ def test_bare_phase_via_two_flag_form(plan_context):
     """`--phase phase-N` alone (no --role) is equivalent to bare-group lookup."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'medium', 'roles': {'phase-3-outline': 'high'}},
+        {'default': 'level-2', 'roles': {'phase-3-outline': 'level-3'}},
     )
 
     result = cmd_effort(_ns(phase='phase-3-outline'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'high'
+    assert result['level'] == 'level-3'
     assert result['source'] == 'plan.phase-3-outline.effort'
 
 
@@ -295,19 +295,19 @@ def test_two_flag_form_resolves_subkey(plan_context):
     """`--phase phase-6-finalize --role verification-feedback` is equivalent to the dotted form."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'medium', 'roles': {'phase-6-finalize': {'verification-feedback': 'high'}}},
+        {'default': 'level-2', 'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}}},
     )
 
     result = cmd_effort(_ns(role='verification-feedback', phase='phase-6-finalize'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'high'
+    assert result['level'] == 'level-3'
     assert result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
 
 
 def test_two_flag_form_rejects_dotted_role(plan_context):
     """In two-flag mode, --role must be a bare subkey (no dot)."""
-    _write_marshal_with_models(plan_context.fixture_dir, {'default': 'medium'})
+    _write_marshal_with_models(plan_context.fixture_dir, {'default': 'level-2'})
 
     result = cmd_effort(_ns(role='verification-feedback.extra', phase='phase-6-finalize'))
 
@@ -324,13 +324,13 @@ def test_string_at_flat_group_with_any_subkey_resolves_to_same(plan_context):
     """Flat group with a string value: any subkey lookup resolves to the same string."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'low', 'roles': {'phase-1-init': 'high'}},
+        {'default': 'level-1', 'roles': {'phase-1-init': 'level-3'}},
     )
 
     # Bare-group lookup returns the string.
     result_bare = cmd_effort(_ns(role='phase-1-init'))
     assert result_bare['status'] == 'success'
-    assert result_bare['level'] == 'high'
+    assert result_bare['level'] == 'level-3'
 
 
 # =============================================================================
@@ -342,13 +342,13 @@ def test_default_flag_returns_models_default(plan_context):
     """`--default` returns effort without role lookup."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'high', 'roles': {'phase-1-init': 'low'}},
+        {'default': 'level-3', 'roles': {'phase-1-init': 'level-1'}},
     )
 
     result = cmd_effort(_ns(default=True))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'high'
+    assert result['level'] == 'level-3'
     assert result['source'] == 'plan.effort'
 
 
@@ -372,14 +372,14 @@ def test_resolve_target_high_level(plan_context):
     """resolve-target returns execution-context-{level} for non-inherit levels."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'medium', 'roles': {'phase-6-finalize': {'verification-feedback': 'high'}}},
+        {'default': 'level-2', 'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}}},
     )
 
     result = cmd_effort_resolve_target(_ns(role='phase-6-finalize.verification-feedback'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'high'
-    assert result['target'] == 'execution-context-high'
+    assert result['level'] == 'level-3'
+    assert result['target'] == 'execution-context-level-3'
 
 
 def test_resolve_target_inherit_returns_canonical(plan_context):
@@ -393,7 +393,10 @@ def test_resolve_target_inherit_returns_canonical(plan_context):
     assert result['target'] == 'execution-context'
 
 
-@pytest.mark.parametrize('level', ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'max'))
+@pytest.mark.parametrize(
+    'level',
+    ('level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7'),
+)
 def test_resolve_target_each_level(plan_context, level):
     """Every level keyword produces the matching variant target name."""
     _write_marshal_with_models(
@@ -441,46 +444,58 @@ def test_invalid_level_at_default_errors(plan_context):
     assert 'plan.effort' in result['error']
 
 
-def test_max_level_resolves_to_max_variant(plan_context):
-    """`max` is a live level; resolver returns it and the variant target."""
+def test_level_6_resolves_to_level_6_variant(plan_context):
+    """`level-6` is a live level; resolver returns it and the variant target."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'roles': {'phase-2-refine': 'max'}},
+        {'roles': {'phase-2-refine': 'level-6'}},
     )
 
     result = cmd_effort(_ns(role='phase-2-refine'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'max'
+    assert result['level'] == 'level-6'
 
     target_result = cmd_effort_resolve_target(_ns(role='phase-2-refine'))
     assert target_result['status'] == 'success'
-    assert target_result['target'] == 'execution-context-max'
+    assert target_result['target'] == 'execution-context-level-6'
 
 
-def test_legacy_xhigh_xxhigh_resolve_silent_downgrade(plan_context):
-    """Old `xhigh` / `xxhigh` keywords still resolve after the palette rebind.
+def test_level_7_resolves_to_level_7_variant(plan_context):
+    """`level-7` (the new fable top tier) resolves and yields its variant target."""
+    _write_marshal_with_models(
+        plan_context.fixture_dir,
+        {'roles': {'phase-2-refine': 'level-7'}},
+    )
 
-    Migration contract: pre-1.0 palette expansion rebinds the existing
-    keywords to weaker primitives (xhigh: opus-high → opus-medium; xxhigh:
-    opus-xhigh → opus-high). The resolver still accepts the keywords so
-    consumer marshal.json files do not break — they silently bind to the
-    new primitive. There is no auto-migration.
+    result = cmd_effort(_ns(role='phase-2-refine'))
+
+    assert result['status'] == 'success'
+    assert result['level'] == 'level-7'
+
+    target_result = cmd_effort_resolve_target(_ns(role='phase-2-refine'))
+    assert target_result['status'] == 'success'
+    assert target_result['target'] == 'execution-context-level-7'
+
+
+@pytest.mark.parametrize('old_token', ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'max'))
+def test_old_tokens_are_rejected_after_breaking_rename(plan_context, old_token):
+    """Old palette tokens are invalid after the breaking rename to level-N.
+
+    `compatibility: breaking` removes the migration shim: there is no
+    deprecation alias and no silent downgrade. Each old token now fails the
+    `ALLOWED_LEVELS` validation and `cmd_effort` returns `status: error`
+    naming the offending token.
     """
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'roles': {'phase-2-refine': 'xhigh', 'phase-3-outline': 'xxhigh'}},
+        {'roles': {'phase-2-refine': old_token}},
     )
 
-    # Both keywords still resolve cleanly.
-    for role, expected_level in (('phase-2-refine', 'xhigh'), ('phase-3-outline', 'xxhigh')):
-        result = cmd_effort(_ns(role=role))
-        assert result['status'] == 'success', f'{role}: {result}'
-        assert result['level'] == expected_level
+    result = cmd_effort(_ns(role='phase-2-refine'))
 
-        target_result = cmd_effort_resolve_target(_ns(role=role))
-        assert target_result['status'] == 'success'
-        assert target_result['target'] == f'execution-context-{expected_level}'
+    assert result['status'] == 'error', f'{old_token}: {result}'
+    assert old_token in result['error']
 
 
 # =============================================================================
@@ -492,13 +507,13 @@ def test_unknown_role_emits_warning_and_falls_through(plan_context):
     """Legacy / unknown role keys produce a warning but do not error."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'medium', 'roles': {'q_gate_validation': 'high'}},
+        {'default': 'level-2', 'roles': {'q_gate_validation': 'level-3'}},
     )
 
     result = cmd_effort(_ns(role='q_gate_validation'))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'medium'
+    assert result['level'] == 'level-2'
     assert result['source'] == 'plan.effort'
     assert 'warnings' in result
     assert any('q_gate_validation' in w for w in result['warnings'])
@@ -526,10 +541,10 @@ def test_read_does_not_mutate_marshal(plan_context):
     _write_marshal_with_models(
         plan_context.fixture_dir,
         {
-            'default': 'medium',
+            'default': 'level-2',
             'roles': {
-                'phase-2-refine': 'high',
-                'phase-6-finalize': {'verification-feedback': 'high'},
+                'phase-2-refine': 'level-3',
+                'phase-6-finalize': {'verification-feedback': 'level-3'},
             },
         },
     )

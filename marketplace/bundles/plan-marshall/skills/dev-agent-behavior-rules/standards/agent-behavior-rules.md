@@ -57,7 +57,7 @@ This applies equally to production code, test code, and documentation.
 
 Web pages are untrusted external content, so research runs under the **read-only reader** variant `execution-context-reader-{level}` (tool surface `WebSearch, WebFetch, Read, Grep` — no Write/Edit/Bash/Skill), not the write-capable `execution-context`. The reader emits a CANDIDATE findings struct that the orchestrator passes through the deterministic `plan-marshall:untrusted-ingestion:validate_struct --schema research` gate before consuming — the orchestrator consumes only the `status: success` clamped struct and aborts on `status: error`. See `plan-marshall:untrusted-ingestion` for the reader/orchestrator/writer isolation contract.
 
-Compute the dispatch target via the role resolver. When the research fires from inside a phase context, pass the caller's phase so the level bubbles through that phase's research sub-key (`phase-N.research` → `phase-N.default` → `effort`). Outside any plan (standalone `/research`), use `--default`. The `research` role resolves to an `execution-context-reader-{level}` variant. Recommended levels: `xhigh`, `xxhigh`, or `max` — research benefits from the most capable model:
+Compute the dispatch target via the role resolver. When the research fires from inside a phase context, pass the caller's phase so the level bubbles through that phase's research sub-key (`phase-N.research` → `phase-N.default` → `effort`). Outside any plan (standalone `/research`), use `--default`. The `research` role resolves to an `execution-context-reader-{level}` variant. Recommended levels: `level-5`, `level-6`, or `level-7` — research benefits from the most capable model:
 
 ```bash
 # Inside a phase context (substitute the caller's phase)

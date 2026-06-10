@@ -1,6 +1,6 @@
 {
   "plan": {
-    "effort": "high",
+    "effort": "level-3",
     "open_in_ide": true,
     "coverage": {
       "thoroughness": "inherit",
@@ -9,26 +9,26 @@
     "phase-1-init": {
       "branch_strategy": "feature",
       "use_worktree": true,
-      "effort": "high",
       "init_without_asking": true,
       "deep_lane": "auto",
-      "escalation": "auto"
+      "escalation": "auto",
+      "effort": "level-3"
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
       "compatibility": "breaking",
-      "effort": "high",
       "simplicity": "lean",
-      "revalidation": "auto"
+      "revalidation": "auto",
+      "effort": "level-3"
     },
     "phase-3-outline": {
       "plan_without_asking": false,
-      "effort": "xhigh",
-      "qgate": "auto"
+      "qgate": "auto",
+      "effort": "level-4"
     },
     "phase-4-plan": {
       "execute_without_asking": true,
-      "effort": "high"
+      "effort": "level-3"
     },
     "phase-5-execute": {
       "commit_strategy": "per_plan",
@@ -40,8 +40,8 @@
         "default:build_verify"
       ],
       "effort": {
-        "default": "xhigh",
-        "verification-feedback": "high"
+        "default": "level-4",
+        "verification-feedback": "level-3"
       }
     },
     "phase-6-finalize": {
@@ -76,9 +76,9 @@
         "default:archive-plan"
       ],
       "effort": {
-        "default": "high",
-        "verification-feedback": "high",
-        "post-run-review": "xhigh"
+        "default": "level-3",
+        "verification-feedback": "level-3",
+        "post-run-review": "level-4"
       }
     }
   },
