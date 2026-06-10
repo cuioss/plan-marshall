@@ -85,4 +85,4 @@ python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build ru
 == Related
 
 * xref:build.adoc[Build] — the wrapper, layout, and tool configuration
-* xref:workflow-verification.adoc[Workflow Verification] — opt-in semantic verification of plan artifacts (separate from unit tests)
+* link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[Plan Retrospective] — opt-in retrospective audit of plan artifacts (separate from unit tests)
