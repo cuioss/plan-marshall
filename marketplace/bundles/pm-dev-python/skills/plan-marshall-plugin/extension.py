@@ -78,10 +78,10 @@ class Extension(ExtensionBase):
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if Python domain applies based on .py files in paths."""
-        paths = module_data.get('paths', {})
-        sources = paths.get('sources', [])
-        tests = paths.get('tests', [])
-        build_systems = module_data.get('build_systems', [])
+        paths = module_data.get('paths') or {}
+        sources = paths.get('sources') or []
+        tests = paths.get('tests') or []
+        build_systems = module_data.get('build_systems') or []
 
         signals = []
         if 'python' in build_systems:

@@ -110,7 +110,7 @@ class Extension(ExtensionBase):
 
         Uses general-dev domain skills (not build domain, which has empty profiles).
         """
-        build_systems = set(module_data.get('build_systems', []))
+        build_systems = set(module_data.get('build_systems') or [])
         if not build_systems & _CODE_BUILD_SYSTEMS:
             return {
                 'applicable': False,

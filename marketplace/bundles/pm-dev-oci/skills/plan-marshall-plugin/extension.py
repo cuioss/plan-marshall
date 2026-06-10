@@ -15,9 +15,9 @@ class Extension(ExtensionBase):
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if OCI domain applies based on Dockerfile or container config."""
-        paths = module_data.get('paths', {})
-        module_path = paths.get('module', '')
-        sources = paths.get('sources', [])
+        paths = module_data.get('paths') or {}
+        module_path = paths.get('module') or ''
+        sources = paths.get('sources') or []
 
         signals = []
         all_paths = [module_path] + sources
@@ -42,7 +42,7 @@ class Extension(ExtensionBase):
                 signals.append(f'Container directory: {p}')
 
         # Check metadata for container indicators
-        metadata = module_data.get('metadata', {})
+        metadata = module_data.get('metadata') or {}
         if metadata.get('packaging') == 'docker' or metadata.get('container'):
             signals.append('container metadata detected')
 

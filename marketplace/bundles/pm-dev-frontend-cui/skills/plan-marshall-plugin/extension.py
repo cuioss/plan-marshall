@@ -47,7 +47,7 @@ class Extension(ExtensionBase):
         The frontend-maven-plugin drives npm from Maven, making dual presence
         the definitive signal for CUI-style frontend modules.
         """
-        build_systems = module_data.get('build_systems', [])
+        build_systems = module_data.get('build_systems') or []
         # CUI JS modules have both npm and maven (dual build system)
         if 'npm' not in build_systems or 'maven' not in build_systems:
             return {
@@ -61,7 +61,7 @@ class Extension(ExtensionBase):
         signals = [f'build_systems={",".join(build_systems)}']
 
         # Check for CUI dependencies as additional signal
-        deps = module_data.get('dependencies', [])
+        deps = module_data.get('dependencies') or []
         dep_strings = [d if isinstance(d, str) else '' for d in deps]
         cui_deps = [d for d in dep_strings if 'de.cuioss' in d]
         if cui_deps:

@@ -16,6 +16,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import pytest
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT
 
@@ -717,6 +719,111 @@ def test_applies_to_module_result_structure():
         result = ext.applies_to_module(_maven_module_data())
         for key in required_keys:
             assert key in result, f'{bundle}: applies_to_module missing key {key}'
+
+
+# =============================================================================
+# Null-Safety Regression Tests (applies_to_module against malformed discovery)
+# =============================================================================
+#
+# Regression guard for the crash where extension_discovery emits a module
+# whose discovered dict is missing an expected key or carries an explicit
+# None value (e.g. ``build_systems``, ``paths``, ``metadata``,
+# ``dependencies`` absent or None, or a nested ``paths.module`` /
+# ``paths.sources`` / ``metadata.packaging`` None). Every fixed
+# applies_to_module() must return ``applicable: False`` for such input
+# rather than raising KeyError / AttributeError / TypeError.
+#
+# Parametrized across all nine bundles fixed by the null-guard change so a
+# regression in any single extension surfaces as a distinct
+# ``bundle-malformed_case`` failure id, never a silent pass.
+
+# The nine bundles whose applies_to_module() reads were null-guarded.
+NULL_GUARD_BUNDLES = [
+    'pm-dev-python',
+    'pm-documents',
+    'pm-dev-oci',
+    'pm-dev-frontend',
+    'pm-dev-frontend-cui',
+    'pm-dev-java',
+    'pm-dev-java-cui',
+    'pm-plugin-development',
+    'plan-marshall',
+]
+
+# Malformed module-data dicts exercising every discovered field that an
+# applies_to_module() reads. Each entry is (case_id, module_data).
+#
+# Every case deliberately carries NO positive ``build_systems`` signal
+# (the key is absent or None): the six extensions that gate on
+# ``build_systems`` would legitimately return applicable=True for a valid
+# value such as ``['maven']``, so a positive build-system value would make
+# the shared ``applicable is False`` assertion wrong. With ``build_systems``
+# always absent/None, the assertion holds for all nine extensions — none has
+# any applicability signal to latch onto. The cases still drive the nested
+# ``paths`` / ``metadata`` / ``dependencies`` reads (which oci and documents
+# perform regardless of ``build_systems``) by setting those containers and
+# their sub-keys to None.
+_MALFORMED_MODULE_DATA = [
+    ('empty_dict', {}),
+    ('build_systems_none', {'build_systems': None}),
+    ('paths_none', {'paths': None}),
+    ('paths_subkeys_none', {'paths': {'module': None, 'sources': None, 'tests': None}}),
+    ('metadata_none', {'paths': {'sources': None}, 'metadata': None}),
+    (
+        'metadata_subkeys_none',
+        {
+            'paths': {'sources': None},
+            'metadata': {'packaging': None, 'container': None, 'profiles': None},
+        },
+    ),
+    ('dependencies_none', {'dependencies': None}),
+    (
+        'all_discovered_none',
+        {
+            'name': None,
+            'build_systems': None,
+            'paths': None,
+            'metadata': None,
+            'dependencies': None,
+            'packages': None,
+            'commands': None,
+            'stats': None,
+        },
+    ),
+]
+
+_REQUIRED_RESULT_KEYS = ['applicable', 'confidence', 'signals', 'additive_to', 'skills_by_profile']
+
+
+@pytest.mark.parametrize('bundle', NULL_GUARD_BUNDLES)
+@pytest.mark.parametrize('case_id,module_data', _MALFORMED_MODULE_DATA, ids=[c[0] for c in _MALFORMED_MODULE_DATA])
+def test_applies_to_module_null_safe(bundle: str, case_id: str, module_data: dict):
+    """applies_to_module() returns False (never raises) for null/missing discovered fields.
+
+    Cross-bundle regression test: a null-guard regression in any single
+    extension is caught as a distinct ``bundle[case_id]`` failure rather than
+    a silent pass. Asserts both that the call does not raise AND that it
+    returns a well-formed not-applicable result.
+    """
+    ext = load_extension(bundle)
+
+    # Must not raise — the crash this guards against was KeyError /
+    # AttributeError / TypeError on the discovered-field reads.
+    try:
+        result = ext.applies_to_module(module_data)
+    except (KeyError, AttributeError, TypeError) as err:
+        raise AssertionError(
+            f'{bundle}: applies_to_module() raised {type(err).__name__} on malformed '
+            f'discovery case {case_id!r}: {err}'
+        ) from err
+
+    # Missing/None discovered fields carry no applicability signal, so the
+    # result must be the well-formed not-applicable shape.
+    assert result['applicable'] is False, (
+        f'{bundle}: expected applicable=False for malformed case {case_id!r}, got {result["applicable"]}'
+    )
+    for key in _REQUIRED_RESULT_KEYS:
+        assert key in result, f'{bundle}: result missing key {key!r} for malformed case {case_id!r}'
 
 
 # =============================================================================

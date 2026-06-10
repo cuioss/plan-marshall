@@ -36,7 +36,7 @@ class Extension(ExtensionBase):
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if CUI Java domain applies. Additive to 'java'."""
-        build_systems = module_data.get('build_systems', [])
+        build_systems = module_data.get('build_systems') or []
         if 'maven' not in build_systems and 'gradle' not in build_systems:
             return {
                 'applicable': False,
@@ -49,7 +49,7 @@ class Extension(ExtensionBase):
         signals = [f'build_systems={",".join(build_systems)}']
 
         # Check for CUI dependencies as additional signal
-        deps = module_data.get('dependencies', [])
+        deps = module_data.get('dependencies') or []
         dep_strings = [d if isinstance(d, str) else '' for d in deps]
         cui_deps = [d for d in dep_strings if 'de.cuioss' in d or 'de.cuioss.portal' in d or 'de.cuioss.jsf' in d]
         if cui_deps:
