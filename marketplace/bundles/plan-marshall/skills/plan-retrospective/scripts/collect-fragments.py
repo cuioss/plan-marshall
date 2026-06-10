@@ -49,6 +49,7 @@ from input_validation import (  # type: ignore[import-not-found]
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
+from retro_sections import valid_aspect_keys  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 _ARCHIVED_TMP_SUBDIR = 'plan-retrospective'
@@ -245,6 +246,49 @@ def _locate_bundle(args: argparse.Namespace) -> Path:
     return live_path
 
 
+def _domain_aspect_keys() -> set[str]:
+    """Return the set of domain-contributed retrospective aspect names.
+
+    Domain bundles register additional aspects via
+    ``provides_retrospective_aspects()`` (e.g. ``wrapper-tangle`` from
+    ``pm-plugin-development``). Those keys are registered through the same
+    ``collect-fragments add --aspect <key>`` path but are NOT in the static
+    :data:`retro_sections.SECTION_SPEC`. The validation guard must accept them,
+    so they are discovered at add-time via the same extension-discovery library
+    that ``extension-api list-retrospective-aspects`` exposes — both this script
+    and ``extension_discovery`` live on the executor PYTHONPATH, so the import is
+    a direct in-process call rather than a subprocess shell-out.
+    """
+    from extension_discovery import (  # type: ignore[import-not-found]
+        discover_all_extensions,
+        get_retrospective_aspects_from_extensions,
+    )
+
+    extensions = discover_all_extensions()
+    aspects = get_retrospective_aspects_from_extensions(extensions)
+    try:
+        return {a['aspect'] for a in aspects if a.get('aspect')}
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError(
+            'Domain-contributed retrospective aspects are malformed: expected a '
+            "list of dicts each carrying an 'aspect' key, but encountered a "
+            f'partially corrupt structure (None, non-dict entry, or wrong value '
+            f'type) while building the aspect-key set: {exc}'
+        ) from exc
+
+
+def _registerable_aspect_keys() -> set[str]:
+    """Return the closed set of aspect keys ``cmd_add`` accepts.
+
+    The union of (a) the static section registry keys
+    (:func:`retro_sections.valid_aspect_keys`) and (b) the domain-contributed
+    aspect names (:func:`_domain_aspect_keys`). An ``--aspect`` outside this set
+    is a producer/consumer drift — a typo'd or renamed key that the consumer's
+    section map will never look up — and is rejected loudly by ``cmd_add``.
+    """
+    return valid_aspect_keys() | _domain_aspect_keys()
+
+
 def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
     """Merge a fragment file into the bundle under the given aspect key."""
     aspect = args.aspect
@@ -252,6 +296,27 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError('--aspect is required')
     if aspect.startswith('_'):
         raise ValueError('Reserved aspect key: keys starting with "_" are internal metadata')
+
+    # Validate --aspect against the canonical registry (static section keys ∪
+    # domain-contributed aspects) BEFORE touching the bundle. An unregistered
+    # key would otherwise write silently into the bundle and then be dropped by
+    # compile-report's static section loop — a silent-data-loss class. Reject it
+    # loudly here, naming the offending key and the valid set, and do NOT mutate
+    # the bundle.
+    registerable = _registerable_aspect_keys()
+    if aspect not in registerable:
+        return {
+            'status': 'error',
+            'operation': 'add',
+            'plan_id': args.plan_id,
+            'aspect': aspect,
+            'error': (
+                f'Unregistered aspect key: {aspect!r}. It is not in the canonical section '
+                f'registry nor any domain-contributed aspect set, so compile-report would '
+                f'silently drop its section. Valid aspect keys: {sorted(registerable)}'
+            ),
+            'valid_aspects': sorted(registerable),
+        }
 
     bundle_path = _locate_bundle(args)
     bundle = _read_bundle(bundle_path)

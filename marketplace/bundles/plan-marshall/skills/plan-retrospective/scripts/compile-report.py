@@ -32,38 +32,12 @@ from input_validation import (  # type: ignore[import-not-found]
     add_session_id_arg,
     parse_args_with_toon_errors,
 )
+from retro_sections import SECTION_SPEC  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
-# Section order matches ``references/report-structure.md``.
-# Fragment keys MUST match the hyphenated aspect names produced by
-# ``collect-fragments add --aspect <name>``. Underscored variants silently
-# drop the corresponding section because the consumer lookup never finds the
-# producer's payload.
-_SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
-    # (heading, fragment_key, conditional_trigger)
-    # ``conditional_trigger`` is the fragment key whose presence is required
-    # for the section to be emitted. ``None`` means always emit.
-    ('Executive Summary', '_executive-summary', None),
-    ('Goals vs Outcomes', 'request-result-alignment', None),
-    ('Artifact Consistency', 'artifact-consistency', None),
-    ('Log Analysis', 'log-analysis', None),
-    # Phase Dispatch Boundaries — gated on the presence of at least one phase
-    # entry with ``present: true``. The trigger key is the per-phase fragment
-    # itself; the should_emit dispatch surfaces a dedicated boundary-presence
-    # branch (lesson 2026-05-20-12-002).
-    ('Phase Dispatch Boundaries', 'dispatch_boundaries', 'dispatch_boundaries'),
-    ('Invariant Outcomes', 'invariant-summary', None),
-    ('Plan Efficiency', 'plan-efficiency', None),
-    ('LLM-to-Script Opportunities', 'llm-to-script-opportunities', None),
-    ('Logging Gaps', 'logging-gap-analysis', None),
-    ('Script Failure Analysis', 'script-failure-analysis', 'script-failure-analysis'),
-    ('Permission Prompt Analysis', 'permission-prompt-analysis', 'permission-prompt-analysis'),
-    # Manifest Decisions is conditional on its own fragment being present —
-    # ``check-manifest-consistency`` only emits a fragment when execution.toon
-    # exists, so plans pre-dating the manifest deliverable get no section.
-    ('Manifest Decisions', 'manifest-decisions', 'manifest-decisions'),
-    ('Proposed Lessons', 'lessons-proposal', None),
-)
+# The canonical section→fragment-key registry lives in ``retro_sections`` so the
+# producer (``collect-fragments``) and this consumer share one source of truth.
+# See ``retro_sections.SECTION_SPEC`` for the row schema and section order.
 
 
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -273,7 +247,7 @@ def build_document(
     else:
         exec_text = '_No executive summary provided._'
 
-    for heading, fragment_key, trigger in _SECTION_SPEC:
+    for heading, fragment_key, trigger in SECTION_SPEC:
         if fragment_key == '_executive-summary':
             parts.append(f'## {heading}\n\n{exec_text}\n')
             written.append(heading)
