@@ -74,20 +74,28 @@ def _documented_step_token(skill_md: Path) -> str:
     ``--phase 6-finalize`` argument and a ``--step {token}`` argument. Return
     the ``{token}`` so the test asserts against the live documented value
     rather than a hard-coded copy.
+
+    The parsing is order-independent: ``--phase`` and ``--step`` may appear in
+    either order within the ``mark-step-done`` command block, and both
+    space-separated (``--flag value``) and equals-separated (``--flag=value``)
+    forms are handled.
     """
     content = skill_md.read_text(encoding='utf-8')
-    # Match the --step argument on a mark-step-done invocation that also names
-    # the 6-finalize phase, tolerant of line breaks / backslash continuations.
-    match = re.search(
-        r'mark-step-done\b[\s\S]*?--phase\s+6-finalize\b[\s\S]*?--step\s+(\S+)',
-        content,
+    # Extract every mark-step-done command block (up to the next blank line,
+    # closing code fence, or end of string), then search within each block for
+    # one that contains both --phase 6-finalize and --step, regardless of order.
+    _phase_pat = re.compile(r'--phase(?:\s+|=)6-finalize\b')
+    _step_pat = re.compile(r'--step(?:\s+|=)(\S+)')
+    for block in re.findall(r'mark-step-done\b[\s\S]*?(?=\n\s*\n|```|$)', content):
+        if not _phase_pat.search(block):
+            continue
+        step_match = _step_pat.search(block)
+        if step_match:
+            return step_match.group(1)
+    raise AssertionError(
+        f'No `mark-step-done ... --phase 6-finalize ... --step <token>` '
+        f'invocation found in {skill_md}; Step 6 termination contract changed.'
     )
-    if match is None:
-        raise AssertionError(
-            f'No `mark-step-done ... --phase 6-finalize ... --step <token>` '
-            f'invocation found in {skill_md}; Step 6 termination contract changed.'
-        )
-    return match.group(1)
 
 
 # ---------------------------------------------------------------------------

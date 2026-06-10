@@ -197,10 +197,13 @@ def test_step_absent_returns_not_recorded(plan_context):
     assert result['step'] == 'step-missing'
 
 
-def test_step_absent_but_orphan_present_returns_mismatched_key(plan_context):
-    """--require-terminal on an absent queried step, when another terminal record
-    exists under a different key in the same phase, escalates to
-    step_record_mismatched_key carrying that orphan key."""
+def test_step_absent_with_require_terminal_returns_error(plan_context):
+    """--require-terminal on an absent step escalates to step_record_missing.
+
+    A terminal record under a completely unrelated key in the same phase does NOT
+    trigger step_record_mismatched_key — near-miss detection is restricted to
+    genuine near-misses (bare/qualified name variants or close typographic errors).
+    An unrelated key like ``step-a`` is not a near-miss for ``step-missing``."""
     plan_id = 'assert-absent-require'
     _make_plan(plan_id)
     _seed_step(plan_id, '1-init', 'step-a', 'done')
@@ -208,13 +211,11 @@ def test_step_absent_but_orphan_present_returns_mismatched_key(plan_context):
     result = cmd_assert_step_recorded(_assert_args(plan_id, '1-init', 'step-missing', require_terminal=True))
 
     assert result['status'] == 'error'
-    assert result['error'] == 'step_record_mismatched_key'
+    assert result['error'] == 'step_record_missing'
     assert result['recorded'] is False
     assert result['outcome'] is None
     assert result['phase'] == '1-init'
     assert result['step'] == 'step-missing'
-    assert result['orphan_key'] == 'step-a'
-    assert result['orphan_outcome'] == 'done'
 
 
 def test_phase_absent_returns_not_recorded(plan_context):
