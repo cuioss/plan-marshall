@@ -405,7 +405,7 @@ Return:
 
 ```toon
 status: error
-error_type: refine_contract_violation
+error: refine_contract_violation
 display_detail: "refine dispatched edits to main checkout"
 plan_id: {plan_id}
 dirty_files: {file_list}

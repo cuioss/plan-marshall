@@ -53,7 +53,7 @@ Error TOON shape for any of the above:
 ```toon
 status: error
 display_detail: "execution-context: missing required field <field>"
-error_type: contract_violation
+error: contract_violation
 component: "plan-marshall:execution-context"
 missing_field: "<field>"
 ```
@@ -81,7 +81,7 @@ If any skill load fails, STOP and return:
 ```toon
 status: error
 display_detail: "execution-context: failed to load skill <name>"
-error_type: skill_load_failure
+error: skill_load_failure
 component: "plan-marshall:execution-context"
 context:
   skill: "<name>"
@@ -111,7 +111,7 @@ Read the resolved path with the `Read` tool. If the file does not exist or the n
 ```toon
 status: error
 display_detail: "execution-context: workflow doc not found: <notation>"
-error_type: workflow_not_found
+error: workflow_not_found
 component: "plan-marshall:execution-context"
 workflow: "<notation>"
 ```

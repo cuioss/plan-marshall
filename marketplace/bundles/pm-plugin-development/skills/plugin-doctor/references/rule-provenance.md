@@ -145,6 +145,7 @@ Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediati
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|
 | `shell-substitution-in-skills` | safety | `_analyze_shell_substitution_in_skills.py` | Plan `remove-lesson-ref-noise` (2026-05-15) — `$(` command substitution in plan-marshall skill markdown violates the dev-agent-behavior-rules "Bash: no shell constructs" hard rule. Structural exemptions: inline-code spans and fenced blocks with `markdown`/`text` info-string. |
+| `WORKFLOW_DOC_TOON_ERROR_FIELD` | safety | `_analyze_workflow_doc_toon_error_field.py` | Lesson `2026-06-10-13-001` and the canonical error-envelope contract at `plan-marshall/skills/plan-marshall/workflow/planning.md` — fenced ` ```toon ` workflow/agent error blocks must use `error:` as the category discriminator (with the message carried by `display_detail:`), not the non-canonical `error_type:`. The orchestrator and the execution-context dispatcher branch on the field name they read out of the TOON block, so a drifted key silently desynchronises the read-side match. Detection scope: fenced ` ```toon ` blocks only; the key must be at the start of a TOON line. Inline `{status: error, error_type: ...}` brace shorthands, prose references outside any fence, and non-`toon` fences are out of scope by design. Quality-gate-active (zero residual findings after the normalization sweep). |
 
 ### Bash chain-shape invariant
 

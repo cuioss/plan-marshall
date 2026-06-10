@@ -210,8 +210,8 @@ All errors MUST return structured TOON:
 
 ```toon
 status	error
-error_type	{skill_error|script_error|timeout|validation}
-error	"Human-readable message"
+error	{skill_error|script_error|timeout|validation}
+display_detail	"Human-readable message"
 recoverable	{true|false}
 ```
 
