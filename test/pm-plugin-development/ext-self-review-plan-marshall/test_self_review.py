@@ -1404,6 +1404,35 @@ class TestDetectUnguardedBoundaries:
         out = _detect_unguarded_boundaries(added)
         assert out == []
 
+    def test_subprocess_inside_existing_try_block_surfaces_nothing(self, tmp_path: Path):
+        # The try block is NOT part of the diff (pre-existing) — only the
+        # subprocess.run line is added.  Without post-image walking this case
+        # was incorrectly flagged as unguarded.
+        mod_py = tmp_path / 'mod.py'
+        mod_py.write_text(
+            'def run():\n'
+            '    try:\n'
+            '        pass\n'
+            '        subprocess.run(["ls"])\n'
+        )
+        added = [('mod.py', 4, '        subprocess.run(["ls"])')]
+        out = _detect_unguarded_boundaries(added, tmp_path)
+        assert out == []
+
+    def test_subprocess_outside_try_with_project_dir_surfaces_candidate(self, tmp_path: Path):
+        # Confirm that the post-image path still surfaces genuinely unguarded
+        # calls when project_dir is provided.
+        mod_py = tmp_path / 'mod.py'
+        mod_py.write_text(
+            'def run():\n'
+            '    subprocess.run(["ls"])\n'
+        )
+        added = [('mod.py', 2, '    subprocess.run(["ls"])')]
+        out = _detect_unguarded_boundaries(added, tmp_path)
+        assert len(out) == 1
+        assert out[0]['line'] == 2
+        assert out[0]['boundary'] == 'subprocess.run'
+
 
 # =============================================================================
 # Test: _detect_count_prose (Facet 2)

@@ -1187,7 +1187,9 @@ def _detect_description_vs_body(
     return out
 
 
-def _detect_unguarded_boundaries(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
+def _detect_unguarded_boundaries(
+    added: list[tuple[str, int, str]], project_dir: Path | None = None
+) -> list[dict[str, Any]]:
     """Detect an added subprocess/file-I/O boundary call with no guard (Facet 1).
 
     Scans added ``.py`` lines for a boundary call and surfaces it when BOTH
@@ -1202,6 +1204,15 @@ def _detect_unguarded_boundaries(added: list[tuple[str, int, str]]) -> list[dict
        per-file walk that opens an "inside try" window at a ``try:`` opener and
        closes it at the next def/class header.
 
+    When ``project_dir`` is provided the function reads the full post-image of
+    each changed ``.py`` file and walks every line to build accurate
+    try-block / function-boundary state.  This ensures that pre-existing
+    ``try`` blocks and ``def``/``class`` headers — which are absent from the
+    diff's ``added`` lines — are correctly accounted for.  When the file is not
+    present on disk (e.g. in unit tests without a ``project_dir``), the
+    function falls back to scanning only the ``added`` lines, which preserves
+    the original behaviour for test scenarios.
+
     Network calls (``socket.``, ``urllib.``, ``http.client.``) are out of scope
     and never matched (their absence from the boundary regexes is the exclusion).
     The existing sibling-envelope unguarded-pair detection is a separate concern
@@ -1210,48 +1221,100 @@ def _detect_unguarded_boundaries(added: list[tuple[str, int, str]]) -> list[dict
     Each entry carries ``file``, ``line``, ``boundary`` (the matched call kind),
     and ``guarded`` (always ``False`` for a surfaced entry).
     """
-    # Track, per file, whether the current line sits inside an open try block.
-    # A def/class header resets the window (a try cannot span a function
-    # boundary), so the "enclosing try in the SAME function" rule is honoured.
     out: list[dict[str, Any]] = []
-    inside_try_by_file: dict[str, bool] = {}
+
+    # Group added lines by file so we can process each file independently.
+    added_by_file: dict[str, dict[int, str]] = {}
     for path, lineno, content in added:
-        if not path.endswith('.py'):
-            continue
-        if _DEF_OR_CLASS_HEADER.match(content):
-            inside_try_by_file[path] = False
-            continue
-        if _TRY_OPENER.match(content):
-            inside_try_by_file[path] = True
-            continue
-        inside_try = inside_try_by_file.get(path, False)
+        if path.endswith('.py'):
+            added_by_file.setdefault(path, {})[lineno] = content
 
-        sub_match = _SUBPROCESS_BOUNDARY.search(content)
-        if sub_match is not None:
-            guarded = inside_try or bool(_CHECK_TRUE_KWARG.search(content))
-            if not guarded:
-                out.append(
-                    {
-                        'file': path,
-                        'line': lineno,
-                        'boundary': f'subprocess.{sub_match.group(1)}',
-                        'guarded': False,
-                    }
-                )
-            continue
+    for path, added_lines in added_by_file.items():
+        post_image = _read_post_image(project_dir, path) if project_dir is not None else []
 
-        if _FILE_IO_BOUNDARY.search(content) is not None:
-            if not inside_try:
-                io_match = _FILE_IO_BOUNDARY.search(content)
-                token = io_match.group(0).rstrip('(') if io_match is not None else 'file_io'
-                out.append(
-                    {
-                        'file': path,
-                        'line': lineno,
-                        'boundary': token.lstrip('.'),
-                        'guarded': False,
-                    }
-                )
+        if post_image:
+            # Walk the full post-image so that pre-existing try blocks and
+            # def/class headers outside the diff are properly tracked.
+            inside_try = False
+            for idx, line in enumerate(post_image, start=1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+                if _DEF_OR_CLASS_HEADER.match(line):
+                    inside_try = False
+                    continue
+                if _TRY_OPENER.match(line):
+                    inside_try = True
+                    continue
+                if idx not in added_lines:
+                    continue
+                content = added_lines[idx]
+                sub_match = _SUBPROCESS_BOUNDARY.search(content)
+                if sub_match is not None:
+                    guarded = inside_try or bool(_CHECK_TRUE_KWARG.search(content))
+                    if not guarded:
+                        out.append(
+                            {
+                                'file': path,
+                                'line': idx,
+                                'boundary': f'subprocess.{sub_match.group(1)}',
+                                'guarded': False,
+                            }
+                        )
+                    continue
+                if _FILE_IO_BOUNDARY.search(content) is not None:
+                    if not inside_try:
+                        io_match = _FILE_IO_BOUNDARY.search(content)
+                        token = io_match.group(0).rstrip('(') if io_match is not None else 'file_io'
+                        out.append(
+                            {
+                                'file': path,
+                                'line': idx,
+                                'boundary': token.lstrip('.'),
+                                'guarded': False,
+                            }
+                        )
+        else:
+            # Fallback: no post-image available — scan only the added lines.
+            # A def/class header resets the window (a try cannot span a
+            # function boundary), so the "enclosing try in the SAME function"
+            # rule is honoured within the diff-only subset.
+            inside_try = False
+            for lineno, content in sorted(added_lines.items()):
+                stripped = content.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+                if _DEF_OR_CLASS_HEADER.match(content):
+                    inside_try = False
+                    continue
+                if _TRY_OPENER.match(content):
+                    inside_try = True
+                    continue
+                sub_match = _SUBPROCESS_BOUNDARY.search(content)
+                if sub_match is not None:
+                    guarded = inside_try or bool(_CHECK_TRUE_KWARG.search(content))
+                    if not guarded:
+                        out.append(
+                            {
+                                'file': path,
+                                'line': lineno,
+                                'boundary': f'subprocess.{sub_match.group(1)}',
+                                'guarded': False,
+                            }
+                        )
+                    continue
+                if _FILE_IO_BOUNDARY.search(content) is not None:
+                    if not inside_try:
+                        io_match = _FILE_IO_BOUNDARY.search(content)
+                        token = io_match.group(0).rstrip('(') if io_match is not None else 'file_io'
+                        out.append(
+                            {
+                                'file': path,
+                                'line': lineno,
+                                'boundary': token.lstrip('.'),
+                                'guarded': False,
+                            }
+                        )
     return out
 
 
@@ -1405,7 +1468,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     source_of_truth = _detect_source_of_truth(added)
     same_document = _detect_same_document_consistency(added)
     description_vs_body = _detect_description_vs_body(added, project_dir)
-    unguarded_boundaries = _detect_unguarded_boundaries(added)
+    unguarded_boundaries = _detect_unguarded_boundaries(added, project_dir)
     count_prose = _detect_count_prose(modified_files, project_dir)
     changed_pairs = _iter_changed_line_pairs(diff_text)
     if modified_files:
