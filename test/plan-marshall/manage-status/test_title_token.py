@@ -17,6 +17,7 @@ These tests cover:
 
 import json
 from argparse import Namespace
+from pathlib import Path
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -28,6 +29,7 @@ _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py'
 _core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_status_cmd_core')
 
 cmd_create = _lifecycle.cmd_create
+cmd_archive = _lifecycle.cmd_archive
 cmd_title_token = _query.cmd_title_token
 TITLE_TOKEN_STATES = _core.TITLE_TOKEN_STATES
 
@@ -207,3 +209,66 @@ def test_clear_writes_no_title_body_artifact(plan_context):
 
     plan_dir = plan_context.plan_dir_for('tt-no-render-clear')
     assert not (plan_dir / 'title-body.txt').exists()
+
+
+# =============================================================================
+# archive: cmd_archive pops title_token before writing the archived status.json
+# =============================================================================
+#
+# An archived plan has no live session driving its terminal title, so any
+# in-flight title_token (a lock state OR a build state) left behind would
+# persist a stale lock/build glyph in the archived snapshot. cmd_archive must
+# pop the field token-agnostically — a single pop covers every
+# TITLE_TOKEN_STATES value. These tests assert the field is absent from the
+# archived status.json after archiving with a pre-set merge token AND after
+# archiving with a pre-set build token.
+
+
+def _read_archived_status(result):
+    """Read the archived status.json from a cmd_archive result dict."""
+    archived_status_path = Path(result['archived_to']) / 'status.json'
+    assert archived_status_path.exists(), (
+        f'archived status.json missing at {archived_status_path} — '
+        f'either move failed or archived_to points to wrong path'
+    )
+    return json.loads(archived_status_path.read_text(encoding='utf-8'))
+
+
+def test_archive_pops_merge_lock_title_token(plan_context):
+    """cmd_archive must pop a pre-set merge-lock title_token before archiving."""
+    plan_id = 'tt-archive-merge-token'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+    # A merge-lock token represents an in-flight lock state held by the now-gone
+    # live session.
+    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='lock-owned'))
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
+
+    assert result['status'] == 'success', f'archive failed: {result}'
+    archived_status = _read_archived_status(result)
+    assert 'title_token' not in archived_status, (
+        f"Expected title_token absent from archived status.json after archiving "
+        f"with a pre-set merge token, but found "
+        f"{archived_status.get('title_token')!r}. cmd_archive must pop "
+        f"title_token before write_status/shutil.move."
+    )
+
+
+def test_archive_pops_build_title_token(plan_context):
+    """cmd_archive must pop a pre-set build title_token before archiving."""
+    plan_id = 'tt-archive-build-token'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+    # A build token represents an in-flight build phase; the pop is
+    # token-agnostic, so a build state must be dropped too.
+    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='building'))
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
+
+    assert result['status'] == 'success', f'archive failed: {result}'
+    archived_status = _read_archived_status(result)
+    assert 'title_token' not in archived_status, (
+        f"Expected title_token absent from archived status.json after archiving "
+        f"with a pre-set build token, but found "
+        f"{archived_status.get('title_token')!r}. cmd_archive must pop "
+        f"title_token token-agnostically before write_status/shutil.move."
+    )

@@ -32,7 +32,7 @@ STATE (manage-status)            COMPOSER (manage-terminal-title)   RESOLVE+EMIT
 │   writes status.title_   │     │     pm:{phase}[:{short}]     │  │  2. session cache → plan_id          │
 │   token (NO rendering)    │     │     pm:Completed[:{short}]   │  │  3. _read_title_state(plan_id):      │
 └────────────┬─────────────┘     │  2. TITLE_TOKEN_GLYPHS[token]│  │     a. live status.json              │
-             │ writes            │     ⏳/🔒/🕐/🔨 (when set)    │  │     b. archived status.json glob     │
+             │ writes            │     ⏳/🔒/🕐/🔨 (active phase)│  │     b. archived status.json glob     │
              ▼                   │  3. resolve_icon(event)      │  │  4. compose(state, event)  ──────────┤
    status.json                  │     ➤/?/✓, ✅ terminal       │  │  5. emit per platform:               │
    (current_phase,              │        override               │  │     OSC terminalSequence (every event)│
@@ -75,12 +75,24 @@ display vocabulary.
 
 ### Archive interaction
 
-`cmd_archive` (in `manage-status`) marks the active phase done, sets
-`current_phase = 'complete'` when every phase is done, then moves the **entire
-plan directory** to `.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/` via
-`shutil.move`. Because `status.json` is the single source of title state and it
-travels inside the moved directory, the archived `status.json` carries the
-terminal `current_phase` (`complete` / `archived`) into the archive with no
+`cmd_archive` (in `manage-status`) performs three mutations to `status.json`
+before moving the plan directory:
+
+1. Marks the active phase `done`.
+2. Sets `current_phase = 'complete'` when every phase is done.
+3. Pops the `title_token` field (`status.pop('title_token', None)`) — an
+   archived plan has no live session driving its terminal title, so any
+   in-flight token (`lock-waiting` / `lock-owned` / `build-waiting` /
+   `building`) left behind would persist a stale lock/build glyph in the
+   archived snapshot. The pop is token-agnostic: it covers all four
+   `TITLE_TOKEN_STATES` values with a single operation.
+
+After writing the mutated `status.json` back to the live plan directory,
+`cmd_archive` moves the **entire plan directory** to
+`.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/` via `shutil.move`.
+Because `status.json` is the single source of title state and it travels
+inside the moved directory, the archived `status.json` carries the terminal
+`current_phase` and the cleared `title_token` state into the archive with no
 separate body artifact to preserve. The archive name is built from
 `date_prefix = now_utc_iso()[:10]` and `archive_name = f'{date_prefix}-{plan_id}'`.
 
@@ -111,7 +123,9 @@ composes `'{icon} {glyph} {body}'` from three independent inputs:
   not `None`, so a finished plan still shows in the title.
 - **Glyph** — the `title_token` lock/build-state glyph (⏳ `lock-waiting`,
   🔒 `lock-owned`, 🕐 `build-waiting`, 🔨 `building`), prepended when the field is
-  set; omitted when no `title_token` is present.
+  set for an active phase; omitted when no `title_token` is present, and also
+  omitted for terminal phases (`complete` / `archived`) regardless of the
+  persisted token — a finished plan holds no live lock/build state.
 - **Icon** — the process icon from the hook event (➤ active / ? waiting /
   ✓ done), with a **terminal-state override to ✅** (`_ICON_TERMINAL`, U+2705)
   for `complete` / `archived` phases regardless of the event or `icon_override`.

@@ -1,0 +1,40 @@
+= Parallelism and Locking
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
+
+Several plans can be in flight at once — each in its own worktree on its own feature branch (see xref:branches-and-worktrees.adoc[Branches and Worktrees]) — so the only state they contend for is the shared underlying repository and Plan Marshall's own main-anchored coordination files. Two cooperative locks serialize the moments where that shared state actually matters: the *merge mutex* serializes the merge-to-`main` boundary, and the *build-queue limiter* caps how many builds run at once across the cluster. Both are file-based, both anchor to the main checkout regardless of which worktree the caller is pinned to, and both sit on one shared, TOCTOU-safe read-modify-write core. A self-healing reaper, a main-anchored event log, and a set of terminal-title glyphs make the live state observable and keep a crashed session from wedging the system.
+
+== Merge Mutex
+
+When a plan finishes executing, it ships: its feature branch is pushed, a PR is opened, and once that PR merges, the plan's commits land on `main`. Because several plans can reach that point at once, two of them must never fold into `main` at the same moment. The *merge mutex* (`manage-locks` `merge_lock`) is the single file-based serializer for that boundary. It uses an `O_EXCL` atomic create so exactly one holder can own the lock at a time, and plan-liveness reclamation frees the lock of a crashed holder (a holder is dead when its plan directory exists in neither the main checkout nor any worktree). A blocked acquirer receives a structured `blocked` + `blocking_plan_id` payload — distinct from a hard error — that drives the orchestrator's escalation rather than a silent hang.
+
+The same mutex serves two callers: the user-facing Pre-Merge Gate that lands the PR, and the internal move-back lock that `integrate_into_main` uses when it relocates the plan directory from the worktree back to the main checkout. The move-back lock is an implementation-detail relocation lock, not a user-facing merge, so it acquires and releases the mutex *without* the terminal-title side-effect — it never surfaces or leaves a lock glyph.
+
+== Build-Queue Limiter
+
+Running every concurrent plan's full build at the same time would thrash a shared machine. The *build-queue limiter* (`manage-locks` `build_queue`) caps concurrency to a bounded number of slots, persisted in the main-anchored `build-queue.json`. A build that finds a free slot is admitted immediately; one that does not is enqueued and waits, then is promoted into the next freed slot in FIFO order (oldest enqueue first). The wrapper that requests a slot retries with backoff until it is admitted, so the limiter shapes throughput without ever dropping a build.
+
+== Self-Healing Stale Reaper
+
+A build whose process is hard-killed — a `SIGKILL` that bypasses the normal release — can leave a live-looking active entry wedging its slot. The reaper bounds how long such a dead slot can starve the queue. Every active entry records an `active_since` activation timestamp (distinct from its FIFO enqueue time), and an adaptive threshold, `build_queue_upper_limit`, tracks the longest real build observed. The limit is monotonic-up and clamped to `[600 s, 3600 s]`, so a legitimately long build raises the bar but a single anomaly can never ratchet it past an hour. At the start of every acquire and release — inside the *same* serialized read-modify-write that decides admission, never as a separate pass — a `validate_lock_queue` step reaps any active entry older than `2 ×` the limit, frees its slot, FIFO-promotes waiters into the freed slots, and emits a `reaped-stale` event. Folding the reap into the one atomic mutation is what keeps it from racing a concurrent admit.
+
+== Terminal-Title Glyphs
+
+While a plan waits on or holds one of these locks, its terminal title carries a coordination glyph so the live state is visible at a glance: ⏳ lock-waiting, 🔒 lock-owned, 🕐 build-waiting, 🔨 building. A finished plan holds no live lock or build state, so its title never shows a coordination glyph. The glyph vocabulary and the title-composition pipeline are documented in xref:../user/terminal-title.adoc[User Guide › Terminal Title].
+
+== Main-Anchored Lock Log
+
+Lock contention is cross-session by nature, so its event trail cannot live in any one plan's per-worktree work-log. Both primitives emit `[LOCK]` lifecycle events — acquire, blocked, release, and the reaper's stale-reclaim — to a *single* main-anchored global log shared by every session, resolved through the same main-anchored mechanism the lock files use. Each event carries the lock id (the holder plan id and lock file for the merge mutex; the admission id for the build queue) plus holder/waiter correlation on contention, so a stuck slot or a contention pathology can be reconstructed after the fact. Emission is best-effort and sits strictly outside each lock's atomic window, so a logging failure can never affect lock correctness.
+
+[#related]
+== Related
+
+* link:../../marketplace/bundles/plan-marshall/skills/manage-locks/SKILL.md[`manage-locks`] — canonical contract: the merge mutex, the build-queue limiter, the shared TOCTOU-safe core, and main-anchored resolution
+* xref:branches-and-worktrees.adoc[Branches and Worktrees] — the plan-bound isolation and post-execute shipping flow the merge mutex coordinates
+* xref:../user/parallelism-and-locking.adoc[User Guide › Parallelism and Locking] — operator knobs, the `[LOCK]` log, and the stuck-queue FAQ

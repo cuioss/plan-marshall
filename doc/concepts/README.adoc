@@ -1,7 +1,10 @@
 = Concepts
 :nofooter:
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
 
 xref:../../README.md[Plan Marshall] » Concepts
 
@@ -12,6 +15,7 @@ How Plan Marshall is built and why. These pages are short navigational summaries
 * xref:build-management.adoc[Build Management] — technology-neutral build abstraction: canonical command names (`verify`, `quality-gate`, `module-tests`, …) resolved per module to whatever tool the module actually uses (Maven / Gradle / npm / pyprojectx). The LLM dispatches one method call, waits for a structured TOON, spends no tokens on build output noise during the wait.
 * xref:planning-workflow.adoc[Planning Workflow] — the six-phase plan lifecycle (init → refine → outline → plan → execute → finalize) and the orchestrator that drives it.
 * xref:branches-and-worktrees.adoc[Branches and Worktrees] — why each plan runs in its own isolated git worktree on a dedicated feature branch, the worktree lifecycle (phases 1-4 run on the main checkout; the worktree directory and feature branch are created at phase-5 Step 2.5), and the cleanup ordering that keeps the main checkout pollution-free.
+* xref:parallelism-and-locking.adoc[Parallelism and Locking] — the two cooperative, main-anchored locks that serialize concurrent plans: the merge mutex (merge-to-`main` boundary) and the build-queue limiter (bounded slots, FIFO promotion, a self-healing stale-slot reaper), plus the terminal-title coordination glyphs and the `[LOCK]` main-anchored global log.
 * xref:recipes.adoc[Recipes] — predefined, repeatable transformations whose plan shape is known. Skips refine confidence and outline discovery; produces deliverables from a deterministic mapping. The workflow's known-shape escape hatch.
 * xref:process-enforcement.adoc[Process Enforcement] — four cooperating mechanisms (hard rules · script funnel · Q-Gate · phase handshakes) that keep the LLM on the documented process. Small surface, load-bearing impact at every phase boundary.
 * xref:simplification.adoc[Simplification] — three cooperating mechanisms (simplicity posture · minimum-viable-code rule · finalize-step-simplify) that keep the LLM from over-building. Ordered soft to hard around one anti-pattern catalogue, so surplus structure is progressively less likely to survive.

@@ -14,6 +14,10 @@ exercise every composition code path documented in the module:
 - The terminal-state override: ``current_phase`` in ``complete`` / ``archived``
   forces ✅ regardless of event, ➤/? never appear, and the Completed body
   renders.
+- Terminal-phase glyph suppression: a finished plan holds no live lock/build
+  state, so the ``title_token`` glyph (⏳ / 🔒 / 🕐 / 🔨) is suppressed for
+  terminal phases across all four token states, while active-phase glyphs are
+  unaffected.
 - Body format ``pm:{phase}[:{short}]`` for active phases.
 - Purity: no I/O, deterministic — repeated calls with the same inputs return
   identical results.
@@ -307,14 +311,6 @@ class TestComposeTerminalOverride:
         )
         assert result == f"{ICON_TERMINAL} pm:Completed:all done"
 
-    def test_terminal_override_with_glyph(self):
-        # A title_token glyph still renders for a finished plan.
-        result = compose(
-            {"current_phase": "complete", "title_token": "lock-owned"},
-            "Stop",
-        )
-        assert result == f"{ICON_TERMINAL} {GLYPH_LOCK_OWNED} pm:Completed"
-
     def test_process_icons_never_appear_for_terminal(self):
         # Neither ➤ nor ? ever leads a terminal-phase title.
         for event in ("UserPromptSubmit", "Notification", "SessionStart", "Stop"):
@@ -322,6 +318,101 @@ class TestComposeTerminalOverride:
             leading_icon = result.split(" ", 1)[0]
             assert leading_icon == ICON_TERMINAL
             assert leading_icon not in (ICON_ACTIVE, ICON_WAITING, ICON_DONE)
+
+
+# =============================================================================
+# compose — terminal-phase glyph suppression (all four token states)
+# =============================================================================
+
+# The four lock/build token states paired with their glyph, iterated in-test
+# as the full closed vocabulary of TITLE_TOKEN_GLYPHS so a silent state
+# addition is caught (cross-checked against the map below). The two terminal
+# phases that force the ✅ icon and the Completed body.
+_ALL_TOKEN_STATES = [
+    ("lock-waiting", GLYPH_LOCK_WAITING),
+    ("lock-owned", GLYPH_LOCK_OWNED),
+    ("build-waiting", GLYPH_BUILD_WAITING),
+    ("building", GLYPH_BUILDING),
+]
+_TERMINAL_PHASES = ["complete", "archived"]
+
+
+class TestComposeTerminalGlyphSuppression:
+    """A finished plan suppresses the title_token glyph for every token state.
+
+    A terminal phase holds no live lock/build state, so the glyph is suppressed
+    regardless of the persisted ``title_token`` — across all four states and
+    both terminal phases (``complete`` / ``archived``). The Completed body and
+    the ✅ terminal icon still render; only the glyph segment is dropped.
+    """
+
+    def test_token_states_cover_full_vocabulary(self):
+        # Guard: the iterated state list mirrors the closed glyph vocabulary,
+        # so a new token state cannot slip past the suppression matrix below.
+        assert {state for state, _ in _ALL_TOKEN_STATES} == set(TITLE_TOKEN_GLYPHS)
+
+    def test_glyph_suppressed_for_terminal_phase(self):
+        # All four token states are suppressed for both terminal phases.
+        for phase in _TERMINAL_PHASES:
+            for token, glyph in _ALL_TOKEN_STATES:
+                result = compose(
+                    {"current_phase": phase, "title_token": token},
+                    "Stop",
+                )
+                # No glyph segment: icon + body only; glyph never appears.
+                assert result == f"{ICON_TERMINAL} pm:Completed", (phase, token)
+                assert glyph not in result, (phase, token)
+                # Exactly one space — two parts (icon + body), no glyph segment.
+                assert result.count(" ") == 1, (phase, token)
+
+    def test_glyph_suppressed_with_short_description(self):
+        # Suppression holds even when a short_description widens the body.
+        for phase in _TERMINAL_PHASES:
+            for token, glyph in _ALL_TOKEN_STATES:
+                result = compose(
+                    {
+                        "current_phase": phase,
+                        "short_description": "wrap up",
+                        "title_token": token,
+                    },
+                    "UserPromptSubmit",
+                )
+                assert result == f"{ICON_TERMINAL} pm:Completed:wrap up", (phase, token)
+                assert glyph not in result, (phase, token)
+
+    def test_glyph_suppressed_regardless_of_event(self):
+        # The suppression is event-agnostic: every hook event yields the same
+        # glyph-free terminal title.
+        events = ("UserPromptSubmit", "Notification", "SessionStart", "Stop")
+        for phase in _TERMINAL_PHASES:
+            for token, glyph in _ALL_TOKEN_STATES:
+                for event in events:
+                    result = compose(
+                        {"current_phase": phase, "title_token": token}, event
+                    )
+                    assert result == f"{ICON_TERMINAL} pm:Completed", (
+                        phase,
+                        token,
+                        event,
+                    )
+                    assert glyph not in result, (phase, token, event)
+
+
+class TestComposeActiveGlyphStillRenders:
+    """Regression guard: active-phase glyphs are unaffected by the suppression.
+
+    The terminal-phase suppression must not leak into active phases — every
+    token state still prepends its glyph for a non-terminal phase.
+    """
+
+    def test_active_phase_glyph_renders(self):
+        for token, glyph in _ALL_TOKEN_STATES:
+            result = compose(
+                {"current_phase": "5-execute", "title_token": token},
+                "UserPromptSubmit",
+            )
+            assert result == f"{ICON_ACTIVE} {glyph} pm:5-execute", token
+            assert glyph in result, token
 
 
 # =============================================================================

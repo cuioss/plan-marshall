@@ -29,6 +29,16 @@ ARCHITECTURE_REFRESH_TIER_0_DEFAULT = 'enabled'
 ARCHITECTURE_REFRESH_TIER_1_VALUES = ('prompt', 'auto', 'disabled')
 ARCHITECTURE_REFRESH_TIER_1_DEFAULT = 'prompt'
 
+# Build-queue upper-limit clamp bounds (the single source of truth for the
+# adaptive stale-reclaim threshold; build_queue.py imports these). The knob is
+# monotonic-up toward the longest observed real build held-duration, floored at
+# 600 s (10 min) so a legitimately long build is never falsely reaped, and capped
+# at 3600 s (1 h) so a single anomalously long held lock can never ratchet the
+# limit beyond an hour — the validate_lock_queue stale threshold (2 × limit) thus
+# tops out at 7200 s (2 h).
+_BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS = 600
+_BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS = 3600
+
 DEFAULT_STRUCTURE = {
     'version': 1,
     'commands': {},
@@ -456,6 +466,70 @@ def cmd_architecture_refresh_set_tier_1(args: argparse.Namespace) -> dict:
 
 
 # =============================================================================
+# Build-Queue-Limit Subcommands
+# =============================================================================
+
+
+def _clamp_build_queue_upper_limit(value: int) -> int:
+    """Clamp ``value`` into ``[floor, ceiling]`` for the build-queue upper limit."""
+    return max(
+        _BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS,
+        min(_BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS, value),
+    )
+
+
+def _read_build_queue_upper_limit() -> int:
+    """Read ``build_queue.upper_limit_seconds``, clamped to ``[600, 3600]``.
+
+    Defaults to the 600 s floor when the section/key is absent. A non-integer or
+    boolean stored value (``bool`` is an ``int`` subclass) falls back to the
+    floor, mirroring the same guard :func:`_resolve_max_slots` uses in
+    ``build_queue.py``. The returned value is always within the clamp bounds.
+    """
+    config = read_run_config(get_run_config_path())
+    block = config.get('build_queue')
+    if not isinstance(block, dict):
+        return _BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS
+    raw = block.get('upper_limit_seconds')
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return _BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS
+    return _clamp_build_queue_upper_limit(raw)
+
+
+def _write_build_queue_upper_limit(value: int) -> None:
+    """Persist ``build_queue.upper_limit_seconds`` clamped to ``[600, 3600]``."""
+    config_path = get_run_config_path()
+    config = read_run_config(config_path)
+    config.setdefault('build_queue', {})['upper_limit_seconds'] = _clamp_build_queue_upper_limit(value)
+    _write_json_file(config_path, config)
+
+
+def cmd_build_queue_limit_get(args: argparse.Namespace) -> dict:
+    """Get build_queue.upper_limit_seconds (default 600 s, clamped [600, 3600])."""
+    del args  # unused — fixed-shape verb
+    try:
+        value = _read_build_queue_upper_limit()
+        return {'status': 'success', 'field': 'build_queue_upper_limit', 'value': value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_build_queue_limit_set(args: argparse.Namespace) -> dict:
+    """Set build_queue.upper_limit_seconds (positive int, clamped to [600, 3600])."""
+    try:
+        if args.value <= 0:
+            return _invalid_value_error(str(args.value), ('positive integer (seconds)',))
+        _write_build_queue_upper_limit(args.value)
+        return {
+            'status': 'success',
+            'field': 'build_queue_upper_limit',
+            'value': _clamp_build_queue_upper_limit(args.value),
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
 # Cleanup Subcommands (delegates to cleanup.py functions)
 # =============================================================================
 
@@ -524,6 +598,12 @@ Examples:
 
   # Set architecture-refresh tier-1 (prompt|auto|disabled)
   %(prog)s architecture-refresh set-tier-1 --value auto
+
+  # Get the build-queue adaptive upper limit (default: 600 s)
+  %(prog)s build-queue-limit get
+
+  # Set the build-queue adaptive upper limit (clamped to [600, 3600])
+  %(prog)s build-queue-limit set --value 1800
 
   # Clean .plan directories based on retention settings
   %(prog)s cleanup
@@ -640,6 +720,34 @@ Examples:
     )
     p_arch_set_t1.set_defaults(func=cmd_architecture_refresh_set_tier_1)
 
+    # build-queue-limit command with subcommands
+    p_bql = subparsers.add_parser(
+        'build-queue-limit',
+        help='Manage the adaptive build-queue stale-reclaim upper limit',
+        allow_abbrev=False,
+    )
+    bql_subparsers = p_bql.add_subparsers(
+        dest='build_queue_limit_command', required=True, help='Build-queue-limit operation'
+    )
+
+    # build-queue-limit get
+    p_bql_get = bql_subparsers.add_parser(
+        'get', help='Get build_queue.upper_limit_seconds (default 600 s)', allow_abbrev=False
+    )
+    p_bql_get.set_defaults(func=cmd_build_queue_limit_get)
+
+    # build-queue-limit set
+    p_bql_set = bql_subparsers.add_parser(
+        'set', help='Set build_queue.upper_limit_seconds (clamped [600, 3600])', allow_abbrev=False
+    )
+    p_bql_set.add_argument(
+        '--value',
+        type=int,
+        required=True,
+        help='Upper-limit seconds (positive int; clamped to [600, 3600])',
+    )
+    p_bql_set.set_defaults(func=cmd_build_queue_limit_set)
+
     # cleanup command
     p_cleanup = subparsers.add_parser(
         'cleanup', help='Clean .plan directories based on retention settings', allow_abbrev=False
@@ -681,6 +789,12 @@ Examples:
     if args.command == 'architecture-refresh':
         if not args.architecture_refresh_command:
             p_arch.print_help()
+            return 1
+
+    # Handle build-queue-limit subcommand
+    if args.command == 'build-queue-limit':
+        if not args.build_queue_limit_command:
+            p_bql.print_help()
             return 1
 
     result = args.func(args)

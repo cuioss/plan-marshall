@@ -92,12 +92,23 @@ consumer. It exposes:
   build queue (D5) both build on. The TOCTOU / check-then-act mitigation menu
   lives in `dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`
   and is not duplicated here.
+- `log_lock_event(lock, event, lock_id, **fields)` — the single best-effort
+  `[LOCK]` emission point both lock primitives call at each lifecycle point
+  (`merge_lock`: acquired / reclaimed / blocked / released; `build_queue`:
+  acquired / blocked / released / reaped-stale). It appends a `[LOCK]`-tagged
+  line to the single main-anchored global lock-event log (`lock-{date}.log`
+  under `.plan/logs/`) — never the per-worktree work-log — because locks are
+  cross-session, main-anchored coordination whose event timeline must be shared
+  across all sessions. Uses `WARNING` level for `reaped-stale`; `INFO` for
+  every other event. The entire body is best-effort: any failure (resolution,
+  unwritable dir, encoding) is swallowed so a logging error can never affect
+  lock correctness.
 
 Consumers import the core via PYTHONPATH (mirroring how `script-shared` modules
 are consumed):
 
 ```python
-from _locks_core import holder_is_dead, rmw_json
+from _locks_core import holder_is_dead, rmw_json, log_lock_event
 ```
 
 ## Canonical invocations
@@ -118,7 +129,7 @@ xref this section by name instead of restating the command inline. See
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
-  --plan-id PLAN_ID [--timeout TIMEOUT]
+  --plan-id PLAN_ID [--timeout TIMEOUT] [--no-title-token]
 ```
 
 ### merge_lock — check
@@ -132,7 +143,7 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock check \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
-  --plan-id PLAN_ID
+  --plan-id PLAN_ID [--no-title-token]
 ```
 
 ### build_queue — acquire

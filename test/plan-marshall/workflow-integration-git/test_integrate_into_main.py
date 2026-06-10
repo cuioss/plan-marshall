@@ -59,21 +59,30 @@ _spec.loader.exec_module(integrate_into_main)
 
 
 class _FakeMergeLock:
-    """Stub merge_lock module recording acquire/release calls."""
+    """Stub merge_lock module recording acquire/release calls.
+
+    Records the ``set_title_token`` value forwarded on each acquire/release so a
+    test can assert integrate suppresses the merge-lock title-token surface during
+    the brief, finalize-internal move-back mutex (no spurious ⏳/🔒 glyph).
+    """
 
     def __init__(self, acquire_status: str = 'success') -> None:
         self.acquire_status = acquire_status
         self.acquired = 0
         self.released = 0
+        self.acquire_set_title_tokens: list[object] = []
+        self.release_set_title_tokens: list[object] = []
 
     def run_acquire(self, args: Namespace) -> dict:
         self.acquired += 1
+        self.acquire_set_title_tokens.append(getattr(args, 'set_title_token', 'absent'))
         if self.acquire_status != 'success':
             return {'status': 'error', 'error_code': 'TIMEOUT', 'plan_id': args.plan_id}
         return {'status': 'success', 'plan_id': args.plan_id, 'action': 'acquired'}
 
     def run_release(self, args: Namespace) -> dict:
         self.released += 1
+        self.release_set_title_tokens.append(getattr(args, 'set_title_token', 'absent'))
         return {'status': 'success', 'plan_id': args.plan_id, 'action': 'released'}
 
 
@@ -218,6 +227,48 @@ class TestIntegrateHappyPath:
         # The worktree-bound executor is left where it was (worktree removal handles it),
         # never file-moved onto a fresh main slot.
         assert wt_executor.is_file()
+
+
+# =============================================================================
+# Merge-lock title-token suppression (this plan, Deliverable 3)
+# =============================================================================
+
+
+class TestIntegrateSuppressesMergeLockTitleToken:
+    """The move-back merge lock is a brief, finalize-internal mutex — flashing a
+    ⏳/🔒 glyph into the terminal title is spurious noise. integrate forwards
+    ``set_title_token=False`` on BOTH the acquire and the release so no merge-lock
+    glyph reaches the title during integration."""
+
+    def test_acquire_forwards_set_title_token_false(self, isolated_env: dict) -> None:
+        env = isolated_env
+        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+        # The single acquire forwarded set_title_token=False (not absent, not True).
+        assert env['fake_lock'].acquire_set_title_tokens == [False]
+
+    def test_release_forwards_set_title_token_false(self, isolated_env: dict) -> None:
+        env = isolated_env
+        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+        # The single release forwarded set_title_token=False (mirrors the acquire).
+        assert env['fake_lock'].release_set_title_tokens == [False]
+
+    def test_rollback_release_also_forwards_set_title_token_false(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The release on the rollback (move-back-failure) exit path also forwards
+        ``set_title_token=False`` — every release path mirrors the suppressed
+        acquire so a crashed move-back never leaves a clear targeting an unset token."""
+        env = isolated_env
+
+        def boom(src: Path, dst: Path) -> None:
+            raise OSError('simulated move-back failure')
+
+        monkeypatch.setattr(integrate_into_main, '_move_back_dir', boom)
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+        assert result['status'] == 'error'
+        assert env['fake_lock'].acquire_set_title_tokens == [False]
+        assert env['fake_lock'].release_set_title_tokens == [False]
 
 
 # =============================================================================
