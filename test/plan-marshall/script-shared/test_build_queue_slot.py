@@ -236,6 +236,27 @@ def test_acquire_error_is_hard_failure(monkeypatch):
             pass
 
 
+def test_acquire_error_mid_wait_releases_queued_id(monkeypatch):
+    """A hard acquire failure DURING the retry loop releases the already-queued
+    admission id instead of leaking it. The wait runs OUTSIDE build_queue_slot's
+    finally, so _wait_for_admission must release the queued waiting entry itself
+    on any non-return exit — otherwise the slot leaks until reaped."""
+    monkeypatch.setattr(bqs, '_resolve_max_retries', lambda: 3)
+    double = _QueueDouble([
+        {'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-Q'},
+        {'status': 'error', 'error': 'queue vanished mid-wait'},
+    ])
+    _install_queue(monkeypatch, double)
+
+    with pytest.raises(RuntimeError, match='queue vanished mid-wait'):
+        with build_queue_slot('P'):
+            pass
+
+    # The queued waiting entry from the initial blocked acquire was released as
+    # cleanup before the RuntimeError propagated — no leaked waiting slot.
+    assert 'P:uuid-Q' in double.released_ids
+
+
 # =============================================================================
 # Always-release on body exception
 # =============================================================================

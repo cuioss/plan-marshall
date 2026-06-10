@@ -220,23 +220,37 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
     if result.get('admission') == 'admitted':
         return admission_id
 
-    for _ in range(max_retries):
-        time.sleep(_WAIT_SECONDS)
-        # Re-poll WITHOUT releasing — run_acquire is idempotent for an
-        # already-queued plan_id, so the waiting entry keeps its FIFO position
-        # in place instead of being shuffled to the back on each retry.
-        result = _acquire(plan_id)
-        if result.get('status') != 'success':
-            raise RuntimeError(
-                f'build_queue acquire failed for {plan_id!r}: {result.get("error")}'
-            )
-        admission_id = str(result['id'])
-        if result.get('admission') == 'admitted':
-            return admission_id
+    # From here ``admission_id`` is a QUEUED waiting entry, not yet a held slot,
+    # and the whole wait runs OUTSIDE ``build_queue_slot``'s ``try/finally`` — so
+    # any non-return exit from the poll loop (a hard acquire failure, retry
+    # exhaustion, or an interrupt during ``time.sleep``) must release the queued
+    # id itself or the waiting entry leaks. Catch ``BaseException`` so cleanup
+    # also runs on ``KeyboardInterrupt`` / ``SystemExit``; the admitted-slot
+    # ``return`` below bypasses the handler, so a live held slot is never
+    # released here (its release is owned by ``build_queue_slot``'s ``finally``).
+    try:
+        for _ in range(max_retries):
+            time.sleep(_WAIT_SECONDS)
+            # Re-poll WITHOUT releasing — run_acquire is idempotent for an
+            # already-queued plan_id, so the waiting entry keeps its FIFO
+            # position in place instead of being shuffled to the back on each
+            # retry.
+            result = _acquire(plan_id)
+            if result.get('status') != 'success':
+                raise RuntimeError(
+                    f'build_queue acquire failed for {plan_id!r}: {result.get("error")}'
+                )
+            admission_id = str(result['id'])
+            if result.get('admission') == 'admitted':
+                return admission_id
 
-    # Retries exhausted while still blocked — release the queued id and fail.
-    _release(plan_id, admission_id)
-    raise BuildQueueTimeout(plan_id, max_retries)
+        # Retries exhausted while still blocked — fail (the queued id is released
+        # by the handler below as cleanup, so an exhausted plan does not leak a
+        # waiting entry).
+        raise BuildQueueTimeout(plan_id, max_retries)
+    except BaseException:
+        _release(plan_id, admission_id)
+        raise
 
 
 @contextmanager
