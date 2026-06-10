@@ -123,6 +123,8 @@ def _load_optional_bundle_finalize_steps(marketplace_root: Path) -> list[str]:
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
         inserted = True
+    sys.modules.pop('_config_defaults', None)
+    sys.modules.pop('constants', None)
     try:
         import _config_defaults  # noqa: PLC0415
 
@@ -259,14 +261,17 @@ def _project_local_targets(marketplace_root: Path) -> list[tuple[Path, str]]:
     if not skills_root.is_dir():
         return []
     results: list[tuple[Path, str]] = []
-    for skill_dir in sorted(skills_root.glob('finalize-step-*')):
-        if not skill_dir.is_dir():
-            continue
-        skill_md = skill_dir / 'SKILL.md'
-        if not skill_md.is_file():
-            continue
-        expected = f'project:{skill_dir.name}'
-        results.append((skill_md, expected))
+    try:
+        for skill_dir in sorted(skills_root.glob('finalize-step-*')):
+            if not skill_dir.is_dir():
+                continue
+            skill_md = skill_dir / 'SKILL.md'
+            if not skill_md.is_file():
+                continue
+            expected = f'project:{skill_dir.name}'
+            results.append((skill_md, expected))
+    except OSError:
+        pass
     return results
 
 
