@@ -268,7 +268,7 @@ def _reclaim_stale_lock(lock_path: Path, observed_holder: str, new_holder: str) 
     sidecar = lock_path.with_name(f'{lock_path.name}.reclaim.{os.getpid()}.{uuid.uuid4().hex}')
     try:
         os.rename(str(lock_path), str(sidecar))
-    except OSError:
+    except FileNotFoundError:
         # The path was already swapped or removed by a racing reclaimer — this
         # reclaimer did not claim the observed file. Lose cleanly and retry.
         return False
