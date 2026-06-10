@@ -1129,15 +1129,15 @@ class TestApplyProjectStepPermissions:
 
     def test_wildcard_coverage_short_circuits_add(self, tmp_path):
         """Covering wildcard Skill({skill}:*) prevents adding bare Skill({skill})."""
-        marshal = self._write_marshal(tmp_path, {'phase-5-execute': ['project:verify-workflow']})
-        settings = self._write_settings(tmp_path, ['Skill(verify-workflow:*)'])
+        marshal = self._write_marshal(tmp_path, {'phase-5-execute': ['project:example-step']})
+        settings = self._write_settings(tmp_path, ['Skill(example-step:*)'])
 
         result = cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=False))
 
         assert result['status'] == 'success'
         assert result['added'] == []
         allow = self._read_settings(settings)['permissions']['allow']
-        assert 'Skill(verify-workflow)' not in allow
+        assert 'Skill(example-step)' not in allow
 
 
 # =============================================================================

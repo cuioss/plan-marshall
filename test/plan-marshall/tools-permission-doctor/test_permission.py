@@ -341,14 +341,14 @@ class TestDetectMissingProjectStepPermissions:
 
     def test_wildcard_skill_rule_covers_project_step(self, tmp_path):
         """Covering wildcard Skill({skill}:*) counts as coverage for bare Skill({skill})."""
-        marshal = self._write_marshal(tmp_path, {'phase-5-execute': ['project:verify-workflow']})
-        settings = self._write_settings(tmp_path, ['Skill(verify-workflow:*)'])
+        marshal = self._write_marshal(tmp_path, {'phase-5-execute': ['project:example-step']})
+        settings = self._write_settings(tmp_path, ['Skill(example-step:*)'])
 
         result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
         assert result['status'] == 'success'
         assert len(result['missing']) == 0
-        assert result['present'][0]['covered_by'] == 'Skill(verify-workflow:*)'
+        assert result['present'][0]['covered_by'] == 'Skill(example-step:*)'
 
     def test_no_project_steps_returns_empty(self, tmp_path):
         """Marshal without project: steps reports empty missing/present lists."""
@@ -367,11 +367,11 @@ class TestDetectMissingProjectStepPermissions:
         marshal = self._write_marshal(
             tmp_path,
             {
-                'phase-5-execute': ['project:verify-workflow'],
+                'phase-5-execute': ['project:example-step'],
                 'phase-6-finalize': ['project:finalize-step-plugin-doctor'],
             },
         )
-        settings = self._write_settings(tmp_path, ['Skill(verify-workflow)'])
+        settings = self._write_settings(tmp_path, ['Skill(example-step)'])
 
         result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
@@ -380,7 +380,7 @@ class TestDetectMissingProjectStepPermissions:
         assert len(result['missing']) == 1
         assert result['missing'][0]['skill'] == 'finalize-step-plugin-doctor'
         assert len(result['present']) == 1
-        assert result['present'][0]['skill'] == 'verify-workflow'
+        assert result['present'][0]['skill'] == 'example-step'
 
     def test_malformed_marshal_returns_error(self, tmp_path):
         """Malformed marshal.json returns a structured error, not a raise."""
