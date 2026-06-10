@@ -43,12 +43,13 @@ class StatusData(TypedDict):
     updated: str
 
 
-# Valid title-token states. The token is a field-only marker written into
-# status.json by the ``title-token set`` verb; manage-status performs NO
-# rendering. The composition (glyph vocabulary + ``{icon} {body}`` assembly)
-# lives in ``manage-terminal-title`` — manage-status only persists the bare
-# state string so the per-target renderer can read it.
-TITLE_TOKEN_STATES = frozenset({'lock-waiting', 'lock-owned', 'build-waiting', 'building'})
+# Valid title-token states — the two lock-coordination states (lock-waiting /
+# lock-owned). The token is a field-only marker written into status.json by the
+# ``title-token set`` verb; manage-status performs NO rendering. The composition
+# (glyph vocabulary + ``{icon} {body}`` assembly) lives in
+# ``manage-terminal-title`` — manage-status only persists the bare state string
+# so the per-target renderer can read it.
+TITLE_TOKEN_STATES = frozenset({'lock-waiting', 'lock-owned'})
 
 
 # =============================================================================

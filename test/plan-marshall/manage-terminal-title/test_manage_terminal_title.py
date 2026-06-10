@@ -8,16 +8,15 @@ exercise every composition code path documented in the module:
 
 - :func:`compose` returns ``'{icon} {glyph} {body}'`` for each token state, and
   ``'{icon} {body}'`` (no glyph) when no ``title_token`` is set.
-- The :data:`TITLE_TOKEN_GLYPHS` glyph map (⏳ / 🔒 / 🕐 / 🔨) is correct.
+- The :data:`TITLE_TOKEN_GLYPHS` glyph map (⏳ / 🔒) is correct.
 - :func:`resolve_icon` maps each hook event to the canonical process icon
   (➤ active / ? waiting / ✓ done) including the defensive default.
 - The terminal-state override: ``current_phase`` in ``complete`` / ``archived``
   forces ✅ regardless of event, ➤/? never appear, and the Completed body
   renders.
-- Terminal-phase glyph suppression: a finished plan holds no live lock/build
-  state, so the ``title_token`` glyph (⏳ / 🔒 / 🕐 / 🔨) is suppressed for
-  terminal phases across all four token states, while active-phase glyphs are
-  unaffected.
+- Terminal-phase glyph suppression: a finished plan holds no live lock state,
+  so the ``title_token`` glyph (⏳ / 🔒) is suppressed for terminal phases
+  across both token states, while active-phase glyphs are unaffected.
 - Body format ``pm:{phase}[:{short}]`` for active phases.
 - Purity: no I/O, deterministic — repeated calls with the same inputs return
   identical results.
@@ -47,8 +46,6 @@ ICON_TERMINAL = "✅"  # ✅
 
 GLYPH_LOCK_WAITING = "⏳"  # ⏳
 GLYPH_LOCK_OWNED = "\U0001f512"  # 🔒
-GLYPH_BUILD_WAITING = "\U0001f550"  # 🕐
-GLYPH_BUILDING = "\U0001f528"  # 🔨
 
 
 # =============================================================================
@@ -57,7 +54,7 @@ GLYPH_BUILDING = "\U0001f528"  # 🔨
 
 
 class TestTitleTokenGlyphMap:
-    """The four lock/build state → glyph mappings are exact."""
+    """The two lock-state → glyph mappings are exact."""
 
     def test_lock_waiting_glyph(self):
         assert TITLE_TOKEN_GLYPHS["lock-waiting"] == GLYPH_LOCK_WAITING
@@ -65,20 +62,12 @@ class TestTitleTokenGlyphMap:
     def test_lock_owned_glyph(self):
         assert TITLE_TOKEN_GLYPHS["lock-owned"] == GLYPH_LOCK_OWNED
 
-    def test_build_waiting_glyph(self):
-        assert TITLE_TOKEN_GLYPHS["build-waiting"] == GLYPH_BUILD_WAITING
-
-    def test_building_glyph(self):
-        assert TITLE_TOKEN_GLYPHS["building"] == GLYPH_BUILDING
-
-    def test_exactly_four_states(self):
-        # The vocabulary is closed at four states — guard against silent
+    def test_exactly_two_states(self):
+        # The vocabulary is closed at two states — guard against silent
         # additions/removals.
         assert set(TITLE_TOKEN_GLYPHS) == {
             "lock-waiting",
             "lock-owned",
-            "build-waiting",
-            "building",
         }
 
 
@@ -196,20 +185,6 @@ class TestComposeGlyph:
         )
         assert result == f"{ICON_ACTIVE} {GLYPH_LOCK_OWNED} pm:5-execute"
 
-    def test_build_waiting_token(self):
-        result = compose(
-            {"current_phase": "5-execute", "title_token": "build-waiting"},
-            "UserPromptSubmit",
-        )
-        assert result == f"{ICON_ACTIVE} {GLYPH_BUILD_WAITING} pm:5-execute"
-
-    def test_building_token(self):
-        result = compose(
-            {"current_phase": "5-execute", "title_token": "building"},
-            "UserPromptSubmit",
-        )
-        assert result == f"{ICON_ACTIVE} {GLYPH_BUILDING} pm:5-execute"
-
     def test_no_token_omits_glyph(self):
         result = compose({"current_phase": "5-execute"}, "UserPromptSubmit")
         # Exactly two space-separated parts: icon + body, no glyph segment.
@@ -229,11 +204,11 @@ class TestComposeGlyph:
             {
                 "current_phase": "5-execute",
                 "short_description": "do thing",
-                "title_token": "building",
+                "title_token": "lock-owned",
             },
             "Stop",
         )
-        assert result == f"{ICON_DONE} {GLYPH_BUILDING} pm:5-execute:do thing"
+        assert result == f"{ICON_DONE} {GLYPH_LOCK_OWNED} pm:5-execute:do thing"
 
 
 # =============================================================================
@@ -321,18 +296,16 @@ class TestComposeTerminalOverride:
 
 
 # =============================================================================
-# compose — terminal-phase glyph suppression (all four token states)
+# compose — terminal-phase glyph suppression (both token states)
 # =============================================================================
 
-# The four lock/build token states paired with their glyph, iterated in-test
-# as the full closed vocabulary of TITLE_TOKEN_GLYPHS so a silent state
-# addition is caught (cross-checked against the map below). The two terminal
-# phases that force the ✅ icon and the Completed body.
+# The two lock token states paired with their glyph, iterated in-test as the
+# full closed vocabulary of TITLE_TOKEN_GLYPHS so a silent state addition is
+# caught (cross-checked against the map below). The two terminal phases that
+# force the ✅ icon and the Completed body.
 _ALL_TOKEN_STATES = [
     ("lock-waiting", GLYPH_LOCK_WAITING),
     ("lock-owned", GLYPH_LOCK_OWNED),
-    ("build-waiting", GLYPH_BUILD_WAITING),
-    ("building", GLYPH_BUILDING),
 ]
 _TERMINAL_PHASES = ["complete", "archived"]
 
@@ -340,8 +313,8 @@ _TERMINAL_PHASES = ["complete", "archived"]
 class TestComposeTerminalGlyphSuppression:
     """A finished plan suppresses the title_token glyph for every token state.
 
-    A terminal phase holds no live lock/build state, so the glyph is suppressed
-    regardless of the persisted ``title_token`` — across all four states and
+    A terminal phase holds no live lock state, so the glyph is suppressed
+    regardless of the persisted ``title_token`` — across both states and
     both terminal phases (``complete`` / ``archived``). The Completed body and
     the ✅ terminal icon still render; only the glyph segment is dropped.
     """
@@ -352,7 +325,7 @@ class TestComposeTerminalGlyphSuppression:
         assert {state for state, _ in _ALL_TOKEN_STATES} == set(TITLE_TOKEN_GLYPHS)
 
     def test_glyph_suppressed_for_terminal_phase(self):
-        # All four token states are suppressed for both terminal phases.
+        # Both token states are suppressed for both terminal phases.
         for phase in _TERMINAL_PHASES:
             for token, glyph in _ALL_TOKEN_STATES:
                 result = compose(
@@ -439,7 +412,7 @@ class TestComposeNoOp:
         # No body → None even when a token and a done event are present.
         assert (
             compose(
-                {"current_phase": "", "title_token": "building"},
+                {"current_phase": "", "title_token": "lock-owned"},
                 "Stop",
             )
             is None
@@ -458,7 +431,7 @@ class TestPurity:
         state = {
             "current_phase": "5-execute",
             "short_description": "stable",
-            "title_token": "building",
+            "title_token": "lock-waiting",
         }
         first = compose(state, "UserPromptSubmit")
         second = compose(state, "UserPromptSubmit")

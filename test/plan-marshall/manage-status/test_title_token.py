@@ -6,7 +6,7 @@ The ``title-token`` verb persists a bare state string into
 vocabulary + ``{icon} {body}`` assembly) lives in ``manage-terminal-title``.
 These tests cover:
 
-- ``set`` writes each of the four ``TITLE_TOKEN_STATES`` into status.json.
+- ``set`` writes each of the two ``TITLE_TOKEN_STATES`` into status.json.
 - ``clear`` removes the ``title_token`` field, and is idempotent when the
   field is already absent.
 - An invalid ``--state`` is rejected by argparse (exit code 2) before the
@@ -33,10 +33,10 @@ cmd_archive = _lifecycle.cmd_archive
 cmd_title_token = _query.cmd_title_token
 TITLE_TOKEN_STATES = _core.TITLE_TOKEN_STATES
 
-# The four canonical title-token states (lock + build phases). Asserted
+# The two canonical title-token states (lock-coordination phases). Asserted
 # explicitly here so a silent change to TITLE_TOKEN_STATES surfaces as a
 # test failure rather than passing vacuously.
-EXPECTED_STATES = frozenset({'lock-waiting', 'lock-owned', 'build-waiting', 'building'})
+EXPECTED_STATES = frozenset({'lock-waiting', 'lock-owned'})
 
 
 def _read_status(plan_context, plan_id):
@@ -46,17 +46,17 @@ def _read_status(plan_context, plan_id):
 
 
 # =============================================================================
-# Guard: the state vocabulary is exactly the four documented states
+# Guard: the state vocabulary is exactly the two documented states
 # =============================================================================
 
 
-def test_title_token_states_are_the_four_documented_states():
-    """``TITLE_TOKEN_STATES`` is exactly the four lock/build phase states."""
+def test_title_token_states_are_the_two_documented_states():
+    """``TITLE_TOKEN_STATES`` is exactly the two lock-coordination phase states."""
     assert TITLE_TOKEN_STATES == EXPECTED_STATES
 
 
 # =============================================================================
-# set: each of the four states writes status.title_token
+# set: each of the two states writes status.title_token
 # =============================================================================
 
 
@@ -84,38 +84,14 @@ def test_set_lock_owned_writes_title_token(plan_context):
     assert stored['title_token'] == 'lock-owned'
 
 
-def test_set_build_waiting_writes_title_token(plan_context):
-    """``title-token set --state build-waiting`` persists the bare state string."""
-    cmd_create(Namespace(plan_id='tt-build-waiting', title='Test', phases='1-init', force=False))
-    result = cmd_title_token(Namespace(plan_id='tt-build-waiting', token_verb='set', state='build-waiting'))
-
-    assert result['status'] == 'success'
-    assert result['title_token'] == 'build-waiting'
-
-    stored = _read_status(plan_context, 'tt-build-waiting')
-    assert stored['title_token'] == 'build-waiting'
-
-
-def test_set_building_writes_title_token(plan_context):
-    """``title-token set --state building`` persists the bare state string."""
-    cmd_create(Namespace(plan_id='tt-building', title='Test', phases='1-init', force=False))
-    result = cmd_title_token(Namespace(plan_id='tt-building', token_verb='set', state='building'))
-
-    assert result['status'] == 'success'
-    assert result['title_token'] == 'building'
-
-    stored = _read_status(plan_context, 'tt-building')
-    assert stored['title_token'] == 'building'
-
-
 def test_set_overwrites_existing_token(plan_context):
     """A second ``set`` overwrites the prior title_token value."""
     cmd_create(Namespace(plan_id='tt-overwrite', title='Test', phases='1-init', force=False))
     cmd_title_token(Namespace(plan_id='tt-overwrite', token_verb='set', state='lock-waiting'))
-    cmd_title_token(Namespace(plan_id='tt-overwrite', token_verb='set', state='building'))
+    cmd_title_token(Namespace(plan_id='tt-overwrite', token_verb='set', state='lock-owned'))
 
     stored = _read_status(plan_context, 'tt-overwrite')
-    assert stored['title_token'] == 'building'
+    assert stored['title_token'] == 'lock-owned'
 
 
 # =============================================================================
@@ -155,7 +131,7 @@ def test_clear_is_idempotent_when_unset(plan_context):
 def test_clear_twice_is_idempotent(plan_context):
     """Clearing twice in a row leaves the field absent and reports cleared=False."""
     cmd_create(Namespace(plan_id='tt-clear-twice', title='Test', phases='1-init', force=False))
-    cmd_title_token(Namespace(plan_id='tt-clear-twice', token_verb='set', state='build-waiting'))
+    cmd_title_token(Namespace(plan_id='tt-clear-twice', token_verb='set', state='lock-waiting'))
 
     first = cmd_title_token(Namespace(plan_id='tt-clear-twice', token_verb='clear'))
     second = cmd_title_token(Namespace(plan_id='tt-clear-twice', token_verb='clear'))
@@ -204,7 +180,7 @@ def test_set_writes_no_title_body_artifact(plan_context):
 def test_clear_writes_no_title_body_artifact(plan_context):
     """``clear`` persists only status.json — no title-body.txt rendering."""
     cmd_create(Namespace(plan_id='tt-no-render-clear', title='Test', phases='1-init', force=False))
-    cmd_title_token(Namespace(plan_id='tt-no-render-clear', token_verb='set', state='building'))
+    cmd_title_token(Namespace(plan_id='tt-no-render-clear', token_verb='set', state='lock-owned'))
     cmd_title_token(Namespace(plan_id='tt-no-render-clear', token_verb='clear'))
 
     plan_dir = plan_context.plan_dir_for('tt-no-render-clear')
@@ -216,12 +192,11 @@ def test_clear_writes_no_title_body_artifact(plan_context):
 # =============================================================================
 #
 # An archived plan has no live session driving its terminal title, so any
-# in-flight title_token (a lock state OR a build state) left behind would
-# persist a stale lock/build glyph in the archived snapshot. cmd_archive must
-# pop the field token-agnostically — a single pop covers every
-# TITLE_TOKEN_STATES value. These tests assert the field is absent from the
-# archived status.json after archiving with a pre-set merge token AND after
-# archiving with a pre-set build token.
+# in-flight title_token (a lock state) left behind would persist a stale lock
+# glyph in the archived snapshot. cmd_archive must pop the field
+# token-agnostically — a single pop covers every TITLE_TOKEN_STATES value.
+# This test asserts the field is absent from the archived status.json after
+# archiving with a pre-set merge token.
 
 
 def _read_archived_status(result):
@@ -251,24 +226,4 @@ def test_archive_pops_merge_lock_title_token(plan_context):
         f"with a pre-set merge token, but found "
         f"{archived_status.get('title_token')!r}. cmd_archive must pop "
         f"title_token before write_status/shutil.move."
-    )
-
-
-def test_archive_pops_build_title_token(plan_context):
-    """cmd_archive must pop a pre-set build title_token before archiving."""
-    plan_id = 'tt-archive-build-token'
-    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
-    # A build token represents an in-flight build phase; the pop is
-    # token-agnostic, so a build state must be dropped too.
-    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='building'))
-
-    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
-
-    assert result['status'] == 'success', f'archive failed: {result}'
-    archived_status = _read_archived_status(result)
-    assert 'title_token' not in archived_status, (
-        f"Expected title_token absent from archived status.json after archiving "
-        f"with a pre-set build token, but found "
-        f"{archived_status.get('title_token')!r}. cmd_archive must pop "
-        f"title_token token-agnostically before write_status/shutil.move."
     )

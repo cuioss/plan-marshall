@@ -12,7 +12,7 @@ imported via PYTHONPATH by `platform-runtime`, mirroring how `script-shared`
 modules are consumed.
 
 `manage_terminal_title.py` owns the title-composition contract: the body-format
-function, the `TITLE_TOKEN_GLYPHS` lock/build-state glyph map, the icon palette +
+function, the `TITLE_TOKEN_GLYPHS` lock-state glyph map, the icon palette +
 event→icon resolver, and the pure `compose(state_dict, event)` function. It is a
 **leaf library** — it imports NEITHER `manage-status` NOR `platform-runtime`.
 `platform-runtime` imports it one-directionally to render the title string after
@@ -63,14 +63,12 @@ still shows in the title (with the ✅ override below).
 
 ### Glyph (`TITLE_TOKEN_GLYPHS`)
 
-The `title_token` lock/build-state glyph, prepended when the field is set:
+The `title_token` lock-state glyph, prepended when the field is set:
 
 | State | Glyph |
 |-------|-------|
 | `lock-waiting` | ⏳ |
 | `lock-owned` | 🔒 |
-| `build-waiting` | 🕐 |
-| `building` | 🔨 |
 
 `manage-status` persists only the bare state string in the `title_token` field;
 this map is the single owner of the state→glyph rendering. The glyph is omitted
@@ -78,10 +76,10 @@ this map is the single owner of the state→glyph rendering. The glyph is omitte
 
 - No `title_token` is set in the plan state.
 - `current_phase` is a terminal phase (`complete` / `archived`) — a finished
-  plan holds no live lock/build state, so the glyph is suppressed regardless of
-  any persisted `title_token` value. The suppression is token-agnostic: all four
-  `TITLE_TOKEN_GLYPHS` states (⏳/🔒/🕐/🔨) are uniformly suppressed for a
-  terminal plan.
+  plan holds no live lock state, so the glyph is suppressed regardless of
+  any persisted `title_token` value. The suppression is token-agnostic: both
+  `TITLE_TOKEN_GLYPHS` states (⏳/🔒) are uniformly suppressed for a terminal
+  plan.
 
 ### Icon (`resolve_icon` + terminal override)
 

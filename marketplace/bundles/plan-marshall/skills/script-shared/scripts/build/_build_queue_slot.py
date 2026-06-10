@@ -7,6 +7,9 @@ site wraps around its ``execute_direct(...)`` call so that, **only when a
 (``plan-marshall:manage-locks:build_queue``, the bounded-``k``-slot admitter
 from D5).
 
+This module is a **pure concurrency limiter**: it admits, waits, and releases
+build-queue slots and does nothing else. It writes no terminal-title state.
+
 Behaviour:
 
 * **No plan_id → NO-OP passthrough.** When ``plan_id`` is falsy the context
@@ -14,50 +17,36 @@ Behaviour:
   plan (ad-hoc CLI run, the standalone ``run`` subcommand) therefore runs
   completely unchanged — this is the critical backward-compatibility guarantee.
 * **plan_id set → acquire / wait / release.** On entry it calls ``build_queue
-  acquire``. On ``admitted`` it best-effort sets the ``building`` title-token
-  (🔨) and yields so the caller runs the build. On ``blocked`` it best-effort
-  sets the ``build-waiting`` title-token (🕐), sleeps ``_WAIT_SECONDS`` and
-  re-polls ``acquire`` WITHOUT releasing first, up to ``build_queue.max_retries``
-  (default 10 from marshal.json). Because ``run_acquire`` is idempotent for an
-  already-queued ``plan_id``, the plan KEEPS its FIFO position across retries
-  rather than being shuffled to the back. Whether the slot is admitted or the
-  retries are exhausted, the held / queued admission id is ALWAYS released and
-  the title-token ALWAYS cleared in a ``finally`` block, so the queue never leaks
-  a slot or a waiting entry and the terminal-title state never gets stuck.
+  acquire``. On ``admitted`` it yields so the caller runs the build. On
+  ``blocked`` it sleeps ``_WAIT_SECONDS`` and re-polls ``acquire`` WITHOUT
+  releasing first, up to ``build_queue.max_retries`` (default 10 from
+  marshal.json). Because ``run_acquire`` is idempotent for an already-queued
+  ``plan_id``, the plan KEEPS its FIFO position across retries rather than being
+  shuffled to the back. Whether the slot is admitted or the retries are
+  exhausted, the held / queued admission id is ALWAYS released in a ``finally``
+  block, so the queue never leaks a slot or a waiting entry.
 * **Retries exhausted → BuildQueueTimeout.** When the build is still blocked
   after the final retry the queued id is released (cleanup) and
   :class:`BuildQueueTimeout` is raised, carrying a structured "try again later"
   message the build site turns into an error result without running the build.
 
-**Title-token writes are best-effort.** Every ``manage-status title-token`` and
-``platform_runtime session push-title-token`` call is wrapped so a failure
-NEVER affects the build outcome — the token is a display affordance, not a
-correctness primitive. The queue ``acquire`` / ``release`` calls are NOT
-best-effort: an ``acquire`` that cannot reach the queue is a hard failure (the
-build must not silently bypass the concurrency limiter), and a ``release``
-failure is logged but cannot itself abort an already-finished build.
+The queue ``acquire`` / ``release`` calls are NOT best-effort: an ``acquire``
+that cannot reach the queue is a hard failure (the build must not silently
+bypass the concurrency limiter), and a ``release`` failure is logged but cannot
+itself abort an already-finished build.
 
-**Two invocation channels, by registration status.**
-
-* The queue primitive ``manage-locks/scripts/build_queue.py`` is NOT an
-  executor-registered notation — like its sibling ``merge_lock.py`` it is loaded
-  by FILE PATH and its ``run_acquire`` / ``run_release`` handlers are called
-  in-process with an ``argparse.Namespace``. This mirrors
-  ``integrate_into_main.py``'s ``_load_merge_lock`` pattern (the single owner of
-  the lock logic is reused, never re-implemented or shelled out to).
-* The two best-effort title-token operations live in executor-registered skills
-  (``manage-status`` and ``platform-runtime``) whose multi-module layouts make a
-  file-path import fragile; they are invoked through the executor
-  (``python3 .plan/execute-script.py {notation} ...``) as a subprocess. A
-  failure of either is swallowed — the title token is a display affordance, not
-  a correctness primitive.
+The queue primitive ``manage-locks/scripts/build_queue.py`` is NOT an
+executor-registered notation — like its sibling ``merge_lock.py`` it is loaded
+by FILE PATH and its ``run_acquire`` / ``run_release`` handlers are called
+in-process with an ``argparse.Namespace``. This mirrors
+``integrate_into_main.py``'s ``_load_merge_lock`` pattern (the single owner of
+the lock logic is reused, never re-implemented or shelled out to).
 """
 
 from __future__ import annotations
 
 import importlib.util
 import logging
-import subprocess
 import sys
 import time
 from argparse import Namespace
@@ -66,8 +55,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from file_ops import get_executor_path, get_marshal_path, read_json  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from file_ops import get_marshal_path, read_json  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
@@ -84,15 +72,6 @@ _BUILD_QUEUE_PATH = _THIS_DIR.parent.parent.parent / 'manage-locks' / 'scripts' 
 _WAIT_SECONDS = 60
 
 _DEFAULT_MAX_RETRIES = 10
-
-# Title-token icons for the two build phases. The glyph vocabulary is the
-# display contract shared with manage-terminal-title; these two are the build
-# phase pair (🕐 waiting for a slot, 🔨 actively building).
-_ICON_BUILD_WAITING = '🕐'
-_ICON_BUILDING = '🔨'
-
-_TITLE_TOKEN_NOTATION = 'plan-marshall:manage-status:manage-status'
-_PUSH_TOKEN_NOTATION = 'plan-marshall:platform-runtime:platform_runtime'
 
 # Lazily-imported build_queue module (file-path import; see _load_build_queue).
 _build_queue_mod: Any = None
@@ -175,33 +154,6 @@ def _resolve_max_retries() -> int:
     return raw if raw > 0 else _DEFAULT_MAX_RETRIES
 
 
-def _run_executor(notation: str, *cli_args: str) -> dict[str, Any]:
-    """Invoke ``{notation}`` through the executor and parse its TOON stdout.
-
-    Returns the parsed TOON dict on a clean (exit 0) run. On a non-zero exit or
-    unparseable output, returns ``{'status': 'error', ...}`` so the caller can
-    branch on ``status`` without catching exceptions for the common failure
-    path. Never raises for a subprocess failure — the queue/token call sites
-    decide whether a given failure is fatal.
-    """
-    cmd = [sys.executable, str(get_executor_path()), notation, *cli_args]
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    except OSError as exc:
-        return {'status': 'error', 'error': f'executor invocation failed: {exc}'}
-    if proc.returncode != 0:
-        return {
-            'status': 'error',
-            'error': f'{notation} exited {proc.returncode}',
-            'stderr': proc.stderr.strip(),
-        }
-    try:
-        parsed = parse_toon(proc.stdout)
-    except Exception as exc:  # noqa: BLE001 — any parse failure degrades to error
-        return {'status': 'error', 'error': f'unparseable TOON from {notation}: {exc}'}
-    return parsed if isinstance(parsed, dict) else {'status': 'error', 'error': 'non-dict TOON'}
-
-
 def _acquire(plan_id: str) -> dict[str, Any]:
     """Call ``build_queue.run_acquire`` in-process and return its result dict.
 
@@ -244,52 +196,18 @@ def _release_raw(plan_id: str, admission_id: str) -> dict[str, Any]:
     return result if isinstance(result, dict) else {'status': 'error', 'error': 'non-dict release result'}
 
 
-def _set_title_token(plan_id: str, state: str) -> None:
-    """Best-effort ``manage-status title-token set --state {state}``.
-
-    Wrapped so any failure (script error, parse error, missing plan) is
-    swallowed at DEBUG — the title token is a display affordance and MUST NOT
-    influence the build outcome.
-    """
-    try:
-        _run_executor(
-            _TITLE_TOKEN_NOTATION, 'title-token', 'set', '--plan-id', plan_id, '--state', state
-        )
-    except Exception as exc:  # noqa: BLE001 — token writes are best-effort
-        logger.debug('title-token set(%s) for %s failed: %s', state, plan_id, exc)
-
-
-def _clear_title_token(plan_id: str) -> None:
-    """Best-effort ``manage-status title-token clear`` (always in finally)."""
-    try:
-        _run_executor(_TITLE_TOKEN_NOTATION, 'title-token', 'clear', '--plan-id', plan_id)
-    except Exception as exc:  # noqa: BLE001 — token writes are best-effort
-        logger.debug('title-token clear for %s failed: %s', plan_id, exc)
-
-
-def _push_title_token(plan_id: str, icon: str) -> None:
-    """Best-effort ``platform_runtime session push-title-token --icon {icon}``."""
-    try:
-        _run_executor(
-            _PUSH_TOKEN_NOTATION, 'session', 'push-title-token', '--plan-id', plan_id, '--icon', icon
-        )
-    except Exception as exc:  # noqa: BLE001 — token push is best-effort
-        logger.debug('push-title-token(%s) for %s failed: %s', icon, plan_id, exc)
-
-
 def _wait_for_admission(plan_id: str, max_retries: int) -> str:
     """Acquire a slot, polling while blocked, and return the admitted id.
 
-    Sets the ``build-waiting`` token (🕐) on each blocked poll and re-polls
-    ``acquire`` WITHOUT releasing first. Because ``run_acquire`` is idempotent
-    for an already-queued ``plan_id`` — it reuses the existing waiting entry in
-    place rather than appending a new one — the plan KEEPS its FIFO position
-    across every retry. Releasing-then-re-acquiring (the prior behaviour) pushed
-    the plan to the back of the waiting queue on each poll, defeating FIFO; that
-    release is therefore gone from the loop. Raises :class:`BuildQueueTimeout`
-    when still blocked after ``max_retries`` re-polls (the final queued id IS
-    released first, as cleanup, so an exhausted plan does not leak a waiting
-    entry).
+    Re-polls ``acquire`` WITHOUT releasing first. Because ``run_acquire`` is
+    idempotent for an already-queued ``plan_id`` — it reuses the existing waiting
+    entry in place rather than appending a new one — the plan KEEPS its FIFO
+    position across every retry. Releasing-then-re-acquiring (the prior
+    behaviour) pushed the plan to the back of the waiting queue on each poll,
+    defeating FIFO; that release is therefore gone from the loop. Raises
+    :class:`BuildQueueTimeout` when still blocked after ``max_retries`` re-polls
+    (the final queued id IS released first, as cleanup, so an exhausted plan does
+    not leak a waiting entry).
     """
     result = _acquire(plan_id)
     if result.get('status') != 'success':
@@ -301,10 +219,6 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
     admission_id = str(result['id'])
     if result.get('admission') == 'admitted':
         return admission_id
-
-    # Blocked: surface the waiting state, then poll.
-    _set_title_token(plan_id, 'build-waiting')
-    _push_title_token(plan_id, _ICON_BUILD_WAITING)
 
     for _ in range(max_retries):
         time.sleep(_WAIT_SECONDS)
@@ -332,8 +246,8 @@ def build_queue_slot(plan_id: str | None) -> Iterator[None]:
     When ``plan_id`` is falsy this is a pure no-op passthrough — the body runs
     unchanged with no queue interaction (the backward-compatibility guarantee
     for plan-less builds). When ``plan_id`` is set, the body runs only after a
-    slot is admitted; the slot is released and the title-token cleared in a
-    ``finally`` regardless of how the body exits.
+    slot is admitted; the slot is released in a ``finally`` regardless of how the
+    body exits.
 
     Raises:
         BuildQueueTimeout: when no slot is admitted within ``max_retries``.
@@ -345,11 +259,7 @@ def build_queue_slot(plan_id: str | None) -> Iterator[None]:
     max_retries = _resolve_max_retries()
     admission_id = _wait_for_admission(plan_id, max_retries)
 
-    # Admitted — surface the building state and run the build.
-    _set_title_token(plan_id, 'building')
-    _push_title_token(plan_id, _ICON_BUILDING)
     try:
         yield
     finally:
         _release(plan_id, admission_id)
-        _clear_title_token(plan_id)
