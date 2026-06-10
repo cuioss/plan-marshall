@@ -135,6 +135,58 @@ Task: plan-marshall:{target}
 
 The agent returns `plan_id` and `domains` in its TOON.
 
+**Post-init contract assertion**: phase-1-init's contract is plan-structure creation only — it writes `request.md`, `references.json`, and `status.json` under `.plan/local/plans/{plan_id}/**` and returns `plan_id` + `domains` (+ `next_phase`) and nothing else of substance (see `plan-marshall:phase-1-init` § Enforcement). When the `content` it receives reads like a ready-to-apply implementation spec, the agent treats it as a work order — editing source files, switching the checkout onto a `fix/`/`feature/` branch, and returning a payload that omits `plan_id` and carries a `pr_url` instead. This is the same failure class as the post-refine violation one phase later (see `feedback_phase2_refine_never_implements`), and it silently advances the orchestrator into phase-2-refine with main-checkout drift. Assert structurally that the init was contract-clean before advancing.
+
+**Return-shape check**: assert the phase-1-init return TOON carries a non-empty `plan_id` AND does NOT carry a `pr_url`, a `branch`, or a "patched N files" / files-patched `display_detail`. Any of those is a rogue-implementation signal — phase-1-init never opens a PR, never reports a branch, and never reports files patched.
+
+**Main-checkout cleanliness check**: assert the main checkout is clean and was not switched onto a feature branch. Keep the two checks as separate single-command Bash blocks (one command per call):
+
+```bash
+git -C . status --porcelain
+```
+
+```bash
+git -C . branch --show-current
+```
+
+Assert the first command's output is empty and the second command's output equals the base branch (the checkout was not switched onto a `fix/`/`feature/` branch).
+
+**Success branch** — the return-shape check passes (non-empty `plan_id`, no rogue payload field), the porcelain output is empty, and the current branch equals the base branch:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:plan-marshall) Post-init main-checkout assertion passed (clean, plan_id present)"
+```
+
+Continue to the **Metrics** fused-call below.
+
+**Violation branch** — any of the checks fails: the return TOON omits `plan_id` or carries a `pr_url` / `branch` / patched-files `display_detail`, OR the porcelain output is non-empty, OR the current branch differs from the base branch. The orchestrator MUST emit a `[CRITICAL]` work-log entry naming the offending signal (dirty files / switched branch / missing plan_id / rogue payload field), return the structured error TOON, and refuse to advance to phase-2-refine.
+
+`{offending_signal}` names the specific violation: the joined non-empty lines of the `git -C . status --porcelain` output for a dirty tree, the resolved branch name for a switched checkout, `missing plan_id` when the return omits `plan_id`, or the rogue field name (`pr_url` / `branch` / files-patched `display_detail`) when the return shape is wrong.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[CRITICAL] (plan-marshall:plan-marshall) Init contract violation — phase-1-init dispatched edits to the main checkout: {offending_signal}"
+```
+
+Return:
+
+```toon
+status: error
+error_type: init_contract_violation
+display_detail: "init dispatched edits to main checkout"
+plan_id: {plan_id}
+offending_signal: {offending_signal}
+```
+
+Do NOT call the **Metrics** fused-call. Do NOT capture the phase handshake. Do NOT continue to 2-refine. The orchestrator stops here; recovery requires the user to inspect the offending files, revert them or move them into `.plan/local/plans/{plan_id}/**`, and run `git -C . checkout {base_branch}` if the checkout was switched onto a `fix/`/`feature/` branch.
+
+**Cross-references**:
+- `plan-marshall:phase-1-init` § Enforcement — the prohibition this assertion enforces
+- `feedback_phase2_refine_never_implements` — driving failure history for the symmetric post-refine guard
+
 **Metrics**: After the init agent completes and `plan_id` is known, record the
 `1-init → 2-refine` boundary in a single fused call (forwarding the agent's
 `<usage>` data to the closing phase). The fused command persists the same
