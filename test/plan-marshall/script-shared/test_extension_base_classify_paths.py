@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests for ExtensionBase.classify_paths(), classify_globs(), and the
-base-lib tree-glob deriver ``derive_globs_from_tree``.
+base-lib build_map route deriver + completeness validator.
 
 Covers three concerns of the file-to-build contract that live in the
 ``script-shared`` ``extension_base`` module:
@@ -8,19 +8,21 @@ Covers three concerns of the file-to-build contract that live in the
 1. ``classify_paths()`` — the default no-op contract and the subclass-override
    pattern (the change-set classification path).
 2. ``classify_build_class()`` — the per-(path, role) build_class default map.
-3. ``classify_globs()`` + ``derive_globs_from_tree()`` — the portable
-   ``(suffix, role_heuristic)`` vocabulary accessor and the base-lib tree
-   deriver that scans the real project tree and emits concrete, complete-by-
-   construction globs (so production ``.py`` files outside ``scripts/`` are
-   covered because they exist in the tree, not because an author guessed a
-   glob).
+3. ``classify_globs()`` + ``derive_globs_from_tree()`` + the completeness
+   validator ``validate_tree_completeness()`` — the explicit ``(pattern, role)``
+   route accessor, the route-collection consumer the build_map seed reads, and
+   the git-tracked completeness validator that reports any tracked source file no
+   declared route covers (so a production ``.py`` outside the obvious roots is
+   caught, while untracked ``target/`` / ``.venv/`` output is ignored).
 
 The aggregator's longest-glob-wins overlap resolution and the unclaimed-path
 warning are tested separately in test_manage_execution_manifest_*.py — this
-module covers only the per-extension method contract and the base deriver.
+module covers only the per-extension method contract, the base route deriver,
+and the validator.
 """
 
 import fnmatch
+import subprocess
 
 from extension_base import (  # type: ignore[import-not-found]
     BUILD_CLASS_BUILD_CONFIG_FULL,
@@ -29,13 +31,14 @@ from extension_base import (  # type: ignore[import-not-found]
     BUILD_CLASS_PROD_COMPILE,
     BUILD_CLASS_TEST_RUN,
     BUILD_CLASSES,
-    ROLE_HEURISTIC_CONFIG,
-    ROLE_HEURISTIC_DOCUMENTATION,
-    ROLE_HEURISTIC_PRODUCTION_BY_LOCATION,
-    ROLE_HEURISTIC_TEST_BY_LOCATION,
-    ROLE_HEURISTICS,
+    BUILD_MAP_ROLES,
+    ROLE_CONFIG,
+    ROLE_DOCUMENTATION,
+    ROLE_PRODUCTION,
+    ROLE_TEST,
     ExtensionBase,
     derive_globs_from_tree,
+    validate_tree_completeness,
 )
 
 
@@ -333,45 +336,45 @@ def test_subclass_build_class_override_falls_through_for_other_roles():
 
 
 # =============================================================================
-# Role-heuristic vocabulary constants
+# build_map role vocabulary constants
 # =============================================================================
 
 
-def test_role_heuristics_is_the_closed_four_value_set():
-    """ROLE_HEURISTICS is exactly the four heuristic names, no more, no less."""
-    assert ROLE_HEURISTICS == frozenset({
-        'production-by-location',
-        'test-by-location',
+def test_build_map_roles_is_the_closed_four_value_set():
+    """BUILD_MAP_ROLES is exactly the four resolved roles, no more, no less."""
+    assert BUILD_MAP_ROLES == frozenset({
+        'production',
+        'test',
         'documentation',
         'config',
     })
-    assert len(ROLE_HEURISTICS) == 4
+    assert len(BUILD_MAP_ROLES) == 4
 
 
-def test_role_heuristic_named_constants_are_members():
-    """Each named ROLE_HEURISTIC_* constant is a member of ROLE_HEURISTICS."""
-    for value in (
-        ROLE_HEURISTIC_PRODUCTION_BY_LOCATION,
-        ROLE_HEURISTIC_TEST_BY_LOCATION,
-        ROLE_HEURISTIC_DOCUMENTATION,
-        ROLE_HEURISTIC_CONFIG,
-    ):
-        assert value in ROLE_HEURISTICS
+def test_build_map_role_named_constants_are_members():
+    """Each named role constant is a member of BUILD_MAP_ROLES."""
+    for value in (ROLE_PRODUCTION, ROLE_TEST, ROLE_DOCUMENTATION, ROLE_CONFIG):
+        assert value in BUILD_MAP_ROLES
 
 
 # =============================================================================
-# classify_globs() accessor — portable (suffix, role_heuristic) vocabulary
+# classify_globs() accessor — explicit (pattern, role) routes
 # =============================================================================
 
 
-class _VocabularyExtension(_MinimalExtension):
-    """ExtensionBase subclass overriding classify_globs() with a portable vocabulary."""
+class _RouteExtension(_MinimalExtension):
+    """ExtensionBase subclass declaring explicit (pattern, role) build_map routes.
+
+    Routes use single-``*`` fnmatch globs (the matcher the build_map consumer
+    uses) where a ``*`` matches across ``/`` — so ``scripts/*.py`` covers
+    ``scripts/foo.py`` and any file beneath ``scripts/``.
+    """
 
     def classify_globs(self) -> list[tuple[str, str]]:
         return [
-            ('.py', ROLE_HEURISTIC_PRODUCTION_BY_LOCATION),
-            ('.py', ROLE_HEURISTIC_TEST_BY_LOCATION),
-            ('pyproject.toml', ROLE_HEURISTIC_CONFIG),
+            ('scripts/*.py', ROLE_PRODUCTION),
+            ('test/*.py', ROLE_TEST),
+            ('pyproject.toml', ROLE_CONFIG),
         ]
 
 
@@ -385,208 +388,248 @@ def test_classify_paths_override_does_not_imply_globs_override():
     """A classify_paths override alone leaves classify_globs at the empty default.
 
     classify_globs is a separate accessor — overriding classify_paths does not
-    auto-populate the vocabulary.
+    auto-populate the routes.
     """
     ext = _ClassifyingExtension()
     assert ext.classify_globs() == []
 
 
-def test_subclass_classify_globs_returns_vocabulary_verbatim():
-    """A classify_globs override returns the (suffix, role_heuristic) vocabulary verbatim."""
-    ext = _VocabularyExtension()
+def test_subclass_classify_globs_returns_routes_verbatim():
+    """A classify_globs override returns the (pattern, role) routes verbatim."""
+    ext = _RouteExtension()
     assert ext.classify_globs() == [
-        ('.py', 'production-by-location'),
-        ('.py', 'test-by-location'),
+        ('scripts/*.py', 'production'),
+        ('test/*.py', 'test'),
         ('pyproject.toml', 'config'),
     ]
 
 
-def test_classify_globs_returns_role_heuristics_not_resolved_roles():
-    """The vocabulary uses role-heuristic names, NOT the resolved four roles.
+def test_classify_globs_returns_resolved_roles():
+    """Each route's second element is a resolved BUILD_MAP_ROLES member.
 
-    A vocabulary tuple's second element is a ROLE_HEURISTICS member
-    (``production-by-location`` etc.), never a bare ``production`` /
-    ``test`` resolved-role string — the deriver resolves the heuristic to a
-    role, the vocabulary does not pre-resolve it.
+    The route carries a resolved role (``production`` / ``test`` / ...), NOT a
+    by-location heuristic name — there is no heuristic indirection left.
     """
-    ext = _VocabularyExtension()
-    for _suffix, role_heuristic in ext.classify_globs():
-        assert role_heuristic in ROLE_HEURISTICS
+    ext = _RouteExtension()
+    for _pattern, role in ext.classify_globs():
+        assert role in BUILD_MAP_ROLES
 
 
 # =============================================================================
-# derive_globs_from_tree() — base-lib tree deriver
+# derive_globs_from_tree() — explicit-route collection consumer
 # =============================================================================
-
-
-def _write_tree(root, rel_paths: list[str]) -> None:
-    """Create each repo-relative path under ``root`` as an empty file."""
-    for rel in rel_paths:
-        target = root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('')
 
 
 def _matches_any(path: str, globs: list[str]) -> bool:
-    """Return True when ``path`` matches at least one derived glob."""
+    """Return True when ``path`` matches at least one collected route pattern."""
     return any(fnmatch.fnmatchcase(path, g) for g in globs)
 
 
-def test_derive_globs_returns_empty_dict_for_no_extensions(tmp_path):
-    """No registered extensions ⇒ no derived globs."""
-    _write_tree(tmp_path, ['scripts/foo.py'])
-    assert derive_globs_from_tree(str(tmp_path), []) == {}
+def test_derive_globs_returns_empty_dict_for_no_extensions():
+    """No registered extensions ⇒ no collected routes."""
+    assert derive_globs_from_tree('/irrelevant', []) == {}
 
 
-def test_derive_globs_skips_extension_with_empty_vocabulary(tmp_path):
+def test_derive_globs_skips_extension_with_no_routes():
     """An extension whose classify_globs() is empty contributes nothing."""
-    _write_tree(tmp_path, ['scripts/foo.py'])
-    # _MinimalExtension keeps the base empty-vocabulary default.
-    assert derive_globs_from_tree(str(tmp_path), [_MinimalExtension()]) == {}
+    # _MinimalExtension keeps the base empty-route default.
+    assert derive_globs_from_tree('/irrelevant', [_MinimalExtension()]) == {}
 
 
-def test_derive_globs_keys_result_by_domain_key(tmp_path):
-    """The derived dict is keyed by the extension's first domain key."""
-    _write_tree(tmp_path, ['scripts/foo.py'])
-    derived = derive_globs_from_tree(str(tmp_path), [_VocabularyExtension()])
+def test_derive_globs_keys_result_by_domain_key():
+    """The collected dict is keyed by the extension's first domain key."""
+    derived = derive_globs_from_tree('/irrelevant', [_RouteExtension()])
     assert set(derived.keys()) == {'minimal'}
 
 
-def test_derive_globs_covers_production_py_outside_scripts(tmp_path):
-    """A production .py outside scripts/ is covered — the regression this fixes.
+def test_derive_globs_returns_declared_routes_verbatim():
+    """The collected routes are the declared (pattern, role) tuples, sorted.
 
-    The vocabulary is portable (``.py`` + production-by-location); the deriver
-    scans the real tree and emits a glob anchored at the file's parent dir, so
-    a production file the author never anticipated (``pkg/sub/mod.py``) is
-    caught because it exists in the tree.
+    No tree scan, no per-directory enumeration — the compact declared route set
+    seeds directly.
     """
-    _write_tree(tmp_path, ['pkg/sub/mod.py'])
-    derived = derive_globs_from_tree(str(tmp_path), [_VocabularyExtension()])
-    prod_globs = [glob for glob, role in derived['minimal'] if role == 'production']
-    assert _matches_any('pkg/sub/mod.py', prod_globs)
-
-
-def test_derive_globs_splits_production_and_test_by_location(tmp_path):
-    """The .py vocabulary splits production vs test by the test-root predicate."""
-    _write_tree(tmp_path, ['pkg/mod.py', 'test/pkg/test_mod.py'])
-    derived = derive_globs_from_tree(str(tmp_path), [_VocabularyExtension()])
-    entries = derived['minimal']
-    prod_globs = [glob for glob, role in entries if role == 'production']
-    test_globs = [glob for glob, role in entries if role == 'test']
-    assert _matches_any('pkg/mod.py', prod_globs)
-    assert not _matches_any('pkg/mod.py', test_globs)
-    assert _matches_any('test/pkg/test_mod.py', test_globs)
-    assert not _matches_any('test/pkg/test_mod.py', prod_globs)
-
-
-def test_derive_globs_emits_exact_path_for_config_basename(tmp_path):
-    """An exact-name config entry derives the exact path (not a *suffix glob)."""
-    _write_tree(tmp_path, ['pyproject.toml', 'sub/pyproject.toml'])
-    derived = derive_globs_from_tree(str(tmp_path), [_VocabularyExtension()])
-    config_globs = [glob for glob, role in derived['minimal'] if role == 'config']
-    assert 'pyproject.toml' in config_globs
-    assert 'sub/pyproject.toml' in config_globs
-
-
-def test_derive_globs_prunes_vcs_and_cache_dirs(tmp_path):
-    """The deriver never descends into pruned dirs (.git, __pycache__, target, ...)."""
-    _write_tree(tmp_path, [
-        'pkg/real.py',
-        '.git/hooks/fake.py',
-        '__pycache__/cached.py',
-        'target/built.py',
-        '.venv/lib/dep.py',
+    derived = derive_globs_from_tree('/irrelevant', [_RouteExtension()])
+    assert derived['minimal'] == sorted([
+        ('scripts/*.py', 'production'),
+        ('test/*.py', 'test'),
+        ('pyproject.toml', 'config'),
     ])
-    derived = derive_globs_from_tree(str(tmp_path), [_VocabularyExtension()])
-    prod_globs = [glob for glob, role in derived['minimal'] if role == 'production']
-    assert _matches_any('pkg/real.py', prod_globs)
-    # Files under pruned dirs are never scanned, so no glob is anchored at them.
-    for pruned in ('.git/hooks/fake.py', '__pycache__/cached.py', 'target/built.py', '.venv/lib/dep.py'):
-        assert not _matches_any(pruned, prod_globs), f'{pruned} should be pruned'
 
 
-def test_derive_globs_deduplicates_globs(tmp_path):
-    """Two production files in the same dir collapse to one derived glob."""
-    _write_tree(tmp_path, ['pkg/a.py', 'pkg/b.py'])
-    derived = derive_globs_from_tree(str(tmp_path), [_VocabularyExtension()])
-    prod_globs = [glob for glob, role in derived['minimal'] if role == 'production']
-    assert len(prod_globs) == len(set(prod_globs))
-    # Both files live in pkg/, so a single pkg/*.py glob covers both.
-    assert _matches_any('pkg/a.py', prod_globs)
-    assert _matches_any('pkg/b.py', prod_globs)
+def test_derive_globs_is_compact_not_per_directory():
+    """A single production route stays one entry regardless of tree breadth.
+
+    The regression this fixes: the old deriver emitted one glob per matched
+    directory (167 globs); the explicit-route contract keeps the declared route
+    count compact.
+    """
+    derived = derive_globs_from_tree('/irrelevant', [_RouteExtension()])
+    prod = [(p, r) for p, r in derived['minimal'] if r == 'production']
+    assert prod == [('scripts/*.py', 'production')]
 
 
-def test_derive_globs_entries_are_sorted_and_deterministic(tmp_path):
+def test_derive_globs_does_not_read_project_root(tmp_path):
+    """Route collection ignores the tree — project_root is signature parity only."""
+    # An empty tmp_path tree must not change the collected routes.
+    derived = derive_globs_from_tree(str(tmp_path), [_RouteExtension()])
+    assert ('scripts/*.py', 'production') in derived['minimal']
+
+
+def test_derive_globs_deduplicates_routes():
+    """Duplicate declared routes collapse to one entry."""
+
+    class _DupRouteExtension(_MinimalExtension):
+        def classify_globs(self) -> list[tuple[str, str]]:
+            return [
+                ('scripts/*.py', ROLE_PRODUCTION),
+                ('scripts/*.py', ROLE_PRODUCTION),
+            ]
+
+    derived = derive_globs_from_tree('/irrelevant', [_DupRouteExtension()])
+    assert derived['minimal'] == [('scripts/*.py', 'production')]
+
+
+def test_derive_globs_entries_are_sorted_and_deterministic():
     """The per-domain entries are emitted in deterministic sorted order."""
-    _write_tree(tmp_path, ['z/mod.py', 'a/mod.py', 'm/mod.py'])
-    first = derive_globs_from_tree(str(tmp_path), [_VocabularyExtension()])
-    second = derive_globs_from_tree(str(tmp_path), [_VocabularyExtension()])
+
+    class _UnsortedRouteExtension(_MinimalExtension):
+        def classify_globs(self) -> list[tuple[str, str]]:
+            return [
+                ('z/*.py', ROLE_PRODUCTION),
+                ('a/*.py', ROLE_PRODUCTION),
+                ('m/*.py', ROLE_PRODUCTION),
+            ]
+
+    first = derive_globs_from_tree('/irrelevant', [_UnsortedRouteExtension()])
+    second = derive_globs_from_tree('/irrelevant', [_UnsortedRouteExtension()])
     assert first == second
     assert first['minimal'] == sorted(first['minimal'])
 
 
-def test_derive_globs_skips_extension_without_domain_key(tmp_path):
-    """An extension with a vocabulary but no resolvable domain key is omitted."""
+def test_derive_globs_skips_extension_without_domain_key():
+    """An extension with routes but no resolvable domain key is omitted."""
 
-    class _NoDomainKeyExtension(_VocabularyExtension):
+    class _NoDomainKeyExtension(_RouteExtension):
         def get_skill_domains(self) -> list[dict]:
             return []
 
-    _write_tree(tmp_path, ['pkg/mod.py'])
-    derived = derive_globs_from_tree(str(tmp_path), [_NoDomainKeyExtension()])
+    derived = derive_globs_from_tree('/irrelevant', [_NoDomainKeyExtension()])
     assert derived == {}
 
 
-def test_derive_globs_documentation_heuristic_is_location_agnostic(tmp_path):
-    """A documentation-heuristic suffix is claimed regardless of where it sits."""
+def test_derive_globs_ignores_route_with_unknown_role():
+    """A route tuple with a non-BUILD_MAP_ROLES role contributes nothing."""
 
-    class _DocExtension(_MinimalExtension):
+    class _BadRoleExtension(_MinimalExtension):
         def classify_globs(self) -> list[tuple[str, str]]:
-            return [('.md', ROLE_HEURISTIC_DOCUMENTATION)]
+            return [('scripts/*.py', 'not-a-real-role')]
 
-    _write_tree(tmp_path, ['README.md', 'docs/intro.md', 'test/notes.md'])
-    derived = derive_globs_from_tree(str(tmp_path), [_DocExtension()])
-    doc_globs = [glob for glob, role in derived['minimal'] if role == 'documentation']
-    # All three .md files are claimed under documentation — even the one under test/.
-    assert _matches_any('README.md', doc_globs)
-    assert _matches_any('docs/intro.md', doc_globs)
-    assert _matches_any('test/notes.md', doc_globs)
-
-
-def test_derive_globs_ignores_unknown_role_heuristic(tmp_path):
-    """A vocabulary tuple with a non-ROLE_HEURISTICS name contributes nothing."""
-
-    class _BadHeuristicExtension(_MinimalExtension):
-        def classify_globs(self) -> list[tuple[str, str]]:
-            return [('.py', 'not-a-real-heuristic')]
-
-    _write_tree(tmp_path, ['pkg/mod.py'])
-    derived = derive_globs_from_tree(str(tmp_path), [_BadHeuristicExtension()])
+    derived = derive_globs_from_tree('/irrelevant', [_BadRoleExtension()])
     assert derived == {}
 
 
-def test_derive_globs_survives_extension_raising_in_classify_globs(tmp_path):
+def test_derive_globs_survives_extension_raising_in_classify_globs():
     """A broken extension is skipped, not allowed to abort the whole derivation."""
 
     class _RaisingExtension(_MinimalExtension):
         def classify_globs(self) -> list[tuple[str, str]]:
             raise RuntimeError('boom')
 
-    _write_tree(tmp_path, ['pkg/mod.py'])
-    derived = derive_globs_from_tree(
-        str(tmp_path), [_RaisingExtension(), _VocabularyExtension()]
-    )
+    derived = derive_globs_from_tree('/irrelevant', [_RaisingExtension(), _RouteExtension()])
     # The raising extension is skipped; the well-behaved one still contributes.
     assert 'minimal' in derived
 
 
-def test_derive_globs_every_entry_role_resolves_to_a_build_class(tmp_path):
-    """Each (glob, role) the deriver emits resolves to a BUILD_CLASSES member.
+def test_derive_globs_every_entry_role_resolves_to_a_build_class():
+    """Each (pattern, role) route resolves to a BUILD_CLASSES member.
 
     This is exactly the per-entry lookup the build_map seed aggregator performs.
     """
-    _write_tree(tmp_path, ['pkg/mod.py', 'test/test_mod.py', 'pyproject.toml'])
-    ext = _VocabularyExtension()
-    derived = derive_globs_from_tree(str(tmp_path), [ext])
-    for _glob, role in derived['minimal']:
-        assert ext.classify_build_class(_glob, role) in BUILD_CLASSES
+    ext = _RouteExtension()
+    derived = derive_globs_from_tree('/irrelevant', [ext])
+    for _pattern, role in derived['minimal']:
+        assert ext.classify_build_class(_pattern, role) in BUILD_CLASSES
+
+
+# =============================================================================
+# validate_tree_completeness() — git-tracked completeness validator
+# =============================================================================
+
+
+def _git_init_and_track(root, rel_paths: list[str]) -> None:
+    """Create + git-add each repo-relative path under ``root`` as a tracked file."""
+    subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'T'], check=True)
+    for rel in rel_paths:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('')
+    subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True)
+
+
+def test_validate_completeness_returns_empty_when_all_covered(tmp_path):
+    """Every tracked source file matched by a declared route ⇒ no uncovered paths."""
+    _git_init_and_track(tmp_path, ['scripts/foo.py', 'test/test_foo.py'])
+    uncovered = validate_tree_completeness(str(tmp_path), [_RouteExtension()])
+    assert uncovered == []
+
+
+def test_validate_completeness_flags_uncovered_tracked_source(tmp_path):
+    """A tracked production .py outside every declared route is reported uncovered.
+
+    The regression this fixes: a production module the routes forgot (here
+    ``marketplace/targets/generate.py``, outside ``scripts/``) surfaces as an
+    uncovered path instead of being silently missed.
+    """
+    _git_init_and_track(tmp_path, ['scripts/foo.py', 'marketplace/targets/generate.py'])
+    uncovered = validate_tree_completeness(str(tmp_path), [_RouteExtension()])
+    assert 'marketplace/targets/generate.py' in uncovered
+    assert 'scripts/foo.py' not in uncovered
+
+
+def test_validate_completeness_ignores_untracked_paths(tmp_path):
+    """Untracked target/ and .venv/ output is never flagged (tracked-only scan)."""
+    _git_init_and_track(tmp_path, ['scripts/foo.py'])
+    # Create untracked source files under build/dependency output dirs.
+    for untracked in ('target/built.py', '.venv/lib/dep.py'):
+        target = tmp_path / untracked
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('')
+    uncovered = validate_tree_completeness(str(tmp_path), [_RouteExtension()])
+    assert 'target/built.py' not in uncovered
+    assert '.venv/lib/dep.py' not in uncovered
+    assert uncovered == []
+
+
+def test_validate_completeness_ignores_non_source_suffixes(tmp_path):
+    """Tracked docs / config (.md, .toml) are not source files and not flagged."""
+    _git_init_and_track(tmp_path, ['scripts/foo.py', 'README.md', 'extra.toml'])
+    uncovered = validate_tree_completeness(str(tmp_path), [_RouteExtension()])
+    # README.md / extra.toml are non-source — only .py is validated for coverage.
+    assert uncovered == []
+
+
+def test_validate_completeness_returns_empty_outside_git_repo(tmp_path):
+    """A non-repo root yields no uncovered paths (validator fails soft, not loud)."""
+    (tmp_path / 'scripts').mkdir()
+    (tmp_path / 'scripts' / 'foo.py').write_text('')
+    uncovered = validate_tree_completeness(str(tmp_path), [_RouteExtension()])
+    assert uncovered == []
+
+
+def test_validate_completeness_only_production_and_test_routes_cover(tmp_path):
+    """Only production/test routes count toward coverage — a doc/config route does not.
+
+    A documentation route does not make a tracked .py covered; the .py must be
+    matched by a production or test route.
+    """
+
+    class _DocOnlyRouteExtension(_MinimalExtension):
+        def classify_globs(self) -> list[tuple[str, str]]:
+            return [('scripts/*.py', ROLE_DOCUMENTATION)]
+
+    _git_init_and_track(tmp_path, ['scripts/foo.py'])
+    uncovered = validate_tree_completeness(str(tmp_path), [_DocOnlyRouteExtension()])
+    # The .py is matched only by a documentation route, so it is still uncovered.
+    assert 'scripts/foo.py' in uncovered

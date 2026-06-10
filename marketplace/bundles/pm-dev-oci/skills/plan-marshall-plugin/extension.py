@@ -102,25 +102,34 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return the OCI domain's portable (suffix, role_heuristic) vocabulary.
+        """Return the OCI domain's explicit ``(pattern, role)`` build_map routes.
 
-        Container build files are claimed under the location-agnostic
-        ``production-by-location`` heuristic — ``.dockerignore`` and the
-        ``Dockerfile`` / ``Containerfile`` family (matched as a basename suffix,
-        so ``Dockerfile`` and ``app.Dockerfile`` are both caught). Compose files
-        are claimed under ``config``. The deriver emits a concrete glob covering
-        every matching file in the tree. See the base classify_globs() contract.
+        Each route is a single-``*`` fnmatch glob paired with a resolved role.
+        Container build files are claimed under ``production``: ``.dockerignore``
+        and the ``Dockerfile`` / ``Containerfile`` family. The family is declared
+        in three forms so fnmatch (where a single ``*`` spans ``/``) catches the
+        file at the repo root (``Dockerfile``), in any subdirectory
+        (``*/Dockerfile``), and as a named-suffix variant (``*.Dockerfile``, e.g.
+        ``app.Dockerfile``). Compose files are claimed under ``config`` with the
+        same repo-root / subdirectory pair. See the base classify_globs() contract
+        for the route-collection wiring.
         """
-        vocabulary: list[tuple[str, str]] = []
-        # Production — exact .dockerignore and the Dockerfile / Containerfile family.
+        routes: list[tuple[str, str]] = []
+        # Production — exact .dockerignore (repo-root + any subdirectory).
         for name in self._PRODUCTION_FILENAMES:
-            vocabulary.append((name, 'production-by-location'))
-        for name in self._PRODUCTION_FILENAME_PREFIXES:
-            vocabulary.append((name, 'production-by-location'))
-        # Config — compose / docker-compose filenames.
+            routes.append((name, 'production'))
+            routes.append((f'*/{name}', 'production'))
+        # Production — Dockerfile / Containerfile family: bare, in any
+        # subdirectory, and as a ``<name>.Dockerfile`` named variant.
+        for prefix in self._PRODUCTION_FILENAME_PREFIXES:
+            routes.append((prefix, 'production'))
+            routes.append((f'*/{prefix}', 'production'))
+            routes.append((f'*.{prefix}', 'production'))
+        # Config — compose / docker-compose filenames (repo-root + subdirectory).
         for name in self._CONFIG_FILENAMES:
-            vocabulary.append((name, 'config'))
-        return vocabulary
+            routes.append((name, 'config'))
+            routes.append((f'*/{name}', 'config'))
+        return routes
 
     # build_class: this extension claims the ``production`` / ``config`` roles
     # (Dockerfile/Containerfile production; compose config), for which the

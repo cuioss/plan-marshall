@@ -442,56 +442,62 @@ Plan-wide bucket: `mixed_with_docs` (production + test + documentation present).
 
 ---
 
-### classify_globs (build_map vocabulary)
+### classify_globs (build_map routes)
 
-Declares this extension's contribution to the `build_map` file-to-build contract as a **portable `(extension, role)` vocabulary** — NOT literal path-globs. Each entry pairs a file-extension suffix with a location-role heuristic name; the seed aggregator runs the base-lib tree-deriver over that vocabulary to produce the concrete, complete-by-construction globs written into `skill_domains.build_map`. The default implementation is an empty list — extensions that contribute no buildable file types simply do not override this method.
+Declares this extension's contribution to the `build_map` file-to-build contract as a list of explicit **`(pattern, role)` routes**. Each route pairs a concrete glob pattern with one of the four resolved file roles, declaring both WHAT the domain owns and WHERE it lives. The seed aggregator consumes the routes verbatim — no tree scan enumerates one glob per directory. The default implementation is an empty list — extensions that contribute no buildable file types simply do not override this method.
 
-**Lifecycle**: Called by `manage-config`'s `aggregate_build_map()` during `init` / `sync-defaults` / `build-map seed`. The aggregator collects every extension's vocabulary, hands it to `derive_globs_from_tree(project_root, extensions)` (the `script-shared` deriver), and writes the resulting concrete globs into `skill_domains.build_map`.
+**Lifecycle**: Called by `manage-config`'s `aggregate_build_map()` during `init` / `sync-defaults` / `build-map seed`. The aggregator collects every extension's routes via `derive_globs_from_tree(project_root, extensions)` (the `script-shared` route collector), stamps each `(pattern, role)` with `classify_build_class`, and writes the result into `skill_domains.build_map`.
 
 ```python
 def classify_globs(self) -> list[tuple[str, str]]:
-    """Return this extension's portable (extension, role) build_map vocabulary.
+    """Return this extension's explicit (pattern, role) build_map routes.
 
-    Each tuple is ``(suffix, role_heuristic)`` — a file-extension suffix and
-    the location-role heuristic that decides the file's role from where it
-    sits in the tree. The seed aggregator's tree-deriver scans the actual
-    project tree, matches files against this vocabulary, and emits one flat
-    ``{parent_dir}/*{suffix}`` glob per directory that contains a matched file
-    (never a recursive ``**`` form), covering EVERY matching file — so files
-    outside an author's assumed layout (e.g. ``marketplace/targets/*.py`` and
-    every ``marketplace/bundles/<bundle>/skills/plan-marshall-plugin/*.py``)
-    are caught because they exist in the tree, not because an author guessed a
-    glob).
+    Each tuple is ``(pattern, role)`` — a concrete glob pattern paired with one
+    of the four resolved file roles. The route declares both WHAT this domain
+    owns and WHERE it lives, so the build_map seed consumes the routes verbatim.
+    Patterns are matched with ``fnmatch.fnmatch`` (the matcher the downstream
+    ``manage-execution-manifest`` build_map consumer uses), so a single ``*``
+    matches across ``/`` — declare single-``*`` globs, NOT recursive ``**``
+    forms. A production ``.py`` outside the obvious roots (e.g.
+    ``marketplace/targets/*.py`` or every
+    ``marketplace/bundles/*/skills/plan-marshall-plugin/*.py``) is covered by
+    declaring a route whose pattern matches it.
 
     Returns:
-        List of ``(suffix, role_heuristic)`` tuples. Example for the python
-        domain: ``[('.py', 'production-by-location'), ('.py', 'test-by-location')]``.
+        List of ``(pattern, role)`` tuples. ``pattern`` is an fnmatch-style glob
+        (e.g. ``test/*.py``) or an exact path for a single config file (e.g.
+        ``pyproject.toml``). ``role`` is one of the four roles — ``production`` /
+        ``test`` / ``documentation`` / ``config``. Example for the python domain:
+        ``[('build.py', 'production'), ('marketplace/bundles/*.py', 'production'),
+        ('marketplace/targets/*.py', 'production'), ('test/*.py', 'test')]``.
 
-    Default: ``[]`` — an extension that owns no buildable file types
-    contributes no vocabulary.
+    Default: ``[]`` — an extension that owns no buildable file types declares no
+    routes.
     """
 ```
 
-#### Why vocabulary, not literal globs
+#### Why explicit routes plus a completeness validator
 
-A literal path-glob (`marketplace/bundles/**/scripts/*.py`) encodes the *author's* assumed layout, not the consumer project's. When a production `.py` file lives outside the assumed location (`marketplace/targets/foo.py`, `*/skills/plan-marshall-plugin/extension.py`), no author-shipped glob matches it, so it classifies to no `build_class` and derives zero build — a silent under-classification. The portable vocabulary moves the layout knowledge out of the author's glob and into a deterministic tree scan: the deriver finds where each `(suffix, role_heuristic)` file actually lives and emits globs that cover them all. The seed is therefore **complete-by-construction** over the real tree.
+A route declares both the pattern and the role directly, so the seed is compact — a handful of routes per domain rather than one glob per directory. Patterns use single-`*` fnmatch globs: because `fnmatch.fnmatch` lets a single `*` span `/`, `marketplace/targets/*.py` covers `marketplace/targets/generate.py` and any file beneath `targets/`, and `marketplace/bundles/*.py` covers every nested `.py` under `marketplace/bundles/`. Recursive `**` forms are NOT used.
 
-#### Role heuristic names
+The risk an explicit-route contract carries is the inverse of an over-broad glob: an author can forget a route, leaving a production `.py` outside the declared patterns covered by no `build_class`. That omission is caught by a separate **git-tracked completeness validator** (`validate_tree_completeness` in `script-shared`). The validator scans `git ls-files`, and reports any tracked source file (suffix `.py`) that no `production`/`test` route matches. Because the scan is git-tracked-only, untracked build output (`target/**`, `.venv/**`, `node_modules/**`) is never flagged. A forgotten production module surfaces as an uncovered path; a generated file under `target/` does not.
 
-| Heuristic | Resolved role | Decides from |
-|-----------|---------------|--------------|
-| `production-by-location` | `production` | The file sits outside any test root (e.g. not under `test/`). |
-| `test-by-location` | `test` | The file sits under a test root (e.g. `test/**`, `**/test/**`). |
-| `documentation` | `documentation` | The suffix is a documentation suffix (e.g. `.md`, `.adoc`). |
-| `config` | `config` | The suffix is a build/lint/packaging config suffix. |
+#### Route roles
 
-The heuristic name resolves to one of the same four roles as `classify_paths` (`production` / `test` / `documentation` / `config`). The deriver owns the location predicates that turn a `*-by-location` heuristic into a concrete role for a given path.
+| Role | Decides | Build action |
+|------|---------|--------------|
+| `production` | The route claims production source. | `classify_build_class` → `compile`. |
+| `test` | The route claims test source. | `classify_build_class` → `module-tests`. |
+| `documentation` | The route claims documentation. | `classify_build_class` → `docs-validate`. |
+| `config` | The route claims build/lint/packaging config. | `classify_build_class` → `verify`. |
+
+The role is one of the same four roles as `classify_paths` (`production` / `test` / `documentation` / `config`) and maps straight through to a `classify_build_class` build_class with no name-to-name indirection. Only `production` and `test` routes participate in the completeness validator's coverage check.
 
 ### classify_build_class (canonical command per entry)
 
 Maps each `(glob, role)` the aggregator holds to its **canonical-named `build_class`** — the canonical command name the entry resolves to (`compile` / `module-tests` / `verify` / `docs-validate` / `none`). There is no indirection enum: the `build_class` value IS the canonical command, so one vocabulary spans `build_map`, `derive-verification`, `architecture resolve`, and the `per_deliverable_build` depth knob (same meaning ⇒ same word).
 
-**Lifecycle**: Called by `aggregate_build_map()` once per derived `(glob, role)` pair to stamp the entry's `build_class` before it is written into `skill_domains.build_map`.
+**Lifecycle**: Called by `aggregate_build_map()` once per collected `(glob, role)` route to stamp the entry's `build_class` before it is written into `skill_domains.build_map`.
 
 ```python
 def classify_build_class(self, glob: str, role: str) -> str:
@@ -504,7 +510,7 @@ def classify_build_class(self, glob: str, role: str) -> str:
     indirection map.
 
     Args:
-        glob: The concrete glob the deriver produced for this entry.
+        glob: The concrete glob pattern the extension declared for this route.
         role: The resolved role — ``production`` / ``test`` /
             ``documentation`` / ``config``.
 
@@ -530,16 +536,18 @@ The single source of truth for the closed set is `BUILD_CLASSES` in `script-shar
 | `verify` | config | `verify` (full reactor for the changed module) |
 | `none` | any | No command — a changed set whose only role yields `none` derives no build |
 
-#### Worked example (build_map vocabulary)
+#### Worked example (build_map routes)
 
-The python domain returns the vocabulary `[('.py', 'production-by-location'), ('.py', 'test-by-location')]`. Against a tree that contains `marketplace/targets/generate.py` (outside any test root) and `test/plan-marshall/manage-architecture/test_resolve.py` (under a test root), the deriver emits one flat `{parent_dir}/*{suffix}` glob per directory that contains a matched file (never a recursive `**` form):
+The python domain returns explicit routes `[('build.py', 'production'), ('marketplace/bundles/*.py', 'production'), ('marketplace/targets/*.py', 'production'), ('test/*.py', 'test')]`. The aggregator stamps each route with `classify_build_class`, producing the seeded entries:
 
-| Derived glob | role | build_class |
-|--------------|------|-------------|
+| Route pattern | role | build_class |
+|---------------|------|-------------|
+| `build.py` | `production` | `compile` |
+| `marketplace/bundles/*.py` | `production` | `compile` |
 | `marketplace/targets/*.py` | `production` | `compile` |
-| `test/plan-marshall/manage-architecture/*.py` | `test` | `module-tests` |
+| `test/*.py` | `test` | `module-tests` |
 
-A file in a deeper directory yields its own anchored glob — e.g. `marketplace/targets/claude/base.py` derives `marketplace/targets/claude/*.py`, and every `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py` derives `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/*.py`. Coverage is complete because the tree scan emits one flat glob per matched directory, not because an author guessed a `scripts/`-anchored or recursive glob. The `build_class` of each production entry is the canonical command `compile` directly.
+Because `fnmatch` lets a single `*` span `/`, the `marketplace/bundles/*.py` route covers every nested `.py` under `marketplace/bundles/` — including each `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py` — and `marketplace/targets/*.py` covers `marketplace/targets/generate.py` and any file beneath `targets/`. The `build_class` of each production route is the canonical command `compile` directly. The git-tracked completeness validator confirms no tracked `.py` is left uncovered; a production module the routes forgot surfaces as an uncovered path rather than silently classifying to no build.
 
 ---
 

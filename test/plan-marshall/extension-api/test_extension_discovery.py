@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
 # ruff: noqa: I001, E402
-"""Tests for the extension_discovery → tree-deriver bridge.
+"""Tests for the extension_discovery → route-collector bridge.
 
 ``derive_build_map_globs(project_root, extensions)`` bridges extension
-discovery to the ``script-shared`` base-lib tree-deriver
-(``derive_globs_from_tree``). Each registered extension declares a portable
-``(suffix, role_heuristic)`` vocabulary via ``classify_globs()``; the bridge
-hands the discovered extension modules to the deriver, which scans the real
-``project_root`` tree and emits the concrete globs that cover EVERY matching
-file. The build_map seed aggregator (``manage-config``) consumes this output.
+discovery to the ``script-shared`` base-lib route collector
+(``derive_globs_from_tree``). Each registered extension declares its build_map
+as explicit ``(pattern, role)`` routes via ``classify_globs()`` — an
+fnmatch-style glob (e.g. ``marketplace/bundles/*.py``) paired with one of the
+four resolved roles (``production`` / ``test`` / ``documentation`` /
+``config``). The bridge gathers those declared routes verbatim, keyed by each
+extension's domain key; it no longer scans the tree to enumerate one glob per
+directory. Tree completeness is a SEPARATE concern handled by
+``validate_tree_completeness``. The build_map seed aggregator (``manage-config``)
+consumes this output.
 
 Two flavours of coverage:
 
-1. Synthetic-tree units — a small fixture tree plus stub extension modules,
-   asserting the bridge's contract deterministically (no dependency on the
-   live marketplace tree).
+1. Synthetic-route units — stub extension modules declaring explicit routes,
+   asserting the bridge collects them verbatim, keyed by domain, role-filtered,
+   and de-duplicated (no dependency on the live marketplace tree).
 2. Real-tree regression — the bridge over the live worktree, asserting the 26
    previously-missed production ``.py`` files (every
    ``*/skills/plan-marshall-plugin/extension.py`` and every
-   ``marketplace/targets/**/*.py``) are now covered by a derived production
-   glob. This is the regression the build_map redesign exists to fix.
+   ``marketplace/targets/**/*.py``) are now covered by a declared python
+   production route. This is the regression the build_map redesign exists to fix.
 """
 
 from __future__ import annotations
@@ -33,13 +37,15 @@ from conftest import (  # type: ignore[import-not-found]
     load_script_module,
 )
 
-# The role-heuristic constants used to build stub vocabularies live in the
-# script-shared extension module (already on sys.path via conftest).
+# The resolved-role constants used to build stub route sets live in the
+# script-shared extension module (already on sys.path via conftest). The old
+# ROLE_HEURISTIC_* constants were removed by the build_map redesign — routes
+# now declare resolved roles directly.
 from extension_base import (  # type: ignore[import-not-found]
-    ROLE_HEURISTIC_CONFIG,
-    ROLE_HEURISTIC_DOCUMENTATION,
-    ROLE_HEURISTIC_PRODUCTION_BY_LOCATION,
-    ROLE_HEURISTIC_TEST_BY_LOCATION,
+    ROLE_CONFIG,
+    ROLE_DOCUMENTATION,
+    ROLE_PRODUCTION,
+    ROLE_TEST,
     ExtensionBase,
 )
 
@@ -47,39 +53,42 @@ _discovery = load_script_module('plan-marshall', 'extension-api', 'extension_dis
 
 
 # =============================================================================
-# Stub extensions and tree helpers
+# Stub extensions and helpers
 # =============================================================================
 
 
 class _StubPythonExtension(ExtensionBase):
-    """Minimal extension declaring the python .py production/test vocabulary."""
+    """Minimal extension declaring explicit python production/test/config routes."""
 
     def get_skill_domains(self) -> list[dict]:
         return [{'domain': {'key': 'python', 'name': 'P', 'description': 'd'}, 'profiles': {}}]
 
     def classify_globs(self) -> list[tuple[str, str]]:
         return [
-            ('.py', ROLE_HEURISTIC_PRODUCTION_BY_LOCATION),
-            ('.py', ROLE_HEURISTIC_TEST_BY_LOCATION),
-            ('pyproject.toml', ROLE_HEURISTIC_CONFIG),
+            ('marketplace/bundles/*.py', ROLE_PRODUCTION),
+            ('test/*.py', ROLE_TEST),
+            ('pyproject.toml', ROLE_CONFIG),
         ]
 
 
 class _StubDocsExtension(ExtensionBase):
-    """Minimal extension declaring a location-agnostic doc vocabulary."""
+    """Minimal extension declaring a broad documentation route."""
 
     def get_skill_domains(self) -> list[dict]:
         return [{'domain': {'key': 'documentation', 'name': 'D', 'description': 'd'}, 'profiles': {}}]
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        return [('.md', ROLE_HEURISTIC_DOCUMENTATION)]
+        return [('*.md', ROLE_DOCUMENTATION)]
 
 
-def _write_tree(root, rel_paths: list[str]) -> None:
-    for rel in rel_paths:
-        target = root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('')
+class _StubEmptyExtension(ExtensionBase):
+    """Minimal extension owning no buildable file types (no routes)."""
+
+    def get_skill_domains(self) -> list[dict]:
+        return [{'domain': {'key': 'empty', 'name': 'E', 'description': 'd'}, 'profiles': {}}]
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        return []
 
 
 def _matches_any(path: str, globs: list[str]) -> bool:
@@ -91,20 +100,18 @@ def _prod_globs(entries: list[tuple[str, str]]) -> list[str]:
 
 
 # =============================================================================
-# Synthetic-tree bridge units
+# Synthetic-route bridge units
 # =============================================================================
 
 
 def test_bridge_returns_empty_for_no_extensions(tmp_path):
-    """An empty pre-discovered extension list yields an empty derivation."""
-    _write_tree(tmp_path, ['scripts/foo.py'])
+    """An empty pre-discovered extension list yields an empty collection."""
     result = _discovery.derive_build_map_globs(tmp_path, extensions=[])
     assert result == {}
 
 
 def test_bridge_keys_result_by_domain_key(tmp_path):
     """The bridge returns a dict keyed by each extension's domain key."""
-    _write_tree(tmp_path, ['pkg/mod.py', 'README.md'])
     extensions = [
         {'bundle': 'pm-dev-python', 'module': _StubPythonExtension()},
         {'bundle': 'pm-documents', 'module': _StubDocsExtension()},
@@ -113,17 +120,27 @@ def test_bridge_keys_result_by_domain_key(tmp_path):
     assert set(result.keys()) == {'python', 'documentation'}
 
 
-def test_bridge_covers_production_py_outside_scripts(tmp_path):
-    """The bridge derives a production glob covering a non-scripts/ .py file."""
-    _write_tree(tmp_path, ['pkg/sub/mod.py'])
+def test_bridge_collects_routes_verbatim(tmp_path):
+    """The bridge collects each extension's declared routes verbatim (no tree scan)."""
     extensions = [{'bundle': 'pm-dev-python', 'module': _StubPythonExtension()}]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
-    assert _matches_any('pkg/sub/mod.py', _prod_globs(result['python']))
+    assert ('marketplace/bundles/*.py', 'production') in result['python']
+    assert ('test/*.py', 'test') in result['python']
+    assert ('pyproject.toml', 'config') in result['python']
+
+
+def test_bridge_omits_domains_with_no_routes(tmp_path):
+    """An extension whose classify_globs() returns no routes contributes nothing."""
+    extensions = [
+        {'bundle': 'empty', 'module': _StubEmptyExtension()},
+        {'bundle': 'pm-dev-python', 'module': _StubPythonExtension()},
+    ]
+    result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
+    assert set(result.keys()) == {'python'}
 
 
 def test_bridge_skips_entries_with_no_module(tmp_path):
-    """Entries lacking a 'module' key are filtered before the deriver runs."""
-    _write_tree(tmp_path, ['pkg/mod.py'])
+    """Entries lacking a 'module' key are filtered before the collector runs."""
     extensions = [
         {'bundle': 'broken'},  # no 'module'
         {'bundle': 'pm-dev-python', 'module': _StubPythonExtension()},
@@ -132,22 +149,28 @@ def test_bridge_skips_entries_with_no_module(tmp_path):
     assert set(result.keys()) == {'python'}
 
 
-def test_bridge_splits_production_and_test(tmp_path):
-    """The .py vocabulary splits production vs test by the test-root predicate."""
-    _write_tree(tmp_path, ['pkg/mod.py', 'test/pkg/test_mod.py'])
+def test_bridge_separates_production_and_test_by_declared_role(tmp_path):
+    """Production vs test is split by the declared route role, not a tree predicate."""
     extensions = [{'bundle': 'pm-dev-python', 'module': _StubPythonExtension()}]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     entries = result['python']
     prod_globs = [glob for glob, role in entries if role == 'production']
     test_globs = [glob for glob, role in entries if role == 'test']
-    assert _matches_any('pkg/mod.py', prod_globs)
-    assert _matches_any('test/pkg/test_mod.py', test_globs)
-    assert not _matches_any('test/pkg/test_mod.py', prod_globs)
+    assert 'marketplace/bundles/*.py' in prod_globs
+    assert 'test/*.py' in test_globs
+    assert 'test/*.py' not in prod_globs
+
+
+def test_bridge_returns_deduplicated_sorted_routes(tmp_path):
+    """Collected routes are de-duplicated and returned in deterministic sorted order."""
+    extensions = [{'bundle': 'pm-dev-python', 'module': _StubPythonExtension()}]
+    result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
+    entries = result['python']
+    assert entries == sorted(set(entries))
 
 
 def test_bridge_is_deterministic(tmp_path):
-    """Two runs over the same tree return identical derivations."""
-    _write_tree(tmp_path, ['z/mod.py', 'a/mod.py'])
+    """Two collections over the same extensions return identical results."""
     extensions = [{'bundle': 'pm-dev-python', 'module': _StubPythonExtension()}]
     first = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     second = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
@@ -164,16 +187,16 @@ def test_bridge_is_deterministic(tmp_path):
 # marketplace tree:
 #   - 10 × marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py
 #   - 16 × marketplace/targets/**/*.py
-# The tree-derived vocabulary now covers all of them because the deriver scans
-# the real tree and emits a glob anchored at each file's parent directory.
+# The explicit python production routes (marketplace/bundles/*.py and
+# marketplace/targets/*.py — a single * spans /) now cover all of them.
 
 
 def _real_production_py_outside_scripts() -> list[str]:
     """Enumerate every repo-relative production .py under marketplace/ that
     lives outside a scripts/ directory and outside any test root.
 
-    Mirrors the set the deriver must cover: the extension.py files and the
-    marketplace/targets/ package. Resolved from the live tree so the test
+    Mirrors the set the declared routes must cover: the extension.py files and
+    the marketplace/targets/ package. Resolved from the live tree so the test
     tracks the real corpus rather than a frozen literal list.
     """
     paths: list[str] = []
@@ -212,24 +235,24 @@ def test_real_tree_corpus_has_the_expected_out_of_scripts_files():
     assert len(corpus) >= 26
 
 
-def test_real_tree_derivation_covers_every_out_of_scripts_production_py():
-    """Every out-of-scripts production .py is covered by a derived production glob.
+def test_real_tree_routes_cover_every_out_of_scripts_production_py():
+    """Every out-of-scripts production .py is covered by a declared python production route.
 
-    The bridge discovers the live extensions and derives globs over the real
-    worktree. The python domain's tree-derived production globs must match
-    every extension.py and every marketplace/targets/**/*.py — the exact set
-    the old static scripts/-anchored globs silently dropped.
+    The bridge discovers the live extensions and collects their declared routes
+    over the real worktree. The python domain's production routes must match
+    every extension.py and every marketplace/targets/**/*.py — the exact set the
+    old static scripts/-anchored globs silently dropped.
     """
     derived = _discovery.derive_build_map_globs(PROJECT_ROOT)
-    assert 'python' in derived, 'python domain must contribute tree-derived globs'
+    assert 'python' in derived, 'python domain must contribute build_map routes'
     prod_globs = _prod_globs(derived['python'])
 
     corpus = _real_production_py_outside_scripts()
     uncovered = [p for p in corpus if not _matches_any(p, prod_globs)]
-    assert not uncovered, f'derived production globs miss {len(uncovered)} files: {uncovered[:10]}'
+    assert not uncovered, f'declared production routes miss {len(uncovered)} files: {uncovered[:10]}'
 
 
-def test_real_tree_derivation_covers_a_sample_extension_py():
+def test_real_tree_routes_cover_a_sample_extension_py():
     """Spot-check: the python domain covers pm-dev-python's own extension.py."""
     derived = _discovery.derive_build_map_globs(PROJECT_ROOT)
     prod_globs = _prod_globs(derived['python'])
@@ -237,7 +260,7 @@ def test_real_tree_derivation_covers_a_sample_extension_py():
     assert _matches_any(sample, prod_globs)
 
 
-def test_real_tree_derivation_covers_marketplace_targets_generate():
+def test_real_tree_routes_cover_marketplace_targets_generate():
     """Spot-check: the python domain covers marketplace/targets/generate.py."""
     derived = _discovery.derive_build_map_globs(PROJECT_ROOT)
     prod_globs = _prod_globs(derived['python'])

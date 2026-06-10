@@ -454,6 +454,10 @@ Manage project structure knowledge including module metadata, placement rules, a
 
 ### Step 1: Select Operation
 
+The Project Structure operation list has 5 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a paginated menu following the "More..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): the first page presents 3 operations plus a "More..." continuation, and the second page presents the remaining operations.
+
+**Page 1** — first 3 operations plus the "More..." continuation:
+
 ```yaml
 AskUserQuestion:
   question: "What would you like to do with project structure?"
@@ -465,8 +469,22 @@ AskUserQuestion:
       description: "Update module metadata (layer, responsibility, tips)"
     - label: "Manage Placement"
       description: "Add or update placement rules"
+    - label: "More..."
+      description: "Show remaining project-structure operations"
+  multiSelect: false
+```
+
+**Page 2** — shown only when the user selects "More..." on Page 1:
+
+```yaml
+AskUserQuestion:
+  question: "What would you like to do with project structure?"
+  header: "Operation (continued)"
+  options:
     - label: "Regenerate"
       description: "Re-detect structure from project files"
+    - label: "Re-seed Build Map"
+      description: "Re-seed skill_domains.build_map after a domain extension change"
   multiSelect: false
 ```
 
@@ -592,6 +610,12 @@ AskUserQuestion:
 If user chooses "Refine", use the "Edit Module" operation flow.
 
 This regenerates the per-module architecture layout under `.plan/project-architecture/` from current build file definitions: a refreshed `_project.json` (the source of truth for the module index) plus an `enriched.json` stub per indexed module. Per-module `enriched.json` files are preserved when "Keep enrichment" was selected and reset only when "Reset enrichment" was selected. Derived module data is not persisted — it is computed on demand by `crawl_module_derived`.
+
+### Operation: Re-seed Build Map
+
+Re-seed `skill_domains.build_map` after a domain extension is added or updated. The seed is write-once — an existing block is preserved — so re-seeding picks up newly-registered domains without clobbering operator corrections.
+
+See [build-map-setup.md](build-map-setup.md) § "Menu Mode: Re-Seed After an Extension Change" for the seed/read commands and the `action` (`seeded` / `preserved`) interpretation.
 
 ---
 

@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 # ruff: noqa: I001, E402, F811
-"""Tests for phase_handshake pending-findings invariants and blocking-type roundtrip.
+"""Tests for phase_handshake pending-findings invariants and the FIXED
+actionable-vs-knowledge blocking rule.
 
 Split from test_phase_handshake.py: covers the two pluggable invariants
 (``pending_findings_by_type``, ``pending_findings_blocking_count``), the
 intra-finalize re-capture boundary guards, the qgate aggregator, and the
-D4 round-trip parametrized contract over every blocking type.
+fixed-rule contract over the hardcoded actionable set.
+
+The blocking partition is HARDCODED in ``_invariants._ACTIONABLE_FINDING_TYPES``
+(``build-error``, ``test-failure``, ``lint-issue``, ``sonar-issue``, ``qgate``,
+``pr-comment``) — NOT a per-phase ``marshal.json`` config slot. KNOWLEDGE types
+(``insight``, ``tip``, ``best-practice``, ``improvement``) are NEVER counted.
+This is NOT naive "any pending finding blocks": knowledge types are excluded by
+the fixed rule.
 """
 
 from __future__ import annotations
@@ -54,14 +62,19 @@ def stub_query_counts(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
 
 
 @pytest.fixture
-def stub_blocking_types(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str] | None]:
-    """Stub ``_read_blocking_finding_types`` with a per-phase mapping."""
-    state: dict[str, list[str] | None] = {}
+def stub_qgate_count(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """Stub ``_query_pending_qgate_count_aggregated`` with a single counter.
 
-    def _read(_plan_id: str, phase: str) -> list[str] | None:
-        return state.get(phase)
+    The aggregator only consumes ``plan_id``; the stub returns the value held
+    under the ``'qgate'`` key (default 0) so qgate counts can be set
+    independently of the per-type counts.
+    """
+    state: dict[str, int] = {'qgate': 0}
 
-    monkeypatch.setattr(inv, '_read_blocking_finding_types', _read)
+    def _agg(_plan_id: str) -> int:
+        return state['qgate']
+
+    monkeypatch.setattr(inv, '_query_pending_qgate_count_aggregated', _agg)
     return state
 
 
@@ -69,13 +82,12 @@ def stub_blocking_types(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str] 
 
 
 def test_capture_pending_findings_by_type_compact_summary(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
     """The per-type row mirrors the per-type query and stays sorted/stable."""
     stub_query_counts['bug'] = 2
     stub_query_counts['lint-issue'] = 1
     stub_query_counts['insight'] = 5
-    stub_blocking_types['5-execute'] = None
 
     result = cmds.cmd_capture(_ns(plan_id='pf-by-type', phase='5-execute'))
 
@@ -86,15 +98,17 @@ def test_capture_pending_findings_by_type_compact_summary(
     assert 'insight=5' in summary
     assert 'tip=0' in summary
     assert 'best-practice=0' in summary
-    assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
+    # ``lint-issue`` is in the hardcoded actionable set, so it contributes to
+    # the blocking count; ``bug`` and ``insight`` (non-actionable / knowledge)
+    # do not. At this non-guarded boundary the count is captured passively.
+    assert result['invariants']['pending_findings_blocking_count'] in (1, '1')
 
 
 def test_capture_pending_findings_by_type_persists_to_handshakes_toon(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
     """The per-type row round-trips through handshakes.toon under the schema."""
     stub_query_counts['triage'] = 4
-    stub_blocking_types['5-execute'] = None
 
     cmds.cmd_capture(_ns(plan_id='pf-persist', phase='5-execute'))
 
@@ -112,69 +126,69 @@ def test_handshake_fields_includes_pending_finding_columns() -> None:
 
 
 # --- (b) verify-strict blocks transition at guarded boundary -------------
+#
+# Under the FIXED rule a pending ACTIONABLE finding blocks the 6-finalize
+# boundary with no config partition involved.
 
 
-def test_capture_at_finalize_boundary_blocks_when_blocking_type_pending(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+def test_capture_at_finalize_boundary_blocks_when_actionable_pending(
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
-    """5-execute → 6-finalize: capture --phase 6-finalize must refuse."""
-    stub_query_counts['bug'] = 1
+    """5-execute → 6-finalize: capture --phase 6-finalize must refuse when an
+    actionable finding (``build-error``) is pending."""
+    stub_query_counts['build-error'] = 1
     stub_query_counts['lint-issue'] = 0
-    stub_blocking_types['6-finalize'] = ['bug', 'lint-issue']
 
     result = cmds.cmd_capture(_ns(plan_id='pf-block-finalize', phase='6-finalize'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 1
-    assert result['blocking_types'] == ['bug', 'lint-issue']
-    assert result['per_type'] == {'bug': 1, 'lint-issue': 0}
+    # The hardcoded actionable set is surfaced as the gated types.
+    assert result['blocking_types'] == list(inv._ACTIONABLE_FINDING_TYPES)
+    assert result['per_type']['build-error'] == 1
     assert store.get_row('pf-block-finalize', '6-finalize') is None
 
 
 def test_capture_blocks_automated_review_to_branch_cleanup_boundary(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
     """automated-review → branch-cleanup boundary is guarded via re-capture."""
     stub_query_counts['sonar-issue'] = 2
-    stub_blocking_types['6-finalize'] = ['sonar-issue']
 
     result = cmds.cmd_capture(_ns(plan_id='pf-block-autoreview', phase='6-finalize'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 2
-    assert result['per_type'] == {'sonar-issue': 2}
+    assert result['per_type']['sonar-issue'] == 2
     assert store.get_row('pf-block-autoreview', '6-finalize') is None
 
 
 def test_capture_blocks_sonar_roundtrip_next_boundary(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
     """sonar-roundtrip → next boundary is guarded via re-capture."""
     stub_query_counts['pr-comment'] = 3
-    stub_blocking_types['6-finalize'] = ['pr-comment']
 
     result = cmds.cmd_capture(_ns(plan_id='pf-block-sonar', phase='6-finalize'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 3
-    assert result['per_type'] == {'pr-comment': 3}
+    assert result['per_type']['pr-comment'] == 3
     assert store.get_row('pf-block-sonar', '6-finalize') is None
 
 
 def test_verify_at_finalize_boundary_reports_drift_for_strict_mode(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
     """cmd_verify translates BlockingFindingsPresent into drift on the
     blocking-count column — the CLI ``--strict`` flag turns drift into exit 1."""
-    stub_blocking_types['6-finalize'] = ['bug']
-
     cap = cmds.cmd_capture(_ns(plan_id='pf-verify-strict', phase='6-finalize'))
     assert cap['status'] == 'success'
 
-    stub_query_counts['bug'] = 1
+    stub_query_counts['build-error'] = 1
     result = cmds.cmd_verify(_ns(plan_id='pf-verify-strict', phase='6-finalize'))
 
     assert result['status'] == 'drift'
@@ -182,20 +196,19 @@ def test_verify_at_finalize_boundary_reports_drift_for_strict_mode(
     assert 'pending_findings_blocking_count' in diff_names
 
 
-# --- (c) verify-strict allows transition with only non-blocking types ---
+# --- (c) knowledge types NEVER block (the fixed-rule exclusion) -----------
 
 
-def test_capture_at_finalize_succeeds_when_only_long_lived_findings_pending(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+def test_capture_at_finalize_succeeds_when_only_knowledge_findings_pending(
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
-    """Only the four long-lived non-blocking types pending → boundary clears."""
+    """Only the four KNOWLEDGE types pending → boundary clears (fixed rule)."""
     stub_query_counts['insight'] = 7
     stub_query_counts['tip'] = 4
     stub_query_counts['best-practice'] = 2
     stub_query_counts['improvement'] = 9
-    stub_blocking_types['6-finalize'] = ['bug', 'lint-issue', 'sonar-issue']
 
-    result = cmds.cmd_capture(_ns(plan_id='pf-long-lived', phase='6-finalize'))
+    result = cmds.cmd_capture(_ns(plan_id='pf-knowledge', phase='6-finalize'))
 
     assert result['status'] == 'success'
     assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
@@ -204,22 +217,22 @@ def test_capture_at_finalize_succeeds_when_only_long_lived_findings_pending(
     assert 'tip=4' in summary
     assert 'best-practice=2' in summary
     assert 'improvement=9' in summary
-    row = store.get_row('pf-long-lived', '6-finalize')
+    row = store.get_row('pf-knowledge', '6-finalize')
     assert row is not None
     assert row['pending_findings_blocking_count'] in (0, '0')
 
-    verify = cmds.cmd_verify(_ns(plan_id='pf-long-lived', phase='6-finalize'))
+    verify = cmds.cmd_verify(_ns(plan_id='pf-knowledge', phase='6-finalize'))
     assert verify['status'] == 'ok'
 
 
-def test_blocking_count_zero_when_no_partition_configured(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+def test_blocking_count_zero_when_no_actionable_findings_pending(
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
-    """Phases without a blocking_finding_types config slot capture as 0."""
+    """A non-actionable type pending (e.g. ``bug``) does not block — only the
+    hardcoded actionable set counts, so the capture clears with 0."""
     stub_query_counts['bug'] = 5
-    stub_blocking_types['3-outline'] = None
 
-    result = cmds.cmd_capture(_ns(plan_id='pf-no-partition', phase='3-outline'))
+    result = cmds.cmd_capture(_ns(plan_id='pf-no-actionable', phase='3-outline'))
 
     assert result['status'] == 'success'
     assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
@@ -228,11 +241,10 @@ def test_blocking_count_zero_when_no_partition_configured(
 
 
 def test_blocking_count_passive_at_non_guarded_boundary(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
-    """Non-guarded phases capture the blocking total without raising."""
-    stub_query_counts['bug'] = 2
-    stub_blocking_types['5-execute'] = ['bug']
+    """Non-guarded phases capture the actionable total without raising."""
+    stub_query_counts['build-error'] = 2
 
     result = cmds.cmd_capture(_ns(plan_id='pf-passive', phase='5-execute'))
 
@@ -266,14 +278,13 @@ def test_query_pending_count_excludes_accepted_and_taken_into_account(
 
 
 def test_capture_blocking_count_excludes_resolved_findings(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
-    """End-to-end: a 6-finalize capture clears even when blocking-type
-    findings exist in resolved buckets."""
-    stub_query_counts['bug'] = 0
+    """End-to-end: a 6-finalize capture clears even when actionable-type
+    findings exist in resolved buckets (the pending query returns 0)."""
+    stub_query_counts['build-error'] = 0
     stub_query_counts['lint-issue'] = 0
     stub_query_counts['sonar-issue'] = 0
-    stub_blocking_types['6-finalize'] = ['bug', 'lint-issue', 'sonar-issue']
 
     result = cmds.cmd_capture(_ns(plan_id='pf-accepted', phase='6-finalize'))
 
@@ -343,24 +354,19 @@ def test_capture_blocks_at_finalize_when_qgate_pending_via_aggregator(
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
-    stub_blocking_types,
-    monkeypatch: pytest.MonkeyPatch,
+    stub_qgate_count,
 ) -> None:
-    """qgate is in the default blocking partition for 6-finalize."""
-    monkeypatch.setattr(
-        inv,
-        '_query_pending_qgate_count_aggregated',
-        lambda _plan_id: 1,
-    )
-    stub_blocking_types['6-finalize'] = ['qgate']
+    """qgate is in the hardcoded actionable set; a pending qgate finding
+    (counted via the aggregation path) blocks 6-finalize."""
+    stub_qgate_count['qgate'] = 1
 
     result = cmds.cmd_capture(_ns(plan_id='pf-block-qgate', phase='6-finalize'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 1
-    assert result['blocking_types'] == ['qgate']
-    assert result['per_type'] == {'qgate': 1}
+    assert result['blocking_types'] == list(inv._ACTIONABLE_FINDING_TYPES)
+    assert result['per_type']['qgate'] == 1
     assert store.get_row('pf-block-qgate', '6-finalize') is None
 
 
@@ -369,17 +375,11 @@ def test_capture_succeeds_at_finalize_when_qgate_finding_accepted(
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
-    stub_blocking_types,
-    monkeypatch: pytest.MonkeyPatch,
+    stub_qgate_count,
 ) -> None:
     """qgate findings resolved via ``accepted`` / ``taken_into_account``
     drop out of the pending count; the boundary clears."""
-    monkeypatch.setattr(
-        inv,
-        '_query_pending_qgate_count_aggregated',
-        lambda _plan_id: 0,
-    )
-    stub_blocking_types['6-finalize'] = ['qgate']
+    stub_qgate_count['qgate'] = 0
 
     result = cmds.cmd_capture(_ns(plan_id='pf-qgate-accepted', phase='6-finalize'))
 
@@ -394,11 +394,11 @@ def test_capture_routes_only_qgate_via_aggregator(
     plan_context,
     only_pending_findings_invariants,
     stub_metadata,
-    stub_query_counts,
-    stub_blocking_types,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The qgate-aggregator route MUST NOT leak into other blocking types."""
+    """The qgate-aggregator route MUST NOT leak into other actionable types:
+    ``qgate`` is summed via the aggregator while every other actionable type
+    goes through the generic per-type query."""
     aggregator_calls: list[str] = []
     type_query_types: list[str] = []
 
@@ -413,15 +413,17 @@ def test_capture_routes_only_qgate_via_aggregator(
     monkeypatch.setattr(inv, '_query_pending_qgate_count_aggregated', _fake_aggregator)
     monkeypatch.setattr(inv, '_query_pending_count_for_type', _fake_type_query)
 
-    stub_blocking_types['6-finalize'] = ['build-error', 'qgate', 'lint-issue']
-
     result = cmds.cmd_capture(_ns(plan_id='pf-qgate-route', phase='6-finalize'))
 
     assert result['status'] == 'success'
     assert aggregator_calls == ['pf-qgate-route']
     assert 'qgate' not in type_query_types
+    # Every non-qgate actionable type is routed through the generic query.
     assert 'build-error' in type_query_types
     assert 'lint-issue' in type_query_types
+    assert 'sonar-issue' in type_query_types
+    assert 'test-failure' in type_query_types
+    assert 'pr-comment' in type_query_types
 
 
 # --- (f) intra-finalize boundary re-capture (production scenarios) -------
@@ -432,11 +434,10 @@ def test_pending_pr_comment_blocks_automated_review_to_branch_cleanup(
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
-    stub_blocking_types,
+    stub_qgate_count,
 ) -> None:
     """automated-review → branch-cleanup intra-finalize re-capture."""
     stub_query_counts['pr-comment'] = 2
-    stub_blocking_types['6-finalize'] = ['pr-comment']
 
     result = cmds.cmd_capture(_ns(plan_id='pf-intra-autoreview', phase='6-finalize'))
 
@@ -444,7 +445,7 @@ def test_pending_pr_comment_blocks_automated_review_to_branch_cleanup(
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 2
     assert 'pr-comment' in result['blocking_types']
-    assert result['per_type'] == {'pr-comment': 2}
+    assert result['per_type']['pr-comment'] == 2
     assert store.get_row('pf-intra-autoreview', '6-finalize') is None
 
 
@@ -453,11 +454,10 @@ def test_pending_sonar_issue_blocks_sonar_roundtrip_to_next(
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
-    stub_blocking_types,
+    stub_qgate_count,
 ) -> None:
     """sonar-roundtrip → next intra-finalize re-capture."""
     stub_query_counts['sonar-issue'] = 1
-    stub_blocking_types['6-finalize'] = ['sonar-issue']
 
     result = cmds.cmd_capture(_ns(plan_id='pf-intra-sonar', phase='6-finalize'))
 
@@ -465,7 +465,7 @@ def test_pending_sonar_issue_blocks_sonar_roundtrip_to_next(
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 1
     assert 'sonar-issue' in result['blocking_types']
-    assert result['per_type'] == {'sonar-issue': 1}
+    assert result['per_type']['sonar-issue'] == 1
     assert store.get_row('pf-intra-sonar', '6-finalize') is None
 
 
@@ -474,11 +474,10 @@ def test_intra_finalize_recapture_clears_after_resolution(
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
-    stub_blocking_types,
+    stub_qgate_count,
 ) -> None:
     """The intra-finalize re-capture loop-back contract: clears after fix."""
     stub_query_counts['pr-comment'] = 1
-    stub_blocking_types['6-finalize'] = ['pr-comment']
 
     first = cmds.cmd_capture(_ns(plan_id='pf-intra-loop', phase='6-finalize'))
     assert first['status'] == 'error'
@@ -494,72 +493,108 @@ def test_intra_finalize_recapture_clears_after_resolution(
 
 
 # =============================================================================
-# D4: Round-trip tests for every blocking type in the dict[str, Callable] mapping
+# Fixed-rule contract: every actionable type counts; every knowledge type is
+# excluded. Replaces the former determine_mode-coupled round-trip parametrize.
 # =============================================================================
 
 
-import determine_mode as _determine_mode_for_roundtrip  # type: ignore[import-not-found]  # noqa: E402
-
-
-@pytest.mark.parametrize(
-    'finding_type',
-    sorted(_determine_mode_for_roundtrip._FINALIZE_BLOCKING_TYPES.keys()),
-)
-def test_blocking_type_roundtrip_queried_matches_produced(
+@pytest.mark.parametrize('finding_type', sorted(inv._ACTIONABLE_FINDING_TYPES))
+def test_actionable_type_roundtrip_queried_matches_produced(
     finding_type: str,
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
-    stub_blocking_types,
-    monkeypatch: pytest.MonkeyPatch,
+    stub_qgate_count,
 ) -> None:
-    """Round-trip: producing N findings of this type → query reports exactly N."""
+    """Round-trip: producing N findings of an actionable type → query reports N."""
     produced_count = 3
     if finding_type == 'qgate':
-        monkeypatch.setattr(
-            inv, '_query_pending_qgate_count_aggregated', lambda _plan_id: produced_count
-        )
+        stub_qgate_count['qgate'] = produced_count
     else:
         stub_query_counts[finding_type] = produced_count
-
-    stub_blocking_types['5-execute'] = [finding_type]
 
     queried_count = inv._capture_pending_findings_blocking_count(
         'plan-roundtrip', {}, '5-execute'
     )
 
     assert queried_count == produced_count, (
-        f'Round-trip failed for blocking type {finding_type!r}: '
+        f'Round-trip failed for actionable type {finding_type!r}: '
         f'queried={queried_count}, produced={produced_count}.'
     )
 
 
-def test_blocking_type_silent_zero_tripwire_all_types_have_dispatch(
+def test_all_actionable_types_have_dispatch_no_silent_zero(
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
-    stub_blocking_types,
-    monkeypatch: pytest.MonkeyPatch,
+    stub_qgate_count,
 ) -> None:
-    """No type in the mapping silently returns zero when traffic exists."""
-    mapping_keys = sorted(_determine_mode_for_roundtrip._FINALIZE_BLOCKING_TYPES.keys())
+    """No actionable type silently returns zero when traffic exists — the total
+    equals the number of actionable types when each contributes one."""
+    actionable = sorted(inv._ACTIONABLE_FINDING_TYPES)
 
-    monkeypatch.setattr(
-        inv, '_query_pending_qgate_count_aggregated', lambda _plan_id: 1
-    )
-    for finding_type in mapping_keys:
+    stub_qgate_count['qgate'] = 1
+    for finding_type in actionable:
         if finding_type == 'qgate':
             continue
         stub_query_counts[finding_type] = 1
-
-    stub_blocking_types['5-execute'] = list(mapping_keys)
 
     queried_total = inv._capture_pending_findings_blocking_count(
         'plan-tripwire', {}, '5-execute'
     )
 
-    expected_total = len(mapping_keys)
-    assert queried_total == expected_total
+    assert queried_total == len(actionable)
+
+
+@pytest.mark.parametrize(
+    'knowledge_type', ['insight', 'tip', 'best-practice', 'improvement']
+)
+def test_knowledge_type_never_counts_toward_blocking(
+    knowledge_type: str,
+    only_pending_findings_invariants,
+    stub_metadata,
+    stub_query_counts,
+    stub_qgate_count,
+) -> None:
+    """A pending KNOWLEDGE-type finding contributes 0 to the blocking count even
+    at the guarded boundary — the fixed rule excludes it."""
+    stub_query_counts[knowledge_type] = 9
+
+    queried_total = inv._capture_pending_findings_blocking_count(
+        'plan-knowledge', {}, '6-finalize'
+    )
+
+    assert queried_total == 0, (
+        f'KNOWLEDGE type {knowledge_type!r} must never count toward the block, '
+        f'got {queried_total}'
+    )
+
+
+def test_actionable_set_is_the_fixed_partition() -> None:
+    """The hardcoded actionable set is exactly the user-approved six types and
+    excludes every knowledge type."""
+    assert set(inv._ACTIONABLE_FINDING_TYPES) == {
+        'build-error',
+        'test-failure',
+        'lint-issue',
+        'sonar-issue',
+        'qgate',
+        'pr-comment',
+    }
+    for knowledge in ('insight', 'tip', 'best-practice', 'improvement'):
+        assert knowledge not in inv._ACTIONABLE_FINDING_TYPES
+
+
+def test_config_partition_readers_removed() -> None:
+    """The per-phase config-partition surfaces are gone from the module.
+
+    Pins the absence of ``_read_blocking_finding_types`` (the marshal.json
+    read) and ``_resolve_blocking_callable_registry`` (the determine_mode
+    import) so a regression that re-introduces the config partition fails
+    loudly.
+    """
+    assert not hasattr(inv, '_read_blocking_finding_types')
+    assert not hasattr(inv, '_resolve_blocking_callable_registry')
 
 
 # =============================================================================
@@ -583,11 +618,10 @@ def explode_phase_steps(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_findings_check_succeeds_when_no_blocking_findings(
-    plan_context, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
     """(a) Clean count → ``status: success`` with the blocking_count echoed."""
-    stub_query_counts['bug'] = 0
-    stub_blocking_types['6-finalize'] = ['bug']
+    stub_query_counts['build-error'] = 0
 
     result = cmds.cmd_findings_check(_ns(plan_id='fc-clean', phase='6-finalize'))
 
@@ -600,11 +634,10 @@ def test_findings_check_succeeds_when_no_blocking_findings(
 
 
 def test_findings_check_blocks_when_blocking_finding_pending(
-    plan_context, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
-    """(c) Pending blocking finding → the composite-capture error envelope."""
+    """(c) Pending actionable finding → the composite-capture error envelope."""
     stub_query_counts['pr-comment'] = 2
-    stub_blocking_types['6-finalize'] = ['pr-comment']
 
     result = cmds.cmd_findings_check(_ns(plan_id='fc-block', phase='6-finalize'))
 
@@ -613,22 +646,21 @@ def test_findings_check_blocks_when_blocking_finding_pending(
     assert result['plan_id'] == 'fc-block'
     assert result['phase'] == '6-finalize'
     assert result['blocking_count'] == 2
-    assert result['blocking_types'] == ['pr-comment']
-    assert result['per_type'] == {'pr-comment': 2}
+    assert result['blocking_types'] == list(inv._ACTIONABLE_FINDING_TYPES)
+    assert result['per_type']['pr-comment'] == 2
     assert 'message' in result
     # Read-only: the blocking verdict writes no handshake row.
     assert store.get_row('fc-block', '6-finalize') is None
 
 
 def test_findings_check_does_not_run_phase_steps_complete(
-    plan_context, stub_metadata, stub_query_counts, stub_blocking_types, explode_phase_steps
+    plan_context, stub_metadata, stub_query_counts, stub_qgate_count, explode_phase_steps
 ) -> None:
     """(b) Regression: findings-check evaluates ONLY the blocking-findings
     invariant — never ``phase_steps_complete`` — so a mid-pipeline checkpoint
     where the required steps are incomplete still produces
     ``blocking_findings_present`` (NOT ``phase_steps_incomplete``)."""
     stub_query_counts['sonar-issue'] = 1
-    stub_blocking_types['6-finalize'] = ['sonar-issue']
 
     result = cmds.cmd_findings_check(_ns(plan_id='fc-no-steps', phase='6-finalize'))
 
@@ -640,12 +672,11 @@ def test_findings_check_does_not_run_phase_steps_complete(
 
 
 def test_findings_check_clean_count_ignores_incomplete_phase_steps(
-    plan_context, stub_metadata, stub_query_counts, stub_blocking_types, explode_phase_steps
+    plan_context, stub_metadata, stub_query_counts, stub_qgate_count, explode_phase_steps
 ) -> None:
     """Clean blocking count clears even when phase steps are incomplete — the
     core fix: the gate no longer short-circuits on ``phase_steps_incomplete``."""
-    stub_query_counts['bug'] = 0
-    stub_blocking_types['6-finalize'] = ['bug']
+    stub_query_counts['build-error'] = 0
 
     result = cmds.cmd_findings_check(_ns(plan_id='fc-clean-no-steps', phase='6-finalize'))
 
@@ -654,13 +685,12 @@ def test_findings_check_clean_count_ignores_incomplete_phase_steps(
 
 
 def test_findings_check_error_envelope_matches_composite_capture(
-    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
     """(c) The blocking-findings error payload field set is identical between
     ``findings-check`` and the composite ``capture`` so the two intra-finalize
     callers branch on an interchangeable envelope."""
     stub_query_counts['pr-comment'] = 3
-    stub_blocking_types['6-finalize'] = ['pr-comment']
 
     capture_result = cmds.cmd_capture(_ns(plan_id='fc-parity-cap', phase='6-finalize'))
     check_result = cmds.cmd_findings_check(_ns(plan_id='fc-parity-chk', phase='6-finalize'))
@@ -672,14 +702,13 @@ def test_findings_check_error_envelope_matches_composite_capture(
 
 
 def test_findings_check_refuses_on_unresolved_worktree(
-    plan_context, stub_metadata, stub_query_counts, stub_blocking_types
+    plan_context, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
     """The worktree-resolution assertion fires before the findings query, so an
     unresolved worktree surfaces ``worktree_unresolved`` (consistent with
     ``capture`` / ``verify``)."""
     stub_metadata['use_worktree'] = True
     stub_metadata['worktree_path'] = ''
-    stub_blocking_types['6-finalize'] = ['bug']
 
     result = cmds.cmd_findings_check(_ns(plan_id='fc-wt', phase='6-finalize'))
 
@@ -690,7 +719,7 @@ def test_findings_check_refuses_on_unresolved_worktree(
 
 
 def test_findings_check_fails_closed_on_unevaluable_query(
-    plan_context, stub_metadata, stub_blocking_types, monkeypatch: pytest.MonkeyPatch
+    plan_context, stub_metadata, stub_qgate_count, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A partial query failure (per-type query returns ``None``) makes the gate
     fail CLOSED with ``query_failed`` rather than failing open as
@@ -698,7 +727,6 @@ def test_findings_check_fails_closed_on_unevaluable_query(
     branch-cleanup without proof that no blocking findings remain — returning
     success on an unevaluable invariant would be a fail-open gate."""
     monkeypatch.setattr(inv, '_query_pending_count_for_type', lambda _p, _t: None)
-    stub_blocking_types['6-finalize'] = ['bug']
 
     result = cmds.cmd_findings_check(_ns(plan_id='fc-query-fail', phase='6-finalize'))
 

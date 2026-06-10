@@ -150,26 +150,34 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return the JS/TS domain's portable (suffix, role_heuristic) vocabulary.
+        """Return the JS/TS domain's explicit ``(pattern, role)`` build_map routes.
 
-        Each JS/TS suffix is declared under both the production-by-location and
-        test-by-location heuristics; the tree-deriver's predicate splits them via
-        the ``.spec.`` / ``.test.`` filename-infix convention (colocated tests) and
-        the ``test`` / ``tests`` directory-root convention. Config files are
+        Each route is a single-``*`` fnmatch glob paired with a resolved role.
+        Patterns are matched with ``fnmatch.fnmatch`` by the downstream
+        ``manage-execution-manifest`` consumer, where a single ``*`` spans ``/``.
+        For each JS/TS suffix the domain declares a broad production route
+        (e.g. ``*.js``) plus the more-specific colocated-test routes
+        (``*.spec.js`` / ``*.test.js``); the seed aggregator's longest-glob-wins
+        specificity comparison routes a ``.spec.`` / ``.test.`` file to ``test``
+        even though the broad production glob also matches it. Config files are
         claimed by exact basename. See the base classify_globs() contract for the
-        tree-deriver wiring.
+        route-collection wiring.
         """
-        vocabulary: list[tuple[str, str]] = []
-        # Production / test source — each JS/TS suffix under both location
-        # heuristics; the deriver splits production vs test by the *.spec.* /
-        # *.test.* infix and the test-root convention.
+        routes: list[tuple[str, str]] = []
+        # Production source — broad per-suffix route (a single ``*`` spans ``/``,
+        # so ``*.js`` covers JS anywhere in the tree).
         for ext in self._SOURCE_SUFFIXES:
-            vocabulary.append((ext, 'production-by-location'))
-            vocabulary.append((ext, 'test-by-location'))
+            routes.append((f'*{ext}', 'production'))
+        # Test source — the colocated ``.spec.`` / ``.test.`` infix forms per
+        # suffix (e.g. ``*.spec.js``). These are more specific than the broad
+        # production glob, so the aggregator routes the overlap to ``test``.
+        for ext in self._SOURCE_SUFFIXES:
+            for token in self._TEST_TOKENS:
+                routes.append((f'*{token}{ext.lstrip(".")}', 'test'))
         # Config — exact filenames the JS toolchain reads.
         for name in self._CONFIG_FILES:
-            vocabulary.append((name, 'config'))
-        return vocabulary
+            routes.append((name, 'config'))
+        return routes
 
     # build_class: this extension claims the ``production`` / ``test`` /
     # ``config`` roles, for which the ExtensionBase defaults

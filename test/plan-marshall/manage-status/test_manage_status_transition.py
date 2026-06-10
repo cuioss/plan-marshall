@@ -1260,3 +1260,71 @@ class TestLoopBackTargetValidation:
         )
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_loop_back_target'
+
+
+# =============================================================================
+# Fixed actionable-vs-knowledge rule at the 5-execute -> 6-finalize boundary
+# =============================================================================
+#
+# Integration-level assertions over the REAL ``_capture_pending_findings_blocking_count``
+# (narrowed INVARIANTS registry) driven through ``cmd_capture --phase 6-finalize``:
+# a pending KNOWLEDGE-type finding does NOT block the guarded boundary; a pending
+# ACTIONABLE-type finding DOES. No marshal.json blocking_finding_types partition
+# is involved — the rule is hardcoded in ``_invariants._ACTIONABLE_FINDING_TYPES``.
+
+
+@pytest.fixture
+def _only_blocking_invariant(monkeypatch):
+    """Narrow INVARIANTS to just the real pending-findings-blocking entry."""
+    stubbed = [
+        (
+            'pending_findings_blocking_count',
+            lambda _pid, _md: True,
+            _inv._capture_pending_findings_blocking_count,
+        ),
+    ]
+    monkeypatch.setattr(_inv, 'INVARIANTS', stubbed)
+    monkeypatch.setattr(_cmds, 'INVARIANTS', stubbed)
+
+
+def _stub_finding_queries(monkeypatch, per_type: dict[str, int], qgate: int = 0) -> None:
+    """Stub the per-type and qgate-aggregator query helpers."""
+    monkeypatch.setattr(
+        _inv, '_query_pending_count_for_type', lambda _pid, ft: per_type.get(ft, 0)
+    )
+    monkeypatch.setattr(
+        _inv, '_query_pending_qgate_count_aggregated', lambda _pid: qgate
+    )
+
+
+def test_finalize_boundary_pending_knowledge_finding_does_not_block(
+    plan_context, _only_blocking_invariant, _stub_metadata, monkeypatch
+):
+    """A pending KNOWLEDGE-type finding (``insight``) clears the 6-finalize
+    capture under the fixed rule."""
+    _stub_finding_queries(monkeypatch, {'insight': 5, 'tip': 3})
+
+    result = _cmds.cmd_capture(
+        Namespace(plan_id='fixed-rule-knowledge', phase='6-finalize', override=False, reason=None, strict=False)
+    )
+
+    assert result['status'] == 'success'
+    assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
+
+
+def test_finalize_boundary_pending_actionable_finding_blocks(
+    plan_context, _only_blocking_invariant, _stub_metadata, monkeypatch
+):
+    """A pending ACTIONABLE-type finding (``build-error``) refuses the 6-finalize
+    capture under the fixed rule."""
+    _stub_finding_queries(monkeypatch, {'build-error': 1})
+
+    result = _cmds.cmd_capture(
+        Namespace(plan_id='fixed-rule-actionable', phase='6-finalize', override=False, reason=None, strict=False)
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'blocking_findings_present'
+    assert result['blocking_count'] == 1
+    assert result['blocking_types'] == list(_inv._ACTIONABLE_FINDING_TYPES)
+    assert result['per_type']['build-error'] == 1

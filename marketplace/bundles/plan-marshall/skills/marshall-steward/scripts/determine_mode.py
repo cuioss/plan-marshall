@@ -7,8 +7,6 @@ Subcommands:
     check-docs                    Check if project docs need .plan/temp documentation
     fix-docs                      Deterministically fix missing documentation content
     check-structure               Check if the per-module project-architecture layout exists
-    seed-blocking-finding-types   Idempotently seed default phase-boundary
-                                  blocking-finding partitions into marshal.json
     check-working-prefixes        Detect absence or drift of project.working_prefixes
                                   against the canonical default (non-clobbering)
 
@@ -22,7 +20,6 @@ Usage:
     python3 determine_mode.py check-docs
     python3 determine_mode.py fix-docs
     python3 determine_mode.py check-structure
-    python3 determine_mode.py seed-blocking-finding-types
     python3 determine_mode.py check-working-prefixes
 
 Output (TOON format):
@@ -56,12 +53,6 @@ Output (TOON format):
         path	.plan/project-architecture
         modules_count	0
 
-    seed-blocking-finding-types subcommand:
-        status	success
-        seed_status	seeded
-        seeded_count	6
-        skipped_count	0
-
     check-working-prefixes subcommand:
         status	ok
 
@@ -77,7 +68,6 @@ Output (TOON format):
 import argparse
 import json
 import sys
-from collections.abc import Callable
 from pathlib import Path
 
 # Bootstrap sys.path — this script runs before the executor sets up PYTHONPATH.
@@ -213,247 +203,6 @@ def check_structure(plan_dir: Path) -> tuple[str, Path, int]:
     if valid_count == 0:
         return 'missing', arch_dir, 0
     return 'exists', arch_dir, valid_count
-
-
-# ---------------------------------------------------------------------------
-# Default phase-boundary blocking-finding partition.
-#
-# Each entry maps a marshal.json phase slot (`plan.phase-{phase}`) to the list
-# of finding types whose presence in `pending` resolution should refuse the
-# phase boundary advance. The handshake invariant
-# `pending_findings_blocking_count` reads this slot at capture time.
-#
-# The partition mirrors the design contract documented in
-# `plan-marshall/references/phase-handshake.md`:
-#
-#   - Block at every phase boundary: build-error, test-failure, lint-issue,
-#     sonar-issue, qgate.
-#   - Block only inside `6-finalize`: pr-comment (PR review feedback is only
-#     meaningful once a PR exists, which happens during finalize).
-#   - Never block: long-lived knowledge types (insight, tip, best-practice,
-#     improvement) — these accumulate across plans and should not gate an
-#     active boundary.
-#
-# Projects override by editing `marshal.json` directly. The seed only writes
-# when the phase slot does not yet contain a `blocking_finding_types` key,
-# so re-running the wizard never clobbers user customisations.
-# ---------------------------------------------------------------------------
-
-# Global block list — applied to every plan phase except where a phase-specific
-# partition supersedes it. The handshake's guarded-boundary set determines
-# *where* a non-empty count actually refuses to persist; the partition itself
-# determines *which* types contribute to the count.
-#
-# Mapping shape (`dict[str, Callable[[str, str], int | None]]`): each blocking
-# type is paired with the consumer-side query callable that knows its storage
-# shape. The two storage shapes are:
-#
-# - canonical per-type JSONL (``findings/{type}.jsonl``) → generic callable
-#   ``_invariants._query_pending_count_for_type`` (resolved lazily at dispatch
-#   time so the wizard does not depend on plan-marshall scripts at import).
-# - bespoke per-phase storage (``findings/qgate-{phase}.jsonl`` for ``qgate``)
-#   → specific callable ``_invariants._query_pending_qgate_count_aggregated``.
-#
-# The mapping is the single source of truth: adding a new blocking-type string
-# without supplying its callable raises ``TypeError`` at module import time
-# (the ``_validate_blocking_types_mapping`` invariant below catches it), not
-# silently no-ops at first capture.
-#
-# The seed (``_DEFAULT_BLOCKING_PARTITION`` below) reads ``list(_GLOBAL_BLOCKING_TYPES)``
-# — Python iterates dict keys, so the consumer-side seed list is unchanged.
-
-# Sentinel names for the two callable kinds. The actual callables are resolved
-# lazily inside ``_invariants.py`` at dispatch time (see
-# ``_capture_pending_findings_blocking_count``) via the
-# ``BLOCKING_TYPE_CALLABLE_NAMES`` registry below — this avoids a circular
-# import between ``marshall-steward`` (which seeds marshal.json) and
-# ``plan-marshall`` (which dispatches the queries).
-GENERIC_PENDING_QUERY = '_query_pending_count_for_type'
-QGATE_AGGREGATED_QUERY = '_query_pending_qgate_count_aggregated'
-
-
-def _generic_query_thunk(plan_id: str, finding_type: str) -> int | None:
-    """Thunk wrapping the generic per-type pending-count query.
-
-    Lazily imports the implementation from ``_invariants.py`` at call time
-    so the wizard (which never invokes these callables) does not pay an
-    import-time dependency on the plan-marshall script tree. Dispatch from
-    ``_invariants.py`` short-circuits this thunk and calls the underlying
-    helper directly via the ``BLOCKING_TYPE_CALLABLE_NAMES`` registry; the
-    thunk is the public-API callable for any other consumer that holds a
-    reference to the ``_GLOBAL_BLOCKING_TYPES`` mapping value.
-    """
-    from _invariants import _query_pending_count_for_type  # type: ignore[import-not-found]
-
-    return _query_pending_count_for_type(plan_id, finding_type)
-
-
-def _qgate_aggregated_query_thunk(plan_id: str, finding_type: str) -> int | None:
-    """Thunk wrapping the Q-Gate aggregated pending-count query.
-
-    ``finding_type`` is accepted to keep the signature uniform across both
-    callable kinds; for the Q-Gate case it is always ``'qgate'`` and is
-    ignored — the aggregation sums across every phase via
-    ``QGATE_PHASES``.
-    """
-    from _invariants import _query_pending_qgate_count_aggregated  # type: ignore[import-not-found]
-
-    return _query_pending_qgate_count_aggregated(plan_id)
-
-
-_GLOBAL_BLOCKING_TYPES: dict[str, Callable[[str, str], int | None]] = {
-    'build-error': _generic_query_thunk,
-    'test-failure': _generic_query_thunk,
-    'lint-issue': _generic_query_thunk,
-    'sonar-issue': _generic_query_thunk,
-    'qgate': _qgate_aggregated_query_thunk,
-}
-
-# pr-comment is only relevant during 6-finalize (after the PR exists), so the
-# global list is augmented only at that phase. The pr-comment finding uses the
-# canonical per-type JSONL storage shape, so it routes through the generic
-# callable.
-_FINALIZE_BLOCKING_TYPES: dict[str, Callable[[str, str], int | None]] = {
-    **_GLOBAL_BLOCKING_TYPES,
-    'pr-comment': _generic_query_thunk,
-}
-
-
-# Name registry that ``_invariants.py`` consults to short-circuit the lazy
-# thunk imports above. Each key in the mapping above MUST be paired with a
-# value that is either ``_generic_query_thunk`` or ``_qgate_aggregated_query_thunk``;
-# any other callable is a programming error and surfaces as a ``TypeError``
-# at module import via the validation below.
-BLOCKING_TYPE_CALLABLE_NAMES: dict[Callable, str] = {
-    _generic_query_thunk: GENERIC_PENDING_QUERY,
-    _qgate_aggregated_query_thunk: QGATE_AGGREGATED_QUERY,
-}
-
-
-def _validate_blocking_types_mapping(mapping: dict[str, Callable[[str, str], int | None]]) -> None:
-    """Fail loudly at import time when a mapping entry lacks a known callable.
-
-    The invariant: every value in ``_GLOBAL_BLOCKING_TYPES`` and
-    ``_FINALIZE_BLOCKING_TYPES`` MUST be one of the two callable thunks
-    declared above. Adding a new blocking type without supplying its
-    callable (or supplying an unknown callable) raises ``TypeError`` here,
-    not silently at first capture.
-    """
-    for key, value in mapping.items():
-        if not callable(value):
-            raise TypeError(
-                f"Blocking-type entry {key!r} has non-callable value {value!r}. "
-                f'Each entry must map to a callable with signature '
-                f'(plan_id: str, finding_type: str) -> int | None. '
-                f'See determine_mode.py for the registered thunks.'
-            )
-        if value not in BLOCKING_TYPE_CALLABLE_NAMES:
-            raise TypeError(
-                f"Blocking-type entry {key!r} is mapped to an unregistered callable "
-                f'{value!r}. Register the callable in BLOCKING_TYPE_CALLABLE_NAMES '
-                f'so the dispatcher in _invariants.py can resolve it, or use one of '
-                f"the existing thunks ({GENERIC_PENDING_QUERY}, {QGATE_AGGREGATED_QUERY})."
-            )
-
-
-# Import-time validation — fires the moment the module is loaded.
-_validate_blocking_types_mapping(_GLOBAL_BLOCKING_TYPES)
-_validate_blocking_types_mapping(_FINALIZE_BLOCKING_TYPES)
-
-# Per-phase default partition. Phases not listed below inherit
-# `_GLOBAL_BLOCKING_TYPES`. The map is the source of truth for the seed; the
-# wizard step writes into `marshal.json["plan"][phase]["blocking_finding_types"]`
-# only when that key is absent (idempotent).
-#
-# ``list(_GLOBAL_BLOCKING_TYPES)`` iterates the dict's keys, matching the
-# previous flat-list shape's behaviour. The seed payload is unchanged on disk.
-_DEFAULT_BLOCKING_PARTITION: dict[str, list[str]] = {
-    'phase-1-init': list(_GLOBAL_BLOCKING_TYPES),
-    'phase-2-refine': list(_GLOBAL_BLOCKING_TYPES),
-    'phase-3-outline': list(_GLOBAL_BLOCKING_TYPES),
-    'phase-4-plan': list(_GLOBAL_BLOCKING_TYPES),
-    'phase-5-execute': list(_GLOBAL_BLOCKING_TYPES),
-    'phase-6-finalize': list(_FINALIZE_BLOCKING_TYPES),
-}
-
-
-def seed_blocking_finding_types(plan_dir: Path) -> tuple[str, list[str], list[str]]:
-    """Idempotently seed default `blocking_finding_types` partitions into marshal.json.
-
-    Walks every phase slot in :data:`_DEFAULT_BLOCKING_PARTITION` and writes
-    the configured list into `marshal.json["plan"][phase]["blocking_finding_types"]`
-    **only when that key is absent** in the existing file. Phase slots that
-    already declare the key are left untouched — the seed never clobbers a
-    user customisation. Phase slots that are missing entirely are created
-    with the partition as their sole field; later config writes merge over
-    that minimal slot via the standard `manage-config` set path.
-
-    The function is the wizard's bridge between "marshal.json was just
-    initialised" and "the phase-handshake invariant has the data it needs to
-    enforce the blocking-finding gate". It runs once per first-run wizard
-    invocation; subsequent invocations skip every phase whose slot already
-    contains the key (status `unchanged`).
-
-    Args:
-        plan_dir: Path to the repo-local ``.plan/`` directory containing
-                  ``marshal.json``. The script never writes elsewhere.
-
-    Returns:
-        Tuple of ``(status, seeded_phases, skipped_phases)`` where:
-
-        - ``status`` is ``seeded`` when at least one phase was written,
-          ``unchanged`` when every phase already had the key, or
-          ``missing_marshal`` when ``marshal.json`` does not exist.
-        - ``seeded_phases`` lists the phase slots whose key was newly
-          written (in declaration order).
-        - ``skipped_phases`` lists the phase slots whose key was already
-          present (in declaration order).
-    """
-    import json as _json
-
-    marshal_path = plan_dir / 'marshal.json'
-    if not marshal_path.is_file():
-        return 'missing_marshal', [], []
-
-    try:
-        config = _json.loads(marshal_path.read_text())
-    except (OSError, _json.JSONDecodeError):
-        return 'missing_marshal', [], []
-
-    if not isinstance(config, dict):
-        return 'missing_marshal', [], []
-
-    plan_section = config.setdefault('plan', {})
-    if not isinstance(plan_section, dict):
-        # Defensive: an unexpectedly-shaped 'plan' section gets replaced
-        # with a fresh dict so the seed can proceed without losing the
-        # outer config.
-        plan_section = {}
-        config['plan'] = plan_section
-
-    seeded: list[str] = []
-    skipped: list[str] = []
-
-    for phase, blocking_types in _DEFAULT_BLOCKING_PARTITION.items():
-        phase_section = plan_section.get(phase)
-        if not isinstance(phase_section, dict):
-            phase_section = {}
-            plan_section[phase] = phase_section
-
-        if 'blocking_finding_types' in phase_section:
-            skipped.append(phase)
-            continue
-
-        # Write a defensive copy so future seeds cannot mutate the
-        # canonical default partition through the saved JSON object.
-        phase_section['blocking_finding_types'] = list(blocking_types)
-        seeded.append(phase)
-
-    if not seeded:
-        return 'unchanged', [], skipped
-
-    marshal_path.write_text(_json.dumps(config, indent=2) + '\n')
-    return 'seeded', seeded, skipped
 
 
 def count_section_bullets(content: str, section_heading: str) -> int:
@@ -678,38 +427,6 @@ def cmd_check_structure(args: argparse.Namespace) -> dict:
     }
 
 
-def cmd_seed_blocking_finding_types(args: argparse.Namespace) -> dict:
-    """Handle the 'seed-blocking-finding-types' subcommand.
-
-    Returns TOON-shaped dict with:
-
-    - ``status``: always ``success`` for the script-level operation; the
-      actual seed outcome is in ``seed_status``.
-    - ``seed_status``: ``seeded`` (at least one phase written),
-      ``unchanged`` (all phases already had the key), or
-      ``missing_marshal`` (no marshal.json to seed).
-    - ``seeded_count`` / ``skipped_count``: row counts for downstream
-      formatting.
-    - ``seeded`` / ``skipped``: comma-separated phase keys when non-empty
-      so the wizard can surface the operator-facing detail without
-      double-parsing.
-    """
-    plan_dir = Path(args.plan_dir)
-    seed_status, seeded, skipped = seed_blocking_finding_types(plan_dir)
-
-    result: dict = {
-        'status': 'success',
-        'seed_status': seed_status,
-        'seeded_count': len(seeded),
-        'skipped_count': len(skipped),
-    }
-    if seeded:
-        result['seeded'] = ','.join(seeded)
-    if skipped:
-        result['skipped'] = ','.join(skipped)
-    return result
-
-
 def detect_missing_default_finalize_steps(plan_dir: Path) -> list[str]:
     """Compare ``marshal.json::plan["phase-6-finalize"]["steps"]`` against the
     canonical ``BUILT_IN_FINALIZE_STEPS`` list and return any built-ins missing
@@ -863,19 +580,6 @@ def main() -> int:
     )
     structure_parser.add_argument('--plan-dir', type=str, default='.plan', help='Directory to check (default: .plan)')
 
-    # seed-blocking-finding-types subcommand
-    seed_parser = subparsers.add_parser(
-        'seed-blocking-finding-types',
-        help='Idempotently seed default phase-boundary blocking-finding partitions into marshal.json',
-        allow_abbrev=False,
-    )
-    seed_parser.add_argument(
-        '--plan-dir',
-        type=str,
-        default='.plan',
-        help='Directory containing marshal.json (default: .plan)',
-    )
-
     # check-missing-finalize-steps subcommand
     missing_parser = subparsers.add_parser(
         'check-missing-finalize-steps',
@@ -918,8 +622,6 @@ def main() -> int:
         result = cmd_fix_docs(args)
     elif args.command == 'check-structure':
         result = cmd_check_structure(args)
-    elif args.command == 'seed-blocking-finding-types':
-        result = cmd_seed_blocking_finding_types(args)
     elif args.command == 'check-missing-finalize-steps':
         result = cmd_check_missing_finalize_steps(args)
     elif args.command == 'check-working-prefixes':

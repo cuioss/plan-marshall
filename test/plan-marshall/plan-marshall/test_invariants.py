@@ -1109,63 +1109,47 @@ def test_main_checkout_dirtied_during_plan_exception_carries_payload() -> None:
 
 
 # =============================================================================
-# D4: Blocking-types dispatch via dict[str, Callable] mapping
+# FIXED actionable-vs-knowledge blocking rule (replaces the per-phase config
+# partition + determine_mode dispatch)
 # =============================================================================
 
 
-def test_resolve_blocking_callable_registry_returns_dict_with_all_keys() -> None:
-    """The resolver returns a mapping covering every key from determine_mode.
+def test_actionable_finding_types_is_the_fixed_set() -> None:
+    """The hardcoded actionable set is exactly the six user-approved types."""
+    assert set(inv._ACTIONABLE_FINDING_TYPES) == {
+        'build-error',
+        'test-failure',
+        'lint-issue',
+        'sonar-issue',
+        'qgate',
+        'pr-comment',
+    }
 
-    Asserts the merge between ``_GLOBAL_BLOCKING_TYPES`` and
-    ``_FINALIZE_BLOCKING_TYPES`` produces a flat dispatch table the
-    consumer can index by finding-type string.
+
+def test_actionable_set_excludes_every_knowledge_type() -> None:
+    """KNOWLEDGE types are NEVER in the actionable set (the fixed exclusion)."""
+    for knowledge in ('insight', 'tip', 'best-practice', 'improvement'):
+        assert knowledge not in inv._ACTIONABLE_FINDING_TYPES
+
+
+def test_config_partition_readers_removed_from_module() -> None:
+    """The marshal.json read and the determine_mode import are gone.
+
+    ``_read_blocking_finding_types`` (per-phase config read) and
+    ``_resolve_blocking_callable_registry`` (cross-module determine_mode
+    import) were dropped when the fixed rule replaced the config partition.
+    This guard pins their absence so a regression re-introducing the config
+    partition fails loudly.
     """
-    # Arrange + Act
-    registry = inv._resolve_blocking_callable_registry()
-
-    # Assert — every expected blocking type is present.
-    for finding_type in ('build-error', 'test-failure', 'lint-issue', 'sonar-issue', 'qgate', 'pr-comment'):
-        assert finding_type in registry, f'Missing blocking type {finding_type!r} in dispatch registry'
+    assert not hasattr(inv, '_read_blocking_finding_types')
+    assert not hasattr(inv, '_resolve_blocking_callable_registry')
 
 
-def test_resolve_blocking_callable_registry_generic_types_route_to_generic_query() -> None:
-    """Storage-canonical types resolve to ``_query_pending_count_for_type``."""
-    # Arrange + Act
-    registry = inv._resolve_blocking_callable_registry()
-
-    # Assert — generic types route to the shared helper.
-    assert registry['build-error'] is inv._query_pending_count_for_type
-    assert registry['test-failure'] is inv._query_pending_count_for_type
-    assert registry['lint-issue'] is inv._query_pending_count_for_type
-    assert registry['sonar-issue'] is inv._query_pending_count_for_type
-    assert registry['pr-comment'] is inv._query_pending_count_for_type
-
-
-def test_resolve_blocking_callable_registry_qgate_routes_to_aggregator() -> None:
-    """Q-Gate type resolves to a wrapper around ``_query_pending_qgate_count_aggregated``.
-
-    The wrapper enforces the uniform ``(plan_id, finding_type)`` signature
-    even though the underlying aggregator only consumes ``plan_id``.
+def test_blocking_count_queries_only_actionable_types(monkeypatch) -> None:
+    """The capture queries every actionable type with the uniform signature —
+    qgate via the aggregator, the rest via the generic per-type query — and
+    queries NO knowledge type.
     """
-    # Arrange + Act
-    registry = inv._resolve_blocking_callable_registry()
-    qgate_query = registry['qgate']
-
-    # Assert — distinct from the generic helper (different storage shape).
-    assert qgate_query is not inv._query_pending_count_for_type
-    # The qgate route is a lambda wrapping the aggregator — callable with the
-    # uniform two-arg signature.
-    assert callable(qgate_query)
-
-
-def test_blocking_dispatch_calls_each_callable_with_uniform_signature(monkeypatch) -> None:
-    """Every callable in the dispatch path is invoked as ``(plan_id, finding_type)``.
-
-    Stubs the underlying helpers to record their call arguments, then drives
-    ``_capture_pending_findings_blocking_count`` with a known blocking-types
-    list and asserts the recorded call shape.
-    """
-    # Arrange — stub the generic and qgate helpers.
     generic_calls = []
     qgate_calls = []
 
@@ -1179,49 +1163,100 @@ def test_blocking_dispatch_calls_each_callable_with_uniform_signature(monkeypatc
 
     monkeypatch.setattr(inv, '_query_pending_count_for_type', fake_generic)
     monkeypatch.setattr(inv, '_query_pending_qgate_count_aggregated', fake_qgate)
-    # Stub the marshal.json read to return a known blocking-types list.
-    monkeypatch.setattr(
-        inv,
-        '_read_blocking_finding_types',
-        lambda plan_id, phase: ['build-error', 'qgate', 'sonar-issue'],
-    )
 
-    # Act
     result = inv._capture_pending_findings_blocking_count('plan-x', {}, '5-execute')
 
-    # Assert — every generic helper call has the uniform two-arg signature.
-    assert ('plan-x', 'build-error') in generic_calls
-    assert ('plan-x', 'sonar-issue') in generic_calls
-    # The aggregator is called once (qgate path).
+    # qgate is summed via the aggregator (exactly once).
     assert qgate_calls == ['plan-x']
-    # Total is zero across all helpers — and the function returns 0.
+    # Every non-qgate actionable type is queried via the generic helper.
+    queried_types = {ft for _pid, ft in generic_calls}
+    assert queried_types == {
+        'build-error',
+        'test-failure',
+        'lint-issue',
+        'sonar-issue',
+        'pr-comment',
+    }
+    # No knowledge type was ever queried.
+    for knowledge in ('insight', 'tip', 'best-practice', 'improvement'):
+        assert knowledge not in queried_types
+    # All zero → total zero.
     assert result == 0
 
 
-def test_blocking_dispatch_unknown_type_falls_back_to_generic_query(monkeypatch) -> None:
-    """A blocking type not in the registry falls back to the generic helper.
+def test_blocking_count_sums_pending_actionable_findings(monkeypatch) -> None:
+    """The total is the sum of pending counts across the actionable set."""
+    per_type_counts = {
+        'build-error': 2,
+        'lint-issue': 1,
+        'sonar-issue': 0,
+        'test-failure': 0,
+        'pr-comment': 0,
+    }
 
-    Backward-compatibility guard: types added to ``marshal.json`` centrally
-    without a determine_mode.py update still surface in the count via the
-    generic per-type query path.
-    """
-    # Arrange — stub the generic helper.
-    calls = []
-
-    def fake_generic(plan_id, finding_type):
-        calls.append((plan_id, finding_type))
-        return 7  # arbitrary positive count
-
-    monkeypatch.setattr(inv, '_query_pending_count_for_type', fake_generic)
     monkeypatch.setattr(
         inv,
-        '_read_blocking_finding_types',
-        lambda plan_id, phase: ['novel-finding-type'],
+        '_query_pending_count_for_type',
+        lambda _pid, ft: per_type_counts.get(ft, 0),
     )
+    monkeypatch.setattr(inv, '_query_pending_qgate_count_aggregated', lambda _pid: 3)
 
-    # Act
-    result = inv._capture_pending_findings_blocking_count('plan-fallback', {}, '5-execute')
+    result = inv._capture_pending_findings_blocking_count('plan-sum', {}, '5-execute')
 
-    # Assert — the generic helper was invoked with the uniform signature.
-    assert calls == [('plan-fallback', 'novel-finding-type')]
-    assert result == 7
+    # 2 + 1 + 0 + 0 + 0 (per-type) + 3 (qgate) = 6.
+    assert result == 6
+
+
+def test_blocking_count_raises_at_guarded_boundary_when_actionable_pending(monkeypatch) -> None:
+    """A pending actionable finding at 6-finalize raises BlockingFindingsPresent
+    carrying the hardcoded actionable set as ``blocking_types``."""
+    monkeypatch.setattr(
+        inv,
+        '_query_pending_count_for_type',
+        lambda _pid, ft: 1 if ft == 'build-error' else 0,
+    )
+    monkeypatch.setattr(inv, '_query_pending_qgate_count_aggregated', lambda _pid: 0)
+
+    with pytest.raises(inv.BlockingFindingsPresent) as excinfo:
+        inv._capture_pending_findings_blocking_count('plan-block', {}, '6-finalize')
+
+    err = excinfo.value
+    assert err.blocking_count == 1
+    assert err.blocking_types == list(inv._ACTIONABLE_FINDING_TYPES)
+    assert err.per_type['build-error'] == 1
+
+
+def test_blocking_count_passive_at_non_guarded_boundary(monkeypatch) -> None:
+    """A pending actionable finding at a non-guarded phase returns the count
+    without raising (passive capture for retrospective analysis)."""
+    monkeypatch.setattr(
+        inv,
+        '_query_pending_count_for_type',
+        lambda _pid, ft: 4 if ft == 'sonar-issue' else 0,
+    )
+    monkeypatch.setattr(inv, '_query_pending_qgate_count_aggregated', lambda _pid: 0)
+
+    result = inv._capture_pending_findings_blocking_count('plan-passive', {}, '5-execute')
+
+    assert result == 4
+
+
+def test_blocking_count_returns_none_on_partial_query_failure(monkeypatch) -> None:
+    """A per-type query returning ``None`` poisons the total to ``None`` (the
+    "not applicable" contract) rather than under-counting."""
+    monkeypatch.setattr(inv, '_query_pending_count_for_type', lambda _pid, _ft: None)
+    monkeypatch.setattr(inv, '_query_pending_qgate_count_aggregated', lambda _pid: 0)
+
+    result = inv._capture_pending_findings_blocking_count('plan-fail', {}, '5-execute')
+
+    assert result is None
+
+
+def test_blocking_count_returns_none_on_qgate_query_failure(monkeypatch) -> None:
+    """A ``None`` from the qgate aggregator likewise poisons the total."""
+    monkeypatch.setattr(inv, '_query_pending_count_for_type', lambda _pid, _ft: 0)
+    monkeypatch.setattr(inv, '_query_pending_qgate_count_aggregated', lambda _pid: None)
+
+    result = inv._capture_pending_findings_blocking_count('plan-qgate-fail', {}, '5-execute')
+
+    assert result is None

@@ -80,42 +80,32 @@ domain extensions, and their tests."""
 
 
 # =============================================================================
-# build_map Vocabulary Role Heuristics
+# build_map File Roles
 # =============================================================================
 #
-# The portable (suffix, role_heuristic) vocabulary an extension declares via
-# classify_globs(). The role heuristic decides a matched file's role from WHERE
-# it sits in the project tree (the *-by-location heuristics) or directly from its
-# suffix (the suffix-direct heuristics). The base-lib tree-deriver
-# (derive_globs_from_tree) owns the location predicates that turn a *-by-location
-# heuristic into a concrete role for a given path. The resolved role is one of the
-# same four file roles classify_paths() uses: production / test / documentation /
-# config.
+# The closed set of file roles a classify_globs() explicit route may carry. An
+# extension declares (pattern, role) routes directly: a glob pattern paired with
+# one of these four resolved roles. The role is the same vocabulary
+# classify_paths() and classify_build_class() use, so a route's role maps
+# straight through to a build_class with no name-to-name indirection.
 
-ROLE_HEURISTIC_PRODUCTION_BY_LOCATION = 'production-by-location'
-ROLE_HEURISTIC_TEST_BY_LOCATION = 'test-by-location'
-ROLE_HEURISTIC_DOCUMENTATION = 'documentation'
-ROLE_HEURISTIC_CONFIG = 'config'
+ROLE_PRODUCTION = 'production'
+ROLE_TEST = 'test'
+ROLE_DOCUMENTATION = 'documentation'
+ROLE_CONFIG = 'config'
 
-ROLE_HEURISTICS = frozenset(
+BUILD_MAP_ROLES = frozenset(
     {
-        ROLE_HEURISTIC_PRODUCTION_BY_LOCATION,
-        ROLE_HEURISTIC_TEST_BY_LOCATION,
-        ROLE_HEURISTIC_DOCUMENTATION,
-        ROLE_HEURISTIC_CONFIG,
+        ROLE_PRODUCTION,
+        ROLE_TEST,
+        ROLE_DOCUMENTATION,
+        ROLE_CONFIG,
     }
 )
-"""Closed set of role-heuristic names. The single source of truth shared by
-ExtensionBase.classify_globs() / derive_globs_from_tree(), the domain extension
-vocabularies, and their tests."""
-
-# Resolved role each heuristic maps to (the four classify_paths() roles).
-HEURISTIC_TO_ROLE = {
-    ROLE_HEURISTIC_PRODUCTION_BY_LOCATION: 'production',
-    ROLE_HEURISTIC_TEST_BY_LOCATION: 'test',
-    ROLE_HEURISTIC_DOCUMENTATION: 'documentation',
-    ROLE_HEURISTIC_CONFIG: 'config',
-}
+"""Closed set of file-role names a classify_globs() explicit route may declare.
+The single source of truth shared by ExtensionBase.classify_globs() /
+derive_globs_from_tree(), the domain extension route declarations, and their
+tests."""
 
 
 # =============================================================================

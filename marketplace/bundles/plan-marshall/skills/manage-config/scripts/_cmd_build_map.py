@@ -3,13 +3,14 @@ build-map command handlers for manage-config.
 
 The skill_domains.build_map block in marshal.json is the file-to-build
 contract: a per-domain inventory of {glob, role, build_class} entries seeded
-from the real project tree. Each extension's portable (suffix, role_heuristic)
-vocabulary (classify_globs()) is handed to the script-shared tree-deriver
-(derive_globs_from_tree), which scans the actual tree and emits the concrete
-globs covering every matching file; each (glob, role) is then stamped with its
-domain's classify_build_class(). It is required and always seeded; user
-corrections are made directly to the seeded entries (there is no separate
-override layer).
+from each extension's explicit (pattern, role) routes. Each extension's
+classify_globs() declares those routes directly (single-* fnmatch globs, never
+recursive **); the script-shared route collector (derive_globs_from_tree)
+gathers them verbatim per domain, and each (pattern, role) is then stamped with
+its domain's classify_build_class(). A separate git-tracked completeness
+validator (validate_tree_completeness) flags any tracked source file no declared
+route covers. It is required and always seeded; user corrections are made
+directly to the seeded entries (there is no separate override layer).
 """
 
 import argparse
@@ -36,11 +37,12 @@ def cmd_build_map(args: argparse.Namespace) -> dict:
 
 
 def cmd_build_map_seed(args: argparse.Namespace) -> dict:
-    """Seed marshal.json::skill_domains.build_map from the project tree (write-once).
+    """Seed marshal.json::skill_domains.build_map from extension routes (write-once).
 
-    Aggregates the per-domain build map by deriving concrete globs from the real
-    project tree (each extension's portable classify_globs() vocabulary fed
-    through the script-shared tree-deriver) and writes it under
+    Aggregates the per-domain build map by collecting each extension's explicit
+    ``(pattern, role)`` routes (declared by ``classify_globs()``, gathered
+    verbatim by the script-shared route collector) and stamping each with its
+    domain's ``classify_build_class``, then writes it under
     ``skill_domains.build_map`` with write-once semantics — an existing seed is
     preserved (never clobbered), so user corrections survive a re-seed.
     """

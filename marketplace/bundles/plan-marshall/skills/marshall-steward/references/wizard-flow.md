@@ -236,6 +236,14 @@ See [architecture-setup.md](architecture-setup.md) for the full workflow.
 
 ---
 
+## Step 8b: Seed the Build Map
+
+After the project architecture is discovered (the extension set is now known), seed `skill_domains.build_map` so the file-to-build contract reflects the project's registered domain extensions. The block is already seeded at Step 5 (`init`), so on a clean first run this reports `action: preserved` — that is the expected outcome, not an error. The explicit step exists so a re-run of the wizard picks up newly-added or updated domain extensions.
+
+See [build-map-setup.md](build-map-setup.md) for the seed/read commands, the `action` (`seeded` / `preserved`) interpretation, and the menu re-seed operation.
+
+---
+
 ## Step 9: Configure Skill Domains
 
 Determine applicable skill domains from the architecture analysis, configure the `system` and technical domains, set active profiles, register execute-task skills, attach project-level skills, bulk-populate `skills_by_profile`, register recipes, and verify the result.

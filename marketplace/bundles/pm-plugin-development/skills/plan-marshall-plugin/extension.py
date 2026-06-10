@@ -142,17 +142,21 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return the plugin-dev domain's portable (suffix, role_heuristic) vocabulary.
+        """Return the plugin-dev domain's explicit ``(pattern, role)`` build_map routes.
 
-        Marketplace skill markdown is plain ``.md`` under the location-agnostic
-        ``documentation`` heuristic; the tree-deriver scans the real tree and
-        emits the concrete marketplace-anchored globs (e.g.
-        ``marketplace/bundles/.../skills/.../standards/*.md``) that cover every
-        matching file. The longest-glob-wins overlap with pm-documents's broad
-        ``.md`` claim is resolved by the seed aggregator's specificity comparison,
-        not here. See the base classify_globs() contract.
+        Each route is a single-``*`` fnmatch glob paired with the ``documentation``
+        role — the concrete marketplace-anchored globs covering skill markdown
+        (``SKILL.md`` plus the ``workflow`` / ``standards`` / ``references``
+        subtrees). A single ``*`` spans ``/`` under ``fnmatch.fnmatch`` (the
+        downstream ``manage-execution-manifest`` matcher), so
+        ``marketplace/bundles/*/skills/*/standards/*.md`` covers every standards
+        markdown beneath any bundle's skills. These routes are deliberately more
+        specific than pm-documents's broad ``*.md`` route, so the seed
+        aggregator's longest-glob-wins specificity comparison routes the overlap
+        here. See the base classify_globs() contract for the route-collection
+        wiring.
         """
-        return [('.md', 'documentation')]
+        return [(glob, role) for glob, role, _score in self._CLASSIFY_PATTERNS]
 
     # build_class: this extension claims only the ``documentation`` role
     # (marketplace skill markdown), for which the ExtensionBase default

@@ -144,14 +144,18 @@ class Extension(ExtensionBase):
         return 0
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        """Return the documentation domain's portable (suffix, role_heuristic) vocabulary.
+        """Return the documentation domain's explicit ``(pattern, role)`` build_map routes.
 
-        Each documentation suffix (``.md`` / ``.adoc`` / ``.asciidoc``) is
-        declared under the location-agnostic ``documentation`` heuristic; the
-        tree-deriver emits a concrete glob covering every matching file. See the
-        base classify_globs() contract for the tree-deriver wiring.
+        Each route is a single-``*`` fnmatch glob paired with the ``documentation``
+        role — one broad per-suffix glob (``*.md`` / ``*.adoc`` / ``*.asciidoc``).
+        A single ``*`` spans ``/`` under ``fnmatch.fnmatch`` (the downstream
+        ``manage-execution-manifest`` matcher), so ``*.md`` covers every markdown
+        file anywhere in the tree. The longest-glob-wins overlap with
+        pm-plugin-development's more-specific marketplace-skill routes is resolved
+        by the seed aggregator's specificity comparison, not here. See the base
+        classify_globs() contract for the route-collection wiring.
         """
-        return [(suffix, 'documentation') for suffix in self._DOC_SUFFIXES]
+        return [(f'*{suffix}', 'documentation') for suffix in self._DOC_SUFFIXES]
 
     # build_class: this extension claims only the ``documentation`` role
     # (*.md / *.adoc / *.asciidoc), for which the ExtensionBase default
