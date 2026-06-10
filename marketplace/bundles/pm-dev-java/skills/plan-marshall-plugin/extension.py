@@ -120,14 +120,14 @@ class Extension(ExtensionBase):
         applicable = {'implementation', 'module_testing', 'quality'}
 
         # Check for integration test signals
-        metadata = module_data.get('metadata', {})
-        raw_profiles = metadata.get('profiles', [])
+        metadata = module_data.get('metadata') or {}
+        raw_profiles = metadata.get('profiles') or []
         # Profiles may be dicts ({"id": "...", "canonical": "..."}) or strings
         maven_profiles = [
             p.get('id', '') if isinstance(p, dict) else (p if isinstance(p, str) else '') for p in raw_profiles
         ]
         module_name = module_data.get('name', '')
-        deps = module_data.get('dependencies', [])
+        deps = module_data.get('dependencies') or []
         dep_strings = [d if isinstance(d, str) else '' for d in deps]
 
         has_it_signals = (
@@ -143,7 +143,7 @@ class Extension(ExtensionBase):
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if Java domain applies based on build systems."""
-        build_systems = module_data.get('build_systems', [])
+        build_systems = module_data.get('build_systems') or []
         if 'maven' not in build_systems and 'gradle' not in build_systems:
             return {
                 'applicable': False,
@@ -159,7 +159,7 @@ class Extension(ExtensionBase):
         )
 
         # Module-level customization: move CDI/Lombok to optionals based on deps
-        deps = module_data.get('dependencies', [])
+        deps = module_data.get('dependencies') or []
         dep_strings = [d if isinstance(d, str) else '' for d in deps]
         has_cdi = any('jakarta.enterprise' in d or 'javax.enterprise' in d for d in dep_strings)
         has_lombok = any('lombok' in d for d in dep_strings)

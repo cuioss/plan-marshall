@@ -70,9 +70,9 @@ class Extension(ExtensionBase):
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if documentation domain applies based on doc directories."""
-        paths = module_data.get('paths', {})
-        module_path = paths.get('module', '')
-        sources = paths.get('sources', [])
+        paths = module_data.get('paths') or {}
+        module_path = paths.get('module') or ''
+        sources = paths.get('sources') or []
 
         signals = []
         all_paths = [module_path] + sources
@@ -82,7 +82,7 @@ class Extension(ExtensionBase):
                 signals.append(f'doc directory in {p}')
 
         # Check build_systems for documentation marker
-        build_systems = module_data.get('build_systems', [])
+        build_systems = module_data.get('build_systems') or []
         if 'documentation' in build_systems:
             signals.append('build_systems=documentation')
 

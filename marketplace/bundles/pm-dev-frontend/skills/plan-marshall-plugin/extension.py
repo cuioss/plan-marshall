@@ -74,7 +74,7 @@ class Extension(ExtensionBase):
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if JavaScript domain applies based on build systems."""
-        build_systems = module_data.get('build_systems', [])
+        build_systems = module_data.get('build_systems') or []
         if 'npm' not in build_systems:
             return {
                 'applicable': False,
