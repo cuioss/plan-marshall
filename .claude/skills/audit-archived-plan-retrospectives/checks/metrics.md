@@ -34,11 +34,17 @@ the cross-plan `token-efficiency-trend`) exclude it. The exclusion source is the
 total with no separator). Each check computes on the **effective** token value
 `total_tokens - retrospective_tokens` (never negative).
 
-**Best-effort degrade**: archived plans recorded BEFORE the `retrospective_tokens`
-attribution change have the spend irrecoverably co-mingled in `[6-finalize]`.
-Their phases carry no `retrospective_tokens` field, so the effective value equals
-the raw `total_tokens` and the exclusion is a no-op — the checks behave exactly as
-they did before the change, with no crash and no negative values.
+**Best-effort degrade**: the producer wiring that populates `retrospective_tokens`
+(the finalize retrospective step forwarding its `<usage>` total through the
+`6-finalize` accumulator, which `end-phase` reads back) landed only when this
+attribution was wired — before it, NO plan ever recorded the field, so the spend
+was irrecoverably co-mingled in `[6-finalize]`. Plans archived before the wiring
+carry no `retrospective_tokens` field: the effective value equals the raw
+`total_tokens` and the exclusion is a no-op (no crash, no negative values). Plans
+archived after the wiring — and only those whose opt-in retrospective step
+actually ran — carry the attributed value, so the exclusion subtracts the real
+retrospective spend. The exclusion is therefore live only going forward, not for
+the existing archived corpus.
 
 **Exclusion scope**: ONLY plan-retrospective spend is excluded. q-gate-validation,
 the audit itself, and any other operation landing inside a phase window stay

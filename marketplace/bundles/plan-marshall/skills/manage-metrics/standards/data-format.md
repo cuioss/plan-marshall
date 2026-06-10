@@ -47,6 +47,7 @@ enriched.message_count: 127
 | `total_tokens` | int | Task agent `<usage>` tag (forwarded explicitly OR read from accumulator file) |
 | `duration_ms` | int | Task agent `<usage>` tag (agent-reported, distinct from wall-clock) |
 | `tool_uses` | int | Task agent `<usage>` tag |
+| `retrospective_tokens` | int | Tokens attributable to the plan-retrospective dispatch within the phase window (forwarded explicitly via `--retrospective-tokens` OR read from the accumulator when the finalize retrospective step seeded it). Default-absent — present only on `[6-finalize]` rows of plans where the opt-in retrospective step ran |
 | `subagent_total_tokens` | int | `enrich` post-hoc transcript walk (sum of `<usage>` totals for Task calls inside this phase's window) |
 | `subagent_tool_uses` | int | `enrich` post-hoc transcript walk |
 | `subagent_duration_ms` | int | `enrich` post-hoc transcript walk |
@@ -127,6 +128,7 @@ For the **previous phase** (closed):
 | `agent_duration_seconds` | Derived from `--duration-ms` (when forwarded) |
 | `total_tokens` | `--total-tokens` (when forwarded) |
 | `tool_uses` | `--tool-uses` (when forwarded) |
+| `retrospective_tokens` | `--retrospective-tokens` (when forwarded) OR the closing phase's accumulator value |
 
 For the **next phase** (entered):
 
@@ -185,6 +187,7 @@ phase: 6-finalize
 total_tokens: 84211
 tool_uses: 38
 duration_ms: 412390
+retrospective_tokens: 31200
 samples: 4
 updated: 2026-03-27T10:25:00+00:00
 ```
@@ -198,6 +201,7 @@ updated: 2026-03-27T10:25:00+00:00
 | `total_tokens` | int | Running sum across every `accumulate-agent-usage` call for this phase |
 | `tool_uses` | int | Running sum |
 | `duration_ms` | int | Running sum |
+| `retrospective_tokens` | int | Running sum of `--retrospective-tokens` values — non-zero only when the finalize retrospective step forwarded its `<usage>` total. `end-phase` / `phase-boundary` read this as the fallback for the `[6-finalize].retrospective_tokens` row |
 | `samples` | int | Number of `accumulate-agent-usage` calls — reflects how many Task-agent returns were rolled in |
 | `updated` | ISO 8601 timestamp | Updated atomically on every write |
 
