@@ -169,13 +169,15 @@ Key structural summary:
 
 ## Section: skill_domains.build_map
 
-The file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. `build_map` lives under `skill_domains` (its owning block), is **required and always seeded**, and is the persisted, user-adaptable layer of the contract; the deterministic deriver (`architecture derive-verification`) reads the effective map to emit a task's verification command set.
+The file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. `build_map` lives under `skill_domains` (its owning block) and is the persisted, user-adaptable layer of the contract; the deterministic deriver (`architecture derive-verification`) reads the effective map to emit a task's verification command set.
 
-### Source, write-once semantics, and fail-closed read
+### Source, applicability scoping, write-once semantics, and fail-closed read
 
 `build_map` is **seeded from the domain extensions**, not hand-authored, and its globs are **explicit `(pattern, role)` routes**, not author-guessed literals. Each registered extension's `classify_globs()` declares those routes directly — a concrete glob pattern paired with one of the four resolved roles (see [extension-contract.md](../../extension-api/standards/extension-contract.md) § `classify_globs`); the aggregator collects them verbatim via the `script-shared` route collector. `classify_build_class(glob, role)` then stamps each route with its canonical-named `build_class`; the aggregator collects these into the `{domain: [{glob, role, build_class}]}` structure. Patterns use single-`*` fnmatch globs (never recursive `**`): because `fnmatch` lets a single `*` span `/`, a compact route like `marketplace/bundles/*.py` covers every nested `.py` under `marketplace/bundles/` — including each `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py` — and `marketplace/targets/*.py` covers `marketplace/targets/generate.py` and any file beneath `targets/`. Completeness is enforced by a separate **git-tracked completeness validator**: it scans `git ls-files` and flags any tracked source file (suffix `.py`) no declared `production`/`test` route covers, so a forgotten production module surfaces as an uncovered path while untracked `target/` / `.venv/` output is never flagged. The predicates stay in extension Python — they are **not** migrated into config; `build_map` is the seeded snapshot of the collected routes.
 
-Seeding is **write-once**: an existing `build_map` block is never clobbered by a re-seed, so a correction made directly to the seeded block survives. It is always seeded at `init` / `sync-defaults`; re-seed (preserving the existing seed) via `build-map seed`; read the effective map via `build-map read`. The read **fails closed**: when `skill_domains.build_map` is absent the read returns a structured error rather than an empty map, so a missing seed surfaces instead of silently yielding a no-build. There is no separate override layer; corrections are made directly to the seeded entries.
+**Applicability scoping.** `aggregate_build_map()` includes a domain's routes only when that domain applies to the project. It consults each domain's owning extension's `applies_to_module()` against the discovered project modules (`discover_project_modules`, keyed off the tracked-config parent) and keeps the domain's routes only when `applies_to_module()` reports `applicable: True` for at least one discovered module — the same applicability predicate architecture enrichment uses. A Python-only project therefore never receives `java` / `oci` / `javascript` routes merely because those bundles are installed. Because applicability is resolved against discovered modules, the seed is **post-architecture-only**: when module discovery yields no modules (architecture not yet discovered) the aggregation is empty. Each `applies_to_module()` call is defended so a single misbehaving extension cannot crash the seed.
+
+Seeding is **write-once**: an existing `build_map` block is never clobbered by a default re-seed, so a correction made directly to the seeded block survives. The build map is **not** seeded at `init` or by `sync-defaults` — `get_default_config()` does not include a `build_map` block. The wizard's Step 8b (`build-map seed`, run after architecture discovery so applicability scoping has discovered modules) is the **sole authoritative seed point**; the write-once guard makes that first explicit seed authoritative. Re-seed (preserving the existing seed) via `build-map seed`; force a clean re-derivation that discards the existing block via `build-map seed --force`; read the effective map via `build-map read`. The read **fails closed**: when `skill_domains.build_map` is absent the read returns a structured error rather than an empty map, so a missing seed surfaces instead of silently yielding a no-build. There is no separate override layer; corrections are made directly to the seeded entries.
 
 ### Structure
 
@@ -220,7 +222,8 @@ Closed five-value set, **named for the canonical command directly** — the `bui
 | `none` | any | No command — a changed set whose only role yields `none` derives no build |
 
 Managed via:
-- `build-map seed` (re-seed `skill_domains.build_map` from extensions — write-once)
+- `build-map seed` (re-seed `skill_domains.build_map` from applicable extensions — write-once)
+- `build-map seed --force` (clear any existing block and re-derive a clean one — bypasses the write-once guard)
 - `build-map read` (return the effective map from `skill_domains.build_map`; fail-closed when absent)
 
 ## Section: system

@@ -21,15 +21,18 @@ def cmd_init(args) -> dict:
     if is_initialized() and not getattr(args, 'force', False):
         return error_exit('marshal.json already exists. Use --force to overwrite.')
 
-    # get_default_config already seeds the required skill_domains.build_map (D6)
-    # from the registered extensions, so init always materialises it.
+    # init does NOT seed skill_domains.build_map — build_map is never populated
+    # at init time. Step 8b of the marshall-steward wizard (`build-map seed`) is
+    # the sole authoritative seed point, gated on completed architecture
+    # discovery. The write-once guard in seed_build_map_into makes the first
+    # explicit seed authoritative.
     config = get_default_config()
 
     # NOTE: build_systems is NOT persisted - determined at runtime via extensions
 
     # Auto-detect technical domains (returns list of domain keys). The detected
-    # domains are added alongside the already-seeded skill_domains.build_map;
-    # the `not in skill_domains` guard never clobbers the build_map.
+    # domains are added to skill_domains; the `not in skill_domains` guard
+    # protects the system domain and any other pre-seeded entries.
     detected_keys = detect_domains()
     if detected_keys:
         skill_domains = config.get('skill_domains', {})

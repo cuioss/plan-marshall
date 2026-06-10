@@ -238,9 +238,9 @@ See [architecture-setup.md](architecture-setup.md) for the full workflow.
 
 ## Step 8b: Seed the Build Map
 
-After the project architecture is discovered (the extension set is now known), seed `skill_domains.build_map` so the file-to-build contract reflects the project's registered domain extensions. The block is already seeded at Step 5 (`init`), so on a clean first run this reports `action: preserved` — that is the expected outcome, not an error. The explicit step exists so a re-run of the wizard picks up newly-added or updated domain extensions.
+After the project architecture is discovered (the extension set AND the module set are now known), seed `skill_domains.build_map` so the file-to-build contract reflects the project's *applicable* registered domain extensions. **This is the sole authoritative seed point** — the build map is NOT seeded at Step 5 (`init`) or by `sync-defaults`, because applicability scoping needs the discovered modules to decide which domains apply, and those modules only exist after Step 8. On a clean first run this reports `action: seeded` (the block did not previously exist). The write-once guard makes this first explicit seed authoritative; a wizard re-run reports `action: preserved` and picks up newly-added domain extensions only for domains not already in the block.
 
-See [build-map-setup.md](build-map-setup.md) for the seed/read commands, the `action` (`seeded` / `preserved`) interpretation, and the menu re-seed operation.
+See [build-map-setup.md](build-map-setup.md) for the seed/read commands, the `action` (`seeded` / `preserved` / `re-derived`) interpretation, the `--force` clean re-derivation, and the menu re-seed operation.
 
 ---
 
@@ -269,7 +269,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Step 11: Quality Pipeline Configuration (Optional)
 
-Ask the user to accept defaults (all generic verify steps + 10 finalize steps, default iterations) or configure individually. The 10 default finalize steps (the `BUILT_IN_FINALIZE_STEPS` list in `_config_defaults.py`) are `pre-push-quality-gate`, `commit-push`, `create-pr`, `ci-verify`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, and `archive-plan`. `pre-push-quality-gate` is a built-in default whose activation is derived from `skill_domains.build_map` — it activates whenever the live footprint touches a glob registered in the build_map (those globs are tree-derived from each extension's `classify_globs()` vocabulary, complete-by-construction over the real tree, not author-shipped static literals). CI completion is a dispatcher-resolved precondition (`requires: [ci-complete]` declared on `ci-verify`, `automated-review`, and `sonar-roundtrip` frontmatters), not a sibling step. If configuring, discover available steps and apply.
+Ask the user to accept defaults (all generic verify steps + 10 finalize steps, default iterations) or configure individually. The 10 default finalize steps (the `BUILT_IN_FINALIZE_STEPS` list in `_config_defaults.py`) are `pre-push-quality-gate`, `commit-push`, `create-pr`, `ci-verify`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, and `archive-plan`. `pre-push-quality-gate` is a built-in default whose activation is derived from `skill_domains.build_map` — it activates whenever the live footprint touches a glob registered in the build_map (those globs are the explicit `(pattern, role)` routes each *applicable* extension declares via `classify_globs()`, seeded at Step 8b, not author-shipped static literals). CI completion is a dispatcher-resolved precondition (`requires: [ci-complete]` declared on `ci-verify`, `automated-review`, and `sonar-roundtrip` frontmatters), not a sibling step. If configuring, discover available steps and apply.
 
 **Verification steps** (phase-5-execute) — per-step multi-select:
 

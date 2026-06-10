@@ -352,7 +352,7 @@ def get_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
 
 
 def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
-    """Aggregate the ``(glob, role, build_class)`` build map per domain from routes.
+    """Aggregate the ``(glob, role, build_class)`` build map per *applicable* domain.
 
     Seeds the build map from each domain's explicit ``(pattern, role)`` routes.
     Every extension declares its routes via ``classify_globs()``; the
@@ -368,9 +368,23 @@ def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
     a separate concern: ``validate_tree_completeness`` scans git-tracked source
     files and flags any tracked ``.py`` no declared route covers.
 
+    Applicability scoping: a domain's routes are included only when that domain's
+    owning extension's ``applies_to_module()`` returns ``applicable: True`` for at
+    least one discovered project module. ``applies_to_module()`` over the discovered
+    module architecture (``discover_project_modules`` keyed off the tracked-config
+    parent) is the single source of truth for "applies" — the same predicate
+    architecture enrichment uses — so a Python-only project never receives
+    java/oci/javascript routes merely because those bundles are installed. When
+    module discovery yields no modules (e.g. architecture not yet discovered), the
+    aggregation is empty: the seed runs only after architecture discovery
+    (wizard Step 8b, the sole authoritative seed point). Each ``applies_to_module()`` call is
+    wrapped in the same defensive try/except as the build_class stamp so one
+    misbehaving extension cannot crash the seed.
+
     Returns:
         A dict keyed by domain-key with a list of ``{glob, role, build_class}``
-        dicts as values. Domains contributing no routes are omitted entirely.
+        dicts as values. Non-applicable domains and domains contributing no routes
+        are omitted entirely.
     """
     from extension_discovery import (  # type: ignore[import-not-found]
         derive_build_map_globs,
@@ -393,10 +407,19 @@ def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
             module_by_domain[domain_key] = ext
 
     project_root = get_tracked_config_dir().parent
+
+    # Applicability ground truth: a domain applies when its owning extension's
+    # applies_to_module() is applicable for at least one discovered module. With no
+    # discovered modules the seed is post-architecture-only, so the aggregation is
+    # empty rather than the unscoped full set.
+    applicable_domains = _applicable_domain_keys(project_root, module_by_domain)
+
     derived = derive_build_map_globs(project_root, extensions)
 
     aggregated: dict[str, list[dict[str, str]]] = {}
     for domain_key, entries in derived.items():
+        if domain_key not in applicable_domains:
+            continue
         ext = module_by_domain.get(domain_key)
         if ext is None:
             continue
@@ -410,6 +433,43 @@ def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
         if domain_entries:
             aggregated[domain_key] = domain_entries
     return aggregated
+
+
+def _applicable_domain_keys(project_root: Path, module_by_domain: dict[str, Any]) -> set[str]:
+    """Return the set of domain keys applicable to the discovered project modules.
+
+    A domain key is applicable when its owning extension's ``applies_to_module()``
+    returns ``applicable: True`` for at least one module from
+    ``discover_project_modules(project_root)``. ``discover_project_modules`` is
+    resolved from the ``extension_discovery`` module at call time (mirroring the
+    other collaborators) so tests can redirect it. When no modules are discovered
+    the returned set is empty — the seed runs only after architecture discovery.
+    Each ``applies_to_module()`` call is defended so a single misbehaving extension
+    cannot crash the seed.
+    """
+    from extension_discovery import (  # type: ignore[import-not-found]
+        discover_project_modules,
+    )
+
+    try:
+        discovered = discover_project_modules(project_root)
+    except Exception:
+        return set()
+    modules = discovered.get('modules') if isinstance(discovered, dict) else None
+    if not isinstance(modules, dict) or not modules:
+        return set()
+
+    applicable: set[str] = set()
+    for domain_key, ext in module_by_domain.items():
+        for module_data in modules.values():
+            try:
+                result = ext.applies_to_module(module_data)
+            except Exception:
+                continue
+            if isinstance(result, dict) and result.get('applicable'):
+                applicable.add(domain_key)
+                break
+    return applicable
 
 
 def _safe_domain_key(ext: object) -> str:
@@ -428,35 +488,45 @@ def _safe_domain_key(ext: object) -> str:
     return ''
 
 
-def seed_build_map_into(config: dict) -> dict:
-    """Seed ``skill_domains.build_map`` into ``config`` (write-once).
+def seed_build_map_into(config: dict, force: bool = False) -> dict:
+    """Seed ``skill_domains.build_map`` into ``config``.
 
     Aggregates the per-domain build map from every registered extension and
-    writes it into ``config['skill_domains']['build_map']`` using write-once
-    semantics: an existing ``build_map`` is NEVER clobbered, so a re-seed
-    preserves any user correction made directly to the seeded block. The
-    ``skill_domains`` container is created when absent. The caller is
-    responsible for persisting ``config`` (e.g. via :func:`save_config`).
+    writes it into ``config['skill_domains']['build_map']``. The ``skill_domains``
+    container is created when absent. The caller is responsible for persisting
+    ``config`` (e.g. via :func:`save_config`).
+
+    Default (``force=False``): write-once semantics — an existing ``build_map``
+    is NEVER clobbered, so a re-seed preserves any user correction made directly
+    to the seeded block.
+
+    With ``force=True``: the write-once guard is bypassed — any existing
+    ``build_map`` is cleared and re-derived from the current project state.
 
     Args:
-        config: The loaded marshal.json config dict (mutated in place when seeded).
+        config: The loaded marshal.json config dict (mutated in place when
+            seeded or re-derived).
+        force: When True, clear any existing ``build_map`` and re-derive a clean
+            one, discarding stale or hand-edited entries.
 
     Returns:
-        A result dict with ``action`` (``seeded`` | ``preserved``), the
-        ``build_map`` that is now in ``config``, and its ``domain_count``.
+        A result dict with ``action`` (``seeded`` | ``preserved`` |
+        ``re-derived``), the ``build_map`` that is now in ``config``, and its
+        ``domain_count``.
     """
     skill_domains = config.get('skill_domains')
     if not isinstance(skill_domains, dict):
         skill_domains = {}
         config['skill_domains'] = skill_domains
 
-    if 'build_map' in skill_domains:
-        existing: dict = skill_domains['build_map']
+    existing = skill_domains.get('build_map')
+    if isinstance(existing, dict) and not force:
         return {'action': 'preserved', 'build_map': existing, 'domain_count': len(existing)}
 
+    action = 're-derived' if 'build_map' in skill_domains else 'seeded'
     aggregated = aggregate_build_map()
     skill_domains['build_map'] = aggregated
-    return {'action': 'seeded', 'build_map': aggregated, 'domain_count': len(aggregated)}
+    return {'action': action, 'build_map': aggregated, 'domain_count': len(aggregated)}
 
 
 def merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:

@@ -686,25 +686,25 @@ def test_get_default_config_seeds_no_per_phase_coverage():
 # =============================================================================
 
 
-def test_get_default_config_seeds_build_map_under_skill_domains():
-    """get_default_config() must seed the required build_map under skill_domains.
+def test_get_default_config_does_not_seed_build_map():
+    """get_default_config() must NOT seed build_map — neither top level nor nested.
 
-    The build_map is relocated from the top level into its owning skill_domains
-    block and is always seeded (write-once via seed_build_map_into). The live
-    aggregation may be empty in the test environment, but the key MUST be present.
+    The premature init-time auto-seed was removed (seed-ordering fix): build_map is
+    materialised only at wizard Step 8b (`build-map seed`) after architecture
+    discovery, so the applicability filter has discovered modules to scope against.
+    The default config therefore ships skill_domains (with the system domain) but
+    no build_map block anywhere.
     """
     # Arrange / Act
     config = _config_defaults_mod.get_default_config()
 
-    # Assert — relocated under skill_domains, never at the top level.
-    assert 'build_map' not in config, (
-        'build_map must NOT sit at the top level — it is relocated under skill_domains'
-    )
+    # Assert — no build_map at the top level and none nested under skill_domains.
+    assert 'build_map' not in config, 'build_map must not sit at the top level'
     assert 'skill_domains' in config
-    assert 'build_map' in config['skill_domains'], (
-        'skill_domains.build_map must be seeded (required) by get_default_config()'
+    assert 'build_map' not in config['skill_domains'], (
+        'get_default_config() must NOT seed skill_domains.build_map (seeded at Step 8b '
+        'after architecture discovery)'
     )
-    assert isinstance(config['skill_domains']['build_map'], dict)
 
 
 def test_get_default_config_omits_retired_build_map_overrides():

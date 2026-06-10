@@ -10,7 +10,10 @@ gathers them verbatim per domain, and each (pattern, role) is then stamped with
 its domain's classify_build_class(). A separate git-tracked completeness
 validator (validate_tree_completeness) flags any tracked source file no declared
 route covers. It is required and always seeded; user corrections are made
-directly to the seeded entries (there is no separate override layer).
+directly to the seeded entries (there is no separate override layer). The
+default seed is write-once (an existing build_map is preserved); ``seed
+--force`` clears any existing build_map and re-derives a clean one from the
+current project state.
 """
 
 import argparse
@@ -37,20 +40,26 @@ def cmd_build_map(args: argparse.Namespace) -> dict:
 
 
 def cmd_build_map_seed(args: argparse.Namespace) -> dict:
-    """Seed marshal.json::skill_domains.build_map from extension routes (write-once).
+    """Seed marshal.json::skill_domains.build_map from extension routes.
 
     Aggregates the per-domain build map by collecting each extension's explicit
     ``(pattern, role)`` routes (declared by ``classify_globs()``, gathered
     verbatim by the script-shared route collector) and stamping each with its
     domain's ``classify_build_class``, then writes it under
-    ``skill_domains.build_map`` with write-once semantics — an existing seed is
+    ``skill_domains.build_map``.
+
+    Default (``--force`` absent): write-once semantics — an existing seed is
     preserved (never clobbered), so user corrections survive a re-seed.
+
+    With ``--force``: the write-once guard is bypassed — any existing
+    ``build_map`` is cleared and re-derived from the current project state. Use
+    this to discard stale or hand-edited entries and obtain a clean seed.
     """
     try:
         require_initialized()
         config = load_config()
-        result = seed_build_map_into(config)
-        if result['action'] == 'seeded':
+        result = seed_build_map_into(config, force=getattr(args, 'force', False))
+        if result['action'] in ('seeded', 're-derived'):
             save_config(config)
         return {
             'status': 'success',

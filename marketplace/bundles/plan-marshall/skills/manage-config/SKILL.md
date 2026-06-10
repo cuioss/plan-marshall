@@ -296,11 +296,15 @@ The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable
 
 **Pattern**: Script Automation
 
-The `skill_domains.build_map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. It lives under `skill_domains` (its owning block), is required and always seeded, and is populated from the registered domain extensions with write-once semantics — an existing seed survives a re-seed so user corrections are preserved. The seeded globs are **explicit `(pattern, role)` routes**: each extension declares its routes directly via `classify_globs()` (single-`*` fnmatch globs, never recursive `**`), and the `script-shared` route collector gathers them verbatim. A separate git-tracked completeness validator scans `git ls-files` and flags any tracked source file no declared route covers, so a forgotten production module surfaces rather than silently classifying to no build. There is no separate override layer; corrections are made directly to the seeded entries.
+The `skill_domains.build_map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. It lives under `skill_domains` (its owning block) and is populated from the registered domain extensions with write-once semantics — an existing seed survives a re-seed so user corrections are preserved. The seeded globs are **explicit `(pattern, role)` routes**: each extension declares its routes directly via `classify_globs()` (single-`*` fnmatch globs, never recursive `**`), and the `script-shared` route collector gathers them verbatim. A separate git-tracked completeness validator scans `git ls-files` and flags any tracked source file no declared route covers, so a forgotten production module surfaces rather than silently classifying to no build. There is no separate override layer; corrections are made directly to the seeded entries.
+
+**Applicability scoping.** The seed includes a domain's routes only when that domain applies to the project. `aggregate_build_map()` consults each domain's owning extension's `applies_to_module()` against the discovered project modules and keeps the domain's routes only when `applies_to_module()` reports `applicable: True` for at least one discovered module — the same applicability predicate architecture enrichment uses. A Python-only project therefore never receives `java` / `oci` / `javascript` routes merely because those bundles are installed. Because applicability is resolved against discovered modules, the seed is **post-architecture-only**: when module discovery yields no modules (architecture not yet discovered) the aggregation is empty.
+
+**Seed point.** The build map is **not** populated at `init` or by `sync-defaults` — `get_default_config()` does not include a `build_map` block, so neither the `init` write nor the `sync-defaults` deep-merge seeds it. The wizard's Step 8b (`build-map seed`, run after architecture discovery) is the **sole authoritative seed point**; the write-once guard makes that first explicit seed authoritative. Re-run `build-map seed` whenever a domain extension is added or updated.
 
 ### Seed the Build Map
 
-Re-seeds `skill_domains.build_map` from every registered extension's `classify_globs()` + `classify_build_class()` predicates. The aggregator collects each extension's explicit `(pattern, role)` routes verbatim; `classify_build_class()` then stamps each route with its canonical-named `build_class` (the `build_class` value IS the canonical command — there is no indirection map). Write-once: an existing `build_map` block is never clobbered — only a missing or empty block is populated. It is always seeded at `init` / `sync-defaults`; run `build-map seed` again whenever a domain extension is added or updated.
+Re-seeds `skill_domains.build_map` from every *applicable* registered extension's `classify_globs()` + `classify_build_class()` predicates. The aggregator collects each applicable extension's explicit `(pattern, role)` routes verbatim; `classify_build_class()` then stamps each route with its canonical-named `build_class` (the `build_class` value IS the canonical command — there is no indirection map). Write-once: an existing `build_map` block is never clobbered — only a missing block is populated. Run `build-map seed` at wizard Step 8b (after architecture discovery) and again whenever a domain extension is added or updated.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed
@@ -317,7 +321,17 @@ build_map:
   documentation: [...]
 ```
 
-`action` is `seeded` when the block was written, or `preserved` when an existing block was left untouched. `domain_count` is the number of domains in the resulting block.
+`action` is `seeded` when a missing block was written, or `preserved` when an existing block was left untouched (write-once). `domain_count` is the number of applicable domains in the resulting block.
+
+#### Force a clean re-derivation
+
+`build-map seed --force` bypasses the write-once guard: it clears any existing `build_map` and re-derives a clean one from the current project state (current extensions, current applicability against the discovered modules). Use it to discard stale or hand-edited entries — for example after an extension's `classify_globs()` routes change, since a plain re-seed preserves the existing block and would not pick up the new routes.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed --force
+```
+
+When `--force` clears and rewrites an existing block, `action` is `re-derived` (versus `seeded` for a first-time write into a missing block).
 
 ### Read the Effective Build Map
 
@@ -384,7 +398,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `project` | `get/set` (`default_base_branch`, `working_prefixes`) |
 | `plan` | `{phase} get/set` (incl. run-at-all gates + finalize automation knobs), set-steps, add-step, remove-step, set-max-iterations |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
-| `build-map` | `seed` (re-seed `skill_domains.build_map` from extensions, write-once), `read` (effective map from `skill_domains.build_map`, fail-closed when absent) |
+| `build-map` | `seed` (re-seed `skill_domains.build_map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `skill_domains.build_map`, fail-closed when absent) |
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
 
@@ -945,8 +959,11 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain
 ### build-map seed
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed \
+  [--force]
 ```
+
+`--force` clears any existing `build_map` and re-derives a clean one from the current project state, bypassing the write-once guard.
 
 ### build-map read
 

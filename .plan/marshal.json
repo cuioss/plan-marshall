@@ -108,46 +108,21 @@
   ],
   "skill_domains": {
     "build_map": {
-      "python": [
+      "documentation": [
         {
-          "glob": "**/scripts/**/*.py",
-          "role": "production",
-          "build_class": "prod-compile"
+          "glob": "*.adoc",
+          "role": "documentation",
+          "build_class": "docs-validate"
         },
         {
-          "glob": "**/scripts/*.py",
-          "role": "production",
-          "build_class": "prod-compile"
+          "glob": "*.asciidoc",
+          "role": "documentation",
+          "build_class": "docs-validate"
         },
         {
-          "glob": "scripts/**/*.py",
-          "role": "production",
-          "build_class": "prod-compile"
-        },
-        {
-          "glob": "scripts/*.py",
-          "role": "production",
-          "build_class": "prod-compile"
-        },
-        {
-          "glob": "test/**/*.py",
-          "role": "test",
-          "build_class": "test-run"
-        },
-        {
-          "glob": "tests/**/*.py",
-          "role": "test",
-          "build_class": "test-run"
-        },
-        {
-          "glob": "test/*.py",
-          "role": "test",
-          "build_class": "test-run"
-        },
-        {
-          "glob": "tests/*.py",
-          "role": "test",
-          "build_class": "test-run"
+          "glob": "*.md",
+          "role": "documentation",
+          "build_class": "docs-validate"
         }
       ],
       "plan-marshall-plugin-dev": [
@@ -157,7 +132,7 @@
           "build_class": "docs-validate"
         },
         {
-          "glob": "marketplace/bundles/*/skills/*/workflow/*.md",
+          "glob": "marketplace/bundles/*/skills/*/references/*.md",
           "role": "documentation",
           "build_class": "docs-validate"
         },
@@ -167,7 +142,7 @@
           "build_class": "docs-validate"
         },
         {
-          "glob": "marketplace/bundles/*/skills/*/references/*.md",
+          "glob": "marketplace/bundles/*/skills/*/workflow/*.md",
           "role": "documentation",
           "build_class": "docs-validate"
         }

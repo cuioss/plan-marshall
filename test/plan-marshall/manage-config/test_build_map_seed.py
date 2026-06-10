@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for the marshal.json build_map seed under skill_domains (D6/D7/D8/D14).
+"""Tests for the marshal.json build_map seed under skill_domains.
 
-Covers the relocated, required build_map cluster:
+Covers the relocated, required build_map cluster and the three behaviours the
+build_map-seed-scope fix introduces:
+
 - build-map seed writes the aggregated {domain: [{glob, role, build_class}]}
   structure under ``skill_domains.build_map`` (relocated from the top level).
 - Write-once: a re-seed never clobbers an existing seed, so a user correction
@@ -11,18 +13,31 @@ Covers the relocated, required build_map cluster:
 - Regression: ``skill_domains.build_map`` is present after seed, and the retired
   ``build_map_overrides`` / ``activation_globs`` keys are never written.
 
-It also covers the seed AGGREGATOR WIRING (the core of this deliverable): that
-``aggregate_build_map`` collects every registered extension's explicit
-``(pattern, role)`` routes (``classify_globs()``) through the ``script-shared``
-route deriver (``derive_globs_from_tree``, reached via the
-``extension_discovery.derive_build_map_globs`` bridge) — so a production ``.py``
-file living OUTSIDE ``scripts/`` is caught because a declared route covers it.
-These tests drive the aggregator end-to-end against a deterministic extension
+It also covers the seed AGGREGATOR WIRING: ``aggregate_build_map`` collects every
+registered extension's explicit ``(pattern, role)`` routes (``classify_globs()``)
+through the ``script-shared`` route deriver (``derive_globs_from_tree``, reached
+via the ``extension_discovery.derive_build_map_globs`` bridge) — so a production
+``.py`` file living OUTSIDE ``scripts/`` is caught because a declared route covers
+it. These tests drive the aggregator end-to-end against a deterministic extension
 (no ``_FAKE_AGGREGATED`` patch) so the wiring itself — not a stub — is exercised.
+
+The three fix-specific suites at the end cover:
+
+- **Applicability-scoping** — ``aggregate_build_map`` includes a domain's routes
+  only when that domain's ``applies_to_module()`` is applicable for at least one
+  discovered project module; non-applicable domains are dropped even though they
+  declare routes, and an empty discovered-module set yields an empty aggregation.
+- **Init-seed removal** — ``cmd_init`` / ``get_default_config()`` no longer seed
+  ``skill_domains.build_map``; the block is materialised at wizard Step 8b
+  (``build-map seed``) after architecture discovery.
+- **Force reseed** — ``build-map seed --force`` clears any existing block and
+  re-derives it (``action: re-derived``); the default seed stays write-once
+  (``action: preserved``), and a user correction is overwritten by ``--force``.
 """
 
 # ruff: noqa: I001, E402
 
+import importlib
 import importlib.util
 import json
 import sys
@@ -62,6 +77,11 @@ _cmd_init_mod = _load_module('_cmd_init_for_build_map_test', '_cmd_init.py')
 # function to that module's globals — not to any importlib-renamed copy.)
 _config_core_mod = sys.modules[_cmd_build_map_mod.seed_build_map_into.__module__]
 
+# The _config_defaults module backing get_default_config() — exercised directly
+# by the init-seed-removal suite. Resolved via _cmd_init's import so the test
+# asserts against the same module object the init handler uses.
+_config_defaults_mod = importlib.import_module('_config_defaults')
+
 
 # A deterministic fake aggregation result so the seed tests do not depend on the
 # live extension set. Mirrors the real {domain: [{glob, role, build_class}]} shape.
@@ -80,20 +100,6 @@ def _patch_aggregate(monkeypatch):
     """Patch aggregate_build_map on the _config_core module the handler resolves
     against, so seed_build_map_into() consumes the deterministic fake."""
     monkeypatch.setattr(_config_core_mod, 'aggregate_build_map', lambda: _FAKE_AGGREGATED)
-
-
-def _strip_init_seeded_build_map(fixture_dir: Path) -> None:
-    """Remove the build_map that ``cmd_init`` auto-seeds via get_default_config().
-
-    ``cmd_init`` now always seeds ``skill_domains.build_map`` (D6) from the live
-    extension set. Tests that drive the write-once seed path with a deterministic
-    fake must first clear that init-seeded block, otherwise the write-once guard
-    short-circuits to ``preserved`` against the real (empty/live) aggregation.
-    """
-    marshal_path = fixture_dir / 'marshal.json'
-    config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    config.get('skill_domains', {}).pop('build_map', None)
-    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
 
 # =============================================================================
@@ -165,10 +171,13 @@ def test_get_build_map_returns_relocated_block():
 
 
 def test_build_map_seed_writes_aggregated_structure_under_skill_domains(plan_context, monkeypatch):
-    """build-map seed writes the aggregated {domain: [...]} structure under skill_domains."""
+    """build-map seed writes the aggregated {domain: [...]} structure under skill_domains.
+
+    Init no longer seeds build_map, so a bare init leaves the block absent; the
+    first explicit seed against the deterministic fake is the authoritative write.
+    """
     # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
-    _strip_init_seeded_build_map(plan_context.fixture_dir)
     _patch_aggregate(monkeypatch)
 
     # Act
@@ -188,9 +197,8 @@ def test_build_map_seed_writes_aggregated_structure_under_skill_domains(plan_con
 
 def test_build_map_seed_is_write_once(plan_context, monkeypatch):
     """A re-seed preserves an existing seed (write-once) — never clobbers it."""
-    # Arrange — first seed writes the fake map
+    # Arrange — first seed writes the fake map (init no longer pre-seeds)
     _cmd_init_mod.cmd_init(Namespace(force=False))
-    _strip_init_seeded_build_map(plan_context.fixture_dir)
     _patch_aggregate(monkeypatch)
     first = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
     assert first['action'] == 'seeded'
@@ -215,7 +223,6 @@ def test_user_correction_survives_reseed_and_wins_at_read(plan_context, monkeypa
     """A direct correction to skill_domains.build_map survives a re-seed and wins at read."""
     # Arrange — seed, then correct an entry directly on the seeded block.
     _cmd_init_mod.cmd_init(Namespace(force=False))
-    _strip_init_seeded_build_map(plan_context.fixture_dir)
     _patch_aggregate(monkeypatch)
     _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
 
@@ -240,7 +247,6 @@ def test_build_map_read_returns_seed(plan_context, monkeypatch):
     """build-map read returns the seed from skill_domains.build_map unchanged."""
     # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
-    _strip_init_seeded_build_map(plan_context.fixture_dir)
     _patch_aggregate(monkeypatch)
     _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
 
@@ -256,15 +262,11 @@ def test_build_map_read_returns_seed(plan_context, monkeypatch):
 def test_build_map_read_fails_closed_when_seed_absent(plan_context):
     """build-map read returns a structured error when skill_domains.build_map is absent.
 
-    A fresh init seeds the (live-aggregated) build_map, so to exercise the
-    fail-closed path the test strips the block before reading.
+    Init no longer seeds the block, so a bare init already leaves build_map absent
+    — read must fail closed without any pre-read stripping.
     """
-    # Arrange — init, then remove the seeded build_map to emulate a corrupt config.
+    # Arrange — bare init leaves skill_domains without a build_map block.
     _cmd_init_mod.cmd_init(Namespace(force=False))
-    marshal_path = plan_context.fixture_dir / 'marshal.json'
-    config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    config.get('skill_domains', {}).pop('build_map', None)
-    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
     # Act
     result = _cmd_build_map_mod.cmd_build_map_read(Namespace(verb='read'))
@@ -275,32 +277,17 @@ def test_build_map_read_fails_closed_when_seed_absent(plan_context):
 
 
 # =============================================================================
-# Regression: relocation + retired-key removal (D6/D7/D14)
+# Regression: relocation + retired-key removal
 # =============================================================================
-
-
-def test_fresh_init_seeds_required_build_map_under_skill_domains(plan_context):
-    """`manage-config init` always seeds the required skill_domains.build_map block."""
-    # Arrange / Act — fresh init (live aggregation; may be empty but must be present).
-    _cmd_init_mod.cmd_init(Namespace(force=False))
-
-    # Assert — the build_map key is present under skill_domains and required.
-    marshal_path = plan_context.fixture_dir / 'marshal.json'
-    config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert 'skill_domains' in config
-    assert 'build_map' in config['skill_domains'], (
-        'skill_domains.build_map must be seeded (required) on init'
-    )
-    assert isinstance(config['skill_domains']['build_map'], dict)
 
 
 def test_seed_never_writes_retired_override_keys(plan_context, monkeypatch):
     """No retired build_map_overrides key is written by the seed path.
 
-    The override layer was dropped (D14): the build_map under skill_domains is the
+    The override layer was dropped: the build_map under skill_domains is the
     single source of truth, and user corrections are made directly to the seeded
     entries. The build_map cluster no longer carries any activation_globs of its
-    own — pre-push activation derives from the build_map's per-entry globs (D7/D8).
+    own — pre-push activation derives from the build_map's per-entry globs.
     """
     # Arrange / Act
     _cmd_init_mod.cmd_init(Namespace(force=False))
@@ -330,11 +317,9 @@ def test_seed_never_writes_retired_override_keys(plan_context, monkeypatch):
 # script-shared tree-deriver (derive_globs_from_tree) against the REAL tree, so
 # a production .py OUTSIDE scripts/ is caught because it exists in the tree.
 # Unlike the write-once tests above, NO _FAKE_AGGREGATED stub is patched — the
-# aggregator runs for real against a synthetic fixture tree, with only its two
+# aggregator runs for real against a synthetic fixture tree, with only its
 # environmental collaborators redirected: the extension set it discovers and the
-# project root it scans.
-
-import importlib  # noqa: E402
+# project modules it scopes against (applicability ground truth).
 
 from extension_base import (  # type: ignore[import-not-found]  # noqa: E402
     ROLE_PRODUCTION,
@@ -343,9 +328,18 @@ from extension_base import (  # type: ignore[import-not-found]  # noqa: E402
 )
 
 # The extension_discovery module that aggregate_build_map() resolves
-# derive_build_map_globs / discover_all_extensions from at call time. Importing
-# it here gives the tests the same object to monkeypatch.
+# derive_build_map_globs / discover_all_extensions / discover_project_modules
+# from at call time. Importing it here gives the tests the same object to
+# monkeypatch.
 _extension_discovery_mod = importlib.import_module('extension_discovery')
+
+
+# An applicable module set — one synthetic discovered module. aggregate_build_map's
+# applicability filter calls discover_project_modules(project_root) and iterates
+# modules.values(); the value shape only needs to round-trip through each fake
+# extension's applies_to_module(), so a minimal dict suffices.
+_APPLICABLE_MODULES = {'status': 'success', 'modules': {'core': {'name': 'core'}}}
+_NO_MODULES = {'status': 'success', 'modules': {}}
 
 
 class _PythonRouteExtension(ExtensionBase):
@@ -355,6 +349,7 @@ class _PythonRouteExtension(ExtensionBase):
     production route (``marketplace/targets/*.py``, an fnmatch glob) plus a test
     route. The deriver collects the declared routes verbatim, so a production .py
     outside scripts/ is covered by declaring a route whose pattern matches it.
+    Declares itself applicable so the applicability filter keeps its routes.
     """
 
     def get_skill_domains(self) -> list[dict]:
@@ -366,27 +361,43 @@ class _PythonRouteExtension(ExtensionBase):
             ('test/*.py', ROLE_TEST),
         ]
 
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        return {'applicable': True, 'confidence': 'high', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+
 
 class _NoRouteExtension(ExtensionBase):
-    """A python-domain extension that declares no routes at all (base default)."""
+    """A python-domain extension that declares no routes at all (base default).
+
+    Declares itself applicable so the omission is attributable to the empty route
+    set, not to the applicability filter.
+    """
 
     def get_skill_domains(self) -> list[dict]:
         return [{'domain': {'key': 'python', 'name': 'Python', 'description': 'Test'}, 'profiles': {}}]
 
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        return {'applicable': True, 'confidence': 'high', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 
-def _wire_real_aggregator(monkeypatch, extension: ExtensionBase) -> None:
-    """Redirect aggregate_build_map()'s extension-set collaborator.
+
+def _wire_real_aggregator(monkeypatch, extension: ExtensionBase, modules: dict | None = None) -> None:
+    """Redirect aggregate_build_map()'s extension-set and module-discovery collaborators.
 
     aggregate_build_map() resolves derive_build_map_globs + discover_all_extensions
-    from the extension_discovery module at call time. Patch the extension set to
-    the single supplied fake, leaving the real derive_build_map_globs/
-    derive_globs_from_tree route-collection wiring intact so the REAL aggregator
-    consumes the declared routes. Route collection no longer reads the project
-    tree, so the project root need not be redirected.
+    + discover_project_modules from the extension_discovery module at call time.
+    Patch the extension set to the single supplied fake and the discovered module
+    set to ``modules`` (default: one applicable module), leaving the real
+    derive_build_map_globs / derive_globs_from_tree route-collection wiring intact
+    so the REAL aggregator consumes the declared routes. Route collection no longer
+    reads the project tree, so the project root need not be redirected.
     """
     fake_entries = [{'bundle': 'fake', 'path': 'fake/extension.py', 'module': extension}]
     monkeypatch.setattr(
         _extension_discovery_mod, 'discover_all_extensions', lambda: fake_entries
+    )
+    monkeypatch.setattr(
+        _extension_discovery_mod,
+        'discover_project_modules',
+        lambda project_root: _APPLICABLE_MODULES if modules is None else modules,
     )
 
 
@@ -395,7 +406,7 @@ def test_aggregate_build_map_collects_route_matching_out_of_scripts_production_p
 
     This is the regression the deliverable fixes: a production file at
     ``marketplace/targets/generate.py`` (not under ``scripts/``) is covered by the
-    explicit route ``marketplace/targets/**/*.py`` — the old static-glob seed
+    explicit route ``marketplace/targets/*.py`` — the old static-glob seed
     would have silently missed it.
     """
     # Arrange — an extension declaring an out-of-scripts production route.
@@ -444,15 +455,14 @@ def test_aggregate_build_map_stamps_each_entry_with_a_build_class(monkeypatch):
 def test_seed_cli_persists_route_for_out_of_scripts_glob(plan_context, monkeypatch):
     """The seed CLI persists the out-of-scripts route under skill_domains.
 
-    End-to-end through the seed handler (cmd_build_map_seed): init, clear the
-    init-seeded block, then seed against an extension declaring an out-of-scripts
-    production route. The persisted skill_domains.build_map must carry a
-    python-domain glob matching that file.
+    End-to-end through the seed handler (cmd_build_map_seed): init, then seed
+    against an extension declaring an out-of-scripts production route. The
+    persisted skill_domains.build_map must carry a python-domain glob matching
+    that file. Init no longer pre-seeds, so the seed writes the derived block.
     """
-    # Arrange — init, clear the init-seeded build_map, wire the real aggregator
-    # against an extension declaring an out-of-scripts production route.
+    # Arrange — init, wire the real aggregator against an extension declaring an
+    # out-of-scripts production route.
     _cmd_init_mod.cmd_init(Namespace(force=False))
-    _strip_init_seeded_build_map(plan_context.fixture_dir)
     _wire_real_aggregator(monkeypatch, _PythonRouteExtension())
 
     # Act — seed through the CLI handler.
@@ -482,9 +492,8 @@ def test_read_cli_returns_route_seed(plan_context, monkeypatch):
     through cmd_build_map_read: the merged build_map the read CLI returns must
     carry the python-domain glob that matches the out-of-scripts production .py.
     """
-    # Arrange — init, clear, wire, seed.
+    # Arrange — init, wire, seed.
     _cmd_init_mod.cmd_init(Namespace(force=False))
-    _strip_init_seeded_build_map(plan_context.fixture_dir)
     _wire_real_aggregator(monkeypatch, _PythonRouteExtension())
     _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
 
@@ -508,9 +517,10 @@ def test_aggregate_build_map_omits_domain_with_no_routes(monkeypatch):
 
     An extension at the base ``classify_globs()`` default (empty list) contributes
     no entries, so the python domain is dropped from the aggregated map (rather
-    than appearing with an empty list).
+    than appearing with an empty list). The extension declares itself applicable,
+    so the omission is attributable to the empty route set — not the filter.
     """
-    # Arrange — an extension declaring no routes at all.
+    # Arrange — an applicable extension declaring no routes at all.
     _wire_real_aggregator(monkeypatch, _NoRouteExtension())
 
     # Act
@@ -518,3 +528,252 @@ def test_aggregate_build_map_omits_domain_with_no_routes(monkeypatch):
 
     # Assert — the python domain contributed nothing and is omitted.
     assert 'python' not in aggregated
+
+
+# =============================================================================
+# Applicability scoping — applies_to_module() over discovered modules
+# =============================================================================
+#
+# aggregate_build_map() includes a domain's routes only when that domain's owning
+# extension's applies_to_module() returns applicable: True for at least one
+# discovered project module. These tests redirect both the extension set AND the
+# discovered module set so the filter is driven deterministically — a domain that
+# declares routes but applies to no discovered module is dropped, and an empty
+# discovered-module set yields an empty aggregation (the seed runs only after
+# architecture discovery).
+
+
+class _NonApplicablePythonExtension(ExtensionBase):
+    """A python-domain extension declaring routes but never applicable.
+
+    Mirrors the leak the fix closes: an installed bundle whose domain does not
+    apply to the project's modules (e.g. java/oci on a python-only project). It
+    declares real routes via classify_globs() but its applies_to_module() always
+    returns not-applicable, so the aggregator must drop its routes entirely.
+    """
+
+    def get_skill_domains(self) -> list[dict]:
+        return [{'domain': {'key': 'python', 'name': 'Python', 'description': 'Test'}, 'profiles': {}}]
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        return [('marketplace/targets/*.py', ROLE_PRODUCTION)]
+
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+
+
+class _RaisingApplicabilityExtension(ExtensionBase):
+    """A python-domain extension whose applies_to_module() raises.
+
+    The aggregator defends each applies_to_module() call so one misbehaving
+    extension cannot crash the seed — the raising extension is simply treated as
+    not-applicable and dropped.
+    """
+
+    def get_skill_domains(self) -> list[dict]:
+        return [{'domain': {'key': 'python', 'name': 'Python', 'description': 'Test'}, 'profiles': {}}]
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        return [('marketplace/targets/*.py', ROLE_PRODUCTION)]
+
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        raise RuntimeError('boom — applies_to_module misbehaved')
+
+
+def test_aggregate_includes_applicable_domain(monkeypatch):
+    """A domain applicable for a discovered module keeps its routes.
+
+    The positive control for the applicability filter: with at least one discovered
+    module for which applies_to_module() is applicable, the python domain's routes
+    survive aggregation unchanged.
+    """
+    # Arrange — an applicable extension with one discovered module.
+    _wire_real_aggregator(monkeypatch, _PythonRouteExtension(), modules=_APPLICABLE_MODULES)
+
+    # Act
+    aggregated = _config_core_mod.aggregate_build_map()
+
+    # Assert — applicable domain's routes are present.
+    assert 'python' in aggregated
+    by_role = {entry['role']: entry['build_class'] for entry in aggregated['python']}
+    assert by_role['production'] == 'compile'
+    assert by_role['test'] == 'module-tests'
+
+
+def test_aggregate_excludes_non_applicable_domain_with_routes(monkeypatch):
+    """An installed domain that applies to no discovered module is excluded.
+
+    The core fix: even though the extension declares real routes via
+    classify_globs(), its applies_to_module() is not-applicable for every
+    discovered module, so its routes are dropped — a python-only project never
+    receives routes from a domain that does not apply to its modules.
+    """
+    # Arrange — a route-declaring extension that is never applicable.
+    _wire_real_aggregator(monkeypatch, _NonApplicablePythonExtension(), modules=_APPLICABLE_MODULES)
+
+    # Act
+    aggregated = _config_core_mod.aggregate_build_map()
+
+    # Assert — the non-applicable domain contributed nothing.
+    assert 'python' not in aggregated
+    assert aggregated == {}
+
+
+def test_aggregate_empty_when_no_modules_discovered(monkeypatch):
+    """An empty discovered-module set yields an empty aggregation.
+
+    With no discovered modules the applicability filter has nothing to match
+    against, so the aggregation is empty rather than the unscoped full set — the
+    seed runs only after architecture discovery (wizard Step 8b / sync-defaults).
+    """
+    # Arrange — an applicable, route-declaring extension but NO discovered modules.
+    _wire_real_aggregator(monkeypatch, _PythonRouteExtension(), modules=_NO_MODULES)
+
+    # Act
+    aggregated = _config_core_mod.aggregate_build_map()
+
+    # Assert — no modules → empty aggregation regardless of declared routes.
+    assert aggregated == {}
+
+
+def test_aggregate_tolerates_raising_applies_to_module(monkeypatch):
+    """A misbehaving applies_to_module() does not crash the seed; its domain drops.
+
+    The defensive try/except around the applies_to_module() call treats a raising
+    extension as not-applicable rather than propagating the exception — the seed
+    completes and the raising domain is simply omitted.
+    """
+    # Arrange — an extension whose applies_to_module() raises, with a discovered module.
+    _wire_real_aggregator(monkeypatch, _RaisingApplicabilityExtension(), modules=_APPLICABLE_MODULES)
+
+    # Act — must not raise.
+    aggregated = _config_core_mod.aggregate_build_map()
+
+    # Assert — the raising domain is dropped; aggregation is empty.
+    assert aggregated == {}
+
+
+# =============================================================================
+# Init-seed removal — init / get_default_config() no longer seed build_map
+# =============================================================================
+#
+# The premature init-time auto-seed was removed: build_map is materialised only at
+# wizard Step 8b (build-map seed) after architecture discovery, so the
+# applicability filter has discovered modules to scope against. A bare init must
+# leave skill_domains present but build_map absent.
+
+
+def test_fresh_init_does_not_seed_build_map(plan_context):
+    """`manage-config init` no longer seeds skill_domains.build_map.
+
+    Regression for the seed-ordering fix: init runs before architecture discovery,
+    so it must NOT seed the (applicability-scoped) build_map. The block is absent
+    after a bare init and is materialised later at wizard Step 8b.
+    """
+    # Arrange / Act — fresh init.
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # Assert — skill_domains is present but carries no build_map block.
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert 'skill_domains' in config
+    assert 'build_map' not in config['skill_domains'], (
+        'init must NOT seed skill_domains.build_map (seeded at Step 8b after architecture discovery)'
+    )
+
+
+def test_get_default_config_has_skill_domains_without_build_map():
+    """get_default_config() returns skill_domains present but build_map absent.
+
+    The default config no longer ships a build_map block — get_default_config()
+    must return skill_domains (with at least the system domain) and no build_map
+    nested under it.
+    """
+    # Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert — skill_domains present, build_map absent.
+    assert 'skill_domains' in config
+    assert 'system' in config['skill_domains']
+    assert 'build_map' not in config['skill_domains']
+
+
+# =============================================================================
+# Force reseed — `build-map seed --force` clears and re-derives
+# =============================================================================
+#
+# The default seed is write-once; `--force` is the explicit clear-and-re-derive
+# escape hatch (the meta-project migration path). A forced reseed reports
+# action: re-derived (distinct from seeded / preserved) and overwrites any
+# existing block, including a user correction.
+
+
+def test_force_reseed_clears_and_rederives_existing_block(plan_context, monkeypatch):
+    """`seed --force` over an existing block clears and re-derives it.
+
+    With a build_map already present, a default seed would preserve it; `--force`
+    bypasses the write-once guard and re-derives the block from the current
+    aggregation, reporting action: re-derived.
+    """
+    # Arrange — seed once (deterministic fake), so a block already exists.
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    _patch_aggregate(monkeypatch)
+    first = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
+    assert first['action'] == 'seeded'
+
+    # Act — forced reseed.
+    forced = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=True))
+
+    # Assert — re-derived (not preserved), and the persisted block matches the
+    # current aggregation.
+    assert forced['status'] == 'success'
+    assert forced['action'] == 're-derived'
+    assert forced['domain_count'] == 2
+
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert config['skill_domains']['build_map'] == _FAKE_AGGREGATED
+
+
+def test_default_seed_without_force_preserves_existing_block(plan_context, monkeypatch):
+    """`seed` without `--force` still preserves an existing block (write-once).
+
+    The negative control for the force path: with an existing block, a default
+    seed (force=False) reports action: preserved and leaves the block untouched.
+    """
+    # Arrange — seed once so a block exists.
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    _patch_aggregate(monkeypatch)
+    _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
+
+    # Act — re-seed without force.
+    second = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
+
+    # Assert — preserved, not re-derived.
+    assert second['action'] == 'preserved'
+
+
+def test_force_reseed_overwrites_user_correction(plan_context, monkeypatch):
+    """A user correction is overwritten by `--force` (NOT write-once).
+
+    The default seed preserves a hand-edited entry, but `--force` is the documented
+    migration escape hatch: it discards stale or hand-edited entries and re-derives
+    a clean block from the current aggregation.
+    """
+    # Arrange — seed, then hand-edit an entry directly on the seeded block.
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    _patch_aggregate(monkeypatch)
+    _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
+
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config['skill_domains']['build_map']['python'][0]['build_class'] = 'none'
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    # Act — forced reseed.
+    forced = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=True))
+
+    # Assert — the correction was overwritten by the re-derived aggregation.
+    assert forced['action'] == 're-derived'
+    after = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert after['skill_domains']['build_map']['python'][0]['build_class'] == 'compile'
