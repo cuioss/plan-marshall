@@ -386,10 +386,12 @@ def get_default_config() -> dict:
 
     Returns a new dict each time to avoid mutation issues.
 
-    The ``skill_domains.build_map`` block is always seeded (D6): the required
-    file-to-build contract is aggregated from every registered extension via
-    :func:`_config_core.seed_build_map_into` and written under ``skill_domains``
-    so init and sync-defaults both materialise it.
+    The ``skill_domains.build_map`` block is NOT seeded here: build_map is never
+    populated at init time. Step 8b of the marshall-steward wizard (``build-map
+    seed``) is the sole authoritative seed point, gated on completed architecture
+    discovery so applicability scoping has discovered modules to work with. The
+    write-once guard in :func:`_config_core.seed_build_map_into` ensures the first
+    explicit seed wins and subsequent seedings without ``--force`` are no-ops.
 
     NOTE:
     - build_systems is NOT included - determined at runtime via extension discovery
@@ -399,10 +401,6 @@ def get_default_config() -> dict:
     - Extension verify steps in phase-5-execute.steps are appended by skill-domains configure
     """
     import copy
-
-    # Lazy import to avoid an import cycle at module load (_config_core imports
-    # nothing from this module, so the lazy import is purely defensive).
-    from _config_core import seed_build_map_into  # type: ignore[import-not-found]
 
     system_domain = copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)
     validate_domain_invariants(system_domain)
@@ -423,6 +421,4 @@ def get_default_config() -> dict:
             'phase-6-finalize': copy.deepcopy(DEFAULT_PLAN_FINALIZE),
         },
     }
-    # Always seed the required build_map under skill_domains (write-once).
-    seed_build_map_into(config)
     return config

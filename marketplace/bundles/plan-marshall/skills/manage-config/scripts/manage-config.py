@@ -264,14 +264,20 @@ def main() -> int:
         allow_abbrev=False,
     )
     bm_sub = p_bm.add_subparsers(dest='verb', required=True, help='Operation')
-    bm_sub.add_parser(
+    bm_seed = bm_sub.add_parser(
         'seed',
-        help='Re-seed build_map from extensions, preserving existing seed + overrides (write-once)',
+        help='Seed build_map from applicable domains, write-once (existing seed preserved unless --force)',
         allow_abbrev=False,
+    )
+    bm_seed.add_argument(
+        '--force',
+        action='store_true',
+        help='Clear any existing build_map and re-derive a clean one from current project state '
+        '(bypasses the write-once guard)',
     )
     bm_sub.add_parser(
         'read',
-        help='Return the merged effective build map (seed ∪ overrides, overrides win by glob)',
+        help='Return the effective build map from skill_domains.build_map',
         allow_abbrev=False,
     )
 
