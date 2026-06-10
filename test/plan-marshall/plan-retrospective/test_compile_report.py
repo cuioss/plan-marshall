@@ -613,6 +613,207 @@ def _write_fragments_with_dispatch_boundaries(
     return fragments_file
 
 
+# =============================================================================
+# Registry-consistency regression guard (deliverable 2)
+# =============================================================================
+#
+# The class of defect this guard pins down: a producer aspect key drifting from
+# the consumer's section map. ``retro_sections.SECTION_SPEC`` is the single
+# shared registry both scripts consume — ``compile-report`` renders from it and
+# ``collect-fragments add`` validates ``--aspect`` against the derived
+# ``valid_aspect_keys()``. This guard asserts the full registry↔producer↔consumer
+# round-trip so a future aspect-key add or rename that drifts the two apart fails
+# at test time, distinct from D1's hand-picked local ``cmd_add`` unit cases.
+
+# Direct import of retro_sections.py from the same scripts/ directory the
+# executor puts on PYTHONPATH (conftest mirrors that path setup). Importing the
+# live registry — rather than restating the key list — is what makes this guard
+# self-maintaining: a new SECTION_SPEC row is automatically covered.
+import retro_sections as _retro_sections  # noqa: E402
+
+_COLLECT_FRAGMENTS_SCRIPT_REGISTRY = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'collect-fragments.py'
+)
+
+
+def _registry_render_fragment_lines(fragment_key: str, trigger: str | None) -> list[str]:
+    """Return TOON lines for a single registry aspect that ``should_emit`` accepts.
+
+    Conditional sections (``trigger is not None``) emit only when their fragment
+    carries non-empty payload, so this synthesizes the minimal shape each
+    ``should_emit`` branch recognizes:
+
+    - ``dispatch_boundaries`` → a per-phase dict with one ``present: true`` phase.
+    - ``manifest-decisions`` → ``manifest_present: true``.
+    - every other conditional key → a one-item ``findings`` list.
+
+    Unconditional sections (``trigger is None``) emit on a bare ``status: success``
+    fragment.
+    """
+    if fragment_key == 'dispatch_boundaries':
+        return [
+            'dispatch_boundaries:',
+            '  5-execute:',
+            '    present: true',
+            '    rows[0]:',
+            '    unknown_count: 0',
+            '    clean_exit_queue_empty_count: 0',
+        ]
+    lines = [f'{fragment_key}:', '  status: success']
+    if trigger is None:
+        return lines
+    if fragment_key == 'manifest-decisions':
+        lines.append('  manifest_present: true')
+        return lines
+    # Generic conditional section — a single findings entry satisfies should_emit.
+    lines.extend(
+        [
+            '  findings[1]{severity,message}:',
+            '    info,registry-consistency probe finding',
+        ]
+    )
+    return lines
+
+
+def _write_full_registry_fragments(tmp_path: Path) -> Path:
+    """Write a fragments bundle carrying EVERY non-``_`` key in SECTION_SPEC.
+
+    Each aspect's fragment is shaped so its (possibly conditional) section
+    emits, so the rendered report must contain a section for every registry
+    key — exercising the consumer-render side of the round-trip invariant.
+    """
+    lines = [
+        '_executive-summary:',
+        '  summary: "Registry-consistency round-trip probe."',
+    ]
+    for _heading, fragment_key, trigger in _retro_sections.SECTION_SPEC:
+        if fragment_key.startswith('_'):
+            continue
+        lines.extend(_registry_render_fragment_lines(fragment_key, trigger))
+    fragments_file = tmp_path / 'fragments-full-registry.toon'
+    fragments_file.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    return fragments_file
+
+
+class TestRegistryConsistencyGuard:
+    """End-to-end registry↔producer↔consumer round-trip guard.
+
+    Pins the shared ``retro_sections.SECTION_SPEC`` registry to BOTH ends:
+    every renderable section key must (a) render a report section through
+    ``compile-report`` and (b) be a key ``collect-fragments add`` accepts. A
+    future drift between the producer-validation set and the consumer-render
+    set fails here, closing the silent-section-drop hole from both sides.
+    """
+
+    def test_every_registered_static_aspect_renders_a_report_section(self, tmp_path, monkeypatch):
+        """Consumer side: compile-report renders a section for EVERY SECTION_SPEC key.
+
+        Loops the live registry rather than a hand-curated heading list, so a
+        new SECTION_SPEC row that compile-report fails to render is caught
+        automatically.
+        """
+        # Arrange — expected headings are derived from the registry itself.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_full_registry_fragments(tmp_path)
+        expected_headings = {
+            heading
+            for heading, fragment_key, _trigger in _retro_sections.SECTION_SPEC
+            if not fragment_key.startswith('_')
+        }
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--fragments-file',
+            str(fragments),
+        )
+
+        # Assert — every registry heading is written, none silently omitted.
+        assert result.success, result.stderr
+        data = result.toon()
+        written = set(data['sections_written'])
+        missing = expected_headings - written
+        assert not missing, (
+            f'Registry drift: SECTION_SPEC keys rendered no section: {sorted(missing)} '
+            f'(omitted={data.get("sections_omitted")})'
+        )
+        # The rendered markdown carries each heading — guards against a
+        # sections_written entry that names a heading the body never emits.
+        content = (plan_dir / 'quality-verification-report.md').read_text(encoding='utf-8')
+        for heading in expected_headings:
+            assert f'## {heading}' in content, f'Registry key "{heading}" claimed written but absent from report body'
+
+    def test_every_valid_aspect_key_is_accepted_by_collect_fragments_add(self, tmp_path, monkeypatch):
+        """Producer side: collect-fragments add accepts EVERY valid_aspect_keys() entry.
+
+        Loops the derived registerable-key set so the producer-validation set
+        and the consumer-render set stay in lockstep — a key compile-report
+        renders but cmd_add rejects (or vice versa) fails here.
+        """
+        # Arrange — one plan, one bundle, then add each registry key in turn.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        init_result = run_script(
+            _COLLECT_FRAGMENTS_SCRIPT_REGISTRY,
+            'init',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+        )
+        assert init_result.success, init_result.stderr
+
+        valid_keys = sorted(_retro_sections.valid_aspect_keys())
+        assert valid_keys, 'valid_aspect_keys() returned an empty set — registry is mis-wired'
+
+        # Act / Assert — add every registry key; each must be accepted.
+        for aspect in valid_keys:
+            fragment = tmp_path / f'frag-{aspect}.toon'
+            fragment.write_text(f'status: success\naspect: {aspect}\n', encoding='utf-8')
+            add_result = run_script(
+                _COLLECT_FRAGMENTS_SCRIPT_REGISTRY,
+                'add',
+                '--plan-id',
+                plan_id,
+                '--aspect',
+                aspect,
+                '--fragment-file',
+                str(fragment),
+            )
+            assert add_result.success, f'add subprocess failed for aspect={aspect}: {add_result.stderr}'
+            data = add_result.toon()
+            assert data['status'] == 'success', (
+                f'Registry drift: collect-fragments add rejected the registry key {aspect!r} '
+                f'that compile-report renders — payload: {data}'
+            )
+            assert data['aspect'] == aspect
+
+    def test_render_set_and_accept_set_are_identical(self, tmp_path, monkeypatch):
+        """Lockstep invariant: the consumer-render key set == the producer-accept key set.
+
+        The render set is every non-``_`` ``fragment_key`` in SECTION_SPEC; the
+        accept set is ``valid_aspect_keys()``. Both derive from the same
+        registry, so they must be byte-for-byte equal — this asserts the
+        derivation never diverges (e.g. a future ``valid_aspect_keys`` filter
+        change that drops a renderable key).
+        """
+        render_set = {
+            fragment_key
+            for _heading, fragment_key, _trigger in _retro_sections.SECTION_SPEC
+            if not fragment_key.startswith('_')
+        }
+        accept_set = _retro_sections.valid_aspect_keys()
+        assert render_set == accept_set, (
+            'Registry drift: the compile-report render-set and the collect-fragments '
+            f'accept-set diverged.\n  render-only: {sorted(render_set - accept_set)}'
+            f'\n  accept-only: {sorted(accept_set - render_set)}'
+        )
+
+
 class TestPhaseDispatchBoundariesSection:
     """Rendering tests for the Phase Dispatch Boundaries section."""
 

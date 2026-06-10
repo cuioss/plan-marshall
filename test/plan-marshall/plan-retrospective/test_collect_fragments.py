@@ -6,6 +6,16 @@ malformed TOON fragments and duplicate aspect registration without
 ``--overwrite``. Mode is now a bundle property (persisted under
 ``_meta.mode`` by ``init``); ``add`` and ``finalize`` read it from the
 bundle rather than accepting ``--mode`` as an argument.
+
+``cmd_add`` validates ``--aspect`` against the canonical aspect-key registry
+(static :data:`retro_sections.SECTION_SPEC` keys ∪ domain-contributed aspects)
+before touching the bundle. Every aspect key used across these tests is a
+member of that registry — the registered static keys are hyphenated
+(``request-result-alignment``, ``log-analysis``, ``artifact-consistency``,
+``plan-efficiency``, ``lessons-proposal``, …) to match the consumer's section
+map, never the underscored variants that would silently empty a report
+section. The validation guard itself is exercised by
+:class:`TestAddAspectKeyValidation`.
 """
 
 from __future__ import annotations
@@ -200,7 +210,7 @@ class TestAddHappyPath:
         # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
-        fragment_path = _write_fragment(tmp_path, 'aspect-a.toon', _valid_fragment_body('request_result_alignment'))
+        fragment_path = _write_fragment(tmp_path, 'aspect-a.toon', _valid_fragment_body('request-result-alignment'))
 
         # Act — add no longer accepts --mode; it reads the mode from the bundle.
         result = run_script(
@@ -209,7 +219,7 @@ class TestAddHappyPath:
             '--plan-id',
             plan_id,
             '--aspect',
-            'request_result_alignment',
+            'request-result-alignment',
             '--fragment-file',
             str(fragment_path),
         )
@@ -219,13 +229,13 @@ class TestAddHappyPath:
         data = result.toon()
         assert data['status'] == 'success'
         assert data['operation'] == 'add'
-        assert data['aspect'] == 'request_result_alignment'
+        assert data['aspect'] == 'request-result-alignment'
         # overwrote is false on first insertion (TOON serializes bool as false).
         assert data['overwrote'] is False or str(data['overwrote']).lower() == 'false'
         # Bundle file now contains the aspect section.
         bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
         content = bundle_path.read_text(encoding='utf-8')
-        assert 'request_result_alignment:' in content
+        assert 'request-result-alignment:' in content
         assert 'status: success' in content
 
 
@@ -250,7 +260,7 @@ class TestAddFaultPaths:
             '--plan-id',
             plan_id,
             '--aspect',
-            'request_result_alignment',
+            'request-result-alignment',
             '--fragment-file',
             str(fragment_path),
         )
@@ -265,8 +275,8 @@ class TestAddFaultPaths:
         # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
-        fragment_path = _write_fragment(tmp_path, 'aspect.toon', _valid_fragment_body('request_result_alignment'))
-        _add_aspect(plan_id, 'request_result_alignment', fragment_path)
+        fragment_path = _write_fragment(tmp_path, 'aspect.toon', _valid_fragment_body('request-result-alignment'))
+        _add_aspect(plan_id, 'request-result-alignment', fragment_path)
 
         # Act — second add for the same aspect without --overwrite.
         result = run_script(
@@ -275,7 +285,7 @@ class TestAddFaultPaths:
             '--plan-id',
             plan_id,
             '--aspect',
-            'request_result_alignment',
+            'request-result-alignment',
             '--fragment-file',
             str(fragment_path),
         )
@@ -286,8 +296,134 @@ class TestAddFaultPaths:
         data = result.toon()
         assert data['status'] == 'error'
         assert data['operation'] == 'add'
-        assert data['aspect'] == 'request_result_alignment'
+        assert data['aspect'] == 'request-result-alignment'
         assert 'already registered' in data['error']
+
+
+# =============================================================================
+# add — aspect-key validation guard
+# =============================================================================
+
+
+class TestAddAspectKeyValidation:
+    """``cmd_add`` rejects ``--aspect`` keys outside the canonical registry.
+
+    The registry is the union of (a) the static section keys from
+    ``retro_sections.SECTION_SPEC`` (``valid_aspect_keys()``) and (b) the
+    domain-contributed aspect names discovered via the extension-discovery
+    library (e.g. ``wrapper-tangle``). An ``--aspect`` outside this set is a
+    producer/consumer drift — a typo'd or renamed key the consumer's section
+    map will never look up — so ``cmd_add`` rejects it loudly with
+    ``status: error`` BEFORE touching the bundle, naming the offending key and
+    the valid set, rather than writing it silently into the bundle where
+    ``compile-report`` would later drop its section.
+
+    Registered static keys (hyphenated) and registered domain keys are still
+    accepted; the guard only fires for genuinely unregistered keys.
+    """
+
+    def test_rejects_unregistered_aspect_key_with_status_error(self, tmp_path, monkeypatch):
+        # Arrange — an underscored variant of a real section key is exactly the
+        # drift the guard protects against: the consumer's SECTION_SPEC uses
+        # the hyphenated form, so the underscored key is unregistered.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('drift'))
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'add',
+            '--plan-id',
+            plan_id,
+            '--aspect',
+            'request_result_alignment',  # underscored — NOT registered
+            '--fragment-file',
+            str(fragment_path),
+        )
+
+        # Assert — structured error payload, process still exits 0 (status is
+        # reported via output_toon, not the exit code).
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'error'
+        assert data['operation'] == 'add'
+        assert data['aspect'] == 'request_result_alignment'
+        assert 'Unregistered aspect key' in data['error']
+        # The error names the valid set so the caller can self-correct.
+        assert 'request-result-alignment' in data['error']
+        # The bundle MUST be untouched — the guard runs before any write, so
+        # the unregistered key never lands in the inventory.
+        from toon_parser import parse_toon
+
+        bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
+        parsed = parse_toon(bundle_path.read_text(encoding='utf-8'))
+        assert 'request_result_alignment' not in parsed
+        assert parsed['_meta'].get('aspects', []) == []
+
+    def test_accepts_registered_static_aspect_key(self, tmp_path, monkeypatch):
+        # Arrange — a registered static section key (hyphenated) is accepted.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('static'))
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'add',
+            '--plan-id',
+            plan_id,
+            '--aspect',
+            'request-result-alignment',  # registered static key
+            '--fragment-file',
+            str(fragment_path),
+        )
+
+        # Assert
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data['aspect'] == 'request-result-alignment'
+        assert data['aspects'] == ['request-result-alignment']
+
+    def test_accepts_registered_domain_aspect_key(self, tmp_path, monkeypatch):
+        # Arrange — a domain-contributed aspect (e.g. wrapper-tangle from
+        # pm-plugin-development) is registered through provides_retrospective_aspects
+        # rather than the static SECTION_SPEC, and must also be accepted. The
+        # exact domain-aspect set is discovered at add-time, so assert the guard
+        # accepts whatever the live extension discovery reports.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        domain_keys = module._domain_aspect_keys()
+        # Skip cleanly when no domain aspect is registered in the test
+        # environment — the static-key acceptance test still covers the
+        # positive path, and this assertion would otherwise be vacuous.
+        import pytest
+
+        if not domain_keys:
+            pytest.skip('no domain-contributed retrospective aspects registered')
+        domain_aspect = sorted(domain_keys)[0]
+        _init_bundle(plan_id)
+        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('domain'))
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'add',
+            '--plan-id',
+            plan_id,
+            '--aspect',
+            domain_aspect,
+            '--fragment-file',
+            str(fragment_path),
+        )
+
+        # Assert
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data['aspect'] == domain_aspect
+        assert data['aspects'] == [domain_aspect]
 
 
 # =============================================================================
@@ -303,14 +439,14 @@ class TestAddOverwrite:
         original = _write_fragment(
             tmp_path,
             'original.toon',
-            'status: success\naspect: request_result_alignment\nmarker: original\n',
+            'status: success\naspect: request-result-alignment\nmarker: original\n',
         )
-        _add_aspect(plan_id, 'request_result_alignment', original)
+        _add_aspect(plan_id, 'request-result-alignment', original)
 
         replacement = _write_fragment(
             tmp_path,
             'replacement.toon',
-            'status: success\naspect: request_result_alignment\nmarker: replacement\n',
+            'status: success\naspect: request-result-alignment\nmarker: replacement\n',
         )
 
         # Act
@@ -320,7 +456,7 @@ class TestAddOverwrite:
             '--plan-id',
             plan_id,
             '--aspect',
-            'request_result_alignment',
+            'request-result-alignment',
             '--fragment-file',
             str(replacement),
             '--overwrite',
@@ -360,7 +496,7 @@ class TestAddFragmentPathResolution:
         work_dir = plan_dir / 'work'
         work_dir.mkdir(parents=True, exist_ok=True)
         (work_dir / 'fragment-alpha.toon').write_text(
-            _valid_fragment_body('request_result_alignment'), encoding='utf-8'
+            _valid_fragment_body('request-result-alignment'), encoding='utf-8'
         )
 
         # Act — relative path; cwd is the test runner root, NOT the plan dir.
@@ -370,7 +506,7 @@ class TestAddFragmentPathResolution:
             '--plan-id',
             plan_id,
             '--aspect',
-            'request_result_alignment',
+            'request-result-alignment',
             '--fragment-file',
             'work/fragment-alpha.toon',
         )
@@ -379,14 +515,14 @@ class TestAddFragmentPathResolution:
         # rather than cwd, so the fragment is found and merged.
         assert result.success, result.stderr
         bundle_content = (plan_dir / 'work' / 'retro-fragments.toon').read_text(encoding='utf-8')
-        assert 'request_result_alignment:' in bundle_content
+        assert 'request-result-alignment:' in bundle_content
         assert 'status: success' in bundle_content
 
     def test_absolute_fragment_file_still_resolves_unchanged(self, tmp_path, monkeypatch):
         # Arrange — fragment outside the plan dir; pass its absolute path.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
-        external = _write_fragment(tmp_path, 'external.toon', _valid_fragment_body('plan_efficiency'))
+        external = _write_fragment(tmp_path, 'external.toon', _valid_fragment_body('plan-efficiency'))
 
         # Act
         result = run_script(
@@ -395,7 +531,7 @@ class TestAddFragmentPathResolution:
             '--plan-id',
             plan_id,
             '--aspect',
-            'plan_efficiency',
+            'plan-efficiency',
             '--fragment-file',
             str(external),
         )
@@ -404,7 +540,7 @@ class TestAddFragmentPathResolution:
         # outside the plan dir still resolves correctly.
         assert result.success, result.stderr
         bundle_content = (plan_dir / 'work' / 'retro-fragments.toon').read_text(encoding='utf-8')
-        assert 'plan_efficiency:' in bundle_content
+        assert 'plan-efficiency:' in bundle_content
 
 
 # =============================================================================
@@ -427,7 +563,7 @@ class TestArchivedPathSubcommandAgreement:
         plan_id = 'archived-agreement'
         archived_plan_path = (tmp_path / 'archive-copy').resolve()
         archived_plan_path.mkdir(parents=True, exist_ok=True)
-        fragment_path = _write_fragment(tmp_path, 'aspect.toon', _valid_fragment_body('request_result_alignment'))
+        fragment_path = _write_fragment(tmp_path, 'aspect.toon', _valid_fragment_body('request-result-alignment'))
         expected_bundle = archived_plan_path / 'work' / 'retro-fragments.toon'
 
         # Act 1: init in archived mode under the caller-supplied root.
@@ -453,7 +589,7 @@ class TestArchivedPathSubcommandAgreement:
             '--archived-plan-path',
             str(archived_plan_path),
             '--aspect',
-            'request_result_alignment',
+            'request-result-alignment',
             '--fragment-file',
             str(fragment_path),
         )
@@ -490,10 +626,10 @@ class TestFinalize:
         # we can assert finalize returns the sorted list.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
-        frag_b = _write_fragment(tmp_path, 'b.toon', _valid_fragment_body('log_analysis'))
-        frag_a = _write_fragment(tmp_path, 'a.toon', _valid_fragment_body('artifact_consistency'))
-        _add_aspect(plan_id, 'log_analysis', frag_b)
-        _add_aspect(plan_id, 'artifact_consistency', frag_a)
+        frag_b = _write_fragment(tmp_path, 'b.toon', _valid_fragment_body('log-analysis'))
+        frag_a = _write_fragment(tmp_path, 'a.toon', _valid_fragment_body('artifact-consistency'))
+        _add_aspect(plan_id, 'log-analysis', frag_b)
+        _add_aspect(plan_id, 'artifact-consistency', frag_a)
 
         # Act — finalize no longer accepts --mode.
         result = run_script(
@@ -514,7 +650,7 @@ class TestFinalize:
         # normalize before comparison.
         assert int(data['aspect_count']) == 2
         # aspects are sorted alphabetically; _meta is filtered out.
-        assert data['aspects'] == ['artifact_consistency', 'log_analysis']
+        assert data['aspects'] == ['artifact-consistency', 'log-analysis']
 
     def test_finalize_on_empty_bundle_returns_empty_aspect_list(self, tmp_path, monkeypatch):
         # Arrange
@@ -569,8 +705,8 @@ class TestAuthoritativeAspectInventory:
         # top-level key.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
-        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('chat_history_analysis'))
-        _add_aspect(plan_id, 'chat_history_analysis', fragment_path)
+        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('lessons-proposal'))
+        _add_aspect(plan_id, 'lessons-proposal', fragment_path)
 
         bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
         leaked = bundle_path.read_text(encoding='utf-8')
@@ -585,7 +721,7 @@ class TestAuthoritativeAspectInventory:
         from toon_parser import parse_toon
 
         parsed = parse_toon(bundle_path.read_text(encoding='utf-8'))
-        phantom_keys = [k for k in parsed if not k.startswith('_') and k != 'chat_history_analysis']
+        phantom_keys = [k for k in parsed if not k.startswith('_') and k != 'lessons-proposal']
         assert phantom_keys, 'expected the embedded-colon block scalar to leak a phantom sibling key'
 
         # Act
@@ -600,7 +736,7 @@ class TestAuthoritativeAspectInventory:
         # inflated phantom count.
         assert result.success, result.stderr
         data = result.toon()
-        assert data['aspects'] == ['chat_history_analysis']
+        assert data['aspects'] == ['lessons-proposal']
         assert int(data['aspect_count']) == 1
 
     def test_add_registers_aspect_in_authoritative_inventory(self, tmp_path, monkeypatch):
@@ -608,7 +744,7 @@ class TestAuthoritativeAspectInventory:
         # aspect in _meta.aspects, and the add return reports from that list.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
-        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('chat_history_analysis'))
+        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('lessons-proposal'))
 
         # Act
         result = run_script(
@@ -617,7 +753,7 @@ class TestAuthoritativeAspectInventory:
             '--plan-id',
             plan_id,
             '--aspect',
-            'chat_history_analysis',
+            'lessons-proposal',
             '--fragment-file',
             str(fragment_path),
         )
@@ -625,13 +761,13 @@ class TestAuthoritativeAspectInventory:
         # Assert — the reported aspects come from _meta.aspects.
         assert result.success, result.stderr
         data = result.toon()
-        assert data['aspects'] == ['chat_history_analysis']
+        assert data['aspects'] == ['lessons-proposal']
         # The bundle's _meta block carries the authoritative inventory.
         from toon_parser import parse_toon
 
         bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
         parsed = parse_toon(bundle_path.read_text(encoding='utf-8'))
-        assert parsed['_meta']['aspects'] == ['chat_history_analysis']
+        assert parsed['_meta']['aspects'] == ['lessons-proposal']
 
     def test_overwrite_readd_does_not_duplicate_aspect_in_inventory(self, tmp_path, monkeypatch):
         # Arrange — register an aspect, then re-add it with --overwrite.
@@ -642,7 +778,7 @@ class TestAuthoritativeAspectInventory:
             'original.toon',
             'status: success\naspect: log_analysis\nmarker: original\n',
         )
-        _add_aspect(plan_id, 'log_analysis', original)
+        _add_aspect(plan_id, 'log-analysis', original)
         replacement = _write_fragment(
             tmp_path,
             'replacement.toon',
@@ -656,7 +792,7 @@ class TestAuthoritativeAspectInventory:
             '--plan-id',
             plan_id,
             '--aspect',
-            'log_analysis',
+            'log-analysis',
             '--fragment-file',
             str(replacement),
             '--overwrite',
@@ -665,7 +801,7 @@ class TestAuthoritativeAspectInventory:
         # Assert — dedup invariant: the aspect appears exactly once.
         assert result.success, result.stderr
         data = result.toon()
-        assert data['aspects'] == ['log_analysis']
+        assert data['aspects'] == ['log-analysis']
 
         # finalize agrees: one aspect, count 1.
         finalize_result = run_script(
@@ -676,7 +812,7 @@ class TestAuthoritativeAspectInventory:
         )
         assert finalize_result.success, finalize_result.stderr
         finalize_data = finalize_result.toon()
-        assert finalize_data['aspects'] == ['log_analysis']
+        assert finalize_data['aspects'] == ['log-analysis']
         assert int(finalize_data['aspect_count']) == 1
 
 
@@ -1000,16 +1136,16 @@ class TestCmdAdd:
         module = _load_module()
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
         fragment = tmp_path / 'f.toon'
-        fragment.write_text(_valid_fragment_body('aspect_a'), encoding='utf-8')
+        fragment.write_text(_valid_fragment_body('request-result-alignment'), encoding='utf-8')
 
         # Act
-        result = module.cmd_add(self._args(plan_id, 'aspect_a', fragment))
+        result = module.cmd_add(self._args(plan_id, 'request-result-alignment', fragment))
 
         # Assert
         assert result['status'] == 'success'
         assert result['overwrote'] is False
         # _meta is filtered out of the aspects list.
-        assert result['aspects'] == ['aspect_a']
+        assert result['aspects'] == ['request-result-alignment']
 
     def test_duplicate_without_overwrite_returns_error_status(self, tmp_path, monkeypatch):
         # Arrange
@@ -1017,11 +1153,11 @@ class TestCmdAdd:
         module = _load_module()
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
         fragment = tmp_path / 'f.toon'
-        fragment.write_text(_valid_fragment_body('aspect_a'), encoding='utf-8')
-        module.cmd_add(self._args(plan_id, 'aspect_a', fragment))
+        fragment.write_text(_valid_fragment_body('request-result-alignment'), encoding='utf-8')
+        module.cmd_add(self._args(plan_id, 'request-result-alignment', fragment))
 
         # Act
-        result = module.cmd_add(self._args(plan_id, 'aspect_a', fragment))
+        result = module.cmd_add(self._args(plan_id, 'request-result-alignment', fragment))
 
         # Assert — duplicate add returns structured error, does not raise.
         assert result['status'] == 'error'
@@ -1035,12 +1171,12 @@ class TestCmdAdd:
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
         fragment = tmp_path / 'f.toon'
         fragment.write_text('status: success\naspect: x\nmarker: original\n', encoding='utf-8')
-        module.cmd_add(self._args(plan_id, 'aspect_a', fragment))
+        module.cmd_add(self._args(plan_id, 'request-result-alignment', fragment))
         replacement = tmp_path / 'g.toon'
         replacement.write_text('status: success\naspect: x\nmarker: replacement\n', encoding='utf-8')
 
         # Act
-        result = module.cmd_add(self._args(plan_id, 'aspect_a', replacement, overwrite=True))
+        result = module.cmd_add(self._args(plan_id, 'request-result-alignment', replacement, overwrite=True))
 
         # Assert
         assert result['status'] == 'success'
@@ -1061,15 +1197,17 @@ class TestCmdAdd:
         bundle_path.parent.mkdir(parents=True, exist_ok=True)
         bundle_path.write_text('', encoding='utf-8')
         fragment = tmp_path / 'f.toon'
-        fragment.write_text(_valid_fragment_body('aspect_a'), encoding='utf-8')
+        fragment.write_text(_valid_fragment_body('request-result-alignment'), encoding='utf-8')
 
-        # Act / Assert
+        # Act / Assert — a REGISTERED aspect key is used so the aspect-key
+        # validation guard (which runs first) passes and the _meta.mode
+        # rejection path is the one exercised here.
         try:
             module.cmd_add(
                 _ArgsNS(
                     plan_id=plan_id,
                     archived_plan_path=None,
-                    aspect='aspect_a',
+                    aspect='request-result-alignment',
                     fragment_file=str(fragment),
                     overwrite=False,
                 )
@@ -1107,6 +1245,50 @@ class TestCmdAdd:
         else:
             raise AssertionError('Expected ValueError for reserved aspect key')
 
+    def test_rejects_unregistered_aspect_returns_error_status(self, tmp_path, monkeypatch):
+        """Regression: cmd_add must reject an aspect key outside the registry.
+
+        Direct-import counterpart to
+        :meth:`TestAddAspectKeyValidation.test_rejects_unregistered_aspect_key_with_status_error`
+        — exercises the registry branch in ``cmd_add`` without the subprocess
+        layer so coverage instruments it. The unregistered key returns a
+        structured ``status: error`` payload (it does NOT raise) and the bundle
+        is left untouched.
+        """
+        # Arrange
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
+        fragment = tmp_path / 'f.toon'
+        fragment.write_text(_valid_fragment_body('drift'), encoding='utf-8')
+
+        # Act — an unregistered key (underscored variant of a real section).
+        result = module.cmd_add(self._args(plan_id, 'request_result_alignment', fragment))
+
+        # Assert — structured error, names the offending key and the valid set.
+        assert result['status'] == 'error'
+        assert result['operation'] == 'add'
+        assert result['aspect'] == 'request_result_alignment'
+        assert 'Unregistered aspect key' in result['error']
+        assert 'valid_aspects' in result
+        assert 'request-result-alignment' in result['valid_aspects']
+
+    def test_accepts_registered_static_aspect(self, tmp_path, monkeypatch):
+        """A registered static section key (hyphenated) passes the guard."""
+        # Arrange
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
+        fragment = tmp_path / 'f.toon'
+        fragment.write_text(_valid_fragment_body('static'), encoding='utf-8')
+
+        # Act
+        result = module.cmd_add(self._args(plan_id, 'lessons-proposal', fragment))
+
+        # Assert
+        assert result['status'] == 'success'
+        assert result['aspects'] == ['lessons-proposal']
+
 
 class TestCmdFinalize:
     """Direct unit tests for cmd_finalize."""
@@ -1117,14 +1299,14 @@ class TestCmdFinalize:
         module = _load_module()
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
         frag_b = tmp_path / 'b.toon'
-        frag_b.write_text(_valid_fragment_body('log_analysis'), encoding='utf-8')
+        frag_b.write_text(_valid_fragment_body('log-analysis'), encoding='utf-8')
         frag_a = tmp_path / 'a.toon'
-        frag_a.write_text(_valid_fragment_body('artifact_consistency'), encoding='utf-8')
+        frag_a.write_text(_valid_fragment_body('artifact-consistency'), encoding='utf-8')
         module.cmd_add(
             _ArgsNS(
                 plan_id=plan_id,
                 archived_plan_path=None,
-                aspect='log_analysis',
+                aspect='log-analysis',
                 fragment_file=str(frag_b),
                 overwrite=False,
             )
@@ -1133,7 +1315,7 @@ class TestCmdFinalize:
             _ArgsNS(
                 plan_id=plan_id,
                 archived_plan_path=None,
-                aspect='artifact_consistency',
+                aspect='artifact-consistency',
                 fragment_file=str(frag_a),
                 overwrite=False,
             )
@@ -1151,7 +1333,7 @@ class TestCmdFinalize:
         assert result['status'] == 'success'
         assert result['operation'] == 'finalize'
         assert result['aspect_count'] == 2
-        assert result['aspects'] == ['artifact_consistency', 'log_analysis']
+        assert result['aspects'] == ['artifact-consistency', 'log-analysis']
         assert Path(result['bundle_path']) == plan_dir / 'work' / 'retro-fragments.toon'
 
     def test_empty_bundle_returns_empty_aspect_list(self, tmp_path, monkeypatch):
@@ -1309,7 +1491,7 @@ class TestMainEntryPoint:
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         fragment = tmp_path / 'f.toon'
-        fragment.write_text(_valid_fragment_body('x'), encoding='utf-8')
+        fragment.write_text(_valid_fragment_body('request-result-alignment'), encoding='utf-8')
 
         # init
         monkeypatch.setattr(
@@ -1322,7 +1504,8 @@ class TestMainEntryPoint:
             pass
         capsys.readouterr()
 
-        # add — no --mode under the new contract.
+        # add — no --mode under the new contract. A registered aspect key is
+        # used so the aspect-key validation guard accepts it.
         monkeypatch.setattr(
             'sys.argv',
             [
@@ -1331,7 +1514,7 @@ class TestMainEntryPoint:
                 '--plan-id',
                 plan_id,
                 '--aspect',
-                'x',
+                'request-result-alignment',
                 '--fragment-file',
                 str(fragment),
             ],
