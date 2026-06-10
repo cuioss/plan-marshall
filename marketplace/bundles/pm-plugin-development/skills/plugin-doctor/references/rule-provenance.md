@@ -99,13 +99,14 @@ Activated unconditionally per lesson `2026-04-29-23-002`. Cross-checks marketpla
 
 ### Phase-6 finalize step termination
 
-Three rules guarding `mark-step-done` invocations. Source: phase-6 finalize-orchestration contract (silent-failure surface).
+Four rules guarding `mark-step-done` invocations. Source: phase-6 finalize-orchestration contract (silent-failure surface).
 
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|
 | `MARK_STEP_DONE_STALE_NOTATION` | structural | `_analyze_markdown.py::check_mark_step_done_violations` (via `_doctor_analysis.py`) | Phase-6 finalize-orchestration contract — the stale underscored `manage-status:manage_status` does not resolve; canonical form is `manage-status:manage-status`. |
 | `MARK_STEP_DONE_MISSING_PHASE` | structural | same | Phase-6 finalize-orchestration contract — without `--phase`, the step termination is routed to the wrong phase record. |
 | `MARK_STEP_DONE_MISSING_OUTCOME` | structural | same | Phase-6 finalize-orchestration contract — without `--outcome`, the step cannot be terminated unambiguously. |
+| `finalize-step-token-mismatch` | structural | `_analyze_finalize_step_token.py::scan_finalize_step_token` (via `doctor-marketplace.py::cmd_quality_gate`) | Phase-6 finalize-orchestration contract — a finalize-step skill's documented `mark-step-done --step <token>` (under `--phase 6-finalize`) must equal the skill's manifest step_id (`{bundle}:{skill}` for `OPTIONAL_BUNDLE_FINALIZE_STEPS` members; `project:{name}` for `.claude/skills/finalize-step-*`). A drifted token mis-keys `phase_steps`, so the `phase_steps_complete` handshake reports the step missing and the halt-and-retry recovery loops forever. |
 
 ### Script-safety rules
 

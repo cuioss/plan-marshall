@@ -42,6 +42,7 @@ from _analyze_bash_fence_inline_code_exemption import (
     analyze_bash_fence_inline_code_exemption,
 )
 from _analyze_declared_vs_disk import analyze_declared_vs_disk
+from _analyze_finalize_step_token import scan_finalize_step_token
 from _analyze_frontmatter import analyze_frontmatter
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
@@ -759,6 +760,12 @@ def cmd_quality_gate(args) -> dict:
                                     to publish a ``## Canonical invocations``
                                     section — the build-failing regression net
                                     against argparse-rejection drift)
+      - scan_finalize_step_token   (finalize-step-token-mismatch: a finalize-step
+                                    skill's documented ``mark-step-done --step``
+                                    token under ``--phase 6-finalize`` must match
+                                    its fully-qualified manifest step_id, else the
+                                    recorded phase_steps key drifts and the
+                                    phase_steps_complete handshake loops forever)
 
     Note: ``analyze_bash_chain_shapes_in_skills`` and
     ``analyze_tmp_redirect_in_skills`` are NOT included in quality-gate because
@@ -900,6 +907,19 @@ def cmd_quality_gate(args) -> dict:
     all_issues.extend(historical_prose_findings)
     rule_summaries.append(
         {'rule': 'analyze_historical_prose_in_skills', 'findings': len(historical_prose_findings)}
+    )
+
+    # finalize-step-token-mismatch — flags a finalize-step skill whose documented
+    # mark-step-done --step token (under --phase 6-finalize) diverges from the
+    # skill's fully-qualified manifest step_id. Scans bundle SKILL.md files in
+    # OPTIONAL_BUNDLE_FINALIZE_STEPS plus the project-local
+    # .claude/skills/finalize-step-*/SKILL.md tree (derived internally). Findings
+    # carry absolute file paths, so _scoped's path filter applies uniformly under
+    # --paths.
+    finalize_step_token_findings = _scoped(scan_finalize_step_token(marketplace_root))
+    all_issues.extend(finalize_step_token_findings)
+    rule_summaries.append(
+        {'rule': 'scan_finalize_step_token', 'findings': len(finalize_step_token_findings)}
     )
 
     role_field_findings = _scoped(analyze_role_field(marketplace_root))
