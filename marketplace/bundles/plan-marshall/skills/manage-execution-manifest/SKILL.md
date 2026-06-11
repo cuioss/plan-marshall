@@ -89,7 +89,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   [--affected-files-count {N}] \
   [--phase-5-steps {step1,step2,...}] \
   [--phase-6-steps {step1,step2,...}] \
-  [--commit-strategy {per_plan|per_deliverable|none}]
+  [--commit-and-push {true|false}]
 ```
 
 **Parameters**:
@@ -101,7 +101,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--affected-files-count` (optional, default 0): Count of affected files surfaced by the outline; used by the `early_terminate` rule
 - `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs from `marshal.json` (e.g., `quality-gate,module-tests,coverage`). The decision matrix selects a subset. If omitted, defaults to `quality-gate,module-tests`.
 - `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `commit-push,create-pr,automated-review,sonar-roundtrip,lessons-capture,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
-- `--commit-strategy` (optional, default `per_plan`): `per_plan|per_deliverable|none` — the resolved commit strategy from phase-5-execute config. When `none`, `commit-push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_strategy_none` pre-filter before the matrix runs.
+- `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `commit-push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
 
 **Output** (TOON):
 ```toon
@@ -116,7 +116,7 @@ phase_5:
 phase_6:
   steps_count: 6
 rule_fired: surgical_tech_debt
-commit_strategy: per_plan
+commit_and_push: true
 commit_push_omitted: false
 pre_push_quality_gate_omitted: false
 pre_submission_self_review_omitted: false
@@ -333,7 +333,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --scope-estimate {none|surgical|single_module|multi_module|broad} \
   [--recipe-key KEY] [--affected-files-count N] \
   [--phase-5-steps LIST] [--phase-6-steps LIST] \
-  [--commit-strategy {per_plan|per_deliverable|none}]
+  [--commit-and-push {true|false}]
 ```
 
 ### read

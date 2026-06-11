@@ -81,7 +81,7 @@ Show configuration summaries for user confirmation before proceeding:
 
 **Defaults Applied**:
 - Compatibility: breaking
-- Commit Strategy: per_deliverable
+- Commit and Push: true
 - Finalizing: commit-only
 
 Proceed with this configuration? (yes/no)

@@ -96,14 +96,14 @@ python3 .plan/execute-script.py plan-marshall:execute-task:inject_project_dir \
   run --command "{verification_command}" --plan-id {plan_id}
 ```
 
-Injecting `--plan-id` (rather than `--project-dir {worktree_path}`) routes the executor's two-tier audit-log entry to the plan-scoped `.plan/local/plans/{plan_id}/logs/script-execution.log` — the log the `pre-commit-verify-freshness` gate reads — and lets the Bucket B script auto-resolve the worktree path itself via its `--plan-id`/`--project-dir` two-state contract. No separate `get-worktree-path` resolution is required.
+Injecting `--plan-id` (rather than `--project-dir {worktree_path}`) lets the Bucket B script auto-resolve the worktree path itself via its `--plan-id`/`--project-dir` two-state contract. No separate `get-worktree-path` resolution is required.
 
 Parse the TOON output from the script's stdout. Use the `rewritten_command` value as the command to execute. When `injected` is `true`, log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --plan-id for {notation} (routes build log to plan-scoped script-execution.log)"
+  --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --plan-id for {notation} (auto-resolves worktree path for the Bucket B script)"
 ```
 
 The helper whitelists the eight Bucket B notations from `plan-marshall:tools-script-executor/standards/cwd-policy.md`; Bucket A `manage-*` notations and unknown notations pass through unchanged. The helper skips injection when the command already supplies `--plan-id` (no double injection) and when it already supplies an explicit `--project-dir` (a legacy override is respected untouched). See `scripts/inject_project_dir.py` for the authoritative whitelist.
@@ -315,7 +315,7 @@ Run verification commands without modifying files.
         run --command "{step.target}" --plan-id {plan_id}
       ```
 
-      Parse the `TOON` output. Use the `rewritten_command` value as the command to execute. When the worktree path resolved in Step 1 is empty (main-checkout flow), skip the helper and execute the raw `step.target`. Injecting `--plan-id` routes the executor's audit-log entry to the plan-scoped `script-execution.log` and lets the Bucket B script auto-resolve the worktree via its two-state contract.
+      Parse the `TOON` output. Use the `rewritten_command` value as the command to execute. When the worktree path resolved in Step 1 is empty (main-checkout flow), skip the helper and execute the raw `step.target`. Injecting `--plan-id` lets the Bucket B script auto-resolve the worktree via its two-state contract.
 
    b. Execute the resulting command with a Bash timeout derived from the architecture-resolved canonical envelope. See `plan-marshall:dev-agent-behavior-rules` § "Bash: Timeout from architecture-resolved canonical command" for the authoritative rule: read `bash_timeout_seconds` and `execution_tier` from the resolved TOON, pass `timeout: bash_timeout_seconds * 1000` when `execution_tier=per_task`, and hand off to the orchestrator when `execution_tier=orchestrator`. The 600000ms floor still applies to ad-hoc invocations that do not flow through architecture resolve, and matches `CLAUDE.md` § Build Commands.
 
@@ -324,7 +324,7 @@ Run verification commands without modifying files.
       ```bash
       python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
         work --plan-id {plan_id} --level INFO \
-        --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --plan-id for {notation} (routes build log to plan-scoped script-execution.log)"
+        --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --plan-id for {notation} (auto-resolves worktree path for the Bucket B script)"
       ```
 
    Check exit code and output of the executed command. This step mirrors the Common Workflow → Step: Run Verification sub-step; see that section for the authoritative whitelist of `Bucket B` notations, the no-inject pass-through rule for `Bucket A` `manage-*` notations, and the rationale for skipping injection when the command already supplies `--plan-id` or an explicit `--project-dir`.

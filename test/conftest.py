@@ -946,7 +946,7 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
         'phase-1-init': {'branch_strategy': 'direct'},
         'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
         'phase-5-execute': {
-            'commit_strategy': 'per_deliverable',
+            'commit_and_push': True,
             'max_iterations': 5,
             'steps': ['quality_check', 'build_verify'],
         },

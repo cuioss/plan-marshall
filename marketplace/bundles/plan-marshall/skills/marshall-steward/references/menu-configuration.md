@@ -135,10 +135,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
 ```
 
-**Commit strategy** (phase-5-execute): `per_deliverable` (recommended), `per_plan`, or `none`
+**Commit and push** (phase-5-execute): `true` (recommended — commit per-deliverable + push at finalize) or `false` (local-only run)
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
+  plan phase-5-execute set --field commit_and_push --value {true|false}
 ```
 
 **Confidence threshold** (phase-2-refine, menu-only): `95` (recommended), `90`, or `100`

@@ -6,9 +6,9 @@ user-invocable: false
 
 # Phase Finalize Skill
 
-**Role**: Finalize phase skill. Handles shipping workflow (commit, push, PR) and plan completion. Verification tasks have already been executed within phase-5-execute.
+**Role**: Finalize phase skill. Handles shipping workflow (assert clean tree, push, PR) and plan completion. Under the unconditional per-deliverable commit model, every deliverable was already committed on the feature branch during phase-5-execute, so finalize produces NO plan-level commit — it asserts a clean tree and ships (push + PR). Verification tasks have already been executed within phase-5-execute.
 
-**Key Pattern**: Shipping-focused execution. No verification steps—all quality checks run as verification tasks within phase-5-execute before reaching this phase.
+**Key Pattern**: Shipping-focused execution. No verification steps—all quality checks run as verification tasks within phase-5-execute before reaching this phase. Per-deliverable commits live on the feature branch; `main` receives the squash at merge — the squash-merge convention is unchanged.
 
 **Required steps declaration**: This skill opts in to the `phase_steps_complete` handshake invariant. The canonical list of steps that MUST be marked done on `status.metadata.phase_steps["6-finalize"]` before the phase transitions is maintained in [standards/required-steps.md](standards/required-steps.md). Each built-in step's standards document terminates with a `manage-status mark-step-done` call whose `--step` value matches an entry in that file.
 
@@ -32,7 +32,7 @@ Skill: plan-marshall:tools-integration-ci
 - Never improvise script subcommands — use only those documented in this skill's workflow steps
 - Never skip a step in the manifest list based on PR state, CI state, or earlier step outcomes. The ONLY valid skip condition is the resumable re-entry check (skip if already marked `done` from a previous invocation). Standards documents handle their own runtime state decisions inside their dispatched bodies.
 - Never issue a raw `git` Bash call without `git -C {worktree_path}` (pre-worktree-removal) or `git -C {main_checkout}` (post-worktree-removal). No `cd` chaining, no implicit cwd. `{worktree_path}` and `{main_checkout}` MUST be resolved by the Step 0 entry step before any standards document runs.
-- Never invoke a build, CI, Sonar, or GitHub/GitLab script (`ci`, `pyproject_build`, `sonar`, `workflow-integration-*`) without an explicit routing flag. Forward `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` / `--project-dir {main_checkout}` (escape hatch / explicit override after worktree removal). The two flags are mutually exclusive. The executor is cwd-pass-through; routing must be explicit at every call site. **Salience: any freshness-relevant orchestrator-context build** — a `pyproject_build run` whose build-log line must be visible to the `pre-commit-verify-freshness` gate (e.g. the `pre-push-quality-gate` step run immediately before `commit-push`) — **MUST forward `--plan-id {plan_id}`, never the `--project-dir` escape hatch**: `--project-dir` routes the build-log line to the global tier, where the plan-scoped freshness gate cannot see it, false-negativing the gate and refusing the push.
+- Never invoke a build, CI, Sonar, or GitHub/GitLab script (`ci`, `pyproject_build`, `sonar`, `workflow-integration-*`) without an explicit routing flag. Forward `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` / `--project-dir {main_checkout}` (escape hatch / explicit override after worktree removal). The two flags are mutually exclusive. The executor is cwd-pass-through; routing must be explicit at every call site.
 
 **Constraints:**
 - Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
@@ -109,7 +109,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 | `phase-6-finalize.review_bot_buffer_seconds` | integer | Max seconds to wait after CI for new review-bot comments (used as `--timeout` for `pr wait-for-comments`; ceiling, not fixed delay; default: 180) |
 | `phase-6-finalize.max_iterations` | integer | Maximum finalize-verify loops (default: 3) |
 | `phase-6-finalize.loop_back_without_asking` | bool | Symmetric counterpart to `phase-6-finalize.finalize_without_asking`. When `true`, a `loop_back` outcome from any phase-6-finalize step (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX) auto-dispatches the execute pipeline inline and re-enters the finalize loop, capped by `max_iterations`. When `false` (default), the dispatcher halts and returns control to the user. Read at runtime via `manage-config plan phase-6-finalize get --field loop_back_without_asking`. See Step 3 § "Loop-back continuation" for the dispatch shape. |
-| `phase-5-execute.commit_strategy` | string | per_deliverable / per_plan / none |
+| `phase-5-execute.commit_and_push` | bool | When `true` (default), the unconditional per-deliverable commits made in phase-5 are pushed and a PR is created. When `false`, the run is local-only — the manifest's `commit_push_disabled` pre-filter strips `commit-push`, `pre-push-quality-gate`, and `pre-submission-self-review` so no push happens. |
 | `phase-6-finalize.finalize_without_asking` | bool | Forward-direction auto-continuation: when `true`, after `5-execute → 6-finalize` transition the orchestrator dispatches `phase-6-finalize` inline rather than halting and prompting the user. Read at runtime via `manage-config plan phase-6-finalize get --field finalize_without_asking`. The reverse-direction symmetric counterpart is `phase-6-finalize.loop_back_without_asking`. |
 | `phase-1-init.branch_strategy` | string | feature / direct |
 
@@ -388,7 +388,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init get --audit-plan-id {plan_id}
 ```
 
-Read the config blocks for `review_bot_buffer_seconds`, `max_iterations`, `commit_strategy`, and `branch_strategy`. **Do not** read the `steps` field from `marshal.json` here — that field is the candidate set consumed by `phase-4-plan` Step 8b, not by this skill. The manifest's `phase_6.steps` list is the only valid source for runtime dispatch.
+Read the config blocks for `review_bot_buffer_seconds`, `max_iterations`, `commit_and_push`, and `branch_strategy`. **Do not** read the `steps` field from `marshal.json` here — that field is the candidate set consumed by `phase-4-plan` Step 8b, not by this skill. The manifest's `phase_6.steps` list is the only valid source for runtime dispatch.
 
 Also read references context for branch and issue information:
 
@@ -401,7 +401,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Finalize strategy: commit={commit_strategy}, manifest_steps={steps_count}, branch={branch_strategy}"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Finalize strategy: commit_and_push={commit_and_push}, manifest_steps={steps_count}, branch={branch_strategy}"
 ```
 
 ### Step 3: Execute Step Pipeline (Manifest-Driven, Resumable, Timeout-Wrapped)
@@ -513,7 +513,7 @@ The comparison consults both HEAD-advance AND `git status --porcelain` non-empti
 
 `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "commit-push", "ci-verify", "finalize-step-simplify"}`. Each step MUST persist `head_at_completion` on its terminal `--outcome done` `mark-step-done` call so the comparison above is meaningful. The standards docs for each step (`pre-push-quality-gate.md`, `automated-review.md`, `sonar-roundtrip.md`, `commit-push.md`, `finalize-step-simplify.md`) carry the per-step instructions for capturing `git rev-parse HEAD` immediately before the `mark-step-done` invocation and forwarding it via `--head-at-completion {sha}`. `finalize-step-simplify` is HEAD-dependent because it applies simplification edits directly to the worktree; a loop-back fix task that advances HEAD must re-fire it so the simplification pass runs against the newer tree instead of skipping on a stale `done` record. Branches that mark `loop_back` or `failed` do not need to persist the SHA — the dispatcher's general resumability handling for those outcomes does not consult it. CI completion is a separate dispatcher-resolved precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so the same HEAD-advance signal that invalidates a stale `done` record also invalidates the precondition cache.
 
-**Worktree-freshness precondition for `commit-push`**: `commit-push` additionally requires that the worktree state itself has been observed by a fresh `verify` run — `pre-push-quality-gate` validates *what the code is*, while `pre-commit-verify-freshness` (see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness") validates *that a `verify` was actually performed against this version of the code*. The two checks are complementary, not redundant: a worktree mutated after the most recent `pyproject_build run` log line passes neither — `pre-push-quality-gate` may pass against the new tree if the orchestrator re-runs it, but `pre-commit-verify-freshness` fails because no `verify` log line post-dates the mutation. The freshness gate is fail-closed: `commit-push` MUST refuse to proceed when `pre-commit-verify-freshness` returns `status: stale` or `status: undecidable`, recording `outcome=failed` with a structured `display_detail`. See `standards/commit-push.md` § "Freshness precondition" for the canonical call shape and the full status-to-action table.
+**Worktree-freshness precondition for `commit-push`**: `commit-push` additionally requires that the worktree state itself has been observed by a fresh `verify` run — `pre-push-quality-gate` validates *what the code is*, while `pre-commit-verify-freshness` (see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness") validates *that a `verify` was actually performed against this version of the code*. The two checks are complementary, not redundant: a worktree mutated after the most recent successful build passes neither — `pre-push-quality-gate` may pass against the new tree if the orchestrator re-runs it, but `pre-commit-verify-freshness` fails because no `kind=build` change-ledger entry carries the current working-tree `worktree_sha`. The freshness gate is fail-closed: `commit-push` MUST refuse to proceed when `pre-commit-verify-freshness` returns `status: stale` or `status: undecidable`, recording `outcome=failed` with a structured `display_detail`. See `standards/commit-push.md` § "Freshness precondition" for the canonical call shape and the full status-to-action table.
 
 Resolve the comparison HEAD inside the dispatcher block at the moment of the per-step check:
 

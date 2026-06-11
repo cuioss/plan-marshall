@@ -264,7 +264,7 @@ def test_skill_domains_detect_runs(plan_context, monkeypatch):
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -308,7 +308,7 @@ def test_skill_domains_detect_no_overwrite(plan_context, monkeypatch):
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -398,7 +398,7 @@ def test_get_available_uses_discovery(plan_context, monkeypatch):
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -460,7 +460,7 @@ def test_configure_domains(plan_context, monkeypatch):
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -504,7 +504,7 @@ def test_configure_always_adds_system(plan_context, monkeypatch):
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -570,7 +570,7 @@ def test_get_available_works_without_skill_domains(plan_context, monkeypatch):
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -607,7 +607,7 @@ def test_configure_works_without_skill_domains(plan_context, monkeypatch):
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -649,7 +649,7 @@ def test_list_requires_skill_domains(plan_context, monkeypatch):
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -824,7 +824,7 @@ def test_configure_preserves_project_skills(plan_context, monkeypatch):
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -893,7 +893,7 @@ def test_configure_preserves_build_map_and_active_profiles(plan_context, monkeyp
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -952,7 +952,7 @@ def test_configure_drops_project_skills_for_removed_domains(plan_context, monkey
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },
@@ -999,7 +999,7 @@ def test_get_nested_includes_project_skills(plan_context, monkeypatch):
             'phase-1-init': {'branch_strategy': 'direct'},
             'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
             'phase-5-execute': {
-                'commit_strategy': 'per_deliverable',
+                'commit_and_push': True,
                 'max_iterations': 5,
                 'steps': ['default:quality_check', 'default:build_verify'],
             },

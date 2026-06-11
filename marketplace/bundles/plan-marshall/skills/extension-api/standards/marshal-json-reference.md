@@ -24,7 +24,7 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `plan.phase-2-refine.compatibility` | User config | phase-2-refine, phase-3-outline | - |
 | `plan.phase-3-outline.plan_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-4-plan.execute_without_asking` | User config | plan-marshall orchestrator | - |
-| `plan.phase-5-execute.commit_strategy` | User config | phase-5-execute | - |
+| `plan.phase-5-execute.commit_and_push` | User config | phase-5-execute, phase-6-finalize | - |
 | `plan.phase-5-execute.steps` | Built-in + `provides_verify_steps()` | phase-4-plan, phase-5-execute | [ext-point-verify-steps.md](ext-point-verify-steps.md) |
 | `plan.phase-5-execute.max_iterations` | User config | phase-5-execute | - |
 | `plan.phase-6-finalize.steps` | Built-in + `provides_finalize_steps()` | phase-6-finalize | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) |

@@ -160,7 +160,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field commit_strategy --value per_plan
+  plan phase-5-execute set --field commit_and_push --value false
 
 # Select the per-deliverable build depth — enum: off | compile-only | compile+scoped-test | full
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -494,7 +494,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "qgate": "auto"
     },
     "phase-5-execute": {
-      "commit_strategy": "per_deliverable",
+      "commit_and_push": true,
       "max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
       "steps": ["quality_check", "build_verify"]

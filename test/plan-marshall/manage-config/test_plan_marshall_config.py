@@ -108,7 +108,7 @@ def test_plan_phase_5_execute_get(plan_context, monkeypatch):
     result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
 
     assert result['status'] == 'success'
-    assert 'commit_strategy' in result
+    assert 'commit_and_push' in result
 
 
 def test_plan_phase_6_finalize_get(plan_context, monkeypatch):

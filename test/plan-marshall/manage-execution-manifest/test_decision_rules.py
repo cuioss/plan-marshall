@@ -82,7 +82,7 @@ def _compose_ns(
     affected_files_count: int = 5,
     phase_5_steps: str | None = 'quality-gate,module-tests',
     phase_6_steps: str | None = None,
-    commit_strategy: str | None = None,
+    commit_and_push: str | None = None,
 ) -> Namespace:
     return Namespace(
         plan_id=plan_id,
@@ -93,7 +93,7 @@ def _compose_ns(
         affected_files_count=affected_files_count,
         phase_5_steps=phase_5_steps,
         phase_6_steps=phase_6_steps if phase_6_steps is not None else _phase_6_with_self_review(),
-        commit_strategy=commit_strategy,
+        commit_and_push=commit_and_push,
     )
 
 
@@ -183,11 +183,11 @@ class TestPreSubmissionSelfReviewInactive:
         assert result['pre_submission_self_review_omitted'] is False
         assert 'pre-submission-self-review' in result_phase_6_steps(result)
 
-    def test_commit_strategy_none_strips_self_review(self, plan_context):
+    def test_commit_and_push_false_strips_self_review(self, plan_context):
         _seed_marshal(ci_provider=None)
         _stub_footprint(['some/file.py'])
 
-        ns = _compose_ns(plan_id='qg-self-review-no-push', commit_strategy='none')
+        ns = _compose_ns(plan_id='qg-self-review-no-push', commit_and_push='false')
         result = cmd_compose(ns)
 
         assert result is not None
@@ -281,7 +281,7 @@ class TestPrePushQualityGateInactive:
     def test_no_op_when_gate_absent_from_candidates(self, plan_context, monkeypatch):
         """The pre-filter is a no-op (and never calls the decision) when the gate
         is already absent from the candidate set — e.g. already stripped by
-        ``commit_strategy=none``."""
+        ``commit_and_push=false``."""
         _seed_marshal(ci_provider=None)
         _stub_footprint(['scripts/foo.py'])
 

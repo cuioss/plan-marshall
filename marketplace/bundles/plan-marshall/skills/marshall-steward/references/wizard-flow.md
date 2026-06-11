@@ -294,7 +294,7 @@ See [skill-domains-setup.md](skill-domains-setup.md) for the full workflow.
 
 ## Step 10: Plan Phase Settings (Optional)
 
-Ask the user to accept defaults (`branch=feature`, `compatibility=breaking`, `commits=per_plan`) or configure each field interactively. If configuring, apply each choice via manage-config:
+Ask the user to accept defaults (`branch=feature`, `compatibility=breaking`, `commit_and_push=true`) or configure each field interactively. If configuring, apply each choice via manage-config:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -302,7 +302,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
+  plan phase-5-execute set --field commit_and_push --value {true|false}
 ```
 
 ---

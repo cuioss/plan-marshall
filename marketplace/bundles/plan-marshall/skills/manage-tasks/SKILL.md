@@ -76,7 +76,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire. |
 | `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all four count/id fields present and zero-valued) only when BOTH counts are zero. See "Loop-Exit Guard" below for the contract. |
-| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the worktree state has been observed by a fresh `verify` run before any pre-commit transition. Emits `status: fresh` (verify entry post-dates the worktree mtime), `status: stale` (worktree mutated since the last observed verify), or `status: undecidable` (no positive freshness proof exists — either no matching log entry, or no mtime baseline). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
+| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition. Queries the unified change-ledger for a `kind=build` entry with `exit_code == 0` whose `worktree_sha` matches the recomputed working-tree currency hash. Emits `status: fresh` (matching successful build entry exists), `status: stale` (ledger has entries but none matches the current working-tree sha), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
 
@@ -148,37 +148,53 @@ necessary-vs-sufficient gap between `loop-exit-guard` (queue-empty proof) and
 the pre-commit-push state (worktree-actually-verified proof). `loop-exit-guard`
 answers a structurally narrower question ("is the task queue empty?") than
 what the pre-commit gate needs ("has the codebase actually been verified
-against its current on-disk state?"). This verb closes the gap by comparing
-the most recent `plan-marshall:build-pyproject:pyproject_build run` INFO line
-in `script-execution.log` against the most recent file-content mtime in the
-worktree (scoped to the live plan footprint derived on demand — `{base}...HEAD`
-∪ porcelain — falling back to a pruned worktree-root walk when the footprint is
-empty; see "Algorithm" below). The
-two guards are complementary, not redundant: queue-emptiness and
-verify-freshness must BOTH be true before any pre-commit transition.
+against its current on-disk state?"). This verb closes the gap by querying the
+unified change-ledger for a `kind=build` entry with `exit_code == 0` whose
+`worktree_sha` matches the recomputed working-tree currency hash. The two
+guards are complementary, not redundant: queue-emptiness and verify-freshness
+must BOTH be true before any pre-commit transition.
 
 The gap this closes: the orchestrator can dispatch `commit-push` against a tree
-that no full `verify` has observed if the loop-exit guard is the only gate checked.
+that no successful build has observed if the loop-exit guard is the only gate
+checked.
 
-**Question answered:** is the most recent `verify` log entry newer than the
-worktree state it would re-verify?
+**Question answered:** does a successful `kind=build` ledger entry exist that
+was stamped against the CURRENT working-tree state?
+
+The `worktree_sha` is the working-tree currency hash (staged + unstaged +
+untracked-not-ignored), NOT the committed `HEAD`. This is deliberate: at
+gate time the plan's edits are still uncommitted, so a `HEAD`-based primitive
+would match trivially regardless of any uncommitted change between build and
+gate (a false-positive `fresh`). Folding the uncommitted state into the sha
+means an edit after a clean-tree build changes the sha, and the gate correctly
+reports `stale`.
+
+The ledger query filters on `kind`, `exit_code`, and `worktree_sha` only —
+never `notation` or `plan_id` — so it is build-tool-agnostic and tier-agnostic:
+a Maven/Gradle/npm build, or an orchestrator-driven global-tier build with
+`plan_id: null`, satisfies the gate exactly as a plan-scoped pyproject build
+does. The `kind=build` entry is stamped by the executor dispatch boundary after
+every build-class invocation. See
+[`../manage-change-ledger/SKILL.md`](../manage-change-ledger/SKILL.md) for the
+ledger API (entry schema, `query` verb, and the `kind=build` writer) — the
+ledger query semantics are not inline-copied here.
 
 **Three return statuses (fail-closed contract):**
 
-- `status: fresh` — latest matching INFO build entry post-dates the newest
-  worktree mtime. A fresh `verify` has been observed against the current
-  on-disk state, so the gate is permitted to pass. Carries `t_build_iso`,
-  `t_worktree_iso`, `newest_mtime_path`, and `worktree_root` for the
-  audit trail.
-- `status: stale` — newest worktree mtime post-dates the most recent build
-  entry. The worktree has been mutated since the last observed verify, so
-  the gate MUST fail closed. Carries the same audit fields as `fresh`.
-- `status: undecidable` — no positive freshness proof exists. Two
-  sub-reasons: (a) `reason: no_build_log_entry` — `script-execution.log`
-  carries no matching INFO line (or the log file is missing); (b)
-  `reason: worktree_mtime_unresolvable` — the worktree root produced no
-  candidate files after pruning skip-list directories. Both
-  sub-reasons MUST be treated as gate failure.
+- `status: fresh` — a `kind=build` entry with `exit_code == 0` and a matching
+  `worktree_sha` exists; a successful build has been observed against the
+  current on-disk state, so the gate is permitted to pass. Carries
+  `worktree_sha`, `matched_notation`, `timestamp_iso`, `worktree_root`, and
+  `ledger_path` for the audit trail.
+- `status: stale` — the ledger has entries but none is a successful build
+  against the current working-tree sha. The worktree has been mutated since the
+  last observed build, so the gate MUST fail closed. Carries `worktree_sha`,
+  `worktree_root`, and `ledger_path`.
+- `status: undecidable` — no positive freshness proof can be established. Two
+  sub-reasons: (a) `reason: no_registry` — the change-ledger file is absent or
+  empty; (b) `reason: head_unresolvable` — the working-tree sha cannot be
+  computed (a non-git directory or a repo with no commit). Both sub-reasons
+  MUST be treated as gate failure.
 
 **Canonical invocation:**
 
@@ -196,34 +212,28 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
   `commit-push`.
 
 Both gates fail closed on any non-`fresh` status and emit a `[BLOCKED]` work-log
-line carrying the reason, the newest-mtime path, and both timestamps. The
-`--force` orchestrator escape mirrors the existing pending-tasks-guard escape
-— deliberate, log-recorded override for triage-driven aborts. Never invoked
-programmatically from inside the loop.
+line carrying the reason and the working-tree sha. The `--force` orchestrator
+escape mirrors the existing pending-tasks-guard escape — deliberate,
+log-recorded override for triage-driven aborts. Never invoked programmatically
+from inside the loop.
 
 **Algorithm (deterministic; no LLM dispatch):**
 
-1. Resolve the plan-scoped `script-execution.log` path via the same
-   `.plan/plans/{plan_id}/logs/` resolution used by `manage-logging`.
-2. Scan the log for INFO lines matching the literal substring
-   `plan-marshall:build-pyproject:pyproject_build run`. Parse the leading
-   ISO-8601 timestamp for the newest match as `t_build`.
-3. Resolve the worktree root via `status.metadata.worktree_path`; fall back
-   to the current working directory when no worktree is materialised.
-4. Derive the live plan footprint on demand from the worktree (`{base}...HEAD`
-   ∪ porcelain, reading `references.json` only to resolve the base ref). When
-   non-empty, compute `t_worktree` as the maximum mtime over the footprint
-   entries that still exist on disk (resolved relative to the worktree root).
-   When the footprint is empty or all entries are missing, fall back to a
-   pruned worktree-root walk that skips `.git/`, `.plan/`, `node_modules/`,
-   `__pycache__/`, `.venv/`, `target/`, `build/`, and any other dotted
-   directory.
-5. Decide: `t_build < t_worktree` → `stale`; otherwise → `fresh`; missing
-   either timestamp → `undecidable` with the appropriate `reason`.
+1. Resolve the worktree root via `status.metadata.worktree_path`; fall back to
+   the current working directory when no worktree is materialised.
+2. Recompute the current working-tree sha (`compute_worktree_sha` — staged +
+   unstaged + untracked-not-ignored). When it cannot be computed (non-git
+   directory or a repo with no commit), return `undecidable` with
+   `reason: head_unresolvable`.
+3. Read the change-ledger entries. When the ledger file is absent or empty,
+   return `undecidable` with `reason: no_registry`.
+4. Scan for any entry with `kind == build`, `exit_code == 0`, and
+   `worktree_sha` equal to the current working-tree sha. On a match → `fresh`.
+5. No match → `stale`.
 
-The algorithm never raises uncaught exceptions on missing log file, missing
-references, or absent worktree — every degenerate input case returns
-`undecidable` with a descriptive `reason`.
+The algorithm never raises uncaught exceptions on missing status metadata,
+missing ledger, or absent worktree — every degenerate input case returns a
+descriptive status (`undecidable` or `stale`).
 
 ### Script-Level `[OUTCOME]` Emission (`finalize-step`)
 

@@ -50,7 +50,7 @@ JSON structure and field definitions for project configuration.
       "execute_without_asking": true
     },
     "phase-5-execute": {
-      "commit_strategy": "per_plan",
+      "commit_and_push": true,
       "max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
       "per_task_budget_reserve_tokens": "50K",
@@ -348,13 +348,13 @@ These fields live directly under `plan`, outside any phase block.
 
 ### phase-5-execute
 
-Execute phase with integrated verification pipeline. Contains commit strategy, iteration limits, and a flat ordered `steps` list for verification.
+Execute phase with integrated verification pipeline. Contains the `commit_and_push` boolean, iteration limits, and a flat ordered `steps` list for verification.
 
 ```json
 {
   "plan": {
     "phase-5-execute": {
-      "commit_strategy": "per_plan",
+      "commit_and_push": true,
       "max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
       "per_task_budget_reserve_tokens": "50K",
@@ -370,7 +370,7 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
 
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
-| `commit_strategy` | string | "per_plan" | per_deliverable, per_plan, none — when the execute loop commits (each deliverable chain-tail / once at end of phase / defer to finalize) |
+| `commit_and_push` | bool | true | true=commit per-deliverable + push at finalize; false=local-only run (commit-push/push/PR steps stripped by the manifest `commit_push_disabled` pre-filter) |
 | `max_iterations` | int | 5 | Maximum verify-execute-verify loops |
 | `per_deliverable_build` | string | "compile+scoped-test" | off, compile-only, compile+scoped-test, full — build depth at each per-deliverable chain-tail point (Step 10). `off` skips the focused build; `compile-only` type-checks the changed module; `compile+scoped-test` adds the module's scoped tests; `full` runs a whole-tree quality-gate per deliverable (legacy, opt-in). |
 | `per_task_budget_reserve_tokens` | string | "50K" | Per-task budget **reserve** — the minimum context-window margin that must remain free before the budget-bounded task loop starts another task. Governs the continue-vs-yield sentinel. The `_tokens` suffix names the unit; the human-friendly value form (`"50K"`) is parsed to an int by `sensible_number.parse_sensible_int` in the phase-5-execute consumer. The workflow's documented fallback when the key is absent is `50000`. |

@@ -615,7 +615,7 @@ This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUS
 - `affected_files_count` — `manage-references get --field affected_files`, count entries.
 - `phase-5-steps` candidate (`{p5_csv}`) — read via the bash call below, comma-join the returned `steps` list.
 - `phase-6-steps` candidate (`{p6_csv}`) — read via the bash call below, comma-join the returned `steps` list.
-- `commit_strategy` — read via the bash call below, from the `commit_strategy` field; omit `--commit-strategy` on `compose` when the field is absent (defaults to `per_plan`).
+- `commit_and_push` — read via the bash call below, from the `commit_and_push` field; omit `--commit-and-push` on `compose` when the field is absent (defaults to `true`).
 
 **Read manifest inputs** (run before compose; do NOT skip or improvise alternative reads):
 
@@ -650,10 +650,10 @@ Parse `value` as a list and comma-join to produce `{p6_csv}`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --field commit_strategy
+  plan phase-5-execute get --field commit_and_push
 ```
 
-Parse `value` as `{commit_strategy}` — omit `--commit-strategy` on `compose` when the field is absent.
+Parse `value` as `{commit_and_push}` — omit `--commit-and-push` on `compose` when the field is absent.
 
 **Compose**:
 
@@ -668,7 +668,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --affected-files-count {N} \
   --phase-5-steps "{p5_csv}" \
   --phase-6-steps "{p6_csv}" \
-  [--commit-strategy {commit_strategy}]
+  [--commit-and-push {commit_and_push}]
 ```
 
 **Validate** (immediately after compose, before Q-Gate):

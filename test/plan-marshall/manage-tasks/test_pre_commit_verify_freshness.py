@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
 """Tests for the ``pre-commit-verify-freshness`` subcommand of manage-tasks.
 
-The subcommand answers a single deterministic question — "is the most recent
-``plan-marshall:build-pyproject:pyproject_build run`` INFO line in
-``script-execution.log`` newer than the most recent file-content mtime in the
-worktree?" — and returns one of three statuses (``fresh``, ``stale``,
-``undecidable``) for the orchestrator to consume as a fail-closed gate. See
+The subcommand answers a single deterministic question — "does the unified
+change-ledger contain a ``kind=build`` entry with ``exit_code == 0`` whose
+``worktree_sha`` equals the CURRENT working-tree currency hash?" — and returns
+one of three statuses (``fresh``, ``stale``, ``undecidable``) for the
+orchestrator to consume as a fail-closed gate. See
 ``marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md`` §
 "Pre-Commit Verify Freshness" for the contract.
 
-The mtime-candidate scope is now the live plan footprint, derived on demand via
-``compute_plan_branch_diff`` rather than a seeded ``references.modified_files``
-ledger. Tests stub ``_resolve_footprint`` to inject the footprint without
-standing up a real git worktree; an empty footprint falls back to the
-worktree-root walk exactly as the empty ledger did before.
+The freshness primitive is the change-ledger lookup, NOT a file-mtime heuristic.
+Tests stub the two module-level boundary functions the command imports:
+
+- ``compute_worktree_sha`` — the working-tree currency hash. Stubbed to a
+  deterministic literal so the lookup match is exercised without standing up a
+  real git worktree. Returning ``None`` exercises the ``head_unresolvable``
+  fail-closed path.
+- ``resolve_ledger_path`` — the tracked-config-dir ledger location. Stubbed to a
+  temp JSONL file so the test controls the ledger entries directly.
+
+Together they make the gate's three-way decision (``fresh`` / ``stale`` /
+``undecidable``) deterministic and isolated from both git and the real ledger.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
-import os
 from argparse import Namespace
-from datetime import UTC, datetime
 from pathlib import Path
 
 from conftest import PROJECT_ROOT
@@ -54,51 +59,24 @@ _freshness_mod = _load_module(
 )
 cmd_pre_commit_verify_freshness = _freshness_mod.cmd_pre_commit_verify_freshness
 
+# The current-sha literal the stubbed ``compute_worktree_sha`` returns. A
+# ``kind=build`` entry whose ``worktree_sha`` matches this is a fresh build.
+_CURRENT_SHA = 'a' * 64
+_OTHER_SHA = 'b' * 64
+
 
 # =============================================================================
 # Fixture builders
 # =============================================================================
 
 
-def _iso(dt: datetime) -> str:
-    """Format a UTC datetime as the ISO-8601 string the log scanner expects."""
-    return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-
-def _write_build_log(
-    plan_dir: Path,
-    *,
-    entries: list[tuple[datetime, str]] | None = None,
-) -> Path:
-    """Write a ``logs/script-execution.log`` file with the given entries.
-
-    Each entry is a ``(timestamp, message)`` tuple. Timestamps are rendered in
-    the canonical log format the freshness scanner expects:
-    ``[<iso>] [INFO] [<6-char hex>] <message>``. A few non-matching lines are
-    sprinkled in to prove the regex skips them.
-    """
-    logs_dir = plan_dir / 'logs'
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    log_path = logs_dir / 'script-execution.log'
-    lines: list[str] = []
-    if entries:
-        for idx, (ts, msg) in enumerate(entries):
-            stamp = _iso(ts)
-            # 6-char hex hash placeholder (matches the production hash length).
-            hash_id = f'{idx:06x}'
-            lines.append(f'[{stamp}] [INFO] [{hash_id}] {msg}')
-    # Sprinkle some non-matching entries to ensure the regex is strict.
-    lines.append('[2026-01-01T00:00:00Z] [INFO] [abcdef] some-other-script run (1.00s)')
-    lines.append('[2026-01-01T00:00:01Z] [ERROR] [bbbbbb] plan-marshall:build-pyproject:pyproject_build run (2.00s)')
-    log_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-    return log_path
-
-
 def _write_status(plan_dir: Path, *, worktree_path: str = '') -> Path:
     """Write a minimal ``status.json`` whose metadata.worktree_path is set.
 
-    Empty ``worktree_path`` (the default) leaves the metadata absent so the
-    command falls back to the current working directory.
+    Empty ``worktree_path`` (the default) leaves the worktree resolution to fall
+    back to the current working directory. ``compute_worktree_sha`` is stubbed,
+    so the resolved root never reaches real git — the status file exists only so
+    ``_resolve_worktree_root`` has a deterministic input.
     """
     status = {
         'plan_id': plan_dir.name,
@@ -109,19 +87,60 @@ def _write_status(plan_dir: Path, *, worktree_path: str = '') -> Path:
     return status_path
 
 
-def _stub_footprint(monkeypatch, footprint: list[str]) -> None:
-    """Patch the footprint resolver so no real git worktree is required."""
-    monkeypatch.setattr(
-        _freshness_mod, '_resolve_footprint', lambda plan_id, worktree_root: list(footprint)
-    )
+def _build_entry(
+    *,
+    worktree_sha: str | None = _CURRENT_SHA,
+    exit_code: int = 0,
+    notation: str = 'plan-marshall:build-pyproject:pyproject_build',
+    plan_id: str | None = 'freshness-test',
+    timestamp_iso: str = '2026-06-11T12:00:00Z',
+) -> dict:
+    """Construct a ``kind=build`` ledger record dict.
+
+    Mirrors the shape produced by ``_ledger_core.build_record``. The gate filters
+    on ``kind``, ``exit_code`` and ``worktree_sha`` only — never ``notation`` or
+    ``plan_id`` — so those fields are parameterised to prove tier/tool agnosticism.
+    """
+    return {
+        'kind': 'build',
+        'notation': notation,
+        'plan_id': plan_id,
+        'args': 'run',
+        'exit_code': exit_code,
+        'worktree_sha': worktree_sha,
+        'log_file': None,
+        'timestamp_iso': timestamp_iso,
+    }
 
 
-def _touch(path: Path, *, mtime: datetime) -> None:
-    """Create a file (or update its mtime) at the given UTC timestamp."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text('content', encoding='utf-8')
-    epoch = mtime.replace(tzinfo=UTC).timestamp() if mtime.tzinfo is None else mtime.timestamp()
-    os.utime(path, (epoch, epoch))
+def _change_entry(*, worktree_sha: str = _CURRENT_SHA) -> dict:
+    """Construct a ``kind=change`` ledger record dict (must NOT satisfy the gate)."""
+    return {
+        'kind': 'change',
+        'deliverable_id': 'D1',
+        'commit_sha': 'c' * 40,
+        'changed_paths': ['src.py'],
+        'worktree_sha': worktree_sha,
+        'timestamp_iso': '2026-06-11T11:00:00Z',
+    }
+
+
+def _write_ledger(tmp_path: Path, entries: list[dict]) -> Path:
+    """Write a JSONL change-ledger file with the given entries and return its path."""
+    ledger_path = tmp_path / 'change-ledger.jsonl'
+    lines = [json.dumps(entry, sort_keys=True) for entry in entries]
+    ledger_path.write_text('\n'.join(lines) + ('\n' if lines else ''), encoding='utf-8')
+    return ledger_path
+
+
+def _stub_worktree_sha(monkeypatch, sha: str | None) -> None:
+    """Patch ``compute_worktree_sha`` so no real git worktree is required."""
+    monkeypatch.setattr(_freshness_mod, 'compute_worktree_sha', lambda root: sha)
+
+
+def _stub_ledger_path(monkeypatch, ledger_path: Path) -> None:
+    """Patch ``resolve_ledger_path`` so the gate reads the test's temp ledger."""
+    monkeypatch.setattr(_freshness_mod, 'resolve_ledger_path', lambda: ledger_path)
 
 
 # =============================================================================
@@ -129,170 +148,181 @@ def _touch(path: Path, *, mtime: datetime) -> None:
 # =============================================================================
 
 
-def test_fresh_when_log_entry_post_dates_worktree(plan_context, monkeypatch) -> None:
-    """status: fresh — most recent build entry newer than worktree mtime."""
+def test_fresh_when_matching_build_entry_present(plan_context, monkeypatch, tmp_path) -> None:
+    """status: fresh — ledger has a successful build for the current sha."""
     plan_dir = plan_context.plan_dir_for('freshness-fresh')
-
-    worktree_root = plan_dir / 'worktree'
-    worktree_root.mkdir()
-    # Worktree file mtime: 2026-05-01
-    _touch(worktree_root / 'src.py', mtime=datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC))
-
-    _write_status(plan_dir, worktree_path=str(worktree_root))
-    _stub_footprint(monkeypatch, ['src.py'])
-    # Build log entry: 2026-05-02 (after worktree mtime).
-    _write_build_log(
-        plan_dir,
-        entries=[
-            (datetime(2026, 5, 2, 12, 0, 0, tzinfo=UTC), 'plan-marshall:build-pyproject:pyproject_build run (5.00s)'),
-        ],
-    )
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-fresh'))
 
     assert result['status'] == 'fresh', result
     assert result['plan_id'] == 'freshness-fresh'
-    assert result['t_build_iso'] == '2026-05-02T12:00:00Z'
-    assert result['t_worktree_iso'] == '2026-05-01T12:00:00Z'
-    assert result['newest_mtime_path'].endswith('src.py')
+    assert result['worktree_sha'] == _CURRENT_SHA
+    assert result['matched_notation'] == 'plan-marshall:build-pyproject:pyproject_build'
 
 
-def test_stale_when_footprint_file_post_dates_build_log(plan_context, monkeypatch) -> None:
-    """status: stale — a footprint entry is newer than the most recent build."""
-    plan_dir = plan_context.plan_dir_for('freshness-stale-footprint')
+def test_stale_when_ledger_empty(plan_context, monkeypatch, tmp_path) -> None:
+    """ledger empty -> fail closed (undecidable / no_registry)."""
+    plan_dir = plan_context.plan_dir_for('freshness-empty')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [])
+    _stub_ledger_path(monkeypatch, ledger_path)
 
-    worktree_root = plan_dir / 'worktree'
-    worktree_root.mkdir()
-    # File touched AFTER the build entry.
-    _touch(worktree_root / 'changed.py', mtime=datetime(2026, 5, 5, 9, 0, 0, tzinfo=UTC))
-
-    _write_status(plan_dir, worktree_path=str(worktree_root))
-    _stub_footprint(monkeypatch, ['changed.py'])
-    _write_build_log(
-        plan_dir,
-        entries=[
-            (datetime(2026, 5, 4, 23, 0, 0, tzinfo=UTC), 'plan-marshall:build-pyproject:pyproject_build run (5.00s)'),
-        ],
-    )
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-stale-footprint'))
-
-    assert result['status'] == 'stale', result
-    assert result['t_build_iso'] == '2026-05-04T23:00:00Z'
-    assert result['t_worktree_iso'] == '2026-05-05T09:00:00Z'
-    assert result['newest_mtime_path'].endswith('changed.py')
-
-
-def test_stale_via_worktree_root_fallback_when_footprint_empty(plan_context, monkeypatch) -> None:
-    """status: stale — footprint empty; root walk finds a newer file."""
-    plan_dir = plan_context.plan_dir_for('freshness-stale-fallback')
-
-    worktree_root = plan_dir / 'worktree'
-    worktree_root.mkdir()
-    # Drop a recent file outside the footprint; the rglob fallback finds it.
-    _touch(worktree_root / 'unlisted.txt', mtime=datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC))
-
-    _write_status(plan_dir, worktree_path=str(worktree_root))
-    # Empty footprint → triggers the worktree-root walk.
-    _stub_footprint(monkeypatch, [])
-    _write_build_log(
-        plan_dir,
-        entries=[
-            (datetime(2026, 5, 1, 0, 0, 0, tzinfo=UTC), 'plan-marshall:build-pyproject:pyproject_build run (5.00s)'),
-        ],
-    )
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-stale-fallback'))
-
-    assert result['status'] == 'stale', result
-    assert result['t_build_iso'] == '2026-05-01T00:00:00Z'
-    assert result['newest_mtime_path'].endswith('unlisted.txt')
-
-
-def test_undecidable_when_no_build_log_entry(plan_context, monkeypatch) -> None:
-    """status: undecidable / reason: no_build_log_entry — log has no match."""
-    plan_dir = plan_context.plan_dir_for('freshness-undecidable-no-log')
-
-    worktree_root = plan_dir / 'worktree'
-    worktree_root.mkdir()
-    _touch(worktree_root / 'src.py', mtime=datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC))
-
-    _write_status(plan_dir, worktree_path=str(worktree_root))
-    _stub_footprint(monkeypatch, ['src.py'])
-    # No build entries — only the noise lines from _write_build_log.
-    _write_build_log(plan_dir, entries=None)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-undecidable-no-log'))
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-empty'))
 
     assert result['status'] == 'undecidable', result
-    assert result['reason'] == 'no_build_log_entry'
-    assert 'log_path' in result
+    assert result['reason'] == 'no_registry'
+    assert result['worktree_sha'] == _CURRENT_SHA
+    assert 'ledger_path' in result
 
 
-def test_undecidable_when_worktree_mtime_unresolvable(plan_context, monkeypatch) -> None:
-    """status: undecidable / reason: worktree_mtime_unresolvable — empty tree."""
-    plan_dir = plan_context.plan_dir_for('freshness-undecidable-empty-tree')
+def test_stale_when_ledger_absent(plan_context, monkeypatch, tmp_path) -> None:
+    """ledger file missing entirely -> fail closed (undecidable / no_registry)."""
+    plan_dir = plan_context.plan_dir_for('freshness-no-file')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    # Point at a path that was never written.
+    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
 
-    # Worktree root exists but is empty (and the footprint is empty too).
-    worktree_root = plan_dir / 'worktree'
-    worktree_root.mkdir()
-
-    _write_status(plan_dir, worktree_path=str(worktree_root))
-    _stub_footprint(monkeypatch, [])
-    _write_build_log(
-        plan_dir,
-        entries=[
-            (datetime(2026, 5, 2, 12, 0, 0, tzinfo=UTC), 'plan-marshall:build-pyproject:pyproject_build run (5.00s)'),
-        ],
-    )
-
-    result = cmd_pre_commit_verify_freshness(
-        Namespace(plan_id='freshness-undecidable-empty-tree')
-    )
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-file'))
 
     assert result['status'] == 'undecidable', result
-    assert result['reason'] == 'worktree_mtime_unresolvable'
-    assert result['t_build_iso'] == '2026-05-02T12:00:00Z'
+    assert result['reason'] == 'no_registry'
 
 
-def test_picks_newest_when_multiple_build_entries_present(plan_context, monkeypatch) -> None:
-    """Ensures the scanner picks the latest matching INFO entry, not the first."""
-    plan_dir = plan_context.plan_dir_for('freshness-newest-wins')
+def test_stale_when_build_entry_for_different_sha(plan_context, monkeypatch, tmp_path) -> None:
+    """ledger has a successful build but for a DIFFERENT sha -> stale (fail)."""
+    plan_dir = plan_context.plan_dir_for('freshness-diff-sha')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    # Successful build, wrong worktree_sha — the worktree mutated since the build.
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
 
-    worktree_root = plan_dir / 'worktree'
-    worktree_root.mkdir()
-    _touch(worktree_root / 'src.py', mtime=datetime(2026, 5, 1, 0, 0, 0, tzinfo=UTC))
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-diff-sha'))
 
-    _write_status(plan_dir, worktree_path=str(worktree_root))
-    _stub_footprint(monkeypatch, ['src.py'])
-    _write_build_log(
-        plan_dir,
-        entries=[
-            (datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC), 'plan-marshall:build-pyproject:pyproject_build run (5.00s)'),
-            (datetime(2026, 5, 9, 12, 0, 0, tzinfo=UTC), 'plan-marshall:build-pyproject:pyproject_build run (5.00s)'),
-            (datetime(2026, 5, 5, 12, 0, 0, tzinfo=UTC), 'plan-marshall:build-pyproject:pyproject_build run (5.00s)'),
+    assert result['status'] == 'stale', result
+    assert result['worktree_sha'] == _CURRENT_SHA
+
+
+def test_stale_when_only_failed_build_for_current_sha(plan_context, monkeypatch, tmp_path) -> None:
+    """A build entry matches the sha but ``exit_code != 0`` -> stale (fail closed)."""
+    plan_dir = plan_context.plan_dir_for('freshness-failed-build')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=1)]
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-failed-build'))
+
+    assert result['status'] == 'stale', result
+
+
+def test_stale_when_only_change_entry_matches_sha(plan_context, monkeypatch, tmp_path) -> None:
+    """A ``kind=change`` entry for the current sha must NOT satisfy the gate."""
+    plan_dir = plan_context.plan_dir_for('freshness-change-only')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_change_entry(worktree_sha=_CURRENT_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-change-only'))
+
+    assert result['status'] == 'stale', result
+
+
+def test_undecidable_when_worktree_sha_unresolvable(plan_context, monkeypatch, tmp_path) -> None:
+    """ledger query cannot run because the sha is undefined -> conservative fail.
+
+    ``compute_worktree_sha`` returns ``None`` (non-git directory / repo with no
+    commit), so no positive freshness proof can be established and the gate fails
+    closed BEFORE the ledger is even consulted.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-no-sha')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, None)
+    # A fresh-looking ledger exists but must be irrelevant — the sha is undefined.
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-sha'))
+
+    assert result['status'] == 'undecidable', result
+    assert result['reason'] == 'head_unresolvable'
+
+
+def test_fresh_match_is_notation_and_tier_agnostic(plan_context, monkeypatch, tmp_path) -> None:
+    """A non-pyproject, plan-less (``plan_id=None``) build still satisfies the gate.
+
+    The query filters on ``kind``, ``exit_code`` and ``worktree_sha`` only — so a
+    Maven build from an orchestrator-driven global-tier run with ``plan_id=None``
+    proves freshness exactly as a plan-scoped pyproject build does.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-agnostic')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path,
+        [
+            _build_entry(
+                worktree_sha=_CURRENT_SHA,
+                notation='plan-marshall:build-maven:maven',
+                plan_id=None,
+            )
         ],
     )
+    _stub_ledger_path(monkeypatch, ledger_path)
 
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-newest-wins'))
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-agnostic'))
 
     assert result['status'] == 'fresh', result
-    assert result['t_build_iso'] == '2026-05-09T12:00:00Z'
+    assert result['matched_notation'] == 'plan-marshall:build-maven:maven'
 
 
-def test_no_exception_when_log_file_missing(plan_context, monkeypatch) -> None:
-    """Degenerate case: no log file at all → undecidable, no exception."""
-    plan_dir = plan_context.plan_dir_for('freshness-no-log-file')
+def test_fresh_among_mixed_entries(plan_context, monkeypatch, tmp_path) -> None:
+    """The matching successful build is found among non-matching noise entries."""
+    plan_dir = plan_context.plan_dir_for('freshness-mixed')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path,
+        [
+            _change_entry(worktree_sha=_OTHER_SHA),
+            _build_entry(worktree_sha=_OTHER_SHA),
+            _build_entry(worktree_sha=_CURRENT_SHA, exit_code=1),
+            _build_entry(worktree_sha=_CURRENT_SHA, notation='plan-marshall:build-npm:npm'),
+        ],
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
 
-    worktree_root = plan_dir / 'worktree'
-    worktree_root.mkdir()
-    _touch(worktree_root / 'src.py', mtime=datetime(2026, 5, 1, 0, 0, 0, tzinfo=UTC))
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-mixed'))
 
-    _write_status(plan_dir, worktree_path=str(worktree_root))
-    _stub_footprint(monkeypatch, ['src.py'])
-    # No script-execution.log file written.
+    assert result['status'] == 'fresh', result
+    assert result['matched_notation'] == 'plan-marshall:build-npm:npm'
 
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-log-file'))
 
-    assert result['status'] == 'undecidable', result
-    assert result['reason'] == 'no_build_log_entry'
+def test_malformed_ledger_lines_are_skipped(plan_context, monkeypatch, tmp_path) -> None:
+    """A ledger with garbage lines around a valid entry still resolves fresh.
+
+    ``read_entries`` tolerates and skips malformed JSONL lines, so a corrupt line
+    must not turn a genuine fresh build into a query error.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-malformed')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = tmp_path / 'change-ledger.jsonl'
+    valid = json.dumps(_build_entry(worktree_sha=_CURRENT_SHA), sort_keys=True)
+    ledger_path.write_text(
+        'not-json-at-all\n' + valid + '\n{ broken json\n', encoding='utf-8'
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-malformed'))
+
+    assert result['status'] == 'fresh', result

@@ -1109,3 +1109,149 @@ def test_no_worktree_write_refusal_guard_symbol_present():
             f'Rejected worktree-write refusal guard symbol {symbol!r} must be absent '
             f'(ADR-002: structural cwd-pinning is the primary enforcement)'
         )
+
+
+# =============================================================================
+# TESTS: build-class change-ledger append at the executor dispatch boundary
+#
+# The executor template appends one kind=build change-ledger entry after every
+# build-class dispatch (a notation under plan-marshall:build-pyproject /
+# build-maven / build-gradle / build-npm). The freshness gate reads these
+# entries to answer "was this exact working-tree state built?". The append is
+# fire-and-forget and — critically — fires AFTER the subprocess returns, never
+# before dispatch, so only completed builds (regardless of exit_code) are
+# recorded. These tests pin the source-level presence, the structural import of
+# the ledger primitives, and the after-return ordering.
+# =============================================================================
+
+
+def test_template_contains_build_ledger_append_at_dispatch_boundary():
+    """The executor template must invoke the build-class ledger append at the
+    dispatch boundary, guarded by the build-class notation predicate."""
+    source = TEMPLATE_PATH.read_text(encoding='utf-8')
+
+    assert 'def _append_build_ledger_record(' in source, (
+        '_append_build_ledger_record helper missing from template'
+    )
+    assert 'def _is_build_class_notation(' in source, (
+        '_is_build_class_notation predicate missing from template'
+    )
+    # main() must guard the append behind the build-class predicate and call
+    # the appender with the resolved plan_id and exit_code.
+    assert 'if _is_build_class_notation(notation):' in source, (
+        'main() must guard the ledger append behind _is_build_class_notation(notation)'
+    )
+    assert '_append_build_ledger_record(' in source, (
+        'main() must invoke _append_build_ledger_record at the dispatch boundary'
+    )
+
+
+def test_template_build_ledger_uses_shared_primitives():
+    """The append must reuse the manage-change-ledger writer and the shared
+    worktree-sha helper rather than re-implementing the hash or the append."""
+    source = TEMPLATE_PATH.read_text(encoding='utf-8')
+
+    assert 'from _ledger_core import append_entry, build_record' in source, (
+        'template must import append_entry + build_record from the manage-change-ledger core'
+    )
+    assert 'from worktree_sha import compute_worktree_sha' in source, (
+        'template must import compute_worktree_sha from the shared script-shared helper'
+    )
+
+
+def test_shared_module_dirs_wires_ledger_import_dirs():
+    """get_shared_module_dirs must include the dirs the template imports at
+    executor module level.
+
+    The template imports ``_ledger_core`` (from manage-change-ledger/scripts)
+    and ``worktree_sha`` (from script-shared/scripts) at the executor's own
+    module level. Those imports resolve at runtime ONLY if get_shared_module_dirs
+    places both dirs on the executor's sys.path via the {{SHARED_MODULE_DIRS}}
+    block. This is the generator-side half of the contract whose template-side
+    half is asserted by test_template_build_ledger_uses_shared_primitives — a
+    regression guard against the broken-executor defect where the template
+    imported the modules but the generator never wired their dirs.
+    """
+    module = load_module()
+
+    dirs = module.get_shared_module_dirs(MARKETPLACE_ROOT)
+    dir_strs = [str(d) for d in dirs]
+
+    assert any(d.endswith('manage-change-ledger/scripts') for d in dir_strs), (
+        'get_shared_module_dirs must include manage-change-ledger/scripts so the '
+        f'executor-level `from _ledger_core import ...` resolves; got {dir_strs}'
+    )
+    assert any(d.endswith('script-shared/scripts') for d in dir_strs), (
+        'get_shared_module_dirs must include script-shared/scripts so the '
+        f'executor-level `from worktree_sha import ...` resolves; got {dir_strs}'
+    )
+
+
+def test_template_build_ledger_append_fires_after_dispatch_not_before():
+    """The ledger append must be placed AFTER the subprocess dispatch returns,
+    never before it — only completed dispatches are recorded.
+
+    Asserted positionally on the rendered source: the
+    ``_append_build_ledger_record(`` call site in main() must appear strictly
+    after the ``subprocess.run(`` dispatch and after the exit_code is bound.
+    """
+    source = TEMPLATE_PATH.read_text(encoding='utf-8')
+
+    dispatch_idx = source.find('result = subprocess.run(')
+    assert dispatch_idx != -1, 'subprocess.run dispatch not found in template'
+
+    # The call site inside main() is guarded by the predicate; locate the guard
+    # and the call that follows it.
+    guard_idx = source.find('if _is_build_class_notation(notation):')
+    assert guard_idx != -1, 'build-class guard not found in main()'
+
+    call_site_idx = source.find('_append_build_ledger_record(', guard_idx)
+    assert call_site_idx != -1, 'ledger append call site not found after the guard'
+
+    assert call_site_idx > dispatch_idx, (
+        'ledger append must fire AFTER the subprocess dispatch, not before — '
+        f'append at {call_site_idx} precedes dispatch at {dispatch_idx}'
+    )
+
+    # The exit_code the append records is bound from the dispatch result, so the
+    # call site must also follow the exit_code assignment.
+    exit_code_idx = source.find('exit_code = result.returncode')
+    assert exit_code_idx != -1, 'exit_code assignment not found in template'
+    assert call_site_idx > exit_code_idx, (
+        'ledger append must fire after exit_code is bound from the dispatch result'
+    )
+
+
+def test_template_build_ledger_helpers_loadable_and_predicate_works():
+    """The rendered template loads as a module (its new ledger-core and
+    worktree-sha imports resolve), and the build-class predicate classifies
+    build-* notations correctly while rejecting non-build notations."""
+    module = _load_template_module()
+
+    assert hasattr(module, '_is_build_class_notation'), (
+        '_is_build_class_notation must be defined in the loaded template module'
+    )
+    assert hasattr(module, '_append_build_ledger_record'), (
+        '_append_build_ledger_record must be defined in the loaded template module'
+    )
+
+    # Build-class notations across all four build-* skills classify as build.
+    for build_notation in (
+        'plan-marshall:build-pyproject:pyproject_build',
+        'plan-marshall:build-maven:maven',
+        'plan-marshall:build-gradle:gradle',
+        'plan-marshall:build-npm:npm',
+    ):
+        assert module._is_build_class_notation(build_notation), (
+            f'{build_notation} must classify as a build-class dispatch'
+        )
+
+    # Non-build notations must NOT classify as build.
+    for non_build_notation in (
+        'plan-marshall:manage-files:manage-files',
+        'plan-marshall:manage-logging:manage-logging',
+        'pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory',
+    ):
+        assert not module._is_build_class_notation(non_build_notation), (
+            f'{non_build_notation} must NOT classify as a build-class dispatch'
+        )

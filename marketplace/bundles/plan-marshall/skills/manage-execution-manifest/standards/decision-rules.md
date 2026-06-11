@@ -12,7 +12,7 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `scope_estimate` | `solution_outline.md` solution-level metadata (deliverable 2) | enum: `none|surgical|single_module|multi_module|broad` |
 | `recipe_key` | `--recipe-key` argument when supplied, else read by the composer from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) | string or absent |
 | `affected_files_count` | `references.json::affected_files` length | int (≥0) |
-| `commit_strategy` | `manage-config plan phase-5-execute get --field commit_strategy` | enum: `per_plan|per_deliverable|none` (default: `per_plan`) |
+| `commit_and_push` | `manage-config plan phase-5-execute get --field commit_and_push` | bool (default: `true`) |
 | `build_map_globs` | derived from `marshal.json::build.map` — the union of every entry's `glob` across all domains | list[string] (default: empty when build_map absent) |
 | `live_footprint` | derived on demand from the worktree (`{base}...HEAD` ∪ porcelain via `compute_plan_branch_diff`); empty before the worktree is materialized | list[string] (default: empty) |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.steps` | list[string] |
@@ -73,7 +73,7 @@ Before evaluating the seven-row matrix below, the composer applies a fixed seque
 
 The pre-filters run in this order:
 
-1. **`commit_strategy_none`** — drops `commit-push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur.
+1. **`commit_push_disabled`** — drops `commit-push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur.
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
 3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when the live plan footprint is empty.
 4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
@@ -87,21 +87,21 @@ After the seven-row matrix runs, two post-matrix transforms inspect the matrix o
 1. **`ceremony_finalize_selection`** — applies the four `plan.phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `plugin_doctor` / `simplify`, each `always|never|auto`) to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `automated-review`. Documented in its own subsection below.
 2. **`bot_enforcement_guard`** — on GitHub/GitLab plans where `default:automated-review` is missing from the final `phase_6.steps`, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
 
-### Pre-Filter: `commit_strategy_none`
+### Pre-Filter: `commit_push_disabled`
 
-**Condition**: `commit_strategy == none`.
+**Condition**: `commit_and_push == false`.
 
 **Effect**: `commit-push`, `pre-push-quality-gate`, AND `pre-submission-self-review` are all removed from `phase_6_candidates` before the rows are evaluated. The pre-filter removes the two pre-push gating steps because they are meaningless without a downstream push — they exist solely to gate code that will be sent to remote CI.
 
-**Why a pre-filter (not an eighth row)**: `commit_strategy` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the seven rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the seven-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.
+**Why a pre-filter (not an eighth row)**: `commit_and_push` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the seven rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the seven-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.
 
 **Decision log line** (in addition to the row's own log line):
 
 ```
-(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_strategy=none
+(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_and_push=false
 ```
 
-When `commit_strategy ∈ {per_plan, per_deliverable}` (or absent — the default is `per_plan`), the pre-filter is a no-op and emits no log entry.
+When `commit_and_push == true` (or absent — the default is `true`), the pre-filter is a no-op and emits no log entry.
 
 ### Pre-Filter: `pre_push_quality_gate_inactive`
 
@@ -111,7 +111,7 @@ When `commit_strategy ∈ {per_plan, per_deliverable}` (or absent — the defaul
 - the live plan footprint is empty, OR
 - No entry in the live footprint matches any glob in `build_map_globs` (using `fnmatch.fnmatch`).
 
-**Effect**: `pre-push-quality-gate` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-push-quality-gate` was already removed by `commit_strategy_none`, this pre-filter is a no-op and emits no log entry.
+**Effect**: `pre-push-quality-gate` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-push-quality-gate` was already removed by `commit_push_disabled`, this pre-filter is a no-op and emits no log entry.
 
 **Why a pre-filter (not an eighth row)**: Activation is derived from `build.map` (the single source of truth for buildable file types) paired with a glob match against the live footprint, both orthogonal to the change-type / scope / recipe inputs that the seven-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the seven-row matrix verbatim and adds exactly one independent decision-log line.
 
@@ -123,13 +123,13 @@ When `commit_strategy ∈ {per_plan, per_deliverable}` (or absent — the defaul
 
 When all three activation conditions are satisfied (non-empty build_map globs, non-empty footprint, at least one glob match), the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the seven-row matrix.
 
-**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `commit_strategy_none` and *before* every row of the seven-row matrix. The pre-filter is therefore observable independently — Row 7 (default), Row 5 (surgical_bug_fix / surgical_tech_debt), and Row 2 (recipe) all see a Phase 6 candidate list that already has `pre-push-quality-gate` removed if either pre-filter fired.
+**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `commit_push_disabled` and *before* every row of the seven-row matrix. The pre-filter is therefore observable independently — Row 7 (default), Row 5 (surgical_bug_fix / surgical_tech_debt), and Row 2 (recipe) all see a Phase 6 candidate list that already has `pre-push-quality-gate` removed if either pre-filter fired.
 
 ### Pre-Filter: `pre_submission_self_review_inactive`
 
 **Condition**: the live plan footprint is empty.
 
-**Effect**: `pre-submission-self-review` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-submission-self-review` was already removed by `commit_strategy_none`, this pre-filter is a no-op and emits no log entry.
+**Effect**: `pre-submission-self-review` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-submission-self-review` was already removed by `commit_push_disabled`, this pre-filter is a no-op and emits no log entry.
 
 **Why a pre-filter (not an eighth row)**: Activation depends only on the live footprint being non-empty (the four cognitive checks have no diff to inspect when the plan touched zero files). The condition is orthogonal to the change-type / scope / recipe inputs the seven-row matrix consumes. Unlike `pre-push-quality-gate` (which gates on the `build.map` globs), this step has no glob gate — the four structural-defect classes it targets (symmetric pairs, regex over-fit, wording, duplication) apply to any code or doc change, and gating by file extension would mean missing the very wording/duplication defects the lesson cites for `.md` files.
 

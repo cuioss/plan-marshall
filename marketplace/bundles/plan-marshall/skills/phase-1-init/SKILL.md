@@ -652,7 +652,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --values {domain}
 ```
 
-Project-level settings (compatibility, commit_strategy, branch_strategy, verification steps, finalize steps) are read directly from `marshal.json` by each phase skill at runtime.
+Project-level settings (compatibility, commit_and_push, branch_strategy, verification steps, finalize steps) are read directly from `marshal.json` by each phase skill at runtime.
 
 ### Step 10: Log Creation
 

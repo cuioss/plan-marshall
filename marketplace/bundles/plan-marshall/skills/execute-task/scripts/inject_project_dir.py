@@ -4,12 +4,9 @@
 This helper rewrites `python3 .plan/execute-script.py {notation} run ...`
 commands so that Bucket B notations (build / CI / Sonar / PR-doctor) always
 carry `--plan-id {plan_id}` when a plan runs in an isolated git worktree.
-Injecting `--plan-id` (rather than `--project-dir {worktree_path}`) routes the
-executor's two-tier audit-log entry to the plan-scoped
-`.plan/local/plans/{plan_id}/logs/script-execution.log` — the log the
-`pre-commit-verify-freshness` gate reads — and lets the Bucket B script
-auto-resolve the worktree path itself via its `--plan-id`/`--project-dir`
-two-state contract.
+Injecting `--plan-id` (rather than `--project-dir {worktree_path}`) lets the
+Bucket B script auto-resolve the worktree path itself via its
+`--plan-id`/`--project-dir` two-state contract.
 
 Bucket A `manage-*` notations are cwd-agnostic and are returned unchanged, as
 are non-executor commands, any command that already contains `--plan-id` (no
@@ -95,8 +92,7 @@ def inject_project_dir(command: str, plan_id: str) -> tuple[str, bool]:
             rewrite. Parsed with :func:`shlex.split`.
         plan_id: Plan identifier inserted verbatim as the value for
             ``--plan-id`` when injection applies. The Bucket B script resolves
-            the worktree path itself from this flag via its two-state contract,
-            and the executor routes the audit-log entry to the plan-scoped log.
+            the worktree path itself from this flag via its two-state contract.
 
     Returns:
         A tuple ``(rewritten_command, injected)``. ``injected`` is ``True``
