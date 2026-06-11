@@ -17,7 +17,6 @@ Usage:
 """
 
 import argparse
-import fnmatch
 import json
 import shlex
 import subprocess
@@ -77,6 +76,29 @@ VALID_SCOPE_ESTIMATES = (
 )
 
 VALID_TRACKS = ('simple', 'complex')
+
+# Documentation file suffixes recognized generically by the change-footprint
+# classifier. Documentation has NO build-system owner — it is not a buildable
+# unit and not a build_map route role — so doc recognition is an
+# extension-agnostic file-suffix fact rather than a build-extension classify
+# claim. Any changed path ending in one of these suffixes is tagged with the
+# ``documentation`` footprint role independently of (and BEFORE) the
+# build-extension classify_paths() iteration. The build extensions still supply
+# production / test / config recognition; this generic rule is the sole source of
+# documentation recognition. The vocabulary mirrors the suffixes the retired
+# pm-documents Axis-B classifier used (``.md`` / ``.adoc`` / ``.asciidoc``).
+_DOC_SUFFIXES: tuple[str, ...] = ('.md', '.adoc', '.asciidoc')
+
+
+def _is_documentation_path(path: str) -> bool:
+    """Return True when ``path`` is a documentation file by suffix.
+
+    The generic, extension-agnostic documentation predicate consumed by
+    :func:`_classify_paths_via_extensions`. Documentation has no build-system
+    owner, so doc recognition is a pure file-suffix fact — a path is
+    documentation iff it ends in one of :data:`_DOC_SUFFIXES`.
+    """
+    return path.endswith(_DOC_SUFFIXES)
 
 VALID_COMMIT_STRATEGIES = ('per_plan', 'per_deliverable', 'none')
 DEFAULT_COMMIT_STRATEGY = 'per_plan'
@@ -580,26 +602,49 @@ def _classify_paths_via_extensions(
     plan_id: str | None = None,
     extensions: list[Any] | None = None,
 ) -> tuple[str, list[str]]:
-    """Classify a path list via per-domain ExtensionBase.classify_paths().
+    """Classify a path list into a plan-wide change-footprint bucket.
 
-    Pure aggregator: loads every registered extension, asks each one to
-    classify the path list via its ``classify_paths()`` method, resolves
-    multi-extension overlap by longest-glob-wins (highest
-    ``classify_path_specificity`` wins; alphabetical domain-key tie-break),
-    tags paths no extension claims as ``unknown`` and emits a ``[STATUS]``
-    decision-log warning naming them, then collapses the per-path claims
-    into one of six plan-wide bucket values.
+    Two-stage classifier:
+
+    1. **Generic documentation recognition (extension-agnostic).** Any path
+       ending in a :data:`_DOC_SUFFIXES` suffix (``.md`` / ``.adoc`` /
+       ``.asciidoc``) is tagged with the ``documentation`` footprint role
+       directly, BEFORE and independent of the build-extension iteration.
+       Documentation has no build-system owner — it is not a buildable unit and
+       not a build_map route role — so doc recognition is a pure file-suffix fact
+       owned here, not a build-extension claim. Documentation paths are removed
+       from the set handed to the build extensions, so a build extension never
+       claims (or contests) a doc path and a doc path is never tagged
+       ``unknown``.
+
+    2. **Build-extension recognition (production / test / config).** The
+       remaining non-doc paths flow to every discovered build extension (Axis-B:
+       ``build-pyproject`` / ``build-maven`` / ``build-gradle`` / ``build-npm``)
+       via ``classify_paths()``. Multi-extension overlap is resolved by
+       longest-glob-wins (highest ``classify_path_specificity`` wins; alphabetical
+       domain-key tie-break). Non-doc paths no build extension claims are tagged
+       ``unknown`` and emit a ``[STATUS]`` decision-log warning.
+
+    The per-path roles (the generic ``documentation`` tags plus the build
+    extensions' production / test / config claims) are then collapsed into one of
+    six plan-wide bucket values.
+
+    File classification for production / test / config flows from the
+    build-system-owned ``BuildExtensionBase`` subclasses, NOT the language domain
+    extensions — the latter own Axis-A (skill-loading) only and expose no
+    ``classify_paths``. Documentation recognition flows from neither: it is the
+    generic suffix rule above.
 
     Args:
         paths: Plan-wide union of every deliverable's ``affected_files``.
         plan_id: When supplied AND at least one path is unclaimed, the
             aggregator emits a ``[STATUS]`` warning naming each unclaimed
             path under this plan id. Omit during unit tests.
-        extensions: Optional pre-resolved list of extension instances. When
+        extensions: Optional pre-resolved list of build-extension instances. When
             ``None`` the aggregator calls
-            :func:`extension_discovery.discover_all_extensions` and uses
-            every loaded module. The override is intended for the fake-
-            extension test fixture in
+            :func:`extension_discovery.discover_build_extensions` and uses
+            every loaded build-extension module. The override is intended for the
+            fake-extension test fixture in
             ``test/plan-marshall/manage-execution-manifest/_fixtures.py``.
 
     Returns:
@@ -623,25 +668,40 @@ def _classify_paths_via_extensions(
     if not paths:
         return 'documentation_only', []
 
+    # Stage 1 — generic, extension-agnostic documentation recognition. Any path
+    # ending in a documentation suffix is the ``documentation`` footprint role,
+    # owned by nobody (no build owner for docs). These paths are split out so the
+    # build extensions never see them: a doc path is never claimed/contested by
+    # an extension and never tagged ``unknown``.
+    per_path_role: dict[str, str] = {}
+    code_paths: list[str] = []
+    for path in paths:
+        if _is_documentation_path(path):
+            per_path_role[path] = 'documentation'
+        else:
+            code_paths.append(path)
+
     # Resolve the active extension set. The lazy import avoids a circular
     # dependency on extension_discovery during module import; the test
     # fixture passes ``extensions`` explicitly so we never hit this branch
     # during unit tests.
     if extensions is None:
         try:
-            from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
+            from extension_discovery import discover_build_extensions  # type: ignore[import-not-found]
         except ImportError:
-            return 'documentation_only', []
-        discovered = discover_all_extensions()
-        extensions = [ext.get('module') for ext in discovered if ext.get('module') is not None]
+            extensions = []
+        else:
+            discovered = discover_build_extensions()
+            extensions = [ext.get('module') for ext in discovered if ext.get('module') is not None]
 
-    # Collect per-extension claims. Each entry is
-    # (extension_instance, domain_key, role, path).
+    # Stage 2 — build-extension recognition over the non-doc paths only. Collect
+    # per-extension claims. Each entry is (extension_instance, domain_key, role,
+    # path).
     Claim = tuple[Any, str, str, str]
     raw_claims: list[Claim] = []
     for ext in extensions:
         try:
-            claims = ext.classify_paths(list(paths))
+            claims = ext.classify_paths(list(code_paths))
             domain_key = _safe_domain_key(ext)
             for role, claimed_paths in claims.items():
                 for path in claimed_paths:
@@ -651,7 +711,6 @@ def _classify_paths_via_extensions(
 
     # Resolve overlaps per-path: highest specificity wins; alphabetical
     # tie-break on domain_key.
-    per_path_role: dict[str, str] = {}
     claims_by_path: dict[str, list[Claim]] = {}
     for claim in raw_claims:
         claims_by_path.setdefault(claim[3], []).append(claim)
@@ -668,8 +727,9 @@ def _classify_paths_via_extensions(
         scored.sort(key=lambda item: (-item[0], item[1]))
         per_path_role[path] = scored[0][2]
 
-    # Identify unclaimed paths and emit warning when the caller passed plan_id.
-    unclaimed = [p for p in paths if p not in per_path_role]
+    # Identify unclaimed paths (non-doc paths no build extension claimed) and
+    # emit a warning when the caller passed plan_id.
+    unclaimed = [p for p in code_paths if p not in per_path_role]
     if unclaimed:
         if plan_id:
             _emit_decision_log(
@@ -893,49 +953,6 @@ def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> N
 # =============================================================================
 
 
-def _read_build_map_globs() -> list[str]:
-    """Derive the pre-push-quality-gate activation globs from ``skill_domains.build_map``.
-
-    The build_map under ``skill_domains`` is the single source of truth for the
-    file-to-build contract — every ``{glob, role, build_class}`` entry across all
-    domains names a file type the project knows how to build. The pre-push
-    quality gate activates whenever the live footprint touches any of those
-    globs (polyglot-OR + descriptor-triggering, D7/D8): a registered file type
-    in the diff means the bundle is buildable and the gate is meaningful.
-
-    Returns the deduplicated list of non-empty glob strings collected from every
-    build_map entry. Returns an empty list when the file is missing, the
-    ``skill_domains.build_map`` block is absent, or no entry carries a glob — the
-    pre-filter treats an empty list as "inactive" and removes
-    ``default:pre-push-quality-gate``.
-    """
-    marshal_path = get_marshal_path()
-    if not marshal_path.exists():
-        return []
-    data = read_json(marshal_path, default={})
-    if not isinstance(data, dict):
-        return []
-    skill_domains = data.get('skill_domains')
-    if not isinstance(skill_domains, dict):
-        return []
-    build_map = skill_domains.get('build_map')
-    if not isinstance(build_map, dict):
-        return []
-    globs: list[str] = []
-    seen: set[str] = set()
-    for entries in build_map.values():
-        if not isinstance(entries, list):
-            continue
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            glob = entry.get('glob')
-            if isinstance(glob, str) and glob and glob not in seen:
-                seen.add(glob)
-                globs.append(glob)
-    return globs
-
-
 def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     """Read ``plan.{phase_key}.steps`` from marshal.json.
 
@@ -1012,15 +1029,6 @@ def _resolve_footprint(plan_id: str) -> list[str]:
     return sorted(footprint)
 
 
-def _any_glob_matches(paths: list[str], globs: list[str]) -> bool:
-    """Return ``True`` iff at least one ``path`` matches at least one ``glob``."""
-    for path in paths:
-        for glob in globs:
-            if fnmatch.fnmatch(path, glob):
-                return True
-    return False
-
-
 def _apply_commit_strategy_none(phase_6_candidates: list[str], commit_strategy: str) -> tuple[list[str], bool]:
     """Pre-filter: drop ``commit-push`` when ``commit_strategy == none``.
 
@@ -1042,38 +1050,34 @@ def _apply_commit_strategy_none(phase_6_candidates: list[str], commit_strategy: 
 
 
 def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``pre-push-quality-gate`` when activation conditions fail.
+    """Pre-filter: drop ``pre-push-quality-gate`` when the build decision says so.
 
-    Activation is derived from ``skill_domains.build_map`` (single source of
-    truth) and requires BOTH:
+    Activation is the centralized build-necessity decision owned by
+    ``extension_base.should_execute_build`` — the single home for the
+    "is a build necessary?" verdict the four former consumer sites each
+    re-derived. The decision is a pure function of the ``skill_domains.build_map``
+    globs and the live plan footprint: it returns ``decision: build`` when the
+    footprint touches a registered build glob, and ``decision: not_necessary``
+    (with a log-friendly ``reason``) when the build_map registers no globs, the
+    footprint is empty, or the footprint intersects no build glob.
 
-    1. The build_map under ``skill_domains`` carries at least one ``glob`` entry
-       (i.e. the project registers at least one buildable file type).
-    2. At least one entry in the live plan footprint matches one of those
-       build_map globs (using ``fnmatch.fnmatch``).
-
-    When either condition fails, ``pre-push-quality-gate`` is removed from
-    ``phase_6_candidates``. The pre-filter is a no-op when ``pre-push-quality-gate``
-    is already absent (e.g., already filtered by ``_apply_commit_strategy_none``).
-    Returns the filtered list plus a flag indicating whether the pre-filter
-    fired (i.e., the step was active in the input but inactive after the
-    check).
+    When the verdict is ``not_necessary``, ``pre-push-quality-gate`` is removed
+    from ``phase_6_candidates``. The pre-filter is a no-op when
+    ``pre-push-quality-gate`` is already absent (e.g., already filtered by
+    ``_apply_commit_strategy_none``). Returns the filtered list plus a flag
+    indicating whether the pre-filter fired (i.e., the step was active in the
+    input but inactive after the check).
     """
     if 'pre-push-quality-gate' not in phase_6_candidates:
         return phase_6_candidates, False
 
-    globs = _read_build_map_globs()
-    if not globs:
+    from extension_base import should_execute_build  # type: ignore[import-not-found]
+
+    verdict = should_execute_build('quality-gate', plan_id)
+    if verdict.get('decision') != 'build':
         return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
 
-    footprint = _resolve_footprint(plan_id)
-    if not footprint:
-        return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
-
-    if not _any_glob_matches(footprint, globs):
-        return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
-
-    # All activation conditions satisfied — keep the step.
+    # Build is necessary — keep the step.
     return phase_6_candidates, False
 
 
@@ -1159,8 +1163,7 @@ def _read_compatibility() -> str:
     value is not a non-empty string — matching ``DEFAULT_PLAN_REFINE['compatibility']``,
     so a fresh project (or one that never overrode the knob) resolves to the
     default the rest of the pipeline assumes. The composer reads marshal.json
-    straight through, mirroring ``_read_drop_review_on_scope_gate`` /
-    ``_read_build_map_globs``.
+    straight through, mirroring ``_read_drop_review_on_scope_gate``.
     """
     marshal_path = get_marshal_path()
     if marshal_path is None or not marshal_path.exists():

@@ -4,7 +4,10 @@
 This module is the single public interface for domain bundle extensions.
 
 Provides:
-    - ExtensionBase: Abstract base class for extensions
+    - ExtensionBase: Abstract base class for extensions (Axis-A: skill-loading)
+    - BuildExtensionBase: Abstract base class for build-system-owned
+      file-to-build extensions (Axis-B: classify_globs / classify_paths /
+      classify_path_specificity / classify_build_class)
     - Canonical command constants (re-exported from _extension_constants):
       CMD_*, CANONICAL_COMMANDS, PROFILE_PATTERNS, APPLICABLE_PROFILES
     - Build-class vocabulary (re-exported from _extension_constants):
@@ -63,9 +66,9 @@ _SOURCE_SUFFIXES: tuple[str, ...] = ('.py',)
 def derive_globs_from_tree(
     project_root: str, extensions: list
 ) -> dict[str, list[tuple[str, str]]]:
-    """Collect each extension's explicit ``(pattern, role)`` build_map routes per domain.
+    """Collect each build extension's explicit ``(pattern, role)`` build_map routes per domain.
 
-    The shared base-lib consumer behind the build_map seed. Each registered
+    The shared base-lib consumer behind the build_map seed. Each registered build
     extension declares its build_map as explicit ``(pattern, role)`` routes via
     ``classify_globs()`` — an fnmatch-style glob pattern (e.g.
     ``marketplace/bundles/*.py``)
@@ -77,24 +80,28 @@ def derive_globs_from_tree(
     directory.
 
     Tree completeness is a SEPARATE concern: :func:`validate_tree_completeness`
-    scans git-tracked source files and reports any tracked source file no
-    declared route covers. The seed consumes the routes here; the validator gates
-    completeness.
+    scans git-tracked source files within build-covered roots and reports any
+    such source file no declared route covers. The seed consumes the routes here;
+    the validator gates completeness.
 
     Args:
         project_root: Absolute path to the project root (accepted for signature
             parity with :func:`validate_tree_completeness`; route collection does
             not read the tree).
-        extensions: List of extension instances (objects exposing
-            ``classify_globs()`` and ``get_skill_domains()``). Extensions whose
-            ``classify_globs()`` returns no routes contribute nothing.
+        extensions: List of :class:`BuildExtensionBase` instances exposing
+            ``classify_globs()``, keyed by the domain each serves via
+            ``get_skill_domains()``. Build extensions whose ``classify_globs()``
+            returns no routes contribute nothing.
 
     Returns:
         A dict keyed by domain-key with a list of de-duplicated ``(pattern, role)``
         tuples as values, in deterministic sorted order. Domains declaring no
-        routes are omitted entirely.
+        routes are omitted entirely. When several build extensions serve the same
+        domain key (e.g. build-maven and build-gradle both serving ``java``), their
+        routes are MERGED under that key — the per-domain route sets are unioned,
+        not overwritten.
     """
-    derived: dict[str, list[tuple[str, str]]] = {}
+    by_domain: dict[str, set[tuple[str, str]]] = {}
 
     for ext in extensions:
         try:
@@ -114,17 +121,14 @@ def derive_globs_from_tree(
         if not domain_key:
             continue
 
-        seen: set[tuple[str, str]] = set()
+        seen = by_domain.setdefault(domain_key, set())
         for route in routes:
             pattern, role = route
             if role not in BUILD_MAP_ROLES:
                 continue
             seen.add((pattern, role))
 
-        if seen:
-            derived[domain_key] = sorted(seen)
-
-    return derived
+    return {key: sorted(routes) for key, routes in by_domain.items() if routes}
 
 
 def _list_tracked_files(project_root: str) -> list[str]:
@@ -156,22 +160,96 @@ def _list_tracked_files(project_root: str) -> list[str]:
     return sorted(rel_paths)
 
 
+def _route_root(pattern: str) -> str:
+    """Return the leading non-wildcard directory prefix of a route ``pattern``.
+
+    The buildable-unit root of a route is the longest leading run of path
+    segments that contain no glob wildcard (``*``/``?``/``[``). It is the tree a
+    build extension actually claims:
+
+    - ``marketplace/bundles/*.py`` → ``marketplace/bundles/`` (a directory root).
+    - ``test/*.py`` → ``test/``.
+    - ``build.py`` → ``build.py`` (an exact-file route; its own path is the root).
+    - ``pyproject.toml`` → ``pyproject.toml``.
+
+    A path is "within" a directory root when it is prefixed by ``root`` (with the
+    trailing slash); an exact-file root matches only that file. The returned root
+    carries a trailing ``/`` for directory roots and no trailing ``/`` for
+    exact-file roots, so :func:`_within_buildable_roots` can distinguish the two.
+
+    Args:
+        pattern: A route glob (e.g. ``marketplace/bundles/*.py``) or an exact
+            path (e.g. ``build.py``).
+
+    Returns:
+        The buildable-unit root string for ``pattern``.
+    """
+    segments = pattern.split('/')
+    kept: list[str] = []
+    for segment in segments:
+        if any(ch in segment for ch in ('*', '?', '[')):
+            break
+        kept.append(segment)
+    if len(kept) == len(segments):
+        # No wildcard segment — the pattern is an exact path; it is its own root.
+        return pattern
+    # At least one wildcard segment was dropped — the kept prefix is a directory
+    # root. Join with a trailing slash so prefix matching is segment-aligned.
+    return '/'.join(kept) + '/' if kept else ''
+
+
+def _within_buildable_roots(rel_path: str, roots: set[str]) -> bool:
+    """Return True when ``rel_path`` falls under at least one buildable-unit root.
+
+    A directory root (trailing ``/``) claims every path beneath it; an
+    exact-file root (no trailing ``/``) claims only that exact path. The empty
+    root ``''`` claims nothing (a fully-wildcarded pattern with no leading
+    literal prefix declares no concrete tree).
+
+    Args:
+        rel_path: Repo-relative, forward-slashed tracked file path.
+        roots: Set of buildable-unit roots from :func:`_route_root`.
+
+    Returns:
+        True when ``rel_path`` is a buildable unit (within a claimed root).
+    """
+    for root in roots:
+        if not root:
+            continue
+        if root.endswith('/'):
+            if rel_path.startswith(root):
+                return True
+        elif rel_path == root:
+            return True
+    return False
+
+
 def validate_tree_completeness(project_root: str, extensions: list) -> list[str]:
-    """Return git-tracked source files no declared build_map route covers.
+    """Return uncovered git-tracked source files within buildable-unit roots.
 
     The completeness validator that replaces the old per-directory glob
     enumeration. Where the deriver once GUARANTEED coverage by emitting a glob
     per matched directory, the explicit-route contract instead lets domains
     declare compact routes and VALIDATES that those routes cover every tracked
-    source file. A tracked ``.py`` an author's routes forgot (e.g. a production
-    module outside the obvious roots) surfaces here as an uncovered path.
+    source file **within a build-covered tree**. A tracked ``.py`` an author's
+    routes forgot but that lives under a buildable-unit root (e.g. a production
+    module the routes did not enumerate inside ``marketplace/bundles/``) surfaces
+    here as an uncovered path.
+
+    The completeness denominator is **buildable units only**, NOT the full
+    tracked-file universe. A buildable unit is a tracked source file that falls
+    under a root some :class:`BuildExtensionBase` actually claims — derived from
+    the leading non-wildcard prefix of each ``production``/``test`` route via
+    :func:`_route_root`. A tracked ``.py`` outside every build-covered root (e.g.
+    a one-off script in a directory no build system owns) is NOT a buildable unit
+    and is never reported uncovered.
 
     The scan is git-tracked-only by construction (:func:`_list_tracked_files`),
     so untracked ``target/`` / ``.venv/`` output is never flagged. Only
     build-relevant source suffixes (:data:`_SOURCE_SUFFIXES`) are checked;
-    documentation, config, and data files are ignored. A source file is covered
-    when it matches at least one ``production`` or ``test`` route declared by any
-    extension.
+    documentation, config, and data files are ignored. A buildable-unit source
+    file is covered when it matches at least one ``production`` or ``test`` route
+    declared by any extension.
 
     Route patterns are matched with :func:`fnmatch.fnmatch` — the SAME matcher
     the downstream build_map consumer (``manage-execution-manifest``) uses — so a
@@ -182,11 +260,13 @@ def validate_tree_completeness(project_root: str, extensions: list) -> list[str]
 
     Args:
         project_root: Absolute path to the project root to scan.
-        extensions: List of extension instances exposing ``classify_globs()``.
+        extensions: List of :class:`BuildExtensionBase` instances exposing
+            ``classify_globs()``.
 
     Returns:
-        Sorted list of repo-relative tracked source paths covered by no declared
-        route. Empty when every tracked source file is covered.
+        Sorted list of repo-relative tracked source paths that are buildable
+        units (within a build-covered root) yet covered by no declared route.
+        Empty when every buildable-unit source file is covered.
     """
     source_routes: list[str] = []
     for ext in extensions:
@@ -199,17 +279,220 @@ def validate_tree_completeness(project_root: str, extensions: list) -> list[str]
             if role in (ROLE_PRODUCTION, ROLE_TEST):
                 source_routes.append(pattern)
 
+    # Buildable-unit denominator: only tracked source under a build-covered root
+    # is a completeness candidate. The roots come from the production/test route
+    # prefixes — the trees a BuildExtensionBase actually claims.
+    buildable_roots = {_route_root(pattern) for pattern in source_routes}
+
     uncovered: list[str] = []
     for rel_path in _list_tracked_files(project_root):
         if not rel_path.endswith(_SOURCE_SUFFIXES):
+            continue
+        if not _within_buildable_roots(rel_path, buildable_roots):
             continue
         if not any(fnmatch.fnmatch(rel_path, pattern) for pattern in source_routes):
             uncovered.append(rel_path)
     return sorted(uncovered)
 
 
+def _read_build_map_globs(project_root: str | None = None) -> list[str]:
+    """Collect every non-empty ``glob`` from ``skill_domains.build_map`` in marshal.json.
+
+    The build_map under ``skill_domains`` is the single source of truth for the
+    file-to-build contract — every ``{glob, role, build_class}`` entry across all
+    domains names a file type the project knows how to build. This is the
+    build-decision activation gate: a build is necessary only when the live
+    footprint touches one of these globs.
+
+    Returns the deduplicated list of non-empty glob strings collected from every
+    build_map entry, in first-seen order. Returns an empty list when marshal.json
+    is missing, the ``skill_domains.build_map`` block is absent, or no entry
+    carries a glob — :func:`should_execute_build` treats an empty list as "no
+    build registered" and returns ``not_necessary``.
+
+    Args:
+        project_root: Accepted for signature parity with
+            :func:`should_execute_build`; the marshal path is resolved from the
+            current execution context (``file_ops.get_marshal_path`` honours the
+            cwd-pinned / ``set_base_dir`` override), so this argument is not
+            consumed here. The cross-skill ``file_ops`` import is deferred
+            (in-function) so this foundational module carries no hard top-level
+            dependency on another skill's scripts dir — build extensions import
+            ``extension_base`` standalone.
+    """
+    del project_root  # resolved from execution context, not forwarded
+    import json as _json
+
+    from file_ops import get_marshal_path, read_json  # type: ignore[import-not-found]
+
+    marshal_path = get_marshal_path()
+    if not marshal_path.exists():
+        return []
+    try:
+        data = read_json(marshal_path, default={})
+    except (OSError, _json.JSONDecodeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    skill_domains = data.get('skill_domains')
+    if not isinstance(skill_domains, dict):
+        return []
+    build_map = skill_domains.get('build_map')
+    if not isinstance(build_map, dict):
+        return []
+    globs: list[str] = []
+    seen: set[str] = set()
+    for entries in build_map.values():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            glob = entry.get('glob')
+            if isinstance(glob, str) and glob and glob not in seen:
+                seen.add(glob)
+                globs.append(glob)
+    return globs
+
+
+def _resolve_plan_footprint(plan_id: str) -> list[str]:
+    """Derive the live plan footprint for ``plan_id`` on demand.
+
+    Reads ``status.metadata.worktree_path`` to locate the worktree, then derives
+    the footprint live via ``compute_plan_branch_diff`` (``{base}...HEAD`` ∪
+    porcelain). Returns an empty list when no worktree is resolvable — the normal
+    case during early compose (phase-4-plan), *before* phase-5 materialises the
+    worktree. :func:`should_execute_build` treats an empty footprint as "nothing
+    changed" and returns ``not_necessary``.
+
+    The cross-skill ``file_ops`` / ``_references_core`` imports are deferred
+    (in-function) for the same reason as :func:`_read_build_map_globs`: this
+    foundational module carries no hard top-level dependency on another skill's
+    scripts dir.
+
+    Args:
+        plan_id: Plan identifier whose footprint to resolve.
+    """
+    import json as _json
+    import subprocess as _subprocess
+    from pathlib import Path as _Path
+
+    from _references_core import (  # type: ignore[import-not-found]
+        compute_plan_branch_diff,
+        resolve_base_ref,
+    )
+    from constants import FILE_REFERENCES, FILE_STATUS  # type: ignore[import-not-found]
+    from file_ops import get_plan_dir, read_json  # type: ignore[import-not-found]
+
+    status_path = get_plan_dir(plan_id) / FILE_STATUS
+    if not status_path.exists():
+        return []
+    try:
+        status = read_json(status_path, default={})
+    except (OSError, _json.JSONDecodeError):
+        return []
+    if not isinstance(status, dict):
+        return []
+    metadata = status.get('metadata', {})
+    if not isinstance(metadata, dict):
+        return []
+    worktree_path = metadata.get('worktree_path', '')
+    if not isinstance(worktree_path, str) or not worktree_path:
+        return []
+    worktree = _Path(worktree_path)
+    if not worktree.is_dir():
+        return []
+
+    refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
+    try:
+        refs = read_json(refs_path, default={})
+    except (OSError, _json.JSONDecodeError):
+        refs = {}
+    if not isinstance(refs, dict):
+        refs = {}
+    base_ref = resolve_base_ref(None, refs)
+    try:
+        footprint = compute_plan_branch_diff(worktree, base_ref)
+    except _subprocess.CalledProcessError:
+        return []
+    return sorted(footprint)
+
+
+def should_execute_build(
+    canonical_command: str,
+    plan_id: str,
+    project_root: str | None = None,
+) -> dict:
+    """Decide whether ``canonical_command`` must run for ``plan_id``'s footprint.
+
+    The single, build-system-owned home for the build-necessity decision that
+    four consumer sites previously each re-derived (the pre-push-quality-gate
+    activation in ``manage-execution-manifest``, the phase-4-plan per-task
+    verification derivation, and the per-bundle Axis-B classify logic). The
+    decision is a pure function of the ``skill_domains.build_map`` globs and the
+    live plan footprint — no LLM judgement:
+
+    1. Collect the build_map globs via :func:`_read_build_map_globs`.
+    2. Resolve the live footprint via :func:`_resolve_plan_footprint`.
+    3. Return ``not_necessary`` (with a log-friendly ``reason``) when the
+       build_map registers no globs, OR the footprint is empty, OR the footprint
+       intersects no build glob. Otherwise return ``build``.
+
+    Args:
+        canonical_command: The canonical command under decision (e.g.
+            ``quality-gate`` / ``verify`` / ``coverage``). Echoed back on the
+            ``build`` verdict so callers can resolve+run it without re-deriving.
+        plan_id: Plan identifier whose footprint gates the decision.
+        project_root: Accepted for signature parity; the marshal path resolves
+            from the current execution context regardless of this value.
+
+    Returns:
+        A verdict dict. The ``build`` shape::
+
+            {'decision': 'build', 'canonical_command': <command>}
+
+        The ``not_necessary`` shape always carries a non-empty ``reason``::
+
+            {'decision': 'not_necessary', 'reason': <log-friendly text>,
+             'canonical_command': <command>}
+    """
+    globs = _read_build_map_globs(project_root)
+    if not globs:
+        return {
+            'decision': 'not_necessary',
+            'reason': 'build_map registers no globs — project has no buildable file types',
+            'canonical_command': canonical_command,
+        }
+
+    footprint = _resolve_plan_footprint(plan_id)
+    if not footprint:
+        return {
+            'decision': 'not_necessary',
+            'reason': 'plan footprint is empty — no changed files to build',
+            'canonical_command': canonical_command,
+        }
+
+    for path in footprint:
+        for glob in globs:
+            if fnmatch.fnmatch(path, glob):
+                return {'decision': 'build', 'canonical_command': canonical_command}
+
+    return {
+        'decision': 'not_necessary',
+        'reason': 'plan footprint touches no build_map glob — only non-buildable files changed',
+        'canonical_command': canonical_command,
+    }
+
+
 class ExtensionBase(ABC):
-    """Abstract base class for domain bundle extensions.
+    """Abstract base class for domain bundle extensions (Axis-A: skill-loading).
+
+    Owns Axis-A of the extension contract only: skill-loading and the workflow
+    extension hooks. The file-to-build map (Axis-B — ``classify_globs`` /
+    ``classify_paths`` / ``classify_path_specificity`` / ``classify_build_class``)
+    lives on the sibling :class:`BuildExtensionBase`, subclassed by the
+    build-system-owned extensions. A language domain extension subclasses
+    ``ExtensionBase`` only.
 
     Subclasses must implement:
         - get_skill_domains: Domain metadata and skill profiles
@@ -474,207 +757,6 @@ class ExtensionBase(ABC):
         """
         return []
 
-    def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
-        """Classify each path into a file-role bucket owned by this extension.
-
-        Extensions own the predicates that decide which paths they claim and
-        the role each claimed path plays (production / test / documentation /
-        config). The default implementation is a no-op — extensions that do
-        not own any file types simply do not override this method.
-
-        Args:
-            paths: List of repo-relative path strings to classify. The
-                aggregator passes every path under the plan's
-                `references.affected_files` union. Extensions are free to
-                ignore paths their globs do not match.
-
-        Returns:
-            A dict keyed by file-role with list-of-claimed-paths values.
-            The four roles are fixed by contract:
-
-            - ``production``: source code that ships to production (e.g.,
-              ``scripts/foo.py``, ``src/main/java/Foo.java``).
-            - ``test``: test source code (e.g., ``test/foo_test.py``,
-              ``src/test/java/FooIT.java``).
-            - ``documentation``: human-readable documentation (e.g.,
-              ``README.md``, ``standards/foo.md``, ``docs/foo.adoc``).
-            - ``config``: build / lint / packaging configuration (e.g.,
-              ``pom.xml``, ``pyproject.toml``, ``package.json``).
-
-            Default returns the empty four-role dict
-            ``{'production': [], 'test': [], 'documentation': [], 'config': []}``;
-            the aggregator interprets this as "this extension claims
-            nothing". The default is intentionally NOT
-            ``NotImplementedError`` — extensions opting out is the common
-            case.
-
-        Aggregator responsibility (NOT this method's responsibility):
-
-        - **Longest-glob-wins overlap resolution.** When two extensions claim
-          the same path under different roles or different glob patterns,
-          the aggregator (`manage-execution-manifest._classify_paths_via_extensions`)
-          counts non-wildcard path-segment tokens in each extension's matched
-          glob and the longest-glob wins. Ties break alphabetically on the
-          extension's domain key.
-        - **Unclaimed-path handling.** Paths no extension claims are tagged
-          ``unknown`` by the aggregator and surface as a ``[STATUS]``
-          warning. The aggregator never silently falls back to
-          ``documentation_only``.
-        - **Plan-wide bucket collapse.** The aggregator collapses per-path
-          claims into one of six plan-wide bucket values: ``production_only``,
-          ``test_only``, ``documentation_only``, ``mixed_code``,
-          ``mixed_with_docs``, ``unknown``.
-
-        Example (override in a domain extension)::
-
-            def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
-                claims: dict[str, list[str]] = {
-                    'production': [], 'test': [], 'documentation': [], 'config': []
-                }
-                for path in paths:
-                    if path.endswith('.py') and path.startswith('scripts/'):
-                        claims['production'].append(path)
-                    elif path.endswith('.py') and (
-                        path.startswith('test/') or path.startswith('tests/')
-                    ):
-                        claims['test'].append(path)
-                    elif path in ('pyproject.toml', 'uv.lock'):
-                        claims['config'].append(path)
-                return claims
-
-        See ``extension-api/standards/extension-contract.md`` § classify_paths()
-        for the complete contract documentation.
-        """
-        return {'production': [], 'test': [], 'documentation': [], 'config': []}
-
-    def classify_path_specificity(self, path: str, role: str) -> int:
-        """Return the non-wildcard segment count of this extension's matched glob.
-
-        Called by the manage-execution-manifest aggregator when more than one
-        extension claims the same path. The aggregator uses the returned value
-        to apply longest-glob-wins overlap resolution: the extension with the
-        highest specificity score wins the path under its declared role.
-
-        Args:
-            path: The path that this extension claimed (in any role).
-            role: The role under which this extension claimed the path
-                (one of ``production`` / ``test`` / ``documentation`` /
-                ``config``).
-
-        Returns:
-            Non-negative integer specificity score. Higher wins. The default
-            returns ``0`` — extensions that override ``classify_paths()`` are
-            expected to override this method as well, returning the count of
-            non-wildcard path-segment tokens in the glob that matched ``path``
-            for ``role``.
-
-        Example::
-
-            # An extension whose glob ``marketplace/bundles/*/skills/*/SKILL.md``
-            # claimed the path ``marketplace/bundles/foo/skills/bar/SKILL.md``
-            # for the ``documentation`` role returns 4 (the four explicit
-            # segments: ``marketplace``, ``bundles``, ``skills``, ``SKILL.md``).
-            def classify_path_specificity(self, path: str, role: str) -> int:
-                if role == 'documentation' and path.endswith('SKILL.md'):
-                    return 4
-                return 0
-        """
-        return 0
-
-    def classify_build_class(self, path: str, role: str) -> str:
-        """Return the deterministic build_class for a (path, role) pair.
-
-        The second leg of the file-to-build contract. Where ``classify_paths()``
-        maps a path to a file role, this method maps the resulting (path, role)
-        pair to a build_class — the deterministic classification a downstream
-        consumer (``manage-execution-manifest``, ``phase-4-plan``) reads to derive
-        the verification command set for a changed-artifact list without
-        re-deriving the file type. This method is exactly parallel to
-        ``classify_path_specificity`` (a separate per-(path, role) lookup, NOT a
-        change to the four-role ``classify_paths()`` return shape).
-
-        Args:
-            path: The path this extension claimed (in any role). Supplied so a
-                domain may discriminate the build_class on the path itself when
-                the role default is wrong for that domain; the default
-                implementation ignores it.
-            role: The role under which this extension claimed the path — one of
-                ``production`` / ``test`` / ``documentation`` / ``config``.
-
-        Returns:
-            A member of the closed 5-value enum ``BUILD_CLASSES`` — each value
-            NAMES the canonical command directly (no name-to-name indirection):
-
-            - ``compile``: production source — resolves a ``compile``.
-            - ``module-tests``: test source — resolves ``test-compile`` +
-              ``module-tests``.
-            - ``docs-validate``: documentation — derives a doc validation gate.
-            - ``verify``: build/lint/packaging config — resolves a full reactor
-              ``verify`` for the affected module.
-            - ``none``: no build derives from this (path, role) pair.
-
-            The default maps roles deterministically:
-            ``production → compile``, ``test → module-tests``,
-            ``documentation → docs-validate``, ``config → verify``,
-            and any unmatched role → ``none``. Domains that override
-            ``classify_paths()`` inherit this default and override
-            ``classify_build_class`` ONLY where the role→build_class default is
-            wrong for the domain (e.g. a generated file whose path should derive
-            ``none`` despite a ``production`` role).
-
-        See ``extension-api/standards/extension-contract.md`` § classify_paths()
-        for the complete contract documentation.
-        """
-        default_by_role = {
-            'production': BUILD_CLASS_PROD_COMPILE,
-            'test': BUILD_CLASS_TEST_RUN,
-            'documentation': BUILD_CLASS_DOCS_VALIDATE,
-            'config': BUILD_CLASS_BUILD_CONFIG_FULL,
-        }
-        return default_by_role.get(role, BUILD_CLASS_NONE)
-
-    def classify_globs(self) -> list[tuple[str, str]]:
-        """Return this extension's explicit ``(pattern, role)`` build_map routes.
-
-        Each tuple is ``(pattern, role)`` — a concrete glob pattern paired with
-        one of the four resolved file roles. The route declares both WHAT this
-        domain owns and WHERE it lives, so the build_map seed consumes the routes
-        verbatim: no tree scan enumerates one glob per directory. Patterns are
-        matched with :func:`fnmatch.fnmatch` (the matcher the downstream
-        ``manage-execution-manifest`` build_map consumer uses), so a single
-        ``*`` matches across ``/`` — declare single-``*`` globs, NOT recursive
-        ``**`` forms. A production ``.py`` outside the obvious roots (e.g.
-        ``marketplace/targets/*.py`` or every
-        ``marketplace/bundles/*/skills/plan-marshall-plugin/*.py``) is covered by
-        declaring a route whose pattern matches it. The git-tracked completeness
-        validator (``validate_tree_completeness``) reports any tracked source
-        file these routes forgot, so an omitted production module surfaces as an
-        uncovered path rather than being silently missed.
-
-        Returns:
-            A list of ``(pattern, role)`` tuples. ``pattern`` is an
-            fnmatch-style glob (e.g. ``test/*.py``) or an exact path for a single
-            config file (e.g. ``pyproject.toml``). ``role`` is one of the four
-            ``BUILD_MAP_ROLES`` — ``production`` / ``test`` / ``documentation`` /
-            ``config`` — and maps straight through to a ``classify_build_class``
-            build_class with no name-to-name indirection. The default
-            implementation returns an empty list: extensions that own no
-            buildable file types contribute no routes. Example for the python
-            domain:
-            ``[('build.py', 'production'),
-            ('marketplace/bundles/*.py', 'production'),
-            ('marketplace/targets/*.py', 'production'),
-            ('test/*.py', 'test')]``.
-
-        This accessor is exactly parallel to ``classify_build_class`` and
-        ``classify_path_specificity``: a per-extension lookup the aggregator
-        consumes, NOT a change to the ``classify_paths()`` return shape.
-
-        See ``extension-api/standards/extension-contract.md`` § classify_globs()
-        for the complete contract documentation.
-        """
-        return []
-
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if this domain applies to a specific module and return resolved skills.
 
@@ -814,3 +896,239 @@ class ExtensionBase(ABC):
             'additive_to': additive_to,
             'skills_by_profile': skills_by_profile,
         }
+
+
+class BuildExtensionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis-B method has a default
+    """Abstract base class for build-system-owned file-to-build extensions.
+
+    Owns Axis-B of the extension contract: the file-to-build map. Where
+    :class:`ExtensionBase` answers "what skills does this domain load" (Axis-A),
+    a ``BuildExtensionBase`` subclass answers "what build does a changed file
+    trigger." The two hierarchies are deliberately un-entangled — a build skill
+    (``build-pyproject`` / ``build-maven`` / ``build-gradle`` / ``build-npm``)
+    ships a ``BuildExtensionBase`` subclass declaring its ``(pattern, role)``
+    routes, while the language domain extensions subclass only
+    :class:`ExtensionBase`.
+
+    The four methods below carry the same default implementations the
+    file-to-build contract has always had:
+
+        - ``classify_globs``: empty route list (a build extension owning no
+          buildable file types contributes nothing).
+        - ``classify_paths``: empty four-role dict (no-op claim).
+        - ``classify_path_specificity``: ``0`` (no specificity score).
+        - ``classify_build_class``: the role→build_class default map.
+
+    The module-level :func:`derive_globs_from_tree` and
+    :func:`validate_tree_completeness` functions iterate ``classify_globs()`` on
+    ``BuildExtensionBase`` instances — they are the aggregator-facing consumers of
+    the routes a subclass declares.
+
+    There is no abstract method: every Axis-B method has a sensible default, so a
+    subclass that overrides nothing is a valid (no-route) build extension. The
+    ``ABC`` base marks the class as the Axis-B contract anchor.
+    """
+
+    def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+        """Classify each path into a file-role bucket owned by this extension.
+
+        Build extensions own the predicates that decide which paths they claim
+        and the role each claimed path plays (production / test / documentation /
+        config). The default implementation is a no-op — build extensions that do
+        not own any file types simply do not override this method.
+
+        Args:
+            paths: List of repo-relative path strings to classify. The
+                aggregator passes every path under the plan's
+                `references.affected_files` union. Build extensions are free to
+                ignore paths their globs do not match.
+
+        Returns:
+            A dict keyed by file-role with list-of-claimed-paths values.
+            The four roles are fixed by contract:
+
+            - ``production``: source code that ships to production (e.g.,
+              ``scripts/foo.py``, ``src/main/java/Foo.java``).
+            - ``test``: test source code (e.g., ``test/foo_test.py``,
+              ``src/test/java/FooIT.java``).
+            - ``documentation``: human-readable documentation (e.g.,
+              ``README.md``, ``standards/foo.md``, ``docs/foo.adoc``).
+            - ``config``: build / lint / packaging configuration (e.g.,
+              ``pom.xml``, ``pyproject.toml``, ``package.json``).
+
+            Default returns the empty four-role dict
+            ``{'production': [], 'test': [], 'documentation': [], 'config': []}``;
+            the aggregator interprets this as "this extension claims
+            nothing". The default is intentionally NOT
+            ``NotImplementedError`` — extensions opting out is the common
+            case.
+
+        Aggregator responsibility (NOT this method's responsibility):
+
+        - **Longest-glob-wins overlap resolution.** When two extensions claim
+          the same path under different roles or different glob patterns,
+          the aggregator (`manage-execution-manifest._classify_paths_via_extensions`)
+          counts non-wildcard path-segment tokens in each extension's matched
+          glob and the longest-glob wins. Ties break alphabetically on the
+          extension's domain key.
+        - **Unclaimed-path handling.** Paths no extension claims are tagged
+          ``unknown`` by the aggregator and surface as a ``[STATUS]``
+          warning. The aggregator never silently falls back to
+          ``documentation_only``.
+        - **Plan-wide bucket collapse.** The aggregator collapses per-path
+          claims into one of six plan-wide bucket values: ``production_only``,
+          ``test_only``, ``documentation_only``, ``mixed_code``,
+          ``mixed_with_docs``, ``unknown``.
+
+        Example (override in a build extension)::
+
+            def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+                claims: dict[str, list[str]] = {
+                    'production': [], 'test': [], 'documentation': [], 'config': []
+                }
+                for path in paths:
+                    if path.endswith('.py') and path.startswith('scripts/'):
+                        claims['production'].append(path)
+                    elif path.endswith('.py') and (
+                        path.startswith('test/') or path.startswith('tests/')
+                    ):
+                        claims['test'].append(path)
+                    elif path in ('pyproject.toml',):
+                        claims['config'].append(path)
+                return claims
+
+        See ``extension-api/standards/extension-contract.md`` § classify_paths()
+        for the complete contract documentation.
+        """
+        return {'production': [], 'test': [], 'documentation': [], 'config': []}
+
+    def classify_path_specificity(self, path: str, role: str) -> int:
+        """Return the non-wildcard segment count of this extension's matched glob.
+
+        Called by the manage-execution-manifest aggregator when more than one
+        extension claims the same path. The aggregator uses the returned value
+        to apply longest-glob-wins overlap resolution: the extension with the
+        highest specificity score wins the path under its declared role.
+
+        Args:
+            path: The path that this extension claimed (in any role).
+            role: The role under which this extension claimed the path
+                (one of ``production`` / ``test`` / ``documentation`` /
+                ``config``).
+
+        Returns:
+            Non-negative integer specificity score. Higher wins. The default
+            returns ``0`` — build extensions that override ``classify_paths()``
+            are expected to override this method as well, returning the count of
+            non-wildcard path-segment tokens in the glob that matched ``path``
+            for ``role``.
+
+        Example::
+
+            # An extension whose glob ``marketplace/bundles/*/skills/*/SKILL.md``
+            # claimed the path ``marketplace/bundles/foo/skills/bar/SKILL.md``
+            # for the ``documentation`` role returns 4 (the four explicit
+            # segments: ``marketplace``, ``bundles``, ``skills``, ``SKILL.md``).
+            def classify_path_specificity(self, path: str, role: str) -> int:
+                if role == 'documentation' and path.endswith('SKILL.md'):
+                    return 4
+                return 0
+        """
+        return 0
+
+    def classify_build_class(self, path: str, role: str) -> str:
+        """Return the deterministic build_class for a (path, role) pair.
+
+        The second leg of the file-to-build contract. Where ``classify_paths()``
+        maps a path to a file role, this method maps the resulting (path, role)
+        pair to a build_class — the deterministic classification a downstream
+        consumer (``manage-execution-manifest``, ``phase-4-plan``) reads to derive
+        the verification command set for a changed-artifact list without
+        re-deriving the file type. This method is exactly parallel to
+        ``classify_path_specificity`` (a separate per-(path, role) lookup, NOT a
+        change to the four-role ``classify_paths()`` return shape).
+
+        Args:
+            path: The path this extension claimed (in any role). Supplied so a
+                build extension may discriminate the build_class on the path
+                itself when the role default is wrong; the default implementation
+                ignores it.
+            role: The role under which this extension claimed the path — one of
+                ``production`` / ``test`` / ``documentation`` / ``config``.
+
+        Returns:
+            A member of the closed 5-value enum ``BUILD_CLASSES`` — each value
+            NAMES the canonical command directly (no name-to-name indirection):
+
+            - ``compile``: production source — resolves a ``compile``.
+            - ``module-tests``: test source — resolves ``test-compile`` +
+              ``module-tests``.
+            - ``docs-validate``: documentation — derives a doc validation gate.
+            - ``verify``: build/lint/packaging config — resolves a full reactor
+              ``verify`` for the affected module.
+            - ``none``: no build derives from this (path, role) pair.
+
+            The default maps roles deterministically:
+            ``production → compile``, ``test → module-tests``,
+            ``config → verify``, and any unmatched role → ``none``. There is no
+            ``documentation`` route role — documentation is not a build-system
+            concern and has no build owner; doc-change recognition is a generic
+            file-suffix fact owned by ``manage-execution-manifest``, not a
+            build_class derived here. Build extensions that override
+            ``classify_paths()`` inherit this default and override
+            ``classify_build_class`` ONLY where the role→build_class default is
+            wrong (e.g. a generated file whose path should derive ``none`` despite
+            a ``production`` role).
+
+        See ``extension-api/standards/extension-contract.md`` § classify_paths()
+        for the complete contract documentation.
+        """
+        default_by_role = {
+            'production': BUILD_CLASS_PROD_COMPILE,
+            'test': BUILD_CLASS_TEST_RUN,
+            'config': BUILD_CLASS_BUILD_CONFIG_FULL,
+        }
+        return default_by_role.get(role, BUILD_CLASS_NONE)
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        """Return this extension's explicit ``(pattern, role)`` build_map routes.
+
+        Each tuple is ``(pattern, role)`` — a concrete glob pattern paired with
+        one of the four resolved file roles. The route declares both WHAT this
+        build extension owns and WHERE it lives, so the build_map seed consumes
+        the routes verbatim: no tree scan enumerates one glob per directory.
+        Patterns are matched with :func:`fnmatch.fnmatch` (the matcher the
+        downstream ``manage-execution-manifest`` build_map consumer uses), so a
+        single ``*`` matches across ``/`` — declare single-``*`` globs, NOT
+        recursive ``**`` forms. A production ``.py`` outside the obvious roots
+        (e.g. ``marketplace/targets/*.py`` or every
+        ``marketplace/bundles/*/skills/plan-marshall-plugin/*.py``) is covered by
+        declaring a route whose pattern matches it. The git-tracked completeness
+        validator (``validate_tree_completeness``) reports any tracked source
+        file these routes forgot **within a build-covered root**, so an omitted
+        production module surfaces as an uncovered path rather than being silently
+        missed.
+
+        Returns:
+            A list of ``(pattern, role)`` tuples. ``pattern`` is an
+            fnmatch-style glob (e.g. ``test/*.py``) or an exact path for a single
+            config file (e.g. ``pyproject.toml``). ``role`` is one of the four
+            ``BUILD_MAP_ROLES`` — ``production`` / ``test`` / ``documentation`` /
+            ``config`` — and maps straight through to a ``classify_build_class``
+            build_class with no name-to-name indirection. The default
+            implementation returns an empty list: build extensions that own no
+            buildable file types contribute no routes. Example for the python
+            build extension:
+            ``[('build.py', 'production'),
+            ('marketplace/bundles/*.py', 'production'),
+            ('marketplace/targets/*.py', 'production'),
+            ('test/*.py', 'test')]``.
+
+        This accessor is exactly parallel to ``classify_build_class`` and
+        ``classify_path_specificity``: a per-extension lookup the aggregator
+        consumes, NOT a change to the ``classify_paths()`` return shape.
+
+        See ``extension-api/standards/extension-contract.md`` § classify_globs()
+        for the complete contract documentation.
+        """
+        return []

@@ -354,32 +354,38 @@ def get_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
 def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
     """Aggregate the ``(glob, role, build_class)`` build map per *applicable* domain.
 
-    Seeds the build map from each domain's explicit ``(pattern, role)`` routes.
-    Every extension declares its routes via ``classify_globs()``; the
-    ``script-shared`` route collector (``derive_globs_from_tree``, reached via the
+    Seeds the build map from each build system's explicit ``(pattern, role)``
+    routes. Every build skill's ``BuildExtensionBase`` subclass declares its routes
+    via ``classify_globs()``; the ``script-shared`` route collector
+    (``derive_globs_from_tree``, reached via the
     ``extension_discovery.derive_build_map_globs`` bridge) gathers those routes
-    verbatim, keyed by domain — it no longer scans the tree to enumerate one glob
-    per directory. A route's single-``*`` fnmatch pattern can span ``/`` (e.g.
-    ``marketplace/targets/*.py`` covers ``marketplace/targets/generate.py`` and any
-    nested file, and ``marketplace/bundles/*.py`` covers every
+    verbatim, keyed by each build extension's served domain key — it no longer
+    scans the tree to enumerate one glob per directory. A route's single-``*``
+    fnmatch pattern can span ``/`` (e.g. ``marketplace/targets/*.py`` covers
+    ``marketplace/targets/generate.py`` and any nested file, and
+    ``marketplace/bundles/*.py`` covers every
     ``*/skills/plan-marshall-plugin/extension.py``), so a compact route set covers
     files outside the obvious roots. Each collected ``(glob, role)`` route is then
-    stamped with its domain's ``classify_build_class(glob, role)``. Completeness is
-    a separate concern: ``validate_tree_completeness`` scans git-tracked source
-    files and flags any tracked ``.py`` no declared route covers.
+    stamped with its build extension's ``classify_build_class(glob, role)``.
+    Completeness is a separate concern: ``validate_tree_completeness`` scans
+    git-tracked source files and flags any tracked ``.py`` no declared route
+    covers.
 
-    Applicability scoping: a domain's routes are included only when that domain's
-    owning extension's ``applies_to_module()`` returns ``applicable: True`` for at
-    least one discovered project module. ``applies_to_module()`` over the discovered
-    module architecture (``discover_project_modules`` keyed off the tracked-config
-    parent) is the single source of truth for "applies" — the same predicate
-    architecture enrichment uses — so a Python-only project never receives
-    java/oci/javascript routes merely because those bundles are installed. When
-    module discovery yields no modules (e.g. architecture not yet discovered), the
-    aggregation is empty: the seed runs only after architecture discovery
-    (wizard Step 8b, the sole authoritative seed point). Each ``applies_to_module()`` call is
-    wrapped in the same defensive try/except as the build_class stamp so one
-    misbehaving extension cannot crash the seed.
+    Routes and build_class come from the build extensions (Axis-B); applicability
+    scoping remains gated on the *language* extension's ``applies_to_module()``
+    (Axis-A skill-loading domain applicability — the single source of truth for
+    "does this project use python/java/..."). A domain's routes are included only
+    when that domain's owning *language* extension's ``applies_to_module()`` returns
+    ``applicable: True`` for at least one discovered project module.
+    ``applies_to_module()`` over the discovered module architecture
+    (``discover_project_modules`` keyed off the tracked-config parent) is the same
+    predicate architecture enrichment uses — so a Python-only project never
+    receives java/oci/javascript routes merely because those build skills are
+    installed. When module discovery yields no modules (e.g. architecture not yet
+    discovered), the aggregation is empty: the seed runs only after architecture
+    discovery (wizard Step 8b, the sole authoritative seed point). Each
+    ``applies_to_module()`` call is wrapped in the same defensive try/except as the
+    build_class stamp so one misbehaving extension cannot crash the seed.
 
     Returns:
         A dict keyed by domain-key with a list of ``{glob, role, build_class}``
@@ -389,38 +395,54 @@ def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
     from extension_discovery import (  # type: ignore[import-not-found]
         derive_build_map_globs,
         discover_all_extensions,
+        discover_build_extensions,
     )
 
-    extensions = discover_all_extensions()
+    build_extensions = discover_build_extensions()
 
-    # Map each domain key to the extension module that owns it, so the
-    # build_class stamp below queries the right domain's classifier. The deriver
-    # keys its output by domain key (its tie-break mirrors _safe_domain_key), so
-    # an identical first-domain-key lookup recovers the owning module.
-    module_by_domain: dict[str, Any] = {}
-    for entry in extensions:
+    # Map each domain key to the BUILD extension module that owns its routes, so
+    # the build_class stamp below queries the right build system's classifier. The
+    # deriver keys its output by domain key (its tie-break mirrors _safe_domain_key),
+    # so an identical first-domain-key lookup recovers the owning build extension.
+    # build-maven and build-gradle both serve 'java'; the first wins here, but the
+    # role->build_class default is identical for both, so the stamp is the same.
+    build_module_by_domain: dict[str, Any] = {}
+    for entry in build_extensions:
         ext = entry.get('module')
         if ext is None:
             continue
         domain_key = _safe_domain_key(ext)
-        if domain_key and domain_key not in module_by_domain:
-            module_by_domain[domain_key] = ext
+        if domain_key and domain_key not in build_module_by_domain:
+            build_module_by_domain[domain_key] = ext
+
+    # Applicability ground truth comes from the LANGUAGE extensions (Axis-A):
+    # whether the project's modules use python/java/... gates whether that domain's
+    # build routes are seeded. Map each domain key to its language extension module.
+    language_extensions = discover_all_extensions()
+    language_module_by_domain: dict[str, Any] = {}
+    for entry in language_extensions:
+        ext = entry.get('module')
+        if ext is None:
+            continue
+        domain_key = _safe_domain_key(ext)
+        if domain_key and domain_key not in language_module_by_domain:
+            language_module_by_domain[domain_key] = ext
 
     project_root = get_tracked_config_dir().parent
 
-    # Applicability ground truth: a domain applies when its owning extension's
-    # applies_to_module() is applicable for at least one discovered module. With no
-    # discovered modules the seed is post-architecture-only, so the aggregation is
-    # empty rather than the unscoped full set.
-    applicable_domains = _applicable_domain_keys(project_root, module_by_domain)
+    # Applicability ground truth: a domain applies when its owning LANGUAGE
+    # extension's applies_to_module() is applicable for at least one discovered
+    # module. With no discovered modules the seed is post-architecture-only, so the
+    # aggregation is empty rather than the unscoped full set.
+    applicable_domains = _applicable_domain_keys(project_root, language_module_by_domain)
 
-    derived = derive_build_map_globs(project_root, extensions)
+    derived = derive_build_map_globs(project_root, build_extensions)
 
     aggregated: dict[str, list[dict[str, str]]] = {}
     for domain_key, entries in derived.items():
         if domain_key not in applicable_domains:
             continue
-        ext = module_by_domain.get(domain_key)
+        ext = build_module_by_domain.get(domain_key)
         if ext is None:
             continue
         domain_entries: list[dict[str, str]] = []

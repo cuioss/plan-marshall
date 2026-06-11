@@ -1,5 +1,5 @@
 """
-build-map command handlers for manage-config.
+build-map and build-decision command handlers for manage-config.
 
 The skill_domains.build_map block in marshal.json is the file-to-build
 contract: a per-domain inventory of {glob, role, build_class} entries seeded
@@ -14,6 +14,13 @@ directly to the seeded entries (there is no separate override layer). The
 default seed is write-once (an existing build_map is preserved); ``seed
 --force`` clears any existing build_map and re-derives a clean one from the
 current project state.
+
+The ``build-decision`` verb is the centralized build-necessity decision API: it
+returns a structured ``build`` / ``not_necessary`` verdict (the latter carrying a
+log-friendly ``reason``) by delegating to the build-system-owned
+``should_execute_build`` helper in ``script-shared``. The four former consumer
+sites share this one entry point instead of each re-deriving the decision from
+the build_map globs + live footprint.
 """
 
 import argparse
@@ -86,5 +93,33 @@ def cmd_build_map_read(args: argparse.Namespace) -> dict:
             'build_map': merged,
             'domain_count': len(merged),
         }
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+
+def cmd_build_decision(args: argparse.Namespace) -> dict:
+    """Return the centralized build-necessity verdict for a canonical command.
+
+    Thin wrapper over the build-system-owned ``should_execute_build`` helper in
+    ``script-shared`` (``extension_base``). The verdict is a pure function of the
+    ``skill_domains.build_map`` globs and the live plan footprint:
+
+    - ``decision: build`` when the footprint touches a registered build glob.
+    - ``decision: not_necessary`` (with a non-empty ``reason``) when the build_map
+      registers no globs, the footprint is empty, or the footprint intersects no
+      build glob.
+
+    All four former consumer sites (pre-push-quality-gate activation,
+    phase-4-plan per-task verification derivation, the per-bundle classify logic)
+    share this one entry point so the decision is never re-derived inline.
+    """
+    from extension_base import should_execute_build  # type: ignore[import-not-found]
+
+    plan_id = getattr(args, 'plan_id', None) or getattr(args, 'audit_plan_id', None)
+    if not plan_id:
+        return {'status': 'error', 'error': 'build-decision requires --plan-id (or --audit-plan-id)'}
+    try:
+        verdict = should_execute_build(args.command, plan_id)
+        return {'status': 'success', **verdict}
     except Exception as e:
         return {'status': 'error', 'error': str(e)}

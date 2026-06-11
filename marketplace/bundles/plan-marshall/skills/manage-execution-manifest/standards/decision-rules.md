@@ -207,25 +207,29 @@ When `scope_estimate ∈ {none, multi_module, broad}` and `drop_review_on_scope_
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `whole_tree_gate_inactive` and *before* every row of the seven-row matrix and the bot-enforcement guard.
 
+## Generic documentation recognition (no build owner)
+
+Documentation is **not** a build-system concern and has **no build-extension owner**. Doc-change recognition is therefore a generic, extension-agnostic file-suffix fact owned by the aggregator itself, not a build-extension claim. Before any build-extension iteration, the aggregator tags every path ending in one of `_DOC_SUFFIXES` (`.md` / `.adoc` / `.asciidoc`) with the `documentation` footprint role and removes it from the set handed to the build extensions. A documentation path is therefore:
+
+- never claimed or contested by a build extension (it is split out before they run),
+- never subject to longest-glob-wins overlap resolution (no extension competes for it),
+- never tagged `unknown` (the generic suffix rule always recognizes it).
+
+The build extensions (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) supply only the production / test / config roles; documentation is sourced exclusively by the generic suffix rule. This keeps the `documentation_only` / `mixed_with_docs` bucket vocabulary unchanged — only the SOURCE of doc recognition is the generic inline rule rather than an extension.
+
 ## Overlap resolution policy
 
-When the path union contains a path claimed by more than one domain extension (e.g., `pm-documents` claims `*.md`, `pm-plugin-development` claims `marketplace/bundles/*/skills/*/SKILL.md`), the aggregator resolves the conflict via **longest-glob-wins specificity**:
+When the path union contains a **non-documentation** path claimed by more than one build extension (e.g., two build systems serving the same domain both claim a production source path), the aggregator resolves the conflict via **longest-glob-wins specificity**:
 
-1. For each claiming extension, the aggregator calls `classify_path_specificity(path, role)` — a companion method on `ExtensionBase` documented in `extension-api/standards/extension-contract.md`. Each extension returns a non-negative integer score equal to the count of non-wildcard path-segment tokens in the glob that matched `path` for `role`.
+1. For each claiming extension, the aggregator calls `classify_path_specificity(path, role)` — a companion method on `BuildExtensionBase` documented in `extension-api/standards/extension-contract.md`. Each extension returns a non-negative integer score equal to the count of non-wildcard path-segment tokens in the glob that matched `path` for `role`.
 2. The extension with the **highest** specificity score wins the path under its declared role.
 3. Ties break **alphabetically on the extension's domain key** (`d.get('domain', {}).get('key')`) — deterministic and order-independent.
 
-Order-independence is structural: the aggregator collects every extension's claims first, then resolves overlaps. Extension load order is irrelevant.
-
-**Worked overlap** — for the path `marketplace/bundles/foo/skills/bar/SKILL.md`:
-
-- `pm-documents` claims it under `documentation` with `classify_path_specificity(...) == 0` (its glob `*.md` has zero explicit segments).
-- `pm-plugin-development` claims it under `documentation` with `classify_path_specificity(...) == 4` (its glob `marketplace/bundles/*/skills/*/SKILL.md` has four explicit segments).
-- Resolution: `pm-plugin-development` wins; the path is tagged `documentation` from `pm-plugin-development`.
+Order-independence is structural: the aggregator collects every build extension's claims first, then resolves overlaps. Extension load order is irrelevant. Documentation paths never enter this resolution — they are recognized generically (see above) before the build extensions run.
 
 ## Unclaimed paths
 
-Paths no extension claims are tagged `unknown` by the aggregator AND surface as a `[STATUS]` decision-log warning naming each unclaimed path. The aggregator **never** silently falls back to `documentation_only` for unclaimed paths. The `unknown` tag forces the plan-wide bucket to `unknown`, which downstream guards (e.g., the `phase-3-outline` File-type classifier section) treat as a hard error requiring user resolution.
+A **non-documentation** path no build extension claims is tagged `unknown` by the aggregator AND surfaces as a `[STATUS]` decision-log warning naming each unclaimed path. Documentation paths are never unclaimed — the generic suffix rule always recognizes them. The aggregator **never** silently falls back to `documentation_only` for unclaimed code paths. The `unknown` tag forces the plan-wide bucket to `unknown`, which downstream guards (e.g., the `phase-3-outline` File-type classifier section) treat as a hard error requiring user resolution.
 
 **Decision log line** (emitted at most once per compose call when at least one path is unclaimed):
 

@@ -154,8 +154,19 @@ def _seed_marshal(
 
 
 def _stub_footprint(footprint: list[str]) -> None:
-    """Stub ``_resolve_footprint`` so activation pre-filters see the given set."""
+    """Stub the footprint seams so activation pre-filters see the given set.
+
+    Two pre-filters resolve the live footprint through different seams: the
+    self-review pre-filter reads the manifest module's ``_resolve_footprint``,
+    while the pre-push-quality-gate pre-filter delegates to
+    ``extension_base.should_execute_build``, which resolves the footprint via the
+    extension_base module's ``_resolve_plan_footprint``. Stub BOTH so the test
+    footprint drives every activation decision.
+    """
+    import extension_base  # type: ignore[import-not-found]
+
     _mem._resolve_footprint = lambda plan_id: list(footprint)
+    extension_base._resolve_plan_footprint = lambda plan_id: list(footprint)
 
 
 def _manifest_phase_6_steps(result: dict) -> list[str]:

@@ -1418,15 +1418,22 @@ def _write_marshal(
 
 
 def _stub_footprint(footprint: list[str]) -> None:
-    """Stub ``_resolve_footprint`` so the activation pre-filter sees the given set.
+    """Stub the footprint seams so the activation pre-filters see the given set.
 
-    The compose pre-filters now derive the live plan footprint on demand via
-    ``compute_plan_branch_diff`` instead of reading a seeded
-    ``references.modified_files`` ledger, so the test injects the footprint by
-    replacing the module-level resolver. The ``TestPrePushQualityGatePreFilter``
-    autouse fixture restores the original after each test.
+    The compose pre-filters derive the live plan footprint on demand instead of
+    reading a seeded ``references.modified_files`` ledger. Two distinct seams are
+    in play: the self-review pre-filter reads the manifest module's
+    ``_resolve_footprint``, while the pre-push-quality-gate pre-filter delegates
+    to ``extension_base.should_execute_build``, which resolves the footprint via
+    the extension_base module's ``_resolve_plan_footprint``. Both are replaced so
+    the injected footprint drives every activation decision. The
+    ``TestPrePushQualityGatePreFilter`` autouse fixture restores both after each
+    test.
     """
+    import extension_base  # type: ignore[import-not-found]
+
     _mem._resolve_footprint = lambda plan_id: list(footprint)
+    extension_base._resolve_plan_footprint = lambda plan_id: list(footprint)
 
 
 def _candidate_phase_6_with_pre_push() -> str:
@@ -1451,9 +1458,13 @@ class TestPrePushQualityGatePreFilter:
 
     @pytest.fixture(autouse=True)
     def _restore_footprint_resolver(self):
+        import extension_base  # type: ignore[import-not-found]
+
         original = _mem._resolve_footprint
+        original_plan_footprint = extension_base._resolve_plan_footprint
         yield
         _mem._resolve_footprint = original
+        extension_base._resolve_plan_footprint = original_plan_footprint
 
     _OMIT_LINE = (
         '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '

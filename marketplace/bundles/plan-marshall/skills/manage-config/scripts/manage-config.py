@@ -16,7 +16,7 @@ Usage:
 
 import argparse
 
-from _cmd_build_map import cmd_build_map
+from _cmd_build_map import cmd_build_decision, cmd_build_map
 from _cmd_coverage import cmd_coverage_expand, cmd_coverage_read, cmd_coverage_resolve
 from _cmd_domain_detect import cmd_domain_detect
 from _cmd_effort import cmd_effort, cmd_effort_apply_preset, cmd_effort_resolve_target
@@ -279,6 +279,29 @@ def main() -> int:
         'read',
         help='Return the effective build map from skill_domains.build_map',
         allow_abbrev=False,
+    )
+
+    # --- build-decision ---
+    p_bd = subparsers.add_parser(
+        'build-decision',
+        help='Decide whether a canonical command must run for a plan footprint '
+        '(build / not_necessary verdict)',
+        allow_abbrev=False,
+    )
+    p_bd.add_argument(
+        '--command',
+        required=True,
+        help='Canonical command under decision (e.g. quality-gate / verify / coverage)',
+    )
+    p_bd.add_argument(
+        '--plan-id',
+        dest='plan_id',
+        help='Plan identifier whose live footprint gates the decision',
+    )
+    p_bd.add_argument(
+        '--audit-plan-id',
+        dest='audit_plan_id',
+        help='Alias for --plan-id (execution-log attribution parity with other verbs)',
     )
 
     # --- init ---
@@ -616,6 +639,8 @@ def main() -> int:
             p_bm.print_help()
             return 2
         result = cmd_build_map(args)
+    elif args.noun == 'build-decision':
+        result = cmd_build_decision(args)
     elif args.noun == 'init':
         result = cmd_init(args)
     elif args.noun == 'sync-defaults':

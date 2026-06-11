@@ -383,11 +383,11 @@ When two extensions claim the same path, the **aggregator** — NOT the extensio
 
 Extensions therefore return their own claims naively (i.e., based on their own predicates) and do NOT attempt to coordinate with sibling extensions. The aggregator handles cross-extension overlap.
 
-**Example overlap**: both `pm-documents` (glob `*.{md,adoc,asciidoc}`) and `pm-plugin-development` (glob `marketplace/bundles/*/skills/*/{SKILL.md,workflow/*.md,standards/*.md,references/*.md}`) claim a path like `marketplace/bundles/foo/skills/bar/SKILL.md`. The `pm-plugin-development` glob has four explicit non-wildcard segments (`marketplace`, `bundles`, `skills`, `SKILL.md`) versus `pm-documents`'s zero (`*.md` is wildcard-only), so `pm-plugin-development` wins.
+**Example overlap**: two build systems serving the same domain (e.g. `build-maven` and `build-gradle`, both keyed under `java`) may both claim a production source path. The aggregator resolves the overlap by longest-glob-wins specificity. Documentation paths never enter overlap resolution — they are recognized generically by `manage-execution-manifest`'s `.md` / `.adoc` / `.asciidoc` suffix rule (no build owner for docs) and split out before the build extensions run. Only `BuildExtensionBase` subclasses (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) supply production/test/config claims.
 
 #### Unclaimed-Path Policy (Aggregator Responsibility)
 
-Paths no extension claims are tagged `unknown` by the aggregator AND surface as a `[STATUS]` warning naming each unclaimed path. The aggregator **never** silently falls back to `documentation_only` or any other bucket. The `unknown` tag forces the plan-wide bucket value to `unknown`, which downstream guards (e.g., `phase-3-outline` File-type classifier section) treat as a hard error requiring user resolution.
+A **non-documentation** path no build extension claims is tagged `unknown` by the aggregator AND surfaces as a `[STATUS]` warning naming each unclaimed path. Documentation paths are never unclaimed — the generic suffix rule always recognizes them. The aggregator **never** silently falls back to `documentation_only` or any other bucket for unclaimed code paths. The `unknown` tag forces the plan-wide bucket value to `unknown`, which downstream guards (e.g., `phase-3-outline` File-type classifier section) treat as a hard error requiring user resolution.
 
 #### Six-Bucket Plan-Wide Output
 
@@ -424,19 +424,18 @@ The aggregator calls this method on every extension that claimed a contested pat
 
 #### Worked Example
 
-Given the input path list `['scripts/foo.py', 'test/foo_test.py', 'marketplace/bundles/foo/skills/bar/SKILL.md']` and the registered extensions `pm-dev-python`, `pm-documents`, `pm-plugin-development`:
+Given the input path list `['scripts/foo.py', 'test/foo_test.py', 'marketplace/bundles/foo/skills/bar/SKILL.md']` and the registered build extension `build-pyproject`:
 
-1. `pm-dev-python` claims: `{'production': ['scripts/foo.py'], 'test': ['test/foo_test.py'], 'documentation': [], 'config': []}`.
-2. `pm-documents` claims: `{'production': [], 'test': [], 'documentation': ['marketplace/bundles/foo/skills/bar/SKILL.md'], 'config': []}` (matched glob `*.md`).
-3. `pm-plugin-development` claims: `{'production': [], 'test': [], 'documentation': ['marketplace/bundles/foo/skills/bar/SKILL.md'], 'config': []}` (matched glob `marketplace/bundles/*/skills/*/SKILL.md`).
+1. The generic documentation rule runs FIRST: `marketplace/bundles/foo/skills/bar/SKILL.md` ends in `.md`, so it is tagged `documentation` directly and removed from the set the build extensions see — no build owner, no extension claim.
+2. `build-pyproject` (the python `BuildExtensionBase`) claims the remaining code paths: `{'production': ['scripts/foo.py'], 'test': ['test/foo_test.py'], 'documentation': [], 'config': []}`.
 
-Aggregator resolves the overlap on `marketplace/bundles/foo/skills/bar/SKILL.md`: `pm-plugin-development`'s glob has four explicit segments vs `pm-documents`'s zero — `pm-plugin-development` wins. Final per-path map:
+Final per-path map:
 
-| Path | Role | Source extension |
-|------|------|------------------|
-| `scripts/foo.py` | `production` | `pm-dev-python` |
-| `test/foo_test.py` | `test` | `pm-dev-python` |
-| `marketplace/bundles/foo/skills/bar/SKILL.md` | `documentation` | `pm-plugin-development` |
+| Path | Role | Source |
+|------|------|--------|
+| `scripts/foo.py` | `production` | `build-pyproject` |
+| `test/foo_test.py` | `test` | `build-pyproject` |
+| `marketplace/bundles/foo/skills/bar/SKILL.md` | `documentation` | generic suffix rule (no build owner) |
 
 Plan-wide bucket: `mixed_with_docs` (production + test + documentation present).
 
@@ -488,10 +487,11 @@ The risk an explicit-route contract carries is the inverse of an over-broad glob
 |------|---------|--------------|
 | `production` | The route claims production source. | `classify_build_class` → `compile`. |
 | `test` | The route claims test source. | `classify_build_class` → `module-tests`. |
-| `documentation` | The route claims documentation. | `classify_build_class` → `docs-validate`. |
 | `config` | The route claims build/lint/packaging config. | `classify_build_class` → `verify`. |
 
-The role is one of the same four roles as `classify_paths` (`production` / `test` / `documentation` / `config`) and maps straight through to a `classify_build_class` build_class with no name-to-name indirection. Only `production` and `test` routes participate in the completeness validator's coverage check.
+The build_map route role is one of the three resolved roles (`production` / `test` / `config`) — documentation is **not** a build_map route role (no build owner for docs), so `BUILD_MAP_ROLES` excludes it and a `documentation` route is dropped by the deriver. The role maps straight through to a `classify_build_class` build_class with no name-to-name indirection. Only `production` and `test` routes participate in the completeness validator's coverage check.
+
+Documentation recognition is owned generically by `manage-execution-manifest`'s change-footprint classifier (a `.md` / `.adoc` / `.asciidoc` suffix rule), NOT by a build extension. See `manage-execution-manifest/standards/decision-rules.md` § "Generic documentation recognition (no build owner)".
 
 ### classify_build_class (canonical command per entry)
 
@@ -505,22 +505,22 @@ def classify_build_class(self, glob: str, role: str) -> str:
 
     The returned value is the canonical command name the entry resolves to:
     ``compile`` (production), ``module-tests`` (test), ``verify`` (config),
-    ``docs-validate`` (documentation), or ``none`` (no build). The closed set
-    equals the canonical-command vocabulary — there is no name-to-name
-    indirection map.
+    or ``none`` (no build). The closed set equals the canonical-command
+    vocabulary — there is no name-to-name indirection map. ``docs-validate``
+    remains a valid build_class value the deriver handles for marketplace
+    skill ``.md`` change footprints, but it is NOT produced by the role
+    default below — documentation is not a build_map route role.
 
     Args:
         glob: The concrete glob pattern the extension declared for this route.
-        role: The resolved role — ``production`` / ``test`` /
-            ``documentation`` / ``config``.
+        role: The resolved role — ``production`` / ``test`` / ``config``.
 
     Returns:
-        One of ``compile`` / ``module-tests`` / ``verify`` /
-        ``docs-validate`` / ``none``.
+        One of ``compile`` / ``module-tests`` / ``verify`` / ``none``.
 
     Default: a role→command map — ``production`` → ``compile``, ``test`` →
-    ``module-tests``, ``documentation`` → ``docs-validate``, ``config`` →
-    ``verify``, otherwise ``none``.
+    ``module-tests``, ``config`` → ``verify``, otherwise ``none`` (including
+    the ``documentation`` role, which has no build owner).
     """
 ```
 
