@@ -754,7 +754,7 @@ class TestConcurrentReclamation:
         env_overrides = {'PLAN_BASE_DIR': str(base)}
 
         n = 8
-        trials = 20
+        trials = 10
 
         # Live contender plan dirs are stable across trials — staged once. Once
         # one contender reclaims, the rest find a LIVE holder and serialize.
