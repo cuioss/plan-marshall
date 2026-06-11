@@ -321,12 +321,17 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
             ``extension_base`` standalone.
     """
     del project_root  # resolved from execution context, not forwarded
+    import json as _json
+
     from file_ops import get_marshal_path, read_json  # type: ignore[import-not-found]
 
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
         return []
-    data = read_json(marshal_path, default={})
+    try:
+        data = read_json(marshal_path, default={})
+    except (OSError, _json.JSONDecodeError):
+        return []
     if not isinstance(data, dict):
         return []
     skill_domains = data.get('skill_domains')
@@ -368,6 +373,7 @@ def _resolve_plan_footprint(plan_id: str) -> list[str]:
     Args:
         plan_id: Plan identifier whose footprint to resolve.
     """
+    import json as _json
     import subprocess as _subprocess
     from pathlib import Path as _Path
 
@@ -381,7 +387,10 @@ def _resolve_plan_footprint(plan_id: str) -> list[str]:
     status_path = get_plan_dir(plan_id) / FILE_STATUS
     if not status_path.exists():
         return []
-    status = read_json(status_path, default={})
+    try:
+        status = read_json(status_path, default={})
+    except (OSError, _json.JSONDecodeError):
+        return []
     if not isinstance(status, dict):
         return []
     metadata = status.get('metadata', {})
@@ -395,7 +404,10 @@ def _resolve_plan_footprint(plan_id: str) -> list[str]:
         return []
 
     refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
-    refs = read_json(refs_path, default={})
+    try:
+        refs = read_json(refs_path, default={})
+    except (OSError, _json.JSONDecodeError):
+        refs = {}
     if not isinstance(refs, dict):
         refs = {}
     base_ref = resolve_base_ref(None, refs)

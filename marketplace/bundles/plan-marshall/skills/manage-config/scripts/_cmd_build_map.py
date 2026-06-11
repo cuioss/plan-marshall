@@ -118,5 +118,8 @@ def cmd_build_decision(args: argparse.Namespace) -> dict:
     plan_id = getattr(args, 'plan_id', None) or getattr(args, 'audit_plan_id', None)
     if not plan_id:
         return {'status': 'error', 'error': 'build-decision requires --plan-id (or --audit-plan-id)'}
-    verdict = should_execute_build(args.command, plan_id)
-    return {'status': 'success', **verdict}
+    try:
+        verdict = should_execute_build(args.command, plan_id)
+        return {'status': 'success', **verdict}
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
