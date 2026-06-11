@@ -491,6 +491,7 @@ class TestMainAnchoredResolution:
 
 
 class TestConcurrentAdmissionBoundary:
+    @pytest.mark.xdist_group(name="manage_locks_contention")
     def test_concurrent_acquire_admits_exactly_max_slots(self, isolated_base: dict) -> None:
         """§5 (i): with ``max_slots = k`` and ``k + m`` spawned subprocesses racing
         the SAME main-anchored build-queue.json via the CLI, EXACTLY ``k`` are
@@ -532,6 +533,7 @@ class TestConcurrentAdmissionBoundary:
         assert len(active_ids) == k
         assert len(set(active_ids)) == k
 
+    @pytest.mark.xdist_group(name="manage_locks_contention")
     def test_n_plus_one_racers_never_admit_n_plus_one(self, isolated_base: dict) -> None:
         """§5 (i), tightest boundary: with ``max_slots = N`` and exactly ``N + 1``
         spawned subprocesses racing the SAME main-anchored build-queue.json, EXACTLY
@@ -582,6 +584,7 @@ class TestConcurrentAdmissionBoundary:
         # Active and waiting partitions are disjoint — no id is both.
         assert set(active_ids).isdisjoint(set(waiting_ids))
 
+    @pytest.mark.xdist_group(name="manage_locks_contention")
     def test_massive_parallel_admits_exactly_max_slots(self, isolated_base: dict) -> None:
         """§5 (i), massive-parallel: a large ``max_slots = k`` with a large excess of
         spawned subprocesses (``k + m``, all racing the SAME main-anchored
@@ -646,6 +649,7 @@ class TestConcurrentAdmissionBoundary:
 
 
 class TestConcurrentReleaseFifoPromote:
+    @pytest.mark.xdist_group(name="manage_locks_contention")
     def test_concurrent_releases_promote_each_waiter_exactly_once(self, isolated_base: dict) -> None:
         """§5 (iii): k active holders + w waiting entries; releasing all k active
         slots concurrently promotes each freed slot to exactly ONE distinct
