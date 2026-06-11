@@ -165,6 +165,13 @@ message: {error message if status=error}
 
 `display_detail` shape: `"{tasks_created} tasks across {parallelizable_groups} groups"` on success; ≤80 chars, ASCII, no trailing period.
 
+**Error codes** (returned in the `error` field when `status: error`):
+
+| `error` | Raised by | Meaning |
+|---------|-----------|---------|
+| `tasks_already_exist` | Step 2.5 (re-entry guard) | phase-4-plan was re-entered against a plan that already has tasks (`counts.total > 0`). Task creation is not idempotent, so the phase aborts before Step 3 rather than duplicating the queue. The payload carries `existing_task_count`. To re-plan, clear the existing tasks first, then re-enter. |
+| `invalid_manifest` | Step 7b (manifest validate) | The composed execution manifest failed validation; the phase aborts before Q-Gate. |
+
 ## Related
 
 | Document | Purpose |
@@ -215,6 +222,42 @@ If no unresolved findings: Continue with normal Steps 3..11 (first entry).
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-4-plan) Starting plan phase"
 ```
+
+### Step 2.5: Re-Entry Guard (Prevent Duplicate Task Creation)
+
+**Purpose**: Task creation (Steps 5–6) is NOT idempotent — `batch-add` assigns fresh sequential `TASK-NNN` numbers in array order at call time and never reconciles against tasks that already exist. A second phase-4-plan invocation against a plan that already has tasks therefore re-creates the entire task set, leaving the plan with duplicate tasks (`TASK-001`…`TASK-NNN` from the first run plus a renumbered second copy of the same deliverables). This guard makes a re-entry that finds existing tasks abort loudly instead of silently doubling the queue.
+
+This step runs after Step 2 (phase start logged) and BEFORE Step 3 (deliverable load), so the abort fires before any deliverable parsing or skill resolution work is done.
+
+**Probe the existing task count**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
+  --plan-id {plan_id} --status all
+```
+
+Parse `counts.total` from the returned TOON.
+
+**Decision**:
+
+- **`counts.total == 0`** (first entry, expected case) → proceed to Step 3. No tasks exist yet; task creation is safe.
+- **`counts.total > 0`** (re-entry with tasks already present) → ABORT the phase fail-loud. Do NOT proceed to Step 3, do NOT create tasks, do NOT transition the phase. Log the abort and return the structured `tasks_already_exist` error TOON to the orchestrator:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[ERROR] (plan-marshall:phase-4-plan) Re-entry guard: {counts.total} task(s) already exist — refusing to re-create tasks (would duplicate the queue). Returning tasks_already_exist."
+```
+
+```toon
+status: error
+error: tasks_already_exist
+existing_task_count: {counts.total}
+display_detail: "tasks already exist ({counts.total}) — refusing to duplicate"
+message: "phase-4-plan re-entered against a plan that already has {counts.total} task(s). Task creation is not idempotent; re-creating would duplicate the queue. To re-plan, clear the existing tasks first, then re-enter phase-4-plan."
+```
+
+**Q-Gate re-entry exemption**: The Step 1 Q-Gate auto-loop path (re-entering phase-4-plan to address unresolved Q-Gate findings) is the one legitimate re-entry that must NOT trip this guard. That path resolves its findings against the EXISTING task set and re-runs Steps 3..11 with corrections applied — it does not create a duplicate task batch from scratch. When Step 1 surfaced unresolved findings (`filtered_count > 0`) and the re-entry is driven by that auto-loop, the orchestrator clears the prior task set before re-dispatch (so `counts.total == 0` at this probe) — the guard sees an empty queue and the re-plan proceeds normally. A non-empty `counts.total` at this point therefore always signals an unintended duplicate-creating re-entry, never the sanctioned Q-Gate correction loop.
 
 ### Step 3: Load All Deliverables
 
