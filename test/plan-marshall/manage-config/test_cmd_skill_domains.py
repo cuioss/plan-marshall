@@ -717,6 +717,119 @@ def test_discover_project_returns_structured_output(plan_context):
     assert 'count: ' in result.stdout
 
 
+# =============================================================================
+# Prefix-exclusion filter tests (deliverable 2 / Finding B)
+# =============================================================================
+
+
+def _run_discover_project_skills_in_cwd(cwd: Path) -> list[dict]:
+    """Invoke discover_project_skills() with cwd switched to ``cwd``.
+
+    discover_project_skills() scans ``.claude/skills/`` relative to the process
+    cwd, so tests needing custom project-level layouts must chdir into an
+    isolated temp directory. Parallels ``_run_verify_discovery_in_cwd``.
+    """
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(cwd)
+        return _cmd_skill_domains.discover_project_skills()
+    finally:
+        os.chdir(original_cwd)
+
+
+def _make_skill_dir(base: Path, name: str) -> None:
+    """Create a ``.claude/skills/{name}`` dir with a minimal SKILL.md under ``base``."""
+    skill_dir = base / '.claude' / 'skills' / name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: {name} desc\n---\n\n# {name}\n')
+
+
+def test_discover_project_skills_excludes_recipe_prefix(tmp_path):
+    """discover_project_skills() excludes recipe-* dirs owned by _discover_all_recipes."""
+    _make_skill_dir(tmp_path, 'recipe-lesson-cleanup')
+    _make_skill_dir(tmp_path, 'genuine-helper')
+
+    skills = _run_discover_project_skills_in_cwd(tmp_path)
+
+    names = [s['name'] for s in skills]
+    assert 'recipe-lesson-cleanup' not in names
+    assert 'genuine-helper' in names
+
+
+def test_discover_project_skills_excludes_verify_step_prefix(tmp_path):
+    """discover_project_skills() excludes verify-step-* dirs owned by verify-step discovery."""
+    _make_skill_dir(tmp_path, 'verify-step-lint')
+    _make_skill_dir(tmp_path, 'genuine-helper')
+
+    skills = _run_discover_project_skills_in_cwd(tmp_path)
+
+    names = [s['name'] for s in skills]
+    assert 'verify-step-lint' not in names
+    assert 'genuine-helper' in names
+
+
+def test_discover_project_skills_excludes_finalize_step_prefix(tmp_path):
+    """discover_project_skills() excludes finalize-step-* dirs owned by finalize-step discovery."""
+    _make_skill_dir(tmp_path, 'finalize-step-plugin-doctor')
+    _make_skill_dir(tmp_path, 'genuine-helper')
+
+    skills = _run_discover_project_skills_in_cwd(tmp_path)
+
+    names = [s['name'] for s in skills]
+    assert 'finalize-step-plugin-doctor' not in names
+    assert 'genuine-helper' in names
+
+
+def test_discover_project_skills_excludes_audit_prefix(tmp_path):
+    """discover_project_skills() excludes audit-* dirs owned by audit-recipe discovery."""
+    _make_skill_dir(tmp_path, 'audit-archived-plan-retrospectives')
+    _make_skill_dir(tmp_path, 'genuine-helper')
+
+    skills = _run_discover_project_skills_in_cwd(tmp_path)
+
+    names = [s['name'] for s in skills]
+    assert 'audit-archived-plan-retrospectives' not in names
+    assert 'genuine-helper' in names
+
+
+def test_discover_project_skills_all_excluded_returns_empty(tmp_path):
+    """A .claude/skills/ holding only dedicated-prefix dirs yields an empty candidate set."""
+    _make_skill_dir(tmp_path, 'recipe-lesson-cleanup')
+    _make_skill_dir(tmp_path, 'verify-step-lint')
+    _make_skill_dir(tmp_path, 'finalize-step-plugin-doctor')
+    _make_skill_dir(tmp_path, 'audit-archived-plan-retrospectives')
+
+    skills = _run_discover_project_skills_in_cwd(tmp_path)
+
+    assert skills == []
+
+
+def test_discover_project_skills_consumer_angle_regression(tmp_path):
+    """Consumer-angle regression: the domain-attach candidate set the wizard sees
+    contains ONLY the genuine domain-attachable skill when the .claude/skills/
+    fixture mixes all four dedicated-prefix dirs with exactly one genuine skill.
+
+    Asserts on the `notation`-shaped candidate set surfaced by
+    discover_project_skills() — the exact surface the `discover-project` verb
+    wraps and hands to the wizard. This pins the wizard-visible outcome so a future
+    refactor cannot silently regress the prefix-exclusion fix. Against the pre-fix
+    (unfiltered) behaviour this assertion FAILS — the unfiltered scanner surfaced
+    all five dirs as domain-attach candidates.
+    """
+    _make_skill_dir(tmp_path, 'recipe-lesson-cleanup')
+    _make_skill_dir(tmp_path, 'verify-step-lint')
+    _make_skill_dir(tmp_path, 'finalize-step-plugin-doctor')
+    _make_skill_dir(tmp_path, 'audit-archived-plan-retrospectives')
+    _make_skill_dir(tmp_path, 'genuine-domain-skill')
+
+    skills = _run_discover_project_skills_in_cwd(tmp_path)
+
+    surfaced = {s['notation'] for s in skills}
+    # ONLY the genuine skill is surfaced to the wizard as a domain-attach candidate.
+    assert surfaced == {'project:genuine-domain-skill'}
+    assert len(skills) == 1
+
+
 def test_attach_project_to_domain(plan_context, monkeypatch):
     """Test attach-project adds project skills to a domain."""
     create_nested_marshal_json(plan_context.fixture_dir)

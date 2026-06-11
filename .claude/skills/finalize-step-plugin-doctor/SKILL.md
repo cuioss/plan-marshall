@@ -3,7 +3,7 @@ name: finalize-step-plugin-doctor
 description: Finalize-phase wrapper that runs the scopeable plugin-doctor quality-gate against the marketplace source of skills the plan touched, gating structural lint before push
 user-invocable: false
 allowed-tools: Bash
-order: 9
+order: 6
 ---
 
 # Finalize Step: plugin-doctor
@@ -12,7 +12,7 @@ order: 9
 
 Run the plugin-doctor `quality-gate` invariant rule set (argparse safety, argument-naming, manage-invocation, extension contracts, shell-substitution, lesson-id / historical prose, role-field) scoped to the marketplace source of any skill the plan modifies — gating structural lint **before push**. Catches structural breakage that the Python `quality-gate` (ruff/mypy/pytest) cannot detect. The `affected_files` read (Step 1) and skill-dir extraction (Step 2) SUPPLY the `--paths` targets the gate scopes to; the skip-clean exit (Step 3) skips the gate when the read succeeds and the plan touched no skill.
 
-Ordered at `order: 9` so it slots between `project:finalize-step-pre-submission-self-review` and `default:commit-push` (order 10) — structural lint gates before the commit is pushed, not after CI.
+Ordered at `order: 6` so it slots between `default:finalize-step-pre-push-quality-gate` (order 5) and `project:finalize-step-pre-submission-self-review` (order 7) — structural lint gates before the commit is pushed, not after CI. Slot 6 is distinct from `default:finalize-step-whole-tree-gate` (order 9), so no two active finalize steps share a canonical `order`.
 
 When the plan runs in an isolated worktree, the gate first regenerates a worktree-bound executor so the `manage-invocation-invalid` rule probes each script's `--help` against the worktree's TRUE argparse surface. Without this step, the worktree's `.plan/execute-script.py` is a symlink to the main checkout's executor, whose embedded mappings resolve every `manage-*` notation to the main-checkout (pre-plan) script — making a newly added subcommand read as a false-positive "unregistered" and a newly required flag read as a false-negative that masks the real CI finding.
 

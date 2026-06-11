@@ -144,10 +144,25 @@ def _build_skill_dict_with_descriptions(entries: list) -> dict[str, str]:
     return result
 
 
-def discover_project_skills() -> list[dict]:
-    """Discover project-level skills from .claude/skills/ directory.
+# Prefixes owned by dedicated `.claude/skills/` discoveries. A skill dir whose
+# name starts with one of these is surfaced by its own discovery
+# (`_discover_all_recipes` for `recipe-`, `_discover_all_verify_steps` for
+# `verify-step-`, `_discover_all_finalize_steps` for `finalize-step-`, audit
+# recipes for `audit-`) and is NOT domain-attachable. `discover_project_skills()`
+# excludes them so the wizard's domain-attach question does not double-surface a
+# skill another discovery already owns (attaching a recipe/finalize-step/etc. to
+# a domain is a no-op).
+_DEDICATED_PREFIXES = ('recipe-', 'verify-step-', 'finalize-step-', 'audit-')
 
-    Scans for SKILL.md files and extracts name + description from frontmatter.
+
+def discover_project_skills() -> list[dict]:
+    """Discover domain-attachable project-level skills from .claude/skills/.
+
+    Scans for SKILL.md files and extracts name + description from frontmatter,
+    excluding any skill dir whose name is owned by a dedicated prefix discovery
+    (``recipe-``, ``verify-step-``, ``finalize-step-``, ``audit-``). The residual
+    is the true domain-attachable set — empty for a well-formed project that holds
+    only prefixed skills.
 
     Returns:
         List of dicts: [{notation: "project:{name}", name: str, description: str}]
@@ -159,6 +174,11 @@ def discover_project_skills() -> list[dict]:
     skills: list[dict] = []
     for skill_dir in sorted(claude_skills.iterdir()):
         if not skill_dir.is_dir() or skill_dir.name.startswith('.'):
+            continue
+        # Skip dirs owned by a dedicated prefix discovery — they are not
+        # domain-attachable. Mirrors the `.startswith()` filter shape used by the
+        # sibling discoveries (each of which claims exactly its owning prefix).
+        if skill_dir.name.startswith(_DEDICATED_PREFIXES):
             continue
         skill_md = skill_dir / 'SKILL.md'
         if not skill_md.exists():

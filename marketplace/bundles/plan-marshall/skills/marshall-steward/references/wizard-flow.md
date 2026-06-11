@@ -84,7 +84,7 @@ Interpret the output:
 
 ## Step 3: Ensure Executor Permission (BOOTSTRAP)
 
-Add the executor permission to project-local settings so script execution doesn't prompt:
+Add the executor permission to project-local settings so script execution doesn't prompt — but **consult the current permission state first**. This step is a consult-before-add gate: the steward MUST read the existing project permission state before widening the executor allow-list, and MUST NOT widen it without a prior consult. The widening is deterministic — driven by the consult result, not by an unconditional `ensure` write.
 
 **BOOTSTRAP**: Use a DIRECT Python call (no executor yet). Resolve the script path deterministically via `bootstrap_plugin resolve` (`${BOOTSTRAP}` was located in SKILL.md Prerequisites) and read `resolved_path` from the TOON as `{PERMISSION_FIX}`:
 
@@ -92,7 +92,20 @@ Add the executor permission to project-local settings so script execution doesn'
 python3 "${BOOTSTRAP}" resolve --bundle plan-marshall --path skills/tools-permission-fix/scripts/permission_fix.py
 ```
 
-Then invoke the resolved script directly:
+**Consult (mandatory, read-only) — read the current permission state before any widening.** Run `ensure-executor` in `--dry-run` mode against the project target. The dry run previews whether the executor permission is already present without modifying any settings file, so it is the read-only consult of the current allow-list state:
+
+```bash
+python3 "{PERMISSION_FIX}" ensure-executor --target project --dry-run
+```
+
+Interpret the consult result before deciding whether to widen:
+
+| dry-run result | Meaning | Action |
+|----------------|---------|--------|
+| permission already present | The executor allow-list already covers `Bash(python3 .plan/execute-script.py *)` | No widening needed — record the consult and skip the write below. |
+| permission absent | The executor permission is missing from project settings | Proceed to the widening write below — the consult has cleared the gate. |
+
+**Widen only when the consult shows the permission is absent.** Do NOT issue the write unconditionally — the consult above is the gate that authorizes it. When the consult shows the permission is absent, invoke the resolved script to add it:
 
 ```bash
 python3 "{PERMISSION_FIX}" ensure \
@@ -189,6 +202,8 @@ python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
 ## STEWARD audit trail (applies to every Configuration step)
 
 From Step 4 (executor present) onward, the wizard emits a **STEWARD audit entry** for every decision it makes — one entry per `AskUserQuestion` answer the operator gives AND one per auto-decision the wizard takes without prompting (auto-selected provider, detected default, skipped step). The entries use `manage-logging`'s first-class global/no-plan path (the wizard runs before any plan exists, so `--plan-id` is omitted) under the stable `[STEWARD] (plan-marshall:marshall-steward)` prefix — see `manage-logging` SKILL.md § "Global / no-plan logging path" and § "STEWARD audit namespace".
+
+**One entry per answer / auto-decision — coalescing is forbidden.** Every individual operator answer and every individual auto-decision MUST produce its own separate audit entry. The wizard MUST NOT coalesce multiple answers or auto-decisions into a single combined entry, MUST NOT summarize a group of decisions (e.g. all of Step 11's per-step toggles) under one rolled-up line, and MUST NOT defer emission to a batch flush at the end of a step or at wizard completion. A multi-question `AskUserQuestion` call yields one entry per answered question; a multi-select answer that resolves N toggles yields N entries (one per toggle decided); a step that prompts once and then auto-decides twice yields three entries. The audit trail must be reconstructable down to each discrete decision, so the entry-to-decision mapping is strictly one-to-one — never one-to-many.
 
 - **Operator answers** to an `AskUserQuestion` and **auto-decisions** are decision-class — log them with the `decision` subcommand (the file is the category, so no `[DECISION]` prefix; the `[STEWARD]` bracket names the namespace):
 
@@ -382,7 +397,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 - **Start from the full discovered set; remove only on explicit decline.** The selection MUST START from the complete built-in + project + bundle-optional set returned by `list-finalize-steps`. A step is REMOVED from the selection ONLY when the operator explicitly declines it. A built-in step (e.g. `default:finalize-step-print-phase-breakdown`) MUST NOT be silently omitted because it fits no invented group — every built-in is in the starting set and survives unless the operator declines it.
 - **Thread prior decisions; pre-exclude, never re-ask.** Decisions already made earlier in the wizard (e.g. a `sonar-roundtrip` the operator declined at provider/credential setup) MUST be threaded into the Custom selection: the declined step and any step that `requires:` it are PRE-EXCLUDED from the offered set, never re-surfaced for a second decline. The Custom path reads the already-recorded decisions rather than re-prompting for an answer the operator has already given.
 
-If `set-steps` returns `missing_order` or `order_collision`, the offending step's authoritative source (frontmatter on built-in standards docs / `SKILL.md` for `project:` steps / extension `provides_*_steps()` return-dict for skill steps) lacks an `order` value or duplicates one already used by another selected step — fix the source and re-run.
+If `set-steps` returns `missing_order` or `order_collision`, resolve it at the **config layer** — the steward sequences the explicit `phase-6.steps` array directly. The `phase-6.steps` array is runtime-authoritative; a step's source `order:` frontmatter (frontmatter on built-in standards docs / `SKILL.md` for `project:` steps / extension `provides_*_steps()` return-dict for skill steps) only governs the seed/presentation sort `marshall-steward` applies when first writing the array. To resolve a collision or a missing order, set the desired sequence in the `phase-6.steps` array via `set-steps` and re-run.
+
+The steward MUST NEVER mutate a shared skill's source `order:` frontmatter to resolve a config-layer ordering concern. Editing a shared skill's `order:` to break a sort tie leaves an uncommitted source mutation in the worktree that risks leaking into an unrelated plan's commit, and changes the global seed order for every project — a config-layer concern resolved by a source-layer side effect. Sequence the array, never the source.
 
 For max iterations (verification default 5, finalize default 3):
 
