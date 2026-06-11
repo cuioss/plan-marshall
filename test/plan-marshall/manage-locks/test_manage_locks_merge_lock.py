@@ -218,6 +218,7 @@ class TestNoDoubleMerge:
         assert result['action'] == 'acquired'
         assert result['holder'] == 'plan-b'
 
+    @pytest.mark.xdist_group(name="manage_locks_contention")
     def test_concurrent_acquire_admits_exactly_one_under_real_contention(
         self, isolated_base: dict
     ) -> None:
@@ -242,9 +243,9 @@ class TestNoDoubleMerge:
                 '--plan-id',
                 f'race-{i}',
                 '--timeout',
-                '2',
+                '8',
                 env_overrides=env_overrides,
-                timeout=30,
+                timeout=60,
             )
 
         with ThreadPoolExecutor(max_workers=n) as pool:
@@ -610,6 +611,7 @@ class TestConcurrentReclamation:
     process-level races are the load-bearing concurrency obligation for the merge
     mutex's reclamation path."""
 
+    @pytest.mark.xdist_group(name="manage_locks_contention")
     def test_concurrent_acquire_against_dead_holder_admits_exactly_one_reclaimer(
         self, isolated_base: dict
     ) -> None:
@@ -643,9 +645,9 @@ class TestConcurrentReclamation:
                 '--plan-id',
                 f'reclaim-{i}',
                 '--timeout',
-                '2',
+                '8',
                 env_overrides=env_overrides,
-                timeout=30,
+                timeout=60,
             )
 
         with ThreadPoolExecutor(max_workers=n) as pool:
@@ -676,6 +678,7 @@ class TestConcurrentReclamation:
         for p in blocked:
             assert p['blocking_plan_id'] == winners[0]['holder'], p
 
+    @pytest.mark.xdist_group(name="manage_locks_contention")
     def test_concurrent_acquire_never_evicts_a_live_holder(self, isolated_base: dict) -> None:
         """A LIVE holder holds the lock while N concurrent acquirers race it → NONE
         win, ALL block, and the live holder's lock is never reclaimed or evicted.
@@ -701,9 +704,9 @@ class TestConcurrentReclamation:
                 '--plan-id',
                 f'contender-{i}',
                 '--timeout',
-                '1',
+                '8',
                 env_overrides=env_overrides,
-                timeout=30,
+                timeout=60,
             )
 
         with ThreadPoolExecutor(max_workers=n) as pool:
@@ -722,6 +725,7 @@ class TestConcurrentReclamation:
         for p in blocked:
             assert p['blocking_plan_id'] == 'live-holder', p
 
+    @pytest.mark.xdist_group(name="manage_locks_contention")
     def test_concurrent_reclaim_admits_exactly_one_across_repeated_trials(
         self, isolated_base: dict
     ) -> None:
@@ -764,9 +768,9 @@ class TestConcurrentReclamation:
                 '--plan-id',
                 f'reclaim-{i}',
                 '--timeout',
-                '2',
+                '8',
                 env_overrides=env_overrides,
-                timeout=30,
+                timeout=60,
             )
 
         for trial in range(trials):

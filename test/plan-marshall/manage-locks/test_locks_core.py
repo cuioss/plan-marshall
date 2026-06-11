@@ -31,6 +31,8 @@ import os
 import threading
 import time
 
+import pytest
+
 from conftest import load_script_module
 
 _mod = load_script_module('plan-marshall', 'manage-locks', '_locks_core.py', '_locks_core_under_test')
@@ -337,6 +339,7 @@ def test_rmw_json_returns_committed_state(tmp_path):
 # =============================================================================
 
 
+@pytest.mark.xdist_group(name="manage_locks_contention")
 def test_rmw_json_serializes_concurrent_increments(tmp_path):
     # Two threads each run N increment mutations against the same file. If the
     # read-modify-write were not serialized by the guard, lost updates would
