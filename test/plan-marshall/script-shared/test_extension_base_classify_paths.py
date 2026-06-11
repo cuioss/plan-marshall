@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Tests for ExtensionBase.classify_paths(), classify_globs(), and the
+"""Tests for BuildExtensionBase.classify_paths(), classify_globs(), and the
 base-lib build_map route deriver + completeness validator.
 
 Covers three concerns of the file-to-build contract that live in the
-``script-shared`` ``extension_base`` module:
+``script-shared`` ``extension_base`` module — all now owned by the Axis-B
+``BuildExtensionBase`` ABC, not ``ExtensionBase``:
 
 1. ``classify_paths()`` — the default no-op contract and the subclass-override
    pattern (the change-set classification path).
@@ -12,8 +13,10 @@ Covers three concerns of the file-to-build contract that live in the
    validator ``validate_tree_completeness()`` — the explicit ``(pattern, role)``
    route accessor, the route-collection consumer the build_map seed reads, and
    the git-tracked completeness validator that reports any tracked source file no
-   declared route covers (so a production ``.py`` outside the obvious roots is
-   caught, while untracked ``target/`` / ``.venv/`` output is ignored).
+   declared route covers **within a build-covered root** (so a production ``.py``
+   the routes forgot inside a buildable-unit tree is caught, while untracked
+   ``target/`` / ``.venv/`` output AND tracked source outside every build-covered
+   root are ignored).
 
 The aggregator's longest-glob-wins overlap resolution and the unclaimed-path
 warning are tested separately in test_manage_execution_manifest_*.py — this
@@ -36,14 +39,20 @@ from extension_base import (  # type: ignore[import-not-found]
     ROLE_DOCUMENTATION,
     ROLE_PRODUCTION,
     ROLE_TEST,
-    ExtensionBase,
+    BuildExtensionBase,
     derive_globs_from_tree,
     validate_tree_completeness,
 )
 
 
-class _MinimalExtension(ExtensionBase):
-    """ExtensionBase subclass with only the abstract method implemented."""
+class _MinimalExtension(BuildExtensionBase):
+    """BuildExtensionBase subclass with the default Axis-B contract.
+
+    Carries a ``get_skill_domains()`` so :func:`derive_globs_from_tree` (which
+    keys collected routes by the extension's first domain key) can file the
+    routes under a domain — the deriver consumes both the Axis-B routes and the
+    domain key a build extension serves.
+    """
 
     def get_skill_domains(self) -> list[dict]:
         return [{
@@ -58,7 +67,7 @@ class _MinimalExtension(ExtensionBase):
 
 
 class _ClassifyingExtension(_MinimalExtension):
-    """ExtensionBase subclass overriding classify_paths()."""
+    """BuildExtensionBase subclass overriding classify_paths()."""
 
     def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
         claims: dict[str, list[str]] = {
@@ -262,10 +271,12 @@ def test_default_classify_build_class_test_maps_to_module_tests():
     assert ext.classify_build_class('test/foo_test.py', 'test') == BUILD_CLASS_TEST_RUN
 
 
-def test_default_classify_build_class_documentation_maps_to_docs_validate():
-    """role=documentation derives docs-validate by default."""
+def test_default_classify_build_class_documentation_falls_back_to_none():
+    """role=documentation has no build_class — documentation is not a build_map
+    role and has no build owner, so the default mapping treats it as an unmatched
+    role and derives none."""
     ext = _MinimalExtension()
-    assert ext.classify_build_class('README.md', 'documentation') == BUILD_CLASS_DOCS_VALIDATE
+    assert ext.classify_build_class('README.md', 'documentation') == BUILD_CLASS_NONE
 
 
 def test_default_classify_build_class_config_maps_to_verify():
@@ -282,9 +293,13 @@ def test_default_classify_build_class_unmatched_role_falls_back_to_none():
 
 
 def test_default_classify_build_class_returns_a_member_for_every_role():
-    """Every declared role resolves to a BUILD_CLASSES member."""
+    """Every declared build_map role resolves to a BUILD_CLASSES member.
+
+    documentation is NOT a build_map role and is deliberately excluded — it has
+    no build owner and resolves to the none fallback like any unmatched role.
+    """
     ext = _MinimalExtension()
-    for role in ('production', 'test', 'documentation', 'config'):
+    for role in ('production', 'test', 'config'):
         assert ext.classify_build_class('any/path', role) in BUILD_CLASSES
 
 
@@ -331,7 +346,7 @@ def test_subclass_build_class_override_falls_through_for_other_roles():
     """The override delegates to the default for roles it does not special-case."""
     ext = _PathDiscriminatingExtension()
     assert ext.classify_build_class('test/foo_test.py', 'test') == BUILD_CLASS_TEST_RUN
-    assert ext.classify_build_class('README.md', 'documentation') == BUILD_CLASS_DOCS_VALIDATE
+    assert ext.classify_build_class('README.md', 'documentation') == BUILD_CLASS_NONE
     assert ext.classify_build_class('pyproject.toml', 'config') == BUILD_CLASS_BUILD_CONFIG_FULL
 
 
@@ -340,21 +355,25 @@ def test_subclass_build_class_override_falls_through_for_other_roles():
 # =============================================================================
 
 
-def test_build_map_roles_is_the_closed_four_value_set():
-    """BUILD_MAP_ROLES is exactly the four resolved roles, no more, no less."""
+def test_build_map_roles_is_the_closed_three_value_set():
+    """BUILD_MAP_ROLES is exactly production / test / config — no documentation.
+
+    Documentation is not a build_map route role (no build owner for docs), so
+    ROLE_DOCUMENTATION is deliberately absent from the set.
+    """
     assert BUILD_MAP_ROLES == frozenset({
         'production',
         'test',
-        'documentation',
         'config',
     })
-    assert len(BUILD_MAP_ROLES) == 4
+    assert len(BUILD_MAP_ROLES) == 3
 
 
 def test_build_map_role_named_constants_are_members():
-    """Each named role constant is a member of BUILD_MAP_ROLES."""
-    for value in (ROLE_PRODUCTION, ROLE_TEST, ROLE_DOCUMENTATION, ROLE_CONFIG):
+    """Each build_map role constant is a member; documentation is NOT."""
+    for value in (ROLE_PRODUCTION, ROLE_TEST, ROLE_CONFIG):
         assert value in BUILD_MAP_ROLES
+    assert ROLE_DOCUMENTATION not in BUILD_MAP_ROLES
 
 
 # =============================================================================
@@ -363,7 +382,7 @@ def test_build_map_role_named_constants_are_members():
 
 
 class _RouteExtension(_MinimalExtension):
-    """ExtensionBase subclass declaring explicit (pattern, role) build_map routes.
+    """BuildExtensionBase subclass declaring explicit (pattern, role) build_map routes.
 
     Routes use single-``*`` fnmatch globs (the matcher the build_map consumer
     uses) where a ``*`` matches across ``/`` — so ``scripts/*.py`` covers
@@ -575,17 +594,47 @@ def test_validate_completeness_returns_empty_when_all_covered(tmp_path):
     assert uncovered == []
 
 
-def test_validate_completeness_flags_uncovered_tracked_source(tmp_path):
-    """A tracked production .py outside every declared route is reported uncovered.
+class _SubrootRouteExtension(_MinimalExtension):
+    """Build extension whose production route is narrower than its buildable root.
 
-    The regression this fixes: a production module the routes forgot (here
-    ``marketplace/targets/generate.py``, outside ``scripts/``) surfaces as an
-    uncovered path instead of being silently missed.
+    The route ``src/*/main.py`` claims the directory root ``src/`` (the leading
+    non-wildcard prefix) but only matches a ``main.py`` one level under it. So a
+    sibling ``.py`` under ``src/`` IS a buildable unit (inside the build-covered
+    root) yet uncovered by the route — exactly the in-root-but-missed case the
+    completeness validator must still surface.
+    """
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        return [('src/*/main.py', ROLE_PRODUCTION)]
+
+
+def test_validate_completeness_flags_uncovered_tracked_source_inside_build_root(tmp_path):
+    """An uncovered .py INSIDE a build-covered root still surfaces (31fed0).
+
+    ``src/a/main.py`` is matched by the route (covered); ``src/a/orphan.py`` lives
+    under the same build-covered root ``src/`` but no route matches it — so it is
+    a buildable unit the routes forgot and is reported uncovered.
+    """
+    _git_init_and_track(tmp_path, ['src/a/main.py', 'src/a/orphan.py'])
+    uncovered = validate_tree_completeness(str(tmp_path), [_SubrootRouteExtension()])
+    assert 'src/a/orphan.py' in uncovered
+    assert 'src/a/main.py' not in uncovered
+
+
+def test_validate_completeness_ignores_source_outside_every_build_root(tmp_path):
+    """A tracked .py OUTSIDE every build-covered root is NOT reported (31fed0).
+
+    The buildable-units denominator: ``_RouteExtension``'s production/test routes
+    establish the roots ``scripts/`` and ``test/``. A one-off
+    ``marketplace/targets/generate.py`` lives under neither root, so it is not a
+    buildable unit and the validator stays silent on it — even though no route
+    covers it.
     """
     _git_init_and_track(tmp_path, ['scripts/foo.py', 'marketplace/targets/generate.py'])
     uncovered = validate_tree_completeness(str(tmp_path), [_RouteExtension()])
-    assert 'marketplace/targets/generate.py' in uncovered
+    assert 'marketplace/targets/generate.py' not in uncovered
     assert 'scripts/foo.py' not in uncovered
+    assert uncovered == []
 
 
 def test_validate_completeness_ignores_untracked_paths(tmp_path):
@@ -622,14 +671,22 @@ def test_validate_completeness_only_production_and_test_routes_cover(tmp_path):
     """Only production/test routes count toward coverage — a doc/config route does not.
 
     A documentation route does not make a tracked .py covered; the .py must be
-    matched by a production or test route.
+    matched by a production or test route. The production route ``src/*/main.py``
+    establishes the build-covered root ``src/`` (so ``src/a/foo.py`` IS a
+    buildable unit), while the documentation route ``src/*.py`` does not count as
+    coverage — so the in-root ``src/a/foo.py`` it only doc-matches still surfaces.
     """
 
-    class _DocOnlyRouteExtension(_MinimalExtension):
+    class _DocRouteWithBuildRootExtension(_MinimalExtension):
         def classify_globs(self) -> list[tuple[str, str]]:
-            return [('scripts/*.py', ROLE_DOCUMENTATION)]
+            return [
+                ('src/*/main.py', ROLE_PRODUCTION),  # establishes build root src/
+                ('src/*.py', ROLE_DOCUMENTATION),  # does NOT count toward coverage
+            ]
 
-    _git_init_and_track(tmp_path, ['scripts/foo.py'])
-    uncovered = validate_tree_completeness(str(tmp_path), [_DocOnlyRouteExtension()])
-    # The .py is matched only by a documentation route, so it is still uncovered.
-    assert 'scripts/foo.py' in uncovered
+    _git_init_and_track(tmp_path, ['src/a/main.py', 'src/a/foo.py'])
+    uncovered = validate_tree_completeness(str(tmp_path), [_DocRouteWithBuildRootExtension()])
+    # src/a/foo.py is inside the build-covered root but matched only by a
+    # documentation route, so it is still uncovered. src/a/main.py is covered.
+    assert 'src/a/foo.py' in uncovered
+    assert 'src/a/main.py' not in uncovered

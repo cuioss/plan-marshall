@@ -2,26 +2,32 @@
 # ruff: noqa: I001, E402
 """Tests for the extension_discovery → route-collector bridge.
 
-``derive_build_map_globs(project_root, extensions)`` bridges extension
+``derive_build_map_globs(project_root, extensions)`` bridges BUILD-extension
 discovery to the ``script-shared`` base-lib route collector
-(``derive_globs_from_tree``). Each registered extension declares its build_map
-as explicit ``(pattern, role)`` routes via ``classify_globs()`` — an
-fnmatch-style glob (e.g. ``marketplace/bundles/*.py``) paired with one of the
-four resolved roles (``production`` / ``test`` / ``documentation`` /
-``config``). The bridge gathers those declared routes verbatim, keyed by each
-extension's domain key; it no longer scans the tree to enumerate one glob per
-directory. Tree completeness is a SEPARATE concern handled by
+(``derive_globs_from_tree``). Each build skill's ``BuildExtensionBase`` subclass
+declares its build_map as explicit ``(pattern, role)`` routes via
+``classify_globs()`` — an fnmatch-style glob (e.g. ``marketplace/bundles/*.py``)
+paired with one of the four resolved roles (``production`` / ``test`` /
+``documentation`` / ``config``). The bridge gathers those declared routes
+verbatim, keyed by each build extension's served domain key; it no longer scans
+the tree to enumerate one glob per directory. When two build extensions serve the
+same domain key (build-maven + build-gradle both serving ``java``), their routes
+are MERGED under that key. Tree completeness is a SEPARATE concern handled by
 ``validate_tree_completeness``. The build_map seed aggregator (``manage-config``)
 consumes this output.
 
-Two flavours of coverage:
+Three flavours of coverage:
 
-1. Synthetic-route units — stub extension modules declaring explicit routes,
-   asserting the bridge collects them verbatim, keyed by domain, role-filtered,
-   and de-duplicated (no dependency on the live marketplace tree).
-2. Real-tree regression — the bridge over the live worktree, asserting the 26
-   previously-missed production ``.py`` files (every
-   ``*/skills/plan-marshall-plugin/extension.py`` and every
+1. Synthetic-route units — stub build-extension modules declaring explicit
+   routes, asserting the bridge collects them verbatim, keyed by served domain,
+   role-filtered, de-duplicated, and merged across same-domain extensions (no
+   dependency on the live marketplace tree).
+2. Build-extension discovery — ``discover_build_extensions()`` loads each build
+   skill's ``scripts/extension.py`` and returns the ``BuildExtension`` instances,
+   each declaring its served domain key.
+3. Real-tree regression — the bridge over the live worktree (discovering the real
+   build extensions), asserting the 26 previously-missed production ``.py`` files
+   (every ``*/skills/plan-marshall-plugin/extension.py`` and every
    ``marketplace/targets/**/*.py``) are now covered by a declared python
    production route. This is the regression the build_map redesign exists to fix.
 """
@@ -40,25 +46,26 @@ from conftest import (  # type: ignore[import-not-found]
 # The resolved-role constants used to build stub route sets live in the
 # script-shared extension module (already on sys.path via conftest). The old
 # ROLE_HEURISTIC_* constants were removed by the build_map redesign — routes
-# now declare resolved roles directly.
+# now declare resolved roles directly. ``BuildExtensionBase`` is the Axis-B
+# contract anchor the real build extensions subclass.
 from extension_base import (  # type: ignore[import-not-found]
     ROLE_CONFIG,
     ROLE_DOCUMENTATION,
     ROLE_PRODUCTION,
     ROLE_TEST,
-    ExtensionBase,
+    BuildExtensionBase,
 )
 
 _discovery = load_script_module('plan-marshall', 'extension-api', 'extension_discovery.py')
 
 
 # =============================================================================
-# Stub extensions and helpers
+# Stub build extensions and helpers
 # =============================================================================
 
 
-class _StubPythonExtension(ExtensionBase):
-    """Minimal extension declaring explicit python production/test/config routes."""
+class _StubPythonBuildExtension(BuildExtensionBase):
+    """Minimal build extension declaring explicit python production/test/config routes."""
 
     def get_skill_domains(self) -> list[dict]:
         return [{'domain': {'key': 'python', 'name': 'P', 'description': 'd'}, 'profiles': {}}]
@@ -71,8 +78,14 @@ class _StubPythonExtension(ExtensionBase):
         ]
 
 
-class _StubDocsExtension(ExtensionBase):
-    """Minimal extension declaring a broad documentation route."""
+class _StubDocsBuildExtension(BuildExtensionBase):
+    """Build extension declaring ONLY a documentation route.
+
+    Documentation is no longer a build_map role (no build owner for docs), so the
+    deriver filters this extension's sole route out — the extension contributes
+    NO build_map entries. Used to assert that a documentation-only build
+    extension is dropped from the keyed result.
+    """
 
     def get_skill_domains(self) -> list[dict]:
         return [{'domain': {'key': 'documentation', 'name': 'D', 'description': 'd'}, 'profiles': {}}]
@@ -81,14 +94,38 @@ class _StubDocsExtension(ExtensionBase):
         return [('*.md', ROLE_DOCUMENTATION)]
 
 
-class _StubEmptyExtension(ExtensionBase):
-    """Minimal extension owning no buildable file types (no routes)."""
+class _StubEmptyBuildExtension(BuildExtensionBase):
+    """Minimal build extension owning no buildable file types (no routes)."""
 
     def get_skill_domains(self) -> list[dict]:
         return [{'domain': {'key': 'empty', 'name': 'E', 'description': 'd'}, 'profiles': {}}]
 
     def classify_globs(self) -> list[tuple[str, str]]:
         return []
+
+
+class _StubMavenBuildExtension(BuildExtensionBase):
+    """A java-domain build extension declaring maven-style routes."""
+
+    def get_skill_domains(self) -> list[dict]:
+        return [{'domain': {'key': 'java', 'name': 'J', 'description': 'd'}, 'profiles': {}}]
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        return [('src/main/*.java', ROLE_PRODUCTION), ('pom.xml', ROLE_CONFIG)]
+
+
+class _StubGradleBuildExtension(BuildExtensionBase):
+    """A second java-domain build extension declaring gradle-style routes.
+
+    Shares the ``java`` domain key with the maven stub: the bridge must MERGE
+    both extensions' routes under ``java`` rather than overwrite.
+    """
+
+    def get_skill_domains(self) -> list[dict]:
+        return [{'domain': {'key': 'java', 'name': 'J', 'description': 'd'}, 'profiles': {}}]
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        return [('src/main/*.java', ROLE_PRODUCTION), ('build.gradle', ROLE_CONFIG)]
 
 
 def _matches_any(path: str, globs: list[str]) -> bool:
@@ -111,18 +148,22 @@ def test_bridge_returns_empty_for_no_extensions(tmp_path):
 
 
 def test_bridge_keys_result_by_domain_key(tmp_path):
-    """The bridge returns a dict keyed by each extension's domain key."""
+    """The bridge returns a dict keyed by each build extension's served domain key.
+
+    A documentation-only build extension contributes no routes (documentation is
+    not a build_map role), so its domain is omitted from the keyed result.
+    """
     extensions = [
-        {'bundle': 'pm-dev-python', 'module': _StubPythonExtension()},
-        {'bundle': 'pm-documents', 'module': _StubDocsExtension()},
+        {'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()},
+        {'skill': 'build-docs', 'module': _StubDocsBuildExtension()},
     ]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
-    assert set(result.keys()) == {'python', 'documentation'}
+    assert set(result.keys()) == {'python'}
 
 
 def test_bridge_collects_routes_verbatim(tmp_path):
-    """The bridge collects each extension's declared routes verbatim (no tree scan)."""
-    extensions = [{'bundle': 'pm-dev-python', 'module': _StubPythonExtension()}]
+    """The bridge collects each build extension's declared routes verbatim (no tree scan)."""
+    extensions = [{'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()}]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     assert ('marketplace/bundles/*.py', 'production') in result['python']
     assert ('test/*.py', 'test') in result['python']
@@ -130,10 +171,10 @@ def test_bridge_collects_routes_verbatim(tmp_path):
 
 
 def test_bridge_omits_domains_with_no_routes(tmp_path):
-    """An extension whose classify_globs() returns no routes contributes nothing."""
+    """A build extension whose classify_globs() returns no routes contributes nothing."""
     extensions = [
-        {'bundle': 'empty', 'module': _StubEmptyExtension()},
-        {'bundle': 'pm-dev-python', 'module': _StubPythonExtension()},
+        {'skill': 'build-empty', 'module': _StubEmptyBuildExtension()},
+        {'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()},
     ]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     assert set(result.keys()) == {'python'}
@@ -142,8 +183,8 @@ def test_bridge_omits_domains_with_no_routes(tmp_path):
 def test_bridge_skips_entries_with_no_module(tmp_path):
     """Entries lacking a 'module' key are filtered before the collector runs."""
     extensions = [
-        {'bundle': 'broken'},  # no 'module'
-        {'bundle': 'pm-dev-python', 'module': _StubPythonExtension()},
+        {'skill': 'broken'},  # no 'module'
+        {'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()},
     ]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     assert set(result.keys()) == {'python'}
@@ -151,7 +192,7 @@ def test_bridge_skips_entries_with_no_module(tmp_path):
 
 def test_bridge_separates_production_and_test_by_declared_role(tmp_path):
     """Production vs test is split by the declared route role, not a tree predicate."""
-    extensions = [{'bundle': 'pm-dev-python', 'module': _StubPythonExtension()}]
+    extensions = [{'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()}]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     entries = result['python']
     prod_globs = [glob for glob, role in entries if role == 'production']
@@ -163,7 +204,7 @@ def test_bridge_separates_production_and_test_by_declared_role(tmp_path):
 
 def test_bridge_returns_deduplicated_sorted_routes(tmp_path):
     """Collected routes are de-duplicated and returned in deterministic sorted order."""
-    extensions = [{'bundle': 'pm-dev-python', 'module': _StubPythonExtension()}]
+    extensions = [{'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()}]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     entries = result['python']
     assert entries == sorted(set(entries))
@@ -171,17 +212,77 @@ def test_bridge_returns_deduplicated_sorted_routes(tmp_path):
 
 def test_bridge_is_deterministic(tmp_path):
     """Two collections over the same extensions return identical results."""
-    extensions = [{'bundle': 'pm-dev-python', 'module': _StubPythonExtension()}]
+    extensions = [{'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()}]
     first = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     second = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     assert first == second
+
+
+def test_bridge_merges_routes_across_same_domain_build_extensions(tmp_path):
+    """Two build extensions serving the same domain key MERGE their routes.
+
+    build-maven and build-gradle both serve ``java``; the bridge must union their
+    declared routes under ``java`` rather than let the second overwrite the first.
+    """
+    extensions = [
+        {'skill': 'build-maven', 'module': _StubMavenBuildExtension()},
+        {'skill': 'build-gradle', 'module': _StubGradleBuildExtension()},
+    ]
+    result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
+    assert set(result.keys()) == {'java'}
+    java_routes = result['java']
+    # Both the shared production route and BOTH config descriptors are present.
+    assert ('src/main/*.java', 'production') in java_routes
+    assert ('pom.xml', 'config') in java_routes
+    assert ('build.gradle', 'config') in java_routes
+    # De-duplicated: the shared production route appears exactly once.
+    assert java_routes.count(('src/main/*.java', 'production')) == 1
+
+
+# =============================================================================
+# Build-extension discovery
+# =============================================================================
+
+
+def test_discover_build_extensions_returns_real_build_extensions():
+    """discover_build_extensions() loads each build skill's BuildExtension.
+
+    The four build skills (build-pyproject / build-maven / build-gradle /
+    build-npm) each ship a BuildExtension(BuildExtensionBase). Discovery loads
+    them all and returns one entry per skill carrying the instantiated module.
+    """
+    discovered = _discovery.discover_build_extensions()
+    skills = {entry['skill'] for entry in discovered}
+    # At minimum the four build skills must be discovered.
+    assert {'build-pyproject', 'build-maven', 'build-gradle', 'build-npm'} <= skills
+    for entry in discovered:
+        module = entry['module']
+        assert isinstance(module, BuildExtensionBase)
+        # Each declares routes and a served domain key.
+        assert module.classify_globs()
+        domains = module.get_skill_domains()
+        assert domains and domains[0]['domain']['key']
+
+
+def test_discover_build_extensions_serves_expected_domain_keys():
+    """Each real build extension is filed under its expected served domain key."""
+    discovered = _discovery.discover_build_extensions()
+    by_skill = {entry['skill']: entry['module'] for entry in discovered}
+
+    def _key(skill: str) -> str:
+        return by_skill[skill].get_skill_domains()[0]['domain']['key']
+
+    assert _key('build-pyproject') == 'python'
+    assert _key('build-maven') == 'java'
+    assert _key('build-gradle') == 'java'
+    assert _key('build-npm') == 'javascript'
 
 
 # =============================================================================
 # Real-tree regression: the 26 previously-missed production .py files
 # =============================================================================
 #
-# The build_map redesign's central regression: the python domain's old
+# The build_map redesign's central regression: the python build system's old
 # scripts/-anchored static globs missed every production .py file living
 # outside a scripts/ directory. There are exactly 26 such files in the
 # marketplace tree:
@@ -238,10 +339,10 @@ def test_real_tree_corpus_has_the_expected_out_of_scripts_files():
 def test_real_tree_routes_cover_every_out_of_scripts_production_py():
     """Every out-of-scripts production .py is covered by a declared python production route.
 
-    The bridge discovers the live extensions and collects their declared routes
-    over the real worktree. The python domain's production routes must match
-    every extension.py and every marketplace/targets/**/*.py — the exact set the
-    old static scripts/-anchored globs silently dropped.
+    The bridge discovers the live build extensions and collects their declared
+    routes over the real worktree. The python build system's production routes
+    must match every extension.py and every marketplace/targets/**/*.py — the exact
+    set the old static scripts/-anchored globs silently dropped.
     """
     derived = _discovery.derive_build_map_globs(PROJECT_ROOT)
     assert 'python' in derived, 'python domain must contribute build_map routes'
@@ -253,7 +354,7 @@ def test_real_tree_routes_cover_every_out_of_scripts_production_py():
 
 
 def test_real_tree_routes_cover_a_sample_extension_py():
-    """Spot-check: the python domain covers pm-dev-python's own extension.py."""
+    """Spot-check: the python build system covers pm-dev-python's own extension.py."""
     derived = _discovery.derive_build_map_globs(PROJECT_ROOT)
     prod_globs = _prod_globs(derived['python'])
     sample = 'marketplace/bundles/pm-dev-python/skills/plan-marshall-plugin/extension.py'
@@ -261,7 +362,7 @@ def test_real_tree_routes_cover_a_sample_extension_py():
 
 
 def test_real_tree_routes_cover_marketplace_targets_generate():
-    """Spot-check: the python domain covers marketplace/targets/generate.py."""
+    """Spot-check: the python build system covers marketplace/targets/generate.py."""
     derived = _discovery.derive_build_map_globs(PROJECT_ROOT)
     prod_globs = _prod_globs(derived['python'])
     assert _matches_any('marketplace/targets/generate.py', prod_globs)

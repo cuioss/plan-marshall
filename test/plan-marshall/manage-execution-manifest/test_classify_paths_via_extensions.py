@@ -13,7 +13,7 @@ also consumed it has been removed (see ``test_compose_docs_only_branch.py``).
 import importlib.util
 from pathlib import Path
 
-from extension_base import ExtensionBase  # type: ignore[import-not-found]
+from extension_base import BuildExtensionBase  # type: ignore[import-not-found]
 
 # =============================================================================
 # Module loading
@@ -52,8 +52,17 @@ _manifest_mod._emit_decision_log = lambda *a, **kw: None  # type: ignore[attr-de
 # =============================================================================
 
 
-class _FakeExtension(ExtensionBase):
-    """Minimal ExtensionBase subclass that returns canned classify_paths claims."""
+class _FakeExtension(BuildExtensionBase):
+    """Minimal BuildExtensionBase subclass returning canned classify_paths claims.
+
+    The aggregator iterates *build* extensions (Axis-B), so a fake that models
+    a build extension's production / test / config claims subclasses
+    ``BuildExtensionBase`` — the home of ``classify_paths`` /
+    ``classify_path_specificity`` after the Axis-B strip moved those methods off
+    the language ``ExtensionBase`` hierarchy. Documentation is NOT modelled here:
+    doc recognition is the aggregator's generic ``_DOC_SUFFIXES`` rule, owned by
+    no extension.
+    """
 
     def __init__(
         self,
@@ -132,13 +141,30 @@ def test_test_only_bucket():
     assert bucket == 'test_only'
 
 
-def test_documentation_only_bucket():
-    docs_ext = _FakeExtension(
-        'documentation',
-        claims={'production': [], 'test': [], 'documentation': ['README.md'], 'config': []},
-    )
-    bucket, _ = _classify_paths_via_extensions(['README.md'], extensions=[docs_ext])
+def test_documentation_only_bucket_recognized_generically():
+    """A *.md path is recognized as documentation by the generic suffix rule with
+    NO extension claiming it — documentation has no build owner."""
+    bucket, unclaimed = _classify_paths_via_extensions(['README.md'], extensions=[])
     assert bucket == 'documentation_only'
+    assert unclaimed == []
+
+
+def test_documentation_suffixes_all_recognized_generically():
+    """Every documentation suffix (.md / .adoc / .asciidoc) is recognized
+    generically without any extension."""
+    for path in ('README.md', 'doc/guide.adoc', 'doc/spec.asciidoc'):
+        bucket, unclaimed = _classify_paths_via_extensions([path], extensions=[])
+        assert bucket == 'documentation_only'
+        assert unclaimed == []
+
+
+def test_skill_md_recognized_as_documentation_generically():
+    """A marketplace SKILL.md path is documentation by the generic suffix rule —
+    no per-bundle extension overlap resolution is involved anymore."""
+    path = 'marketplace/bundles/foo/skills/bar/SKILL.md'
+    bucket, unclaimed = _classify_paths_via_extensions([path], extensions=[])
+    assert bucket == 'documentation_only'
+    assert unclaimed == []
 
 
 def test_mixed_code_bucket():
@@ -158,6 +184,9 @@ def test_mixed_code_bucket():
 
 
 def test_mixed_with_docs_bucket():
+    """A production .py (extension-claimed) plus a generic .md doc yields
+    mixed_with_docs — the doc role comes from the generic suffix rule, not an
+    extension."""
     py_ext = _FakeExtension(
         'python',
         claims={
@@ -167,19 +196,15 @@ def test_mixed_with_docs_bucket():
             'config': [],
         },
     )
-    docs_ext = _FakeExtension(
-        'documentation',
-        claims={
-            'production': [], 'test': [], 'documentation': ['README.md'], 'config': []
-        },
-    )
     bucket, _ = _classify_paths_via_extensions(
-        ['scripts/foo.py', 'README.md'], extensions=[py_ext, docs_ext]
+        ['scripts/foo.py', 'README.md'], extensions=[py_ext]
     )
     assert bucket == 'mixed_with_docs'
 
 
 def test_mixed_with_docs_includes_test_role():
+    """A test .py (extension-claimed) plus a generic .md doc yields
+    mixed_with_docs."""
     py_ext = _FakeExtension(
         'python',
         claims={
@@ -189,14 +214,8 @@ def test_mixed_with_docs_includes_test_role():
             'config': [],
         },
     )
-    docs_ext = _FakeExtension(
-        'documentation',
-        claims={
-            'production': [], 'test': [], 'documentation': ['README.md'], 'config': []
-        },
-    )
     bucket, _ = _classify_paths_via_extensions(
-        ['test/foo_test.py', 'README.md'], extensions=[py_ext, docs_ext]
+        ['test/foo_test.py', 'README.md'], extensions=[py_ext]
     )
     assert bucket == 'mixed_with_docs'
 
@@ -257,25 +276,25 @@ def test_config_combined_with_production_yields_production_only():
 # =============================================================================
 
 
-def test_longest_glob_wins_pm_plugin_dev_beats_pm_documents_on_skill_md():
-    """The pm-plugin-development extension wins SKILL.md paths over pm-documents
-    via higher classify_path_specificity score."""
+def test_doc_path_is_recognized_generically_before_any_extension():
+    """A doc path is tagged documentation by the generic suffix rule and is never
+    handed to an extension — so a build extension that would (wrongly) try to
+    claim it under another role has no effect.
+
+    This is the post-refactor replacement for the old pm-plugin-dev-beats-
+    pm-documents longest-glob test: doc recognition no longer flows through
+    extensions at all, so there is no extension overlap to resolve for docs.
+    """
     path = 'marketplace/bundles/foo/skills/bar/SKILL.md'
-    docs_ext = _FakeExtension(
-        'documentation',
-        claims={'production': [], 'test': [], 'documentation': [path], 'config': []},
-        specificity={(path, 'documentation'): 0},  # *.md glob → 0 explicit segments
+    # An extension that absurdly tries to claim the SKILL.md as production must
+    # not win — the generic doc rule fires first and removes the path from the
+    # set the extension sees.
+    rogue_ext = _FakeExtension(
+        'rogue',
+        claims={'production': [path], 'test': [], 'documentation': [], 'config': []},
+        specificity={(path, 'production'): 99},
     )
-    plugin_ext = _FakeExtension(
-        'plan-marshall-plugin-dev',
-        claims={'production': [], 'test': [], 'documentation': [path], 'config': []},
-        specificity={(path, 'documentation'): 4},  # marketplace/bundles/*/skills/*/SKILL.md
-    )
-    bucket, unclaimed = _classify_paths_via_extensions(
-        [path], extensions=[docs_ext, plugin_ext]
-    )
-    # Both claimed under documentation, so the resolved bucket is documentation_only.
-    # The winner is plugin_ext (higher specificity).
+    bucket, unclaimed = _classify_paths_via_extensions([path], extensions=[rogue_ext])
     assert bucket == 'documentation_only'
     assert unclaimed == []
 

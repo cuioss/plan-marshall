@@ -61,6 +61,42 @@ def get_extension_api_scripts_path() -> Path:
     return resolve_skills_root(Path(__file__)) / 'script-shared' / 'scripts' / 'extension'
 
 
+# The build skills whose ``scripts/extension.py`` ships a ``BuildExtensionBase``
+# subclass (Axis-B: the file-to-build map). These are sibling skills under the
+# plan-marshall bundle's ``skills`` directory; each owns one build system's
+# ``(pattern, role)`` routes. Discovery is name-driven (not a tree scan) so a
+# build skill without an ``extension.py`` is silently skipped.
+_BUILD_EXTENSION_SKILLS: tuple[str, ...] = (
+    'build-pyproject',
+    'build-maven',
+    'build-gradle',
+    'build-npm',
+)
+
+
+def get_build_extension_paths() -> list[Path]:
+    """Return the existing ``scripts/extension.py`` paths for the build skills.
+
+    Each build skill (``build-pyproject`` / ``build-maven`` / ``build-gradle`` /
+    ``build-npm``) ships a ``BuildExtensionBase`` subclass under
+    ``scripts/extension.py``. The skills directory is resolved via
+    ``resolve_skills_root`` (identity walk, the same anchor
+    :func:`get_extension_api_scripts_path` uses); each named build skill's
+    ``scripts/extension.py`` is included only when it exists on disk.
+
+    Returns:
+        List of existing ``extension.py`` paths, one per build skill that ships
+        one, in :data:`_BUILD_EXTENSION_SKILLS` order.
+    """
+    skills_root = resolve_skills_root(Path(__file__))
+    paths: list[Path] = []
+    for skill in _BUILD_EXTENSION_SKILLS:
+        candidate = skills_root / skill / 'scripts' / 'extension.py'
+        if candidate.is_file():
+            paths.append(candidate)
+    return paths
+
+
 def load_extension_module(extension_path: Path, bundle_name: str):
     """Load an extension.py module and instantiate the Extension class.
 
@@ -88,6 +124,65 @@ def load_extension_module(extension_path: Path, bundle_name: str):
     except Exception as e:
         log_entry('script', None, 'WARNING', f'[EXTENSION] Failed to load extension from {bundle_name}: {e}')
         return None
+
+
+def load_build_extension_module(extension_path: Path, skill_name: str):
+    """Load a build skill's ``extension.py`` and instantiate its ``BuildExtension``.
+
+    The Axis-B counterpart to :func:`load_extension_module`: build skills expose a
+    ``BuildExtension`` class (subclassing ``BuildExtensionBase``) rather than the
+    Axis-A ``Extension`` class. Returns the instantiated build extension, or
+    ``None`` when the module cannot be loaded or carries no ``BuildExtension``.
+
+    Args:
+        extension_path: Path to the build skill's ``scripts/extension.py``.
+        skill_name: Name of the owning build skill, used for module naming and
+            warning context.
+
+    Returns:
+        A ``BuildExtension`` instance, or ``None`` on failure.
+    """
+    try:
+        spec = importlib.util.spec_from_file_location(f'build_extension_{skill_name}', extension_path)
+        if spec is None or spec.loader is None:
+            log_entry('script', None, 'WARNING', f'[EXTENSION] Failed to create spec for build skill {skill_name}')
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        if hasattr(module, 'BuildExtension'):
+            return module.BuildExtension()
+
+        log_entry('script', None, 'WARNING', f'[EXTENSION] No BuildExtension class found in {skill_name}')
+        return None
+    except Exception as e:
+        log_entry('script', None, 'WARNING', f'[EXTENSION] Failed to load build extension from {skill_name}: {e}')
+        return None
+
+
+def discover_build_extensions() -> list[dict[str, Any]]:
+    """Discover every build skill's ``BuildExtensionBase`` subclass (Axis-B).
+
+    The Axis-B counterpart to :func:`discover_all_extensions`. Where that function
+    finds Axis-A ``ExtensionBase`` modules (the ``plan-marshall-plugin/extension.py``
+    skill-loading extensions), this one loads each build skill's
+    ``scripts/extension.py`` (``build-pyproject`` / ``build-maven`` /
+    ``build-gradle`` / ``build-npm``) and returns the instantiated
+    ``BuildExtension`` objects. These are the file-to-build route owners the
+    build_map aggregator and the route deriver consume.
+
+    Returns:
+        List of dicts with build-extension info: ``{skill, path, module}``. A
+        build skill without an ``extension.py`` or without a ``BuildExtension``
+        class is silently omitted.
+    """
+    extensions: list[dict[str, Any]] = []
+    for extension_path in get_build_extension_paths():
+        skill_name = extension_path.parent.parent.name
+        module = load_build_extension_module(extension_path, skill_name)
+        if module:
+            extensions.append({'skill': skill_name, 'path': str(extension_path), 'module': module})
+    return extensions
 
 
 def find_extension_path(bundle_dir: Path) -> Path | None:
@@ -225,15 +320,20 @@ def derive_build_map_globs(
 ) -> dict[str, list[tuple[str, str]]]:
     """Collect each domain's explicit ``(pattern, role)`` build_map routes.
 
-    Bridges extension discovery to the ``script-shared`` base-lib route collector
-    (``derive_globs_from_tree``). Each registered extension declares its build_map
-    as explicit ``(pattern, role)`` routes via ``classify_globs()`` — an
-    fnmatch-style glob (e.g. ``marketplace/bundles/*.py``) paired with one of the
-    four resolved roles (``production`` / ``test`` / ``documentation`` /
-    ``config``). The collector gathers those declared routes verbatim, keyed by
-    each extension's domain key; it no longer scans the ``project_root`` tree to
-    enumerate one glob per directory (``project_root`` is accepted for signature
-    parity only). Tree completeness is a SEPARATE concern handled by
+    Bridges build-extension discovery to the ``script-shared`` base-lib route
+    collector (``derive_globs_from_tree``). Each build skill's
+    ``BuildExtensionBase`` subclass declares its build_map as explicit
+    ``(pattern, role)`` routes via ``classify_globs()`` — an fnmatch-style glob
+    (e.g. ``marketplace/bundles/*.py``) paired with one of the four resolved roles
+    (``production`` / ``test`` / ``documentation`` / ``config``). The collector
+    gathers those declared routes verbatim, keyed by each build extension's served
+    domain key (from ``get_skill_domains()``); it no longer scans the
+    ``project_root`` tree to enumerate one glob per directory (``project_root`` is
+    accepted for signature parity only). When two build extensions serve the same
+    domain key (e.g. build-maven and build-gradle both serving ``java``), their
+    routes are MERGED under that key — the collector unions the route sets.
+
+    Tree completeness is a SEPARATE concern handled by
     ``validate_tree_completeness``, which reports any git-tracked source file no
     declared route covers. The build_map seed aggregator (``manage-config``)
     consumes this output to stamp each entry's canonical-named ``build_class``.
@@ -242,8 +342,9 @@ def derive_build_map_globs(
         project_root: Project root (accepted for signature parity with the
             completeness validator; route collection does not read the tree).
         extensions: Optional pre-discovered extension list (from
-            ``discover_all_extensions()``). When omitted, all extensions are
-            discovered here.
+            ``discover_build_extensions()``). When omitted, the build extensions
+            are discovered here. Each entry's ``module`` is a
+            ``BuildExtensionBase`` instance.
 
     Returns:
         A dict keyed by domain-key with a list of de-duplicated ``(pattern, role)``
@@ -251,7 +352,7 @@ def derive_build_map_globs(
     """
     from extension_base import derive_globs_from_tree  # type: ignore[import-not-found]
 
-    discovered = extensions if extensions is not None else discover_all_extensions()
+    discovered = extensions if extensions is not None else discover_build_extensions()
     modules = [ext['module'] for ext in discovered if ext.get('module') is not None]
     return derive_globs_from_tree(str(project_root), modules)
 

@@ -324,7 +324,7 @@ def test_seed_never_writes_retired_override_keys(plan_context, monkeypatch):
 from extension_base import (  # type: ignore[import-not-found]  # noqa: E402
     ROLE_PRODUCTION,
     ROLE_TEST,
-    ExtensionBase,
+    BuildExtensionBase,
 )
 
 # The extension_discovery module that aggregate_build_map() resolves
@@ -342,8 +342,8 @@ _APPLICABLE_MODULES = {'status': 'success', 'modules': {'core': {'name': 'core'}
 _NO_MODULES = {'status': 'success', 'modules': {}}
 
 
-class _PythonRouteExtension(ExtensionBase):
-    """A real extension declaring explicit .py routes under domain key 'python'.
+class _PythonRouteExtension(BuildExtensionBase):
+    """A real build extension declaring explicit .py routes under domain key 'python'.
 
     Mirrors the python domain's explicit (pattern, role) routes: an out-of-scripts
     production route (``marketplace/targets/*.py``, an fnmatch glob) plus a test
@@ -365,8 +365,8 @@ class _PythonRouteExtension(ExtensionBase):
         return {'applicable': True, 'confidence': 'high', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 
 
-class _NoRouteExtension(ExtensionBase):
-    """A python-domain extension that declares no routes at all (base default).
+class _NoRouteExtension(BuildExtensionBase):
+    """A python-domain build extension that declares no routes at all (base default).
 
     Declares itself applicable so the omission is attributable to the empty route
     set, not to the applicability filter.
@@ -379,20 +379,28 @@ class _NoRouteExtension(ExtensionBase):
         return {'applicable': True, 'confidence': 'high', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 
 
-def _wire_real_aggregator(monkeypatch, extension: ExtensionBase, modules: dict | None = None) -> None:
+def _wire_real_aggregator(monkeypatch, extension: BuildExtensionBase, modules: dict | None = None) -> None:
     """Redirect aggregate_build_map()'s extension-set and module-discovery collaborators.
 
-    aggregate_build_map() resolves derive_build_map_globs + discover_all_extensions
-    + discover_project_modules from the extension_discovery module at call time.
-    Patch the extension set to the single supplied fake and the discovered module
-    set to ``modules`` (default: one applicable module), leaving the real
-    derive_build_map_globs / derive_globs_from_tree route-collection wiring intact
-    so the REAL aggregator consumes the declared routes. Route collection no longer
-    reads the project tree, so the project root need not be redirected.
+    aggregate_build_map() resolves derive_build_map_globs + discover_build_extensions
+    + discover_all_extensions + discover_project_modules from the extension_discovery
+    module at call time. The single supplied fake is wired as BOTH the build-extension
+    set (route + build_class source via discover_build_extensions) AND the language-
+    extension set (applicability source via discover_all_extensions) — each fake is a
+    BuildExtensionBase subclass that overrides classify_globs / get_skill_domains /
+    applies_to_module, so it serves both roles. The discovered module set is patched
+    to ``modules`` (default: one applicable module), leaving the real
+    derive_build_map_globs / derive_globs_from_tree route-collection wiring intact so
+    the REAL aggregator consumes the declared routes. Route collection no longer reads
+    the project tree, so the project root need not be redirected.
     """
-    fake_entries = [{'bundle': 'fake', 'path': 'fake/extension.py', 'module': extension}]
+    fake_build_entries = [{'skill': 'fake', 'path': 'fake/extension.py', 'module': extension}]
+    fake_lang_entries = [{'bundle': 'fake', 'path': 'fake/extension.py', 'module': extension}]
     monkeypatch.setattr(
-        _extension_discovery_mod, 'discover_all_extensions', lambda: fake_entries
+        _extension_discovery_mod, 'discover_build_extensions', lambda: fake_build_entries
+    )
+    monkeypatch.setattr(
+        _extension_discovery_mod, 'discover_all_extensions', lambda: fake_lang_entries
     )
     monkeypatch.setattr(
         _extension_discovery_mod,
@@ -543,8 +551,8 @@ def test_aggregate_build_map_omits_domain_with_no_routes(monkeypatch):
 # architecture discovery).
 
 
-class _NonApplicablePythonExtension(ExtensionBase):
-    """A python-domain extension declaring routes but never applicable.
+class _NonApplicablePythonExtension(BuildExtensionBase):
+    """A python-domain build extension declaring routes but never applicable.
 
     Mirrors the leak the fix closes: an installed bundle whose domain does not
     apply to the project's modules (e.g. java/oci on a python-only project). It
@@ -562,8 +570,8 @@ class _NonApplicablePythonExtension(ExtensionBase):
         return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 
 
-class _RaisingApplicabilityExtension(ExtensionBase):
-    """A python-domain extension whose applies_to_module() raises.
+class _RaisingApplicabilityExtension(BuildExtensionBase):
+    """A python-domain build extension whose applies_to_module() raises.
 
     The aggregator defends each applies_to_module() call so one misbehaving
     extension cannot crash the seed — the raising extension is simply treated as

@@ -756,15 +756,33 @@ def cmd_skill_domains(args) -> dict:
     elif args.verb == 'configure':
         selected_domains = [d.strip() for d in args.domains.split(',') if d.strip()]
 
-        # Preserve existing project_skills before clearing
+        # Preserve existing per-domain attachments before clearing.
+        # project_skills and active_profiles are restored only for domains that
+        # still exist after reconfigure (mirroring project_skills semantics).
         existing_project_skills: dict[str, list] = {}
+        existing_domain_active_profiles: dict[str, list] = {}
         for domain_key, domain_config in skill_domains.items():
             if isinstance(domain_config, dict):
                 if 'project_skills' in domain_config:
                     existing_project_skills[domain_key] = domain_config['project_skills']
+                if 'active_profiles' in domain_config:
+                    existing_domain_active_profiles[domain_key] = domain_config['active_profiles']
+
+        # Preserve top-level skill_domains siblings that are NOT domain configs.
+        # build_map (file-to-build contract) and a global active_profiles list
+        # live as siblings of the domain entries and must survive reconfigure
+        # unconditionally — they are not domain-scoped.
+        existing_build_map = skill_domains.get('build_map')
+        existing_global_active_profiles = skill_domains.get('active_profiles')
 
         # Clear existing domains and start fresh with only selected ones
         skill_domains = {}
+
+        # Restore top-level siblings (build_map, global active_profiles)
+        if existing_build_map is not None:
+            skill_domains['build_map'] = existing_build_map
+        if existing_global_active_profiles is not None:
+            skill_domains['active_profiles'] = existing_global_active_profiles
 
         # Always add system domain
         skill_domains['system'] = copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)
@@ -795,6 +813,11 @@ def cmd_skill_domains(args) -> dict:
         for domain_key, ps in existing_project_skills.items():
             if domain_key in skill_domains:
                 skill_domains[domain_key]['project_skills'] = ps
+
+        # Restore per-domain active_profiles to domains that still exist
+        for domain_key, ap in existing_domain_active_profiles.items():
+            if domain_key in skill_domains:
+                skill_domains[domain_key]['active_profiles'] = ap
 
         config['skill_domains'] = skill_domains
 

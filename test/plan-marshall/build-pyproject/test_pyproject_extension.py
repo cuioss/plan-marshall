@@ -1,339 +1,330 @@
 #!/usr/bin/env python3
-"""Tests for plan-marshall extension.py (pyproject discovery).
+"""Tests for plan-marshall build-pyproject BuildExtension (the Python file-to-build map).
 
-Tests the pyproject domain extension including:
-- get_skill_domains() - Domain metadata
-- discover_modules() - Delegated to _pyproject_cmd_discover.discover_python_modules()
+Covers the build-system-owned ``BuildExtension(BuildExtensionBase)`` that ships
+in ``build-pyproject/scripts/extension.py``. This extension owns Axis-B of the
+extension contract for the Python build system: the explicit ``(pattern, role)``
+``classify_globs()`` build_map routes plus the ``classify_paths()`` /
+``classify_path_specificity()`` lookups the manage-execution-manifest aggregator
+and the build_map seed consume.
 
-Note: The extension.py delegates to build-pyproject/scripts/_pyproject_cmd_discover.py
-which discovers modules based on directory structure (test/ or tests/ subdirs),
-not pyprojectx alias detection.
+Central to this deliverable is the config-claim contract: the Python build
+extension claims ``pyproject.toml`` as config but NOT ``uv.lock`` or
+``marshal.json`` — neither lockfile nor marshal config triggers a Python build,
+so neither is a build-map config route.
+
+The four build skills (build-pyproject, build-maven, build-gradle, build-npm)
+each ship a ``BuildExtension`` subclass; each ``extension.py`` lives under the
+respective skill's ``scripts/`` directory and shares the module basename
+``extension``, so the class is loaded via ``importlib.util.spec_from_file_location``
+against the explicit file path to avoid the cross-skill module-name collision.
+
+The base-class default contract, the aggregator's longest-glob-wins overlap
+resolution, and the route deriver / completeness validator are covered separately
+in test/plan-marshall/script-shared/test_extension_base_classify_paths.py — this
+module covers only the concrete pyproject BuildExtension's claims.
 """
 
 import importlib.util
 from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import BuildContext
+# extension_base is importable: conftest._setup_marketplace_pythonpath() adds
+# script-shared/scripts/extension/ to sys.path.
+from extension_base import (  # type: ignore[import-not-found]
+    BUILD_CLASS_BUILD_CONFIG_FULL,
+    BUILD_CLASS_PROD_COMPILE,
+    BUILD_CLASS_TEST_RUN,
+    BUILD_CLASSES,
+    BUILD_MAP_ROLES,
+    BuildExtensionBase,
+)
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 EXTENSION_FILE = (
-    PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
+    PROJECT_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'build-pyproject'
+    / 'scripts'
+    / 'extension.py'
 )
 
 
-def _load_pyproject_extension():
-    """Load pyproject Extension class avoiding conflicts."""
-    spec = importlib.util.spec_from_file_location('pyproject_extension', EXTENSION_FILE)
-    pyproject_ext = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(pyproject_ext)
-    return pyproject_ext.Extension
+def _load_pyproject_build_extension():
+    """Load the build-pyproject BuildExtension class by explicit file path.
 
-
-Extension = _load_pyproject_extension()
-
-
-# =============================================================================
-# Test: get_skill_domains()
-# =============================================================================
-
-
-def test_get_skill_domains_returns_expected_structure():
-    """get_skill_domains() returns domain metadata for build domain."""
-    ext = Extension()
-    all_domains = ext.get_skill_domains()
-
-    # Returns list of domains (build + general-dev)
-    assert isinstance(all_domains, list)
-    assert len(all_domains) >= 1
-
-    # Check first domain (build)
-    domains = all_domains[0]
-    assert 'domain' in domains
-    assert domains['domain']['key'] == 'build'
-    assert domains['domain']['name'] == 'Build Systems'
-
-    # Check profiles (build domain has empty profiles - domain bundles handle skill profiles)
-    assert 'profiles' in domains
-
-
-# =============================================================================
-# Test: discover_modules() - No pyproject.toml
-# =============================================================================
-
-
-def test_discover_modules_returns_empty_when_no_pyproject():
-    """discover_modules() returns [] when no pyproject.toml exists."""
-    with BuildContext() as ctx:
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
-        assert modules == []
-
-
-# =============================================================================
-# Test: discover_modules() - pyproject.toml without test dirs
-# =============================================================================
-
-
-def test_discover_modules_returns_empty_when_no_test_dirs():
-    """discover_modules() returns [] when pyproject.toml exists but no test directories."""
-    with BuildContext() as ctx:
-        # Create pyproject.toml
-        pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text("""
-[project]
-name = "my-project"
-version = "1.0.0"
-""")
-
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
-        assert modules == []
-
-
-# =============================================================================
-# Test: discover_modules() - Complete setup
-# =============================================================================
-
-
-def test_discover_modules_returns_module_with_complete_setup():
-    """discover_modules() returns module when pyproject.toml and test dir exist.
-
-    Delegated discovery detects modules by the presence of test/ or tests/
-    subdirectories under the project root.
+    Every build skill ships an ``extension.py`` sharing the module basename
+    ``extension``; loading via ``spec_from_file_location`` against the explicit
+    path avoids the cross-skill ``import extension`` collision.
     """
-    with BuildContext() as ctx:
-        # Create pyproject.toml
-        pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text("""
-[project]
-name = "my-project"
-version = "1.0.0"
-""")
-
-        # Create test directory (triggers module detection)
-        test_dir = ctx.temp_dir / 'test'
-        test_dir.mkdir()
-        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
-
-        # Create source directory
-        src_dir = ctx.temp_dir / 'src'
-        src_dir.mkdir()
-        (src_dir / 'main.py').write_text('print("hello")')
-
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
-
-        assert len(modules) >= 1
-        module = modules[0]
-
-        # Check module structure
-        assert module['name'] == 'default'
-        assert module['build_systems'] == ['python']
-        assert module['paths']['module'] == '.'
-        assert module['paths']['descriptor'] == 'pyproject.toml'
-
-        # Check commands (delegated discovery generates from module structure)
-        commands = module['commands']
-        assert 'verify' in commands
-        assert 'quality-gate' in commands
-
-        # Check command format
-        assert 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run' in commands['verify']
+    spec = importlib.util.spec_from_file_location(
+        'pyproject_build_extension', EXTENSION_FILE
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.BuildExtension
 
 
-def test_discover_modules_maps_only_existing_aliases():
-    """discover_modules() generates commands based on module structure.
+BuildExtension = _load_pyproject_build_extension()
 
-    Delegated discovery generates standard commands (verify, quality-gate, etc.)
-    for all discovered modules, regardless of pyprojectx aliases.
+
+# =============================================================================
+# Subclass contract
+# =============================================================================
+
+
+def test_build_extension_subclasses_build_extension_base():
+    """The pyproject BuildExtension is a BuildExtensionBase (Axis-B), not ExtensionBase."""
+    assert issubclass(BuildExtension, BuildExtensionBase)
+
+
+def test_build_extension_is_instantiable():
+    """The pyproject BuildExtension instantiates with no required arguments."""
+    ext = BuildExtension()
+    assert isinstance(ext, BuildExtensionBase)
+
+
+# =============================================================================
+# classify_paths() — config claim contract (pyproject.toml only)
+# =============================================================================
+
+
+def test_classify_paths_claims_pyproject_toml_as_config():
+    """pyproject.toml is claimed under the config role."""
+    ext = BuildExtension()
+    result = ext.classify_paths(['pyproject.toml'])
+    assert result['config'] == ['pyproject.toml']
+
+
+def test_classify_paths_does_not_claim_uv_lock():
+    """uv.lock is NOT claimed in any role — it does not trigger a Python build."""
+    ext = BuildExtension()
+    result = ext.classify_paths(['uv.lock'])
+    assert 'uv.lock' not in result['config']
+    assert 'uv.lock' not in result['production']
+    assert 'uv.lock' not in result['test']
+    assert 'uv.lock' not in result['documentation']
+
+
+def test_classify_paths_does_not_claim_marshal_json():
+    """marshal.json is NOT claimed in any role — it does not trigger a Python build."""
+    ext = BuildExtension()
+    result = ext.classify_paths(['marshal.json'])
+    assert 'marshal.json' not in result['config']
+    assert 'marshal.json' not in result['production']
+    assert 'marshal.json' not in result['test']
+    assert 'marshal.json' not in result['documentation']
+
+
+def test_classify_paths_claims_pyproject_but_not_lockfile_or_marshal_together():
+    """Mixed config-like input: only pyproject.toml is claimed; uv.lock / marshal.json are not."""
+    ext = BuildExtension()
+    result = ext.classify_paths(['pyproject.toml', 'uv.lock', 'marshal.json'])
+    assert result['config'] == ['pyproject.toml']
+
+
+# =============================================================================
+# classify_paths() — production / test roles
+# =============================================================================
+
+
+def test_classify_paths_claims_scripts_python_as_production():
+    """Python under a scripts/ directory is claimed as production."""
+    ext = BuildExtension()
+    result = ext.classify_paths(
+        ['marketplace/bundles/foo/skills/bar/scripts/baz.py']
+    )
+    assert 'marketplace/bundles/foo/skills/bar/scripts/baz.py' in result['production']
+
+
+def test_classify_paths_claims_direct_child_scripts_python_as_production():
+    """A direct child of scripts/ (no further subdir) is still production.
+
+    fnmatch's ``**/scripts/**/*.py`` requires a subdirectory after scripts/, so
+    the direct-child pattern ``**/scripts/*.py`` is needed to cover this case.
     """
-    with BuildContext() as ctx:
-        pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text("""
-[project]
-name = "minimal-project"
-version = "1.0.0"
-""")
-
-        # Create test dir to trigger discovery
-        test_dir = ctx.temp_dir / 'test'
-        test_dir.mkdir()
-        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
-
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
-
-        assert len(modules) >= 1
-        commands = modules[0]['commands']
-
-        # Delegated discovery always generates verify, quality-gate, compile, clean
-        assert 'verify' in commands
-        assert 'quality-gate' in commands
+    ext = BuildExtension()
+    result = ext.classify_paths(['skills/bar/scripts/baz.py'])
+    assert 'skills/bar/scripts/baz.py' in result['production']
 
 
-# =============================================================================
-# Test: Source/Test Directory Discovery
-# =============================================================================
+def test_classify_paths_claims_test_python_as_test():
+    """Python under a test/ directory is claimed as test."""
+    ext = BuildExtension()
+    result = ext.classify_paths(['test/plan-marshall/build-pyproject/test_foo.py'])
+    assert 'test/plan-marshall/build-pyproject/test_foo.py' in result['test']
 
 
-def test_discover_modules_finds_source_directories():
-    """discover_modules() detects source directories."""
-    with BuildContext() as ctx:
-        pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text("""
-[project]
-name = "test-project"
-""")
-
-        # Create source directory
-        src_dir = ctx.temp_dir / 'src'
-        src_dir.mkdir()
-        (src_dir / 'main.py').write_text('print("hello")')
-
-        # Create test directory (required for module detection)
-        test_dir = ctx.temp_dir / 'test'
-        test_dir.mkdir()
-        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
-
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
-
-        assert len(modules) >= 1
-        paths = modules[0]['paths']
-        sources = paths.get('sources') or []
-        assert 'src' in sources
+def test_classify_paths_claims_tests_python_as_test():
+    """Python under a tests/ directory is claimed as test."""
+    ext = BuildExtension()
+    result = ext.classify_paths(['tests/test_foo.py'])
+    assert 'tests/test_foo.py' in result['test']
 
 
-def test_discover_modules_finds_test_directories():
-    """discover_modules() detects test directories."""
-    with BuildContext() as ctx:
-        pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text("""
-[project]
-name = "test-project"
-""")
-
-        # Create test directory
-        test_dir = ctx.temp_dir / 'test'
-        test_dir.mkdir()
-        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
-
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
-
-        assert len(modules) >= 1
-        paths = modules[0]['paths']
-        tests = paths.get('tests') or []
-        assert 'test' in tests
+def test_classify_paths_returns_all_four_role_keys():
+    """The return always carries the four canonical role keys."""
+    ext = BuildExtension()
+    result = ext.classify_paths(['anything.txt'])
+    assert set(result.keys()) == {'production', 'test', 'documentation', 'config'}
 
 
-def test_discover_modules_counts_python_files():
-    """discover_modules() counts Python files in stats."""
-    with BuildContext() as ctx:
-        pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text("""
-[project]
-name = "test-project"
-""")
-
-        # Create source files
-        src_dir = ctx.temp_dir / 'src'
-        src_dir.mkdir()
-        (src_dir / 'main.py').write_text('print("hello")')
-        (src_dir / 'utils.py').write_text('print("utils")')
-
-        # Create test files
-        test_dir = ctx.temp_dir / 'test'
-        test_dir.mkdir()
-        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
-
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
-
-        assert len(modules) >= 1
-        stats = modules[0]['stats']
-        assert stats['source_files'] == 2
-        assert stats['test_files'] == 1
+def test_classify_paths_omits_unmatched_paths():
+    """A path matching no pattern is omitted from every role bucket."""
+    ext = BuildExtension()
+    result = ext.classify_paths(['mystery.xyz'])
+    assert result == {
+        'production': [],
+        'test': [],
+        'documentation': [],
+        'config': [],
+    }
 
 
-def test_discover_modules_finds_readme():
-    """discover_modules() detects README.md."""
-    with BuildContext() as ctx:
-        pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text("""
-[project]
-name = "test-project"
-""")
+def test_classify_paths_handles_empty_input():
+    """An empty path list yields the empty four-role dict."""
+    ext = BuildExtension()
+    assert ext.classify_paths([]) == {
+        'production': [],
+        'test': [],
+        'documentation': [],
+        'config': [],
+    }
 
-        # Create test dir and README
-        test_dir = ctx.temp_dir / 'test'
-        test_dir.mkdir()
-        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
-        (ctx.temp_dir / 'README.md').write_text('# My Project')
 
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
-
-        assert len(modules) >= 1
-        paths = modules[0]['paths']
-        assert paths.get('readme') == 'README.md'
+def test_classify_paths_mixed_input():
+    """A mixed input list classifies each path into the right bucket."""
+    ext = BuildExtension()
+    result = ext.classify_paths([
+        'skills/bar/scripts/baz.py',
+        'test/test_foo.py',
+        'pyproject.toml',
+        'uv.lock',
+        'marshal.json',
+    ])
+    assert result['production'] == ['skills/bar/scripts/baz.py']
+    assert result['test'] == ['test/test_foo.py']
+    assert result['config'] == ['pyproject.toml']
 
 
 # =============================================================================
-# Test: Mutual Exclusivity with pm-plugin-development
+# classify_path_specificity()
 # =============================================================================
 
 
-def test_discover_modules_works_for_plan_marshall_marketplace():
-    """discover_modules() returns Python module for plan-marshall marketplace."""
-    with BuildContext() as ctx:
-        pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text("""
-[project]
-name = "plan-marshall"
-""")
-
-        # Create test dir (triggers module detection)
-        test_dir = ctx.temp_dir / 'test'
-        test_dir.mkdir()
-        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
-
-        # Create marketplace.json
-        marketplace_dir = ctx.temp_dir / 'marketplace' / '.claude-plugin'
-        marketplace_dir.mkdir(parents=True)
-        (marketplace_dir / 'marketplace.json').write_text('{"name": "plan-marshall", "version": "1.0.0"}')
-
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
-
-        # Should return Python root module
-        assert len(modules) >= 1
-        assert modules[0]['name'] == 'default'
-        assert modules[0]['build_systems'] == ['python']
+def test_classify_path_specificity_returns_score_for_claimed_role():
+    """A claimed path returns the matched glob's non-wildcard segment count."""
+    ext = BuildExtension()
+    # pyproject.toml -> ('pyproject.toml', 'config', 1)
+    assert ext.classify_path_specificity('pyproject.toml', 'config') == 1
+    # skills/bar/scripts/baz.py -> ('**/scripts/**/*.py', 'production', 2)
+    assert (
+        ext.classify_path_specificity('skills/bar/scripts/baz.py', 'production') == 2
+    )
 
 
-def test_discover_modules_handles_other_marketplaces():
-    """discover_modules() works for non-plan-marshall marketplaces."""
-    with BuildContext() as ctx:
-        pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text("""
-[project]
-name = "other-project"
-""")
+def test_classify_path_specificity_returns_zero_for_wrong_role():
+    """A path claimed under a different role than asked returns 0."""
+    ext = BuildExtension()
+    # pyproject.toml is config, not production.
+    assert ext.classify_path_specificity('pyproject.toml', 'production') == 0
 
-        # Create test dir
-        test_dir = ctx.temp_dir / 'test'
-        test_dir.mkdir()
-        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
 
-        # Create marketplace.json with different name
-        marketplace_dir = ctx.temp_dir / 'marketplace' / '.claude-plugin'
-        marketplace_dir.mkdir(parents=True)
-        (marketplace_dir / 'marketplace.json').write_text('{"name": "other-marketplace", "version": "1.0.0"}')
+def test_classify_path_specificity_returns_zero_for_unclaimed_path():
+    """A path that matches no pattern returns 0 for any role."""
+    ext = BuildExtension()
+    assert ext.classify_path_specificity('uv.lock', 'config') == 0
+    assert ext.classify_path_specificity('marshal.json', 'config') == 0
+    assert ext.classify_path_specificity('mystery.xyz', 'production') == 0
 
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
 
-        assert len(modules) >= 1
-        assert modules[0]['name'] == 'default'
+# =============================================================================
+# classify_globs() — explicit (pattern, role) build_map routes
+# =============================================================================
+
+
+def test_classify_globs_returns_pyproject_config_route():
+    """The sole config route is pyproject.toml — uv.lock / marshal.json are absent."""
+    ext = BuildExtension()
+    routes = ext.classify_globs()
+    config_patterns = [pattern for pattern, role in routes if role == 'config']
+    assert config_patterns == ['pyproject.toml']
+    assert ('uv.lock', 'config') not in routes
+    assert ('marshal.json', 'config') not in routes
+
+
+def test_classify_globs_enumerates_four_production_roots():
+    """The four plan-marshall production roots a .py can live under are routed."""
+    ext = BuildExtension()
+    routes = ext.classify_globs()
+    production_patterns = {pattern for pattern, role in routes if role == 'production'}
+    assert production_patterns == {
+        'build.py',
+        '.claude/skills/*.py',
+        'marketplace/bundles/*.py',
+        'marketplace/targets/*.py',
+    }
+
+
+def test_classify_globs_declares_test_route():
+    """The test root test/*.py is declared under the test role."""
+    ext = BuildExtension()
+    routes = ext.classify_globs()
+    assert ('test/*.py', 'test') in routes
+
+
+def test_classify_globs_every_role_is_a_build_map_role():
+    """Each route's role is one of the four resolved BUILD_MAP_ROLES."""
+    ext = BuildExtension()
+    for _pattern, role in ext.classify_globs():
+        assert role in BUILD_MAP_ROLES
+
+
+def test_classify_globs_uses_single_star_not_recursive():
+    """Routes use single-* fnmatch globs (matcher spans /), not recursive ** forms."""
+    ext = BuildExtension()
+    for pattern, _role in ext.classify_globs():
+        assert '**' not in pattern
+
+
+# =============================================================================
+# classify_build_class() — inherited role -> build_class default
+# =============================================================================
+
+
+def test_classify_build_class_production_maps_to_compile():
+    """A production path derives the compile build_class via the inherited default."""
+    ext = BuildExtension()
+    assert (
+        ext.classify_build_class('marketplace/bundles/foo.py', 'production')
+        == BUILD_CLASS_PROD_COMPILE
+    )
+
+
+def test_classify_build_class_test_maps_to_module_tests():
+    """A test path derives the module-tests build_class via the inherited default."""
+    ext = BuildExtension()
+    assert (
+        ext.classify_build_class('test/test_foo.py', 'test') == BUILD_CLASS_TEST_RUN
+    )
+
+
+def test_classify_build_class_config_maps_to_verify():
+    """A config path (pyproject.toml) derives the verify build_class."""
+    ext = BuildExtension()
+    assert (
+        ext.classify_build_class('pyproject.toml', 'config')
+        == BUILD_CLASS_BUILD_CONFIG_FULL
+    )
+
+
+def test_classify_build_class_every_route_role_resolves_to_a_member():
+    """Each declared route role resolves to a BUILD_CLASSES member.
+
+    This is the per-entry lookup the build_map seed aggregator performs.
+    """
+    ext = BuildExtension()
+    for pattern, role in ext.classify_globs():
+        assert ext.classify_build_class(pattern, role) in BUILD_CLASSES

@@ -856,6 +856,84 @@ def test_configure_preserves_project_skills(plan_context, monkeypatch):
     assert 'project:java-helper' in updated['skill_domains']['java']['project_skills']
 
 
+def test_configure_preserves_build_map_and_active_profiles(plan_context, monkeypatch):
+    """Test configure after init preserves build_map and active_profiles alongside project_skills.
+
+    Regression for the skill-domains configure preservation bug: build_map (the
+    file-to-build contract) and a global active_profiles list live as top-level
+    siblings of the domain entries under skill_domains, and per-domain
+    active_profiles live inside the domain configs. A configure call (as run by
+    /marshall-steward after init) must not drop any of them.
+    """
+    config = {
+        'skill_domains': {
+            'build_map': {
+                'marketplace/bundles/**/*.py': 'verify',
+                'test/**/*.py': 'module-tests',
+            },
+            'active_profiles': ['quality', 'security'],
+            'system': {
+                'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                'project_skills': ['project:system-skill'],
+                'execute_task_skills': {'implementation': 'plan-marshall:execute-task-implementation'},
+            },
+            'java': {
+                'bundle': 'pm-dev-java',
+                'project_skills': ['project:java-helper'],
+                'active_profiles': ['testing'],
+                'workflow_skill_extensions': {'triage': 'pm-dev-java:ext-triage-java'},
+            },
+        },
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
+            },
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+
+    result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
+
+    assert result['status'] == 'success'
+
+    updated = json.loads(marshal_path.read_text())
+    skill_domains = updated['skill_domains']
+
+    # Top-level siblings survive reconfigure unconditionally.
+    assert skill_domains['build_map'] == {
+        'marketplace/bundles/**/*.py': 'verify',
+        'test/**/*.py': 'module-tests',
+    }
+    assert skill_domains['active_profiles'] == ['quality', 'security']
+
+    # Per-domain active_profiles restored to domains that still exist.
+    assert skill_domains['java']['active_profiles'] == ['testing']
+
+    # project_skills preservation is unchanged (regression-guarded alongside).
+    assert 'project:system-skill' in skill_domains['system']['project_skills']
+    assert 'project:java-helper' in skill_domains['java']['project_skills']
+
+
 def test_configure_drops_project_skills_for_removed_domains(plan_context, monkeypatch):
     """Test configure drops project_skills for domains that are no longer selected."""
     config = {

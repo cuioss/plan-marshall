@@ -1,11 +1,25 @@
 #!/usr/bin/env python3
-"""Tests for the pre_submission_self_review_inactive pre-filter and bot-enforcement guard."""
+"""Tests for the manage-execution-manifest pre-filters and bot-enforcement guard.
+
+Covers:
+
+- ``pre_push_quality_gate_inactive`` — re-pointed onto the centralized
+  build-decision API (``extension_base.should_execute_build``). The pre-filter
+  keeps ``pre-push-quality-gate`` only when the build-decision verdict is
+  ``build``; a ``not_necessary`` verdict drops it. The decision logic itself is
+  exhaustively covered in ``manage-config/test_build_decision.py``; here we
+  assert the consumer-site wiring (verdict → keep/drop).
+- ``pre_submission_self_review_inactive`` — footprint-gated.
+- The bot-enforcement remediation guard.
+- The task-queue-aware ``early_terminate`` predicate.
+"""
 
 import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
+import extension_base  # type: ignore[import-not-found]
 import pytest
 
 from conftest import PlanContext
@@ -183,6 +197,107 @@ class TestPreSubmissionSelfReviewInactive:
         assert 'commit-push' not in steps
         assert 'pre-push-quality-gate' not in steps
         assert 'pre-submission-self-review' not in steps
+
+
+# =============================================================================
+# Test: pre_push_quality_gate_inactive pre-filter (build-decision consumer site)
+# =============================================================================
+
+
+class TestPrePushQualityGateInactive:
+    """The pre-filter consumes ``extension_base.should_execute_build``'s verdict.
+
+    The build-necessity decision was centralized into
+    ``extension_base.should_execute_build`` (Axis-B strip: the four former
+    consumer sites no longer each re-derive it). ``_apply_pre_push_quality_gate_inactive``
+    is now a thin consumer — it keeps ``pre-push-quality-gate`` iff the verdict
+    is ``build`` and drops it on any ``not_necessary`` verdict. The pre-filter
+    imports ``should_execute_build`` from ``extension_base`` at call time, so
+    patching it on the ``extension_base`` module object is what the pre-filter
+    observes. The decision logic itself is covered in
+    ``manage-config/test_build_decision.py``; these tests assert only the
+    consumer-site wiring.
+    """
+
+    def _phase_6_with_pre_push_quality_gate(self) -> str:
+        """Default phase-6 steps with ``pre-push-quality-gate`` spliced in.
+
+        ``DEFAULT_PHASE_6_STEPS`` does not carry the gate, so a test that wants
+        to exercise the pre-filter must inject it into the candidate set.
+        """
+        steps = list(DEFAULT_PHASE_6_STEPS)
+        steps.insert(steps.index('commit-push'), 'pre-push-quality-gate')
+        return ','.join(steps)
+
+    def test_keeps_gate_when_verdict_is_build(self, plan_context, monkeypatch):
+        """A ``build`` verdict keeps ``pre-push-quality-gate`` in phase_6.steps."""
+        _seed_marshal(ci_provider=None)
+        _stub_footprint(['scripts/foo.py'])
+        monkeypatch.setattr(
+            extension_base,
+            'should_execute_build',
+            lambda command, plan_id, project_root=None: {
+                'decision': 'build',
+                'canonical_command': command,
+            },
+        )
+
+        ns = _compose_ns(
+            plan_id='qg-pre-push-build',
+            phase_6_steps=self._phase_6_with_pre_push_quality_gate(),
+        )
+        result = cmd_compose(ns)
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['pre_push_quality_gate_omitted'] is False
+        assert 'pre-push-quality-gate' in result_phase_6_steps(result)
+
+    def test_drops_gate_when_verdict_is_not_necessary(self, plan_context, monkeypatch):
+        """A ``not_necessary`` verdict drops ``pre-push-quality-gate``."""
+        _seed_marshal(ci_provider=None)
+        _stub_footprint(['README.md'])
+        monkeypatch.setattr(
+            extension_base,
+            'should_execute_build',
+            lambda command, plan_id, project_root=None: {
+                'decision': 'not_necessary',
+                'reason': 'plan footprint touches no build_map glob',
+                'canonical_command': command,
+            },
+        )
+
+        ns = _compose_ns(
+            plan_id='qg-pre-push-not-necessary',
+            phase_6_steps=self._phase_6_with_pre_push_quality_gate(),
+        )
+        result = cmd_compose(ns)
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['pre_push_quality_gate_omitted'] is True
+        assert 'pre-push-quality-gate' not in result_phase_6_steps(result)
+
+    def test_no_op_when_gate_absent_from_candidates(self, plan_context, monkeypatch):
+        """The pre-filter is a no-op (and never calls the decision) when the gate
+        is already absent from the candidate set — e.g. already stripped by
+        ``commit_strategy=none``."""
+        _seed_marshal(ci_provider=None)
+        _stub_footprint(['scripts/foo.py'])
+
+        def _should_not_be_called(*_a, **_kw):
+            raise AssertionError('should_execute_build must not run when the gate is absent')
+
+        monkeypatch.setattr(extension_base, 'should_execute_build', _should_not_be_called)
+
+        # Default candidate set carries no pre-push-quality-gate.
+        ns = _compose_ns(plan_id='qg-pre-push-absent')
+        result = cmd_compose(ns)
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['pre_push_quality_gate_omitted'] is False
+        assert 'pre-push-quality-gate' not in result_phase_6_steps(result)
 
 
 # =============================================================================

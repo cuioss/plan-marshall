@@ -83,11 +83,18 @@ domain extensions, and their tests."""
 # build_map File Roles
 # =============================================================================
 #
-# The closed set of file roles a classify_globs() explicit route may carry. An
-# extension declares (pattern, role) routes directly: a glob pattern paired with
-# one of these four resolved roles. The role is the same vocabulary
+# The closed set of file roles a classify_globs() explicit route may carry. A
+# build extension declares (pattern, role) routes directly: a glob pattern paired
+# with one of these three resolved roles. The role is the same vocabulary
 # classify_paths() and classify_build_class() use, so a route's role maps
 # straight through to a build_class with no name-to-name indirection.
+#
+# There is deliberately NO ``documentation`` build_map role. Documentation is not
+# a buildable unit and has no build-system owner — doc-change recognition is a
+# generic file-suffix fact owned by manage-execution-manifest's change-footprint
+# classifier, not a build_map route role and not a build_class. The
+# ROLE_DOCUMENTATION constant is retained only as the legacy role name so callers
+# can test for its ABSENCE from BUILD_MAP_ROLES.
 
 ROLE_PRODUCTION = 'production'
 ROLE_TEST = 'test'
@@ -98,13 +105,13 @@ BUILD_MAP_ROLES = frozenset(
     {
         ROLE_PRODUCTION,
         ROLE_TEST,
-        ROLE_DOCUMENTATION,
         ROLE_CONFIG,
     }
 )
-"""Closed set of file-role names a classify_globs() explicit route may declare.
-The single source of truth shared by ExtensionBase.classify_globs() /
-derive_globs_from_tree(), the domain extension route declarations, and their
+"""Closed set of file-role names a classify_globs() explicit route may declare —
+production / test / config only. Documentation is not a build_map role (no build
+owner for docs). The single source of truth shared by ExtensionBase.classify_globs()
+/ derive_globs_from_tree(), the build extension route declarations, and their
 tests."""
 
 

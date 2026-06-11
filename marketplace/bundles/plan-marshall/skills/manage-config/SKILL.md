@@ -355,6 +355,37 @@ domain_count: 2
 
 > **Schema and semantics**: See [standards/data-model.md § build_map](standards/data-model.md) for the `{glob, role, build_class}` entry schema, the tree-derived seed contract, and the closed canonical-named `build_class` set.
 
+### Decide Whether a Build Must Run
+
+`build-decision` is the centralized build-necessity decision API. It returns a structured `build` / `not_necessary` verdict for a canonical command (e.g. `quality-gate` / `verify` / `coverage`) against a plan's live footprint, so the consumer sites no longer each re-derive the decision inline. The verdict is a pure function of the `skill_domains.build_map` globs and the live plan footprint — no LLM judgement:
+
+- `decision: build` when the footprint touches at least one registered build_map glob.
+- `decision: not_necessary` (always carrying a non-empty, log-friendly `reason`) when the build_map registers no globs, the footprint is empty, or the footprint intersects no build glob.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-decision \
+  --command quality-gate --plan-id my-plan
+```
+
+**Output — `build` verdict** (TOON):
+
+```toon
+status: success
+decision: build
+canonical_command: quality-gate
+```
+
+**Output — `not_necessary` verdict** (TOON):
+
+```toon
+status: success
+decision: not_necessary
+reason: plan footprint touches no build_map glob — only non-buildable files changed
+canonical_command: quality-gate
+```
+
+The decision logic itself lives in the build-system-owned `should_execute_build` helper in `script-shared`; `build-decision` is a thin wrapper exposing it through the `manage-config` command surface (the home that already owns the `build_map` seed and footprint-matching logic the decision reuses).
+
 ---
 
 ## Workflow: CI Operations
@@ -399,6 +430,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `plan` | `{phase} get/set` (incl. run-at-all gates + finalize automation knobs), set-steps, add-step, remove-step, set-max-iterations |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `build-map` | `seed` (re-seed `skill_domains.build_map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `skill_domains.build_map`, fail-closed when absent) |
+| `build-decision` | `--command --plan-id` (centralized build-necessity verdict: `build` / `not_necessary`; `not_necessary` carries a log-friendly `reason`) |
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
 
@@ -970,6 +1002,15 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map read
 ```
+
+### build-decision
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-decision \
+  --command COMMAND --plan-id PLAN_ID
+```
+
+Returns a `build` / `not_necessary` verdict for `COMMAND` against `PLAN_ID`'s live footprint. `--audit-plan-id` is accepted as an alias for `--plan-id`.
 
 ---
 

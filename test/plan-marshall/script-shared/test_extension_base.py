@@ -193,6 +193,24 @@ def test_extension_base_default_verify_steps():
     assert ext.provides_verify_steps() == []
 
 
+def test_extension_base_no_longer_exposes_axis_b_methods():
+    """ExtensionBase exposes only Axis-A — the four Axis-B build-map methods are gone.
+
+    The file-to-build contract (classify_globs / classify_paths /
+    classify_path_specificity / classify_build_class) was relocated onto the
+    sibling BuildExtensionBase; ExtensionBase must no longer carry them.
+    """
+    ext = ConcreteExtension()
+    for axis_b in (
+        'classify_globs',
+        'classify_paths',
+        'classify_path_specificity',
+        'classify_build_class',
+    ):
+        assert not hasattr(ext, axis_b), f"ExtensionBase still exposes {axis_b}"
+        assert not hasattr(ExtensionBase, axis_b), f"ExtensionBase still declares {axis_b}"
+
+
 # =============================================================================
 # Tests for applies_to_module() and _build_applicable_result()
 # =============================================================================
@@ -447,6 +465,7 @@ if __name__ == '__main__':
         test_extension_base_default_triage,
         test_extension_base_default_outline_skill,
         test_extension_base_default_verify_steps,
+        test_extension_base_no_longer_exposes_axis_b_methods,
         test_extension_base_default_applies_to_module,
         test_build_applicable_result_merges_core,
         test_build_applicable_result_with_additive_to,

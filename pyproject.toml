@@ -120,11 +120,14 @@ explicit_package_bases = true
 # for skill scripts/ dirs or their immediate subdirs — they are covered there.
 # This list is reserved for entries OUTSIDE that derivation (currently empty).
 mypy_path = []
-# Exclude extension.py files in plan-marshall-plugin directories - they are dynamically loaded
-# and mypy can't distinguish them by path (all named "extension")
+# Exclude extension.py files - they are dynamically loaded via importlib and mypy
+# can't distinguish them by path (all named "extension"). This covers both the
+# language-domain extensions (plan-marshall-plugin/extension.py) and the
+# build-system-owned BuildExtensionBase subclasses (build-*/scripts/extension.py).
 # Also exclude test/*/plan-marshall-plugin/ directories - invalid Python package name (contains dashes)
 exclude = [
     "plan-marshall-plugin/extension\\.py$",
+    "skills/[^/]*/scripts/extension\\.py$",
     "test/.*/plan-marshall-plugin/",
     "test/plan-marshall/tools-permission-fix/test_permission\\.py$",
     "test/.*/integration/",
