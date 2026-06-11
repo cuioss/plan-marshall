@@ -99,11 +99,23 @@ At command start, emit the following banner verbatim to the user:
 
 ## Prerequisites
 
-The `/marshall-steward` command must set `${PLUGIN_ROOT}` before loading this skill:
+The `/marshall-steward` command must locate `bootstrap_plugin.py` and detect the plugin root before loading this skill. `bootstrap_plugin.py` is the single deterministic resolver for every other bootstrap script path — locate it once, then route all post-`get-root` path lookups through its `resolve` verb instead of hand-globbing each script.
 
-1. Run `bootstrap_plugin.py get-root` (direct Python call with glob) to detect plugin root
-2. Set `${PLUGIN_ROOT}` to the returned path
-3. The plugin root is cached in `.plan/local/marshall-state.toon` for subsequent calls
+1. **Locate `bootstrap_plugin.py` (the one unavoidable glob).** Resolve its path with the `Glob` tool against the **layout-agnostic** pattern `**/marshall-steward/scripts/bootstrap_plugin.py` and capture the first match as `${BOOTSTRAP}`. The recursive `**` prefix matches both deploy layouts — the flat `target/claude/plan-marshall/skills/…` tree and the versioned cache `…/plan-marshall/{version}/skills/…` tree — without a hand-placed `*` version level.
+2. **Detect the plugin root** and cache it:
+
+   ```bash
+   python3 "${BOOTSTRAP}" get-root
+   ```
+
+   Read `plugin_root` from the TOON output and set `${PLUGIN_ROOT}` to it. The plugin root is cached in `.plan/local/marshall-state.toon` for subsequent calls.
+3. **Resolve every other bootstrap script path through `bootstrap_plugin resolve`** — version-aware, layout-agnostic. For any script `X.py` under a bundle, run:
+
+   ```bash
+   python3 "${BOOTSTRAP}" resolve --bundle plan-marshall --path skills/{skill}/scripts/X.py
+   ```
+
+   and read `resolved_path` from the TOON. Never hand-glob a `${PLUGIN_ROOT}/plan-marshall/*/skills/…` pattern to find a post-`get-root` script — `resolve` already iterates the version dirs deterministically.
 
 ---
 
@@ -111,7 +123,13 @@ The `/marshall-steward` command must set `${PLUGIN_ROOT}` before loading this sk
 
 Determine whether to run wizard or menu based on existing files.
 
-**BOOTSTRAP**: Since execute-script.py may not exist yet, use a DIRECT Python call. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py` and capture the first match as `{DETERMINE_MODE}`. Then invoke it directly:
+**BOOTSTRAP**: Since execute-script.py may not exist yet, use a DIRECT Python call. Resolve the script path deterministically via `bootstrap_plugin resolve` (`${BOOTSTRAP}` was located in Prerequisites) and read `resolved_path` from the TOON as `{DETERMINE_MODE}`:
+
+```bash
+python3 "${BOOTSTRAP}" resolve --bundle plan-marshall --path skills/marshall-steward/scripts/determine_mode.py
+```
+
+Then invoke the resolved script directly:
 
 ```bash
 python3 "{DETERMINE_MODE}" mode
