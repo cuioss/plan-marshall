@@ -14,7 +14,13 @@ The wizard splits into two sections: **Bootstrap** (Steps 1-4) runs before the e
 
 Configure `.gitignore` for `.plan/` directory with tracked file exceptions.
 
-**BOOTSTRAP**: Use a DIRECT Python call (no executor yet). Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore_setup.py` and capture the first match as `{GITIGNORE_SETUP}`. Then invoke it directly:
+**BOOTSTRAP**: Use a DIRECT Python call (no executor yet). Resolve the script path deterministically via `bootstrap_plugin resolve` (`${BOOTSTRAP}` was located in SKILL.md Prerequisites) and read `resolved_path` from the TOON as `{GITIGNORE_SETUP}`:
+
+```bash
+python3 "${BOOTSTRAP}" resolve --bundle plan-marshall --path skills/marshall-steward/scripts/gitignore_setup.py
+```
+
+Then invoke the resolved script directly:
 
 ```bash
 python3 "{GITIGNORE_SETUP}"
@@ -58,7 +64,13 @@ human readers.
 
 ## Step 2: Update Project Documentation (BOOTSTRAP)
 
-**BOOTSTRAP**: Use a DIRECT Python call (executor not yet available). Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py` and capture the first match as `{DETERMINE_MODE}`. Then invoke it directly:
+**BOOTSTRAP**: Use a DIRECT Python call (executor not yet available). Resolve the script path deterministically via `bootstrap_plugin resolve` (`${BOOTSTRAP}` was located in SKILL.md Prerequisites) and read `resolved_path` from the TOON as `{DETERMINE_MODE}`:
+
+```bash
+python3 "${BOOTSTRAP}" resolve --bundle plan-marshall --path skills/marshall-steward/scripts/determine_mode.py
+```
+
+Then invoke the resolved script directly:
 
 ```bash
 python3 "{DETERMINE_MODE}" fix-docs
@@ -74,7 +86,13 @@ Interpret the output:
 
 Add the executor permission to project-local settings so script execution doesn't prompt:
 
-**BOOTSTRAP**: Use a DIRECT Python call (no executor yet). Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission_fix.py` and capture the first match as `{PERMISSION_FIX}`. Then invoke it directly:
+**BOOTSTRAP**: Use a DIRECT Python call (no executor yet). Resolve the script path deterministically via `bootstrap_plugin resolve` (`${BOOTSTRAP}` was located in SKILL.md Prerequisites) and read `resolved_path` from the TOON as `{PERMISSION_FIX}`:
+
+```bash
+python3 "${BOOTSTRAP}" resolve --bundle plan-marshall --path skills/tools-permission-fix/scripts/permission_fix.py
+```
+
+Then invoke the resolved script directly:
 
 ```bash
 python3 "{PERMISSION_FIX}" ensure \
@@ -115,7 +133,11 @@ This ensures script execution works without prompting, independent of global set
 
 When the wizard is running inside a worktree, pass the worktree absolute path to `generate_executor.py` via `--marketplace-root <REPO_ROOT>` so the generated executor's script mappings resolve against the worktree's `marketplace/bundles/` rather than the main checkout (or the plugin cache). When running against the main checkout, omit the flag and let the script auto-detect the plugin cache.
 
-**Inside a worktree** (path under `.plan/local/worktrees/`): resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py` and capture the first match as `{GENERATE_EXECUTOR}`.
+**Inside a worktree** (path under `.plan/local/worktrees/`): resolve the script path deterministically via `bootstrap_plugin resolve` (`${BOOTSTRAP}` was located in SKILL.md Prerequisites) and read `resolved_path` from the TOON as `{GENERATE_EXECUTOR}`:
+
+```bash
+python3 "${BOOTSTRAP}" resolve --bundle plan-marshall --path skills/tools-script-executor/scripts/generate_executor.py
+```
 
 **Refuse-or-scaffold guard (worktree only)**: a worktree executor-gen MUST NOT run until the worktree owns its own `.plan/local` directory. Without it, `generate_executor` climbs to the *main* checkout's `.plan/local` (the nearest ancestor that has one) and overwrites main's `.plan/execute-script.py`. Before invoking `generate_executor` from a worktree, run the guard:
 
@@ -123,7 +145,7 @@ When the wizard is running inside a worktree, pass the worktree absolute path to
 python3 "{DETERMINE_MODE}" check-worktree-plan-local --repo-root "{REPO_ROOT}" --scaffold
 ```
 
-(`{DETERMINE_MODE}` is the steward `determine_mode.py` resolved via `Glob` against `${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py`.) The guard returns:
+(`{DETERMINE_MODE}` is the steward `determine_mode.py` resolved via `python3 "${BOOTSTRAP}" resolve --bundle plan-marshall --path skills/marshall-steward/scripts/determine_mode.py`, reading `resolved_path` from the TOON.) The guard returns:
 
 | status | Meaning | Action |
 |--------|---------|--------|
@@ -137,7 +159,7 @@ With `--scaffold` (as shown), the guard creates the missing `<REPO_ROOT>/.plan/l
 python3 "{GENERATE_EXECUTOR}" generate --marketplace-root "{REPO_ROOT}"
 ```
 
-**Outside a worktree** (main checkout, default path): resolve `{GENERATE_EXECUTOR}` the same way (Glob against the pattern above, take the first match), then invoke it without the marketplace-root flag:
+**Outside a worktree** (main checkout, default path): resolve `{GENERATE_EXECUTOR}` the same way (via `python3 "${BOOTSTRAP}" resolve --bundle plan-marshall --path skills/tools-script-executor/scripts/generate_executor.py`, reading `resolved_path` from the TOON), then invoke it without the marketplace-root flag:
 
 ```bash
 python3 "{GENERATE_EXECUTOR}" generate
@@ -346,13 +368,19 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   finalize-steps apply-preset --preset {name}
 ```
 
-On `Custom`, fall through to the per-step multi-select escape hatch:
+On `Custom`, fall through to the per-step multi-select escape hatch. The Custom path is **deterministic**, not a free-form add-on builder — it MUST be driven entirely by the `list-finalize-steps` enumeration, with the discipline below:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-steps --steps {selection}
 ```
+
+**Custom-path discipline (mandatory — no improvisation):**
+
+- **Drive the multi-select from `list-finalize-steps` verbatim.** `list-finalize-steps` already enumerates the full set — built-in (`BUILT_IN_FINALIZE_STEPS`), project (`project:`), and bundle-optional skill steps. Present exactly those steps. The wizard MUST NOT invent thematic "Add-ons" questions, MUST NOT group steps into invented categories, and MUST NOT couple semantically-unrelated steps under one toggle (e.g. bundling `sonar-roundtrip` with `plan-retrospective`, which forces a nonsense "retrospective but not sonar" undo). When the discovered step count exceeds the `AskUserQuestion` 4-option cap, **paginate** the multi-select across successive `AskUserQuestion` calls over the same `list-finalize-steps` output — never collapse the set into improvised thematic groups to fit the cap.
+- **Start from the full discovered set; remove only on explicit decline.** The selection MUST START from the complete built-in + project + bundle-optional set returned by `list-finalize-steps`. A step is REMOVED from the selection ONLY when the operator explicitly declines it. A built-in step (e.g. `default:finalize-step-print-phase-breakdown`) MUST NOT be silently omitted because it fits no invented group — every built-in is in the starting set and survives unless the operator declines it.
+- **Thread prior decisions; pre-exclude, never re-ask.** Decisions already made earlier in the wizard (e.g. a `sonar-roundtrip` the operator declined at provider/credential setup) MUST be threaded into the Custom selection: the declined step and any step that `requires:` it are PRE-EXCLUDED from the offered set, never re-surfaced for a second decline. The Custom path reads the already-recorded decisions rather than re-prompting for an answer the operator has already given.
 
 If `set-steps` returns `missing_order` or `order_collision`, the offending step's authoritative source (frontmatter on built-in standards docs / `SKILL.md` for `project:` steps / extension `provides_*_steps()` return-dict for skill steps) lacks an `order` value or duplicates one already used by another selected step — fix the source and re-run.
 
