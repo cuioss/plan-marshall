@@ -769,18 +769,17 @@ def cmd_skill_domains(args) -> dict:
                     existing_domain_active_profiles[domain_key] = domain_config['active_profiles']
 
         # Preserve top-level skill_domains siblings that are NOT domain configs.
-        # build_map (file-to-build contract) and a global active_profiles list
-        # live as siblings of the domain entries and must survive reconfigure
-        # unconditionally — they are not domain-scoped.
-        existing_build_map = skill_domains.get('build_map')
+        # The global active_profiles list lives as a sibling of the domain
+        # entries and must survive reconfigure unconditionally — it is not
+        # domain-scoped. (The build_map file-to-build contract no longer lives
+        # under skill_domains; it is a top-level build.map block, so it is
+        # unaffected by reconfigure.)
         existing_global_active_profiles = skill_domains.get('active_profiles')
 
         # Clear existing domains and start fresh with only selected ones
         skill_domains = {}
 
-        # Restore top-level siblings (build_map, global active_profiles)
-        if existing_build_map is not None:
-            skill_domains['build_map'] = existing_build_map
+        # Restore top-level siblings (global active_profiles)
         if existing_global_active_profiles is not None:
             skill_domains['active_profiles'] = existing_global_active_profiles
 

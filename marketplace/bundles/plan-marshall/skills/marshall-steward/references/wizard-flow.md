@@ -115,7 +115,23 @@ This ensures script execution works without prompting, independent of global set
 
 When the wizard is running inside a worktree, pass the worktree absolute path to `generate_executor.py` via `--marketplace-root <REPO_ROOT>` so the generated executor's script mappings resolve against the worktree's `marketplace/bundles/` rather than the main checkout (or the plugin cache). When running against the main checkout, omit the flag and let the script auto-detect the plugin cache.
 
-**Inside a worktree** (path under `.plan/local/worktrees/`): resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py` and capture the first match as `{GENERATE_EXECUTOR}`. Then invoke it directly with the worktree root captured above as `{REPO_ROOT}`:
+**Inside a worktree** (path under `.plan/local/worktrees/`): resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py` and capture the first match as `{GENERATE_EXECUTOR}`.
+
+**Refuse-or-scaffold guard (worktree only)**: a worktree executor-gen MUST NOT run until the worktree owns its own `.plan/local` directory. Without it, `generate_executor` climbs to the *main* checkout's `.plan/local` (the nearest ancestor that has one) and overwrites main's `.plan/execute-script.py`. Before invoking `generate_executor` from a worktree, run the guard:
+
+```bash
+python3 "{DETERMINE_MODE}" check-worktree-plan-local --repo-root "{REPO_ROOT}" --scaffold
+```
+
+(`{DETERMINE_MODE}` is the steward `determine_mode.py` resolved via `Glob` against `${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py`.) The guard returns:
+
+| status | Meaning | Action |
+|--------|---------|--------|
+| `ok` | The worktree already owns `.plan/local` (or `REPO_ROOT` is the main checkout) | Proceed to generate the executor. |
+| `scaffolded` | The worktree lacked `.plan/local`; the guard created it | Proceed to generate the executor. |
+| `refuse` | The worktree lacks `.plan/local` and `--scaffold` was omitted | ABORT — do NOT generate; surface `detail` to the operator. |
+
+With `--scaffold` (as shown), the guard creates the missing `<REPO_ROOT>/.plan/local` rather than refusing, so the wizard can proceed cleanly. The manual workaround when running the guard without `--scaffold` and it returns `refuse` is `mkdir -p <REPO_ROOT>/.plan/local`. Then invoke generate_executor directly with the worktree root captured above as `{REPO_ROOT}`:
 
 ```bash
 python3 "{GENERATE_EXECUTOR}" generate --marketplace-root "{REPO_ROOT}"
@@ -148,6 +164,28 @@ python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
 
 # Configuration (Steps 5 onwards)
 
+## STEWARD audit trail (applies to every Configuration step)
+
+From Step 4 (executor present) onward, the wizard emits a **STEWARD audit entry** for every decision it makes — one entry per `AskUserQuestion` answer the operator gives AND one per auto-decision the wizard takes without prompting (auto-selected provider, detected default, skipped step). The entries use `manage-logging`'s first-class global/no-plan path (the wizard runs before any plan exists, so `--plan-id` is omitted) under the stable `[STEWARD] (plan-marshall:marshall-steward)` prefix — see `manage-logging` SKILL.md § "Global / no-plan logging path" and § "STEWARD audit namespace".
+
+- **Operator answers** to an `AskUserQuestion` and **auto-decisions** are decision-class — log them with the `decision` subcommand (the file is the category, so no `[DECISION]` prefix; the `[STEWARD]` bracket names the namespace):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --level INFO \
+    --message "[STEWARD] (plan-marshall:marshall-steward) {what was decided and why}"
+  ```
+
+- **Status/progress** notes (a step ran, a check passed) are work-class — log them with the `work` subcommand and a `[STEWARD]` category bracket:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --level INFO \
+    --message "[STEWARD] (plan-marshall:marshall-steward) {what happened}"
+  ```
+
+This audit trail makes a plan-less steward run reconstructable from `.plan/logs/decision-{date}.log` and `.plan/logs/work-{date}.log`. Each Configuration step below that prompts or auto-decides emits at least one such entry; do NOT pass a fabricated plan id to force a global fallback — the omitted-`--plan-id` path is the supported global path.
+
 ## Step 5: Initialize Marshal.json
 
 Initialize marshal.json early to establish the `skill_domains` structure needed by later steps.
@@ -168,6 +206,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init -
 **Output**: "Created .plan/marshal.json with defaults"
 
 **Note**: marshal.json contains configuration only. The module list comes from `_project.json["modules"]` (Step 8), which is the source of truth — per-module derived data is computed lazily off that index on demand by `crawl_module_derived`.
+
+**Effort defaults are seeded at init**: `get_default_config()` seeds per-phase `effort` keys (`plan.<phase>.effort`) plus the plan-wide `plan.effort` fallback, mirroring the `balanced` named preset's expanded shape. A freshly-initialized project therefore gets per-phase model tuning out of the box — `effort resolve-target` resolves a concrete `execution-context-{level}` rather than silently falling back to `level: inherit`. The post-wizard **Effort menu** (see [effort-menu.md](../standards/effort-menu.md)) still tunes these after init via `apply-preset` or per-phase edits; init seeding and the menu are complementary (seed-then-tune), not redundant.
 
 ---
 
@@ -238,7 +278,7 @@ See [architecture-setup.md](architecture-setup.md) for the full workflow.
 
 ## Step 8b: Seed the Build Map
 
-After the project architecture is discovered (the extension set AND the module set are now known), seed `skill_domains.build_map` so the file-to-build contract reflects the project's *applicable* registered domain extensions. **This is the sole authoritative seed point** — the build map is NOT seeded at Step 5 (`init`) or by `sync-defaults`, because applicability scoping needs the discovered modules to decide which domains apply, and those modules only exist after Step 8. On a clean first run this reports `action: seeded` (the block did not previously exist). The write-once guard makes this first explicit seed authoritative; a wizard re-run reports `action: preserved` and picks up newly-added domain extensions only for domains not already in the block.
+After the project architecture is discovered (the extension set AND the module set are now known), seed `build.map` so the file-to-build contract reflects the project's *applicable* registered domain extensions. **This is the sole authoritative seed point** — the build map is NOT seeded at Step 5 (`init`) or by `sync-defaults`, because applicability scoping needs the discovered modules to decide which domains apply, and those modules only exist after Step 8. On a clean first run this reports `action: seeded` (the block did not previously exist). The write-once guard makes this first explicit seed authoritative; a wizard re-run reports `action: preserved` and picks up newly-added domain extensions only for domains not already in the block.
 
 See [build-map-setup.md](build-map-setup.md) for the seed/read commands, the `action` (`seeded` / `preserved` / `re-derived`) interpretation, the `--force` clean re-derivation, and the menu re-seed operation.
 
@@ -269,7 +309,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Step 11: Quality Pipeline Configuration (Optional)
 
-Ask the user to accept defaults (all generic verify steps + 10 finalize steps, default iterations) or configure individually. The 10 default finalize steps (the `BUILT_IN_FINALIZE_STEPS` list in `_config_defaults.py`) are `pre-push-quality-gate`, `commit-push`, `create-pr`, `ci-verify`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, and `archive-plan`. `pre-push-quality-gate` is a built-in default whose activation is derived from `skill_domains.build_map` — it activates whenever the live footprint touches a glob registered in the build_map (those globs are the explicit `(pattern, role)` routes each *applicable* extension declares via `classify_globs()`, seeded at Step 8b, not author-shipped static literals). CI completion is a dispatcher-resolved precondition (`requires: [ci-complete]` declared on `ci-verify`, `automated-review`, and `sonar-roundtrip` frontmatters), not a sibling step. If configuring, discover available steps and apply.
+Ask the user to accept defaults (all generic verify steps + 10 finalize steps, default iterations) or configure individually. The 10 default finalize steps (the `BUILT_IN_FINALIZE_STEPS` list in `_config_defaults.py`) are `pre-push-quality-gate`, `commit-push`, `create-pr`, `ci-verify`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, and `archive-plan`. `pre-push-quality-gate` is a built-in default whose activation is derived from `build.map` — it activates whenever the live footprint touches a glob registered in the build_map (those globs are the explicit `(pattern, role)` routes each *applicable* extension declares via `classify_globs()`, seeded at Step 8b, not author-shipped static literals). CI completion is a dispatcher-resolved precondition (`requires: [ci-complete]` declared on `ci-verify`, `automated-review`, and `sonar-roundtrip` frontmatters), not a sibling step. If configuring, discover available steps and apply.
 
 **Verification steps** (phase-5-execute) — per-step multi-select:
 

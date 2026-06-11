@@ -109,17 +109,16 @@ The `hint` field is a recognition token, not optional prose — its presence in 
 
 `architecture derive-verification --changed-artifacts PATH1,PATH2,...` is the single deterministic consumer of the `build_map` file-to-build contract. It classifies each changed-artifact path to a `build_class` via the merged `build_map` (seed ∪ user overrides, longest-glob-wins), groups by `build_class`, and emits the architecture-resolved verification command set per the closed mapping below. This table is the **single source of truth** for the build_class → command mapping — `manage-execution-manifest` and `phase-4-plan` consume the deriver, they do not re-derive the table.
 
-The `build_class` value **names the canonical command directly** — there is no indirection map between the `build_class` and the command it resolves. The deriver resolves `build_class` as the canonical command itself (via `resolve --command {build_class}`), handling `docs-validate` and `none` as the two non-`resolve` cases. The same word — `compile`, `module-tests`, `verify` — spans `build_map`, this deriver, `architecture resolve`, and the `per_deliverable_build` depth knob.
+The `build_class` value **names the canonical command directly** — there is no indirection map between the `build_class` and the command it resolves. The deriver resolves `build_class` as the canonical command itself (via `resolve --command {build_class}`), handling `none` as the only non-`resolve` case. The same word — `compile`, `module-tests`, `verify` — spans `build_map`, this deriver, `architecture resolve`, and the `per_deliverable_build` depth knob.
 
 | `build_class` | role it attaches to | derived verification command(s) |
 |---|---|---|
 | `compile` | production | `architecture resolve --command compile --module {M}` |
 | `module-tests` | test | `architecture resolve --command test-compile --module {M}` **+** `architecture resolve --command module-tests --module {M}` |
-| `docs-validate` | documentation | marketplace skill `.md` → `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {skill-dir} --marketplace-root marketplace`; any other doc → `pm-documents:ref-asciidoc:asciidoc validate --path {path}` |
 | `verify` | config | `architecture resolve --command verify --module {M}` (full reactor for the affected module) |
 | `none` | any | (no command — a changed set whose only role yields `none` derives no build) |
 
-`{M}` is the module resolved per changed path by longest `paths.module` prefix (the finest granularity the architecture API resolves). Derived commands are de-duplicated by their resolved `executable`, so N changed production files in one module derive **one** `compile`, not N. A changed set whose only classification is `docs-validate` (or `none`) derives **zero** Python builds — this is the structural property that ends the docs-only build recurrence.
+`{M}` is the module resolved per changed path by longest `paths.module` prefix (the finest granularity the architecture API resolves). Derived commands are de-duplicated by their resolved `executable`, so N changed production files in one module derive **one** `compile`, not N. A changed set whose only classification is `none` derives **zero** Python builds — this is the structural property that ends the docs-only build recurrence.
 
 Each architecture-resolved command in the output carries the same four-field execution-tier augmentation documented above (`bash_timeout_seconds` / `exceeds_bash_ceiling` / `execution_tier` / `hint`) when its `executable` is a Bucket B build notation, so the per-task timeout routing applies to derived commands exactly as it does to a direct `resolve`.
 
@@ -136,7 +135,7 @@ commands[2]{build_class,path,module,command,executable,resolution_level,bash_tim
   module-tests,test/plan-marshall/manage-architecture/test_derive_verification.py,plan-marshall,module-tests,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""module-tests plan-marshall""",module,330,false,per_task,Bash timeout=330000ms
 ```
 
-`docs-validate` commands carry `build_class`, `path`, `command: docs-validate`, and `executable` (the plugin-doctor or asciidoc notation) but no `module` / `resolution_level` / tier fields — they are fixed notations, not architecture-resolved. The `unclaimed` array lists changed paths that no `build_map` glob matched (they derive no build).
+The `unclaimed` array lists changed paths that no `build_map` glob matched (they derive no build).
 
 ## Cross-References
 

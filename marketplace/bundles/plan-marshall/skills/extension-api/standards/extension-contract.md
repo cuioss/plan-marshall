@@ -445,7 +445,7 @@ Plan-wide bucket: `mixed_with_docs` (production + test + documentation present).
 
 Declares this extension's contribution to the `build_map` file-to-build contract as a list of explicit **`(pattern, role)` routes**. Each route pairs a concrete glob pattern with one of the four resolved file roles, declaring both WHAT the domain owns and WHERE it lives. The seed aggregator consumes the routes verbatim — no tree scan enumerates one glob per directory. The default implementation is an empty list — extensions that contribute no buildable file types simply do not override this method.
 
-**Lifecycle**: Called by `manage-config`'s `aggregate_build_map()` during `init` / `sync-defaults` / `build-map seed`. The aggregator collects every extension's routes via `derive_globs_from_tree(project_root, extensions)` (the `script-shared` route collector), stamps each `(pattern, role)` with `classify_build_class`, and writes the result into `skill_domains.build_map`.
+**Lifecycle**: Called by `manage-config`'s `aggregate_build_map()` during `init` / `sync-defaults` / `build-map seed`. The aggregator collects every extension's routes via `derive_globs_from_tree(project_root, extensions)` (the `script-shared` route collector), stamps each `(pattern, role)` with `classify_build_class`, and writes the result into `build.map`.
 
 ```python
 def classify_globs(self) -> list[tuple[str, str]]:
@@ -497,7 +497,7 @@ Documentation recognition is owned generically by `manage-execution-manifest`'s 
 
 Maps each `(glob, role)` the aggregator holds to its **canonical-named `build_class`** — the canonical command name the entry resolves to (`compile` / `module-tests` / `verify` / `docs-validate` / `none`). There is no indirection enum: the `build_class` value IS the canonical command, so one vocabulary spans `build_map`, `derive-verification`, `architecture resolve`, and the `per_deliverable_build` depth knob (same meaning ⇒ same word).
 
-**Lifecycle**: Called by `aggregate_build_map()` once per collected `(glob, role)` route to stamp the entry's `build_class` before it is written into `skill_domains.build_map`.
+**Lifecycle**: Called by `aggregate_build_map()` once per collected `(glob, role)` route to stamp the entry's `build_class` before it is written into `build.map`.
 
 ```python
 def classify_build_class(self, glob: str, role: str) -> str:

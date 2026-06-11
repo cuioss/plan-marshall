@@ -6,17 +6,19 @@ build-map plan):
 
 - a production changed set derives ``compile``;
 - a test changed set derives ``test-compile`` + ``module-tests``;
-- a docs-only changed set derives ZERO Python builds (docs-validate only);
+- a docs-only changed set derives ZERO builds (documentation has no build owner,
+  so doc paths go unclaimed);
 - a ``none``-only changed set derives no command;
 - a mixed set derives the union;
 - derived commands are de-duplicated by their resolved executable;
 - the deriver is a pure, deterministic function of (changed artifacts,
   build_map, architecture).
 
-The deriver reads the merged ``build_map`` directly from
-``{project_dir}/.plan/marshal.json`` and resolves each path's module by longest
-``paths.module`` prefix, so the fixtures seed both a marshal.json build_map and
-per-module ``derived.json`` files carrying ``paths.module`` + ``commands``.
+The deriver reads the merged ``build_map`` directly from the top-level
+``build.map`` block in ``{project_dir}/.plan/marshal.json`` and resolves each
+path's module by longest ``paths.module`` prefix, so the fixtures seed both a
+marshal.json build.map and per-module ``derived.json`` files carrying
+``paths.module`` + ``commands``.
 """
 
 import importlib.util
@@ -64,8 +66,6 @@ _BUILD_MAP = {
         # `test/pm-mod/*.py` form is required to claim `test/pm-mod/test_foo.py`.
         {'glob': 'test/pm-mod/**/*.py', 'role': 'test', 'build_class': 'module-tests'},
         {'glob': 'test/pm-mod/*.py', 'role': 'test', 'build_class': 'module-tests'},
-        {'glob': 'pm-mod/skills/*/SKILL.md', 'role': 'documentation', 'build_class': 'docs-validate'},
-        {'glob': 'marketplace/bundles/*/skills/*/SKILL.md', 'role': 'documentation', 'build_class': 'docs-validate'},
         {'glob': 'pm-mod/generated/*.py', 'role': 'production', 'build_class': 'none'},
     ],
 }
@@ -109,8 +109,8 @@ def _module_derived(name: str, module_path: str) -> dict:
 def _seed(project_dir: str, build_map: dict | None = _BUILD_MAP) -> None:
     """Seed _project.json, one module (paths.module=pm-mod), and marshal.json.
 
-    The build_map is seeded under ``skill_domains.build_map`` (relocated; single
-    source of truth), which is where ``load_merged_build_map`` reads it.
+    The build_map is seeded under the top-level ``build.map`` block (relocated;
+    single source of truth), which is where ``load_merged_build_map`` reads it.
     """
     save_project_meta(
         {
@@ -127,7 +127,7 @@ def _seed(project_dir: str, build_map: dict | None = _BUILD_MAP) -> None:
     marshal.parent.mkdir(parents=True, exist_ok=True)
     payload: dict = {}
     if build_map is not None:
-        payload['skill_domains'] = {'build_map': build_map}
+        payload['build'] = {'map': build_map}
     marshal.write_text(json.dumps(payload, indent=2), encoding='utf-8')
 
 
@@ -226,35 +226,32 @@ def test_test_path_derives_test_compile_and_module_tests():
         assert 'compile' not in verbs
 
 
-def test_docs_only_set_derives_zero_python_builds():
-    """A docs-only changed set derives a docs-validate gate and ZERO Python builds."""
+def test_docs_only_set_derives_zero_builds():
+    """A docs-only changed set derives ZERO builds — documentation has no build owner.
+
+    With the docs-validate build_class retired, a doc path matches no build_map
+    glob, so it is recorded under ``unclaimed`` and derives no command at all.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
         project.mkdir()
         _seed(str(project))
 
+        doc_path = 'marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md'
         result = cmd_derive_verification(
-            Namespace(
-                changed_artifacts='marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md',
-                project_dir=str(project),
-            )
+            Namespace(changed_artifacts=doc_path, project_dir=str(project))
         )
 
         assert result['status'] == 'success'
-        # No compile / module-tests / verify — the structural docs-only guarantee.
-        for executable in _executables(result):
-            assert 'compile' not in executable
-            assert 'module-tests' not in executable
-            assert 'verify ' not in executable
-        # Exactly the scoped plugin-doctor gate for a marketplace skill .md.
-        docs = _commands_for_verb(result, 'docs-validate')
-        assert len(docs) == 1
-        assert 'doctor-marketplace quality-gate' in docs[0]['executable']
-        assert '--paths marketplace/bundles/plan-marshall/skills/manage-architecture' in docs[0]['executable']
+        # Zero commands — no compile / module-tests / verify and no doc gate.
+        assert result['command_count'] == 0
+        assert result['commands'] == []
+        # The doc path is unclaimed (no build_map glob matched it).
+        assert result['unclaimed'] == [doc_path]
 
 
-def test_non_marketplace_doc_derives_asciidoc_validate():
-    """A non-marketplace doc derives asciidoc validation, still zero Python."""
+def test_non_marketplace_doc_is_unclaimed():
+    """A non-marketplace doc matches no build_map glob and derives nothing."""
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
         project.mkdir()
@@ -265,9 +262,9 @@ def test_non_marketplace_doc_derives_asciidoc_validate():
         )
 
         assert result['status'] == 'success'
-        docs = _commands_for_verb(result, 'docs-validate')
-        assert len(docs) == 1
-        assert 'asciidoc validate --path pm-mod/skills/foo/SKILL.md' in docs[0]['executable']
+        assert result['command_count'] == 0
+        assert result['commands'] == []
+        assert result['unclaimed'] == ['pm-mod/skills/foo/SKILL.md']
 
 
 def test_none_only_set_derives_no_command():
@@ -287,18 +284,23 @@ def test_none_only_set_derives_no_command():
 
 
 def test_mixed_set_derives_union():
-    """A mixed prod+test+docs set derives the union of their command sets."""
+    """A mixed prod+test+docs set derives the union of the buildable command sets.
+
+    The doc path has no build owner, so it goes unclaimed and contributes no
+    command — only the production and test paths derive builds.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
         project.mkdir()
         _seed(str(project))
 
+        doc_path = 'marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md'
         result = cmd_derive_verification(
             Namespace(
                 changed_artifacts=(
                     'pm-mod/scripts/architecture.py,'
                     'test/pm-mod/test_foo.py,'
-                    'marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md'
+                    f'{doc_path}'
                 ),
                 project_dir=str(project),
             )
@@ -309,7 +311,9 @@ def test_mixed_set_derives_union():
         assert 'compile' in verbs
         assert 'test-compile' in verbs
         assert 'module-tests' in verbs
-        assert 'docs-validate' in verbs
+        assert 'docs-validate' not in verbs
+        # The doc path is unclaimed — no build owner for documentation.
+        assert doc_path in result['unclaimed']
 
 
 def test_duplicate_production_files_derive_one_compile():

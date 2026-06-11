@@ -12,7 +12,7 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `skill_domains.{key}.profiles` | `get_skill_domains()` | Skill loading | Core |
 | `skill_domains.{key}.outline_skill` | `provides_outline_skill()` | phase-3-outline | [ext-point-outline.md](ext-point-outline.md) |
 | `skill_domains.{key}.workflow_skill_extensions.triage` | `provides_triage()` | phase-5-execute, phase-6-finalize | [ext-point-triage.md](ext-point-triage.md) |
-| `skill_domains.build_map` | `classify_globs()` + `classify_build_class()` (seeded, write-once, required + always seeded) | architecture derive-verification; phase-6-finalize pre-push-quality-gate activation | Core |
+| `build.map` | `classify_globs()` + `classify_build_class()` (seeded, write-once, required + always seeded) | architecture derive-verification; phase-6-finalize pre-push-quality-gate activation | Core |
 | `extension_defaults.*` | `config_defaults()` | Various (write-once semantics) | Core |
 
 ## Plan Phase Configuration (marshal.json)

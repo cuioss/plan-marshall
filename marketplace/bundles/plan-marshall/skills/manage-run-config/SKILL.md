@@ -43,8 +43,10 @@ Run configuration handling for persistent command configuration storage.
     "tier_0": "enabled",
     "tier_1": "prompt"
   },
-  "build_queue": {
-    "upper_limit_seconds": 600
+  "build": {
+    "queue": {
+      "upper_limit_seconds": 600
+    }
   },
   "ci": {
     "authenticated_tools": [],
@@ -173,7 +175,7 @@ Invalid values surface the standard `status: error, error: invalid_value, allowe
 
 ### build-queue-limit get / set
 
-Manage the adaptive `build_queue.upper_limit_seconds` knob consumed by `build_queue.validate_lock_queue` — the self-healing build-queue stale reaper. The limit is the per-build held-duration ceiling the reaper measures against: an active slot is reaped once its age exceeds `2 ×` this limit. It defaults to and floors at 600 s (10 min), is capped at a 3600 s (1 h) ceiling, and is monotonic-up but clamped — `build_queue` `release` grows it toward the longest observed real build held-duration so a legitimately long build is never falsely reaped, while the ceiling prevents a single anomalously long hold from ratcheting it beyond an hour. The knob lives under a `build_queue` block in the main-anchored `run-configuration.json`, so reads/writes resolve against the main checkout regardless of caller cwd.
+Manage the adaptive `build.queue.upper_limit_seconds` knob consumed by `build_queue.validate_lock_queue` — the self-healing build-queue stale reaper. The limit is the per-build held-duration ceiling the reaper measures against: an active slot is reaped once its age exceeds `2 ×` this limit. It defaults to and floors at 600 s (10 min), is capped at a 3600 s (1 h) ceiling, and is monotonic-up but clamped — `build_queue` `release` grows it toward the longest observed real build held-duration so a legitimately long build is never falsely reaped, while the ceiling prevents a single anomalously long hold from ratcheting it beyond an hour. The knob lives under the `build.queue` block in the main-anchored `run-configuration.json`, so reads/writes resolve against the main checkout regardless of caller cwd.
 
 ```bash
 # Read the current limit (default/floor 600 s, always clamped to [600, 3600])

@@ -1055,7 +1055,7 @@ def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id
     Activation is the centralized build-necessity decision owned by
     ``extension_base.should_execute_build`` — the single home for the
     "is a build necessary?" verdict the four former consumer sites each
-    re-derived. The decision is a pure function of the ``skill_domains.build_map``
+    re-derived. The decision is a pure function of the ``build.map``
     globs and the live plan footprint: it returns ``decision: build`` when the
     footprint touches a registered build glob, and ``decision: not_necessary``
     (with a log-friendly ``reason``) when the build_map registers no globs, the
@@ -1085,7 +1085,7 @@ def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], pl
     """Pre-filter: drop ``pre-submission-self-review`` when activation conditions fail.
 
     Activation requires the live plan footprint to be non-empty. Unlike
-    ``pre-push-quality-gate`` (which gates on the ``skill_domains.build_map``
+    ``pre-push-quality-gate`` (which gates on the ``build.map``
     globs), this step has no glob gate — the four cognitive checks it targets
     (symmetric pairs, regex over-fit, wording, duplication) apply to any code or
     doc change. During early compose (phase-4-plan, before the worktree is
@@ -2091,7 +2091,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #   1. commit_strategy_none — drop commit-push (and pre-push-quality-gate
     #      and pre-submission-self-review) when no push will occur.
     #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate when
-    #      skill_domains.build_map carries no globs or no live-footprint entry
+    #      build.map carries no globs or no live-footprint entry
     #      matches a build_map glob.
     #   3. pre_submission_self_review_inactive — drop pre-submission-self-review
     #      when the live footprint is empty.

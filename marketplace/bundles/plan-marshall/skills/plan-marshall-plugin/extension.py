@@ -27,16 +27,13 @@ class Extension(ExtensionBase):
     """Build system discovery and cross-cutting development extension for plan-marshall bundle."""
 
     def get_skill_domains(self) -> list[dict]:
-        """Return both build and general-dev domains."""
+        """Return the general-dev domain.
+
+        The plan-marshall-plugin extension uses general-dev domain skills; it does
+        not own a build skill-domain (the file-to-build contract is owned by the
+        build-system extensions per ADR-004).
+        """
         return [
-            {
-                'domain': {
-                    'key': 'build',
-                    'name': 'Build Systems',
-                    'description': 'Maven, Gradle, npm, and Python build detection and execution',
-                },
-                'profiles': {},
-            },
             self._general_dev_domain(),
         ]
 

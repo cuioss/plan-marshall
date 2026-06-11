@@ -29,14 +29,12 @@ import subprocess
 
 from extension_base import (  # type: ignore[import-not-found]
     BUILD_CLASS_BUILD_CONFIG_FULL,
-    BUILD_CLASS_DOCS_VALIDATE,
     BUILD_CLASS_NONE,
     BUILD_CLASS_PROD_COMPILE,
     BUILD_CLASS_TEST_RUN,
     BUILD_CLASSES,
     BUILD_MAP_ROLES,
     ROLE_CONFIG,
-    ROLE_DOCUMENTATION,
     ROLE_PRODUCTION,
     ROLE_TEST,
     BuildExtensionBase,
@@ -225,21 +223,26 @@ def test_subclass_override_mixed_input():
 # =============================================================================
 
 
-def test_build_classes_is_the_closed_five_value_set():
-    """BUILD_CLASSES is exactly the closed 5-value enum, no more, no less.
+def test_build_classes_is_the_closed_four_value_set():
+    """BUILD_CLASSES is exactly the closed 4-value enum, no more, no less.
 
     Each value NAMES the canonical command directly (no name-to-name
     indirection): ``compile`` / ``module-tests`` / ``verify`` for the buildable
-    classes, plus ``docs-validate`` and ``none``.
+    classes, plus ``none``. ``docs-validate`` was retired — documentation has no
+    build owner.
     """
     assert BUILD_CLASSES == frozenset({
         'compile',
         'module-tests',
-        'docs-validate',
         'verify',
         'none',
     })
-    assert len(BUILD_CLASSES) == 5
+    assert len(BUILD_CLASSES) == 4
+
+
+def test_docs_validate_is_not_a_build_class():
+    """The retired ``docs-validate`` build_class must be absent from BUILD_CLASSES."""
+    assert 'docs-validate' not in BUILD_CLASSES
 
 
 def test_build_class_named_constants_are_members():
@@ -247,7 +250,6 @@ def test_build_class_named_constants_are_members():
     for value in (
         BUILD_CLASS_PROD_COMPILE,
         BUILD_CLASS_TEST_RUN,
-        BUILD_CLASS_DOCS_VALIDATE,
         BUILD_CLASS_BUILD_CONFIG_FULL,
         BUILD_CLASS_NONE,
     ):
@@ -358,8 +360,8 @@ def test_subclass_build_class_override_falls_through_for_other_roles():
 def test_build_map_roles_is_the_closed_three_value_set():
     """BUILD_MAP_ROLES is exactly production / test / config — no documentation.
 
-    Documentation is not a build_map route role (no build owner for docs), so
-    ROLE_DOCUMENTATION is deliberately absent from the set.
+    Documentation is not a build_map route role (no build owner for docs), so the
+    ``documentation`` role is deliberately absent from the set.
     """
     assert BUILD_MAP_ROLES == frozenset({
         'production',
@@ -373,7 +375,7 @@ def test_build_map_role_named_constants_are_members():
     """Each build_map role constant is a member; documentation is NOT."""
     for value in (ROLE_PRODUCTION, ROLE_TEST, ROLE_CONFIG):
         assert value in BUILD_MAP_ROLES
-    assert ROLE_DOCUMENTATION not in BUILD_MAP_ROLES
+    assert 'documentation' not in BUILD_MAP_ROLES
 
 
 # =============================================================================
@@ -668,25 +670,25 @@ def test_validate_completeness_returns_empty_outside_git_repo(tmp_path):
 
 
 def test_validate_completeness_only_production_and_test_routes_cover(tmp_path):
-    """Only production/test routes count toward coverage — a doc/config route does not.
+    """Only production/test routes count toward coverage — a config route does not.
 
-    A documentation route does not make a tracked .py covered; the .py must be
-    matched by a production or test route. The production route ``src/*/main.py``
-    establishes the build-covered root ``src/`` (so ``src/a/foo.py`` IS a
-    buildable unit), while the documentation route ``src/*.py`` does not count as
-    coverage — so the in-root ``src/a/foo.py`` it only doc-matches still surfaces.
+    A config route does not make a tracked .py covered; the .py must be matched by
+    a production or test route. The production route ``src/*/main.py`` establishes
+    the build-covered root ``src/`` (so ``src/a/foo.py`` IS a buildable unit),
+    while the config route ``src/*.py`` does not count as coverage — so the in-root
+    ``src/a/foo.py`` it only config-matches still surfaces.
     """
 
-    class _DocRouteWithBuildRootExtension(_MinimalExtension):
+    class _ConfigRouteWithBuildRootExtension(_MinimalExtension):
         def classify_globs(self) -> list[tuple[str, str]]:
             return [
                 ('src/*/main.py', ROLE_PRODUCTION),  # establishes build root src/
-                ('src/*.py', ROLE_DOCUMENTATION),  # does NOT count toward coverage
+                ('src/*.py', ROLE_CONFIG),  # does NOT count toward coverage
             ]
 
     _git_init_and_track(tmp_path, ['src/a/main.py', 'src/a/foo.py'])
-    uncovered = validate_tree_completeness(str(tmp_path), [_DocRouteWithBuildRootExtension()])
+    uncovered = validate_tree_completeness(str(tmp_path), [_ConfigRouteWithBuildRootExtension()])
     # src/a/foo.py is inside the build-covered root but matched only by a
-    # documentation route, so it is still uncovered. src/a/main.py is covered.
+    # config route, so it is still uncovered. src/a/main.py is covered.
     assert 'src/a/foo.py' in uncovered
     assert 'src/a/main.py' not in uncovered

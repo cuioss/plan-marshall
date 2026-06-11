@@ -149,18 +149,22 @@ def _resolve_queue_path() -> Path:
 
 
 def _resolve_max_slots() -> int:
-    """Read ``build_queue.max_slots`` from marshal.json, defaulting to 5.
+    """Read ``build.queue.max_slots`` from marshal.json, defaulting to 5.
 
     marshal.json is the cwd-relative tracked config (content-identical across
     main and the pinned worktree, since it is git-tracked). A missing file,
-    missing ``build_queue`` block, missing ``max_slots`` key, or a non-positive /
-    non-integer value all fall back to the conservative default so a
-    misconfigured queue still admits at a sane bound rather than zero.
+    missing ``build`` block, missing ``queue`` block, missing ``max_slots`` key,
+    or a non-positive / non-integer value all fall back to the conservative
+    default so a misconfigured queue still admits at a sane bound rather than
+    zero.
     """
     config = read_json(get_marshal_path(), default={})
     if not isinstance(config, dict):
         return _DEFAULT_MAX_SLOTS
-    block = config.get('build_queue')
+    build = config.get('build')
+    if not isinstance(build, dict):
+        return _DEFAULT_MAX_SLOTS
+    block = build.get('queue')
     if not isinstance(block, dict):
         return _DEFAULT_MAX_SLOTS
     raw = block.get('max_slots')

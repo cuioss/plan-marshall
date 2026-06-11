@@ -19,7 +19,7 @@ Behaviour:
 * **plan_id set → acquire / wait / release.** On entry it calls ``build_queue
   acquire``. On ``admitted`` it yields so the caller runs the build. On
   ``blocked`` it sleeps ``_WAIT_SECONDS`` and re-polls ``acquire`` WITHOUT
-  releasing first, up to ``build_queue.max_retries`` (default 10 from
+  releasing first, up to ``build.queue.max_retries`` (default 10 from
   marshal.json). Because ``run_acquire`` is idempotent for an already-queued
   ``plan_id``, the plan KEEPS its FIFO position across retries rather than being
   shuffled to the back. Whether the slot is admitted or the retries are
@@ -135,17 +135,20 @@ class BuildQueueTimeout(RuntimeError):
 
 
 def _resolve_max_retries() -> int:
-    """Read ``build_queue.max_retries`` from marshal.json, defaulting to 10.
+    """Read ``build.queue.max_retries`` from marshal.json, defaulting to 10.
 
     Mirrors ``build_queue.py::_resolve_max_slots`` — a missing file, missing
-    ``build_queue`` block, missing ``max_retries`` key, or a non-positive /
-    non-integer value all degrade to the conservative default so a misconfigured
-    queue still bounds the wait loop rather than spinning forever.
+    ``build`` block, missing ``queue`` block, missing ``max_retries`` key, or a
+    non-positive / non-integer value all degrade to the conservative default so a
+    misconfigured queue still bounds the wait loop rather than spinning forever.
     """
     config = read_json(get_marshal_path(), default={})
     if not isinstance(config, dict):
         return _DEFAULT_MAX_RETRIES
-    block = config.get('build_queue')
+    build = config.get('build')
+    if not isinstance(build, dict):
+        return _DEFAULT_MAX_RETRIES
+    block = build.get('queue')
     if not isinstance(block, dict):
         return _DEFAULT_MAX_RETRIES
     raw = block.get('max_retries')

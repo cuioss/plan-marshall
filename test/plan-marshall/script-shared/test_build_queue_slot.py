@@ -303,20 +303,30 @@ class TestResolveMaxRetries:
         assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
 
     def test_honors_configured_value(self, monkeypatch):
-        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {'build_queue': {'max_retries': 7}})
+        monkeypatch.setattr(
+            bqs, 'read_json', lambda *a, **k: {'build': {'queue': {'max_retries': 7}}}
+        )
         assert bqs._resolve_max_retries() == 7
 
     def test_non_positive_falls_back(self, monkeypatch):
-        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {'build_queue': {'max_retries': 0}})
+        monkeypatch.setattr(
+            bqs, 'read_json', lambda *a, **k: {'build': {'queue': {'max_retries': 0}}}
+        )
         assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
 
     def test_bool_value_falls_back(self, monkeypatch):
         # bool is an int subclass — must NOT be accepted as a retry count.
-        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {'build_queue': {'max_retries': True}})
+        monkeypatch.setattr(
+            bqs, 'read_json', lambda *a, **k: {'build': {'queue': {'max_retries': True}}}
+        )
         assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
 
     def test_non_dict_config_falls_back(self, monkeypatch):
         monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: ['not', 'a', 'dict'])
+        assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
+
+    def test_non_dict_build_block_falls_back(self, monkeypatch):
+        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {'build': 'not-a-dict'})
         assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
 
 

@@ -722,12 +722,12 @@ The mid-execute per-deliverable build is **focused** by design: it consumes the 
      derive-verification --changed-artifacts {comma_separated_changed_paths} --audit-plan-id {plan_id}
    ```
 
-   Each row in the returned `commands[]` carries a `build_class` (the canonical command name — `compile` / `module-tests` / `docs-validate` / `verify` / `none`) and the architecture-resolved `executable` for that rung. The `build_class` vocabulary and the `build_class` → command mapping are owned by [`../manage-architecture/standards/resolve-command.md` § Build-class → verification command](../manage-architecture/standards/resolve-command.md#build-class--verification-command) — do NOT restate the vocabulary here; this step consumes the derived rows. A deliverable whose changed paths classify entirely to `docs-validate` / `none` yields **zero Python rungs** — the documentation-only short-circuit is therefore a structural property of the derived ladder, not a parallel classification: when no `compile` / `module-tests` rung is present, no Python build runs and only the derived `docs-validate` rung executes — for a marketplace skill `.md` that rung is the scopeable `doctor-marketplace quality-gate --paths {changed skill dirs} --marketplace-root {marketplace root}` the deriver stamped (for other docs, the asciidoc-validate notation).
+   Each row in the returned `commands[]` carries a `build_class` (the canonical command name — `compile` / `module-tests` / `verify` / `none`) and the architecture-resolved `executable` for that rung. The `build_class` vocabulary and the `build_class` → command mapping are owned by [`../manage-architecture/standards/resolve-command.md` § Build-class → verification command](../manage-architecture/standards/resolve-command.md#build-class--verification-command) — do NOT restate the vocabulary here; this step consumes the derived rows. A deliverable whose changed paths classify entirely to `none` (e.g. a documentation-only change — documentation has no build owner) yields **zero rungs** — the documentation-only short-circuit is therefore a structural property of the derived ladder, not a parallel classification: when no `compile` / `module-tests` / `verify` rung is present, no build runs for the deliverable.
 
 4. **Slice the derived ladder by depth and run the selected rungs** via the `executable` each row carries (never hard-code `./pw` / `mvn` / `gradle` / `npm` — the deriver already resolved each rung):
 
-   - **`compile-only`** → run only the rows whose `build_class` is `compile`, plus any `docs-validate` rows. Skip `module-tests` rows.
-   - **`compile+scoped-test`** (default) → run the `compile` rows AND the `module-tests` rows (each `module-tests` rung is itself the `test-compile` + `module-tests` pair the deriver stamped), plus any `docs-validate` rows. `compile` and `module-tests` are distinct checks — `module-tests` does not subsume `compile` — so both rung kinds run at this depth.
+   - **`compile-only`** → run only the rows whose `build_class` is `compile`. Skip `module-tests` rows.
+   - **`compile+scoped-test`** (default) → run the `compile` rows AND the `module-tests` rows (each `module-tests` rung is itself the `test-compile` + `module-tests` pair the deriver stamped). `compile` and `module-tests` are distinct checks — `module-tests` does not subsume `compile` — so both rung kinds run at this depth.
    - **`full`** → ignore the per-rung slice and resolve+run the whole-tree `quality-gate` (the legacy whole-tree-per-deliverable behavior; opt-in only):
 
      ```bash
@@ -735,12 +735,12 @@ The mid-execute per-deliverable build is **focused** by design: it consumes the 
        resolve --command quality-gate --audit-plan-id {plan_id}
      ```
 
-   For every rung executed (derived `executable` or the `full`-depth `quality-gate`), honor the architecture-resolved `bash_timeout_seconds` / `execution_tier` envelope carried on the row: for `execution_tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `execution_tier=orchestrator` return control to the orchestrator to run the long build (do NOT background it). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure). Log the documentation-only path when the derived ladder carries no Python rung:
+   For every rung executed (derived `executable` or the `full`-depth `quality-gate`), honor the architecture-resolved `bash_timeout_seconds` / `execution_tier` envelope carried on the row: for `execution_tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `execution_tier=orchestrator` return control to the orchestrator to run the long build (do NOT background it). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure). Log the documentation-only path when the derived ladder carries no rung:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      decision --plan-id {plan_id} --level INFO \
-     --message "(plan-marshall:phase-5-execute) Derived ladder for deliverable {deliverable} carries zero Python rungs — running only the derived doc gate"
+     --message "(plan-marshall:phase-5-execute) Derived ladder for deliverable {deliverable} carries zero rungs — no build runs for this deliverable"
    ```
 
 5. **On non-zero exit** — route the failure through the **existing Step 11 per-task triage path**: persist each failing finding to the Q-Gate store (`manage-findings qgate add`) and return the `triage_required` signal to the orchestrator. Do NOT invent a new triage surface — reuse the Step 11 contract verbatim (`producer=build-runner`, `finding_type=verification-failure`).

@@ -857,20 +857,24 @@ def test_configure_preserves_project_skills(plan_context, monkeypatch):
 
 
 def test_configure_preserves_build_map_and_active_profiles(plan_context, monkeypatch):
-    """Test configure after init preserves build_map and active_profiles alongside project_skills.
+    """Test configure after init preserves build.map and active_profiles alongside project_skills.
 
-    Regression for the skill-domains configure preservation bug: build_map (the
-    file-to-build contract) and a global active_profiles list live as top-level
-    siblings of the domain entries under skill_domains, and per-domain
-    active_profiles live inside the domain configs. A configure call (as run by
-    /marshall-steward after init) must not drop any of them.
+    Regression for the skill-domains configure preservation bug: the global
+    active_profiles list lives as a top-level sibling of the domain entries under
+    skill_domains, and per-domain active_profiles live inside the domain configs.
+    A configure call (as run by /marshall-steward after init) must not drop any of
+    them. The build_map (file-to-build contract) now lives as a top-level
+    build.map block, so reconfigure (which only rewrites skill_domains) must leave
+    it untouched.
     """
     config = {
-        'skill_domains': {
-            'build_map': {
+        'build': {
+            'map': {
                 'marketplace/bundles/**/*.py': 'verify',
                 'test/**/*.py': 'module-tests',
             },
+        },
+        'skill_domains': {
             'active_profiles': ['quality', 'security'],
             'system': {
                 'defaults': ['plan-marshall:dev-agent-behavior-rules'],
@@ -919,11 +923,12 @@ def test_configure_preserves_build_map_and_active_profiles(plan_context, monkeyp
     updated = json.loads(marshal_path.read_text())
     skill_domains = updated['skill_domains']
 
-    # Top-level siblings survive reconfigure unconditionally.
-    assert skill_domains['build_map'] == {
+    # The top-level build.map block is unaffected by reconfigure.
+    assert updated['build']['map'] == {
         'marketplace/bundles/**/*.py': 'verify',
         'test/**/*.py': 'module-tests',
     }
+    # The global active_profiles sibling survives reconfigure unconditionally.
     assert skill_domains['active_profiles'] == ['quality', 'security']
 
     # Per-domain active_profiles restored to domains that still exist.

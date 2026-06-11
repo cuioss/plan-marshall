@@ -484,7 +484,7 @@ AskUserQuestion:
     - label: "Regenerate"
       description: "Re-detect structure from project files"
     - label: "Re-seed Build Map"
-      description: "Re-seed skill_domains.build_map after a domain extension change"
+      description: "Re-seed build.map after a domain extension change"
   multiSelect: false
 ```
 
@@ -613,7 +613,7 @@ This regenerates the per-module architecture layout under `.plan/project-archite
 
 ### Operation: Re-seed Build Map
 
-Re-seed `skill_domains.build_map` after a domain extension is added or updated. The seed is write-once — an existing block is preserved — so re-seeding picks up newly-registered domains without clobbering operator corrections.
+Re-seed `build.map` after a domain extension is added or updated. The seed is write-once — an existing block is preserved — so re-seeding picks up newly-registered domains without clobbering operator corrections.
 
 See [build-map-setup.md](build-map-setup.md) § "Menu Mode: Re-Seed After an Extension Change" for the seed/read commands and the `action` (`seeded` / `preserved`) interpretation.
 

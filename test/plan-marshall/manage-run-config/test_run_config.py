@@ -873,7 +873,7 @@ class TestRunConfigMainAnchoring:
 
 
 class TestBuildQueueLimitMainAnchoring:
-    """The build_queue.upper_limit_seconds knob round-trips MAIN-anchored: the
+    """The build.queue.upper_limit_seconds knob round-trips MAIN-anchored: the
     adaptive stale-reclaim limit is a cross-session corpus, so a write/read issued
     from a worktree cwd must land on (and read from) the MAIN checkout's
     run-configuration.json — never the worktree-relative copy.
@@ -907,7 +907,7 @@ class TestBuildQueueLimitMainAnchoring:
         assert read_back == 1800
         main_config = main_base / 'run-configuration.json'
         assert main_config.is_file()
-        assert json.loads(main_config.read_text())['build_queue']['upper_limit_seconds'] == 1800
+        assert json.loads(main_config.read_text())['build']['queue']['upper_limit_seconds'] == 1800
         assert not (worktree / '.plan' / 'local' / 'run-configuration.json').exists()
 
     def test_build_queue_limit_write_clamps_then_round_trips_main_anchored(
@@ -931,5 +931,5 @@ class TestBuildQueueLimitMainAnchoring:
         # stored on MAIN, never higher.
         assert run_config._read_build_queue_upper_limit() == 3600
         main_config = main_base / 'run-configuration.json'
-        assert json.loads(main_config.read_text())['build_queue']['upper_limit_seconds'] == 3600
+        assert json.loads(main_config.read_text())['build']['queue']['upper_limit_seconds'] == 3600
         assert not (worktree / '.plan' / 'local' / 'run-configuration.json').exists()

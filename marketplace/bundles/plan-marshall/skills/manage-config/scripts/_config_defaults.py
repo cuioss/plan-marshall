@@ -132,10 +132,31 @@ def validate_run_at_all(value: str, field_name: str) -> None:
         )
 
 
+# Plan-wide effort fallback (`plan.effort` in marshal.json — single string).
+#
+# Per-phase effort defaults are seeded at init so a fresh project gets per-phase
+# model tuning out of the box and `effort resolve-target` resolves a concrete
+# `execution-context-{level}` rather than silently falling back to
+# `level: inherit, source: implicit_default`. The seeded values mirror the
+# `balanced` named preset's expanded per-phase shape (the middle-of-the-road
+# tuning) — see `plan-marshall:plan-marshall` `effort_presets.py::EffortPresets.BALANCED`.
+# The canonical level palette, the resolver chain, and the role registry are
+# owned by the effort standards — see
+# `plan-marshall:plan-marshall/standards/effort-variants.md`,
+# `effort-levels.md`, and `effort-roles.md`; this module only seeds the
+# operator-visible per-phase defaults. The post-wizard Effort menu
+# (`apply-preset` / per-phase edit) still tunes these after init.
+DEFAULT_PLAN_EFFORT = 'level-3'
+
 # Phase-specific plan defaults
 DEFAULT_PLAN_INIT = {
     'branch_strategy': 'feature',
     'use_worktree': True,
+    # Per-phase effort default (seeded at init; balanced-preset baseline). The
+    # phase-1-init role group has only the `default` subkey, so a string
+    # shorthand is the canonical on-disk shape. Read via
+    # `manage-config plan phase-1-init get --field effort` / `effort read --role phase-1-init`.
+    'effort': 'level-3',
     # Auto-continue from 1-init to 2-refine. true = no gate (current behaviour);
     # false = stop after init and wait for the user. Mirrors the sibling
     # plan_without_asking / execute_without_asking review-gate pattern.
@@ -176,6 +197,8 @@ DEFAULT_PLAN_REFINE = {
     'confidence_threshold': 95,
     'compatibility': 'breaking',
     'simplicity': 'lean',
+    # Per-phase effort default (seeded at init; balanced-preset baseline).
+    'effort': 'level-3',
     # Premise / narrative-vs-code safety-check run-at-all gate
     # (auto|always|never). Consumed by the light lane + deep refine
     # revalidation pass. Read via
@@ -189,10 +212,15 @@ DEFAULT_PLAN_OUTLINE = {
     # Consumed by the deep-lane outline dispatch. Read via
     # `manage-config plan phase-3-outline get --field qgate`.
     'qgate': 'auto',
+    # Per-phase effort default (seeded at init; balanced-preset baseline lifts
+    # outline analysis to level-4).
+    'effort': 'level-4',
 }
 
 DEFAULT_PLAN_PLAN = {
     'execute_without_asking': True,
+    # Per-phase effort default (seeded at init; balanced-preset baseline).
+    'effort': 'level-3',
 }
 
 # Built-in verify step names (dispatch table in phase-5-execute SKILL.md)
@@ -246,6 +274,17 @@ DEFAULT_PLAN_EXECUTE = {
     # Registering it here makes the reserve operator-visible in marshal.json.
     'per_task_budget_reserve_tokens': '50K',
     'steps': list(BUILT_IN_VERIFY_STEPS),
+    # Per-phase effort default (seeded at init; balanced-preset baseline). The
+    # phase-5-execute role group has the `default` (per-task implementation) and
+    # `verification-feedback` (build-runner triage) subkeys, so the on-disk shape
+    # is an object. balanced lifts the per-task tier to level-4 and keeps triage
+    # at level-3. Read via
+    # `manage-config plan phase-5-execute get --field effort` or
+    # `effort resolve-target --phase phase-5-execute --role <subkey>`.
+    'effort': {
+        'default': 'level-4',
+        'verification-feedback': 'level-3',
+    },
 }
 
 # Built-in finalize step names (dispatch table in phase-6-finalize SKILL.md)
@@ -359,6 +398,19 @@ DEFAULT_PLAN_FINALIZE = {
     # default False keeps the bot-review invariant intact.
     'drop_review_on_scope_gate': False,
     'steps': list(BUILT_IN_FINALIZE_STEPS),
+    # Per-phase effort default (seeded at init; balanced-preset baseline). The
+    # phase-6-finalize role group has `default`, `verification-feedback`
+    # (sonar / pr-comment / plugin-doctor / pr-state triage), and
+    # `post-run-review` subkeys, so the on-disk shape is an object. balanced
+    # lifts post-run-review to level-4 and keeps default + verification-feedback
+    # at level-3. Read via
+    # `manage-config plan phase-6-finalize get --field effort` or
+    # `effort resolve-target --phase phase-6-finalize --role <subkey>`.
+    'effort': {
+        'default': 'level-3',
+        'verification-feedback': 'level-3',
+        'post-run-review': 'level-4',
+    },
 }
 
 # Build system defaults (detection reference only - commands are in modules)
@@ -368,17 +420,23 @@ BUILD_SYSTEM_DEFAULTS = {
     'npm': {'skill': 'plan-marshall:plan-marshall-plugin'},
 }
 
-# Build-queue defaults (`build_queue.*` in marshal.json — top-level block).
+# Build-queue defaults (`build.queue.*` in marshal.json — under the top-level
+# `build` block, peer to `build.map`).
 # `max_slots` is the number of concurrent build admissions the cross-session
 # build queue grants before enqueuing further requests; the build-queue
 # admission primitive (`plan-marshall:manage-locks:build_queue`) reads it via
-# `build_queue.max_slots`, falling back to 5 when the block or key is absent.
+# `build.queue.max_slots`, falling back to 5 when the block or key is absent.
 # `max_retries` is the number of times the build wrapper re-polls a `blocked`
-# admission before giving up. Both keys live at the marshal.json top level (not
-# under `plan.*`) because the build queue is a project-wide, cross-plan
-# resource. Registering them here makes the queue bounds operator-visible and
-# editable directly in marshal.json.
-DEFAULT_BUILD_QUEUE = {'max_slots': 5, 'max_retries': 10}
+# admission before giving up. `upper_limit_seconds` is the adaptive stale-reclaim
+# ceiling — the per-build held-duration bound the self-healing reaper measures
+# against; it is seeded at the 600 s floor (the same value
+# `manage-run-config._read_build_queue_upper_limit` falls back to) inside the
+# clamped `[600, 3600]` range, so the key is operator-visible instead of
+# fallback-only. All three keys live under the marshal.json top-level `build`
+# block (not under `plan.*`) because the build queue is a project-wide,
+# cross-plan resource. Registering them here makes the queue bounds
+# operator-visible and editable directly in marshal.json.
+DEFAULT_BUILD_QUEUE = {'max_slots': 5, 'max_retries': 10, 'upper_limit_seconds': 600}
 
 
 def get_default_config() -> dict:
@@ -386,7 +444,7 @@ def get_default_config() -> dict:
 
     Returns a new dict each time to avoid mutation issues.
 
-    The ``skill_domains.build_map`` block is NOT seeded here: build_map is never
+    The ``build.map`` block is NOT seeded here: build_map is never
     populated at init time. Step 8b of the marshall-steward wizard (``build-map
     seed``) is the sole authoritative seed point, gated on completed architecture
     discovery so applicability scoping has discovered modules to work with. The
@@ -408,9 +466,14 @@ def get_default_config() -> dict:
         'providers': [],
         'project': copy.deepcopy(DEFAULT_PROJECT),
         'skill_domains': {'system': system_domain},
-        'build_queue': copy.deepcopy(DEFAULT_BUILD_QUEUE),
+        'build': {'queue': copy.deepcopy(DEFAULT_BUILD_QUEUE)},
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
         'plan': {
+            # Plan-wide effort fallback (string at plan.effort). Resolves a
+            # concrete level for any role whose per-phase effort is absent, so
+            # `effort resolve-target --default` never falls back to inherit on a
+            # freshly-seeded config.
+            'effort': DEFAULT_PLAN_EFFORT,
             'open_in_ide': DEFAULT_OPEN_IN_IDE,
             'coverage': copy.deepcopy(DEFAULT_PLAN_COVERAGE),
             'phase-1-init': copy.deepcopy(DEFAULT_PLAN_INIT),

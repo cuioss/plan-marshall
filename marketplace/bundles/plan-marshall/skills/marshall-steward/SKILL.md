@@ -221,7 +221,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `wizard-flow.md` | First-run wizard steps 1-15 (bootstrap 1-4, configuration 5 onwards) | mode=wizard or --wizard flag |
 | `provider-setup.md` | Provider discovery/activation, CI detection, credential setup (extracted from wizard-flow.md) | Linked from `wizard-flow.md` (provider/CI/credential steps) |
 | `architecture-setup.md` | Extension defaults, module discovery, build commands, Maven profiles, LLM analysis + architecture_refresh tier knobs (extracted from wizard-flow.md) | Linked from `wizard-flow.md` Step 8 |
-| `build-map-setup.md` | Build-map seed/read workflow — `skill_domains.build_map` file-to-build contract, write-once seed, menu re-seed operation | Linked from `wizard-flow.md` Step 8b and `menu-configuration.md` (Project Structure) |
+| `build-map-setup.md` | Build-map seed/read workflow — `build.map` file-to-build contract, write-once seed, menu re-seed operation | Linked from `wizard-flow.md` Step 8b and `menu-configuration.md` (Project Structure) |
 | `skill-domains-setup.md` | Skill-domain configuration, profile activation, execute-task/recipe registration (extracted from wizard-flow.md) | Linked from `wizard-flow.md` Step 9 |
 | `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
@@ -243,7 +243,7 @@ consumer (pre-push-quality-gate, commit-push, create-pr, ci-verify,
 automated-review, sonar-roundtrip, lessons-capture, branch-cleanup,
 record-metrics, archive-plan). `pre-push-quality-gate` is a built-in
 default like the rest; its activation is derived from
-`skill_domains.build_map` — it activates whenever the live footprint
+`build.map` — it activates whenever the live footprint
 touches a glob registered in the build_map. Those globs are
 tree-derived from each extension's `classify_globs()` vocabulary
 (complete-by-construction over the real tree), not author-shipped

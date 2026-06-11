@@ -128,14 +128,14 @@ def _seed_marshal(
         # The gates are flat fields under plan.phase-6-finalize.
         phase_6.update(finalize_gates)
 
-    # Pre-push-quality-gate activation derives from skill_domains.build_map globs
+    # Pre-push-quality-gate activation derives from build.map globs
     # (D7/D8). The `**/*.py` build_map glob matches the stubbed footprint so the
     # pre_push_quality_gate_inactive pre-filter does NOT drop the qgate step in
     # the `auto` baseline (lets us isolate the ceremony transform's behaviour).
     marshal: dict = {
         'plan': {'phase-6-finalize': phase_6},
-        'skill_domains': {
-            'build_map': {
+        'build': {
+            'map': {
                 'python': [
                     {'glob': '**/*.py', 'role': 'production', 'build_class': 'compile'},
                 ],

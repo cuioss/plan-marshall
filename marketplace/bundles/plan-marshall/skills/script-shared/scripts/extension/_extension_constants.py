@@ -60,7 +60,6 @@ ALL_CANONICAL_COMMANDS = [
 
 BUILD_CLASS_PROD_COMPILE = 'compile'
 BUILD_CLASS_TEST_RUN = 'module-tests'
-BUILD_CLASS_DOCS_VALIDATE = 'docs-validate'
 BUILD_CLASS_BUILD_CONFIG_FULL = 'verify'
 BUILD_CLASS_NONE = 'none'
 
@@ -68,13 +67,12 @@ BUILD_CLASSES = frozenset(
     {
         BUILD_CLASS_PROD_COMPILE,
         BUILD_CLASS_TEST_RUN,
-        BUILD_CLASS_DOCS_VALIDATE,
         BUILD_CLASS_BUILD_CONFIG_FULL,
         BUILD_CLASS_NONE,
     }
 )
 """Closed set of build_class values — equal to the canonical verification-command
-vocabulary (`compile` / `module-tests` / `verify` / `docs-validate` / `none`).
+vocabulary (`compile` / `module-tests` / `verify` / `none`).
 The single source of truth shared by ExtensionBase.classify_build_class(),
 domain extensions, and their tests."""
 
@@ -92,13 +90,10 @@ domain extensions, and their tests."""
 # There is deliberately NO ``documentation`` build_map role. Documentation is not
 # a buildable unit and has no build-system owner — doc-change recognition is a
 # generic file-suffix fact owned by manage-execution-manifest's change-footprint
-# classifier, not a build_map route role and not a build_class. The
-# ROLE_DOCUMENTATION constant is retained only as the legacy role name so callers
-# can test for its ABSENCE from BUILD_MAP_ROLES.
+# classifier, not a build_map route role and not a build_class.
 
 ROLE_PRODUCTION = 'production'
 ROLE_TEST = 'test'
-ROLE_DOCUMENTATION = 'documentation'
 ROLE_CONFIG = 'config'
 
 BUILD_MAP_ROLES = frozenset(

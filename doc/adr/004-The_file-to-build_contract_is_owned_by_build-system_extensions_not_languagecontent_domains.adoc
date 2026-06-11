@@ -1,7 +1,9 @@
 = ADR-004: The file-to-build contract is owned by build-system extensions, not language/content domains
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
 :sectnums:
+:source-highlighter: highlight.js
 
 == Status
 
@@ -43,7 +45,7 @@ Completeness is enforced over *buildable units only* — tracked source that fal
 === Negative
 
 * Content that is not produced by a code build system has *no build owner* and is therefore absent from the build_map. Documentation (markdown / AsciiDoc) is the principal case: it carries no `BuildExtensionBase`, so it contributes no routes and triggers no automatic build gate. Documentation validation is available only as opt-in recipes, not as a per-push / per-plan gate.
-* Container manifests and any other content a language/content domain recognises for skill-loading but no build system builds fall in the same class — recognised for Axis A, absent from Axis B.
+* Container manifests and any other content a language/content domain recognises for skill-loading but no build system builds fall in the same class — recognised for Axis A, absent from Axis B. Concretely, the container manifests (`Dockerfile`, `Containerfile`, `docker-compose`/`compose.yml`, `.dockerignore`, `.hadolint.yaml`, `.trivyignore`) that `pm-dev-oci`'s `plan-marshall-plugin` extension recognises for skill-loading have *no* `build-oci` `BuildExtensionBase`: they contribute no build_map routes and are not auto-gated per push or per plan. This container-route retirement mirrors the documentation disposition above (recognised for Axis A, absent from Axis B) and is an accepted consequence of this decision, not a defect — no `build-oci` extension is added to restore a route.
 * Domain applicability and build_map contribution are decoupled: a domain can be applicable (its standards load) while contributing zero build routes.
 
 === Risks
@@ -56,6 +58,16 @@ Completeness is enforced over *buildable units only* — tracked source that fal
 * *Keep Axis-B on the language/content domain extensions* (the prior model). Rejected: a language domain has no authority over the build, must re-implement build-system knowledge, and that knowledge leaks — lockfiles and foreign config get claimed as build-triggering, and every language extension carries a partial copy of build logic that drifts.
 * *Fold build-necessity into `architecture resolve`.* Rejected: `resolve` maps a `(module, command)` pair to an executable and is consumed in contexts where necessity is irrelevant; overloading it with a footprint-dependent necessity check breaks command/query separation (a resolver would start returning "no command, not necessary").
 * *Invent a content-build owner for every content type so documentation keeps a build_map route.* Rejected for the core decision: documentation validation is recipe-driven, not a code build. A dedicated content-build `BuildExtensionBase` can be introduced later, without disturbing the single-owner principle, if automatic documentation gating is later wanted. The principle that unifies the rejections: build classification belongs to the layer that owns the build, and only to that layer.
+
+== Amendment: Build config is a top-level marshal.json concern
+
+The original decision settled *ownership* of the file→build contract but left the seeded contract *stored* under `skill_domains.build_map`, with the cross-plan build-queue limiter under a separate top-level `build_queue` block. That storage layout conflated a build concern with the skill-domain registry and left a name collision latent against a vestigial `skill_domains.build` domain entry. This amendment records the storage-layout decision that completes the ownership move:
+
+* The file→build routes (the seeded build_map) are stored at `build.map` — a new top-level `build` block, no longer a sibling under `skill_domains`.
+* The cross-plan build-queue limiter config is stored at `build.queue` (still a project-wide, cross-plan resource — not under `plan.*`), consolidated under the same top-level `build` block.
+* The vestigial `skill_domains.build` skill-domain entry (empty profiles; the extension already uses `general-dev` skills) is retired, which dissolves the name collision with the new top-level `build` block.
+
+The relocation is a *breaking* schema change: every reader switches to the new `build.map` / `build.queue` key paths in one plan with no fallback read of the old `skill_domains.build_map` / top-level `build_queue` paths. The meta-project's own tracked `.plan/marshal.json` is re-seeded to the new layout as part of the same migration.
 
 == References
 

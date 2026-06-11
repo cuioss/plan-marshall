@@ -21,7 +21,7 @@ def cmd_init(args) -> dict:
     if is_initialized() and not getattr(args, 'force', False):
         return error_exit('marshal.json already exists. Use --force to overwrite.')
 
-    # init does NOT seed skill_domains.build_map — build_map is never populated
+    # init does NOT seed build.map — build_map is never populated
     # at init time. Step 8b of the marshall-steward wizard (`build-map seed`) is
     # the sole authoritative seed point, gated on completed architecture
     # discovery. The write-once guard in seed_build_map_into makes the first

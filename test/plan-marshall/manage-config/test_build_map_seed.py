@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Tests for the marshal.json build_map seed under skill_domains.
+"""Tests for the marshal.json build_map seed under the top-level build block.
 
 Covers the relocated, required build_map cluster and the three behaviours the
 build_map-seed-scope fix introduces:
 
 - build-map seed writes the aggregated {domain: [{glob, role, build_class}]}
-  structure under ``skill_domains.build_map`` (relocated from the top level).
+  structure under ``build.map`` (relocated from the top level).
 - Write-once: a re-seed never clobbers an existing seed, so a user correction
   made directly to the seeded entries survives.
-- merge_build_map reads from ``skill_domains.build_map`` and fails closed
+- merge_build_map reads from ``build.map`` and fails closed
   (raises) when the block is absent — there is no override layer.
-- Regression: ``skill_domains.build_map`` is present after seed, and the retired
+- Regression: ``build.map`` is present after seed, and the retired
   ``build_map_overrides`` / ``activation_globs`` keys are never written.
 
 It also covers the seed AGGREGATOR WIRING: ``aggregate_build_map`` collects every
@@ -28,7 +28,7 @@ The three fix-specific suites at the end cover:
   discovered project module; non-applicable domains are dropped even though they
   declare routes, and an empty discovered-module set yields an empty aggregation.
 - **Init-seed removal** — ``cmd_init`` / ``get_default_config()`` no longer seed
-  ``skill_domains.build_map``; the block is materialised at wizard Step 8b
+  ``build.map``; the block is materialised at wizard Step 8b
   (``build-map seed``) after architecture discovery.
 - **Force reseed** — ``build-map seed --force`` clears any existing block and
   re-derives it (``action: re-derived``); the default seed stays write-once
@@ -90,9 +90,6 @@ _FAKE_AGGREGATED = {
         {'glob': 'scripts/*.py', 'role': 'production', 'build_class': 'compile'},
         {'glob': 'test/**/*.py', 'role': 'test', 'build_class': 'module-tests'},
     ],
-    'documentation': [
-        {'glob': '*.adoc', 'role': 'documentation', 'build_class': 'docs-validate'},
-    ],
 }
 
 
@@ -107,10 +104,10 @@ def _patch_aggregate(monkeypatch):
 # =============================================================================
 
 
-def test_merge_build_map_returns_seed_from_skill_domains():
-    """merge_build_map returns a deep copy of skill_domains.build_map unchanged."""
-    # Arrange — build_map lives under skill_domains (relocated).
-    config = {'skill_domains': {'build_map': _FAKE_AGGREGATED}}
+def test_merge_build_map_returns_seed_from_build_block():
+    """merge_build_map returns a deep copy of build.map unchanged."""
+    # Arrange — build_map lives under the top-level build block (relocated).
+    config = {'build': {'map': _FAKE_AGGREGATED}}
 
     # Act
     merged = _config_core_mod.merge_build_map(config)
@@ -118,11 +115,11 @@ def test_merge_build_map_returns_seed_from_skill_domains():
     # Assert — same structure, deep-copied (mutating result must not touch config)
     assert merged == _FAKE_AGGREGATED
     merged['python'][0]['build_class'] = 'mutated'
-    assert config['skill_domains']['build_map']['python'][0]['build_class'] == 'compile'
+    assert config['build']['map']['python'][0]['build_class'] == 'compile'
 
 
 def test_merge_build_map_fails_closed_when_build_map_absent():
-    """merge_build_map raises BuildMapMissingError when skill_domains.build_map is absent.
+    """merge_build_map raises BuildMapMissingError when build.map is absent.
 
     There is no override layer and no silent empty-dict fallback — a missing seed
     surfaces as a structured error (fail-closed) instead of a silent no-build.
@@ -131,37 +128,37 @@ def test_merge_build_map_fails_closed_when_build_map_absent():
         _config_core_mod.merge_build_map({})
 
 
-def test_merge_build_map_fails_closed_when_skill_domains_lacks_build_map():
-    """A skill_domains block without a build_map key still fails closed."""
+def test_merge_build_map_fails_closed_when_build_block_lacks_map():
+    """A build block without a map key still fails closed."""
     with pytest.raises(_config_core_mod.BuildMapMissingError):
-        _config_core_mod.merge_build_map({'skill_domains': {'system': {}}})
+        _config_core_mod.merge_build_map({'build': {'other': {}}})
 
 
 @pytest.mark.parametrize('corrupt_build_map', [[], ['glob'], 'a string', 42, {'python': None}, {'python': 'not a list'}])
 def test_merge_build_map_fails_closed_when_build_map_is_non_dict(corrupt_build_map):
-    """A present-but-corrupt skill_domains.build_map raises BuildMapMissingError.
+    """A present-but-corrupt build.map raises BuildMapMissingError.
 
-    Regression: merge_build_map previously assigned skill_domains['build_map'] to
+    Regression: merge_build_map previously assigned build['map'] to
     seed without a type check, so a corrupt non-dict value crashed the subsequent
     .items() deep-copy with an untyped AttributeError. Partially corrupt dicts
     (e.g. {'python': None} or {'python': 'not a list'}) also crash the inner list
     comprehension with an untyped TypeError. The hardened fail-closed guard now
     treats all corrupt build_map shapes the same as an absent one.
     """
-    config = {'skill_domains': {'build_map': corrupt_build_map}}
+    config = {'build': {'map': corrupt_build_map}}
     with pytest.raises(_config_core_mod.BuildMapMissingError):
         _config_core_mod.merge_build_map(config)
 
 
 def test_get_build_map_returns_empty_when_absent():
-    """get_build_map returns {} (not an error) when skill_domains.build_map is absent."""
+    """get_build_map returns {} (not an error) when build.map is absent."""
     assert _config_core_mod.get_build_map({}) == {}
-    assert _config_core_mod.get_build_map({'skill_domains': {}}) == {}
+    assert _config_core_mod.get_build_map({'build': {}}) == {}
 
 
 def test_get_build_map_returns_relocated_block():
-    """get_build_map locates the relocated build_map under skill_domains."""
-    config = {'skill_domains': {'build_map': _FAKE_AGGREGATED}}
+    """get_build_map locates the relocated build_map under the top-level build block."""
+    config = {'build': {'map': _FAKE_AGGREGATED}}
     assert _config_core_mod.get_build_map(config) == _FAKE_AGGREGATED
 
 
@@ -170,8 +167,8 @@ def test_get_build_map_returns_relocated_block():
 # =============================================================================
 
 
-def test_build_map_seed_writes_aggregated_structure_under_skill_domains(plan_context, monkeypatch):
-    """build-map seed writes the aggregated {domain: [...]} structure under skill_domains.
+def test_build_map_seed_writes_aggregated_structure_under_build_block(plan_context, monkeypatch):
+    """build-map seed writes the aggregated {domain: [...]} structure under build.map.
 
     Init no longer seeds build_map, so a bare init leaves the block absent; the
     first explicit seed against the deterministic fake is the authoritative write.
@@ -186,13 +183,13 @@ def test_build_map_seed_writes_aggregated_structure_under_skill_domains(plan_con
     # Assert — handler reports a seed action and the persisted block matches
     assert result['status'] == 'success'
     assert result['action'] == 'seeded'
-    assert result['domain_count'] == 2
+    assert result['domain_count'] == 1
 
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    # build_map is relocated under skill_domains — NOT at the top level.
-    assert config['skill_domains']['build_map'] == _FAKE_AGGREGATED
-    assert 'build_map' not in config
+    # build_map is relocated under the top-level build block — NOT under skill_domains.
+    assert config['build']['map'] == _FAKE_AGGREGATED
+    assert 'build_map' not in config.get('skill_domains', {})
 
 
 def test_build_map_seed_is_write_once(plan_context, monkeypatch):
@@ -207,7 +204,7 @@ def test_build_map_seed_is_write_once(plan_context, monkeypatch):
     # seeded entries — there is no separate override layer).
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    config['skill_domains']['build_map']['python'][0]['build_class'] = 'none'
+    config['build']['map']['python'][0]['build_class'] = 'none'
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
     # Act — re-seed
@@ -216,11 +213,11 @@ def test_build_map_seed_is_write_once(plan_context, monkeypatch):
     # Assert — re-seed preserved the user correction, did not clobber
     assert second['action'] == 'preserved'
     after = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert after['skill_domains']['build_map']['python'][0]['build_class'] == 'none'
+    assert after['build']['map']['python'][0]['build_class'] == 'none'
 
 
 def test_user_correction_survives_reseed_and_wins_at_read(plan_context, monkeypatch):
-    """A direct correction to skill_domains.build_map survives a re-seed and wins at read."""
+    """A direct correction to build.map survives a re-seed and wins at read."""
     # Arrange — seed, then correct an entry directly on the seeded block.
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _patch_aggregate(monkeypatch)
@@ -228,7 +225,7 @@ def test_user_correction_survives_reseed_and_wins_at_read(plan_context, monkeypa
 
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    config['skill_domains']['build_map']['python'][0]['build_class'] = 'none'
+    config['build']['map']['python'][0]['build_class'] = 'none'
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
     # Act — re-seed (write-once preserves the corrected seed), then read.
@@ -237,14 +234,14 @@ def test_user_correction_survives_reseed_and_wins_at_read(plan_context, monkeypa
 
     # Assert — correction survived re-seed and wins at read
     persisted = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert persisted['skill_domains']['build_map']['python'][0]['build_class'] == 'none'
+    assert persisted['build']['map']['python'][0]['build_class'] == 'none'
     assert read_result['status'] == 'success'
     merged_python = {e['glob']: e for e in read_result['build_map']['python']}
     assert merged_python['scripts/*.py']['build_class'] == 'none'
 
 
 def test_build_map_read_returns_seed(plan_context, monkeypatch):
-    """build-map read returns the seed from skill_domains.build_map unchanged."""
+    """build-map read returns the seed from build.map unchanged."""
     # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _patch_aggregate(monkeypatch)
@@ -256,16 +253,16 @@ def test_build_map_read_returns_seed(plan_context, monkeypatch):
     # Assert
     assert result['status'] == 'success'
     assert result['build_map'] == _FAKE_AGGREGATED
-    assert result['domain_count'] == 2
+    assert result['domain_count'] == 1
 
 
 def test_build_map_read_fails_closed_when_seed_absent(plan_context):
-    """build-map read returns a structured error when skill_domains.build_map is absent.
+    """build-map read returns a structured error when build.map is absent.
 
     Init no longer seeds the block, so a bare init already leaves build_map absent
     — read must fail closed without any pre-read stripping.
     """
-    # Arrange — bare init leaves skill_domains without a build_map block.
+    # Arrange — bare init leaves the config without a build.map block.
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
     # Act
@@ -273,7 +270,7 @@ def test_build_map_read_fails_closed_when_seed_absent(plan_context):
 
     # Assert — fail-closed surfaces as a structured error, not an empty success.
     assert result['status'] == 'error'
-    assert 'build_map' in result['error']
+    assert 'build.map' in result['error']
 
 
 # =============================================================================
@@ -284,10 +281,10 @@ def test_build_map_read_fails_closed_when_seed_absent(plan_context):
 def test_seed_never_writes_retired_override_keys(plan_context, monkeypatch):
     """No retired build_map_overrides key is written by the seed path.
 
-    The override layer was dropped: the build_map under skill_domains is the
-    single source of truth, and user corrections are made directly to the seeded
-    entries. The build_map cluster no longer carries any activation_globs of its
-    own — pre-push activation derives from the build_map's per-entry globs.
+    The override layer was dropped: the build_map under the top-level build block
+    is the single source of truth, and user corrections are made directly to the
+    seeded entries. The build_map cluster no longer carries any activation_globs of
+    its own — pre-push activation derives from the build_map's per-entry globs.
     """
     # Arrange / Act
     _cmd_init_mod.cmd_init(Namespace(force=False))
@@ -298,13 +295,13 @@ def test_seed_never_writes_retired_override_keys(plan_context, monkeypatch):
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
     assert 'build_map_overrides' not in config
-    assert 'build_map_overrides' not in config.get('skill_domains', {})
-    # The build_map cluster under skill_domains carries no activation_globs key —
+    assert 'build_map_overrides' not in config.get('build', {})
+    # The build_map cluster under build carries no activation_globs key —
     # activation derives from the per-entry globs, not a separate cluster list.
     # (The unrelated plan.phase-6-finalize.pre_push_quality_gate.activation_globs
     # field is a distinct knob and is NOT covered by this assertion.)
-    assert 'activation_globs' not in config['skill_domains']
-    build_map = config['skill_domains']['build_map']
+    assert 'activation_globs' not in config['build']
+    build_map = config['build']['map']
     assert 'activation_globs' not in build_map
 
 
@@ -461,11 +458,11 @@ def test_aggregate_build_map_stamps_each_entry_with_a_build_class(monkeypatch):
 
 
 def test_seed_cli_persists_route_for_out_of_scripts_glob(plan_context, monkeypatch):
-    """The seed CLI persists the out-of-scripts route under skill_domains.
+    """The seed CLI persists the out-of-scripts route under build.map.
 
     End-to-end through the seed handler (cmd_build_map_seed): init, then seed
     against an extension declaring an out-of-scripts production route. The
-    persisted skill_domains.build_map must carry a python-domain glob matching
+    persisted build.map must carry a python-domain glob matching
     that file. Init no longer pre-seeds, so the seed writes the derived block.
     """
     # Arrange — init, wire the real aggregator against an extension declaring an
@@ -482,7 +479,7 @@ def test_seed_cli_persists_route_for_out_of_scripts_glob(plan_context, monkeypat
 
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    build_map = config['skill_domains']['build_map']
+    build_map = config['build']['map']
     assert 'python' in build_map
     prod_globs = [e['glob'] for e in build_map['python'] if e['role'] == 'production']
 
@@ -668,11 +665,11 @@ def test_aggregate_tolerates_raising_applies_to_module(monkeypatch):
 # The premature init-time auto-seed was removed: build_map is materialised only at
 # wizard Step 8b (build-map seed) after architecture discovery, so the
 # applicability filter has discovered modules to scope against. A bare init must
-# leave skill_domains present but build_map absent.
+# leave the build.map block absent.
 
 
 def test_fresh_init_does_not_seed_build_map(plan_context):
-    """`manage-config init` no longer seeds skill_domains.build_map.
+    """`manage-config init` no longer seeds build.map.
 
     Regression for the seed-ordering fix: init runs before architecture discovery,
     so it must NOT seed the (applicability-scoped) build_map. The block is absent
@@ -681,29 +678,28 @@ def test_fresh_init_does_not_seed_build_map(plan_context):
     # Arrange / Act — fresh init.
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # Assert — skill_domains is present but carries no build_map block.
+    # Assert — the build.map block is absent after a bare init.
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert 'skill_domains' in config
-    assert 'build_map' not in config['skill_domains'], (
-        'init must NOT seed skill_domains.build_map (seeded at Step 8b after architecture discovery)'
+    assert 'map' not in config.get('build', {}), (
+        'init must NOT seed build.map (seeded at Step 8b after architecture discovery)'
     )
 
 
 def test_get_default_config_has_skill_domains_without_build_map():
-    """get_default_config() returns skill_domains present but build_map absent.
+    """get_default_config() returns skill_domains present but build.map absent.
 
     The default config no longer ships a build_map block — get_default_config()
-    must return skill_domains (with at least the system domain) and no build_map
-    nested under it.
+    must return skill_domains (with at least the system domain) and no build.map
+    block.
     """
     # Act
     config = _config_defaults_mod.get_default_config()
 
-    # Assert — skill_domains present, build_map absent.
+    # Assert — skill_domains present, build.map absent.
     assert 'skill_domains' in config
     assert 'system' in config['skill_domains']
-    assert 'build_map' not in config['skill_domains']
+    assert 'map' not in config.get('build', {})
 
 
 # =============================================================================
@@ -736,11 +732,11 @@ def test_force_reseed_clears_and_rederives_existing_block(plan_context, monkeypa
     # current aggregation.
     assert forced['status'] == 'success'
     assert forced['action'] == 're-derived'
-    assert forced['domain_count'] == 2
+    assert forced['domain_count'] == 1
 
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert config['skill_domains']['build_map'] == _FAKE_AGGREGATED
+    assert config['build']['map'] == _FAKE_AGGREGATED
 
 
 def test_default_seed_without_force_preserves_existing_block(plan_context, monkeypatch):
@@ -775,7 +771,7 @@ def test_force_reseed_overwrites_user_correction(plan_context, monkeypatch):
 
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    config['skill_domains']['build_map']['python'][0]['build_class'] = 'none'
+    config['build']['map']['python'][0]['build_class'] = 'none'
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
     # Act — forced reseed.
@@ -784,4 +780,4 @@ def test_force_reseed_overwrites_user_correction(plan_context, monkeypatch):
     # Assert — the correction was overwritten by the re-derived aggregation.
     assert forced['action'] == 're-derived'
     after = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert after['skill_domains']['build_map']['python'][0]['build_class'] == 'compile'
+    assert after['build']['map']['python'][0]['build_class'] == 'compile'

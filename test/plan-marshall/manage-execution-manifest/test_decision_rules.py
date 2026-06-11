@@ -100,7 +100,7 @@ def _compose_ns(
 def _seed_marshal(ci_provider: str | None = 'github') -> Path:
     """Write a minimal marshal.json at PLAN_BASE_DIR/marshal.json for the test.
 
-    Pre-push-quality-gate activation derives from ``skill_domains.build_map``
+    Pre-push-quality-gate activation derives from ``build.map``
     globs (D7/D8), so the seed carries a build_map entry whose ``**/*.py`` glob
     keeps the gate active against a matching footprint.
     """
@@ -108,8 +108,8 @@ def _seed_marshal(ci_provider: str | None = 'github') -> Path:
 
     marshal: dict = {
         'plan': {'phase-6-finalize': {}},
-        'skill_domains': {
-            'build_map': {
+        'build': {
+            'map': {
                 'python': [
                     {'glob': '**/*.py', 'role': 'production', 'build_class': 'compile'},
                 ],

@@ -81,18 +81,18 @@ JSON structure and field definitions for project configuration.
       ]
     }
   },
-  "skill_domains": {
-    "build_map": {
+  "build": {
+    "map": {
       "python": [
         { "glob": "marketplace/targets/*.py", "role": "production", "build_class": "compile" },
         { "glob": "marketplace/bundles/pm-dev-java/skills/plan-marshall-plugin/*.py", "role": "production", "build_class": "compile" },
         { "glob": "marketplace/bundles/plan-marshall/skills/manage-config/scripts/*.py", "role": "production", "build_class": "compile" },
         { "glob": "test/plan-marshall/manage-config/*.py", "role": "test", "build_class": "module-tests" }
-      ],
-      "documentation": [
-        { "glob": "marketplace/bundles/plan-marshall/skills/manage-config/standards/*.md", "role": "documentation", "build_class": "docs-validate" }
       ]
     },
+    "queue": { "max_slots": 5, "max_retries": 10 }
+  },
+  "skill_domains": {
     "system": {
       "defaults": ["plan-marshall:dev-agent-behavior-rules"],
       "optionals": ["plan-marshall:dev-agent-behavior-rules"],
@@ -167,32 +167,29 @@ Key structural summary:
 - **Technical domains**: Reference a `bundle` and declare `workflow_skill_extensions` (outline, triage)
 - **Profiles**: Loaded at runtime from `extension.py`, not stored in marshal.json
 
-## Section: skill_domains.build_map
+## Section: build.map
 
-The file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. `build_map` lives under `skill_domains` (its owning block) and is the persisted, user-adaptable layer of the contract; the deterministic deriver (`architecture derive-verification`) reads the effective map to emit a task's verification command set.
+The file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. The build map lives at the top-level `build.map` block (its owning block, peer to `build.queue`) and is the persisted, user-adaptable layer of the contract; the deterministic deriver (`architecture derive-verification`) reads the effective map to emit a task's verification command set.
 
 ### Source, applicability scoping, write-once semantics, and fail-closed read
 
-`build_map` is **seeded from the domain extensions**, not hand-authored, and its globs are **explicit `(pattern, role)` routes**, not author-guessed literals. Each registered extension's `classify_globs()` declares those routes directly — a concrete glob pattern paired with one of the four resolved roles (see [extension-contract.md](../../extension-api/standards/extension-contract.md) § `classify_globs`); the aggregator collects them verbatim via the `script-shared` route collector. `classify_build_class(glob, role)` then stamps each route with its canonical-named `build_class`; the aggregator collects these into the `{domain: [{glob, role, build_class}]}` structure. Patterns use single-`*` fnmatch globs (never recursive `**`): because `fnmatch` lets a single `*` span `/`, a compact route like `marketplace/bundles/*.py` covers every nested `.py` under `marketplace/bundles/` — including each `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py` — and `marketplace/targets/*.py` covers `marketplace/targets/generate.py` and any file beneath `targets/`. Completeness is enforced by a separate **git-tracked completeness validator**: it scans `git ls-files` and flags any tracked source file (suffix `.py`) no declared `production`/`test` route covers, so a forgotten production module surfaces as an uncovered path while untracked `target/` / `.venv/` output is never flagged. The predicates stay in extension Python — they are **not** migrated into config; `build_map` is the seeded snapshot of the collected routes.
+`build_map` is **seeded from the domain extensions**, not hand-authored, and its globs are **explicit `(pattern, role)` routes**, not author-guessed literals. Each registered extension's `classify_globs()` declares those routes directly — a concrete glob pattern paired with one of the three resolved roles (see [extension-contract.md](../../extension-api/standards/extension-contract.md) § `classify_globs`); the aggregator collects them verbatim via the `script-shared` route collector. `classify_build_class(glob, role)` then stamps each route with its canonical-named `build_class`; the aggregator collects these into the `{domain: [{glob, role, build_class}]}` structure. Patterns use single-`*` fnmatch globs (never recursive `**`): because `fnmatch` lets a single `*` span `/`, a compact route like `marketplace/bundles/*.py` covers every nested `.py` under `marketplace/bundles/` — including each `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py` — and `marketplace/targets/*.py` covers `marketplace/targets/generate.py` and any file beneath `targets/`. Completeness is enforced by a separate **git-tracked completeness validator**: it scans `git ls-files` and flags any tracked source file (suffix `.py`) no declared `production`/`test` route covers, so a forgotten production module surfaces as an uncovered path while untracked `target/` / `.venv/` output is never flagged. The predicates stay in extension Python — they are **not** migrated into config; `build_map` is the seeded snapshot of the collected routes.
 
 **Applicability scoping.** `aggregate_build_map()` includes a domain's routes only when that domain applies to the project. It consults each domain's owning extension's `applies_to_module()` against the discovered project modules (`discover_project_modules`, keyed off the tracked-config parent) and keeps the domain's routes only when `applies_to_module()` reports `applicable: True` for at least one discovered module — the same applicability predicate architecture enrichment uses. A Python-only project therefore never receives `java` / `oci` / `javascript` routes merely because those bundles are installed. Because applicability is resolved against discovered modules, the seed is **post-architecture-only**: when module discovery yields no modules (architecture not yet discovered) the aggregation is empty. Each `applies_to_module()` call is defended so a single misbehaving extension cannot crash the seed.
 
-Seeding is **write-once**: an existing `build_map` block is never clobbered by a default re-seed, so a correction made directly to the seeded block survives. The build map is **not** seeded at `init` or by `sync-defaults` — `get_default_config()` does not include a `build_map` block. The wizard's Step 8b (`build-map seed`, run after architecture discovery so applicability scoping has discovered modules) is the **sole authoritative seed point**; the write-once guard makes that first explicit seed authoritative. Re-seed (preserving the existing seed) via `build-map seed`; force a clean re-derivation that discards the existing block via `build-map seed --force`; read the effective map via `build-map read`. The read **fails closed**: when `skill_domains.build_map` is absent the read returns a structured error rather than an empty map, so a missing seed surfaces instead of silently yielding a no-build. There is no separate override layer; corrections are made directly to the seeded entries.
+Seeding is **write-once**: an existing `build.map` block is never clobbered by a default re-seed, so a correction made directly to the seeded block survives. The build map is **not** seeded at `init` or by `sync-defaults` — `get_default_config()` does not include a `build.map` block. The wizard's Step 8b (`build-map seed`, run after architecture discovery so applicability scoping has discovered modules) is the **sole authoritative seed point**; the write-once guard makes that first explicit seed authoritative. Re-seed (preserving the existing seed) via `build-map seed`; force a clean re-derivation that discards the existing block via `build-map seed --force`; read the effective map via `build-map read`. The read **fails closed**: when `build.map` is absent the read returns a structured error rather than an empty map, so a missing seed surfaces instead of silently yielding a no-build. There is no separate override layer; corrections are made directly to the seeded entries.
 
 ### Structure
 
 ```json
 {
-  "skill_domains": {
-    "build_map": {
+  "build": {
+    "map": {
       "python": [
         { "glob": "marketplace/targets/*.py", "role": "production", "build_class": "compile" },
         { "glob": "marketplace/bundles/pm-dev-java/skills/plan-marshall-plugin/*.py", "role": "production", "build_class": "compile" },
         { "glob": "marketplace/bundles/plan-marshall/skills/manage-config/scripts/*.py", "role": "production", "build_class": "compile" },
         { "glob": "test/plan-marshall/manage-config/*.py", "role": "test", "build_class": "module-tests" }
-      ],
-      "documentation": [
-        { "glob": "marketplace/bundles/plan-marshall/skills/manage-config/standards/*.md", "role": "documentation", "build_class": "docs-validate" }
       ]
     }
   }
@@ -206,25 +203,24 @@ The `python`-domain globs above are a representative sample — the real seed ca
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `glob` | string | Yes | The path glob the entry classifies. Precedence is **longest-glob-wins** (the existing aggregator specificity): when two entries match a path, the more specific glob claims it. |
-| `role` | string | Yes | File role — one of `production`, `test`, `documentation`, `config`. |
-| `build_class` | string | Yes | The deterministic build action for the `(glob, role)` pair — one of the closed five-value enum below. |
+| `role` | string | Yes | File role — one of `production`, `test`, `config`. |
+| `build_class` | string | Yes | The deterministic build action for the `(glob, role)` pair — one of the closed four-value enum below. |
 
 ### build_class enum
 
-Closed five-value set, **named for the canonical command directly** — the `build_class` value IS the canonical command name, with no name-to-name indirection map. The single source of truth is `BUILD_CLASSES` in `script-shared`'s extension constants, shared by `ExtensionBase.classify_build_class()`, the domain extensions, and their tests.
+Closed four-value set, **named for the canonical command directly** — the `build_class` value IS the canonical command name, with no name-to-name indirection map. The single source of truth is `BUILD_CLASSES` in `script-shared`'s extension constants, shared by `ExtensionBase.classify_build_class()`, the domain extensions, and their tests.
 
 | `build_class` | Role it attaches to | Derived verification |
 |---------------|---------------------|----------------------|
 | `compile` | production | `compile` for the changed module |
 | `module-tests` | test | `test-compile` + `module-tests` for the changed module |
-| `docs-validate` | documentation | `doctor-marketplace quality-gate` (marketplace skill `.md`) / asciidoc validate (other docs) |
 | `verify` | config | `verify` (full reactor for the changed module) |
 | `none` | any | No command — a changed set whose only role yields `none` derives no build |
 
 Managed via:
-- `build-map seed` (re-seed `skill_domains.build_map` from applicable extensions — write-once)
+- `build-map seed` (re-seed `build.map` from applicable extensions — write-once)
 - `build-map seed --force` (clear any existing block and re-derive a clean one — bypasses the write-once guard)
-- `build-map read` (return the effective map from `skill_domains.build_map`; fail-closed when absent)
+- `build-map read` (return the effective map from `build.map`; fail-closed when absent)
 
 ## Section: system
 
@@ -439,7 +435,7 @@ Finalize pipeline with numbered boolean steps.
 | `qgate` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the finalize blocking-findings re-capture (`pre-push-quality-gate`). **Highest-risk gate** — `never` can mask real build/test failures and push a red tree. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | `plugin_doctor` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the structural marketplace lint before push (`finalize-step-plugin-doctor`). `always` overrides the `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | `simplify` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the holistic post-implementation simplification sweep (`finalize-step-simplify`). `always` forces the step in even when the composer's `simplify_inactive` pre-filter would drop it; `never` removes it; `auto` (the default) defers to that pre-filter. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
-| — (pre-push-quality-gate activation) | derived | — | The `default:pre-push-quality-gate` finalize step's activation is **derived from `skill_domains.build_map`** — no dedicated config key. The manifest composer activates the step when the live footprint touches any `glob` registered in `skill_domains.build_map`; an absent build_map or no footprint match leaves the step inactive. |
+| — (pre-push-quality-gate activation) | derived | — | The `default:pre-push-quality-gate` finalize step's activation is **derived from `build.map`** — no dedicated config key. The manifest composer activates the step when the live footprint touches any `glob` registered in `build.map`; an absent build_map or no footprint match leaves the step inactive. |
 | `steps` | list | (see below) | Ordered list of step references to execute — persisted sorted ascending by each step's authoritative `order` value |
 
 Default steps: `default:commit-push`, `default:create-pr`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).

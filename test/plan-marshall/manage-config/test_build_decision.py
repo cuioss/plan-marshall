@@ -4,7 +4,7 @@
 Covers the two halves of deliverable 4:
 
 - ``should_execute_build`` (module-level in ``script-shared``/``extension_base``):
-  the pure build-necessity decision over the ``skill_domains.build_map`` globs and
+  the pure build-necessity decision over the ``build.map`` globs and
   the live plan footprint. Both verdicts are exercised:
     * empty build_map           -> not_necessary (reason populated)
     * empty footprint           -> not_necessary (reason populated)

@@ -282,4 +282,21 @@ Interpret the output:
 
 ---
 
+## Detect/Restore Dropped Finalize Steps (meta-project)
+
+The meta-project's `phase-6-finalize.steps` array carries **hand-maintained** `project:` finalize steps — the `project:finalize-step-{pre-submission-self-review,plugin-doctor,deploy-target,sync-plugin-cache}` skills shipped under `.claude/skills/`. These are NOT preset-driven: the `FinalizeStepPresets` (LOCAL / STANDARD / FULL) are **consumer-scoped** and carry zero `project:` entries, because a preset that seeded a `project:` step would reference a skill a consumer project cannot resolve. A full reconfigure or preset re-apply therefore must not be used to "restore" the meta-project's project-local steps — doing so would overwrite them with a consumer preset that omits them.
+
+To detect whether any shipped `project:` step has drifted out of the configured array, run the finalize-step check (also surfaced by the healthcheck — see `menu-healthcheck.md` Step 6c):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-missing-finalize-steps
+```
+
+- `status: ok` → nothing dropped.
+- `status: missing` with `missing_project_finalize_steps` → the listed `project:` steps are shipped under `.claude/skills/finalize-step-*` but absent from `phase-6-finalize.steps`. **Restore** them by re-adding the listed notations to `plan.phase-6-finalize.steps` (hand-edit or `finalize-steps set-steps`), preserving their canonical position in the array; do NOT re-apply a preset.
+
+Consumer projects ship no project-local finalize steps, so `missing_project_finalize_steps` is always absent there.
+
+---
+
 After any operation completes, return to Main Menu.

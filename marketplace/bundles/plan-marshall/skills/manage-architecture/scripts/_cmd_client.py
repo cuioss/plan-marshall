@@ -124,17 +124,11 @@ _HINT_ORCHESTRATOR: str = 'Exceeds Bash ceiling; orchestrator-tier only'
 #
 # The build_class IS the canonical ``architecture resolve --command`` verb: a
 # ``compile``/``module-tests``/``verify`` build_class resolves directly to the
-# command of the same name (no indirection map). ``docs-validate`` and ``none``
-# are NOT architecture-resolved (a docs validation gate is a fixed plugin-doctor
-# / asciidoc notation, and ``none`` derives nothing), so the deriver handles
-# those two explicitly. The single source of truth for this contract is
+# command of the same name (no indirection map). ``none`` is NOT
+# architecture-resolved (it derives nothing), so the deriver handles it
+# explicitly. The single source of truth for this contract is
 # ``manage-architecture/standards/resolve-command.md`` §
 # "Build-class → verification command".
-
-# Marketplace skill markdown bodies validate through the scoped plugin-doctor
-# quality-gate (rule-complete, CI-equivalent). Other documentation validates
-# through asciidoc. The deriver picks the gate per the changed path.
-_DOCS_MARKETPLACE_GLOB = 'marketplace/bundles/*/skills/*'
 
 # Marketplace bundle root, used to locate each build skill's ``_*_execute.py``
 # module for ``_CONFIG`` import. Resolved via the validated bundles-root
@@ -1330,50 +1324,15 @@ def _augment_resolved(executable_result: dict, project_dir: str) -> dict:
     return augmented
 
 
-def _derive_docs_command(path: str) -> dict[str, str]:
-    """Return the documentation validation command for a docs-validate path.
-
-    Marketplace skill markdown bodies derive the scoped, rule-complete
-    plugin-doctor quality-gate (the CI-equivalent gate). All other docs derive
-    asciidoc validation. The returned dict mirrors the ``resolve`` shape
-    (``command`` + ``executable``) so derived docs commands stream into the
-    same output structure as architecture-resolved commands.
-    """
-    if fnmatch.fnmatch(path, _DOCS_MARKETPLACE_GLOB) or fnmatch.fnmatch(path, _DOCS_MARKETPLACE_GLOB + '/*'):
-        # Scope the doctor gate to the skill directory owning the changed file.
-        skill_dir = _marketplace_skill_dir(path)
-        executable = (
-            'python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace '
-            f'quality-gate --paths {skill_dir} --marketplace-root marketplace'
-        )
-        return {'command': 'docs-validate', 'executable': executable}
-    executable = f'python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc validate --path {path}'
-    return {'command': 'docs-validate', 'executable': executable}
-
-
-def _marketplace_skill_dir(path: str) -> str:
-    """Return the ``marketplace/bundles/<bundle>/skills/<skill>`` dir for a path.
-
-    Falls back to the full path's parent chain when the path is shorter than
-    the skill-directory depth (defensive — the caller only invokes this for
-    paths already matched against the marketplace-skill glob).
-    """
-    parts = Path(path).parts
-    # marketplace / bundles / <bundle> / skills / <skill> / ...
-    if len(parts) >= 5 and parts[0] == 'marketplace' and parts[1] == 'bundles' and parts[3] == 'skills':
-        return str(Path(*parts[:5]))
-    return str(Path(path).parent)
-
-
 def _resolve_verbs_for_build_class(build_class: str) -> list[str]:
     """Return the ``architecture resolve --command`` verbs for a build_class.
 
     The ``build_class`` names the canonical command directly, so it resolves as
     itself — except ``module-tests``, whose test gate is the two-rung ladder
     ``test-compile`` **+** ``module-tests`` (compile the tests, then run them).
-    ``docs-validate`` and ``none`` are handled by the deriver before this is
-    reached and yield an empty verb list here. The single source of truth for
-    this mapping is ``manage-architecture/standards/resolve-command.md`` §
+    ``none`` is handled by the deriver before this is reached and yields an empty
+    verb list here. The single source of truth for this mapping is
+    ``manage-architecture/standards/resolve-command.md`` §
     "Build-class → verification command".
     """
     if build_class == 'compile':
@@ -1424,13 +1383,6 @@ def cmd_derive_verification(args) -> dict:
         build_class = item['build_class']
 
         if build_class == 'none':
-            continue
-
-        if build_class == 'docs-validate':
-            docs_cmd = _derive_docs_command(path)
-            if docs_cmd['executable'] not in seen_executables:
-                seen_executables.add(docs_cmd['executable'])
-                commands.append({'build_class': build_class, 'path': path, **docs_cmd})
             continue
 
         resolve_verbs = _resolve_verbs_for_build_class(build_class)

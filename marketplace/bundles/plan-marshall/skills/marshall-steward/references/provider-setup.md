@@ -53,11 +53,11 @@ Capture `provider` and `confidence` from the output. Map the detected provider t
 
 - **IF** `confidence == high` **AND** the mapped `skill_name` is present in the ci-category providers list from Step 7-2:
   - Auto-select that provider (add it to the activated CI selection).
-  - Log the decision via `manage-logging`:
+  - Log the decision via `manage-logging` on the global/no-plan path (steward runs before any plan exists, so `--plan-id` is omitted — see `manage-logging` SKILL.md § "Global / no-plan logging path" and the STEWARD audit namespace):
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-      decision --plan-id {plan_id} --level INFO \
-      --message "(plan-marshall:marshall-steward) Auto-selected CI provider {skill_name} — detected={provider}, confidence={confidence}, matched_skill={skill_name}"
+      decision --level INFO \
+      --message "[STEWARD] (plan-marshall:marshall-steward) Auto-selected CI provider {skill_name} — detected={provider}, confidence={confidence}, matched_skill={skill_name}"
     ```
   - **Skip** the AskUserQuestion block in Step 7-4c.
 - **ELSE** (confidence is `medium` or `none`, or detected provider not in the ci-category list): proceed to Step 7-4c.

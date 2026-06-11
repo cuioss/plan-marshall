@@ -479,7 +479,7 @@ def _clamp_build_queue_upper_limit(value: int) -> int:
 
 
 def _read_build_queue_upper_limit() -> int:
-    """Read ``build_queue.upper_limit_seconds``, clamped to ``[600, 3600]``.
+    """Read ``build.queue.upper_limit_seconds``, clamped to ``[600, 3600]``.
 
     Defaults to the 600 s floor when the section/key is absent. A non-integer or
     boolean stored value (``bool`` is an ``int`` subclass) falls back to the
@@ -487,7 +487,10 @@ def _read_build_queue_upper_limit() -> int:
     ``build_queue.py``. The returned value is always within the clamp bounds.
     """
     config = read_run_config(get_run_config_path())
-    block = config.get('build_queue')
+    build = config.get('build')
+    if not isinstance(build, dict):
+        return _BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS
+    block = build.get('queue')
     if not isinstance(block, dict):
         return _BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS
     raw = block.get('upper_limit_seconds')
@@ -497,10 +500,11 @@ def _read_build_queue_upper_limit() -> int:
 
 
 def _write_build_queue_upper_limit(value: int) -> None:
-    """Persist ``build_queue.upper_limit_seconds`` clamped to ``[600, 3600]``."""
+    """Persist ``build.queue.upper_limit_seconds`` clamped to ``[600, 3600]``."""
     config_path = get_run_config_path()
     config = read_run_config(config_path)
-    config.setdefault('build_queue', {})['upper_limit_seconds'] = _clamp_build_queue_upper_limit(value)
+    build = config.setdefault('build', {})
+    build.setdefault('queue', {})['upper_limit_seconds'] = _clamp_build_queue_upper_limit(value)
     _write_json_file(config_path, config)
 
 

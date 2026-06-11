@@ -50,7 +50,6 @@ from conftest import (  # type: ignore[import-not-found]
 # contract anchor the real build extensions subclass.
 from extension_base import (  # type: ignore[import-not-found]
     ROLE_CONFIG,
-    ROLE_DOCUMENTATION,
     ROLE_PRODUCTION,
     ROLE_TEST,
     BuildExtensionBase,
@@ -91,7 +90,10 @@ class _StubDocsBuildExtension(BuildExtensionBase):
         return [{'domain': {'key': 'documentation', 'name': 'D', 'description': 'd'}, 'profiles': {}}]
 
     def classify_globs(self) -> list[tuple[str, str]]:
-        return [('*.md', ROLE_DOCUMENTATION)]
+        # 'documentation' is no longer a build_map role (ROLE_DOCUMENTATION was
+        # removed); the literal role string here is exactly what the deriver must
+        # filter out, so this extension contributes NO build_map entries.
+        return [('*.md', 'documentation')]
 
 
 class _StubEmptyBuildExtension(BuildExtensionBase):
@@ -366,3 +368,69 @@ def test_real_tree_routes_cover_marketplace_targets_generate():
     derived = _discovery.derive_build_map_globs(PROJECT_ROOT)
     prod_globs = _prod_globs(derived['python'])
     assert _matches_any('marketplace/targets/generate.py', prod_globs)
+
+
+# =============================================================================
+# plan-marshall-plugin skill-domains: the vestigial build domain is retired
+# =============================================================================
+#
+# The plan-marshall-plugin extension once declared an empty-profiles ``build``
+# skill-domain alongside ``general-dev``. ADR-004 moved the file-to-build
+# contract to the build-system extensions, so the vestigial ``build`` domain was
+# removed — get_skill_domains() now returns ONLY general-dev. Removing it also
+# dissolves the name collision with the new top-level ``build`` config block.
+
+def _load_plan_marshall_plugin_extension():
+    """Load the plan-marshall-plugin ``extension.py`` from the skill ROOT.
+
+    The plan-marshall-plugin extension lives at
+    ``skills/plan-marshall-plugin/extension.py`` (skill root), NOT under a
+    ``scripts/`` subdirectory — so the conftest ``load_script_module`` helper
+    (which resolves ``.../skills/<skill>/scripts/<file>``) cannot load it.
+    This mirrors the proven ``load_extension`` helper in
+    ``test_extension_implementations.py``.
+    """
+    import importlib.util
+
+    extension_path = (
+        MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
+    )
+    if not extension_path.is_file():
+        raise FileNotFoundError(f'Extension not found: {extension_path}')
+    spec = importlib.util.spec_from_file_location(
+        'plan_marshall_plugin_extension', extension_path
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f'Could not load module from {extension_path}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_PLAN_MARSHALL_PLUGIN_EXTENSION = _load_plan_marshall_plugin_extension()
+
+
+def _plan_marshall_plugin_domain_keys() -> list[str]:
+    """Return the domain keys the plan-marshall-plugin extension declares."""
+    extension = _PLAN_MARSHALL_PLUGIN_EXTENSION.Extension()
+    return [entry['domain']['key'] for entry in extension.get_skill_domains()]
+
+
+def test_plan_marshall_plugin_get_skill_domains_returns_only_general_dev():
+    """get_skill_domains() returns exactly the general-dev domain — nothing else.
+
+    The list must contain general-dev and no other domain entry, proving the
+    vestigial build skill-domain is gone.
+    """
+    keys = _plan_marshall_plugin_domain_keys()
+    assert keys == ['general-dev'], (
+        f'plan-marshall-plugin must declare only general-dev, got {keys}'
+    )
+
+
+def test_plan_marshall_plugin_get_skill_domains_omits_build_domain():
+    """The retired build skill-domain must be absent from the returned list."""
+    keys = _plan_marshall_plugin_domain_keys()
+    assert 'build' not in keys, (
+        'the vestigial build skill-domain must not be declared by plan-marshall-plugin'
+    )
