@@ -100,9 +100,6 @@ def _is_documentation_path(path: str) -> bool:
     """
     return path.endswith(_DOC_SUFFIXES)
 
-VALID_COMMIT_STRATEGIES = ('per_plan', 'per_deliverable', 'none')
-DEFAULT_COMMIT_STRATEGY = 'per_plan'
-
 # record-step contract. The execution log records per-step execution outcome
 # plus token attribution into a new ``execution_log[]`` section of the
 # manifest, written by the ``record-step`` subcommand. Phases are the bare
@@ -851,8 +848,8 @@ def _log_decision(plan_id: str, rule: str, body: dict[str, Any]) -> None:
 
 
 def _log_commit_push_omitted(plan_id: str) -> None:
-    """Emit the decision-log entry for the ``commit_strategy_none`` pre-filter."""
-    message = '(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_strategy=none'
+    """Emit the decision-log entry for the ``commit_push_disabled`` pre-filter."""
+    message = '(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_and_push=false'
     _emit_decision_log(plan_id, message)
 
 
@@ -1029,15 +1026,15 @@ def _resolve_footprint(plan_id: str) -> list[str]:
     return sorted(footprint)
 
 
-def _apply_commit_strategy_none(phase_6_candidates: list[str], commit_strategy: str) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``commit-push`` when ``commit_strategy == none``.
+def _apply_commit_push_disabled(phase_6_candidates: list[str], commit_and_push: bool) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``commit-push`` when ``commit_and_push is False``.
 
     Also drops ``pre-push-quality-gate`` and ``pre-submission-self-review``
     because both gates are only meaningful when a downstream push exists.
     Returns the filtered list plus a flag indicating whether the pre-filter
     fired.
     """
-    if commit_strategy != 'none':
+    if commit_and_push:
         return phase_6_candidates, False
     fired = False
     filtered: list[str] = []
@@ -1064,7 +1061,7 @@ def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id
     When the verdict is ``not_necessary``, ``pre-push-quality-gate`` is removed
     from ``phase_6_candidates``. The pre-filter is a no-op when
     ``pre-push-quality-gate`` is already absent (e.g., already filtered by
-    ``_apply_commit_strategy_none``). Returns the filtered list plus a flag
+    ``_apply_commit_push_disabled``). Returns the filtered list plus a flag
     indicating whether the pre-filter fired (i.e., the step was active in the
     input but inactive after the check).
     """
@@ -1093,7 +1090,7 @@ def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], pl
     re-evaluated against the live footprint on any later re-compose.
 
     The pre-filter is a no-op when ``pre-submission-self-review`` is already
-    absent (e.g., already filtered by ``_apply_commit_strategy_none``).
+    absent (e.g., already filtered by ``_apply_commit_push_disabled``).
     Returns the filtered list plus a flag indicating whether the pre-filter
     fired.
     """
@@ -2042,13 +2039,19 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': f'Invalid track: {args.track!r}. Must be one of {list(VALID_TRACKS)}',
         }
 
-    commit_strategy = args.commit_strategy if args.commit_strategy is not None else DEFAULT_COMMIT_STRATEGY
-    if commit_strategy not in VALID_COMMIT_STRATEGIES:
+    raw_commit_and_push = getattr(args, 'commit_and_push', None)
+    if raw_commit_and_push is None:
+        commit_and_push = True
+    elif isinstance(raw_commit_and_push, bool):
+        commit_and_push = raw_commit_and_push
+    elif str(raw_commit_and_push).lower() in ('true', 'false'):
+        commit_and_push = str(raw_commit_and_push).lower() == 'true'
+    else:
         return {
             'status': 'error',
             'plan_id': plan_id,
-            'error': 'invalid_commit_strategy',
-            'message': f'Invalid commit_strategy: {commit_strategy!r}. Must be one of {list(VALID_COMMIT_STRATEGIES)}',
+            'error': 'invalid_commit_and_push',
+            'message': f'Invalid commit_and_push: {raw_commit_and_push!r}. Must be one of [true, false]',
         }
 
     # Source of truth for the candidate step lists: marshal.json
@@ -2088,7 +2091,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # row matrix's change-type / scope / recipe inputs and operate on the
     # candidate list. The order is fixed and documented in
     # standards/decision-rules.md:
-    #   1. commit_strategy_none — drop commit-push (and pre-push-quality-gate
+    #   1. commit_push_disabled — drop commit-push (and pre-push-quality-gate
     #      and pre-submission-self-review) when no push will occur.
     #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate when
     #      build.map carries no globs or no live-footprint entry
@@ -2103,7 +2106,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # Each pre-filter returns (filtered_candidates, fired_flag); we log a
     # dedicated decision-log line per fired pre-filter in addition to the row
     # log line emitted by _log_decision below.
-    phase_6_candidates, commit_push_omitted = _apply_commit_strategy_none(phase_6_candidates, commit_strategy)
+    phase_6_candidates, commit_push_omitted = _apply_commit_push_disabled(phase_6_candidates, commit_and_push)
     phase_6_candidates, pre_push_quality_gate_omitted = _apply_pre_push_quality_gate_inactive(
         phase_6_candidates, plan_id
     )
@@ -2280,7 +2283,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'steps_count': len(body['phase_6']['steps']),
         },
         'rule_fired': rule,
-        'commit_strategy': commit_strategy,
+        'commit_and_push': commit_and_push,
         'commit_push_omitted': commit_push_omitted,
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
         'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
@@ -2857,10 +2860,11 @@ def _build_parser() -> argparse.ArgumentParser:
     compose_parser.add_argument('--phase-5-steps', default=None, help='Comma-separated candidate Phase 5 step IDs')
     compose_parser.add_argument('--phase-6-steps', default=None, help='Comma-separated candidate Phase 6 step IDs')
     compose_parser.add_argument(
-        '--commit-strategy',
+        '--commit-and-push',
         default=None,
-        help='Resolved commit_strategy from phase-5-execute config (per_plan|per_deliverable|none). '
-        'When omitted defaults to per_plan. When set to none, commit-push is omitted from phase_6.steps.',
+        help='Resolved commit_and_push from phase-5-execute config (true|false). '
+        'When omitted defaults to true. When false, commit-push (and pre-push-quality-gate '
+        'and pre-submission-self-review) is omitted from phase_6.steps.',
     )
 
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)

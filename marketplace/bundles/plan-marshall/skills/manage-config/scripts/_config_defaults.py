@@ -256,7 +256,12 @@ def validate_per_deliverable_build(value: str) -> None:
 
 
 DEFAULT_PLAN_EXECUTE = {
-    'commit_strategy': 'per_plan',
+    # When true (the default), the execute loop commits per-deliverable on the
+    # feature branch and phase-6-finalize pushes + opens a PR. When false, the
+    # run is local-only: per-deliverable commits are still made, but the
+    # phase-6 commit-push/push/PR steps are stripped by the manage-execution-
+    # manifest commit_push_disabled pre-filter.
+    'commit_and_push': True,
     'max_iterations': 5,
     # Per-deliverable build depth gating phase-5-execute's chain-tail focused
     # build (Step 10). Enum: see VALID_PER_DELIVERABLE_BUILD /

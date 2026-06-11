@@ -43,7 +43,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 The bulk of project configuration. Canonical schema and field reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
-`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, and `system` sections. Each phase block holds fields specific to that phase, including the run-at-all gates and the three auto-continuation knobs, each homed under the phase whose decision it governs. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_strategy`, `per_deliverable_build`, `per_task_budget_reserve_tokens`, `max_iterations`, `review_bot_buffer_seconds`, `pr_merge_strategy`, the `plan.phase-6-finalize.*` auto-continuation knobs, `auto_rebase_threshold`, `drop_review_on_scope_gate`, `open_in_ide`, the `system.retention.*` knobs, `plan.phase-6-finalize.checks_wait_timeout_seconds`, the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, and `system` sections. Each phase block holds fields specific to that phase, including the run-at-all gates and the three auto-continuation knobs, each homed under the phase whose decision it governs. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_and_push`, `per_deliverable_build`, `per_task_budget_reserve_tokens`, `max_iterations`, `review_bot_buffer_seconds`, `pr_merge_strategy`, the `plan.phase-6-finalize.*` auto-continuation knobs, `auto_rebase_threshold`, `drop_review_on_scope_gate`, `open_in_ide`, the `system.retention.*` knobs, `plan.phase-6-finalize.checks_wait_timeout_seconds`, the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
 [#effort-and-models]
 === Effort and model selection
@@ -163,7 +163,7 @@ Two `plan.phase-5-execute` knobs govern how often the execute phase commits and 
 |===
 | Config key | Default | What it controls
 
-| `plan.phase-5-execute.commit_strategy` | `per_deliverable` | When the execute loop commits. `per_deliverable` commits at each deliverable chain-tail; `per_plan` commits once at end of phase; `none` defers all committing to finalize.
+| `plan.phase-5-execute.commit_and_push` | `true` | When `true` (default), the execute loop commits per-deliverable and finalize pushes + opens a PR; when `false`, the run is local-only (the commit-push/push/PR finalize steps are stripped by the manifest `commit_push_disabled` pre-filter).
 | `plan.phase-5-execute.per_deliverable_build` | `compile+scoped-test` | Build depth at each per-deliverable chain-tail. `off` skips the focused build (end-of-phase sweep only); `compile-only` type-checks the changed module; `compile+scoped-test` adds the module's scoped tests; `full` runs a whole-tree quality-gate per deliverable (legacy, opt-in).
 |===
 

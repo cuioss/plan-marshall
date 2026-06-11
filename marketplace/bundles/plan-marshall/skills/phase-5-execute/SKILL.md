@@ -126,7 +126,7 @@ Contains: the *scope × thoroughness* coverage contract each task body honors at
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-5-execute`** (resolves through `phase-5-execute.default`). The dispatch unit is **budget-bounded** — explicitly NEITHER per-task NOR per-deliverable. The orchestrator dispatches phase-5-execute as ONE `execution-context` envelope that greedily drives the task loop over **as many tasks as the per-task budget reserve permits — which bundles several small deliverables into one envelope and may span a single large deliverable across several envelopes**. Per task the envelope LOADS the `execute-task` skill in-context as a `Skill:` (via `resolve-execute-task-skill`) with the task-declared skill list as runtime input — leaf-legal in-context skill loading per [`dev-agent-behavior-rules`](../dev-agent-behavior-rules/SKILL.md), explicitly NOT a per-task `Task:` subagent dispatch. `per_task_budget_reserve_tokens` is the RESERVE that must remain free before the loop starts another task, not an envelope ceiling, so a single envelope grows well past that reserve. The envelope yields to the orchestrator — which then re-dispatches a fresh envelope to resume the loop — only at one of three TASK-boundary re-dispatch points: (a) the token-budget sentinel; (b) `triage_required` (Step 11/11b verify / quality-gate failure); (c) `baseline_drift`. It is NOT one envelope per task and NOT one envelope per deliverable. Deliverable boundaries govern the COMMIT + FOCUSED-BUILD points only — the Step 10 Per-Deliverable Chain-Tail (an optional commit when `commit_strategy=per_deliverable`, plus a focused per-module build) is a **sub-event that fires within OR across envelopes, decoupled from where the budget sentinel yields, and is NOT a dispatch boundary**; because the sentinel yields at TASK boundaries (between `finalize-step` and the next `manage-tasks next`), a mid-deliverable yield is normal and lossless (`finalize-step` persists in-flight task state, and the Step 10 chain-tail commit still fires whenever the run reaches it, regardless of which envelope gets there). This per-task body runs as a **leaf** inside the `execution-context` envelope — it cannot itself issue a `Task:` dispatch (see [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md), the canonical leaf/dispatch-topology contract). The built-in verification steps (`default:quality_check`, `default:build_verify`, `default:coverage_check`) stay inline as pure build invocations — no LLM judgement, no envelope. Step 9 independent change verification stays inline (three deterministic re-checks: git-diff empty-test, obfuscation-pattern grep, exit-code compare). Steps 11 and 11b detect the verification-failure / quality-gate-failure, persist each finding to the per-plan Q-Gate store (`manage-findings qgate add` — a script call, legal inside a leaf), then **return a `triage_required` signal to the main-context orchestrator**; the orchestrator owns the **`verification-feedback`** dispatch (`--phase phase-5-execute --role verification-feedback`, `producer=build-runner`) and consumes its return to drive the fix-task / suppress / accept branch. The leaf never dispatches `verification-feedback` itself. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2, § 4 (Heuristic 3 — per-iteration `Task:` dispatch only when models differ OR iterations parallelise; the budget-bounded task loop is the iterate-in-context application), and § 5.1 (script over dispatch; phase-scoped resolution + producer-mode bundling).
+This phase dispatches under one role key: **`phase-5-execute`** (resolves through `phase-5-execute.default`). The dispatch unit is **budget-bounded** — explicitly NEITHER per-task NOR per-deliverable. The orchestrator dispatches phase-5-execute as ONE `execution-context` envelope that greedily drives the task loop over **as many tasks as the per-task budget reserve permits — which bundles several small deliverables into one envelope and may span a single large deliverable across several envelopes**. Per task the envelope LOADS the `execute-task` skill in-context as a `Skill:` (via `resolve-execute-task-skill`) with the task-declared skill list as runtime input — leaf-legal in-context skill loading per [`dev-agent-behavior-rules`](../dev-agent-behavior-rules/SKILL.md), explicitly NOT a per-task `Task:` subagent dispatch. `per_task_budget_reserve_tokens` is the RESERVE that must remain free before the loop starts another task, not an envelope ceiling, so a single envelope grows well past that reserve. The envelope yields to the orchestrator — which then re-dispatches a fresh envelope to resume the loop — only at one of three TASK-boundary re-dispatch points: (a) the token-budget sentinel; (b) `triage_required` (Step 11/11b verify / quality-gate failure); (c) `baseline_drift`. It is NOT one envelope per task and NOT one envelope per deliverable. Deliverable boundaries govern the COMMIT + FOCUSED-BUILD points only — the Step 10 Per-Deliverable Chain-Tail (an unconditional per-deliverable commit, plus a focused per-module build) is a **sub-event that fires within OR across envelopes, decoupled from where the budget sentinel yields, and is NOT a dispatch boundary**; because the sentinel yields at TASK boundaries (between `finalize-step` and the next `manage-tasks next`), a mid-deliverable yield is normal and lossless (`finalize-step` persists in-flight task state, and the Step 10 chain-tail commit still fires whenever the run reaches it, regardless of which envelope gets there). This per-task body runs as a **leaf** inside the `execution-context` envelope — it cannot itself issue a `Task:` dispatch (see [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md), the canonical leaf/dispatch-topology contract). The built-in verification steps (`default:quality_check`, `default:build_verify`, `default:coverage_check`) stay inline as pure build invocations — no LLM judgement, no envelope. Step 9 independent change verification stays inline (three deterministic re-checks: git-diff empty-test, obfuscation-pattern grep, exit-code compare). Steps 11 and 11b detect the verification-failure / quality-gate-failure, persist each finding to the per-plan Q-Gate store (`manage-findings qgate add` — a script call, legal inside a leaf), then **return a `triage_required` signal to the main-context orchestrator**; the orchestrator owns the **`verification-feedback`** dispatch (`--phase phase-5-execute --role verification-feedback`, `producer=build-runner`) and consumes its return to drive the fix-task / suppress / accept branch. The leaf never dispatches `verification-feedback` itself. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2, § 4 (Heuristic 3 — per-iteration `Task:` dispatch only when models differ OR iterations parallelise; the budget-bounded task loop is the iterate-in-context application), and § 5.1 (script over dispatch; phase-scoped resolution + producer-mode bundling).
 
 ## Execution Loop
 
@@ -157,16 +157,7 @@ phases:
 
 Use `current_phase` for logging, `skill` for dynamic routing, and `completed_phases/total_phases` for progress display.
 
-### Step 2: Read Commit Strategy and Execution Manifest (Once at start)
-
-Cache the commit strategy for the entire execute loop:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --audit-plan-id {plan_id}
-```
-
-Extract `commit_strategy` from output. Valid values: `per_deliverable`, `per_plan`, `none`.
+### Step 2: Read Execution Manifest (Once at start)
 
 **Read the execution manifest** — the manifest is the single source of truth for which Phase 5 verification steps fire. It is composed by `phase-4-plan` Step 8b and stored at `.plan/local/plans/{plan_id}/execution.toon`:
 
@@ -667,15 +658,15 @@ If independent verification also passes, continue to Step 10.
 
 ### Step 10: Per-Deliverable Chain-Tail (Commit + Focused Build)
 
-Step 10 fires at the **per-deliverable chain-tail point** — the moment all tasks for the just-completed deliverable are done. Two independent concerns hang off this point: the conditional per-deliverable commit (gated on `commit_strategy`) and the focused per-deliverable build (gated on `per_deliverable_build`). Both evaluate the same chain-tail predicate; the commit decision runs first, then the build.
+Step 10 fires at the **per-deliverable chain-tail point** — the moment all tasks for the just-completed deliverable are done. Two independent concerns hang off this point: the (unconditional) per-deliverable commit and the focused per-deliverable build (gated on `per_deliverable_build`). Both evaluate the same chain-tail predicate; the commit runs first, then the build.
 
 **Chain-tail predicate**: Does any other pending/in-progress task have `depends_on` pointing to the just-completed task?
 - **YES** → a downstream task still needs to run → this is NOT the chain tail → skip both the commit and the focused build, proceed to Step 11.
-- **NO** → all tasks for this deliverable are done → this IS the chain tail → run the commit decision (Step 10a) then the focused build (Step 10b).
+- **NO** → all tasks for this deliverable are done → this IS the chain tail → run the commit (Step 10a) then the focused build (Step 10b).
 
-#### Step 10a: Conditional Per-Deliverable Commit
+#### Step 10a: Per-Deliverable Commit
 
-If `commit_strategy == per_deliverable` (cached from Step 2):
+The per-deliverable commit fires UNCONDITIONALLY at every chain tail:
 
 1. **Commit**:
    ```
@@ -692,7 +683,29 @@ If `commit_strategy == per_deliverable` (cached from Step 2):
      work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-5-execute) Per-deliverable commit: {task_id} ({commit_hash})"
    ```
 
-If `commit_strategy` is `per_plan` or `none` → Skip the commit; still proceed to Step 10b.
+3. **Resolve the git-sourced `commit_sha`** — capture the SHA the commit just produced:
+
+   ```bash
+   git -C {worktree_path} rev-parse HEAD
+   ```
+
+   Record the output as `{commit_sha}`.
+
+4. **Source the changed paths from git** — the `kind=change` entry's `changed_paths` MUST be git-sourced (NOT self-computed from the deliverable's declared `affected_files`). Enumerate the paths the commit touched:
+
+   ```bash
+   git -C {worktree_path} diff-tree --no-commit-id --name-only -r {commit_sha}
+   ```
+
+   Record the newline-separated output as `{changed_paths}` (join into a comma-separated list for the verb's `--changed-paths` argument).
+
+5. **Append the `kind=change` ledger entry** — record the per-deliverable commit transition to the unified change-ledger. The verb stores the supplied `changed_paths` list verbatim; do NOT inline-copy the ledger API details — see [`../manage-change-ledger/SKILL.md`](../manage-change-ledger/SKILL.md) § "Canonical invocations" → `append (kind=change)` for the authoritative argument surface:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
+     --kind change --deliverable-id {deliverable} --commit-sha {commit_sha} --changed-paths {changed_paths} \
+     --task-id {task_id}
+   ```
 
 #### Step 10b: Focused Per-Deliverable Build (derived-ladder, depth-sliced)
 
@@ -919,11 +932,11 @@ This gate runs after Step 11b's quality sweep and before Step 12.
 
 #### Step 12a: Pending-tasks transition guard
 
-Before invoking `manage-status transition --completed 5-execute` (see **Phase Transition** section below), refuse to transition when any pending tasks remain AND when the on-disk worktree has not been observed by a fresh `verify` run. Pending-queue emptiness is **necessary but not sufficient**: a task that was marked `done` against a prior code state still leaves the queue empty, yet the codebase the orchestrator is about to ship has never been verified end-to-end. The canonical failure mode for this gap: `loop-exit-guard` returns `pending_count: 0` while the most recent `verify` predated the last source-file mutation, and CI fails on the pushed commit. Step 12a therefore enforces two co-equal gates: (a) `manage-tasks next` only surfaces the head of the queue, so a `null` next does NOT prove the queue is empty when downstream tasks are still in `pending` — fix tasks created by Step 11 triage commonly land here, and a premature transition silently abandons them; (b) the worktree state itself must be **fresh** with respect to the most recent build-runner log entry.
+Before invoking `manage-status transition --completed 5-execute` (see **Phase Transition** section below), refuse to transition when any pending tasks remain AND when the on-disk worktree has not been observed by a fresh `verify` run. Pending-queue emptiness is **necessary but not sufficient**: a task that was marked `done` against a prior code state still leaves the queue empty, yet the codebase the orchestrator is about to ship has never been verified end-to-end. The canonical failure mode for this gap: `loop-exit-guard` returns `pending_count: 0` while the most recent `verify` predated the last source-file mutation, and CI fails on the pushed commit. Step 12a therefore enforces two co-equal gates: (a) `manage-tasks next` only surfaces the head of the queue, so a `null` next does NOT prove the queue is empty when downstream tasks are still in `pending` — fix tasks created by Step 11 triage commonly land here, and a premature transition silently abandons them; (b) the worktree state itself must be **fresh** with respect to the change-ledger — a successful `kind=build` entry must exist whose `worktree_sha` matches the current working-tree currency hash.
 
 **Script-level enforcement**: the authoritative pending-count check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks loop-exit-guard --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Loop-Exit Guard". `status: continue` (with `pending_count > 0` and `pending_ids`) forces the orchestrator to re-dispatch the execution-context; `status: success` (with `pending_count: 0`) is the precondition for recording the `clean_exit_queue_empty` termination cause via the `manage-metrics record-dispatch-boundary` verb. The list-based check below remains documented for backwards compatibility with existing callers — both forms read the same on-disk state, but `loop-exit-guard` is the canonical surface and the verb the orchestrator MUST consult.
 
-**Worktree-state freshness enforcement**: the authoritative freshness check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks pre-commit-verify-freshness --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness". The script compares the most recent `plan-marshall:build-pyproject:pyproject_build run` line in `logs/script-execution.log` against the most recent file mtime in the worktree (scoped to the live plan footprint derived on demand — `{base}...HEAD` ∪ porcelain — falling back to a worktree-root walk when the footprint is empty) and returns one of three statuses. `status: fresh` permits transition; `status: stale` or `status: undecidable` blocks transition with the same `[BLOCKED]` log line shape used for the pending-tasks branch. The gate fails closed by design — there is no LLM judgement and no "probably fine" fallback. Pending-queue emptiness and worktree freshness are **co-equal** gates: both MUST succeed before the phase may transition.
+**Worktree-state freshness enforcement**: the authoritative freshness check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks pre-commit-verify-freshness --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness". The script recomputes the current working-tree currency hash (`worktree_sha`) and scans the unified change-ledger for a `kind=build` entry with `exit_code == 0` whose `worktree_sha` matches. The query is tier-agnostic and build-tool-agnostic — it filters on `kind`, `exit_code`, and `worktree_sha` only, never `notation` or `plan_id`, so a Maven/Gradle/npm build or an orchestrator-driven global-tier build satisfies the gate exactly as a plan-scoped pyproject build does. See `marketplace/bundles/plan-marshall/skills/manage-change-ledger/SKILL.md` for the ledger and `worktree_sha` primitive. The script returns one of three statuses. `status: fresh` permits transition; `status: stale` or `status: undecidable` blocks transition with the same `[BLOCKED]` log line shape used for the pending-tasks branch. The gate fails closed by design — there is no LLM judgement and no "probably fine" fallback. Pending-queue emptiness and worktree freshness are **co-equal** gates: both MUST succeed before the phase may transition.
 
 1. Query the pending-task list:
 
@@ -946,10 +959,10 @@ Before invoking `manage-status transition --completed 5-execute` (see **Phase Tr
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level ERROR \
-     --message "[BLOCKED] (plan-marshall:phase-5-execute) Worktree state not verified: {reason} (newest_mtime_path={path}, t_build={t_build_iso}, t_worktree={t_worktree_iso}) — refusing to transition 5-execute → 6-finalize. Re-dispatch a verify run, or invoke with --force to override."
+     --message "[BLOCKED] (plan-marshall:phase-5-execute) Worktree state not verified: {reason} (worktree_sha={worktree_sha}, ledger_path={ledger_path}) — refusing to transition 5-execute → 6-finalize. Re-dispatch a verify run, or invoke with --force to override."
    ```
 
-   Substitute the placeholders with the corresponding fields from the script's TOON output. Each branch omits a different field set: `stale` omits `reason`; `undecidable` (both `no_build_log_entry` and `worktree_mtime_unresolvable` sub-cases) omits `newest_mtime_path` and `t_worktree_iso`, and the `no_build_log_entry` sub-case additionally omits `t_build_iso`. Substitute `-` for any field absent in the returned TOON. Do NOT call `manage-status transition` and do NOT auto-continue to finalize. The orchestrator's recovery path is to dispatch a fresh `verify` run, after which Step 12a is re-entered.
+   Substitute the placeholders with the corresponding fields from the script's TOON output. Each branch omits a different field set: `stale` omits `reason`; `undecidable` carries `reason` set to one of `no_registry` (the ledger file is absent or empty) or `head_unresolvable` (the working-tree sha cannot be computed), and the `head_unresolvable` sub-case omits `worktree_sha` and `ledger_path`. Substitute `-` for any field absent in the returned TOON. Do NOT call `manage-status transition` and do NOT auto-continue to finalize. The orchestrator's recovery path is to dispatch a fresh `verify` run, after which Step 12a is re-entered.
 
 3. **If the pending count is non-zero**, the phase is NOT complete. Log a `[BLOCKED]` line and abort the transition:
 

@@ -2,7 +2,7 @@
 """Tests for the ``compose`` subcommand of manage-execution-manifest.py.
 
 Split from test_manage_execution_manifest.py — tier 2 direct-import tests for
-the compose path (decision matrix, boundary normalization, commit-strategy,
+the compose path (decision matrix, boundary normalization, commit-and-push,
 pre-push-quality-gate, bot-enforcement guard, placement validation, and
 marshal.json source-of-truth) plus the relevant CLI plumbing tests.
 """
@@ -69,7 +69,7 @@ def _compose_ns(
     affected_files_count: int = 5,
     phase_5_steps: str | None = 'quality-gate,module-tests',
     phase_6_steps: str | None = ','.join(DEFAULT_PHASE_6_STEPS),
-    commit_strategy: str | None = None,
+    commit_and_push: str | None = None,
 ) -> Namespace:
     return Namespace(
         plan_id=plan_id,
@@ -80,7 +80,7 @@ def _compose_ns(
         affected_files_count=affected_files_count,
         phase_5_steps=phase_5_steps,
         phase_6_steps=phase_6_steps,
-        commit_strategy=commit_strategy,
+        commit_and_push=commit_and_push,
     )
 
 
@@ -559,7 +559,7 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
     ``2026-04-27-23-004``: ``cmd_compose`` strips a single leading ``default:``
     from each ``phase_5_candidates`` and ``phase_6_candidates`` entry once at
     intake (via ``_strip_default_prefix``), and every downstream site — the
-    seven-row matrix, ``_apply_commit_strategy_none``,
+    seven-row matrix, ``_apply_commit_push_disabled``,
     ``_apply_pre_push_quality_gate_inactive``,
     ``_apply_pre_submission_self_review_inactive``, and the bot-enforcement
     guard — consumes those already-bare strings without any per-site
@@ -1053,7 +1053,7 @@ def test_compose_default_phase_6_steps_when_csv_omitted(plan_context):
             affected_files_count=12,
             phase_5_steps=None,  # Falls back to DEFAULT_PHASE_5_STEPS.
             phase_6_steps=None,  # Falls back to DEFAULT_PHASE_6_STEPS.
-            commit_strategy=None,
+            commit_and_push=None,
         )
     )
     manifest = read_manifest('matrix-default-csv')
@@ -1063,32 +1063,29 @@ def test_compose_default_phase_6_steps_when_csv_omitted(plan_context):
 
 
 # =============================================================================
-# commit_strategy pre-filter tests
+# commit_and_push pre-filter tests
 # =============================================================================
 
 
 @pytest.mark.parametrize(
-    'commit_strategy,expect_commit_push,expect_omitted',
+    'commit_and_push,expect_commit_push,expect_omitted',
     [
-        ('per_plan', True, False),
-        ('per_deliverable', True, False),
-        (None, True, False),  # Absent flag defaults to per_plan.
-        ('none', False, True),
+        ('true', True, False),
+        (None, True, False),  # Absent flag defaults to true.
+        ('false', False, True),
     ],
 )
-def test_commit_strategy_pre_filter(plan_context, commit_strategy, expect_commit_push, expect_omitted):
-    """Pre-filter: commit_strategy=none drops commit-push; other values retain it."""
-    # plan_id may not contain underscores — convert any underscored strategy
-    # value to a hyphenated slug.
-    slug = (commit_strategy or 'absent').replace('_', '-')
-    plan_id = f'matrix-cs-{slug}'
+def test_commit_and_push_pre_filter(plan_context, commit_and_push, expect_commit_push, expect_omitted):
+    """Pre-filter: commit_and_push=false drops commit-push; true retains it."""
+    slug = commit_and_push or 'absent'
+    plan_id = f'matrix-cap-{slug}'
     result = cmd_compose(
         _compose_ns(
             plan_id=plan_id,
             change_type='feature',
             scope_estimate='multi_module',
             affected_files_count=8,
-            commit_strategy=commit_strategy,
+            commit_and_push=commit_and_push,
         )
     )
     assert result is not None and result['status'] == 'success'
@@ -1101,8 +1098,8 @@ def test_commit_strategy_pre_filter(plan_context, commit_strategy, expect_commit
         assert 'commit-push' not in manifest['phase_6']['steps']
 
 
-def test_commit_strategy_none_emits_decision_log_message(plan_context):
-    """commit_strategy=none triggers the dedicated decision-log emission helper."""
+def test_commit_and_push_false_emits_decision_log_message(plan_context):
+    """commit_and_push=false triggers the dedicated decision-log emission helper."""
     captured: list[str] = []
     original_helper = _mem._log_commit_push_omitted
 
@@ -1113,20 +1110,20 @@ def test_commit_strategy_none_emits_decision_log_message(plan_context):
     try:
         cmd_compose(
             _compose_ns(
-                plan_id='matrix-cs-log',
+                plan_id='matrix-cap-log',
                 change_type='feature',
                 scope_estimate='multi_module',
                 affected_files_count=4,
-                commit_strategy='none',
+                commit_and_push='false',
             )
         )
     finally:
         _mem._log_commit_push_omitted = original_helper
-    assert captured == ['matrix-cs-log']
+    assert captured == ['matrix-cap-log']
 
 
-def test_commit_strategy_none_decision_log_message_matches_contract(plan_context):
-    """commit_strategy=none emits the exact decision-log line from the deliverable contract."""
+def test_commit_and_push_false_decision_log_message_matches_contract(plan_context):
+    """commit_and_push=false emits the exact decision-log line from the deliverable contract."""
     captured: list[tuple[str, str]] = []
     original_emit = _mem._emit_decision_log
 
@@ -1137,11 +1134,11 @@ def test_commit_strategy_none_decision_log_message_matches_contract(plan_context
     try:
         cmd_compose(
             _compose_ns(
-                plan_id='matrix-cs-msg',
+                plan_id='matrix-cap-msg',
                 change_type='feature',
                 scope_estimate='multi_module',
                 affected_files_count=4,
-                commit_strategy='none',
+                commit_and_push='false',
             )
         )
     finally:
@@ -1151,12 +1148,12 @@ def test_commit_strategy_none_decision_log_message_matches_contract(plan_context
     omission_entries = [(pid, msg) for pid, msg in captured if 'commit-push omitted' in msg]
     assert len(omission_entries) == 1, f'expected one omission entry, got {captured!r}'
     pid, msg = omission_entries[0]
-    assert pid == 'matrix-cs-msg'
-    assert msg == ('(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_strategy=none')
+    assert pid == 'matrix-cap-msg'
+    assert msg == ('(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_and_push=false')
 
 
-def test_commit_strategy_default_does_not_emit_omission_log(plan_context):
-    """When commit_strategy is absent (defaults to per_plan), no omission log fires."""
+def test_commit_and_push_default_does_not_emit_omission_log(plan_context):
+    """When commit_and_push is absent (defaults to true), no omission log fires."""
     captured: list[str] = []
     original_helper = _mem._log_commit_push_omitted
 
@@ -1167,11 +1164,11 @@ def test_commit_strategy_default_does_not_emit_omission_log(plan_context):
     try:
         cmd_compose(
             _compose_ns(
-                plan_id='matrix-cs-default-nolog',
+                plan_id='matrix-cap-default-nolog',
                 change_type='feature',
                 scope_estimate='multi_module',
                 affected_files_count=4,
-                commit_strategy=None,
+                commit_and_push=None,
             )
         )
     finally:
@@ -1179,54 +1176,54 @@ def test_commit_strategy_default_does_not_emit_omission_log(plan_context):
     assert captured == []
 
 
-def test_commit_strategy_invalid_value_rejected(plan_context):
-    """Invalid commit_strategy values produce a structured error response."""
+def test_commit_and_push_invalid_value_rejected(plan_context):
+    """Invalid commit_and_push values produce a structured error response."""
     result = cmd_compose(
         _compose_ns(
-            plan_id='matrix-cs-bad',
+            plan_id='matrix-cap-bad',
             change_type='feature',
             scope_estimate='multi_module',
             affected_files_count=2,
-            commit_strategy='nope',
+            commit_and_push='nope',
         )
     )
     assert result is not None and result['status'] == 'error'
-    assert result['error'] == 'invalid_commit_strategy'
+    assert result['error'] == 'invalid_commit_and_push'
 
 
-def test_commit_strategy_none_with_recipe_still_drops_commit_push(plan_context):
+def test_commit_and_push_false_with_recipe_still_drops_commit_push(plan_context):
     """Pre-filter applies before the row matrix — recipe rule still loses commit-push."""
     result = cmd_compose(
         _compose_ns(
-            plan_id='matrix-cs-recipe',
+            plan_id='matrix-cap-recipe',
             change_type='tech_debt',
             scope_estimate='surgical',
             recipe_key='lesson_cleanup',
             affected_files_count=2,
-            commit_strategy='none',
+            commit_and_push='false',
         )
     )
     assert result is not None and result['rule_fired'] == 'recipe'
-    manifest = read_manifest('matrix-cs-recipe')
+    manifest = read_manifest('matrix-cap-recipe')
     assert manifest is not None
     assert 'commit-push' not in manifest['phase_6']['steps']
 
 
-def test_commit_strategy_none_with_prefixed_input_drops_commit_push_and_pre_push(plan_context):
-    """Regression — _apply_commit_strategy_none drops both gates with prefixed input.
+def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_push(plan_context):
+    """Regression — _apply_commit_push_disabled drops both gates with prefixed input.
 
     Pins the latent bug fixed by lesson ``2026-04-27-23-004``: before boundary
-    normalization, ``_apply_commit_strategy_none`` compared candidate entries
+    normalization, ``_apply_commit_push_disabled`` compared candidate entries
     against the bare-name set ``{commit-push, pre-push-quality-gate,
     pre-submission-self-review}``. When ``marshal.json`` emitted prefixed
     candidates (e.g., ``default:commit-push``), the comparison silently failed
-    and the gate steps survived in the manifest despite ``commit_strategy=none``.
+    and the gate steps survived in the manifest despite ``commit_and_push=false``.
 
     Boundary normalization in ``cmd_compose`` strips the ``default:`` prefix
-    once at intake, so ``_apply_commit_strategy_none`` now sees bare strings
+    once at intake, so ``_apply_commit_push_disabled`` now sees bare strings
     and the membership check works regardless of how the caller spelled the
     candidate IDs. This test feeds a fully prefixed candidate list to
-    ``cmd_compose`` with ``commit_strategy=none`` and asserts both gate steps
+    ``cmd_compose`` with ``commit_and_push=false`` and asserts both gate steps
     are dropped and the manifest output is bare.
     """
     prefixed = [
@@ -1240,19 +1237,19 @@ def test_commit_strategy_none_with_prefixed_input_drops_commit_push_and_pre_push
     ]
     result = cmd_compose(
         _compose_ns(
-            plan_id='cs-none-prefixed',
+            plan_id='cap-false-prefixed',
             change_type='feature',
             scope_estimate='multi_module',
             affected_files_count=4,
             phase_6_steps=','.join(prefixed),
-            commit_strategy='none',
+            commit_and_push='false',
         )
     )
     assert result is not None and result['status'] == 'success'
     # commit_push omitted flag is True — pre-filter fired on the prefixed input.
     assert result['commit_push_omitted'] is True
 
-    manifest = read_manifest('cs-none-prefixed')
+    manifest = read_manifest('cap-false-prefixed')
     assert manifest is not None
     steps = manifest['phase_6']['steps']
 
@@ -1355,21 +1352,21 @@ def test_cli_compose_with_all_optional_flags_roundtrips(plan_context):
     assert data['rule_fired'] == 'recipe'
 
 
-def test_cli_compose_commit_strategy_none_omits_commit_push(plan_context):
-    """CLI accepts --commit-strategy none and emits a manifest without commit-push."""
+def test_cli_compose_commit_and_push_false_omits_commit_push(plan_context):
+    """CLI accepts --commit-and-push false and emits a manifest without commit-push."""
     result = run_script(
         SCRIPT_PATH,
         'compose',
         '--plan-id',
-        'cli-cs-none',
+        'cli-cap-false',
         '--change-type',
         'feature',
         '--track',
         'complex',
         '--scope-estimate',
         'multi_module',
-        '--commit-strategy',
-        'none',
+        '--commit-and-push',
+        'false',
     )
     assert result.success, f'compose failed: stderr={result.stderr!r}'
     compose_data = result.toon()
@@ -1377,7 +1374,7 @@ def test_cli_compose_commit_strategy_none_omits_commit_push(plan_context):
     # TOON parser may coerce the bool — accept both shapes defensively.
     assert compose_data['commit_push_omitted'] in (True, 'true', 1)
 
-    read_result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'cli-cs-none')
+    read_result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'cli-cap-false')
     assert read_result.success
     manifest = read_result.toon()
     assert 'commit-push' not in manifest['phase_6']['steps']
@@ -1637,17 +1634,17 @@ class TestPrePushQualityGatePreFilter:
         # No omission entry emitted.
         assert self._omit_entries(captured) == []
 
-    def test_commit_strategy_none_strips_pre_push_too(self, plan_context):
-        """commit_strategy=none strips both commit-push and pre-push-quality-gate.
+    def test_commit_and_push_false_strips_pre_push_too(self, plan_context):
+        """commit_and_push=false strips both commit-push and pre-push-quality-gate.
 
-        The commit-strategy pre-filter runs FIRST and removes both steps, so the
-        downstream pre-push-quality-gate filter sees the step already gone and
+        The commit-push-disabled pre-filter runs FIRST and removes both steps, so
+        the downstream pre-push-quality-gate filter sees the step already gone and
         is a no-op (no omission line emitted by the pre-push filter, regardless
         of glob match).
         """
-        plan_id = 'pp-cs-none'
+        plan_id = 'pp-cap-false'
         # Configure globs and matching modified_files — the gate WOULD be
-        # active, but commit_strategy=none must strip it anyway.
+        # active, but commit_and_push=false must strip it anyway.
         _write_marshal(plan_context.fixture_dir, activation_globs=['marketplace/bundles/**/*.py'])
         _stub_footprint(['marketplace/bundles/plan-marshall/skills/foo.py'])
 
@@ -1660,7 +1657,7 @@ class TestPrePushQualityGatePreFilter:
                     scope_estimate='multi_module',
                     affected_files_count=4,
                     phase_6_steps=_candidate_phase_6_with_pre_push(),
-                    commit_strategy='none',
+                    commit_and_push='false',
                 )
             )
         finally:
@@ -1683,7 +1680,7 @@ class TestPrePushQualityGatePreFilter:
         """Pre-filter runs before Row 1/Row 2/Row 7 — observable via decision-log ordering.
 
         The composer calls (in order):
-          1. _apply_commit_strategy_none
+          1. _apply_commit_push_disabled
           2. _apply_pre_push_quality_gate_inactive
           3. _decide() — which selects a row (Row 1: early_terminate, Row 2:
              recipe, Row 7: default, etc.)

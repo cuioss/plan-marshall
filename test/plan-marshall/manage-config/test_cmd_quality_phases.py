@@ -638,7 +638,7 @@ def test_phase_5_execute_get(plan_context):
     result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
 
     assert result['status'] == 'success'
-    assert 'commit_strategy' in result
+    assert 'commit_and_push' in result
     assert 'compatibility' not in result
 
 
@@ -650,15 +650,15 @@ def test_phase_5_execute_set(plan_context):
         Namespace(
             sub_noun='phase-5-execute',
             verb='set',
-            field='commit_strategy',
-            value='per_plan',
+            field='commit_and_push',
+            value='true',
         )
     )
 
     assert result['status'] == 'success'
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    assert config['plan']['phase-5-execute']['commit_strategy'] == 'per_plan'
+    assert config['plan']['phase-5-execute']['commit_and_push'] is True
 
 
 def test_phase_5_execute_get_per_deliverable_build_default(plan_context):

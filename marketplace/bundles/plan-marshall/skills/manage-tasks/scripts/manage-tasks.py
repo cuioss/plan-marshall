@@ -373,14 +373,26 @@ def build_parser() -> argparse.ArgumentParser:
     # pre-commit-verify-freshness
     p_freshness = subparsers.add_parser(
         'pre-commit-verify-freshness',
-        help='Script-level enforcement: worktree state must be observed by a fresh verify run',
+        help='Script-level enforcement: worktree state must be observed by a fresh build run',
         description=(
-            'Compare the most recent ``plan-marshall:build-pyproject:pyproject_build run`` '
-            'line in ``script-execution.log`` against the most recent file-content mtime in '
-            'the worktree. Returns ``status: fresh`` when the build entry post-dates the '
-            'newest worktree mtime, ``status: stale`` when the worktree has been mutated '
-            'since the last observed verify, and ``status: undecidable`` when no positive '
-            'freshness proof exists (no matching log entry, or no mtime baseline). The '
+            'Query the unified change-ledger for a ``kind=build`` entry whose '
+            '``exit_code == 0`` and whose ``worktree_sha`` equals the CURRENT '
+            'working-tree currency hash. The query is build-tool-agnostic and '
+            'tier-agnostic: it filters on ``kind``, ``exit_code`` and '
+            '``worktree_sha`` only — never ``notation`` or ``plan_id`` — so a '
+            'Maven/Gradle/npm build, or an orchestrator-driven global-tier build '
+            'with ``plan_id: null``, satisfies the gate exactly as a plan-scoped '
+            'build does. The primitive is the *working-tree* currency '
+            '(uncommitted staged+unstaged+untracked state), NOT the committed '
+            '``HEAD``: this is a pre-commit gate, so a HEAD-sha primitive would '
+            'match trivially regardless of uncommitted edits and produce a '
+            'false-positive ``fresh``. Returns ``status: fresh`` when a matching '
+            'successful build entry exists, ``status: stale`` when the ledger has '
+            'entries but none matches the current working-tree sha (the worktree '
+            'has been mutated since the last observed build), and '
+            '``status: undecidable`` when no positive proof can be established '
+            '(``reason: no_registry`` — ledger absent/empty; '
+            '``reason: head_unresolvable`` — working-tree sha undefined). The '
             'gate is fail-closed: only ``fresh`` permits transition. Wired as a '
             'precondition by ``phase-5-execute`` Step 12a and ``phase-6-finalize`` '
             '``commit-push``.'

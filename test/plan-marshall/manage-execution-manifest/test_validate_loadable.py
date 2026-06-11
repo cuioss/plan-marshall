@@ -82,7 +82,7 @@ def _compose_ns(
         affected_files_count=affected_files_count,
         phase_5_steps=','.join(DEFAULT_PHASE_5_STEPS),
         phase_6_steps=phase_6_steps if phase_6_steps is not None else ','.join(DEFAULT_PHASE_6_STEPS),
-        commit_strategy=None,
+        commit_and_push=None,
     )
 
 
