@@ -1,0 +1,66 @@
+= ADR-004: The file-to-build contract is owned by build-system extensions, not language/content domains
+:toc: left
+:toclevels: 2
+:sectnums:
+
+== Status
+
+Accepted
+
+== Context
+
+The build_map answers one question: given a set of changed files, do we build, and which build? Deciding this entangles two orthogonal concerns if a single extension contract owns both:
+
+* *Axis A — skill-loading:* "what do I know about this file / which standards do I load when it is touched?" This is a language/content-domain concern (a Python domain knows Python standards; a docs domain knows AsciiDoc standards).
+* *Axis B — build classification:* "what build does a change to this file require?" This is a build-system concern (the Python build system owns `pyproject.toml`; `.py` → compile/test; a lockfile triggers nothing).
+
+When the language/content domain extensions own Axis B, each must re-implement a slice of build knowledge it has no authority over. The failure mode is structural, not incidental: a language domain ends up claiming files its build system does not build (lockfiles, another tool's config) and stamping a build class on them, because the role→class default it inherits cannot tell a generated artifact from build-affecting source. Every language extension carries a partial, drifting copy of build-classification logic. The choice point this creates — *who owns the file→build classification* — is what this ADR settles.
+
+== Decision
+
+The file-to-build contract is owned by *build-system extensions*, not by language/content domains.
+
+The extension contract is split into two ABCs in `script-shared`:
+
+* `ExtensionBase` owns *Axis A only* — `get_skill_domains`, `applies_to_module`, `config_defaults`, and the `provides_*` workflow hooks.
+* `BuildExtensionBase` owns the *complete Axis-B contract* — `classify_globs`, `classify_paths`, `classify_path_specificity`, `classify_build_class`.
+
+Each code build system (`build-pyproject`, `build-maven`, `build-gradle`, `build-npm`) ships a `BuildExtensionBase` subclass declaring its own `(pattern, role)` routes. The build_map seed sources its routes and build classes exclusively from these subclasses; language/content domain extensions contribute no routes. Domain *applicability* (does the project use Python / Java / …) remains the language domain's `applies_to_module` decision and gates which build extensions' routes are seeded, but the routes themselves come from the build extension.
+
+Build-necessity is a single decision with one home: a centralized `should_execute_build` entry point (exposed through a thin `manage-config build-decision` verb) that every consumer calls instead of re-deriving the decision from the build_map and footprint independently.
+
+Completeness is enforced over *buildable units only* — tracked source that falls under a root some `BuildExtensionBase` actually covers — not over the full tracked-file universe. Artifacts (lockfiles, generated files) and content with no build owner are simply *absent* from the build_map; they are not covered with a placeholder `none` route.
+
+== Consequences
+
+=== Positive
+
+* Each build system is the single owner of its file→build routes; no language extension re-implements build-classification logic, so the drift-and-leak failure mode is removed by construction.
+* A build extension claims only what its build system builds. Lockfiles and foreign config (e.g. the planning system's own config) are no longer mis-classified as build-triggering.
+* One build-decision entry point; the consumer sites (pre-push gate activation, verification-command derivation, task planning) share one tested decision rather than four divergent copies.
+* Completeness is scoped to buildable units, so artifacts need no placeholder routes and the build_map stays minimal.
+
+=== Negative
+
+* Content that is not produced by a code build system has *no build owner* and is therefore absent from the build_map. Documentation (markdown / AsciiDoc) is the principal case: it carries no `BuildExtensionBase`, so it contributes no routes and triggers no automatic build gate. Documentation validation is available only as opt-in recipes, not as a per-push / per-plan gate.
+* Container manifests and any other content a language/content domain recognises for skill-loading but no build system builds fall in the same class — recognised for Axis A, absent from Axis B.
+* Domain applicability and build_map contribution are decoupled: a domain can be applicable (its standards load) while contributing zero build routes.
+
+=== Risks
+
+* *Silent coverage gaps.* Because completeness covers only buildable units, a content type with no build owner drops out of the build_map without the completeness validator flagging it. A later reader may misread the absence as a defect and re-add domain-based routes, regressing the single-owner model. This ADR is the standing answer that the absence is intentional.
+* *Residual dead surface.* A build-class value that no `BuildExtensionBase` emits (notably `docs-validate`) becomes an unreachable branch in the verification-command deriver and a dead enum member until pruned.
+
+== Alternatives Considered
+
+* *Keep Axis-B on the language/content domain extensions* (the prior model). Rejected: a language domain has no authority over the build, must re-implement build-system knowledge, and that knowledge leaks — lockfiles and foreign config get claimed as build-triggering, and every language extension carries a partial copy of build logic that drifts.
+* *Fold build-necessity into `architecture resolve`.* Rejected: `resolve` maps a `(module, command)` pair to an executable and is consumed in contexts where necessity is irrelevant; overloading it with a footprint-dependent necessity check breaks command/query separation (a resolver would start returning "no command, not necessary").
+* *Invent a content-build owner for every content type so documentation keeps a build_map route.* Rejected for the core decision: documentation validation is recipe-driven, not a code build. A dedicated content-build `BuildExtensionBase` can be introduced later, without disturbing the single-owner principle, if automatic documentation gating is later wanted. The principle that unifies the rejections: build classification belongs to the layer that owns the build, and only to that layer.
+
+== References
+
+* `marketplace/bundles/plan-marshall/skills/extension-api/standards/extension-contract.md` — the `ExtensionBase` / `BuildExtensionBase` contract.
+* `marketplace/bundles/plan-marshall/skills/manage-config/` — build_map seed and the `build-decision` verb (`SKILL.md`, `standards/data-model.md`).
+* `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/extension.py` (and the `build-maven` / `build-gradle` / `build-npm` siblings) — the build-system-owned route declarations.
+* `marketplace/bundles/plan-marshall/skills/script-shared/scripts/extension/extension_base.py` — `BuildExtensionBase`, `should_execute_build`, `validate_tree_completeness`.
+* ADR-001 — sibling ownership-boundary decision (skills as the source of truth).
