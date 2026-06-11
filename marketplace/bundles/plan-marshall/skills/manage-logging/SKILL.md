@@ -58,19 +58,38 @@ Script: `plan-marshall:manage-logging:manage-logging`
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  {type} --plan-id {plan_id} --level {level} --message "{message}"
+  {type} [--plan-id {plan_id}] --level {level} --message "{message}"
 ```
 
 **Arguments**:
 
-| Argument | Values | Description |
-|----------|--------|-------------|
-| `type` | `script`, `work`, `decision` | Log type (determines output file) |
-| `--plan-id` | kebab-case | Plan identifier |
-| `--level` | `INFO`, `WARNING`, `ERROR` | Log level |
-| `--message` | string | Log message |
+| Argument | Required | Values | Description |
+|----------|----------|--------|-------------|
+| `type` | Yes | `script`, `work`, `decision` | Log type (determines output file) |
+| `--plan-id` | No | kebab-case | Plan identifier. **Optional on write subcommands** — when omitted, the entry is written to the dated global log under `.plan/logs/` (the first-class global/no-plan path); when supplied and resolving to an initialized plan, the entry is plan-scoped. |
+| `--level` | Yes | `INFO`, `WARNING`, `ERROR` | Log level |
+| `--message` | Yes | string | Log message |
 
 **Output**: None (exit code only)
+
+#### Global / no-plan logging path
+
+Omitting `--plan-id` is a first-class call, not an error — the entry lands in the dated global log under `.plan/logs/` (`work-{date}.log`, `decision-{date}.log`, or `script-execution-{date}.log`). This is the supported path for plan-less callers — components that run BEFORE any plan exists, such as `marshall-steward` (the project-configuration wizard). It replaces the previous workaround of passing a non-existent plan id to force a global fallback.
+
+#### STEWARD audit namespace
+
+`marshall-steward` writes its audit trail through the global/no-plan path with a stable message prefix:
+
+```
+[STEWARD] (plan-marshall:marshall-steward) {what happened}
+```
+
+One entry per `AskUserQuestion` answer and per auto-decision (e.g. `[STEWARD] (plan-marshall:marshall-steward) Selected balanced effort preset`). Decision-class entries use the `decision` subcommand (the file is the category, so no `[DECISION]` prefix); informational/status entries use the `work` subcommand and carry a `[STEWARD]` category bracket. Example:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --level INFO --message "[STEWARD] (plan-marshall:marshall-steward) Selected balanced effort preset"
+```
 
 ### Separator API
 
@@ -176,25 +195,27 @@ notation occurrences across the marketplace. Consuming skills xref this section 
 name (e.g., "see `manage-logging` Canonical invocations → `work`") instead of
 restating the command inline.
 
+`--plan-id` is OPTIONAL on the three write subcommands (`work` / `decision` / `script`); omitting it writes to the dated global log under `.plan/logs/`.
+
 ### work
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging work \
-  --plan-id PLAN_ID --level {INFO|WARNING|ERROR} --message TEXT
+  [--plan-id PLAN_ID] --level {INFO|WARNING|ERROR} --message TEXT
 ```
 
 ### decision
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
-  --plan-id PLAN_ID --level {INFO|WARNING|ERROR} --message TEXT
+  [--plan-id PLAN_ID] --level {INFO|WARNING|ERROR} --message TEXT
 ```
 
 ### script
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging script \
-  --plan-id PLAN_ID --level {INFO|WARNING|ERROR} --message TEXT
+  [--plan-id PLAN_ID] --level {INFO|WARNING|ERROR} --message TEXT
 ```
 
 ### separator

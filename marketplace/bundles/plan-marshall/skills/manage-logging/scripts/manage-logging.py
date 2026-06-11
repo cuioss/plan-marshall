@@ -17,9 +17,22 @@ Usage:
         python3 manage-log.py read --plan-id <plan_id> --type script [--limit N]
 
 Arguments (write):
-    --plan-id  - Plan identifier (required)
+    --plan-id  - Plan identifier (OPTIONAL). When omitted, the entry is written
+                 to the dated global log under .plan/logs/ (the first-class
+                 global/no-plan path used by plan-less callers such as
+                 marshall-steward). When supplied and resolving to an
+                 initialized plan, the entry is plan-scoped.
     --level    - Log level: INFO, WARNING, ERROR (required)
     --message  - Log message (required)
+
+Global / no-plan logging:
+    Omitting --plan-id writes to .plan/logs/{work,decision,script-execution}-{date}.log.
+    marshall-steward uses this path for its STEWARD audit trail with the stable
+    message prefix "[STEWARD] (plan-marshall:marshall-steward) …" — one entry per
+    AskUserQuestion answer and per auto-decision:
+
+        python3 manage-log.py decision --level INFO \\
+            --message "[STEWARD] (plan-marshall:marshall-steward) Selected balanced effort preset"
 
 Arguments (read):
     --plan-id  - Plan identifier (required)
@@ -128,8 +141,19 @@ def handle_write(args: argparse.Namespace) -> dict | None:
 
 
 def _add_write_args(parser: argparse.ArgumentParser) -> None:
-    """Add common write arguments to a subparser."""
-    add_plan_id_arg(parser)
+    """Add common write arguments to a subparser.
+
+    ``--plan-id`` is OPTIONAL on write subcommands (``work`` / ``decision`` /
+    ``script``): when omitted, the entry is written to the dated global log
+    under ``.plan/logs/`` (``work-{date}.log`` / ``decision-{date}.log`` /
+    ``script-execution-{date}.log``) instead of a plan-scoped log. This is the
+    first-class global/no-plan logging path — plan-less callers such as
+    ``marshall-steward`` (which runs before any plan exists) write their
+    ``[STEWARD] (plan-marshall:marshall-steward) …`` audit trail through this
+    path rather than fabricating a plan id. When ``--plan-id`` IS supplied and
+    resolves to an initialized plan, the entry is plan-scoped as before.
+    """
+    add_plan_id_arg(parser, required=False)
     parser.add_argument('--level', required=True, choices=VALID_LEVELS, help='Log level')
     parser.add_argument('--message', required=True, help='Log message')
 

@@ -296,7 +296,7 @@ The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable
 
 **Pattern**: Script Automation
 
-The `skill_domains.build_map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. It lives under `skill_domains` (its owning block) and is populated from the registered domain extensions with write-once semantics — an existing seed survives a re-seed so user corrections are preserved. The seeded globs are **explicit `(pattern, role)` routes**: each extension declares its routes directly via `classify_globs()` (single-`*` fnmatch globs, never recursive `**`), and the `script-shared` route collector gathers them verbatim. A separate git-tracked completeness validator scans `git ls-files` and flags any tracked source file no declared route covers, so a forgotten production module surfaces rather than silently classifying to no build. There is no separate override layer; corrections are made directly to the seeded entries.
+The `build.map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. It lives at the top-level `build.map` block (its owning block, peer to `build.queue`) and is populated from the registered domain extensions with write-once semantics — an existing seed survives a re-seed so user corrections are preserved. The seeded globs are **explicit `(pattern, role)` routes**: each extension declares its routes directly via `classify_globs()` (single-`*` fnmatch globs, never recursive `**`), and the `script-shared` route collector gathers them verbatim. A separate git-tracked completeness validator scans `git ls-files` and flags any tracked source file no declared route covers, so a forgotten production module surfaces rather than silently classifying to no build. There is no separate override layer; corrections are made directly to the seeded entries.
 
 **Applicability scoping.** The seed includes a domain's routes only when that domain applies to the project. `aggregate_build_map()` consults each domain's owning extension's `applies_to_module()` against the discovered project modules and keeps the domain's routes only when `applies_to_module()` reports `applicable: True` for at least one discovered module — the same applicability predicate architecture enrichment uses. A Python-only project therefore never receives `java` / `oci` / `javascript` routes merely because those bundles are installed. Because applicability is resolved against discovered modules, the seed is **post-architecture-only**: when module discovery yields no modules (architecture not yet discovered) the aggregation is empty.
 
@@ -304,7 +304,7 @@ The `skill_domains.build_map` block in `marshal.json` is the file-to-build contr
 
 ### Seed the Build Map
 
-Re-seeds `skill_domains.build_map` from every *applicable* registered extension's `classify_globs()` + `classify_build_class()` predicates. The aggregator collects each applicable extension's explicit `(pattern, role)` routes verbatim; `classify_build_class()` then stamps each route with its canonical-named `build_class` (the `build_class` value IS the canonical command — there is no indirection map). Write-once: an existing `build_map` block is never clobbered — only a missing block is populated. Run `build-map seed` at wizard Step 8b (after architecture discovery) and again whenever a domain extension is added or updated.
+Re-seeds `build.map` from every *applicable* registered extension's `classify_globs()` + `classify_build_class()` predicates. The aggregator collects each applicable extension's explicit `(pattern, role)` routes verbatim; `classify_build_class()` then stamps each route with its canonical-named `build_class` (the `build_class` value IS the canonical command — there is no indirection map). Write-once: an existing `build_map` block is never clobbered — only a missing block is populated. Run `build-map seed` at wizard Step 8b (after architecture discovery) and again whenever a domain extension is added or updated.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed
@@ -315,10 +315,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-
 ```toon
 status: success
 action: seeded
-domain_count: 2
+domain_count: 1
 build_map:
   python: [...]
-  documentation: [...]
 ```
 
 `action` is `seeded` when a missing block was written, or `preserved` when an existing block was left untouched (write-once). `domain_count` is the number of applicable domains in the resulting block.
@@ -335,7 +334,7 @@ When `--force` clears and rewrites an existing block, `action` is `re-derived` (
 
 ### Read the Effective Build Map
 
-Returns the effective build map read from `skill_domains.build_map`. This is the map the `architecture derive-verification` command reads to emit a task's verification command set. The read **fails closed**: when `skill_domains.build_map` is absent it returns a structured error rather than an empty map.
+Returns the effective build map read from `build.map`. This is the map the `architecture derive-verification` command reads to emit a task's verification command set. The read **fails closed**: when `build.map` is absent it returns a structured error rather than an empty map.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map read
@@ -347,8 +346,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-
 status: success
 build_map:
   python: [...]
-  documentation: [...]
-domain_count: 2
+domain_count: 1
 ```
 
 `domain_count` is the number of domain keys in the returned `build_map`.
@@ -357,7 +355,7 @@ domain_count: 2
 
 ### Decide Whether a Build Must Run
 
-`build-decision` is the centralized build-necessity decision API. It returns a structured `build` / `not_necessary` verdict for a canonical command (e.g. `quality-gate` / `verify` / `coverage`) against a plan's live footprint, so the consumer sites no longer each re-derive the decision inline. The verdict is a pure function of the `skill_domains.build_map` globs and the live plan footprint — no LLM judgement:
+`build-decision` is the centralized build-necessity decision API. It returns a structured `build` / `not_necessary` verdict for a canonical command (e.g. `quality-gate` / `verify` / `coverage`) against a plan's live footprint, so the consumer sites no longer each re-derive the decision inline. The verdict is a pure function of the `build.map` globs and the live plan footprint — no LLM judgement:
 
 - `decision: build` when the footprint touches at least one registered build_map glob.
 - `decision: not_necessary` (always carrying a non-empty, log-friendly `reason`) when the build_map registers no globs, the footprint is empty, or the footprint intersects no build glob.
@@ -429,7 +427,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `project` | `get/set` (`default_base_branch`, `working_prefixes`) |
 | `plan` | `{phase} get/set` (incl. run-at-all gates + finalize automation knobs), set-steps, add-step, remove-step, set-max-iterations |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
-| `build-map` | `seed` (re-seed `skill_domains.build_map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `skill_domains.build_map`, fail-closed when absent) |
+| `build-map` | `seed` (re-seed `build.map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `build.map`, fail-closed when absent) |
 | `build-decision` | `--command --plan-id` (centralized build-necessity verdict: `build` / `not_necessary`; `not_necessary` carries a log-friendly `reason`) |
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
@@ -474,9 +472,11 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "temp_on_maintenance": true
     }
   },
-  "build_queue": {
-    "max_slots": 5,
-    "max_retries": 10
+  "build": {
+    "queue": {
+      "max_slots": 5,
+      "max_retries": 10
+    }
   },
   "plan": {
     "phase-1-init": {
@@ -548,11 +548,11 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 
 ### Build-Queue Settings
 
-The `build_queue` block is a top-level marshal.json section (peer to `plan` and `system`, not under `plan.*`) because the build queue is a project-wide, cross-plan resource — every session bounds its concurrent builds against the same shared queue. Both keys are seeded into a fresh marshal.json by `init` and back-filled into existing projects by `sync-defaults`.
+The `build.queue` block lives under the top-level `build` block in marshal.json (peer to `build.map`, not under `plan.*`) because the build queue is a project-wide, cross-plan resource — every session bounds its concurrent builds against the same shared queue. Both keys are seeded into a fresh marshal.json by `init` and back-filled into existing projects by `sync-defaults`.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `max_slots` | `5` | Number of concurrent build admissions the cross-session build queue grants before further requests are enqueued FIFO. Read by the build-queue admission primitive (`plan-marshall:manage-locks:build_queue`) via `build_queue.max_slots`; a missing block, missing key, or non-positive value falls back to `5`. |
+| `max_slots` | `5` | Number of concurrent build admissions the cross-session build queue grants before further requests are enqueued FIFO. Read by the build-queue admission primitive (`plan-marshall:manage-locks:build_queue`) via `build.queue.max_slots`; a missing block, missing key, or non-positive value falls back to `5`. |
 | `max_retries` | `10` | Number of times the build wrapper re-polls a `blocked` admission before giving up. |
 
 Edit both keys directly in marshal.json — they are operator-visible JSON integers at the top level.

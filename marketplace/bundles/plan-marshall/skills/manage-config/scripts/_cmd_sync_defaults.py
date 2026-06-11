@@ -57,11 +57,11 @@ def cmd_sync_defaults(args) -> dict:
     ``get_default_config()`` into it (preserving every existing value), writes
     the merged config back, and reports the added keys grouped by dotted path.
 
-    ``get_default_config()`` does NOT seed ``skill_domains.build_map`` — the
+    ``get_default_config()`` does NOT seed ``build.map`` — the
     build_map is materialized only by the wizard's explicit build-map seed
     step (Step 8b), never at init or by sync-defaults. The deep-merge therefore
-    back-fills other missing default keys while leaving the user's
-    ``skill_domains`` (and any seeded build_map) untouched.
+    back-fills other missing default keys while leaving the user's seeded
+    ``build.map`` untouched.
     """
     if not is_initialized():
         return error_exit('marshal.json not found. Run command /marshall-steward first')

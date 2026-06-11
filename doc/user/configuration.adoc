@@ -187,7 +187,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | `plan.phase-6-finalize.drop_review_on_scope_gate` | `false` | Escape hatch for the manifest composer's scope-gating pre-filter. `false` keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans.
 |===
 
-NOTE: The `default:pre-push-quality-gate` finalize step has no dedicated activation key. Its activation is *derived from* `skill_domains.build_map` (see <<build-map>>): the step activates whenever a changed path matches a glob registered in the build_map.
+NOTE: The `default:pre-push-quality-gate` finalize step has no dedicated activation key. Its activation is *derived from* `build.map` (see <<build-map>>): the step activates whenever a changed path matches a glob registered in the build_map.
 
 [#open-in-ide]
 === Open in IDE
@@ -244,29 +244,28 @@ Tune via `/marshall-steward` → Configuration → Skill Domains.
 [#build-map]
 === Build map
 
-`marshal.json` carries a `build_map` block under `skill_domains` — the file-to-build contract. It maps every changed path to the build action that path requires, so when a plan runs only the relevant build fires: a docs-only change runs the documentation gate (never the test suite), a production-code change compiles, a test change runs the tests. The block is required and always seeded.
+`marshal.json` carries a `build.map` block at the top level — the file-to-build contract. It maps every changed path to the build action that path requires, so when a plan runs only the relevant build fires: a production-code change compiles, a test change runs the tests, and a docs-only change runs no build at all (documentation has no build owner). The block is required and always seeded.
 
-The `build_map` is seeded automatically. Each domain bundle declares which path globs it owns and what build action each glob needs; the wizard aggregates those declarations into `skill_domains.build_map`. Seeding is write-once — a re-seed never clobbers an existing block — so a correction you make survives.
+The `build.map` is seeded automatically. Each domain bundle declares which path globs it owns and what build action each glob needs; the wizard aggregates those declarations into `build.map`. Seeding is write-once — a re-seed never clobbers an existing block — so a correction you make survives.
 
 Each entry classifies a glob into a closed build-class vocabulary:
 
-* `prod-compile` — production code; compiles the changed module.
-* `test-run` — test code; compiles and runs the changed module's tests.
-* `docs-validate` — documentation; runs the doc gate (marketplace skill validation or AsciiDoc validation).
-* `build-config-full` — build configuration; runs the full verify pipeline for the module.
+* `compile` — production code; compiles the changed module.
+* `module-tests` — test code; compiles and runs the changed module's tests.
+* `verify` — build configuration; runs the full verify pipeline for the module.
 * `none` — no build at all (the path is changed but needs no build action).
 
 ==== Correcting a wrong mapping
 
-When the seeded mapping is wrong for your project, correct the entry directly in `skill_domains.build_map` — there is no separate override layer. Because seeding is write-once, your correction survives a re-seed.
+When the seeded mapping is wrong for your project, correct the entry directly in `build.map` — there is no separate override layer. Because seeding is write-once, your correction survives a re-seed.
 
 The common case is a generated source file that the seed treats as production code but that should never trigger a build. Set its entry's `build_class` to `none`:
 
 [source,json]
 ----
 {
-  "skill_domains": {
-    "build_map": {
+  "build": {
+    "map": {
       "python": [
         { "glob": "marketplace/bundles/**/scripts/generated_*.py", "role": "production", "build_class": "none" }
       ]
@@ -275,7 +274,7 @@ The common case is a generated source file that the seed treats as production co
 }
 ----
 
-The canonical schema (the field table, the build-class enum source of truth, the longest-glob-wins precedence) lives in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] § Section: skill_domains.build_map.
+The canonical schema (the field table, the build-class enum source of truth, the longest-glob-wins precedence) lives in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] § Section: build.map.
 
 [#worktrees]
 === Branch strategy and worktrees

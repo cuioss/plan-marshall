@@ -7,6 +7,9 @@ Subcommands:
     check-docs                    Check if project docs need .plan/temp documentation
     fix-docs                      Deterministically fix missing documentation content
     check-structure               Check if the per-module project-architecture layout exists
+    check-worktree-plan-local     Refuse-or-scaffold guard: ensure a worktree owns its
+                                  own .plan/local before executor generation, so it cannot
+                                  contaminate the main checkout's .plan/execute-script.py
     check-working-prefixes        Detect absence or drift of project.working_prefixes
                                   against the canonical default (non-clobbering)
 
@@ -20,6 +23,7 @@ Usage:
     python3 determine_mode.py check-docs
     python3 determine_mode.py fix-docs
     python3 determine_mode.py check-structure
+    python3 determine_mode.py check-worktree-plan-local --repo-root PATH [--scaffold]
     python3 determine_mode.py check-working-prefixes
 
 Output (TOON format):
@@ -52,6 +56,23 @@ Output (TOON format):
         status	missing
         path	.plan/project-architecture
         modules_count	0
+
+    check-worktree-plan-local subcommand:
+        status	ok
+        repo_root	/path/to/main-checkout
+        plan_local	/path/to/main-checkout/.plan/local
+        is_worktree	false
+
+        status	refuse
+        repo_root	/path/to/.plan/local/worktrees/my-plan
+        plan_local	/path/to/.plan/local/worktrees/my-plan/.plan/local
+        is_worktree	true
+        detail	Worktree ... lacks its own .plan/local — refusing ...
+
+        status	scaffolded
+        repo_root	/path/to/.plan/local/worktrees/my-plan
+        plan_local	/path/to/.plan/local/worktrees/my-plan/.plan/local
+        is_worktree	true
 
     check-working-prefixes subcommand:
         status	ok
@@ -203,6 +224,66 @@ def check_structure(plan_dir: Path) -> tuple[str, Path, int]:
     if valid_count == 0:
         return 'missing', arch_dir, 0
     return 'exists', arch_dir, valid_count
+
+
+_WORKTREE_SEGMENT = '/.plan/local/worktrees/'
+
+
+def is_worktree_repo_root(repo_root: Path) -> bool:
+    """Return ``True`` when ``repo_root`` is a plan-marshall worktree checkout.
+
+    A worktree checkout lives under ``.plan/local/worktrees/`` in the main
+    checkout's tree. The detection is purely path-based (mirroring the
+    wizard-flow signal): the resolved repo-top-level path contains the
+    ``/.plan/local/worktrees/`` segment. The main checkout never does.
+    """
+    return _WORKTREE_SEGMENT in str(repo_root.resolve()).replace('\\', '/') + '/'
+
+
+def check_worktree_plan_local(repo_root: Path, scaffold: bool) -> tuple[str, Path]:
+    """Refuse-or-scaffold guard for worktree executor generation.
+
+    Before marshall-steward generates an executor from a worktree
+    (``generate_executor --marketplace-root <REPO_ROOT>``), the worktree MUST
+    own its own ``.plan/local`` directory. Without it, the executor-gen path
+    climbs to the *main* checkout's ``.plan/local`` (the nearest ancestor
+    containing it) and contaminates main's ``.plan/execute-script.py`` — the
+    exact failure this guard prevents.
+
+    Behaviour:
+
+    - ``repo_root`` is NOT a worktree (main checkout): return ``('ok', plan_local)``
+      unconditionally — the guard only governs worktree generation.
+    - ``repo_root`` IS a worktree and ``<repo_root>/.plan/local`` exists: return
+      ``('ok', plan_local)``.
+    - ``repo_root`` IS a worktree and ``<repo_root>/.plan/local`` is absent:
+        * ``scaffold=False`` → return ``('refuse', plan_local)`` so the caller
+          aborts before writing main's executor.
+        * ``scaffold=True`` → create ``<repo_root>/.plan/local`` (parents
+          included) and return ``('scaffolded', plan_local)``.
+
+    Args:
+        repo_root: Resolved repo top-level path (the wizard's ``REPO_ROOT``).
+        scaffold: When ``True``, create the missing ``.plan/local`` instead of
+            refusing.
+
+    Returns:
+        Tuple of (status, plan_local_path) where status is one of
+        ``'ok'``, ``'refuse'``, or ``'scaffolded'``.
+    """
+    plan_local = repo_root / '.plan' / 'local'
+
+    if not is_worktree_repo_root(repo_root):
+        return 'ok', plan_local
+
+    if plan_local.is_dir():
+        return 'ok', plan_local
+
+    if scaffold:
+        plan_local.mkdir(parents=True, exist_ok=True)
+        return 'scaffolded', plan_local
+
+    return 'refuse', plan_local
 
 
 def count_section_bullets(content: str, section_heading: str) -> int:
@@ -427,6 +508,30 @@ def cmd_check_structure(args: argparse.Namespace) -> dict:
     }
 
 
+def cmd_check_worktree_plan_local(args: argparse.Namespace) -> dict:
+    """Handle the 'check-worktree-plan-local' subcommand.
+
+    Implements the refuse-or-scaffold guard so worktree executor generation
+    cannot contaminate the main checkout's ``.plan/execute-script.py``.
+    """
+    repo_root = Path(args.repo_root)
+    status, plan_local = check_worktree_plan_local(repo_root, args.scaffold)
+
+    result: dict = {
+        'status': status,
+        'repo_root': str(repo_root),
+        'plan_local': str(plan_local),
+        'is_worktree': is_worktree_repo_root(repo_root),
+    }
+    if status == 'refuse':
+        result['detail'] = (
+            f'Worktree {repo_root} lacks its own .plan/local — refusing executor '
+            f'generation to avoid contaminating the main checkout. Re-run with '
+            f'--scaffold to create {plan_local} first.'
+        )
+    return result
+
+
 def detect_missing_default_finalize_steps(plan_dir: Path) -> list[str]:
     """Compare ``marshal.json::plan["phase-6-finalize"]["steps"]`` against the
     canonical ``BUILT_IN_FINALIZE_STEPS`` list and return any built-ins missing
@@ -461,15 +566,108 @@ def detect_missing_default_finalize_steps(plan_dir: Path) -> list[str]:
     return [step for step in BUILT_IN_FINALIZE_STEPS if step not in existing]
 
 
+def _read_finalize_steps(plan_dir: Path) -> list[str] | None:
+    """Return ``marshal.json::plan["phase-6-finalize"]["steps"]`` or ``None``.
+
+    ``None`` signals "cannot compare" — marshal.json is absent, unparseable,
+    or the steps value is not a list. Callers treat ``None`` as "nothing to
+    detect" so the wizard never crashes on an unexpected topology.
+    """
+    marshal_path = plan_dir / 'marshal.json'
+    if not marshal_path.exists():
+        return None
+    try:
+        data = json.loads(marshal_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    plan_section = data.get('plan', {}) if isinstance(data, dict) else {}
+    finalize = plan_section.get('phase-6-finalize', {}) if isinstance(plan_section, dict) else {}
+    existing = finalize.get('steps', []) if isinstance(finalize, dict) else []
+    if not isinstance(existing, list):
+        return None
+    return existing
+
+
+def discover_shipped_project_finalize_steps(project_root: Path) -> list[str]:
+    """Discover the ``project:`` finalize-step skills the repo ships.
+
+    A project-local finalize-step skill lives at
+    ``<project_root>/.claude/skills/finalize-step-<name>/SKILL.md``. Each such
+    skill is referenced from ``phase-6-finalize.steps`` as
+    ``project:finalize-step-<name>``. This helper enumerates the shipped
+    skills and returns the corresponding ``project:`` step notations, sorted
+    for determinism.
+
+    Returns an empty list when ``.claude/skills/`` is absent (a consumer
+    project that ships no project-local finalize steps).
+    """
+    skills_dir = project_root / '.claude' / 'skills'
+    if not skills_dir.is_dir():
+        return []
+    notations: list[str] = []
+    for child in sorted(skills_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        if not child.name.startswith('finalize-step-'):
+            continue
+        if not (child / 'SKILL.md').is_file():
+            continue
+        notations.append(f'project:{child.name}')
+    return notations
+
+
+def detect_missing_project_finalize_steps(plan_dir: Path, project_root: Path) -> list[str]:
+    """Return the shipped ``project:`` finalize steps absent from the steps array.
+
+    Compares the ``project:`` finalize-step skills the repo ships (discovered
+    from ``<project_root>/.claude/skills/finalize-step-*``) against
+    ``marshal.json::plan["phase-6-finalize"]["steps"]`` and returns any shipped
+    ``project:`` step missing from that array — the steward surfaces these so a
+    re-run on the meta-project does not silently drop its hand-maintained
+    project-local finalize steps.
+
+    Returns an empty list when marshal.json is absent/unparseable, the steps
+    value is not a list, or the project ships no ``project:`` finalize steps
+    (the consumer-project case).
+    """
+    existing = _read_finalize_steps(plan_dir)
+    if existing is None:
+        return []
+    shipped = discover_shipped_project_finalize_steps(project_root)
+    return [step for step in shipped if step not in existing]
+
+
 def cmd_check_missing_finalize_steps(args: argparse.Namespace) -> dict:
-    """Handle the 'check-missing-finalize-steps' subcommand."""
-    missing = detect_missing_default_finalize_steps(Path(args.plan_dir))
-    if missing:
-        return {
+    """Handle the 'check-missing-finalize-steps' subcommand.
+
+    Detects two classes of absence:
+
+    - built-in ``default:`` steps newly added to ``BUILT_IN_FINALIZE_STEPS``
+      that an existing project's marshal.json predates, and
+    - ``project:`` finalize steps the repo ships (under ``.claude/skills/``)
+      that are absent from ``phase-6-finalize.steps`` — the meta-project case
+      where re-running the steward must not silently drop hand-maintained
+      project-local steps.
+
+    The two detection sets are reported independently so callers can tell a
+    drifted built-in from a dropped project-local step. ``status: missing``
+    fires when EITHER set is non-empty.
+    """
+    plan_dir = Path(args.plan_dir)
+    project_root = Path(getattr(args, 'project_root', None) or '.')
+    missing_default = detect_missing_default_finalize_steps(plan_dir)
+    missing_project = detect_missing_project_finalize_steps(plan_dir, project_root)
+
+    if missing_default or missing_project:
+        result: dict = {
             'status': 'missing',
-            'missing_count': len(missing),
-            'missing_default_finalize_steps': ','.join(missing),
+            'missing_count': len(missing_default) + len(missing_project),
         }
+        if missing_default:
+            result['missing_default_finalize_steps'] = ','.join(missing_default)
+        if missing_project:
+            result['missing_project_finalize_steps'] = ','.join(missing_project)
+        return result
     return {'status': 'ok', 'missing_count': 0}
 
 
@@ -580,12 +778,35 @@ def main() -> int:
     )
     structure_parser.add_argument('--plan-dir', type=str, default='.plan', help='Directory to check (default: .plan)')
 
+    # check-worktree-plan-local subcommand
+    worktree_parser = subparsers.add_parser(
+        'check-worktree-plan-local',
+        help=(
+            'Refuse-or-scaffold guard for worktree executor generation — ensures a '
+            'worktree owns its own .plan/local before generate_executor runs, so it '
+            "cannot contaminate the main checkout's .plan/execute-script.py."
+        ),
+        allow_abbrev=False,
+    )
+    worktree_parser.add_argument(
+        '--repo-root',
+        type=str,
+        required=True,
+        help='Resolved repo top-level path (the wizard REPO_ROOT) to guard.',
+    )
+    worktree_parser.add_argument(
+        '--scaffold',
+        action='store_true',
+        help='Create the missing .plan/local instead of refusing.',
+    )
+
     # check-missing-finalize-steps subcommand
     missing_parser = subparsers.add_parser(
         'check-missing-finalize-steps',
         help=(
-            'Detect built-in default finalize steps absent from an existing '
-            'marshal.json — surfaces newly-added defaults so the wizard can prompt for them.'
+            'Detect finalize steps absent from an existing marshal.json — '
+            'newly-added built-in defaults AND project: steps the repo ships '
+            '(under .claude/skills/) that were dropped from phase-6-finalize.steps.'
         ),
         allow_abbrev=False,
     )
@@ -594,6 +815,15 @@ def main() -> int:
         type=str,
         default='.plan',
         help='Directory containing marshal.json (default: .plan)',
+    )
+    missing_parser.add_argument(
+        '--project-root',
+        type=str,
+        default='.',
+        help=(
+            'Project root used to discover shipped project: finalize-step '
+            'skills under .claude/skills/ (default: .)'
+        ),
     )
 
     # check-working-prefixes subcommand
@@ -622,6 +852,8 @@ def main() -> int:
         result = cmd_fix_docs(args)
     elif args.command == 'check-structure':
         result = cmd_check_structure(args)
+    elif args.command == 'check-worktree-plan-local':
+        result = cmd_check_worktree_plan_local(args)
     elif args.command == 'check-missing-finalize-steps':
         result = cmd_check_missing_finalize_steps(args)
     elif args.command == 'check-working-prefixes':

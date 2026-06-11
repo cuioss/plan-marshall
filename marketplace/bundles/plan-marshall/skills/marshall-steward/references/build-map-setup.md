@@ -2,7 +2,7 @@
 
 Extracted build-map seed logic for the wizard's Project Architecture step and the maintenance Project Structure submenu. Referenced by `wizard-flow.md` Step 8 and `menu-configuration.md` (Project Structure).
 
-The `skill_domains.build_map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. The seed re-derives that block from every *applicable* registered domain extension's `classify_globs()` + `classify_build_class()` predicates. A domain is *applicable* only when its owning extension's `applies_to_module()` reports `applicable: True` for at least one discovered project module, so a Python-only project never receives `java` / `oci` / `javascript` routes. The schema, the applicability-scoping rule, and the closed canonical-named `build_class` set are owned by `manage-config` — see [`../../manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Workflow: Build Map" for the authoritative contract; this reference covers only the wizard/menu wiring.
+The `build.map` block in `marshal.json` is the file-to-build contract: a domain-keyed inventory of `{glob, role, build_class}` entries that maps every changed path to the build action it requires. The seed re-derives that block from every *applicable* registered domain extension's `classify_globs()` + `classify_build_class()` predicates. A domain is *applicable* only when its owning extension's `applies_to_module()` reports `applicable: True` for at least one discovered project module, so a Python-only project never receives `java` / `oci` / `javascript` routes. The schema, the applicability-scoping rule, and the closed canonical-named `build_class` set are owned by `manage-config` — see [`../../manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Workflow: Build Map" for the authoritative contract; this reference covers only the wizard/menu wiring.
 
 ## When the Build Map Is Seeded
 
@@ -72,7 +72,24 @@ build_map:
 domain_count: 2
 ```
 
-The read **fails closed**: when `skill_domains.build_map` is absent it returns a structured error rather than an empty map. A structural completeness validator (`git ls-files` scan) flags any tracked source file no declared route covers, so a forgotten production module surfaces rather than silently classifying to no build.
+The read **fails closed**: when `build.map` is absent it returns a structured error rather than an empty map. A structural completeness validator (`git ls-files` scan) flags any tracked source file no declared route covers, so a forgotten production module surfaces rather than silently classifying to no build.
+
+## Worktree Executor-Gen: `.plan/local` Refuse-or-Scaffold Requirement
+
+When the wizard runs inside a git worktree (a checkout under `.plan/local/worktrees/`), the executor it generates anchors its script mappings to the worktree via `generate_executor --marketplace-root <REPO_ROOT>`. That generation MUST NOT proceed until the worktree owns its own `.plan/local` directory: without it, `generate_executor` climbs to the **main** checkout's `.plan/local` (the nearest ancestor that has one) and overwrites main's `.plan/execute-script.py`, contaminating the main checkout.
+
+The steward enforces this with a refuse-or-scaffold guard (`determine_mode.py check-worktree-plan-local --repo-root <REPO_ROOT> [--scaffold]`, wired into `wizard-flow.md` Step 4):
+
+- `--scaffold` (the wizard default) creates the missing `<REPO_ROOT>/.plan/local` and proceeds (`status: scaffolded`).
+- Without `--scaffold`, a worktree lacking `.plan/local` returns `status: refuse` and generation is aborted.
+
+The working manual workaround when the guard refuses is to create the directory before re-running:
+
+```bash
+mkdir -p <REPO_ROOT>/.plan/local
+```
+
+For the main checkout (`REPO_ROOT` not under `.plan/local/worktrees/`), the guard is a no-op (`status: ok`) — it governs worktree generation only.
 
 ## Menu Mode: Re-Seed After an Extension Change
 

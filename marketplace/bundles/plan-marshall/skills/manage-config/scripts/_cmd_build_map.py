@@ -1,7 +1,7 @@
 """
 build-map and build-decision command handlers for manage-config.
 
-The skill_domains.build_map block in marshal.json is the file-to-build
+The build.map block in marshal.json is the file-to-build
 contract: a per-domain inventory of {glob, role, build_class} entries seeded
 from each extension's explicit (pattern, role) routes. Each extension's
 classify_globs() declares those routes directly (single-* fnmatch globs, never
@@ -47,13 +47,12 @@ def cmd_build_map(args: argparse.Namespace) -> dict:
 
 
 def cmd_build_map_seed(args: argparse.Namespace) -> dict:
-    """Seed marshal.json::skill_domains.build_map from extension routes.
+    """Seed marshal.json::build.map from extension routes.
 
     Aggregates the per-domain build map by collecting each extension's explicit
     ``(pattern, role)`` routes (declared by ``classify_globs()``, gathered
     verbatim by the script-shared route collector) and stamping each with its
-    domain's ``classify_build_class``, then writes it under
-    ``skill_domains.build_map``.
+    domain's ``classify_build_class``, then writes it under ``build.map``.
 
     Default (``--force`` absent): write-once semantics — an existing seed is
     preserved (never clobbered), so user corrections survive a re-seed.
@@ -79,7 +78,7 @@ def cmd_build_map_seed(args: argparse.Namespace) -> dict:
 
 
 def cmd_build_map_read(args: argparse.Namespace) -> dict:
-    """Return the effective build map from ``skill_domains.build_map``.
+    """Return the effective build map from ``build.map``.
 
     Fails closed when the build_map is absent — ``merge_build_map`` raises and
     the error is surfaced in the result dict.
@@ -102,7 +101,7 @@ def cmd_build_decision(args: argparse.Namespace) -> dict:
 
     Thin wrapper over the build-system-owned ``should_execute_build`` helper in
     ``script-shared`` (``extension_base``). The verdict is a pure function of the
-    ``skill_domains.build_map`` globs and the live plan footprint:
+    ``build.map`` globs and the live plan footprint:
 
     - ``decision: build`` when the footprint touches a registered build glob.
     - ``decision: not_necessary`` (with a non-empty ``reason``) when the build_map

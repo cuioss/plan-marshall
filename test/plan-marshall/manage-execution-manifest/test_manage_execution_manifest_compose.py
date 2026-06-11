@@ -1391,14 +1391,14 @@ def test_cli_compose_commit_strategy_none_omits_commit_push(plan_context):
 def _write_marshal(
     fixture_dir: Path, *, activation_globs: list[str] | None = None, include_pre_push_key: bool = True
 ) -> None:
-    """Write a marshal.json whose pre-push activation derives from skill_domains.build_map.
+    """Write a marshal.json whose pre-push activation derives from build.map.
 
     Pre-push-quality-gate activation now reads the per-entry globs from
-    ``skill_domains.build_map`` (D7/D8) — there is no separate
+    ``build.map`` (D7/D8) — there is no separate
     ``pre_push_quality_gate.activation_globs`` source. ``activation_globs`` here
     names the globs the seeded build_map should carry:
 
-    - ``include_pre_push_key=False`` → omit the ``skill_domains.build_map`` block
+    - ``include_pre_push_key=False`` → omit the ``build.map`` block
       entirely (simulates the "absent" branch → gate dropped).
     - ``activation_globs is None`` (with the block present) → seed a build_map
       whose single entry carries no usable glob (also "absent" → gate dropped).
@@ -1407,13 +1407,13 @@ def _write_marshal(
       ``_read_build_map_globs`` collects exactly those globs.
     """
     marshal_path = fixture_dir / 'marshal.json'
-    data: dict = {'plan': {'phase-6-finalize': {}}, 'skill_domains': {}}
+    data: dict = {'plan': {'phase-6-finalize': {}}, 'build': {}}
     if include_pre_push_key:
         globs = activation_globs if activation_globs is not None else []
         entries = [
             {'glob': glob, 'role': 'production', 'build_class': 'compile'} for glob in globs
         ]
-        data['skill_domains']['build_map'] = {'python': entries}
+        data['build']['map'] = {'python': entries}
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
 

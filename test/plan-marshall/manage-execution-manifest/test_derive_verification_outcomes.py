@@ -133,9 +133,9 @@ def _seed(project_dir: str) -> None:
     save_module_derived('pm-b', _module_derived('pm-b', 'pm-b'), project_dir)
     marshal = Path(project_dir) / '.plan' / 'marshal.json'
     marshal.parent.mkdir(parents=True, exist_ok=True)
-    # build_map is relocated under skill_domains (single source of truth).
+    # build_map is relocated under the top-level build block (single source of truth).
     marshal.write_text(
-        json.dumps({'skill_domains': {'build_map': _BUILD_MAP}}, indent=2), encoding='utf-8'
+        json.dumps({'build': {'map': _BUILD_MAP}}, indent=2), encoding='utf-8'
     )
 
 

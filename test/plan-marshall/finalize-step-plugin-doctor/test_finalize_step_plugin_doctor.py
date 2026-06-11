@@ -23,10 +23,15 @@ _WRAPPER_SKILL_MD = _REPO_ROOT / '.claude' / 'skills' / 'finalize-step-plugin-do
 
 # The planning-workflow docs whose documentation_only Verification citations
 # use the scopeable `quality-gate --paths ... --marketplace-root` gate.
+#
+# phase-5-execute/SKILL.md is intentionally excluded: per ADR-004 documentation
+# has no build owner, so the phase-5 derived ladder classifies a marketplace
+# skill `.md` change to `none` (zero rungs) rather than a `docs-validate` rung
+# that ran the plugin-doctor gate. phase-5-execute therefore no longer cites the
+# `quality-gate --paths ... --marketplace-root` doc gate.
 _PLANNING_DOCS = (
     _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md',
     _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md',
-    _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md',
 )
 
 # default:commit-push resolves to order 10 in the phase-6-finalize seed; the

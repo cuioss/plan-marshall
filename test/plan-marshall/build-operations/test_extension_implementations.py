@@ -648,13 +648,17 @@ def test_general_dev_not_applicable_to_non_code_modules():
 
 
 def test_plan_marshall_get_skill_domains_multi():
-    """plan-marshall provides both build and general-dev domains."""
+    """plan-marshall provides only the general-dev domain.
+
+    The vestigial `build` skill-domain was removed: the file-to-build contract is
+    owned by the build-system extensions per ADR-004, not by plan-marshall-plugin.
+    """
     ext = load_extension('plan-marshall')
     all_domains = ext.get_skill_domains()
 
-    assert len(all_domains) == 2
+    assert len(all_domains) == 1
     keys = {d['domain']['key'] for d in all_domains}
-    assert 'build' in keys
+    assert 'build' not in keys
     assert 'general-dev' in keys
 
 
@@ -1291,8 +1295,8 @@ def test_all_extensions_have_unique_domain_keys():
         except FileNotFoundError:
             pass  # Skip bundles without extensions
 
-    assert len(domain_keys) == 11, (
-        f'Should have 11 unique domain keys, got {len(domain_keys)}: {sorted(domain_keys.keys())}'
+    assert len(domain_keys) == 10, (
+        f'Should have 10 unique domain keys, got {len(domain_keys)}: {sorted(domain_keys.keys())}'
     )
 
 

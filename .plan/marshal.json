@@ -1,4 +1,40 @@
 {
+  "build": {
+    "map": {
+      "python": [
+        {
+          "glob": ".claude/skills/*.py",
+          "role": "production",
+          "build_class": "compile"
+        },
+        {
+          "glob": "build.py",
+          "role": "production",
+          "build_class": "compile"
+        },
+        {
+          "glob": "marketplace/bundles/*.py",
+          "role": "production",
+          "build_class": "compile"
+        },
+        {
+          "glob": "marketplace/targets/*.py",
+          "role": "production",
+          "build_class": "compile"
+        },
+        {
+          "glob": "pyproject.toml",
+          "role": "config",
+          "build_class": "verify"
+        },
+        {
+          "glob": "test/*.py",
+          "role": "test",
+          "build_class": "module-tests"
+        }
+      ]
+    }
+  },
   "plan": {
     "effort": "level-3",
     "open_in_ide": true,
@@ -107,47 +143,6 @@
     }
   ],
   "skill_domains": {
-    "build_map": {
-      "documentation": [
-        {
-          "glob": "*.adoc",
-          "role": "documentation",
-          "build_class": "docs-validate"
-        },
-        {
-          "glob": "*.asciidoc",
-          "role": "documentation",
-          "build_class": "docs-validate"
-        },
-        {
-          "glob": "*.md",
-          "role": "documentation",
-          "build_class": "docs-validate"
-        }
-      ],
-      "plan-marshall-plugin-dev": [
-        {
-          "glob": "marketplace/bundles/*/skills/*/SKILL.md",
-          "role": "documentation",
-          "build_class": "docs-validate"
-        },
-        {
-          "glob": "marketplace/bundles/*/skills/*/references/*.md",
-          "role": "documentation",
-          "build_class": "docs-validate"
-        },
-        {
-          "glob": "marketplace/bundles/*/skills/*/standards/*.md",
-          "role": "documentation",
-          "build_class": "docs-validate"
-        },
-        {
-          "glob": "marketplace/bundles/*/skills/*/workflow/*.md",
-          "role": "documentation",
-          "build_class": "docs-validate"
-        }
-      ]
-    },
     "system": {
       "defaults": [],
       "optionals": [],
@@ -162,9 +157,6 @@
         "integration_testing": "plan-marshall:execute-task",
         "verification": "plan-marshall:execute-task"
       }
-    },
-    "build": {
-      "bundle": "plan-marshall"
     },
     "general-dev": {
       "bundle": "plan-marshall"

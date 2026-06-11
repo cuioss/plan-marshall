@@ -105,9 +105,9 @@ def _make_live_plan(base: Path, plan_id: str) -> None:
 
 
 def _set_max_slots(base: Path, max_slots: int) -> None:
-    """Write a marshal.json with the configured ``build_queue.max_slots``."""
+    """Write a marshal.json with the configured ``build.queue.max_slots``."""
     (base / 'marshal.json').write_text(
-        json.dumps({'build_queue': {'max_slots': max_slots}}), encoding='utf-8'
+        json.dumps({'build': {'queue': {'max_slots': max_slots}}}), encoding='utf-8'
     )
 
 

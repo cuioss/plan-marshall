@@ -476,7 +476,7 @@ def merge_module_data(module_name: str, project_dir: str = '.') -> dict[str, Any
 # =============================================================================
 #
 # The deriver is the SINGLE deterministic consumer of the build_map contract.
-# It reads the build_map from marshal.json (skill_domains.build_map, single
+# It reads the build_map from marshal.json (build.map, single
 # source of truth — no override layer),
 # classifies each changed-artifact path to a build_class (longest-glob-wins),
 # resolves the owning module per path, and lets the CLI handler emit the
@@ -488,20 +488,20 @@ def merge_module_data(module_name: str, project_dir: str = '.') -> dict[str, Any
 
 
 def load_merged_build_map(project_dir: str = '.') -> dict[str, list[dict[str, str]]]:
-    """Return the effective ``skill_domains.build_map`` for ``project_dir``.
+    """Return the effective ``build.map`` for ``project_dir``.
 
     Reads ``{project_dir}/.plan/marshal.json`` directly (project_dir-honoring,
     mirroring the ``ext_defaults_*`` accessors) and delegates to the
     ``manage-config`` reader so the deriver consumes the exact same effective
-    map the user sees via ``manage-config build-map read`` — the build_map under
-    ``skill_domains`` (single source of truth, no override layer).
+    map the user sees via ``manage-config build-map read`` — the build_map at
+    the top-level ``build.map`` (single source of truth, no override layer).
 
     Args:
         project_dir: Project directory containing ``.plan/marshal.json``.
 
     Returns:
         The ``{domain: [{glob, role, build_class}]}`` dict. An empty dict when
-        the marshal.json is absent or carries no ``skill_domains.build_map``.
+        the marshal.json is absent or carries no ``build.map``.
     """
     marshal_path = Path(project_dir) / '.plan' / 'marshal.json'
     if not marshal_path.exists():
@@ -516,7 +516,7 @@ def load_merged_build_map(project_dir: str = '.') -> dict[str, list[dict[str, st
 def _merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
     """Delegate to ``manage-config`` ``merge_build_map`` (single source of read logic).
 
-    The build_map read (from ``skill_domains.build_map``, single source of
+    The build_map read (from ``build.map``, single source of
     truth — no override layer) is owned by ``manage-config``'s
     ``_config_core.merge_build_map``. Importing it keeps one implementation
     rather than re-deriving it here. The ``manage-config`` scripts dir is added

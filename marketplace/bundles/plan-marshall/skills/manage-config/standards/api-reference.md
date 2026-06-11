@@ -454,12 +454,12 @@ manage-config init [--force]
 
 ## Noun: build-map
 
-Seed and read the file-to-build contract (`skill_domains.build_map` block in marshal.json). The block is a domain-keyed inventory of `{glob, role, build_class}` entries seeded from the registered domain extensions; it lives under `skill_domains`, is required and always seeded, and is never clobbered on re-seed (write-once). The seeded globs are **explicit `(pattern, role)` routes** — each extension's `classify_globs()` declares them directly (single-`*` fnmatch globs, never recursive `**`), and the `script-shared` route collector gathers them verbatim — and each entry's `build_class` is **canonical-named** (the value IS the canonical command, with no indirection map). A separate git-tracked completeness validator flags any tracked source file no declared route covers. There is no override layer — corrections are made directly to the seeded entries. See [data-model.md § skill_domains.build_map](data-model.md) for the complete schema and the closed canonical-named `build_class` set.
+Seed and read the file-to-build contract (`build.map` block in marshal.json). The block is a domain-keyed inventory of `{glob, role, build_class}` entries seeded from the registered domain extensions; it lives at the top-level `build.map` block (peer to `build.queue`), is required and always seeded, and is never clobbered on re-seed (write-once). The seeded globs are **explicit `(pattern, role)` routes** — each extension's `classify_globs()` declares them directly (single-`*` fnmatch globs, never recursive `**`), and the `script-shared` route collector gathers them verbatim — and each entry's `build_class` is **canonical-named** (the value IS the canonical command, with no indirection map). A separate git-tracked completeness validator flags any tracked source file no declared route covers. There is no override layer — corrections are made directly to the seeded entries. See [data-model.md § build.map](data-model.md) for the complete schema and the closed canonical-named `build_class` set.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
-| `seed` | -- | Re-seed `skill_domains.build_map` from extensions with write-once semantics. Returns `action: seeded` when written; `action: preserved` when an existing block is left untouched. |
-| `read` | -- | Return the effective build map from `skill_domains.build_map`. **Fails closed**: returns a structured error when `skill_domains.build_map` is absent (rather than an empty map). |
+| `seed` | -- | Re-seed `build.map` from extensions with write-once semantics. Returns `action: seeded` when written; `action: preserved` when an existing block is left untouched. |
+| `read` | -- | Return the effective build map from `build.map`. **Fails closed**: returns a structured error when `build.map` is absent (rather than an empty map). |
 
 ### Example: seed
 
@@ -472,10 +472,9 @@ Success payload:
 ```toon
 status: success
 action: seeded
-domain_count: 2
+domain_count: 1
 build_map:
   python: [...]
-  documentation: [...]
 ```
 
 `action` is `seeded` when the block was written, or `preserved` when an existing block was left untouched.
@@ -492,11 +491,10 @@ Success payload:
 status: success
 build_map:
   python: [...]
-  documentation: [...]
-domain_count: 2
+domain_count: 1
 ```
 
-`domain_count` is the number of domain keys in the returned `build_map`. When `skill_domains.build_map` is absent the read fails closed with a structured error payload instead.
+`domain_count` is the number of domain keys in the returned `build_map`. When `build.map` is absent the read fails closed with a structured error payload instead.
 
 ## Error Responses
 

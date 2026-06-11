@@ -26,7 +26,6 @@ from abc import ABC, abstractmethod
 from _extension_constants import (  # noqa: F401 — re-exported for backward compat
     ALL_CANONICAL_COMMANDS,
     BUILD_CLASS_BUILD_CONFIG_FULL,
-    BUILD_CLASS_DOCS_VALIDATE,
     BUILD_CLASS_NONE,
     BUILD_CLASS_PROD_COMPILE,
     BUILD_CLASS_TEST_RUN,
@@ -47,7 +46,6 @@ from _extension_constants import (  # noqa: F401 — re-exported for backward co
     CMD_VERIFY,
     PROFILE_PATTERNS,
     ROLE_CONFIG,
-    ROLE_DOCUMENTATION,
     ROLE_PRODUCTION,
     ROLE_TEST,
 )
@@ -72,8 +70,8 @@ def derive_globs_from_tree(
     extension declares its build_map as explicit ``(pattern, role)`` routes via
     ``classify_globs()`` — an fnmatch-style glob pattern (e.g.
     ``marketplace/bundles/*.py``)
-    paired with one of the four resolved roles (``production`` / ``test`` /
-    ``documentation`` / ``config``). This function gathers those declared routes
+    paired with one of the three resolved roles (``production`` / ``test`` /
+    ``config``). This function gathers those declared routes
     verbatim, keyed by the extension's first domain key; it no longer scans the
     tree to enumerate one glob per directory. The compact route set seeds
     directly — a handful of routes per domain rather than one glob per matched
@@ -296,17 +294,17 @@ def validate_tree_completeness(project_root: str, extensions: list) -> list[str]
 
 
 def _read_build_map_globs(project_root: str | None = None) -> list[str]:
-    """Collect every non-empty ``glob`` from ``skill_domains.build_map`` in marshal.json.
+    """Collect every non-empty ``glob`` from ``build.map`` in marshal.json.
 
-    The build_map under ``skill_domains`` is the single source of truth for the
-    file-to-build contract — every ``{glob, role, build_class}`` entry across all
-    domains names a file type the project knows how to build. This is the
-    build-decision activation gate: a build is necessary only when the live
+    The build_map at the top-level ``build.map`` is the single source of truth
+    for the file-to-build contract — every ``{glob, role, build_class}`` entry
+    across all domains names a file type the project knows how to build. This is
+    the build-decision activation gate: a build is necessary only when the live
     footprint touches one of these globs.
 
     Returns the deduplicated list of non-empty glob strings collected from every
     build_map entry, in first-seen order. Returns an empty list when marshal.json
-    is missing, the ``skill_domains.build_map`` block is absent, or no entry
+    is missing, the ``build.map`` block is absent, or no entry
     carries a glob — :func:`should_execute_build` treats an empty list as "no
     build registered" and returns ``not_necessary``.
 
@@ -334,10 +332,10 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
         return []
     if not isinstance(data, dict):
         return []
-    skill_domains = data.get('skill_domains')
-    if not isinstance(skill_domains, dict):
+    build = data.get('build')
+    if not isinstance(build, dict):
         return []
-    build_map = skill_domains.get('build_map')
+    build_map = build.get('map')
     if not isinstance(build_map, dict):
         return []
     globs: list[str] = []
@@ -429,7 +427,7 @@ def should_execute_build(
     four consumer sites previously each re-derived (the pre-push-quality-gate
     activation in ``manage-execution-manifest``, the phase-4-plan per-task
     verification derivation, and the per-bundle Axis-B classify logic). The
-    decision is a pure function of the ``skill_domains.build_map`` globs and the
+    decision is a pure function of the ``build.map`` globs and the
     live plan footprint — no LLM judgement:
 
     1. Collect the build_map globs via :func:`_read_build_map_globs`.
@@ -1054,16 +1052,15 @@ class BuildExtensionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis
                 itself when the role default is wrong; the default implementation
                 ignores it.
             role: The role under which this extension claimed the path — one of
-                ``production`` / ``test`` / ``documentation`` / ``config``.
+                ``production`` / ``test`` / ``config``.
 
         Returns:
-            A member of the closed 5-value enum ``BUILD_CLASSES`` — each value
+            A member of the closed 4-value enum ``BUILD_CLASSES`` — each value
             NAMES the canonical command directly (no name-to-name indirection):
 
             - ``compile``: production source — resolves a ``compile``.
             - ``module-tests``: test source — resolves ``test-compile`` +
               ``module-tests``.
-            - ``docs-validate``: documentation — derives a doc validation gate.
             - ``verify``: build/lint/packaging config — resolves a full reactor
               ``verify`` for the affected module.
             - ``none``: no build derives from this (path, role) pair.
@@ -1094,7 +1091,7 @@ class BuildExtensionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis
         """Return this extension's explicit ``(pattern, role)`` build_map routes.
 
         Each tuple is ``(pattern, role)`` — a concrete glob pattern paired with
-        one of the four resolved file roles. The route declares both WHAT this
+        one of the three resolved file roles. The route declares both WHAT this
         build extension owns and WHERE it lives, so the build_map seed consumes
         the routes verbatim: no tree scan enumerates one glob per directory.
         Patterns are matched with :func:`fnmatch.fnmatch` (the matcher the
@@ -1112,9 +1109,9 @@ class BuildExtensionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis
         Returns:
             A list of ``(pattern, role)`` tuples. ``pattern`` is an
             fnmatch-style glob (e.g. ``test/*.py``) or an exact path for a single
-            config file (e.g. ``pyproject.toml``). ``role`` is one of the four
-            ``BUILD_MAP_ROLES`` — ``production`` / ``test`` / ``documentation`` /
-            ``config`` — and maps straight through to a ``classify_build_class``
+            config file (e.g. ``pyproject.toml``). ``role`` is one of the three
+            ``BUILD_MAP_ROLES`` — ``production`` / ``test`` / ``config`` — and
+            maps straight through to a ``classify_build_class``
             build_class with no name-to-name indirection. The default
             implementation returns an empty list: build extensions that own no
             buildable file types contribute no routes. Example for the python

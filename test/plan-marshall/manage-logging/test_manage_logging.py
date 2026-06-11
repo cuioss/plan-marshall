@@ -306,3 +306,117 @@ def test_cli_missing_args():
     """Test that missing args fails via argparse."""
     result = run_script(SCRIPT_PATH, 'work', '--plan-id', 'my-plan', '--level', 'INFO')
     assert not result.success, 'Expected failure for missing args'
+
+
+# =============================================================================
+# Global / no-plan logging path + STEWARD audit namespace (D11)
+# =============================================================================
+#
+# manage-logging write subcommands (work / decision / script) accept a plan-less
+# call: omitting --plan-id writes to the dated global log under .plan/logs/. This
+# is the first-class global path used by plan-less callers such as
+# marshall-steward, which emit a [STEWARD] (plan-marshall:marshall-steward) audit
+# trail through it. Resolving the global path via the same get_log_path the writer
+# uses keeps these tests robust to base-dir resolution under the test fixture.
+
+get_log_path = _mod.get_log_path
+
+
+def _read_global_log(log_type: str) -> str:
+    """Read the dated global log file for log_type (the no-plan target)."""
+    path = get_log_path(None, log_type)
+    return path.read_text(encoding='utf-8') if path.exists() else ''
+
+
+def test_write_without_plan_id_targets_global_decision_log(plan_context):
+    """A decision write with plan_id=None lands in the dated global decision log.
+
+    Exercises the first-class global/no-plan path: handle_write with plan_id=None
+    must route to .plan/logs/decision-{date}.log rather than any plan-scoped log.
+    """
+    # Arrange — capture the global decision log content before the write
+    before = _read_global_log('decision')
+    steward_msg = '[STEWARD] (plan-marshall:marshall-steward) Selected balanced effort preset'
+
+    # Act — plan-less decision write under the STEWARD namespace
+    result = handle_write(
+        Namespace(log_type='decision', plan_id=None, level='INFO', message=steward_msg)
+    )
+
+    # Assert — fire-and-forget (None) and the entry landed in the global log
+    assert result is None
+    after = _read_global_log('decision')
+    assert steward_msg in after
+    assert steward_msg not in before
+
+
+def test_write_without_plan_id_targets_global_work_log(plan_context):
+    """A work write with plan_id=None lands in the dated global work log."""
+    # Arrange
+    before = _read_global_log('work')
+    steward_msg = '[STEWARD] (plan-marshall:marshall-steward) Generated executor with 47 mappings'
+
+    # Act — plan-less work write
+    result = handle_write(
+        Namespace(log_type='work', plan_id=None, level='INFO', message=steward_msg)
+    )
+
+    # Assert
+    assert result is None
+    after = _read_global_log('work')
+    assert steward_msg in after
+    assert steward_msg not in before
+
+
+def test_cli_write_without_plan_id_succeeds(plan_context):
+    """CLI: a plan-less decision write under the STEWARD namespace exits cleanly."""
+    # Act — no --plan-id supplied (the first-class global path)
+    result = run_script(
+        SCRIPT_PATH,
+        'decision',
+        '--level',
+        'INFO',
+        '--message',
+        '[STEWARD] (plan-marshall:marshall-steward) provider auto-selected',
+    )
+
+    # Assert — the plan-less global call is accepted (not an argparse rejection)
+    assert result.success, 'plan-less global write must succeed'
+
+
+def test_cli_write_with_invalid_plan_id_still_rejected(plan_context):
+    """CLI: supplying a malformed --plan-id still fails gracefully with invalid_plan_id.
+
+    Making --plan-id optional must NOT weaken validation when it IS supplied — a
+    malformed value is still rejected by the canonical plan-id validator. The
+    rejection follows the project-wide manage-* contract: the identifier-validator
+    failure exits with code 0 and emits ``status: error / error: invalid_plan_id``
+    on stdout (the ``parse_args_with_toon_errors`` helper deliberately does not
+    surface argparse's exit-code-2 contract). See ``assert_invalid_field`` in
+    ``test/plan-marshall/_pm_input_validation_fixtures.py``.
+    """
+    # Act — a malformed plan-id value (uppercase + space) is supplied explicitly
+    result = run_script(
+        SCRIPT_PATH,
+        'decision',
+        '--plan-id',
+        'Not A Valid Plan',
+        '--level',
+        'INFO',
+        '--message',
+        '[STEWARD] (plan-marshall:marshall-steward) should be rejected',
+    )
+
+    # Assert — graceful rejection via the canonical TOON error on stdout (exit 0),
+    # NOT a silent success. The malformed value is rejected even though --plan-id
+    # is now optional, because validation still fires whenever the flag IS present.
+    assert result.returncode == 0, (
+        f'identifier-validator failure must exit 0 (got {result.returncode})\n'
+        f'stdout={result.stdout!r}\nstderr={result.stderr!r}'
+    )
+    data = result.toon()
+    assert data.get('status') == 'error', f'expected status=error, got {data.get("status")!r}'
+    assert data.get('error') == 'invalid_plan_id', (
+        f'a malformed --plan-id must still be rejected with invalid_plan_id, '
+        f'got error={data.get("error")!r}'
+    )

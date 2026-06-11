@@ -16,12 +16,12 @@ Three knobs govern build concurrency and stale-slot recovery.
 
 The build-queue concurrency knobs live in `marshal.json`:
 
-* `build_queue.max_slots` (default 5) — the maximum number of builds that may run concurrently across all sessions. A build that finds a free slot runs immediately; otherwise it is enqueued and promoted in FIFO order as slots free up.
-* `build_queue.max_retries` (default 10) — how many times a waiting build's wrapper retries acquiring a slot before giving up. Raise it on a busy machine where builds routinely wait through several promotions.
+* `build.queue.max_slots` (default 5) — the maximum number of builds that may run concurrently across all sessions. A build that finds a free slot runs immediately; otherwise it is enqueued and promoted in FIFO order as slots free up.
+* `build.queue.max_retries` (default 10) — how many times a waiting build's wrapper retries acquiring a slot before giving up. Raise it on a busy machine where builds routinely wait through several promotions.
 
 The stale-slot threshold lives in the main-anchored `run-configuration.json` and is managed with the `manage-run-config build-queue-limit` verbs from xref:../concepts/parallelism-and-locking.adoc[the self-healing reaper]:
 
-* `build_queue_upper_limit` (default and floor 600 s, ceiling 3600 s) — the adaptive estimate of the longest real build. The reaper treats an active slot older than `2 ×` this value as dead. The value is monotonic-up and clamped to `[600 s, 3600 s]`, so it grows toward the longest build observed but never ratchets past an hour. Read or set it explicitly:
+* `build.queue.upper_limit_seconds` (default and floor 600 s, ceiling 3600 s) — the adaptive estimate of the longest real build. The reaper treats an active slot older than `2 ×` this value as dead. The value is monotonic-up and clamped to `[600 s, 3600 s]`, so it grows toward the longest build observed but never ratchets past an hour. Read or set it explicitly:
 
 [source,bash]
 ----
@@ -45,7 +45,7 @@ When new builds stop being admitted, work through these steps in order:
 
 1. *Inspect the `[LOCK]` events.* Open the main-anchored global lock log and find the active build ids and their `acquired` timestamps. A slot held far longer than a real build takes is the likely culprit; the `held` duration on a later `reaped-stale` event confirms it.
 
-2. *Let the self-healing reaper clear it.* The reaper runs at the start of every acquire and every release, so the next queue operation auto-clears any active entry older than `2 ×` the adaptive `build_queue_upper_limit` and emits a `reaped-stale` `[LOCK]` event. In most cases simply triggering another build (or releasing one) frees the wedged slot without any manual action.
+2. *Let the self-healing reaper clear it.* The reaper runs at the start of every acquire and every release, so the next queue operation auto-clears any active entry older than `2 ×` the adaptive `build.queue.upper_limit_seconds` and emits a `reaped-stale` `[LOCK]` event. In most cases simply triggering another build (or releasing one) frees the wedged slot without any manual action.
 
 3. *Edit `build-queue.json` as a last resort.* If a slot must be freed immediately and no queue operation is imminent, inspect the main-anchored `.plan/local/build-queue.json` to identify the stale active entry, then remove that entry from the `active` list. Do this only when you are certain the holding build is genuinely dead — removing a live build's entry lets a second build claim its slot.
 

@@ -81,6 +81,9 @@ _cmd_system_plan_mod = _load_module(
 _cmd_quality_phases_mod = _load_module(
     '_cmd_quality_phases_for_simplicity_test', '_cmd_quality_phases.py'
 )
+_cmd_effort_mod = _load_module(
+    '_cmd_effort_for_effort_defaults_test', '_cmd_effort.py'
+)
 
 
 def test_default_plan_finalize_includes_auto_merge_after_ci():
@@ -271,7 +274,7 @@ def test_validate_per_deliverable_build_rejects_unknown_value():
 def test_default_plan_finalize_omits_pre_push_quality_gate_activation_globs():
     """DEFAULT_PLAN_FINALIZE must NOT carry a pre_push_quality_gate.activation_globs knob.
 
-    Pre-push activation is derived entirely from skill_domains.build_map globs
+    Pre-push activation is derived entirely from build.map globs
     (D7/D8); the separate finalize-phase pre_push_quality_gate config field was
     dropped, so a surviving seed would re-introduce a dead activation source.
     """
@@ -687,23 +690,25 @@ def test_get_default_config_seeds_no_per_phase_coverage():
 
 
 def test_get_default_config_does_not_seed_build_map():
-    """get_default_config() must NOT seed build_map — neither top level nor nested.
+    """get_default_config() must NOT seed build.map — neither nested nor top level.
 
     The premature init-time auto-seed was removed (seed-ordering fix): build_map is
     materialised only at wizard Step 8b (`build-map seed`) after architecture
     discovery, so the applicability filter has discovered modules to scope against.
     The default config therefore ships skill_domains (with the system domain) but
-    no build_map block anywhere.
+    no build.map block anywhere.
     """
     # Arrange / Act
     config = _config_defaults_mod.get_default_config()
 
-    # Assert — no build_map at the top level and none nested under skill_domains.
-    assert 'build_map' not in config, 'build_map must not sit at the top level'
+    # Assert — no build.map block, and the legacy skill_domains.build_map is absent.
+    assert 'map' not in config.get('build', {}), (
+        'get_default_config() must NOT seed build.map (seeded at Step 8b '
+        'after architecture discovery)'
+    )
     assert 'skill_domains' in config
     assert 'build_map' not in config['skill_domains'], (
-        'get_default_config() must NOT seed skill_domains.build_map (seeded at Step 8b '
-        'after architecture discovery)'
+        'the legacy skill_domains.build_map block must not be present'
     )
 
 
@@ -719,6 +724,36 @@ def test_get_default_config_omits_retired_build_map_overrides():
     # Assert — no override layer anywhere.
     assert 'build_map_overrides' not in config
     assert 'build_map_overrides' not in config['skill_domains']
+    assert 'build_map_overrides' not in config.get('build', {})
+
+
+def test_build_map_round_trips_at_top_level_build_path(tmp_path, monkeypatch):
+    """A build.map block round-trips through save_config / merge_build_map unchanged.
+
+    Regression for the relocation (skill_domains.build_map -> build.map): writing a
+    config carrying a top-level build.map block, persisting it via save_config, and
+    reading it back via merge_build_map must yield the same {domain: [...]} data,
+    proving the new top-level path is the live read/write contract.
+    """
+    # Arrange — a config with a build.map block at the relocated top-level path.
+    build_map = {
+        'python': [
+            {'glob': 'scripts/*.py', 'role': 'production', 'build_class': 'compile'},
+            {'glob': 'test/**/*.py', 'role': 'test', 'build_class': 'module-tests'},
+        ],
+    }
+    config = {'build': {'map': build_map}, 'skill_domains': {'system': {}}}
+    marshal_path = tmp_path / 'marshal.json'
+    monkeypatch.setattr(_config_core_mod, 'MARSHAL_PATH', marshal_path)
+
+    # Act — persist then read back through the live readers.
+    _config_core_mod.save_config(config)
+    persisted = json.loads(marshal_path.read_text(encoding='utf-8'))
+    merged = _config_core_mod.merge_build_map(persisted)
+
+    # Assert — the relocated top-level path round-trips the data unchanged.
+    assert persisted['build']['map'] == build_map
+    assert merged == build_map
 
 
 # =============================================================================
@@ -726,13 +761,15 @@ def test_get_default_config_omits_retired_build_map_overrides():
 # =============================================================================
 #
 # save_config() in _config_core.py enforces a canonical top-level key order when
-# persisting marshal.json. After the D1–D6 dissolutions, the surviving top-level
-# blocks (ci/ceremony_policy/build_map/build_map_overrides removed) are listed
-# alphabetically: extension_defaults, plan, project, providers, skill_domains,
-# system. These tests pin that contract and prove the committed marshal.json
-# already round-trips through save_config with its key order unchanged.
+# persisting marshal.json. After the D1–D6 dissolutions and the build_map
+# relocation to the top-level build block, the surviving top-level blocks
+# (ci/ceremony_policy/build_map_overrides removed) are listed alphabetically:
+# build, extension_defaults, plan, project, providers, skill_domains, system.
+# These tests pin that contract and prove the committed marshal.json already
+# round-trips through save_config with its key order unchanged.
 
 _EXPECTED_CANONICAL_KEY_ORDER = [
+    'build',
     'extension_defaults',
     'plan',
     'project',
@@ -776,6 +813,7 @@ def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
         'project': {},
         'plan': {},
         'extension_defaults': {},
+        'build': {},
     }
     marshal_path = tmp_path / 'marshal.json'
 
@@ -873,16 +911,16 @@ def test_committed_marshal_json_round_trips_through_save_config_unchanged(tmp_pa
 
 
 # =============================================================================
-# build_queue.* top-level config keys (D10)
+# build.queue.* config keys (under the top-level build block)
 # =============================================================================
 #
-# DEFAULT_BUILD_QUEUE seeds the cross-session build-queue admission bounds at the
-# marshal.json top level (not under plan.*) because the build queue is a
-# project-wide, cross-plan resource. `max_slots` defaults to 5 (concurrent build
-# admissions before enqueue) and `max_retries` defaults to 10 (blocked-admission
-# re-polls). These tests pin the defaults surfaced by get_default_config() and
-# prove that an explicit marshal.json value overrides each default via
-# load_config().
+# DEFAULT_BUILD_QUEUE seeds the cross-session build-queue admission bounds under
+# the marshal.json top-level `build` block (peer to build.map, not under plan.*)
+# because the build queue is a project-wide, cross-plan resource. `max_slots`
+# defaults to 5 (concurrent build admissions before enqueue) and `max_retries`
+# defaults to 10 (blocked-admission re-polls). These tests pin the defaults
+# surfaced by get_default_config() and prove that an explicit marshal.json value
+# overrides each default via load_config().
 
 
 def test_default_build_queue_declares_max_slots_5_and_max_retries_10():
@@ -905,39 +943,70 @@ def test_default_build_queue_declares_max_slots_5_and_max_retries_10():
     )
 
 
-def test_get_default_config_surfaces_build_queue_max_slots_default_5():
-    """get_default_config() must surface build_queue.max_slots == 5 when unconfigured.
+def test_default_build_queue_declares_upper_limit_seconds_600():
+    """DEFAULT_BUILD_QUEUE must seed upper_limit_seconds=600 (the clamp floor).
 
-    The build_queue block lives at the marshal.json top level (cross-plan
-    resource), not under plan.*.
+    Seeding the key makes the adaptive stale-reclaim ceiling operator-visible in a
+    freshly-seeded config instead of fallback-only; 600 is the floor of the
+    clamped [600, 3600] range manage-run-config enforces.
+    """
+    # Arrange
+    build_queue = _config_defaults_mod.DEFAULT_BUILD_QUEUE
+
+    # Act / Assert
+    assert 'upper_limit_seconds' in build_queue, (
+        'upper_limit_seconds must be schema-registered in DEFAULT_BUILD_QUEUE'
+    )
+    assert build_queue['upper_limit_seconds'] == 600, (
+        'build_queue.upper_limit_seconds default must be 600 (the clamp floor)'
+    )
+
+
+def test_get_default_config_surfaces_build_queue_max_slots_default_5():
+    """get_default_config() must surface build.queue.max_slots == 5 when unconfigured.
+
+    The build.queue block lives under the marshal.json top-level `build` block
+    (cross-plan resource), not under plan.*.
     """
     # Arrange / Act
     config = _config_defaults_mod.get_default_config()
 
     # Assert
-    assert 'build_queue' in config, (
-        'build_queue must be a top-level block in get_default_config()'
+    assert 'queue' in config.get('build', {}), (
+        'build.queue must live under the top-level build block in get_default_config()'
     )
-    assert config['build_queue'].get('max_slots') == 5
+    assert config['build']['queue'].get('max_slots') == 5
 
 
 def test_get_default_config_surfaces_build_queue_max_retries_default_10():
-    """get_default_config() must surface build_queue.max_retries == 10 when unconfigured."""
+    """get_default_config() must surface build.queue.max_retries == 10 when unconfigured."""
     # Arrange / Act
     config = _config_defaults_mod.get_default_config()
 
     # Assert
-    assert 'build_queue' in config, (
-        'build_queue must be a top-level block in get_default_config()'
+    assert 'queue' in config.get('build', {}), (
+        'build.queue must live under the top-level build block in get_default_config()'
     )
-    assert config['build_queue'].get('max_retries') == 10
+    assert config['build']['queue'].get('max_retries') == 10
+
+
+def test_get_default_config_surfaces_build_queue_upper_limit_seconds_default_600():
+    """get_default_config() must surface build.queue.upper_limit_seconds == 600."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    assert 'queue' in config.get('build', {}), (
+        'build.queue must live under the top-level build block in get_default_config()'
+    )
+    assert config['build']['queue'].get('upper_limit_seconds') == 600
 
 
 def test_marshal_build_queue_max_slots_override_wins(plan_context, monkeypatch):
-    """An explicit marshal.json build_queue.max_slots overrides the default of 5.
+    """An explicit marshal.json build.queue.max_slots overrides the default of 5.
 
-    Seeds a fresh marshal.json (which carries the default build_queue block),
-    rewrites build_queue.max_slots to a custom value, and proves load_config()
+    Seeds a fresh marshal.json (which carries the default build.queue block),
+    rewrites build.queue.max_slots to a custom value, and proves load_config()
     reads the override back rather than the 5 default. The importlib-loaded
     `_config_core_mod` is a distinct module object from the conftest-imported
     `_config_core` that plan_context monkeypatches, so MARSHAL_PATH must be
@@ -949,30 +1018,151 @@ def test_marshal_build_queue_max_slots_override_wins(plan_context, monkeypatch):
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     monkeypatch.setattr(_config_core_mod, 'MARSHAL_PATH', marshal_path)
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert config['build_queue']['max_slots'] == 5  # precondition: seeded default
+    assert config['build']['queue']['max_slots'] == 5  # precondition: seeded default
 
     # Act — write a custom max_slots override into the persisted config
-    config['build_queue']['max_slots'] = 12
+    config['build']['queue']['max_slots'] = 12
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
     reloaded = _config_core_mod.load_config()
 
     # Assert — load_config surfaces the override, not the 5 default
-    assert reloaded['build_queue']['max_slots'] == 12
+    assert reloaded['build']['queue']['max_slots'] == 12
 
 
 def test_marshal_build_queue_max_retries_override_wins(plan_context, monkeypatch):
-    """An explicit marshal.json build_queue.max_retries overrides the default of 10."""
+    """An explicit marshal.json build.queue.max_retries overrides the default of 10."""
     # Arrange — fresh marshal.json with the seeded default block
     _cmd_init_mod.cmd_init(Namespace(force=False))
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     monkeypatch.setattr(_config_core_mod, 'MARSHAL_PATH', marshal_path)
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert config['build_queue']['max_retries'] == 10  # precondition: seeded default
+    assert config['build']['queue']['max_retries'] == 10  # precondition: seeded default
 
     # Act — write a custom max_retries override into the persisted config
-    config['build_queue']['max_retries'] = 3
+    config['build']['queue']['max_retries'] = 3
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
     reloaded = _config_core_mod.load_config()
 
     # Assert — load_config surfaces the override, not the 10 default
-    assert reloaded['build_queue']['max_retries'] == 3
+    assert reloaded['build']['queue']['max_retries'] == 3
+
+
+# =============================================================================
+# Per-phase effort defaults seeded at init (D9)
+# =============================================================================
+#
+# get_default_config() seeds per-phase `effort` keys (plan.<phase>.effort) plus
+# the plan-wide `plan.effort` fallback, mirroring the `balanced` named preset's
+# expanded shape, so a freshly-initialized project gets per-phase model tuning
+# out of the box and `effort resolve-target` resolves a concrete
+# `execution-context-{level}` rather than falling back to `inherit`.
+
+# The seeded per-phase effort shape (mirrors EffortPresets.BALANCED expanded).
+_EXPECTED_PHASE_EFFORT = {
+    'phase-1-init': 'level-3',
+    'phase-2-refine': 'level-3',
+    'phase-3-outline': 'level-4',
+    'phase-4-plan': 'level-3',
+    'phase-5-execute': {'default': 'level-4', 'verification-feedback': 'level-3'},
+    'phase-6-finalize': {
+        'default': 'level-3',
+        'verification-feedback': 'level-3',
+        'post-run-review': 'level-4',
+    },
+}
+_EXPECTED_PLAN_WIDE_EFFORT = 'level-3'
+
+
+def test_default_plan_blocks_carry_per_phase_effort():
+    """Each DEFAULT_PLAN_* block must seed an `effort` key matching the balanced baseline."""
+    # Arrange
+    blocks = {
+        'phase-1-init': _config_defaults_mod.DEFAULT_PLAN_INIT,
+        'phase-2-refine': _config_defaults_mod.DEFAULT_PLAN_REFINE,
+        'phase-3-outline': _config_defaults_mod.DEFAULT_PLAN_OUTLINE,
+        'phase-4-plan': _config_defaults_mod.DEFAULT_PLAN_PLAN,
+        'phase-5-execute': _config_defaults_mod.DEFAULT_PLAN_EXECUTE,
+        'phase-6-finalize': _config_defaults_mod.DEFAULT_PLAN_FINALIZE,
+    }
+
+    # Act / Assert — each block carries the expected effort shape
+    for phase, block in blocks.items():
+        assert 'effort' in block, (
+            f'{phase} DEFAULT_PLAN block must seed a per-phase effort key'
+        )
+        assert block['effort'] == _EXPECTED_PHASE_EFFORT[phase], (
+            f'{phase} effort default must be {_EXPECTED_PHASE_EFFORT[phase]!r}'
+        )
+
+
+def test_default_plan_effort_plan_wide_fallback_is_level_3():
+    """DEFAULT_PLAN_EFFORT must seed the plan-wide fallback at level-3."""
+    # Arrange / Act / Assert
+    assert _config_defaults_mod.DEFAULT_PLAN_EFFORT == _EXPECTED_PLAN_WIDE_EFFORT
+
+
+def test_get_default_config_seeds_per_phase_effort():
+    """get_default_config() must surface per-phase effort under each plan.<phase>."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert — every phase block carries the expected effort
+    plan_block = config['plan']
+    for phase, expected in _EXPECTED_PHASE_EFFORT.items():
+        assert plan_block[phase].get('effort') == expected, (
+            f'plan.{phase}.effort must be seeded as {expected!r}'
+        )
+
+
+def test_get_default_config_seeds_plan_wide_effort_fallback():
+    """get_default_config() must surface plan.effort == level-3 (plan-wide fallback)."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    assert config['plan'].get('effort') == _EXPECTED_PLAN_WIDE_EFFORT
+
+
+def test_effort_resolve_target_resolves_concrete_level_on_fresh_config(plan_context):
+    """`effort resolve-target` resolves a concrete level (not inherit) on a freshly-seeded config.
+
+    Initializes a fresh marshal.json (which now carries per-phase effort
+    defaults) via the plan_context-redirected _config_core, then resolves the
+    phase-5-execute default role — it must return a concrete
+    `execution-context-level-4` target rather than the `inherit`/`implicit_default`
+    fallback that an unseeded config produced. `_cmd_init`, `_cmd_effort`, and the
+    fixture all bind the same cached `_config_core`, so plan_context's MARSHAL_PATH
+    redirect is sufficient (mirrors the simplicity-default get test).
+    """
+    # Arrange — fresh marshal.json with the seeded effort defaults
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # Act — resolve the phase-5-execute default role target
+    args = Namespace(phase='phase-5-execute', role='default', default=False)
+    result = _cmd_effort_mod.cmd_effort_resolve_target(args)
+
+    # Assert — concrete level-4 resolution, not inherit
+    assert result['status'] == 'success'
+    assert result['level'] == 'level-4'
+    assert result['target'] == 'execution-context-level-4'
+    assert result['source'] == 'plan.phase-5-execute.effort.default'
+
+
+def test_effort_resolve_target_default_resolves_plan_wide_level_on_fresh_config(plan_context):
+    """`effort resolve-target --default` resolves the plan-wide level-3 on a fresh config.
+
+    The plan-wide `plan.effort` fallback is seeded, so the --default short-circuit
+    no longer reports `level: inherit, source: implicit_default`.
+    """
+    # Arrange — fresh marshal.json
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # Act — resolve via plan.effort (no role/phase lookup)
+    args = Namespace(phase=None, role=None, default=True)
+    result = _cmd_effort_mod.cmd_effort_resolve_target(args)
+
+    # Assert — concrete plan-wide level, sourced from plan.effort
+    assert result['status'] == 'success'
+    assert result['level'] == 'level-3'
+    assert result['target'] == 'execution-context-level-3'
+    assert result['source'] == 'plan.effort'

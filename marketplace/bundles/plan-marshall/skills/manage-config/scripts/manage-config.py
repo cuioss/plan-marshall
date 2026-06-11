@@ -277,7 +277,7 @@ def main() -> int:
     )
     bm_sub.add_parser(
         'read',
-        help='Return the effective build map from skill_domains.build_map',
+        help='Return the effective build map from build.map',
         allow_abbrev=False,
     )
 

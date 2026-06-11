@@ -232,6 +232,34 @@ Include `terminal_title` in the Step 7 summary TOON (e.g., `terminal_title: {hoo
 
 ---
 
+## Step 6c: Check for Dropped Finalize Steps
+
+Detect finalize steps absent from `marshal.json::plan.phase-6-finalize.steps` — both newly-added built-in `default:` steps and, critically for the **meta-project**, any shipped `project:` finalize-step skill that was dropped from the steps array. Re-running the steward must NOT silently lose hand-maintained project-local finalize steps:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-missing-finalize-steps
+```
+
+The check discovers shipped `project:` steps from `<project-root>/.claude/skills/finalize-step-*` (each `finalize-step-<name>/SKILL.md` maps to `project:finalize-step-<name>`) and compares them against the configured steps. **Interpret results**:
+
+- `status: ok` → No dropped finalize steps PASS
+- `status: missing` → One or both of:
+  - `missing_default_finalize_steps` — newly-added built-in defaults absent from the array
+  - `missing_project_finalize_steps` — shipped `project:` steps absent from the array (the meta-project drift case)
+
+When `missing_project_finalize_steps` is non-empty, show:
+
+```
+[WARN] Project-local finalize steps shipped under .claude/skills/ are missing from
+       phase-6-finalize.steps: {missing_project_finalize_steps}. These are hand-maintained
+       on the meta-project (presets are consumer-scoped and never seed project: steps).
+       Re-add them to plan.phase-6-finalize.steps to restore the dropped steps.
+```
+
+Consumer projects ship no `project:` finalize steps, so `missing_project_finalize_steps` is always absent there — the warning is meta-project-specific. Include `finalize_steps` in the Step 7 summary TOON (e.g., `finalize_steps: {missing_default: 0, missing_project: 0}`).
+
+---
+
 ## Step 7: Summary
 
 Output health check summary. Use `status: success` and `overall: HEALTHY` when all checks passed. Use `status: warning` and `overall: DEGRADED` when any check reported issues.
