@@ -106,13 +106,14 @@ def compute_worktree_sha(worktree_root: str | Path) -> str | None:
         hasher.update(rel_path.encode('utf-8', 'surrogateescape'))
         hasher.update(_NULL)
         try:
-            content = (Path(worktree_root) / rel_path).read_bytes()
+            with open(Path(worktree_root) / rel_path, 'rb') as f:
+                while chunk := f.read(65536):
+                    hasher.update(chunk)
         except OSError:
             # A file git listed but that we cannot read (symlink to nowhere,
             # race with a concurrent delete): fold a stable marker so the
             # absence still contributes deterministically.
-            content = b''
-        hasher.update(content)
+            hasher.update(b'')
         hasher.update(_NULL)
 
     return hasher.hexdigest()

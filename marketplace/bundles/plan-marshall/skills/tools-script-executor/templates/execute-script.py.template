@@ -234,10 +234,10 @@ _DISPATCH_FAILURE_SUPPRESS_NOTATIONS = frozenset([
 # bundle:skill segment, so every script under each build-* skill (e.g. the
 # pyproject_build entry point) is covered.
 _BUILD_CLASS_PREFIXES = frozenset([
-    'plan-marshall:build-pyproject',
-    'plan-marshall:build-maven',
-    'plan-marshall:build-gradle',
-    'plan-marshall:build-npm',
+    'plan-marshall:build-pyproject:',
+    'plan-marshall:build-maven:',
+    'plan-marshall:build-gradle:',
+    'plan-marshall:build-npm:',
 ])
 
 

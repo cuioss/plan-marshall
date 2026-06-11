@@ -76,17 +76,20 @@ def read_entries(path: Path | None = None) -> list[dict[str, Any]]:
     if not ledger_path.is_file():
         return []
     entries: list[dict[str, Any]] = []
-    with open(ledger_path, encoding='utf-8') as handle:
-        for line in handle:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                parsed = json.loads(stripped)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(parsed, dict):
-                entries.append(parsed)
+    try:
+        with open(ledger_path, encoding='utf-8') as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(parsed, dict):
+                    entries.append(parsed)
+    except OSError:
+        pass
     return entries
 
 
