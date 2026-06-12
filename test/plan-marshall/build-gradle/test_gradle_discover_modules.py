@@ -378,9 +378,15 @@ def test_gradle_module_has_commands():
 def test_no_duplicate_modules_with_both_build_files():
     """Test that modules are not duplicated when both pom.xml and build.gradle exist.
 
-    Note: Maven discovery requires Maven commands to succeed. In a test environment
-    without a valid Maven setup, Maven modules are skipped and Gradle takes over.
-    This test verifies no duplication occurs in either case.
+    Note: Maven discovery is now subprocess-free — it parses pom.xml directly with
+    stdlib ElementTree, so a Maven module discovers SUCCESSFULLY even with no Maven
+    binary on PATH (the resolved/inherited fields are filled lazily on demand).
+    Gradle discovery still shells out, so the Gradle module here is a success when a
+    Gradle binary is available (CI runners) and an error struct otherwise (local).
+    Either way, Maven and Gradle are mutually exclusive JVM build systems for one
+    physical directory: the same-path Gradle module is suppressed (Maven wins) by
+    both the primary _discover_gradle dedup and the nested-descriptor guard. The key
+    invariant: no successful module is duplicated for a single directory.
     """
     with BuildContext() as ctx:
         # Create both Maven and Gradle files
@@ -394,9 +400,9 @@ def test_no_duplicate_modules_with_both_build_files():
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        # In test environment, both Maven and Gradle commands fail, so both return
-        # error modules. When Maven was available, there would be 1 module with
-        # build_systems=['maven']. With error structs, we get up to 2 error modules.
+        # The Maven module always discovers successfully (subprocess-free). The
+        # co-located Gradle module is suppressed as a same-path duplicate, so at
+        # most one successful module exists regardless of Gradle binary presence.
         # The key assertion: no successful module is duplicated.
         successful = [m for m in modules if 'error' not in m]
         _ = [m for m in modules if 'error' in m]

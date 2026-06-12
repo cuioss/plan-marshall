@@ -33,7 +33,7 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 - **run**: `--command-args` takes Maven goals/options, e.g., `"verify -Ppre-commit -pl my-module"`
 - **parse**: Additional `no-openrewrite` mode filters OpenRewrite markers
 - **coverage-report**: Searches `target/site/jacoco/jacoco.xml`, `target/jacoco/report.xml`, `target/site/jacoco-aggregate/jacoco.xml`
-- **discover**: Shells out to Maven (`dependency:tree`, `help:all-profiles`) for richer metadata including profiles and dependency scopes — slower than static-file approaches
+- **discover**: Subprocess-free — parses each `pom.xml` with stdlib XML for coordinates, packaging, and declared profile ids, and walks the filesystem for sources/tests. Resolved coordinates, inherited profiles, and the resolved dependency tree are filled lazily, one module at a time, by `enrich_maven_module` (which runs `dependency:tree`, `help:all-profiles`) only when a consumer — the dependency graph or the resolver's profile-canonical path — needs them.
 - **search-markers**: Default extensions: `.java`
 
 ### Producer-Side Finding Storage (`run --plan-id`)

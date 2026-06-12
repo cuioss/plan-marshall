@@ -511,28 +511,93 @@ def extract_audit_plan_id(args: list[str]) -> tuple[str | None, list[str]]:
     return audit_plan_id, cleaned
 
 
+def _resolve_notation_by_cwd_walk(notation: str) -> str | None:
+    """Resolve notation by walking up to a ``marketplace/bundles`` tree.
+
+    Self-heal path for the dev-checkout case: when the embedded SCRIPTS path
+    is stale/relocated and the target-aware (plugin-cache / OpenCode) resolver
+    finds nothing, walk upward from two anchors looking for a live
+    ``marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``:
+
+    1. Each ancestor of ``Path.cwd()`` (covers an executor invoked from inside
+       a checkout / worktree where cwd sits under the repo root).
+    2. Each ancestor of this executor file's own location (covers an executor
+       whose cwd is elsewhere but which itself lives under the checkout).
+
+    The first existing match is returned as an absolute path; ``None`` when no
+    anchor yields a live file. No glob, no env var — a pure upward directory
+    walk so a relocated checkout resolves without a regeneration or a
+    hand-pinned ``PM_MARKETPLACE_ROOT``.
+    """
+    parts = notation.split(':')
+    if len(parts) != 3:
+        return None
+    bundle, skill, script = parts
+    rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
+
+    anchors: list[Path] = []
+    try:
+        anchors.append(Path.cwd())
+    except (OSError, ValueError):
+        pass
+    try:
+        anchors.append(Path(__file__).resolve())
+    except (OSError, ValueError, NameError):
+        pass
+
+    seen: set[str] = set()
+    for anchor in anchors:
+        for parent in [anchor, *anchor.parents]:
+            key = str(parent)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                candidate = parent / rel
+                if candidate.is_file():
+                    return str(candidate.resolve())
+            except (OSError, ValueError):
+                continue
+    return None
+
+
 def resolve_notation(notation: str) -> str | None:
     """Resolve notation to absolute script path.
 
     Resolution order:
-    1. Direct lookup in SCRIPTS (embedded at generation time).
-    2. Prefix/substring fallback in SCRIPTS (compatibility shim).
+    1. Direct lookup in SCRIPTS (embedded at generation time) — returned ONLY
+       when the embedded path still exists on disk. A stale/relocated embedded
+       path is skipped so resolution self-heals via the dynamic fallbacks
+       instead of returning a dead path (which previously forced operators to
+       hand-pin PM_MARKETPLACE_ROOT on every call).
+    2. Prefix/substring fallback in SCRIPTS (compatibility shim) — same
+       existence guard applies.
     3. Target-aware dynamic resolver (_resolve_notation_by_target) —
-       called when the notation is absent from the static SCRIPTS dict.
-       Returns an absolute path discovered from the target-specific skill
+       returns an absolute path discovered from the target-specific skill
        discovery roots (Claude plugin cache or OpenCode config roots).
+    4. cwd/executor-file upward walk to a live ``marketplace/bundles`` tree
+       (_resolve_notation_by_cwd_walk) — covers the dev-checkout case where the
+       target-aware roots are absent.
     """
-    # 1. Direct lookup
+    # 1. Direct lookup — only honour the embedded path when it still exists.
     if notation in SCRIPTS:
-        return SCRIPTS[notation]
+        direct = SCRIPTS[notation]
+        if Path(direct).is_file():
+            return direct
 
-    # 2. Try with /scripts/{skill}.py suffix for compatibility
+    # 2. Prefix/substring compatibility shim — same existence guard.
     for key, path in SCRIPTS.items():
         if key.startswith(notation) or notation in key:
-            return path
+            if Path(path).is_file():
+                return path
 
-    # 3. Target-aware dynamic fallback
-    return _resolve_notation_by_target(notation)
+    # 3. Target-aware dynamic fallback (plugin-cache / OpenCode roots).
+    resolved = _resolve_notation_by_target(notation)
+    if resolved:
+        return resolved
+
+    # 4. cwd / executor-file upward walk to a live marketplace/bundles tree.
+    return _resolve_notation_by_cwd_walk(notation)
 
 
 def build_notation_error(notation: str) -> tuple[str, list[str]]:

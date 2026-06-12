@@ -149,7 +149,7 @@ The executor exports environment variables to child scripts:
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `PLAN_DIR_NAME` | Directory name for plan storage (e.g., `.plan`) | `.plan` |
-| `PM_MARKETPLACE_ROOT` | Explicit marketplace anchor directory (must contain `marketplace/bundles`). Honored by `generate_executor.py` and `script_shared.marketplace_paths.find_marketplace_path()` when resolving the marketplace tree. Overrides the script-relative walk and cwd-based fallback. The CLI flag `--marketplace-root` (on `generate` and `drift`) takes precedence when both are set. | _(unset)_ |
+| `PM_MARKETPLACE_ROOT` | Optional explicit marketplace anchor directory (must contain `marketplace/bundles`). NOT required for stale/relocated embedded paths — the executor self-heals those (see [Self-healing path resolution](#self-healing-path-resolution)). Honored by `generate_executor.py` and `script_shared.marketplace_paths.find_marketplace_path()` when resolving the marketplace tree. Overrides the script-relative walk and cwd-based fallback. The CLI flag `--marketplace-root` (on `generate` and `drift`) takes precedence when both are set. | _(unset)_ |
 | `PYTHONPATH` | Cross-skill import paths | Auto-built from all script directories |
 
 ### PLAN_DIR_NAME Usage
@@ -173,27 +173,51 @@ LOG_DIR = Path(_PLAN_DIR_NAME) / "logs"
 - The executor uses `setdefault()` to respect existing values (e.g., from test infrastructure)
 - This enables test isolation and parallel project execution without interference
 
+## Self-healing path resolution
+
+The executor embeds an absolute-path `SCRIPTS` map at generation time. Those
+paths can go stale when the checkout (or plugin cache) the executor was
+generated against is relocated. `resolve_notation` self-heals automatically — a
+stale embedded path is never returned blindly:
+
+1. **Direct embedded hit** — returned only when the embedded path still exists
+   on disk. A missing path is skipped, not returned.
+2. **Prefix/substring shim** — same existence guard.
+3. **Target-aware resolver** — discovers the script under the target's skill
+   roots (Claude plugin cache `~/.claude/plugins/cache/plan-marshall/*/skills/…`,
+   or the OpenCode config roots).
+4. **cwd / executor-file upward walk** — walks up from both `Path.cwd()` and the
+   executor file's own location looking for a live
+   `marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py` (covers the
+   dev-checkout case).
+
+Because of this, `PM_MARKETPLACE_ROOT` is **not required** to recover from a
+stale/relocated embedded path — it remains only as an intentional explicit
+override for pinning discovery to a specific marketplace tree (see below).
+
 ## Setup
 
 Run `/marshall-steward` to generate the executor after bundle changes.
 
 ### Pinning the marketplace anchor (worktrees / alternate checkouts)
 
-When invoking `generate_executor.py` directly from a worktree or alternate
-checkout where `Path.cwd()` would otherwise resolve to the wrong marketplace
-tree, pin discovery explicitly. Two equivalent mechanisms are supported; the
-CLI flag wins when both are set:
+A stale/relocated embedded path no longer needs an anchor — the executor
+self-heals it (see [Self-healing path resolution](#self-healing-path-resolution)).
+Pin discovery explicitly only when you deliberately want to force a *specific*
+marketplace tree (e.g. invoking `generate_executor.py` from a worktree where
+`Path.cwd()` would otherwise resolve to a different checkout). Two equivalent
+mechanisms are supported; the CLI flag wins when both are set:
 
 ```bash
 # Option A — CLI flag (preferred, single-call discipline)
 python3 generate_executor.py generate --marketplace --marketplace-root /abs/path/to/checkout
 python3 generate_executor.py drift    --marketplace --marketplace-root /abs/path/to/checkout
 
-# Option B — environment variable (useful for batch invocations under a
-# pre-set env, e.g. CI). Set in the executor's invocation header rather than
-# inline `VAR=val cmd` to comply with the Bash one-command-per-call rule.
-export PM_MARKETPLACE_ROOT=/abs/path/to/checkout
-python3 generate_executor.py generate --marketplace
+# Option B — env var as a SINGLE-COMMAND inline assignment. The assignment and
+# the command MUST be one call; never a `cd`+`export` compound (an `export`
+# does not persist across separate Bash calls, and the compound trips the Bash
+# one-command-per-call / no-shell-constructs safety rules).
+PM_MARKETPLACE_ROOT=/abs/path/to/checkout python3 /abs/path/to/checkout/.plan/execute-script.py <notation> ...
 ```
 
 The path passed to `--marketplace-root` (and `PM_MARKETPLACE_ROOT`) is the

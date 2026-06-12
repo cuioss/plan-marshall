@@ -1262,6 +1262,38 @@ def test_plan_marshall_nested_npm_uses_prefix():
         assert '--workspace=' not in npm_module['commands']['module-tests']
 
 
+def test_plan_marshall_no_nested_gradle_when_maven_at_same_path():
+    """Nested discovery suppresses a co-located build.gradle at a Maven path.
+
+    Maven and Gradle are mutually exclusive JVM build systems for one physical
+    module: when both descriptors sit at the same path, Maven wins and the Gradle
+    module is suppressed by the primary _discover_gradle dedup. The nested arm must
+    honour the same rule — re-adding the same-path Gradle module here would yield
+    two successful modules for one directory (regression: subprocess-free Maven
+    discovery now succeeds without a binary, exposing the missing maven_paths guard
+    in the nested-gradle arm). Contrast the npm arm: npm + Maven at one path is a
+    legitimate pairing and is NOT suppressed.
+    """
+    ext = load_extension('plan-marshall')
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        (root / 'build.gradle').write_text('apply plugin: "java"')
+
+        # Maven module already discovered at the root path; the primary
+        # _discover_gradle dedup excluded the co-located Gradle module.
+        existing_modules = [
+            {
+                'name': 'test-project',
+                'build_systems': ['maven'],
+                'paths': {'module': '.'},
+            },
+        ]
+
+        nested = ext._discover_nested_descriptors(str(root), existing_modules)
+
+        assert nested == [], f'co-located build.gradle at a Maven path must not be re-added, got {nested}'
+
+
 # =============================================================================
 # Cross-Bundle Validation Tests
 # =============================================================================

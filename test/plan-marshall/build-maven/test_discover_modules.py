@@ -19,7 +19,12 @@ Contract requirements tested:
 - coordinates: parsed from dependency:tree header
 """
 
+import tempfile
 from pathlib import Path
+
+# discover_descriptors lives in script-shared/scripts/extension/, which conftest
+# already places on sys.path at import time (it scans immediate scripts/ subdirectories).
+from _build_discover import discover_descriptors
 
 from conftest import load_script_module
 
@@ -29,6 +34,8 @@ FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 _maven_cmd_discover_mod = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover')
 
 _build_commands = _maven_cmd_discover_mod._build_commands
+discover_maven_modules = _maven_cmd_discover_mod.discover_maven_modules
+
 _classify_profile = _maven_cmd_discover_mod._classify_profile
 _parse_coordinates_from_maven_output = _maven_cmd_discover_mod._parse_coordinates_from_maven_output
 _parse_dependencies_from_maven_output = _maven_cmd_discover_mod._parse_dependencies_from_maven_output
@@ -590,6 +597,180 @@ def test_full_profile_pipeline():
     for profile in mapped:
         assert 'activation' not in profile
         assert 'is_active' not in profile
+
+
+# =============================================================================
+# Unit Tests: Subprocess-Free Discovery (POM parse, no Maven binary)
+# =============================================================================
+
+
+def _make_module_tree(parent_dirs: dict[str, str]) -> Path:
+    """Create a tmp project tree from {relative_dir: pom_content} and return root.
+
+    A relative_dir of '.' plants the pom at the project root. Each pom is
+    written verbatim; ``src/main/java`` is NOT created unless the test seeds it.
+    """
+    root = Path(tempfile.mkdtemp())
+    for rel, content in parent_dirs.items():
+        target = root if rel == '.' else root / rel
+        target.mkdir(parents=True, exist_ok=True)
+        (target / 'pom.xml').write_text(content)
+    return root
+
+
+_JAR_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>leaf-app</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+</project>
+"""
+
+_AGGREGATOR_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>parent-agg</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+</project>
+"""
+
+
+def test_discover_no_maven_binary_produces_command_map():
+    """Discovery against a pom.xml fixture yields a full command map — no Maven.
+
+    The cheap path must produce compile/verify/quality-gate without any
+    subprocess; this test runs in an environment with no Maven invocation.
+    """
+    root = _make_module_tree({'.': _JAR_POM})
+    modules = discover_maven_modules(str(root))
+
+    assert len(modules) == 1
+    commands = modules[0]['commands']
+    for canonical in ('compile', 'verify', 'quality-gate', 'clean', 'package', 'install'):
+        assert canonical in commands, f'{canonical} missing from cheap command map'
+
+
+def test_discover_packaging_and_name_from_xml_parse():
+    """Packaging + module name come from the XML parse, not Maven output."""
+    root = _make_module_tree({'.': _JAR_POM})
+    module = discover_maven_modules(str(root))[0]
+
+    assert module['name'] == 'leaf-app'
+    assert module['metadata']['packaging'] == 'jar'
+    assert module['metadata']['group_id'] == 'com.example'
+
+
+def test_discover_pom_aggregator_exposes_compile():
+    """A pom aggregator exposes a compile command (reactor passthrough)."""
+    root = _make_module_tree({'.': _AGGREGATOR_POM})
+    module = discover_maven_modules(str(root))[0]
+
+    assert module['metadata']['packaging'] == 'pom'
+    assert 'compile' in module['commands']
+    assert 'package' in module['commands']
+    # pom aggregators still never expose module-tests (no own tests).
+    assert 'module-tests' not in module['commands']
+
+
+def test_discover_dependencies_empty_on_cheap_path():
+    """The cheap crawl leaves dependencies empty (enrich path fills them)."""
+    root = _make_module_tree({'.': _JAR_POM})
+    module = discover_maven_modules(str(root))[0]
+    assert module['dependencies'] == []
+
+
+def test_discover_does_not_invoke_get_maven_metadata(monkeypatch):
+    """The default discovery path never calls _get_maven_metadata / enrich.
+
+    Spy on both the private Maven entry and the public enrich seam and assert a
+    full discover run touches neither — the subprocess is enrich-path only.
+    """
+    metadata_calls = []
+    enrich_calls = []
+
+    def _spy_metadata(*args, **kwargs):
+        metadata_calls.append(args)
+        return None
+
+    def _spy_enrich(*args, **kwargs):
+        enrich_calls.append(args)
+        return None
+
+    monkeypatch.setattr(_maven_cmd_discover_mod, '_get_maven_metadata', _spy_metadata)
+    monkeypatch.setattr(_maven_cmd_discover_mod, 'enrich_maven_module', _spy_enrich)
+
+    root = _make_module_tree({'.': _AGGREGATOR_POM, 'core': _JAR_POM})
+    modules = discover_maven_modules(str(root))
+
+    assert len(modules) == 2
+    assert metadata_calls == [], 'cheap discovery must not call _get_maven_metadata'
+    assert enrich_calls == [], 'cheap discovery must not call enrich_maven_module'
+
+
+def test_enrich_maven_module_is_the_only_subprocess_seam(monkeypatch):
+    """enrich_maven_module is the explicit (and only) subprocess entry.
+
+    It delegates to _get_maven_metadata for ONE module — confirm the call
+    reaches the spied private entry exactly once.
+    """
+    metadata_calls = []
+
+    def _spy_metadata(module_path, project_root):
+        metadata_calls.append((module_path, project_root))
+        return {'artifact_id': 'x', 'group_id': 'g', 'packaging': 'jar', 'profiles': [], 'dependencies': []}
+
+    monkeypatch.setattr(_maven_cmd_discover_mod, '_get_maven_metadata', _spy_metadata)
+
+    root = _make_module_tree({'.': _JAR_POM})
+    result = _maven_cmd_discover_mod.enrich_maven_module(str(root), str(root))
+
+    assert result is not None
+    assert len(metadata_calls) == 1
+
+
+# =============================================================================
+# Unit Tests: Discovery Walk Exclusion Invariant (deliverable 3)
+# =============================================================================
+
+
+def test_discovery_never_descends_into_excluded_dirs():
+    """The discovery walk must skip target/, node_modules/, and build/.
+
+    Plants decoy pom.xml / package.json descriptors inside excluded build-output
+    directories plus one real module under src/, then asserts neither
+    discover_descriptors nor discover_maven_modules surfaces the decoys.
+    """
+    root = Path(tempfile.mkdtemp())
+
+    # Real module at the root with a real src/ tree.
+    (root / 'pom.xml').write_text(_JAR_POM)
+    src = root / 'src' / 'main' / 'java' / 'com' / 'example'
+    src.mkdir(parents=True)
+    (src / 'App.java').write_text('package com.example; class App {}')
+
+    # Decoy descriptors inside excluded dirs — must NEVER be discovered.
+    for excluded in ('target', 'node_modules', 'build'):
+        decoy_dir = root / excluded / 'nested'
+        decoy_dir.mkdir(parents=True)
+        (decoy_dir / 'pom.xml').write_text(_JAR_POM)
+        (decoy_dir / 'package.json').write_text('{"name": "decoy"}')
+
+    # discover_descriptors must only surface the real root pom.
+    descriptors = discover_descriptors(str(root), 'pom.xml')
+    descriptor_strs = [str(p) for p in descriptors]
+    assert len(descriptors) == 1, f'expected only the real pom, got {descriptor_strs}'
+    assert not any('target' in s or 'node_modules' in s or 'build' in s for s in descriptor_strs)
+
+    # discover_maven_modules must surface exactly the one real module.
+    modules = discover_maven_modules(str(root))
+    assert len(modules) == 1
+    assert modules[0]['name'] == 'leaf-app'
+    module_paths = [m['paths']['module'] for m in modules]
+    assert not any('target' in p or 'node_modules' in p or 'build' in p for p in module_paths)
 
 
 # =============================================================================

@@ -16,12 +16,14 @@ extension would pick up the fake project tree.
 
 import json
 import tempfile
+from argparse import Namespace
 from pathlib import Path
 
 from conftest import load_script_module
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')
+_cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
 crawl_module_derived = _architecture_core.crawl_module_derived
 crawl_all_modules = _architecture_core.crawl_all_modules
@@ -29,6 +31,7 @@ iter_modules = _architecture_core.iter_modules
 load_module_derived = _architecture_core.load_module_derived
 save_module_derived = _architecture_core.save_module_derived
 save_project_meta = _architecture_core.save_project_meta
+invalidate_crawl_cache = _architecture_core.invalidate_crawl_cache
 DataNotFoundError = _architecture_core.DataNotFoundError
 
 
@@ -38,6 +41,7 @@ def _seed_synthetic(tmpdir: str, modules: dict[str, dict]) -> None:
     Uses ``save_module_derived`` (the snapshot-fixture writer) so the
     on-disk fallback in ``crawl_all_modules`` picks up the modules.
     """
+    invalidate_crawl_cache()
     save_project_meta(
         {
             'name': 'test-project',
@@ -117,6 +121,48 @@ def test_crawl_all_modules_returns_empty_for_empty_project():
     with tempfile.TemporaryDirectory() as tmpdir:
         result = crawl_all_modules(tmpdir)
         assert result == {}
+
+
+def test_resolve_crawls_exactly_once(monkeypatch):
+    """A single ``resolve`` invocation crawls the project exactly ONCE.
+
+    Pre-fix, ``resolve`` called ``get_root_module`` (which re-crawled per module)
+    plus per-module ``load_module_derived`` calls — O(modules) crawls, each of
+    which shells out to Maven in production. The fix memoizes the crawl and
+    rewrites ``get_root_module`` to a single crawl, so a resolve over a
+    multi-module project recomputes the discovery exactly once.
+    """
+    invalidate_crawl_cache()
+    compute_calls = []
+    real_compute = _architecture_core._compute_all_modules
+
+    def _spy_compute(project_dir, project_path):
+        compute_calls.append(project_dir)
+        return real_compute(project_dir, project_path)
+
+    monkeypatch.setattr(_architecture_core, '_compute_all_modules', _spy_compute)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_synthetic(
+            tmpdir,
+            {
+                'root': {
+                    'name': 'root',
+                    'paths': {'module': '.'},
+                    'commands': {'verify': 'python3 .plan/execute-script.py x run --command-args "verify"'},
+                },
+                'child-a': {'name': 'child-a', 'paths': {'module': 'child-a'}, 'commands': {}},
+                'child-b': {'name': 'child-b', 'paths': {'module': 'child-b'}, 'commands': {}},
+            },
+        )
+        try:
+            args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
+            result = _cmd_client.cmd_resolve(args)
+        finally:
+            invalidate_crawl_cache(tmpdir)
+
+    assert result['status'] == 'success'
+    assert len(compute_calls) == 1, f'resolve must crawl once, crawled {len(compute_calls)}x'
 
 
 def test_discover_writes_project_meta_only():

@@ -441,6 +441,157 @@ def test_help_flag_reaches_script_help(post_removal_executor, monkeypatch):
     assert 'invented_subcommand' not in result.stdout
 
 
+# ============================================================================
+# SELF-HEALING: stale embedded path falls through to dynamic resolution
+# ============================================================================
+# resolve_notation existence-checks the embedded SCRIPTS path. A stale/relocated
+# embedded path is NOT returned blindly — resolution self-heals via the
+# target-aware resolver (stubbed to None here) and the cwd/executor-file upward
+# walk to a live ``marketplace/bundles`` tree. PM_MARKETPLACE_ROOT stays UNSET
+# for these tests to prove the env override is no longer REQUIRED.
+
+# The cwd-walk fallback resolves a full three-part notation against
+# ``marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``.
+SELF_HEAL_NOTATION = 'fakebundle:fakeskill:fakeskill'
+
+
+def _render_executor_with_cwd_walk(target_path: Path, embedded_script_path: Path) -> Path:
+    """Render the executor template with the real cwd-walk fallback intact.
+
+    Identical to :func:`_render_executor` except the SCRIPTS dict is keyed by
+    the full three-part ``SELF_HEAL_NOTATION`` (so the cwd-walk's
+    ``notation.split(':')`` yields a real bundle/skill/script triple), and the
+    target-aware resolver is stubbed to ``None`` so resolution must fall through
+    to ``_resolve_notation_by_cwd_walk``.
+    """
+    template_content = EXECUTOR_TEMPLATE.read_text()
+
+    mappings_code = f'    "{SELF_HEAL_NOTATION}": "{embedded_script_path}",'
+
+    rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
+    rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
+    rendered = rendered.replace(
+        '{{SHARED_MODULE_DIRS}}',
+        f"sys.path.insert(0, '{INPUT_VALIDATION_DIR}')",
+    )
+    rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
+    rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
+    rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
+    rendered = rendered.replace(
+        '{{TARGET_AWARE_RESOLVER}}',
+        'def _resolve_notation_by_target(notation):\n    return None\n',
+    )
+
+    target_path.write_text(rendered)
+    return target_path
+
+
+def test_stale_embedded_path_self_heals_via_cwd_walk(tmp_path, monkeypatch):
+    """
+    A non-existent embedded SCRIPTS path is NOT returned. With PM_MARKETPLACE_ROOT
+    UNSET, resolution self-heals: the cwd-walk discovers the live script under a
+    real ``marketplace/bundles`` tree the executor's cwd sits inside.
+    """
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+
+    # Build a live marketplace tree the cwd-walk can discover. The script lives
+    # at marketplace/bundles/fakebundle/skills/fakeskill/scripts/fakeskill.py.
+    checkout_root = tmp_path / 'checkout'
+    live_script = _build_fake_marketplace(checkout_root, tree_id='LIVE')
+
+    # The embedded path points at a tree that no longer exists on disk.
+    stale_script = tmp_path / 'gone' / 'marketplace' / 'bundles' / 'fakebundle' / 'skills' / 'fakeskill' / 'scripts' / 'fakeskill.py'
+
+    plan_dir = checkout_root / '.plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'logs').mkdir()
+    executor_path = plan_dir / 'execute-script.py'
+    _render_executor_with_cwd_walk(executor_path, embedded_script_path=stale_script)
+
+    env = os.environ.copy()
+    env['PLAN_BASE_DIR'] = str(plan_dir)
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
+    env.pop('PM_MARKETPLACE_ROOT', None)
+
+    # cwd sits inside the live checkout so the upward walk finds the live tree.
+    result = subprocess.run(
+        [sys.executable, str(executor_path), SELF_HEAL_NOTATION],
+        capture_output=True,
+        text=True,
+        cwd=str(checkout_root),
+        timeout=30,
+        env=env,
+    )
+
+    assert result.returncode == 0, (
+        f'Stale embedded path should self-heal via cwd-walk with PM_MARKETPLACE_ROOT unset.\n'
+        f'stdout: {result.stdout}\nstderr: {result.stderr}'
+    )
+    assert 'SENTINEL:LIVE' in result.stdout, (
+        f'Expected the live cwd-walk-discovered script to run, got stdout:\n{result.stdout}'
+    )
+    # Sanity: the stale embedded path was never on disk.
+    assert not stale_script.exists()
+    # The live script is the one the walk should have located.
+    assert live_script.exists()
+
+
+def test_valid_embedded_path_returned_directly(tmp_path, monkeypatch):
+    """
+    A VALID (existing) embedded path is returned directly. The target-aware
+    resolver and cwd-walk are stubbed/irrelevant — the direct hit wins because
+    the embedded path exists on disk.
+    """
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+
+    # The embedded script genuinely exists.
+    embedded_root = tmp_path / 'embedded'
+    embedded_script = _build_fake_marketplace(embedded_root, tree_id='EMBEDDED')
+
+    # A DECOY live tree the cwd-walk WOULD find — its presence proves the direct
+    # hit short-circuits before the walk runs.
+    decoy_root = tmp_path / 'decoy'
+    _build_fake_marketplace(decoy_root, tree_id='DECOY')
+
+    plan_dir = decoy_root / '.plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'logs').mkdir()
+    executor_path = plan_dir / 'execute-script.py'
+    _render_executor_with_cwd_walk(executor_path, embedded_script_path=embedded_script)
+
+    env = os.environ.copy()
+    env['PLAN_BASE_DIR'] = str(plan_dir)
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
+    env.pop('PM_MARKETPLACE_ROOT', None)
+
+    # cwd sits inside the decoy tree; if the direct hit did NOT win, the walk
+    # would discover the decoy and print SENTINEL:DECOY.
+    result = subprocess.run(
+        [sys.executable, str(executor_path), SELF_HEAL_NOTATION],
+        capture_output=True,
+        text=True,
+        cwd=str(decoy_root),
+        timeout=30,
+        env=env,
+    )
+
+    assert result.returncode == 0, (
+        f'Valid embedded path should be returned directly.\nstdout: {result.stdout}\nstderr: {result.stderr}'
+    )
+    assert 'SENTINEL:EMBEDDED' in result.stdout, (
+        f'Expected the valid embedded script to run directly, got stdout:\n{result.stdout}'
+    )
+    assert 'SENTINEL:DECOY' not in result.stdout, (
+        f'The cwd-walk decoy must NOT run when the embedded path exists. stdout:\n{result.stdout}'
+    )
+
+
 def test_pm_marketplace_root_with_trailing_slash_rewrites(two_marketplace_trees, monkeypatch):
     """
     The rewrite helper rstrips trailing slashes — a trailing-slash form of
