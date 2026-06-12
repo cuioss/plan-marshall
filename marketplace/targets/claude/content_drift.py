@@ -88,13 +88,20 @@ def _collect_markdown(root: Path) -> dict[str, bytes]:
     ``_is_content_markdown``.
     """
     collected: dict[str, bytes] = {}
-    for path in sorted(root.rglob('*')):
+    try:
+        paths = sorted(root.rglob('*'))
+    except OSError:
+        paths = []
+    for path in paths:
         if not path.is_file() or path.is_symlink():
             continue
         rel = path.relative_to(root)
         if not _is_content_markdown(rel):
             continue
-        collected[rel.as_posix()] = path.read_bytes()
+        try:
+            collected[rel.as_posix()] = path.read_bytes()
+        except OSError:
+            continue
     return collected
 
 
@@ -127,7 +134,7 @@ def run_content_drift_check(target_dir: Path, marketplace_dir: Path) -> ContentD
     bundle_dirs = list(iter_bundle_dirs(marketplace_dir, None))
     bundle_names = [b.name for b in bundle_dirs]
 
-    if not target_dir.exists():
+    if not target_dir.is_dir():
         summary = (
             f"target/claude not generated at {target_dir} — "
             "run 'python3 marketplace/targets/generate.py --target claude --output target/claude' first"
