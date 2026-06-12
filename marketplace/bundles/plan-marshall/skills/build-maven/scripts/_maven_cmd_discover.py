@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 """Maven module discovery command.
 
-Discovers Maven modules with complete metadata using Maven commands
-and file system analysis. Implements the discover_modules() contract
-from module-discovery.md.
+Discovers Maven modules with complete metadata. The default discovery path is
+SUBPROCESS-FREE: it parses each ``pom.xml`` with stdlib ``xml.etree`` and walks
+the filesystem for sources/tests. A multi-module reactor therefore discovers in
+O(N) cheap reads rather than O(N) Maven JVM startups (and, because the
+architecture crawl memoizes its result, O(N) rather than the former O(N²)).
 
 Data Sources:
-    FROM MAVEN (resolved/inherited):
-        - coordinates: groupId:artifactId:packaging from dependency:tree header
-        - profiles: via help:all-profiles (includes parent POM profiles)
-        - dependencies: via dependency:tree (resolved with scopes)
-    FROM POM.XML (local only - exceptional cases):
-        - description: optional, rarely inherited
-        - parent: GAV reference (not available in dependency:tree)
+    FROM POM.XML PARSE (cheap, default path — no subprocess):
+        - coordinates: artifactId / groupId (parent-fallback) / packaging
+        - profiles: declared ``/project/profiles/profile/id`` ids
+        - description / parent GAV
+    FROM MAVEN (resolved/inherited — enrich path only, one module at a time):
+        - resolved coordinates from dependency:tree header
+        - profiles via help:all-profiles (includes parent POM profiles)
+        - dependencies via dependency:tree (resolved with scopes)
 
-IMPORTANT: Uses Maven commands per module-discovery.md specification:
-- help:all-profiles for profiles (includes inherited from parent POMs)
-- dependency:tree for dependencies AND coordinates (resolved)
-Both are combined in a single Maven call per module to minimize JVM startup overhead.
+The enrich path (:func:`enrich_maven_module`) runs ``help:all-profiles
+dependency:tree`` for a SINGLE module and is invoked lazily by the dependency
+graph and the resolver's profile-canonical path — never by the cheap default
+discovery.
 
 Usage:
     python3 maven_cmd_discover.py discover --root /path/to/project [--format json]
@@ -27,6 +30,7 @@ Output:
 """
 
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -148,10 +152,13 @@ EXT_KEY_PROFILES_MAP = 'build.maven.profiles.map.canonical'
 
 
 def discover_maven_modules(project_root: str) -> list:
-    """Discover all Maven modules with complete metadata.
+    """Discover all Maven modules with complete metadata — subprocess-free.
 
-    Uses discover_descriptors from base library to find all pom.xml files,
-    then gets metadata from Maven (not pom.xml parsing).
+    Uses ``discover_descriptors`` from the base library to find all ``pom.xml``
+    files, then derives each module's shape from a stdlib XML parse of the POM
+    plus filesystem source/test discovery. No Maven subprocess is invoked: the
+    resolved-coordinate / inherited-profile / dependency-tree fields are filled
+    lazily by :func:`enrich_maven_module` only when a consumer needs them.
 
     Args:
         project_root: Absolute path to project root.
@@ -169,22 +176,8 @@ def discover_maven_modules(project_root: str) -> list:
         # Build base module info from descriptor
         base = build_module_base(project_root, str(pom_path))
 
-        # Get all metadata from Maven (coordinates, profiles, dependencies)
-        maven_data = _get_maven_metadata(pom_path.parent, root)
-
-        # If Maven failed, return error-only structure (matches Gradle contract)
-        if maven_data is None:
-            modules.append(
-                {
-                    'name': base.name,
-                    'build_systems': ['maven'],
-                    'error': 'Unable to retrieve metadata - Maven commands failed',
-                }
-            )
-            continue
-
-        # Build complete module data
-        module_data = _build_module(base, pom_path, root, maven_data)
+        # Build complete module data from the cheap POM parse + filesystem walk.
+        module_data = _build_module(base, pom_path, root)
         if module_data:
             modules.append(module_data)
 
@@ -196,14 +189,19 @@ def discover_maven_modules(project_root: str) -> list:
 # =============================================================================
 
 
-def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) -> dict | None:
-    """Build complete module dict from base info and Maven data.
+def _build_module(base, pom_path: Path, project_root: Path) -> dict | None:
+    """Build complete module dict from base info and a cheap POM parse.
+
+    The whole module shape — coordinates, packaging, paths, sources/tests,
+    declared profiles, and the full command map — is computed WITHOUT invoking
+    Maven. Resolved-coordinate / inherited-profile / dependency-tree fields are
+    deliberately NOT populated here; ``dependencies`` is an empty list. A
+    consumer that needs the resolved view calls :func:`enrich_maven_module`.
 
     Args:
         base: ModuleBase from build_module_base
         pom_path: Path to pom.xml file
         project_root: Project root path
-        maven_data: Dict with coordinates, profiles, dependencies from Maven
 
     Returns:
         Complete module dict conforming to module-discovery.md
@@ -211,16 +209,20 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
     module_path = pom_path.parent
     relative_path = base.paths.module
 
-    # Get metadata from Maven output
-    artifact_id = maven_data.get('artifact_id') or base.name
-    group_id = maven_data.get('group_id')
-    packaging = maven_data.get('packaging') or 'jar'
-    profiles = maven_data.get('profiles', [])
-    dependencies = maven_data.get('dependencies', [])
+    # Coordinates / packaging / declared profiles from the cheap POM parse.
+    pom_data = _parse_pom_xml(pom_path)
+    artifact_id = pom_data.get('artifact_id') or base.name
+    group_id = pom_data.get('group_id')
+    packaging = pom_data.get('packaging') or 'jar'
+    # Declared profile ids → the canonical-mapping pipeline (no Maven filtering
+    # for default-activation is possible without a subprocess, so every declared
+    # id is treated as a command-line-activatable profile).
+    declared_profile_ids = pom_data.get('profile_ids', [])
+    profiles = _map_canonical_declared_profiles(declared_profile_ids, str(project_root))
 
-    # Description and parent from pom.xml (single read, per spec: not in dependency:tree)
-    pom_local = _parse_pom_local_metadata(pom_path)
-    description = pom_local['description']
+    # Description and parent from the same POM parse.
+    description = pom_data.get('description')
+    parent = pom_data.get('parent')
 
     # Source directories (shared multi-language discovery)
     sources = discover_sources(module_path)
@@ -252,7 +254,7 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
         'group_id': group_id,
         'packaging': packaging,
         'description': description,
-        'parent': pom_local['parent'],
+        'parent': parent,
     }
     if profiles:
         metadata['profiles'] = profiles
@@ -270,44 +272,157 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
         'metadata': metadata,
         'packages': packages,
         'test_packages': test_packages,
-        'dependencies': dependencies,
+        # Resolved dependency tree is an enrich-path concern; the cheap crawl
+        # leaves this empty. ``enrich_maven_module`` fills it on demand.
+        'dependencies': [],
         'stats': {'source_files': source_files, 'test_files': test_files},
         'commands': commands,
     }
 
 
-def _parse_pom_local_metadata(pom_path: Path) -> dict:
-    """Extract description and parent from pom.xml in a single read.
+def _map_canonical_declared_profiles(profile_ids: list[str], project_root: str) -> list[dict]:
+    """Map cheaply-parsed declared profile ids through the canonical pipeline.
 
-    These fields are not available from Maven commands (dependency:tree, etc.)
-    so they must be parsed from the POM file directly.
+    The cheap POM parse yields bare profile ids (no Maven ``Active:`` flag), so
+    the command-line-activation filter ``_apply_profile_pipeline`` applies to
+    the Maven ``help:all-profiles`` output is not relevant here — every declared
+    id is a candidate. This applies the SAME skip-list + canonical-mapping
+    config the enrich pipeline uses (so an in-pom ``coverage`` profile still maps
+    to the ``coverage`` canonical), but reads its inputs from the declared ids.
 
     Args:
-        pom_path: Path to pom.xml file.
+        profile_ids: Declared ``/project/profiles/profile/id`` values.
+        project_root: Project root for configuration lookup (skip-list, mapping).
 
     Returns:
-        Dict with 'description' (str|None) and 'parent' (str|None).
+        List of ``{id, canonical}`` dicts, skip-filtered, in declared order.
     """
-    content = pom_path.read_text()
+    from _config_core import ext_defaults_get
 
-    # Description: skip <parent> block to avoid matching parent's description
-    description = None
-    content_no_parent = re.sub(r'<parent>.*?</parent>', '', content, flags=re.DOTALL)
-    desc_match = re.search(r'<description>([^<]+)</description>', content_no_parent)
-    if desc_match:
-        description = desc_match.group(1).strip()
+    profiles = [{'id': pid} for pid in profile_ids]
 
-    # Parent GAV
+    skip_list = None
+    explicit_mapping = None
+
+    skip_csv = ext_defaults_get(EXT_KEY_PROFILES_SKIP, project_root)
+    if skip_csv:
+        skip_list = [s.strip() for s in skip_csv.split(',')]
+
+    map_csv = ext_defaults_get(EXT_KEY_PROFILES_MAP, project_root)
+    if map_csv:
+        explicit_mapping = {}
+        for pair in map_csv.split(','):
+            if ':' in pair:
+                profile_id, canonical = pair.split(':', 1)
+                explicit_mapping[profile_id.strip()] = canonical.strip()
+
+    profiles = filter_skip_profiles(profiles, skip_list)
+    return map_canonical_profiles(profiles, explicit_mapping)
+
+
+# =============================================================================
+# Cheap POM parse (stdlib xml.etree — no subprocess)
+# =============================================================================
+
+
+def _strip_ns(tag: str) -> str:
+    """Return the local tag name, dropping any ``{namespace}`` prefix.
+
+    Maven POMs declare the ``http://maven.apache.org/POM/4.0.0`` namespace, so
+    ``ElementTree`` reports tags as ``{http://...}artifactId``. Matching on the
+    local name lets one code path handle both namespaced and namespace-less
+    POMs.
+    """
+    return tag.rsplit('}', 1)[-1]
+
+
+def _find_child(element: ET.Element, local_name: str) -> ET.Element | None:
+    """Return the first direct child of ``element`` whose local tag matches."""
+    for child in element:
+        if _strip_ns(child.tag) == local_name:
+            return child
+    return None
+
+
+def _child_text(element: ET.Element, local_name: str) -> str | None:
+    """Return the stripped text of ``element``'s first matching direct child."""
+    child = _find_child(element, local_name)
+    if child is not None and child.text is not None:
+        text = child.text.strip()
+        return text or None
+    return None
+
+
+def _parse_pom_xml(pom_path: Path) -> dict:
+    """Parse a ``pom.xml`` with stdlib ``xml.etree`` — no Maven subprocess.
+
+    Extracts the fields the cheap discovery path needs. Handles both namespaced
+    POMs (the usual ``http://maven.apache.org/POM/4.0.0`` declaration) and
+    namespace-less POMs by matching on local tag names.
+
+    Args:
+        pom_path: Path to the ``pom.xml`` file.
+
+    Returns:
+        Dict with:
+            - ``packaging``: ``<packaging>`` text, defaulting to ``'jar'``.
+            - ``artifact_id``: ``<artifactId>`` text (or ``None``).
+            - ``group_id``: ``<groupId>`` text, falling back to
+              ``<parent><groupId>`` when the child omits it (or ``None``).
+            - ``profile_ids``: declared ``/project/profiles/profile/id`` values.
+            - ``description``: ``<description>`` text (or ``None``).
+            - ``parent``: ``groupId:artifactId`` of ``<parent>`` (or ``None``).
+        On a malformed/unreadable POM, returns the packaging default with all
+        other fields ``None``/empty so discovery degrades gracefully.
+    """
+    try:
+        root = ET.parse(pom_path).getroot()
+    except (ET.ParseError, OSError):
+        return {
+            'packaging': 'jar',
+            'artifact_id': None,
+            'group_id': None,
+            'profile_ids': [],
+            'description': None,
+            'parent': None,
+        }
+
+    packaging = _child_text(root, 'packaging') or 'jar'
+    artifact_id = _child_text(root, 'artifactId')
+    description = _child_text(root, 'description')
+
+    # Parent block: GAV reference + groupId fallback source.
+    parent_el = _find_child(root, 'parent')
     parent = None
-    parent_match = re.search(r'<parent>(.*?)</parent>', content, flags=re.DOTALL)
-    if parent_match:
-        parent_block = parent_match.group(1)
-        group_match = re.search(r'<groupId>([^<]+)</groupId>', parent_block)
-        artifact_match = re.search(r'<artifactId>([^<]+)</artifactId>', parent_block)
-        if group_match and artifact_match:
-            parent = f'{group_match.group(1).strip()}:{artifact_match.group(1).strip()}'
+    parent_group_id = None
+    if parent_el is not None:
+        parent_group_id = _child_text(parent_el, 'groupId')
+        parent_artifact_id = _child_text(parent_el, 'artifactId')
+        if parent_group_id and parent_artifact_id:
+            parent = f'{parent_group_id}:{parent_artifact_id}'
 
-    return {'description': description, 'parent': parent}
+    # groupId: child declaration wins; otherwise inherit from <parent>.
+    group_id = _child_text(root, 'groupId') or parent_group_id
+
+    # Declared profile ids under /project/profiles/profile/id.
+    profile_ids: list[str] = []
+    profiles_el = _find_child(root, 'profiles')
+    if profiles_el is not None:
+        for profile_el in profiles_el:
+            if _strip_ns(profile_el.tag) != 'profile':
+                continue
+            pid = _child_text(profile_el, 'id')
+            if pid:
+                profile_ids.append(pid)
+
+    return {
+        'packaging': packaging,
+        'artifact_id': artifact_id,
+        'group_id': group_id,
+        'profile_ids': profile_ids,
+        'description': description,
+        'parent': parent,
+    }
 
 
 # =============================================================================
@@ -429,6 +544,29 @@ def _get_maven_metadata(module_path: Path, project_root: Path) -> dict | None:
         'profiles': profiles,
         'dependencies': dependencies,
     }
+
+
+def enrich_maven_module(module_path: str | Path, project_root: str | Path) -> dict | None:
+    """Resolve one module's Maven-derived metadata (the lazy enrich entry).
+
+    The single public seam onto the Maven subprocess. Runs
+    :func:`_get_maven_metadata` for ONE module (``help:all-profiles
+    dependency:tree``) and returns the resolved coordinates, the active/inherited
+    profiles, and the resolved dependency tree. Callers — the dependency-graph
+    path and the resolver's lazy profile-canonical path — invoke this only when
+    they need a field the cheap POM-parse discovery does not populate.
+
+    Args:
+        module_path: Path to the module directory containing ``pom.xml``.
+        project_root: Project root used for Maven execution and config lookup.
+
+    Returns:
+        Dict with ``artifact_id`` / ``group_id`` / ``packaging`` / ``profiles``
+        (canonical-mapped, command-line-activated) / ``dependencies``
+        (``groupId:artifactId:scope`` strings), or ``None`` when the Maven
+        invocation fails or the POM is absent.
+    """
+    return _get_maven_metadata(Path(module_path), Path(project_root))
 
 
 def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
@@ -564,11 +702,18 @@ def _build_commands(
     """Build commands object with resolved canonical command strings.
 
     Resolution rules:
-    - Always (all modules): clean
-    - Always (non-pom): verify, install, clean-install, quality-gate, package
-    - Source-conditional: compile
-    - Test-conditional: test-compile, module-tests
+    - Always (all modules including pom): clean, verify, quality-gate, install,
+      compile, package
+    - Test-conditional (non-pom): test-compile, module-tests
+    - Non-pom: clean-install
     - Profile-based: integration-tests, coverage, benchmark
+
+    ``compile`` / ``package`` are emitted for ``pom`` aggregators too as a
+    reactor passthrough — ``compile`` at the root drives the whole reactor's
+    compile, and ``compile -pl {relative_path}`` a nested aggregator's subtree.
+    A docs-only / aggregator change still resolves a real ``compile`` verb this
+    way instead of falling through to the root cascade. ``compile`` for a
+    source-less leaf is harmless (Maven no-ops it).
 
     Note: clean is a separate command. Other commands do NOT include clean goal.
     Use clean-install for the combined clean + install workflow.
@@ -585,21 +730,22 @@ def _build_commands(
     is_root_module = not relative_path or relative_path == '.'
     pl_arg = '' if is_root_module else f' -pl {relative_path}'
 
-    # 1. Always: clean (all modules including pom)
+    # 1. Always (all modules including pom): clean, the verify/quality-gate
+    #    gate, install, plus the compile/package reactor passthrough.
     cmd_map: dict[str, str] = {
         'clean': f'clean{pl_arg}',
         'quality-gate': f'verify{pl_arg}',
         'verify': f'verify{pl_arg}',
         'install': f'install{pl_arg}',
+        'compile': f'compile{pl_arg}',
+        'package': f'package{pl_arg}',
     }
 
-    # 2. Non-pom modules get additional commands
+    # 2. Non-pom modules get the combined clean+install and (when present) the
+    #    test ladder. pom aggregators have no own tests, so module-tests stays
+    #    non-pom-only.
     if packaging != 'pom':
         cmd_map['clean-install'] = f'clean install{pl_arg}'
-        cmd_map['package'] = f'package{pl_arg}'
-
-        if has_sources:
-            cmd_map['compile'] = f'compile{pl_arg}'
 
         if has_tests:
             cmd_map['test-compile'] = f'test-compile{pl_arg}'

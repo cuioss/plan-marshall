@@ -292,7 +292,7 @@ Each module must include a `commands` dict mapping canonical command names to ex
 
 ## Build-System-Specific Discovery
 
-Extensions use **build tool commands** (not direct file parsing) to extract metadata and dependencies via `execute_direct()`.
+Gradle and npm extensions use **build tool commands** to extract metadata via `execute_direct()`. The Maven extension's default discovery is **subprocess-free**: it parses each `pom.xml` directly (stdlib XML) for coordinates, packaging, and declared profile ids, and runs `help:all-profiles dependency:tree` **lazily, one module at a time**, only when a consumer needs the resolved profiles or dependency tree (the "Primary Command" below is therefore Maven's *enrich* command, not its discovery command).
 
 **Implementations:**
 - Maven: `pm-dev-java/skills/plan-marshall-plugin/scripts/maven_cmd_discover.py`
