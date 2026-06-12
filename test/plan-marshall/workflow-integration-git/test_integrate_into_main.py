@@ -402,6 +402,115 @@ class TestIntegrateLockFailure:
 
 
 # =============================================================================
+# Reentrant merge-lock — self-held-before-integrate (this plan, Deliverable 2)
+# =============================================================================
+
+
+class TestIntegrateWhenMergeLockAlreadySelfHeld:
+    """The finalize auto-merge sequence (Deliverable 2): ``branch-cleanup`` acquires
+    the merge lock under ``plan_id``, then ``integrate_into_main`` re-acquires it
+    under the SAME ``plan_id``. Before the reentrant fix, integrate's ``run_acquire``
+    fell through to the wait loop and self-deadlocked on a lock its own session
+    already held. With the self-holder short-circuit, the re-acquire is granted
+    ``already_held`` and the move-back completes.
+
+    Unlike the rest of this suite, these tests drive the REAL ``merge_lock`` module
+    (not the ``_FakeMergeLock`` stub) so the genuine reentrant short-circuit is
+    exercised end-to-end. The real lock resolves to ``<PLAN_BASE_DIR>/merge.lock``
+    (the ``isolated_env`` fixture stages ``PLAN_BASE_DIR`` at the same staged main
+    ``.plan/local``), so a pre-acquire by the same plan-id is exactly the lock
+    integrate observes as self-held. These tests FAIL on the pre-fix ``run_acquire``
+    (the integrate call would block until the 30s budget elapsed and return a
+    ``blocked``/error rather than integrating) and PASS after the fix.
+    """
+
+    def _install_real_merge_lock(
+        self, env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> object:
+        """Swap integrate's ``_load_merge_lock`` to return the REAL merge_lock module
+        and stage the holder plan dir so the holder counts as LIVE (so the reentrant
+        path, not the stale-reclaim path, is what grants the re-acquire).
+
+        The ``isolated_env`` fixture stubs ``_load_merge_lock`` to return the
+        ``_FakeMergeLock`` recorder, so the real module is loaded fresh here by
+        re-running integrate's own importlib-by-path loader against the SAME
+        merge_lock.py the production script targets (``_MERGE_LOCK_PATH``), then
+        re-stubbed in so BOTH the pre-acquire and integrate's re-acquire run the
+        genuine reentrant short-circuit end-to-end."""
+        real_merge_lock = integrate_into_main._load_module_by_path(
+            'merge_lock_real_under_integrate', integrate_into_main._MERGE_LOCK_PATH
+        )
+        monkeypatch.setattr(
+            integrate_into_main, '_load_merge_lock', lambda: real_merge_lock
+        )
+        # Stage the holder's plan dir under <base>/plans/{plan_id} so the real
+        # holder_is_dead predicate sees a LIVE holder — the reentrant short-circuit
+        # must fire BEFORE any staleness evaluation regardless, but a live holder
+        # makes the test assert the genuine self-holder path, not a reclaim.
+        base = env['main'] / '.plan' / 'local'
+        (base / 'plans' / env['plan_id']).mkdir(parents=True, exist_ok=True)
+        return real_merge_lock
+
+    def test_integrate_completes_when_lock_already_self_held(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env = isolated_env
+        real_merge_lock = self._install_real_merge_lock(env, monkeypatch)
+
+        # branch-cleanup acquired the merge lock under this plan-id first.
+        pre = real_merge_lock.run_acquire(
+            Namespace(plan_id=env['plan_id'], timeout=5.0, set_title_token=False)
+        )
+        assert pre['status'] == 'success'
+        assert pre['action'] == 'acquired'
+
+        # integrate re-acquires under the SAME plan-id — reentrant grant, no
+        # self-deadlock, the move-back completes.
+        result = integrate_into_main.run_integrate_into_main(
+            Namespace(plan_id=env['plan_id'])
+        )
+        assert result['status'] == 'success', result
+        assert result['action'] == 'integrated', result
+
+        # The plan dir landed on main and is gone from the worktree.
+        assert env['main_plan_dir'].is_dir()
+        assert (env['main_plan_dir'] / 'status.json').is_file()
+        assert not env['wt_plan_dir'].exists()
+
+    def test_integrate_release_frees_the_single_underlying_lock(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A single net release: the reentrant grant is NOT an independent second
+        acquisition, so integrate's release removes the one underlying lock file.
+        After integrate, the merge lock is genuinely free — a foreign plan can
+        acquire it (proving integrate's release actually freed it, not left it held
+        by a phantom second acquisition)."""
+        env = isolated_env
+        real_merge_lock = self._install_real_merge_lock(env, monkeypatch)
+        # Resolve the authoritative lock path through the real module's own
+        # main-anchored resolver rather than recomputing it — the resolver is the
+        # single source of truth for where the lock lands under PLAN_BASE_DIR.
+        lock_path = real_merge_lock._resolve_main_lock_path()
+
+        # branch-cleanup holds the lock; the lock file records this plan-id.
+        real_merge_lock.run_acquire(
+            Namespace(plan_id=env['plan_id'], timeout=5.0, set_title_token=False)
+        )
+        assert lock_path.read_text(encoding='utf-8').strip() == env['plan_id']
+
+        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+
+        # integrate released the single underlying lock — the file is gone.
+        assert not lock_path.exists()
+        # The lock is genuinely free: a foreign plan can now acquire it.
+        other = real_merge_lock.run_acquire(
+            Namespace(plan_id='other-plan', timeout=5.0, set_title_token=False)
+        )
+        assert other['status'] == 'success'
+        assert other['action'] == 'acquired'
+
+
+# =============================================================================
 # Not-found / missing worktree-resident plan dir
 # =============================================================================
 

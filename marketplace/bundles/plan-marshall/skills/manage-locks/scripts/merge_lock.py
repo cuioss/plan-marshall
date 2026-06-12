@@ -17,7 +17,16 @@ It exposes three actions:
     holder source (the acquiring ``plan_id``). If the file already exists, wait
     and retry with simple backoff until it frees; a lock whose recorded holder
     no longer corresponds to a live plan is reclaimed (re-verified atomically
-    after the reclaim decision). On wait-budget elapse against a LIVE holder,
+    after the reclaim decision). **Reentrant per ``plan_id``:** when the existing
+    lock is already held by the SAME ``plan_id``, acquire returns
+    ``status: success`` with ``action: already_held`` immediately — no second
+    ``O_EXCL`` create, no staleness check, no wait loop — so the finalize
+    auto-merge path (``branch-cleanup`` then ``integrate_into_main``,
+    re-acquiring under the same ``plan_id``) does not self-deadlock. The
+    reentrant grant is not a second independent acquisition: release stays
+    idempotent and holder-scoped, so the single ``os.unlink`` fires once when the
+    holder releases. Cross-plan mutual exclusion is unaffected — a FOREIGN live
+    holder still blocks. On wait-budget elapse against a foreign LIVE holder,
     returns a structured ``status: blocked`` payload (``blocking_plan_id`` +
     ``poll_window_seconds``) — NOT a hard error — so the Pre-Merge Gate's
     orchestrator escalation (the ``AskUserQuestion`` Wait-and-retry / Skip path)
@@ -426,6 +435,18 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     ``status: blocked`` payload (``blocking_plan_id`` + ``poll_window_seconds``),
     distinct from a hard error, so the Pre-Merge Gate's orchestrator escalation
     still fires. A resolution failure stays ``status: error``.
+
+    **Reentrant per plan_id.** When the existing lock is already held by the
+    SAME ``plan_id``, this acquire is reentrant: it returns ``status: success``
+    with ``action: already_held`` immediately — no second ``O_EXCL`` create, no
+    staleness evaluation, no wait loop. This is the self-holder short-circuit
+    that lets the finalize auto-merge path re-enter the merge lock keyed by the
+    same plan_id (``branch-cleanup`` acquires it, then ``integrate_into_main``
+    re-acquires it under the same ``plan_id``) without self-deadlocking. The
+    reentrant grant is NOT an independent second acquisition — release is
+    idempotent and holder-scoped, so the single real ``os.unlink`` happens once
+    when the holder releases. Cross-plan mutual exclusion is unaffected: a
+    FOREIGN live holder still blocks (or returns ``status: blocked`` on timeout).
     """
     plan_id: str = args.plan_id
     # Guard against the `0` falsy trap: `--timeout 0` (a non-blocking try) is a
@@ -465,8 +486,23 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
                 'reclaimed': reclaimed,
             }
 
-        # The lock is held — inspect the holder for stale reclamation.
+        # The lock is held — inspect the holder. A self-holder (this same
+        # plan_id already holds the lock) is a REENTRANT acquire: return success
+        # immediately, without a second O_EXCL create and without entering the
+        # wait loop. The reentrant grant reads the holder and returns — it adds
+        # no new create race, and it must NOT count as an independent second
+        # acquisition (release stays idempotent and holder-scoped, so the single
+        # real os.unlink happens once when the holder releases).
         holder = _read_holder(lock_path)
+        if holder == plan_id:
+            return {
+                'status': 'success',
+                'plan_id': plan_id,
+                'action': 'already_held',
+                'lock_path': str(lock_path),
+                'holder': plan_id,
+                'reclaimed': False,
+            }
         if holder_is_dead(holder):
             # Capture the reclaimed-from holder before the stale file is evicted
             # so the `reclaimed` [LOCK] event can correlate it.
