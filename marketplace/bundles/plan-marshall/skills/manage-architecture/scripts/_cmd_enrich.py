@@ -15,6 +15,7 @@ from typing import Any
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
+    crawl_all_modules,
     get_module_enriched_path,
     handle_module_not_found_result,
     iter_modules,
@@ -56,8 +57,24 @@ def enrich_project(description: str, project_dir: str = '.', reasoning: str | No
     return {'status': 'success', 'updated': 'project.description'}
 
 
-def _load_module_or_raise(module_name: str, project_dir: str) -> dict:
-    """Validate module exists in ``_project.json`` and return its derived dict."""
+def _load_module_or_raise(
+    module_name: str, project_dir: str, crawled_modules: dict[str, dict[str, Any]] | None = None
+) -> dict:
+    """Validate the module exists in the live crawl and return its derived dict.
+
+    When ``crawled_modules`` is supplied (the per-call discovery result produced
+    once by :func:`enrich_all`), both the existence check and the derived-data
+    lookup are served from it — no fresh whole-worktree crawl is triggered. This
+    is what collapses the per-(module × domain) discovery storm down to one crawl
+    per enrich invocation. When ``crawled_modules`` is ``None`` (single-module
+    enrich verbs), fall back to the live crawl per call.
+    """
+    if crawled_modules is not None:
+        if module_name not in crawled_modules:
+            raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', sorted(crawled_modules.keys()))
+        derived: dict[str, Any] = crawled_modules[module_name]
+        return derived
+
     modules = iter_modules(project_dir)
     if module_name not in modules:
         raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
@@ -225,12 +242,18 @@ def enrich_add_domain(
     include_optionals: bool = False,
     reasoning: str | None = None,
     profiles: set[str] | None = None,
+    crawled_modules: dict[str, dict[str, Any]] | None = None,
 ) -> dict:
-    """Add a domain's skills to a module's skills_by_profile additively."""
+    """Add a domain's skills to a module's skills_by_profile additively.
+
+    ``crawled_modules`` is the optional per-call discovery result threaded by
+    :func:`enrich_all` so the module's derived data is resolved from the single
+    crawl rather than re-crawling the worktree for every (module × domain) pair.
+    """
     if domain_key == 'system':
         raise ValueError("Cannot add 'system' domain to modules")
 
-    module_data = _load_module_or_raise(module_name, project_dir)
+    module_data = _load_module_or_raise(module_name, project_dir, crawled_modules)
 
     # Find extension for this domain (supports multi-domain extensions)
     from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
@@ -340,8 +363,14 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
     """
     from extension_discovery import discover_all_extensions
 
-    # iter_modules raises DataNotFoundError if _project.json is missing.
-    module_names = iter_modules(project_dir)
+    # Compute whole-worktree module discovery ONCE for the entire enrich
+    # invocation. The discovery result is invariant within a single call, so
+    # crawling it once here and threading it through every enrich_add_domain ->
+    # _load_module_or_raise call collapses the former per-(module × domain)
+    # discovery storm down to a single crawl. iter_modules + load_module_derived
+    # each previously triggered a fresh crawl per pair.
+    crawled_modules = crawl_all_modules(project_dir)
+    module_names = sorted(crawled_modules.keys())
 
     extensions = discover_all_extensions()
 
@@ -385,6 +414,7 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
                         project_dir=project_dir,
                         include_optionals=include_optionals,
                         reasoning=reasoning_to_apply,
+                        crawled_modules=crawled_modules,
                     )
                 except ModuleNotFoundInProjectError as e:
                     summary['errors'].append(f'{module_name}/{domain_key}: {e}')

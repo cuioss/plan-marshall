@@ -124,9 +124,9 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 'defaults': ['plan-marshall:dev-agent-behavior-rules'],
                 'optionals': ['plan-marshall:diagnostic-patterns'],
                 'execute_task_skills': {
-                    'implementation': 'plan-marshall:execute-task-implementation',
-                    'module_testing': 'plan-marshall:execute-task-module-testing',
-                    'integration_testing': 'plan-marshall:execute-task-integration_testing',
+                    'implementation': 'plan-marshall:execute-task',
+                    'module_testing': 'plan-marshall:execute-task',
+                    'integration_testing': 'plan-marshall:execute-task',
                 },
             },
             'java': {

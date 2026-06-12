@@ -256,12 +256,20 @@ class TestHelperInvariants:
 
 
 # =============================================================================
-# Ascending-order guard (--all) — order resolution + inversion detection
+# Array-authority contract (--all) — composed array is authoritative for order
 # =============================================================================
+#
+# D4 array-authority contract: once the manifest is composed, ``phase_6.steps``
+# is the authoritative execution order. The ``--all`` path therefore does NOT
+# re-assert ascending order against each step's frontmatter ``order:`` — only
+# standards-file loadability is a hard error here. The ascending-order guard
+# lives exclusively on the pre-composition SEED path (``--check-seed``, below).
+# The order-resolution helpers (``_resolve_step_order``, ``_check_ascending_order``)
+# are retained because ``--check-seed`` still consumes them.
 
 
-class TestAscendingOrderGuard:
-    def test_in_order_phase_6_steps_pass_without_order_error(self, plan_context):
+class TestArrayAuthorityContract:
+    def test_in_order_phase_6_steps_pass(self, plan_context):
         """An --all manifest whose steps are in ascending order returns success."""
         cmd_compose(_compose_ns('vl-order-ok'))
         manifest = _mem.read_manifest('vl-order-ok')
@@ -282,31 +290,36 @@ class TestAscendingOrderGuard:
         assert result['unloadable_count'] == 0
         assert 'error' not in result
 
-    def test_inverted_pair_returns_error_naming_both_steps(self, plan_context):
-        """An --all manifest with an inverted pair returns status: error naming the pair."""
-        cmd_compose(_compose_ns('vl-order-inverted'))
-        manifest = _mem.read_manifest('vl-order-inverted')
+    def test_frontmatter_array_disagreement_does_not_fail(self, plan_context):
+        """Per D4, a composed array whose order disagrees with frontmatter still passes.
+
+        The legacy guard returned ``order_inversion`` here. Under the array-authority
+        contract the composed ``phase_6.steps`` array is authoritative, so the same
+        out-of-frontmatter-order manifest now returns ``status: success`` with no
+        order error — only loadability is a hard error on the ``--all`` path.
+        """
+        cmd_compose(_compose_ns('vl-order-disagree'))
+        manifest = _mem.read_manifest('vl-order-disagree')
         assert manifest is not None
-        # An inversion: sync-plugin-cache (85) precedes deploy-target (80).
+        # Frontmatter order would call this an inversion: sync-plugin-cache (85)
+        # precedes deploy-target (80). The array says this is the intended order.
         manifest['phase_6']['steps'] = [
             'commit-push',
             'project:finalize-step-sync-plugin-cache',
             'project:finalize-step-deploy-target',
         ]
-        _mem.write_manifest('vl-order-inverted', manifest)
+        _mem.write_manifest('vl-order-disagree', manifest)
 
-        result = cmd_validate_loadable(_validate_loadable_ns('vl-order-inverted', use_all=True))
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-order-disagree', use_all=True))
         assert result is not None
-        assert result['status'] == 'error'
-        assert result['error'] == 'order_inversion'
-        # The message names both out-of-order step IDs and their order values.
-        assert 'project:finalize-step-deploy-target' in result['message']
-        assert 'project:finalize-step-sync-plugin-cache' in result['message']
-        assert 'order=80' in result['message']
-        assert 'order=85' in result['message']
-        # The existing loadability payload is preserved alongside the order error.
+        # No order_inversion error — the array is authoritative.
+        assert result['status'] == 'success'
+        assert 'error' not in result
+        assert 'order_inversion' not in result.values()
+        # All steps load, so unloadable_count is zero and results is the full walk.
         assert result['unloadable_count'] == 0
         assert isinstance(result['results'], list)
+        assert len(result['results']) == 3
 
     def test_project_step_order_resolves_from_project_local_skill_md(self):
         """project: step order is read from .claude/skills/{name}/SKILL.md frontmatter."""
@@ -319,8 +332,14 @@ class TestAscendingOrderGuard:
         assert _mem._resolve_step_order('default:commit-push') == 10
         assert _mem._resolve_step_order('create-pr') == 20
 
-    def test_unresolvable_order_steps_are_skipped_and_do_not_trip_guard(self, plan_context):
-        """Steps with no resolvable order are skipped for the ordering check."""
+    def test_all_path_reports_only_loadability_not_order(self, plan_context):
+        """The --all walk surfaces unloadable steps but never an order error.
+
+        Mixes resolvable-order steps, an unresolvable-order bundle:skill step, and
+        a ghost step (no standards file). The ghost step is unloadable, but that is
+        a loadability concern; the array is authoritative for order, so no order
+        check runs and status stays success on the strength of loadability alone.
+        """
         # _resolve_step_order returns None for a non-existent step and for a
         # bundle:skill external step (no project-local SKILL.md).
         assert _mem._resolve_step_order('ghost-step-not-on-disk') is None
@@ -329,10 +348,6 @@ class TestAscendingOrderGuard:
         cmd_compose(_compose_ns('vl-order-skip'))
         manifest = _mem.read_manifest('vl-order-skip')
         assert manifest is not None
-        # Interleave unresolvable-order steps between ascending resolvable ones.
-        # The ghost step has no file (order None); the bundle:skill step has no
-        # project-local SKILL.md (order None). Neither participates in the check,
-        # so the resolvable subsequence (10, 80, 85) stays ascending and passes.
         manifest['phase_6']['steps'] = [
             'commit-push',
             'plan-marshall:plan-retrospective',
@@ -344,15 +359,16 @@ class TestAscendingOrderGuard:
 
         result = cmd_validate_loadable(_validate_loadable_ns('vl-order-skip', use_all=True))
         assert result is not None
-        # The ghost step is unloadable (no standards file) but that is a
-        # loadability concern, not an order concern — status stays success
-        # because the resolvable order subsequence is ascending.
+        # The ghost step is unloadable (no standards file); status stays success
+        # only because loadability is the sole hard error on the --all path —
+        # order is never checked against frontmatter under the array-authority
+        # contract.
         assert result['status'] == 'success'
         assert 'error' not in result
         assert result['unloadable_count'] == 1
 
-    def test_single_step_id_path_has_no_order_check(self, plan_context):
-        """The order guard applies to --all only; --step-id is unchanged."""
+    def test_single_step_id_path_reports_no_order_error(self, plan_context):
+        """--step-id reports loadability only; no order error on any path now."""
         result = cmd_validate_loadable(
             _validate_loadable_ns('vl-order-single', step_id='project:finalize-step-sync-plugin-cache')
         )

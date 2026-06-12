@@ -92,7 +92,7 @@ Returns `defaults` and `optionals` arrays with skill references and descriptions
 manage-config configure-execute-task-skills
 ```
 
-Convention: profile X maps to skill `plan-marshall:execute-task-X`.
+Convention: every profile maps to the unified `plan-marshall:execute-task` skill.
 
 ### resolve-workflow-skill-extension Notes
 

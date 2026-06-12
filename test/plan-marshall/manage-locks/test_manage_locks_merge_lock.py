@@ -267,6 +267,114 @@ class TestNoDoubleMerge:
 
 
 # =============================================================================
+# Reentrant per plan-id — a same-plan-id re-acquire is granted without blocking
+# =============================================================================
+
+
+class TestReentrantAcquire:
+    """The self-holder short-circuit (Deliverable 2): when the lock is already held
+    by the SAME ``plan_id``, a re-acquire returns ``status: success`` with
+    ``action: already_held`` IMMEDIATELY — no second ``O_EXCL`` create, no staleness
+    evaluation, no wait loop. This is the fix for the finalize auto-merge
+    self-deadlock (``branch-cleanup`` holds the lock, then ``integrate_into_main``
+    re-acquires it under the same ``plan_id``). The reentrant grant is NOT an
+    independent second acquisition: release stays idempotent and holder-scoped, so
+    the single real ``os.unlink`` fires once when the holder releases. These tests
+    FAIL on the pre-fix ``run_acquire`` (which fell through to the wait loop and
+    blocked on a self-held live lock) and PASS after the short-circuit lands."""
+
+    def test_same_plan_id_reacquire_is_already_held_success(self, isolated_base: dict) -> None:
+        """A re-acquire for the SAME plan-id (already the live holder) returns a
+        success with ``action: already_held`` rather than blocking or reclaiming."""
+        # plan-a acquires the lock and is live (its plan dir exists), so the
+        # holder is NOT dead — pre-fix this would fall through to the wait loop.
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        # The same plan-a re-acquires — granted reentrantly, not blocked.
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        assert result['status'] == 'success'
+        assert result['action'] == 'already_held'
+        assert result['holder'] == 'plan-a'
+        # A reentrant grant is not a fresh acquire and not a reclaim.
+        assert result['reclaimed'] is False
+        # The lock file is unchanged — still recording plan-a, never re-created.
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'plan-a'
+
+    def test_reentrant_reacquire_does_not_block(self, isolated_base: dict) -> None:
+        """The self-holder short-circuit returns IMMEDIATELY — even a ``timeout: 0``
+        re-acquire (which would block instantly against a FOREIGN holder) succeeds
+        for the same plan-id, proving it never entered the wait loop."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        start = time.monotonic()
+        # timeout=0 is the non-blocking try: a foreign holder would `blocked`
+        # immediately; a self-holder must short-circuit to success.
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=0))
+        elapsed = time.monotonic() - start
+        assert result['status'] == 'success'
+        assert result['action'] == 'already_held'
+        # The reentrant grant returns essentially instantly — far under any budget.
+        assert elapsed < 1.0
+
+    def test_reentrant_reacquire_then_single_release_frees_lock(self, isolated_base: dict) -> None:
+        """The reentrant grant must NOT be an independent second acquisition: after a
+        self-holder re-acquire, ONE release removes the single underlying lock file
+        (release is idempotent and holder-scoped — the single ``os.unlink`` fires
+        once), and the next acquire by a different plan succeeds."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        # Reentrant re-acquire by the same holder — no second lock file created.
+        reentrant = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        assert reentrant['action'] == 'already_held'
+
+        # A single release frees the one underlying lock file.
+        rel = merge_lock.run_release(Namespace(plan_id='plan-a'))
+        assert rel['status'] == 'success'
+        assert rel['action'] == 'released'
+        assert not isolated_base['lock_path'].exists()
+
+        # The lock is now genuinely free — a different plan can acquire it.
+        other = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        assert other['status'] == 'success'
+        assert other['action'] == 'acquired'
+        assert other['holder'] == 'plan-b'
+
+    def test_foreign_live_holder_still_blocks(self, isolated_base: dict) -> None:
+        """Cross-plan mutual exclusion is preserved: a FOREIGN live holder still
+        blocks the reentrant short-circuit only fires for the SAME plan-id. plan-b
+        re-acquiring against a live plan-a holder still returns ``blocked``."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.3))
+        assert result['status'] == 'blocked'
+        assert result['blocking_plan_id'] == 'plan-a'
+        # The lock still records the live foreign holder, never reentrantly granted.
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'plan-a'
+
+    def test_reentrant_grant_does_not_surface_lock_owned_token(
+        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
+    ) -> None:
+        """The reentrant ``already_held`` short-circuit returns before any title-token
+        surface — the lock-owned 🔒 glyph was already set on the FIRST acquire, so the
+        re-acquire surfaces no NEW token (it neither re-creates the lock nor sleeps)."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        _stub_title_tokens.set_states.clear()
+        _stub_title_tokens.pushed_icons.clear()
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        assert result['action'] == 'already_held'
+        # No new token of any kind — neither lock-owned (no re-create) nor
+        # lock-waiting (no sleep).
+        assert _stub_title_tokens.set_states == []
+        assert _stub_title_tokens.pushed_icons == []
+
+
+# =============================================================================
 # Release
 # =============================================================================
 

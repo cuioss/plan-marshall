@@ -571,7 +571,7 @@ The `system` domain contains execute-task skills and base skills applied to all 
 |-------|---------|
 | `defaults` | Base skills loaded for all tasks (`plan-marshall:dev-agent-behavior-rules`) |
 | `optionals` | Optional base skills available for selection |
-| `execute_task_skills` | Maps profiles to execute-task skills (convention: profile X -> `plan-marshall:execute-task-X`) |
+| `execute_task_skills` | Maps profiles to the unified execute-task skill; every profile maps to `plan-marshall:execute-task` |
 
 ### Technical Domains (Profile Structure)
 

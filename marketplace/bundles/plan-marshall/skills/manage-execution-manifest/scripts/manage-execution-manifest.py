@@ -2621,11 +2621,20 @@ def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
 
     - ``--step-id ID``: validate one step. Returns the per-step dict directly.
     - ``--all``: walk every entry in ``manifest.phase_6.steps`` and return a
-      ``results[]`` table plus ``unloadable_count``.
+      ``results[]`` table plus ``unloadable_count``. Loadability of the
+      standards file is the only hard error on this path — the composed
+      ``phase_6.steps`` array is authoritative for execution order (the D4
+      array-authority contract), so a disagreement between the array order
+      and a step's frontmatter ``order:`` is NOT a failure here.
     - ``--check-seed``: read ``plan.phase-6-finalize.steps`` directly from
       ``marshal.json`` (independent of the composed ``execution.toon``) and run
       the ascending-order guard against the seed. Catches a seed-order
       inversion before manifest composition.
+
+    Seed/array authority split: the ascending-order guard fires only on the
+    pre-composition SEED (``--check-seed``); once the manifest is composed,
+    the runtime array — not the frontmatter ``order:`` — is authoritative, so
+    ``--all`` does not re-assert ascending order against frontmatter.
 
     Built-in steps resolve to ``phase-6-finalize/standards/{name}.md`` in the
     marketplace source tree (the cache layout is a deployment concern;
@@ -2733,24 +2742,13 @@ def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
         })
     unloadable_count = sum(1 for r in results if not r['loadable'])
 
-    # Ascending-order guard: assert phase_6.steps resolve to non-decreasing
-    # frontmatter ``order`` values. The check is additive to (and independent
-    # of) the loadability walk above — order resolution covers ``project:``
-    # steps too, because the real inversions occur among project-local steps.
-    # An out-of-order pair flips ``status`` to ``error`` while preserving the
-    # existing ``unloadable_count`` / ``results[]`` payload, so loadability
-    # failures and order failures are both surfaced.
-    order_message = _check_ascending_order(steps)
-    if order_message is not None:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'order_inversion',
-            'message': order_message,
-            'unloadable_count': unloadable_count,
-            'results': results,
-        }
-
+    # Per the D4 array-authority contract, the composed ``phase_6.steps`` array
+    # is authoritative for execution order. The ascending-order guard against
+    # frontmatter ``order:`` belongs to the pre-composition SEED check only
+    # (``--check-seed``); re-asserting it here would let an in-plan change to a
+    # step's ``order:`` frontmatter retroactively invalidate an already-composed
+    # manifest the array says is still correct. Loadability of the standards
+    # file is therefore the only hard error on the ``--all`` path.
     return {
         'status': 'success',
         'plan_id': plan_id,

@@ -12,6 +12,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -30,6 +32,7 @@ load_project_meta = _architecture_core.load_project_meta
 load_module_enriched = _architecture_core.load_module_enriched
 load_module_enriched_or_empty = _architecture_core.load_module_enriched_or_empty
 
+enrich_all = _cmd_enrich.enrich_all
 enrich_best_practice = _cmd_enrich.enrich_best_practice
 enrich_dependencies = _cmd_enrich.enrich_dependencies
 enrich_insight = _cmd_enrich.enrich_insight
@@ -634,6 +637,139 @@ def test_enrich_best_practice_appends():
 
         result = enrich_best_practice('module-a', 'Practice 1', tmpdir)
         assert result['best_practices'] == ['Practice 1']
+
+
+# =============================================================================
+# Regression: tier-0 enrich discovery is memoized to a single worktree crawl
+# =============================================================================
+#
+# History: ``enrich_all`` delegated every (module × domain) pair to
+# ``enrich_add_domain`` -> ``_load_module_or_raise``, which re-ran
+# ``iter_modules`` + ``load_module_derived`` — each a fresh
+# ``crawl_all_modules`` over the whole worktree. With M modules and D applicable
+# domains that is O(M × D) whole-worktree crawls per enrich invocation (the
+# per-iteration discovery storm). The fix crawls once in ``enrich_all`` and
+# threads the result through ``crawled_modules`` so discovery runs exactly once
+# regardless of M × D.
+
+
+class _FakeExtensionApplicable:
+    """Minimal fake extension that applies to any module with a maven build."""
+
+    def __init__(self, domain_key: str, bundle: str, skill_name: str):
+        self._domain_key = domain_key
+        self._bundle = bundle
+        self._skill_name = skill_name
+
+    def get_skill_domains(self) -> list[dict]:
+        return [
+            {
+                'domain': {'key': self._domain_key, 'name': 'Fake Domain', 'description': 'Test fake domain'},
+                'profiles': {
+                    'implementation': {
+                        'defaults': [
+                            {'skill': f'{self._bundle}:{self._skill_name}', 'description': f'Fake from {self._bundle}'}
+                        ],
+                        'optionals': [],
+                    }
+                },
+            }
+        ]
+
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        if 'maven' in module_data.get('build_systems', []):
+            return {
+                'applicable': True,
+                'confidence': 'high',
+                'signals': ['has maven'],
+                'additive_to': None,
+                'skills_by_profile': {
+                    'implementation': {
+                        'defaults': [
+                            {'skill': f'{self._bundle}:{self._skill_name}', 'description': f'Fake from {self._bundle}'}
+                        ],
+                        'optionals': [],
+                    }
+                },
+            }
+        return {
+            'applicable': False,
+            'confidence': 'none',
+            'signals': [],
+            'additive_to': None,
+            'skills_by_profile': {},
+        }
+
+
+def _patch_extensions(monkeypatch: pytest.MonkeyPatch, extensions: list[dict]) -> None:
+    """Patch ``discover_all_extensions`` at the extension_discovery module level.
+
+    ``enrich_all`` and ``enrich_add_domain`` both import ``discover_all_extensions``
+    inside their function bodies, so patching the module attribute reaches every
+    call site.
+    """
+    import extension_discovery
+
+    monkeypatch.setattr(extension_discovery, 'discover_all_extensions', lambda: extensions)
+
+
+def _multi_module_maven_project() -> dict[str, dict]:
+    """Three maven modules → multiple (module × domain) pairs in one enrich_all."""
+    return {
+        name: {
+            'name': name,
+            'build_systems': ['maven'],
+            'paths': {'module': name},
+            'metadata': {},
+            'packages': {},
+            'dependencies': [],
+            'commands': {},
+        }
+        for name in ('module-a', 'module-b', 'module-c')
+    }
+
+
+def test_enrich_all_memoizes_module_discovery_to_single_crawl(monkeypatch):
+    """enrich_all triggers exactly ONE whole-worktree crawl regardless of M × D.
+
+    Spies on ``crawl_all_modules`` (the single discovery primitive that
+    ``iter_modules`` and ``load_module_derived`` both fan out to). The
+    memoization fix crawls once in ``enrich_all`` and threads the result via
+    ``crawled_modules``, so the spy is hit exactly once. Against the pre-fix
+    per-(module × domain) discovery, the spy would be hit many times (≥ 2 × M ×
+    D) — once per ``iter_modules`` + ``load_module_derived`` inside every
+    ``_load_module_or_raise`` call.
+    """
+    fake_ext = _FakeExtensionApplicable(
+        domain_key='memo-domain', bundle='memo-bundle', skill_name='memo-skill'
+    )
+    _patch_extensions(monkeypatch, [{'bundle': 'memo-bundle', 'path': '/fake/path', 'module': fake_ext}])
+
+    call_count = 0
+    real_crawl = _cmd_enrich.crawl_all_modules
+
+    def _counting_crawl(project_dir: str = '.'):
+        nonlocal call_count
+        call_count += 1
+        return real_crawl(project_dir)
+
+    monkeypatch.setattr(_cmd_enrich, 'crawl_all_modules', _counting_crawl)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_test_project(tmpdir, modules=_multi_module_maven_project())
+
+        result = enrich_all(tmpdir)
+
+        assert result['status'] == 'success'
+        # All three maven modules enriched by the single applicable domain.
+        assert sorted(result['modules_enriched']) == ['module-a', 'module-b', 'module-c']
+        # The memoization invariant: discovery ran exactly once for the whole
+        # invocation, not once per (module × domain) pair.
+        assert call_count == 1, (
+            f'enrich_all crawled the worktree {call_count} times — expected exactly 1. '
+            'The per-iteration discovery storm has regressed (crawled_modules is no '
+            'longer threaded through _load_module_or_raise).'
+        )
 
 
 # =============================================================================
