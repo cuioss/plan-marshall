@@ -441,6 +441,18 @@ def test_classify_globs_returns_resolved_roles():
 # =============================================================================
 
 
+def _git_init_and_track(root, rel_paths: list[str]) -> None:
+    """Create + git-add each repo-relative path under ``root`` as a tracked file."""
+    subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'T'], check=True)
+    for rel in rel_paths:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('')
+    subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True)
+
+
 def _matches_any(path: str, globs: list[str]) -> bool:
     """Return True when ``path`` matches at least one collected route pattern."""
     return any(fnmatch.fnmatchcase(path, g) for g in globs)
@@ -612,18 +624,6 @@ def test_derive_globs_every_entry_role_resolves_to_a_build_class(tmp_path):
 # =============================================================================
 # validate_tree_completeness() — git-tracked completeness validator
 # =============================================================================
-
-
-def _git_init_and_track(root, rel_paths: list[str]) -> None:
-    """Create + git-add each repo-relative path under ``root`` as a tracked file."""
-    subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
-    subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
-    subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'T'], check=True)
-    for rel in rel_paths:
-        target = root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('')
-    subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True)
 
 
 def test_validate_completeness_returns_empty_when_all_covered(tmp_path):

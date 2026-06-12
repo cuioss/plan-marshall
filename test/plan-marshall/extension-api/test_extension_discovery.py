@@ -35,6 +35,7 @@ Three flavours of coverage:
 from __future__ import annotations
 
 import fnmatch
+import subprocess
 
 # conftest.py sets up the marketplace PYTHONPATH and exposes module loaders.
 from conftest import (  # type: ignore[import-not-found]
@@ -145,8 +146,6 @@ def _git_init_and_track(root, rel_paths: list[str]) -> None:
     whose pattern matches no git-tracked file, so the synthetic-route bridge units
     must seed a tree carrying a file for each route they expect to survive.
     """
-    import subprocess
-
     subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
     subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
     subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'T'], check=True)

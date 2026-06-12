@@ -40,7 +40,9 @@ The three fix-specific suites at the end cover:
 import importlib
 import importlib.util
 import json
+import subprocess
 import sys
+import tempfile
 from argparse import Namespace
 from pathlib import Path
 
@@ -393,9 +395,6 @@ def _make_tracked_project_root(rel_paths: list[str]) -> Path:
     file for each supplied repo-relative path so the stub routes survive the
     tree-presence filter.
     """
-    import subprocess
-    import tempfile
-
     root = Path(tempfile.mkdtemp(prefix='build-map-seed-tree-'))
     subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
     subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
