@@ -197,7 +197,16 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 Skip the aspect entirely when the manifest file is absent.
 
-**Aspect 13 (chat-history, conditional)** — when `--session-id` is present, resolve the absolute transcript path by constructing the canonical Claude Code path pattern `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` (where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`). Attempt to read the file directly; if absent, try a parent-directory glob under `~/.claude/projects/` for cross-cwd recovery. Pass the resolved `transcript_path` to the LLM analysis prompt as a concrete absolute file path — the LLM `Read`s by absolute path with no discovery step. On `transcript_not_found`, degrade gracefully: emit a fragment with `status: skipped` and `reason: transcript_unavailable` per `references/chat-history-analysis.md`. Never substitute Bash file discovery (`ls`, `find`, Glob) for this resolution — the canonical path derivation is the only sanctioned lookup mechanism for the session JSONL.
+**Aspect 13 (chat-history, conditional)** — when `--session-id` is present, resolve the absolute transcript path by constructing the canonical Claude Code path pattern `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` (where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`). Attempt to read the file directly; if absent, try a parent-directory glob under `~/.claude/projects/` for cross-cwd recovery. Never substitute Bash file discovery (`ls`, `find`, Glob) for this resolution — the canonical path derivation is the only sanctioned lookup mechanism for the session JSONL.
+
+Run the `extract-chat-signal.py` signal-extraction pre-pass against the resolved `transcript_path` to obtain the tier decision and the reduced transcript:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:extract-chat-signal run \
+  --transcript-path {abs_transcript_path}
+```
+
+The pre-pass output drives the two-tier degradation path: when `no_signal == false` AND `over_budget == false` (Tier 1), feed `reduced_transcript` to the LLM analysis prompt and synthesize the `status: success` fragment; otherwise (Tier 2 — transcript absent, no signal, or still over the 2 MiB read budget), emit a `status: skipped` fragment carrying the canonical skip-reason token. The two-tier path and the normative skip-reason token contract (`transcript_too_large` for a size-driven skip vs `transcript_unavailable` for a genuine data absence, and how downstream aggregation MUST distinguish them) are specified in `references/chat-history-analysis.md` — see [`references/chat-history-analysis.md`](references/chat-history-analysis.md) §§ "Two-Tier Degradation Path" and "Skip-Reason Token Contract". Do not restate the token semantics here.
 
 ### Step 4: Compile Report
 
@@ -298,7 +307,14 @@ display_detail: "<{aspects_dispatched} aspects, {lessons_recorded} lessons recor
 
 ## Canonical invocations
 
-The canonical argparse surface for the ten entry-point scripts this skill registers. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". The single-aspect scripts share the same `run` flag surface; `collect-fragments` carries the `init` / `add` / `finalize` sub-verbs.
+The canonical argparse surface for the ten entry-point scripts this skill registers (twelve invocation forms — `collect-fragments` carries three sub-verbs). The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". The single-aspect scripts share the same `run` flag surface; `collect-fragments` carries the `init` / `add` / `finalize` sub-verbs.
+
+### extract-chat-signal — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:extract-chat-signal run \
+  --transcript-path TRANSCRIPT_PATH [--read-budget-bytes READ_BUDGET_BYTES]
+```
 
 ### check-manifest-consistency — run
 
