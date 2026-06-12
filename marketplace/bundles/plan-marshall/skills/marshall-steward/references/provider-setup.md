@@ -84,9 +84,11 @@ If user selects "Skip", no CI provider is activated.
 
 **Note**: Step 13b intentionally re-runs `ci_health detect` for its own verification and persistence responsibilities (verifying the CLI tool and persisting CI configuration to `marshal.json`). The duplicate detect call is cheap and keeps Step 13 self-contained.
 
-### Step 7-5: Present other providers as multiSelect
+### Step 7-5: Present other providers as multiSelect with a canonical Skip option
 
-Only present this step if the `other` category contains at least one provider:
+Only present this step if the `other` category contains at least one provider.
+
+This is a binary activation gate: it MUST always present **≥2 options** — the dynamic `other`-category providers plus a fixed, canonical `Skip` entry. Mirror Step 7-4c, which already pairs dynamic options with a `Skip`. Never emit a single-option array: when `other` contains exactly one provider, the rendered question is that one `{provider}` entry **plus** the canonical `Skip` entry (two options), never the lone provider on its own. `AskUserQuestion` rejects a single-option array, so the LLM MUST NOT assemble its own option list that omits `Skip`.
 
 ```
 AskUserQuestion:
@@ -97,8 +99,13 @@ AskUserQuestion:
         # Dynamic from other-category providers:
         - label: "{display_name}"
           description: "{skill_name} — {description}"
+        # Canonical fixed option, always present:
+        - label: "Skip"
+          description: "Activate no additional providers"
       multiSelect: true
 ```
+
+Selecting `Skip` activates no additional provider. The dynamic providers and the canonical `Skip` together guarantee the gate always renders at least two options.
 
 ### Step 7-6: Persist activated providers
 
