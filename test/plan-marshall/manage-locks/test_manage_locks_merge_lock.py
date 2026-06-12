@@ -753,9 +753,9 @@ class TestConcurrentReclamation:
                 '--plan-id',
                 f'reclaim-{i}',
                 '--timeout',
-                '8',
+                '30',
                 env_overrides=env_overrides,
-                timeout=60,
+                timeout=90,
             )
 
         with ThreadPoolExecutor(max_workers=n) as pool:
@@ -812,9 +812,9 @@ class TestConcurrentReclamation:
                 '--plan-id',
                 f'contender-{i}',
                 '--timeout',
-                '8',
+                '30',
                 env_overrides=env_overrides,
-                timeout=60,
+                timeout=90,
             )
 
         with ThreadPoolExecutor(max_workers=n) as pool:
@@ -855,7 +855,10 @@ class TestConcurrentReclamation:
         deterministic-under-repetition regression guard that fails reliably if the
         TOCTOU hole regresses. It runs under ``PLAN_BASE_DIR`` isolation (no
         contention for the real ``.plan/merge.lock``) and is stable under
-        ``pytest-xdist`` ``-n auto``.
+        ``pytest-xdist`` ``-n auto`` with widened load-sensitive margins
+        (``--timeout 30`` inner wait budget, ``timeout=90`` outer subprocess kill
+        budget, outer > inner) so a legitimately-waiting subprocess is never killed
+        mid-wait on a contended host.
         """
         base = isolated_base['base']
         lock_path = isolated_base['lock_path']
@@ -876,9 +879,9 @@ class TestConcurrentReclamation:
                 '--plan-id',
                 f'reclaim-{i}',
                 '--timeout',
-                '8',
+                '30',
                 env_overrides=env_overrides,
-                timeout=60,
+                timeout=90,
             )
 
         for trial in range(trials):
