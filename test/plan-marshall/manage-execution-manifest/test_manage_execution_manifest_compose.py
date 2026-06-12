@@ -2225,6 +2225,236 @@ def test_whole_tree_gate_inactive_no_decision_log_on_kept_branch(plan_context):
 
 
 # =============================================================================
+# Pre-Filter: whole_tree_gate_inactive — ADDITIVE whole-tree-invariant TRIGGER arm
+#
+# The trigger arm keeps finalize-step-whole-tree-gate REGARDLESS of the plan's
+# compatibility posture whenever the changed set intersects one of the three
+# whole-tree-invariant trigger glob categories AND affected_files_count > 0:
+#
+#   (a) doctor trigger        — plugin-doctor / plan-doctor analyzer & rule .py
+#   (b) sweep-test trigger    — whole-tree grep-sweep guard tests (test_*sweep*.py)
+#   (c) generator/drift trigger — marketplace/targets/** and marketplace/bundles/**
+#
+# These cases exercise the trigger arm against a NON-breaking compatibility
+# (deprecation / smart_and_ask) so the breaking arm can never be the reason the
+# gate is kept — the only thing keeping it is the trigger glob hit. The changed
+# set is read from _read_bundle_change_paths, so the seam is monkeypatched
+# directly (mirroring the _read_compatibility monkeypatch used by the
+# non-breaking-drop test above). The trigger-activation decision-log line is the
+# audit signal that the additive arm fired.
+#
+# See standards/decision-rules.md § Pre-Filter: whole_tree_gate_inactive,
+# § Decision 1.
+# =============================================================================
+
+
+_TRIGGER_ACTIVATION_LINE_TEMPLATE = (
+    '(plan-marshall:manage-execution-manifest:compose) finalize-step-whole-tree-gate activated via '
+    'whole-tree-invariant trigger — changed set hit a trigger glob, affected_files_count={count}'
+)
+
+
+@pytest.mark.parametrize(
+    'trigger_label,trigger_path',
+    [
+        # (a) doctor trigger — both the plugin-doctor and plan-doctor analyzer surfaces.
+        ('doctor-plugin', 'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_foo.py'),
+        ('doctor-plan', 'marketplace/bundles/plan-marshall/skills/plan-doctor/scripts/analyze.py'),
+        # (b) sweep-test trigger — whole-tree grep-sweep guard tests under both roots.
+        ('sweep-plan', 'test/plan-marshall/plan-marshall/test_marketplace_sweep.py'),
+        ('sweep-marketplace', 'test/marketplace/targets/test_bundle_sweep_guard.py'),
+        # (c) generator/drift trigger — the multi-target generator engine and bundle source.
+        ('generator-targets', 'marketplace/targets/claude/generate.py'),
+        ('generator-bundle', 'marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md'),
+    ],
+)
+@pytest.mark.parametrize('compatibility', ['deprecation', 'smart_and_ask'])
+def test_whole_tree_gate_trigger_arm_activates_regardless_of_compatibility(
+    plan_context, compatibility, trigger_label, trigger_path
+):
+    """The trigger arm KEEPS the gate on a non-breaking plan when a trigger glob is hit.
+
+    Each of the three trigger categories (doctor / sweep-test / generator-drift)
+    activates the gate even though compatibility != breaking, which alone would
+    drop the gate via the breaking arm. The only thing keeping the step is the
+    changed-set glob hit.
+    """
+    slug = f'{compatibility.replace("_", "-")}-{trigger_label}'
+    plan_id = f'wtg-trig-{slug}'
+
+    captured: list[tuple[str, str]] = []
+    original_emit = _mem._emit_decision_log
+    original_compat = _mem._read_compatibility
+    original_changed = _mem._read_bundle_change_paths
+
+    def _capture(pid, message):
+        captured.append((pid, message))
+
+    _mem._emit_decision_log = _capture
+    _mem._read_compatibility = lambda: compatibility
+    _mem._read_bundle_change_paths = lambda pid: [trigger_path]
+    try:
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',  # code-bearing
+                scope_estimate='multi_module',
+                affected_files_count=3,  # files > 0
+            )
+        )
+    finally:
+        _mem._emit_decision_log = original_emit
+        _mem._read_compatibility = original_compat
+        _mem._read_bundle_change_paths = original_changed
+
+    assert result is not None and result['status'] == 'success'
+    # Non-breaking compatibility resolved — the breaking arm did NOT keep the gate.
+    assert result['compatibility'] == compatibility
+    # Trigger arm kept the step: it was not omitted.
+    assert result['whole_tree_gate_omitted'] is False
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'finalize-step-whole-tree-gate' in manifest['phase_6']['steps']
+    # The trigger-activation audit line fired exactly once; no omission line.
+    trigger_entries = [(pid, msg) for pid, msg in captured if 'activated via' in msg]
+    assert len(trigger_entries) == 1, f'expected one trigger-activation entry, got {captured!r}'
+    assert trigger_entries[0][0] == plan_id
+    assert trigger_entries[0][1] == _TRIGGER_ACTIVATION_LINE_TEMPLATE.format(count=3)
+    omit_entries = [(pid, msg) for pid, msg in captured if 'whole-tree-gate omitted' in msg]
+    assert omit_entries == []
+
+
+def test_whole_tree_gate_trigger_arm_requires_files_present(plan_context):
+    """The trigger arm is inert when affected_files_count == 0 even with a trigger glob hit.
+
+    Both activation arms require files > 0; a trigger glob in the changed set
+    cannot keep the gate when the plan touched zero files.
+    """
+    plan_id = 'wtg-trig-zero-files'
+    original_compat = _mem._read_compatibility
+    original_changed = _mem._read_bundle_change_paths
+
+    _mem._read_compatibility = lambda: 'deprecation'
+    _mem._read_bundle_change_paths = lambda pid: [
+        'marketplace/bundles/plan-marshall/skills/plan-doctor/scripts/analyze.py'
+    ]
+    try:
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=0,  # files == 0 kills both arms
+            )
+        )
+    finally:
+        _mem._read_compatibility = original_compat
+        _mem._read_bundle_change_paths = original_changed
+
+    assert result is not None and result['status'] == 'success'
+    assert result['whole_tree_gate_omitted'] is True
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'finalize-step-whole-tree-gate' not in manifest['phase_6']['steps']
+
+
+def test_whole_tree_gate_breaking_arm_preserved_without_trigger(plan_context):
+    """The original breaking arm still keeps the gate when NO trigger glob is hit.
+
+    Regression guard: widening the filter with the additive trigger arm must not
+    disturb the clean-slate/breaking activation. A breaking, code-bearing plan
+    whose changed set matches no trigger glob keeps the gate via the breaking arm,
+    and emits NO trigger-activation line (that line is reserved for the additive
+    arm).
+    """
+    plan_id = 'wtg-breaking-no-trigger'
+    captured: list[tuple[str, str]] = []
+    original_emit = _mem._emit_decision_log
+    original_compat = _mem._read_compatibility
+    original_changed = _mem._read_bundle_change_paths
+
+    def _capture(pid, message):
+        captured.append((pid, message))
+
+    _mem._emit_decision_log = _capture
+    _mem._read_compatibility = lambda: 'breaking'
+    # Changed paths that match NONE of the trigger globs (root docs / non-marketplace).
+    _mem._read_bundle_change_paths = lambda pid: ['doc/developer/build.adoc', 'README.md']
+    try:
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',  # code-bearing
+                scope_estimate='multi_module',
+                affected_files_count=4,  # files > 0
+            )
+        )
+    finally:
+        _mem._emit_decision_log = original_emit
+        _mem._read_compatibility = original_compat
+        _mem._read_bundle_change_paths = original_changed
+
+    assert result is not None and result['status'] == 'success'
+    assert result['compatibility'] == 'breaking'
+    # Breaking arm kept the step.
+    assert result['whole_tree_gate_omitted'] is False
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'finalize-step-whole-tree-gate' in manifest['phase_6']['steps']
+    # No trigger-activation line — the breaking arm, not the additive arm, kept it.
+    trigger_entries = [(pid, msg) for pid, msg in captured if 'activated via' in msg]
+    assert trigger_entries == []
+
+
+def test_whole_tree_gate_dropped_when_no_trigger_and_non_breaking(plan_context):
+    """No-trigger, non-breaking plan drops the gate (no-regression on the drop path).
+
+    A non-breaking plan whose changed set matches no trigger glob has neither arm
+    pass: the breaking arm fails on compatibility, the trigger arm fails on the
+    glob miss. The gate is dropped and the omission line — not the activation
+    line — fires.
+    """
+    plan_id = 'wtg-drop-no-trigger'
+    captured: list[tuple[str, str]] = []
+    original_emit = _mem._emit_decision_log
+    original_compat = _mem._read_compatibility
+    original_changed = _mem._read_bundle_change_paths
+
+    def _capture(pid, message):
+        captured.append((pid, message))
+
+    _mem._emit_decision_log = _capture
+    _mem._read_compatibility = lambda: 'deprecation'
+    # Code change, but the paths match none of the whole-tree-invariant triggers.
+    _mem._read_bundle_change_paths = lambda pid: ['src/app/widget.py', 'doc/notes.md']
+    try:
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=2,
+            )
+        )
+    finally:
+        _mem._emit_decision_log = original_emit
+        _mem._read_compatibility = original_compat
+        _mem._read_bundle_change_paths = original_changed
+
+    assert result is not None and result['status'] == 'success'
+    assert result['compatibility'] == 'deprecation'
+    assert result['whole_tree_gate_omitted'] is True
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'finalize-step-whole-tree-gate' not in manifest['phase_6']['steps']
+    # Omission line fired; no trigger-activation line.
+    trigger_entries = [(pid, msg) for pid, msg in captured if 'activated via' in msg]
+    assert trigger_entries == []
+    omit_entries = [(pid, msg) for pid, msg in captured if 'whole-tree-gate omitted' in msg]
+    assert len(omit_entries) == 1
+
+
+# =============================================================================
 # Bot-Enforcement Guard — Remediation behavior (lesson 2026-04-28-10-001)
 #
 # When the resolved CI provider is github or gitlab AND `automated-review` is missing from

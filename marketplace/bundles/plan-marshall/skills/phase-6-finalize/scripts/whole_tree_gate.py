@@ -7,28 +7,50 @@ Backs the ``default:finalize-step-whole-tree-gate`` finalize step (see
 the NOT-diff-scoped complement to the diff-scoped finalize gates: where the
 simplify / self-review passes reason about the plan's own change surface, this
 surfacer sweeps the ENTIRE ``marketplace/`` tree for survivors of deletions the
-plan was meant to make, and compares the request's enumerated mandate against
-the diff's touched files.
+plan was meant to make, compares the request's enumerated mandate against the
+diff's touched files, AND runs three whole-tree facet checks each gated on the
+plan's changed set intersecting the corresponding trigger glob.
 
-This script is the deterministic surfacing half of the step. It emits two
+This script is the deterministic surfacing half of the step. It emits the
 candidate lists; the LLM cognitive pass in the step body classifies each
 ``survivors[]`` row as a genuine omission vs a legitimate retained reference,
 and each ``mandate_gaps[]`` row as a real gap vs a satisfied-by-another-path
-item. The script makes no FAIL/PASS judgement itself — it only surfaces.
+item. The script makes no FAIL/PASS judgement itself — it only surfaces. The
+facet checks (2–4 below) carry their own structured findings into the return
+TOON for the same cognitive pass to classify; the surfacer never converts a
+facet finding into a verdict.
 
-Two checks:
+Surfacing checks:
 
-1. **Whole-tree survivor sweep** — for each identifier the plan DELETED
-   (extracted from removed lines of the ``{base}...HEAD`` diff), grep the
-   entire ``marketplace/`` tree (NOT the diff, NOT only touched skills) with
-   word-boundary anchoring and report every surviving reference as a
+1. **Whole-tree survivor sweep** (always runs) — for each identifier the plan
+   DELETED (extracted from removed lines of the ``{base}...HEAD`` diff), grep
+   the entire ``marketplace/`` tree (NOT the diff, NOT only touched skills)
+   with word-boundary anchoring and report every surviving reference as a
    ``survivors[]{file,line,identifier}`` row. The sweep excludes
    ``.plan/archived-plans/**``, ``__pycache__`` byte-compiled output, and
    vendored snapshot directories.
-2. **Intent-vs-diff scope check** — extract the request's enumerated mandate
-   targets (named files / symbols / contracts in ``request.md``) and flag any
-   that have zero representation in the diff's touched files as a
-   ``mandate_gaps[]`` row.
+2. **Intent-vs-diff scope check** (always runs) — extract the request's
+   enumerated mandate targets (named files / symbols / contracts in
+   ``request.md``) and flag any that have zero representation in the diff's
+   touched files as a ``mandate_gaps[]`` row.
+
+Facet checks (each conditional on the plan's changed set hitting its trigger;
+see ``manage-execution-manifest/standards/decision-rules.md`` § Pre-Filter:
+``whole_tree_gate_inactive`` for the per-category trigger globs — this script
+mirrors those three categories and does NOT redefine the activation predicate):
+
+* **F1 — marketplace-wide static-analysis sweep** (doctor trigger) — when the
+  changed set touches a plugin-doctor / plan-doctor analyzer or rule script,
+  run the marketplace-wide ``plugin-doctor quality-gate`` over the full
+  ``marketplace/`` tree (NOT the build-map-scoped subset) so a rule change that
+  breaks an untouched component surfaces before the push.
+* **F2 — whole-tree grep-sweep guard re-run** (sweep-test trigger) — when the
+  changed set touches a whole-tree grep-sweep guard test, re-run the
+  ``whole_tree_sweep``-marked guard tests with the full tree as scan root.
+* **F3 — generated-target content-drift check** (generator/drift trigger) —
+  when the changed set touches the generator source or any bundle, call
+  ``content_drift.run_content_drift_check`` (regen-first) and surface any
+  drifted / missing / orphan ``.md`` files.
 
 Return shape (CLI emits this as TOON; programmatic callers consume the dict
 directly)::
@@ -41,6 +63,10 @@ directly)::
     mandate_gaps[M]{mandate_item}: ...        # request mandate items absent from the diff
     survivor_count: <int>
     mandate_gap_count: <int>
+    facets:
+      doctor:        {triggered, ran, passed, finding_count, summary}
+      sweep_test:    {triggered, ran, passed, summary}
+      content_drift: {triggered, ran, passed, drift_count, summary}
 
 The script is stdlib-only and registered through the marketplace executor; it
 is invoked via ``python3 .plan/execute-script.py
@@ -48,14 +74,17 @@ plan-marshall:phase-6-finalize:whole_tree_gate scan --plan-id {plan_id}``. The
 executor injects ``PYTHONPATH`` for ``toon_parser``, ``file_ops``, and
 ``input_validation`` so no in-script ``sys.path`` manipulation is required.
 
-Subprocess seams (``_run_git_diff``, ``_run_git_diff_names``) and the
-worktree-root / request-text resolvers are split out so the orchestration body
-is testable without a live git worktree.
+Subprocess seams (``_run_git_diff``, ``_run_git_diff_names``,
+``_run_doctor_quality_gate``, ``_run_sweep_tests``,
+``_run_content_drift_check``) and the worktree-root / request-text resolvers
+are split out so the orchestration body is testable without a live git
+worktree, live doctor run, live pytest run, or live target regeneration.
 """
 
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import re
 import subprocess
 import sys
@@ -116,6 +145,75 @@ _PATH_RE = re.compile(
     r'\b([A-Za-z0-9_./-]+\.(?:py|md|adoc|json|toon|yml|yaml|sh))\b'
 )
 
+# ---------------------------------------------------------------------------
+# Whole-tree facet triggers
+# ---------------------------------------------------------------------------
+#
+# Each facet check (F1 doctor / F2 sweep-test / F3 content-drift) fires only
+# when the plan's changed set intersects the matching trigger-glob category.
+# These three categories MIRROR ``_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS`` in
+# ``manage-execution-manifest.py`` (the single source of the activation
+# predicate the composer uses to keep this step in the manifest). They are
+# repeated here — not imported — because the executor runs this script with a
+# PYTHONPATH that does not include the manifest skill's scripts dir, and the
+# per-facet RUN decision is a finer split (one category per facet) than the
+# composer's coarse "any-trigger-hit ⇒ keep the gate" predicate. The literal
+# patterns are kept byte-identical to the manifest constant; decision-rules.md
+# § Pre-Filter: ``whole_tree_gate_inactive`` is the single doc home for the
+# per-category rationale, cross-referenced from the gate-body doc.
+
+#: F1 doctor trigger — a changed plugin-doctor / plan-doctor analyzer or rule
+#: re-classifies the whole marketplace, so the marketplace-wide doctor pass
+#: must re-run over the full tree.
+_DOCTOR_TRIGGER_GLOBS: tuple[str, ...] = (
+    'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**/*.py',
+    'marketplace/bundles/plan-marshall/skills/plan-doctor/**/*.py',
+)
+
+#: F2 sweep-test trigger — a changed whole-tree grep-sweep guard test must be
+#: re-run with the full ``marketplace/`` scan root rather than module-scoped.
+_SWEEP_TEST_TRIGGER_GLOBS: tuple[str, ...] = (
+    'test/plan-marshall/**/test_*sweep*.py',
+    'test/marketplace/**/test_*sweep*.py',
+)
+
+#: F3 generator/drift trigger — a changed generator engine or bundle source can
+#: drift the generated target tree's content.
+_CONTENT_DRIFT_TRIGGER_GLOBS: tuple[str, ...] = (
+    'marketplace/targets/**',
+    'marketplace/bundles/**',
+)
+
+#: Executor notation of the marketplace-wide static-analysis quality gate the
+#: F1 facet invokes as a subprocess.
+_DOCTOR_NOTATION: str = 'pm-plugin-development:plugin-doctor:doctor-marketplace'
+
+#: The pytest marker the F2 facet selects (``-m whole_tree_sweep``). Registered
+#: in ``pyproject.toml`` ``[tool.pytest.ini_options] markers``.
+_SWEEP_TEST_MARKER: str = 'whole_tree_sweep'
+
+#: Per-facet wall-clock ceilings (seconds) for the subprocess seams. The doctor
+#: pass and the marked sweep tests are both bounded, fast invariant checks; the
+#: ceilings exist only to fail loud rather than hang the finalize gate.
+_DOCTOR_TIMEOUT_S: int = 300
+_SWEEP_TEST_TIMEOUT_S: int = 300
+
+
+def _changed_set_hits(changed_paths: list[str], globs: tuple[str, ...]) -> bool:
+    """Return True when any changed path matches any glob in ``globs``.
+
+    Mirrors the manifest composer's glob-match style: each repo-relative
+    changed path is tested against every glob via :func:`fnmatch.fnmatch`; the
+    first match short-circuits. An empty ``changed_paths`` (a plan whose sources
+    lie outside the trigger surface, or the pre-diff shape) yields False so the
+    facet does not fire.
+    """
+    for path in changed_paths:
+        for pattern in globs:
+            if fnmatch.fnmatch(path, pattern):
+                return True
+    return False
+
 
 # ---------------------------------------------------------------------------
 # Subprocess seams (overridable in tests)
@@ -161,6 +259,177 @@ def _run_git_diff_names(worktree: Path, base_ref: str) -> list[str]:
             f"{str(worktree)!r}: {completed.stderr.strip() or 'no stderr'}"
         )
     return [line for line in completed.stdout.splitlines() if line]
+
+
+def _run_doctor_quality_gate(worktree: Path) -> dict:
+    """Run the marketplace-wide ``plugin-doctor quality-gate`` (F1 facet).
+
+    Invokes the doctor's ``quality-gate`` subcommand over the full
+    ``marketplace/`` tree (no ``--paths`` filter, so the scope is whole-tree)
+    via the executor, captures its exit code and stdout, and returns a small
+    structured dict the facet driver folds into the return TOON. The doctor
+    exits non-zero when it finds violations — that is a SURFACED finding, not an
+    infrastructure error, so a non-zero exit does NOT raise.
+
+    Returns a dict ``{passed: bool, finding_count: int, summary: str}``.
+    ``finding_count`` counts ``finding`` / ``error`` markers in the doctor's
+    stdout (best-effort; the cognitive pass reads the full ``summary``).
+
+    Raises:
+        RuntimeError: the doctor could not be invoked at all — the executor is
+            missing, or the run exceeded :data:`_DOCTOR_TIMEOUT_S`. An un-run
+            facet is indistinguishable from a passed one, so the caller must
+            surface the reason rather than silently treat it as clean.
+    """
+    cmd = [
+        sys.executable,
+        '.plan/execute-script.py',
+        _DOCTOR_NOTATION,
+        'quality-gate',
+        '--marketplace-root',
+        'marketplace',
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=str(worktree),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_DOCTOR_TIMEOUT_S,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f'plugin-doctor quality-gate could not be invoked in {str(worktree)!r}: {exc}'
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f'plugin-doctor quality-gate timed out after {_DOCTOR_TIMEOUT_S}s '
+            f'in {str(worktree)!r}'
+        ) from exc
+
+    stdout = completed.stdout or ''
+    passed = completed.returncode == 0
+    finding_count = sum(
+        stdout.count(token) for token in ('finding', 'error', 'ERROR')
+    )
+    if passed:
+        summary = 'marketplace-wide static-analysis sweep passed: zero findings'
+    else:
+        summary = (
+            'marketplace-wide static-analysis sweep reported findings '
+            f'(exit {completed.returncode}); see stdout:\n{stdout.strip()}'
+        )
+    return {'passed': passed, 'finding_count': finding_count, 'summary': summary}
+
+
+def _run_sweep_tests(worktree: Path) -> dict:
+    """Re-run the ``whole_tree_sweep``-marked guard tests (F2 facet).
+
+    Invokes pytest with ``-m whole_tree_sweep`` from the worktree root, so the
+    marked guard tests run with the full ``marketplace/`` tree as scan root
+    rather than the module-scoped subset phase-5 task verification uses. A pytest
+    exit code of 5 (``no tests collected``) is treated as a PASS — a plan that
+    touches a sweep-test file but whose tree carries no ``whole_tree_sweep``
+    marker has nothing to re-run, and that is not a failure.
+
+    Returns a dict ``{passed: bool, summary: str}``. A non-zero exit other than
+    5 is a surfaced test failure, NOT an infrastructure error, so it does not
+    raise.
+
+    Raises:
+        RuntimeError: pytest could not be invoked at all, or the run exceeded
+            :data:`_SWEEP_TEST_TIMEOUT_S`.
+    """
+    cmd = [
+        sys.executable,
+        '-m',
+        'pytest',
+        '-m',
+        _SWEEP_TEST_MARKER,
+        '-q',
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=str(worktree),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_SWEEP_TEST_TIMEOUT_S,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f'pytest -m {_SWEEP_TEST_MARKER} could not be invoked in {str(worktree)!r}: {exc}'
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f'pytest -m {_SWEEP_TEST_MARKER} timed out after '
+            f'{_SWEEP_TEST_TIMEOUT_S}s in {str(worktree)!r}'
+        ) from exc
+
+    stdout = completed.stdout or ''
+    # pytest exit code 5 == no tests collected (the marker matched nothing).
+    passed = completed.returncode in (0, 5)
+    if completed.returncode == 0:
+        summary = f'whole-tree grep-sweep guard tests passed (-m {_SWEEP_TEST_MARKER})'
+    elif completed.returncode == 5:
+        summary = (
+            f'no {_SWEEP_TEST_MARKER}-marked guard tests collected — nothing to re-run'
+        )
+    else:
+        summary = (
+            f'whole-tree grep-sweep guard tests failed (-m {_SWEEP_TEST_MARKER}, '
+            f'exit {completed.returncode}); see stdout:\n{stdout.strip()}'
+        )
+    return {'passed': passed, 'summary': summary}
+
+
+def _run_content_drift_check(worktree: Path) -> dict:
+    """Run the regen-first generated-target content-drift check (F3 facet).
+
+    Imports ``content_drift.run_content_drift_check`` from the live
+    ``marketplace/targets/claude/`` tree and runs it against the on-disk
+    ``target/claude`` tree (regenerating a fresh tree into a throwaway temp dir
+    as the source of truth). Returns a dict
+    ``{passed: bool, drift_count: int, summary: str}``.
+
+    A drift finding is a SURFACED result, not an infrastructure error — only an
+    import failure or an unexpected exception raises.
+
+    Raises:
+        RuntimeError: the content-drift engine could not be imported or invoked
+            (missing module, generator engine error). An un-run facet must
+            surface the reason rather than count as clean.
+    """
+    try:
+        from marketplace.targets.claude.content_drift import (  # type: ignore[import-not-found]
+            run_content_drift_check,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            f'content-drift engine could not be imported from {str(worktree)!r}: {exc}'
+        ) from exc
+
+    target_dir = worktree / 'target' / 'claude'
+    marketplace_dir = worktree / 'marketplace' / 'bundles'
+    try:
+        result = run_content_drift_check(target_dir, marketplace_dir)
+    except Exception as exc:  # noqa: BLE001 - surface any engine failure as infra error
+        raise RuntimeError(
+            f'content-drift check raised in {str(worktree)!r}: {exc}'
+        ) from exc
+
+    drift_count = (
+        len(result.drifted_files)
+        + len(result.missing_in_target)
+        + len(result.orphan_in_target)
+    )
+    return {
+        'passed': result.passed,
+        'drift_count': drift_count,
+        'summary': result.summary,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +635,138 @@ def _repo_relative(path: Path, root: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Facet orchestration
+# ---------------------------------------------------------------------------
+
+
+def run_facets(
+    worktree_root: Path,
+    changed_files: list[str],
+    *,
+    doctor_runner=None,
+    sweep_runner=None,
+    content_drift_runner=None,
+) -> dict:
+    """Run the three whole-tree facet checks, each gated on its trigger.
+
+    For each facet (F1 doctor / F2 sweep-test / F3 content-drift), the facet
+    fires only when ``changed_files`` intersects the matching trigger-glob
+    category. A facet that does not fire returns ``{triggered: False, ran:
+    False, passed: True, ...}`` — an untriggered facet is vacuously clean and
+    contributes no finding. A facet that fires runs its (overridable) seam and
+    folds the structured result in.
+
+    The surfacer makes NO verdict: ``passed: False`` on a facet is a SURFACED
+    finding for the cognitive pass to classify, exactly like a ``survivors[]``
+    row. An infrastructure failure inside a seam (raised ``RuntimeError``) is
+    captured as ``ran: False, passed: False`` with an ``error`` key, so an
+    un-run facet is never silently treated as clean.
+
+    Args:
+        worktree_root: Worktree root where ``marketplace/`` and ``target/`` live.
+        changed_files: The plan's ``{base}...HEAD`` changed-file path list.
+        doctor_runner: Optional seam in place of :func:`_run_doctor_quality_gate`.
+        sweep_runner: Optional seam in place of :func:`_run_sweep_tests`.
+        content_drift_runner: Optional seam in place of
+            :func:`_run_content_drift_check`.
+
+    Returns:
+        A dict ``{doctor: {...}, sweep_test: {...}, content_drift: {...}}``.
+    """
+    doctor_fn = doctor_runner or _run_doctor_quality_gate
+    sweep_fn = sweep_runner or _run_sweep_tests
+    drift_fn = content_drift_runner or _run_content_drift_check
+
+    facets: dict[str, dict] = {}
+
+    # F1 — marketplace-wide static-analysis sweep (doctor trigger).
+    if _changed_set_hits(changed_files, _DOCTOR_TRIGGER_GLOBS):
+        try:
+            res = doctor_fn(worktree_root)
+            facets['doctor'] = {
+                'triggered': True,
+                'ran': True,
+                'passed': bool(res.get('passed')),
+                'finding_count': int(res.get('finding_count', 0)),
+                'summary': str(res.get('summary', '')),
+            }
+        except RuntimeError as exc:
+            facets['doctor'] = {
+                'triggered': True,
+                'ran': False,
+                'passed': False,
+                'finding_count': 0,
+                'summary': '',
+                'error': str(exc),
+            }
+    else:
+        facets['doctor'] = {
+            'triggered': False,
+            'ran': False,
+            'passed': True,
+            'finding_count': 0,
+            'summary': 'doctor facet not triggered (changed set hit no doctor trigger glob)',
+        }
+
+    # F2 — whole-tree grep-sweep guard re-run (sweep-test trigger).
+    if _changed_set_hits(changed_files, _SWEEP_TEST_TRIGGER_GLOBS):
+        try:
+            res = sweep_fn(worktree_root)
+            facets['sweep_test'] = {
+                'triggered': True,
+                'ran': True,
+                'passed': bool(res.get('passed')),
+                'summary': str(res.get('summary', '')),
+            }
+        except RuntimeError as exc:
+            facets['sweep_test'] = {
+                'triggered': True,
+                'ran': False,
+                'passed': False,
+                'summary': '',
+                'error': str(exc),
+            }
+    else:
+        facets['sweep_test'] = {
+            'triggered': False,
+            'ran': False,
+            'passed': True,
+            'summary': 'sweep-test facet not triggered (changed set hit no sweep-test trigger glob)',
+        }
+
+    # F3 — generated-target content-drift check (generator/drift trigger).
+    if _changed_set_hits(changed_files, _CONTENT_DRIFT_TRIGGER_GLOBS):
+        try:
+            res = drift_fn(worktree_root)
+            facets['content_drift'] = {
+                'triggered': True,
+                'ran': True,
+                'passed': bool(res.get('passed')),
+                'drift_count': int(res.get('drift_count', 0)),
+                'summary': str(res.get('summary', '')),
+            }
+        except RuntimeError as exc:
+            facets['content_drift'] = {
+                'triggered': True,
+                'ran': False,
+                'passed': False,
+                'drift_count': 0,
+                'summary': '',
+                'error': str(exc),
+            }
+    else:
+        facets['content_drift'] = {
+            'triggered': False,
+            'ran': False,
+            'passed': True,
+            'drift_count': 0,
+            'summary': 'content-drift facet not triggered (changed set hit no generator/drift trigger glob)',
+        }
+
+    return facets
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -377,8 +778,11 @@ def scan(
     base_ref: str | None = None,
     diff_runner=None,
     diff_names_runner=None,
+    doctor_runner=None,
+    sweep_runner=None,
+    content_drift_runner=None,
 ) -> dict:
-    """Surface whole-tree survivors and intent-vs-diff mandate gaps.
+    """Surface whole-tree survivors, mandate gaps, and the three facet checks.
 
     Args:
         plan_id: Plan identifier — locates ``references.json`` / ``request.md``.
@@ -391,6 +795,11 @@ def scan(
         diff_names_runner: Optional test seam in place of
             :func:`_run_git_diff_names`. Signature
             ``(worktree: Path, base_ref: str) -> list[str]``.
+        doctor_runner: Optional facet seam in place of
+            :func:`_run_doctor_quality_gate`.
+        sweep_runner: Optional facet seam in place of :func:`_run_sweep_tests`.
+        content_drift_runner: Optional facet seam in place of
+            :func:`_run_content_drift_check`.
 
     Returns:
         The dict matching the return contract in the module docstring.
@@ -410,6 +819,14 @@ def scan(
     request_text = _read_request_text(plan_id)
     mandate_gaps = extract_mandate_items(request_text, changed_files)
 
+    facets = run_facets(
+        worktree_root,
+        changed_files,
+        doctor_runner=doctor_runner,
+        sweep_runner=sweep_runner,
+        content_drift_runner=content_drift_runner,
+    )
+
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -419,6 +836,7 @@ def scan(
         'survivor_count': len(survivors),
         'mandate_gaps': [{'mandate_item': item} for item in mandate_gaps],
         'mandate_gap_count': len(mandate_gaps),
+        'facets': facets,
     }
 
 
@@ -503,6 +921,7 @@ if __name__ == '__main__':
 
 __all__ = [
     'scan',
+    'run_facets',
     'extract_deleted_identifiers',
     'extract_mandate_items',
     'sweep_survivors',

@@ -9,7 +9,8 @@ meant to make, and compares the request's enumerated mandate against the diff's
 touched files. The script makes no FAIL/PASS judgement — it only surfaces two
 candidate lists for the LLM cognitive pass to classify.
 
-These tests pin both surfacing halves at the unit and integration levels:
+These tests pin both surfacing halves AND the three whole-tree facet checks at
+the unit and integration levels:
 
 1. **Whole-tree survivor sweep** — a planted surviving reference to a deleted
    identifier is flagged as a ``survivors[]`` row, anchored on word boundaries,
@@ -17,10 +18,25 @@ These tests pin both surfacing halves at the unit and integration levels:
 2. **Intent-vs-diff scope check** — a request-named mandate file with zero
    representation in the diff's touched files is flagged as a ``mandate_gaps[]``
    row, while a represented mandate item is not.
+3. **F1 doctor facet** — a changed plugin-doctor / plan-doctor analyzer in the
+   changed set triggers the marketplace-wide doctor pass over the FULL
+   ``marketplace/`` root (not the build-map-scoped subset).
+4. **F2 sweep-test facet** — a changed ``whole_tree_sweep``-marked guard test in
+   the changed set triggers the marked-guard re-run with the full scan root.
+5. **F3 content-drift facet** — a changed generator / bundle file in the changed
+   set triggers ``run_content_drift_check`` (regen-first).
+
+Negative coverage: a changed set that hits no facet trigger leaves all three
+facets ``triggered: False`` / ``ran: False`` / ``passed: True`` (vacuously
+clean, no seam invoked), and the always-run survivor sweep is unchanged by the
+facet machinery.
 
 The ``scan`` entry point's ``diff_runner`` / ``diff_names_runner`` seams let the
 integration tests drive the orchestration without a live git worktree, and the
-``worktree_path`` override points the sweep at an isolated fixture tree.
+``worktree_path`` override points the sweep at an isolated fixture tree. The
+``run_facets`` ``doctor_runner`` / ``sweep_runner`` / ``content_drift_runner``
+seams drive each facet's structured result without a live doctor run, live
+pytest run, or live target regeneration.
 """
 
 from __future__ import annotations
@@ -476,6 +492,500 @@ class TestScan:
         # Assert
         assert result['status'] == 'success'
         assert result['mandate_gap_count'] == 0
+
+
+# ===========================================================================
+# run_facets  (the three whole-tree facet checks — mandated criteria #3/#4/#5)
+# ===========================================================================
+#
+# A trigger glob may overlap categories: ``marketplace/bundles/**`` is the F3
+# content-drift trigger AND the directory the F1 doctor analyzer paths live
+# under, so a doctor-analyzer change fires BOTH the doctor and content-drift
+# facets. The fixtures below pick paths that isolate the facet under test
+# wherever a single-facet assertion is intended, and verify the overlap
+# explicitly where it matters.
+
+# Representative paths matching exactly one facet trigger category in isolation
+# of the others, except where overlap is the property under test.
+_DOCTOR_TRIGGER_PATH = (
+    'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/'
+    'scripts/_analyze_rule.py'
+)
+_PLAN_DOCTOR_TRIGGER_PATH = (
+    'marketplace/bundles/plan-marshall/skills/plan-doctor/scripts/plan_doctor.py'
+)
+_SWEEP_TEST_TRIGGER_PATH = 'test/plan-marshall/phase-6-finalize/test_invariant_sweep.py'
+_GENERATOR_TRIGGER_PATH = 'marketplace/targets/claude/content_drift.py'
+# A non-trigger path: a docs file under a non-bundle, non-target, non-test dir.
+_NO_TRIGGER_PATH = 'doc/developer/build.adoc'
+
+
+def _passing_doctor(_wt):
+    return {'passed': True, 'finding_count': 0, 'summary': 'doctor seam: clean'}
+
+
+def _passing_sweep(_wt):
+    return {'passed': True, 'summary': 'sweep seam: clean'}
+
+
+def _passing_drift(_wt):
+    return {'passed': True, 'drift_count': 0, 'summary': 'drift seam: clean'}
+
+
+class TestRunFacetsDoctor:
+    """F1 — marketplace-wide static-analysis sweep, gated on the doctor trigger."""
+
+    def test_doctor_analyzer_in_changed_set_runs_doctor_facet(self, tmp_path):
+        # Arrange — a changed plugin-doctor analyzer; record the worktree root
+        # the seam receives so we can assert it is the FULL marketplace root.
+        seen: dict[str, Path] = {}
+
+        def _doctor(wt):
+            seen['root'] = wt
+            return {'passed': True, 'finding_count': 0, 'summary': 'ran'}
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_DOCTOR_TRIGGER_PATH],
+            doctor_runner=_doctor,
+            sweep_runner=_passing_sweep,
+            content_drift_runner=_passing_drift,
+        )
+
+        # Assert — the doctor facet fired and the seam saw the worktree root
+        # (the full marketplace/ scan root, NOT a build-map-scoped subset).
+        assert facets['doctor']['triggered'] is True
+        assert facets['doctor']['ran'] is True
+        assert facets['doctor']['passed'] is True
+        assert facets['doctor']['summary'] == 'ran'
+        assert seen['root'] == tmp_path
+
+    def test_plan_doctor_path_also_triggers_doctor_facet(self, tmp_path):
+        # Arrange — the plan-doctor trigger glob is the second doctor category.
+        calls: list[Path] = []
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_PLAN_DOCTOR_TRIGGER_PATH],
+            doctor_runner=lambda wt: (calls.append(wt) or _passing_doctor(wt)),
+            sweep_runner=_passing_sweep,
+            content_drift_runner=_passing_drift,
+        )
+
+        # Assert
+        assert facets['doctor']['triggered'] is True
+        assert facets['doctor']['ran'] is True
+        assert calls == [tmp_path]
+
+    def test_doctor_seam_failure_is_surfaced_not_raised(self, tmp_path):
+        # Arrange — the doctor seam reports findings (passed: False). This is a
+        # SURFACED finding, not an error — the facet still ran.
+        def _failing_doctor(_wt):
+            return {
+                'passed': False,
+                'finding_count': 3,
+                'summary': 'three rule violations',
+            }
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_DOCTOR_TRIGGER_PATH],
+            doctor_runner=_failing_doctor,
+            sweep_runner=_passing_sweep,
+            content_drift_runner=_passing_drift,
+        )
+
+        # Assert — the surfacer makes no verdict; passed: False is just surfaced.
+        assert facets['doctor']['triggered'] is True
+        assert facets['doctor']['ran'] is True
+        assert facets['doctor']['passed'] is False
+        assert facets['doctor']['finding_count'] == 3
+
+    def test_doctor_seam_runtime_error_marks_ran_false(self, tmp_path):
+        # Arrange — an infrastructure failure inside the seam must NOT be
+        # silently treated as clean: ran: False, passed: False, error captured.
+        def _exploding_doctor(_wt):
+            raise RuntimeError('plugin-doctor could not be invoked')
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_DOCTOR_TRIGGER_PATH],
+            doctor_runner=_exploding_doctor,
+            sweep_runner=_passing_sweep,
+            content_drift_runner=_passing_drift,
+        )
+
+        # Assert
+        assert facets['doctor']['triggered'] is True
+        assert facets['doctor']['ran'] is False
+        assert facets['doctor']['passed'] is False
+        assert 'could not be invoked' in facets['doctor']['error']
+
+
+class TestRunFacetsSweepTest:
+    """F2 — whole-tree grep-sweep guard re-run, gated on the sweep-test trigger."""
+
+    def test_sweep_guard_test_in_changed_set_runs_sweep_facet(self, tmp_path):
+        # Arrange — a changed whole-tree grep-sweep guard test; capture the
+        # worktree root the seam receives (the full scan root).
+        seen: dict[str, Path] = {}
+
+        def _sweep(wt):
+            seen['root'] = wt
+            return {'passed': True, 'summary': 'guard tests passed'}
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_SWEEP_TEST_TRIGGER_PATH],
+            doctor_runner=_passing_doctor,
+            sweep_runner=_sweep,
+            content_drift_runner=_passing_drift,
+        )
+
+        # Assert — the sweep-test facet fired with the full tree as scan root.
+        assert facets['sweep_test']['triggered'] is True
+        assert facets['sweep_test']['ran'] is True
+        assert facets['sweep_test']['passed'] is True
+        assert seen['root'] == tmp_path
+
+    def test_sweep_seam_failure_is_surfaced(self, tmp_path):
+        # Arrange — the marked guard tests fail (passed: False) — surfaced.
+        def _failing_sweep(_wt):
+            return {'passed': False, 'summary': 'a guard test failed'}
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_SWEEP_TEST_TRIGGER_PATH],
+            doctor_runner=_passing_doctor,
+            sweep_runner=_failing_sweep,
+            content_drift_runner=_passing_drift,
+        )
+
+        # Assert
+        assert facets['sweep_test']['triggered'] is True
+        assert facets['sweep_test']['ran'] is True
+        assert facets['sweep_test']['passed'] is False
+
+    def test_sweep_seam_runtime_error_marks_ran_false(self, tmp_path):
+        # Arrange
+        def _exploding_sweep(_wt):
+            raise RuntimeError('pytest -m whole_tree_sweep could not be invoked')
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_SWEEP_TEST_TRIGGER_PATH],
+            doctor_runner=_passing_doctor,
+            sweep_runner=_exploding_sweep,
+            content_drift_runner=_passing_drift,
+        )
+
+        # Assert
+        assert facets['sweep_test']['triggered'] is True
+        assert facets['sweep_test']['ran'] is False
+        assert facets['sweep_test']['passed'] is False
+        assert 'could not be invoked' in facets['sweep_test']['error']
+
+
+class TestRunFacetsContentDrift:
+    """F3 — generated-target content-drift check, gated on the generator trigger."""
+
+    def test_generator_file_in_changed_set_runs_drift_facet(self, tmp_path):
+        # Arrange — a changed generator-engine file triggers the regen-first
+        # drift check; capture that the seam was invoked.
+        seen: dict[str, Path] = {}
+
+        def _drift(wt):
+            seen['root'] = wt
+            return {'passed': True, 'drift_count': 0, 'summary': 'no drift'}
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_GENERATOR_TRIGGER_PATH],
+            doctor_runner=_passing_doctor,
+            sweep_runner=_passing_sweep,
+            content_drift_runner=_drift,
+        )
+
+        # Assert — the content-drift facet fired and run_content_drift_check
+        # (the seam standing in for it) was invoked with the worktree root.
+        assert facets['content_drift']['triggered'] is True
+        assert facets['content_drift']['ran'] is True
+        assert facets['content_drift']['passed'] is True
+        assert facets['content_drift']['drift_count'] == 0
+        assert seen['root'] == tmp_path
+
+    def test_bundle_file_in_changed_set_runs_drift_facet(self, tmp_path):
+        # Arrange — a changed bundle source (marketplace/bundles/**) is the
+        # second content-drift trigger category.
+        bundle_path = 'marketplace/bundles/plan-marshall/skills/foo/SKILL.md'
+        calls: list[Path] = []
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [bundle_path],
+            doctor_runner=_passing_doctor,
+            sweep_runner=_passing_sweep,
+            content_drift_runner=lambda wt: (calls.append(wt) or _passing_drift(wt)),
+        )
+
+        # Assert
+        assert facets['content_drift']['triggered'] is True
+        assert facets['content_drift']['ran'] is True
+        assert calls == [tmp_path]
+
+    def test_drift_seam_reports_drift_surfaced(self, tmp_path):
+        # Arrange — the drift check finds drifted files (passed: False).
+        def _drifted(_wt):
+            return {
+                'passed': False,
+                'drift_count': 2,
+                'summary': 'two .md files drifted',
+            }
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_GENERATOR_TRIGGER_PATH],
+            doctor_runner=_passing_doctor,
+            sweep_runner=_passing_sweep,
+            content_drift_runner=_drifted,
+        )
+
+        # Assert
+        assert facets['content_drift']['triggered'] is True
+        assert facets['content_drift']['ran'] is True
+        assert facets['content_drift']['passed'] is False
+        assert facets['content_drift']['drift_count'] == 2
+
+    def test_drift_seam_runtime_error_marks_ran_false(self, tmp_path):
+        # Arrange — import/engine failure inside the seam.
+        def _exploding_drift(_wt):
+            raise RuntimeError('content-drift engine could not be imported')
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_GENERATOR_TRIGGER_PATH],
+            doctor_runner=_passing_doctor,
+            sweep_runner=_passing_sweep,
+            content_drift_runner=_exploding_drift,
+        )
+
+        # Assert
+        assert facets['content_drift']['triggered'] is True
+        assert facets['content_drift']['ran'] is False
+        assert facets['content_drift']['passed'] is False
+        assert 'could not be imported' in facets['content_drift']['error']
+
+
+class TestRunFacetsNoTrigger:
+    """Negative coverage — no facet fires, no seam runs, all vacuously clean."""
+
+    def test_no_trigger_leaves_all_facets_untriggered_and_clean(self, tmp_path):
+        # Arrange — a changed set that hits no facet trigger glob, plus failing
+        # seams that MUST NOT be invoked (their failure would prove a leak).
+        def _must_not_run_doctor(_wt):
+            raise AssertionError('doctor seam invoked without a doctor trigger')
+
+        def _must_not_run_sweep(_wt):
+            raise AssertionError('sweep seam invoked without a sweep-test trigger')
+
+        def _must_not_run_drift(_wt):
+            raise AssertionError('drift seam invoked without a generator trigger')
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_NO_TRIGGER_PATH],
+            doctor_runner=_must_not_run_doctor,
+            sweep_runner=_must_not_run_sweep,
+            content_drift_runner=_must_not_run_drift,
+        )
+
+        # Assert — every facet is untriggered, un-run, and vacuously clean. No
+        # seam raised, proving none was invoked.
+        for name in ('doctor', 'sweep_test', 'content_drift'):
+            assert facets[name]['triggered'] is False, name
+            assert facets[name]['ran'] is False, name
+            assert facets[name]['passed'] is True, name
+
+    def test_empty_changed_set_fires_no_facet(self, tmp_path):
+        # Arrange / Act — an empty changed set (pre-diff shape) fires nothing.
+        facets = gate.run_facets(
+            tmp_path,
+            [],
+            doctor_runner=lambda _wt: pytest.fail('doctor must not run'),
+            sweep_runner=lambda _wt: pytest.fail('sweep must not run'),
+            content_drift_runner=lambda _wt: pytest.fail('drift must not run'),
+        )
+
+        # Assert
+        assert facets['doctor']['triggered'] is False
+        assert facets['sweep_test']['triggered'] is False
+        assert facets['content_drift']['triggered'] is False
+
+    def test_one_facet_fires_others_stay_untriggered(self, tmp_path):
+        # Arrange — only the sweep-test trigger is in the changed set; the
+        # doctor and content-drift seams MUST NOT run.
+        def _must_not_run(_wt):
+            raise AssertionError('unrelated facet seam invoked')
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_SWEEP_TEST_TRIGGER_PATH],
+            doctor_runner=_must_not_run,
+            sweep_runner=_passing_sweep,
+            content_drift_runner=_must_not_run,
+        )
+
+        # Assert — exactly one facet fired.
+        assert facets['sweep_test']['triggered'] is True
+        assert facets['sweep_test']['ran'] is True
+        assert facets['doctor']['triggered'] is False
+        assert facets['doctor']['ran'] is False
+        assert facets['content_drift']['triggered'] is False
+        assert facets['content_drift']['ran'] is False
+
+
+class TestRunFacetsTriggerOverlap:
+    """A doctor-analyzer change lives under marketplace/bundles/**, so it fires
+    BOTH the doctor facet AND the content-drift facet; this pins the overlap."""
+
+    def test_doctor_path_also_fires_content_drift(self, tmp_path):
+        # Arrange — a single doctor-analyzer path; both seams should run.
+        ran: set[str] = set()
+
+        # Act
+        facets = gate.run_facets(
+            tmp_path,
+            [_DOCTOR_TRIGGER_PATH],
+            doctor_runner=lambda _wt: (ran.add('doctor') or _passing_doctor(_wt)),
+            sweep_runner=_passing_sweep,
+            content_drift_runner=lambda _wt: (ran.add('drift') or _passing_drift(_wt)),
+        )
+
+        # Assert — the analyzer path is under marketplace/bundles/** so the
+        # content-drift facet also fires; the sweep-test facet does not.
+        assert ran == {'doctor', 'drift'}
+        assert facets['doctor']['triggered'] is True
+        assert facets['content_drift']['triggered'] is True
+        assert facets['sweep_test']['triggered'] is False
+
+
+# ===========================================================================
+# scan + facets  (full-gate integration covering all three facets)
+# ===========================================================================
+
+
+class TestScanWithFacets:
+    """The ``scan`` entry point wires ``run_facets`` and folds the facet block
+    into the return TOON, and the always-run survivor sweep is unchanged by it."""
+
+    def test_full_gate_covers_all_three_facets(self, tmp_path):
+        # Arrange — a changed set that hits ALL THREE facet triggers at once,
+        # with a planted survivor proving the sweep half still runs alongside.
+        root = _make_marketplace_tree(
+            tmp_path,
+            {'bundles/b/skills/s/SKILL.md': 'orphaned_helper still referenced\n'},
+        )
+        diff_text = '-    orphaned_helper()\n'
+        changed_files = [
+            _DOCTOR_TRIGGER_PATH,       # F1 doctor
+            _SWEEP_TEST_TRIGGER_PATH,   # F2 sweep-test
+            _GENERATOR_TRIGGER_PATH,    # F3 content-drift
+        ]
+
+        with PlanContext(plan_id='wtg-scan-facets-all') as ctx:
+            (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
+
+            # Act
+            result = gate.scan(
+                'wtg-scan-facets-all',
+                worktree_path=str(root),
+                base_ref='main',
+                diff_runner=lambda _wt, _ref: diff_text,
+                diff_names_runner=lambda _wt, _ref: changed_files,
+                doctor_runner=_passing_doctor,
+                sweep_runner=_passing_sweep,
+                content_drift_runner=_passing_drift,
+            )
+
+        # Assert — all three facets ran AND the survivor sweep is unchanged.
+        assert result['status'] == 'success'
+        facets = result['facets']
+        assert facets['doctor']['ran'] is True
+        assert facets['sweep_test']['ran'] is True
+        assert facets['content_drift']['ran'] is True
+        # The always-run survivor sweep still surfaced the planted reference.
+        assert result['survivor_count'] == 1
+        assert result['survivors'][0]['identifier'] == 'orphaned_helper'
+
+    def test_no_facet_trigger_leaves_survivor_sweep_unchanged(self, tmp_path):
+        # Arrange — a changed set hitting NO facet trigger; the survivor sweep
+        # half must behave exactly as in the facet-free TestScan cases.
+        root = _make_marketplace_tree(
+            tmp_path,
+            {'bundles/b/skills/s/SKILL.md': 'orphaned_helper still referenced\n'},
+        )
+        diff_text = '-    orphaned_helper()\n'
+        changed_files = [_NO_TRIGGER_PATH]
+
+        with PlanContext(plan_id='wtg-scan-facets-none') as ctx:
+            (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
+
+            # Act
+            result = gate.scan(
+                'wtg-scan-facets-none',
+                worktree_path=str(root),
+                base_ref='main',
+                diff_runner=lambda _wt, _ref: diff_text,
+                diff_names_runner=lambda _wt, _ref: changed_files,
+                doctor_runner=lambda _wt: pytest.fail('doctor must not run'),
+                sweep_runner=lambda _wt: pytest.fail('sweep must not run'),
+                content_drift_runner=lambda _wt: pytest.fail('drift must not run'),
+            )
+
+        # Assert — no facet fired, yet the survivor sweep is identical.
+        assert result['status'] == 'success'
+        assert result['facets']['doctor']['triggered'] is False
+        assert result['facets']['sweep_test']['triggered'] is False
+        assert result['facets']['content_drift']['triggered'] is False
+        assert result['survivor_count'] == 1
+        assert result['survivors'][0]['identifier'] == 'orphaned_helper'
+
+    def test_scan_default_facet_seams_resolve_without_override(self, tmp_path):
+        # Arrange — when no facet runners are passed AND no trigger fires, scan
+        # must not invoke the real (live) facet seams at all.
+        root = _make_marketplace_tree(tmp_path, {'bundles/b/skills/s/x.py': '\n'})
+
+        with PlanContext(plan_id='wtg-scan-facets-default') as ctx:
+            (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
+
+            # Act — no facet trigger in the changed set, so the real seams are
+            # never reached even though no override was supplied.
+            result = gate.scan(
+                'wtg-scan-facets-default',
+                worktree_path=str(root),
+                base_ref='main',
+                diff_runner=lambda _wt, _ref: '',
+                diff_names_runner=lambda _wt, _ref: [_NO_TRIGGER_PATH],
+            )
+
+        # Assert — every facet is untriggered/clean with the real defaults wired.
+        assert result['status'] == 'success'
+        for name in ('doctor', 'sweep_test', 'content_drift'):
+            assert result['facets'][name]['triggered'] is False
+            assert result['facets'][name]['passed'] is True
 
 
 # ===========================================================================
