@@ -89,10 +89,10 @@ Execute-task skills map profile values to the workflow skill that executes tasks
 **Extensibility**: The profile list is open for extension. To add a new profile:
 
 1. Add profile key to `skills_by_profile` in domain `extension.py`
-2. Create corresponding `plan-marshall:execute-task-{profile}` skill
+2. No per-profile skill is needed — every profile maps to the unified `plan-marshall:execute-task` skill
 3. Marshall-steward auto-discovers and registers in `execute_task_skills`
 
-**Convention**: Profile `X` maps to skill `plan-marshall:execute-task-X` by default.
+**Convention**: every profile maps to the unified `plan-marshall:execute-task` skill by default.
 
 ### Technical Domain Structure (Profile-Based)
 

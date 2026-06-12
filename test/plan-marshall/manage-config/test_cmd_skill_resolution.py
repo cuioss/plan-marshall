@@ -39,9 +39,11 @@ _cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
 _cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
 _config_defaults = _load_module('_config_defaults', '_config_defaults.py')
 
+cmd_configure_execute_task_skills = _cmd_skill_resolution.cmd_configure_execute_task_skills
 cmd_get_skills_by_profile = _cmd_skill_resolution.cmd_get_skills_by_profile
 cmd_list_finalize_steps = _cmd_skill_resolution.cmd_list_finalize_steps
 cmd_resolve_domain_skills = _cmd_skill_resolution.cmd_resolve_domain_skills
+cmd_resolve_execute_task_skill = _cmd_skill_resolution.cmd_resolve_execute_task_skill
 cmd_resolve_workflow_skill_extension = _cmd_skill_resolution.cmd_resolve_workflow_skill_extension
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
@@ -271,6 +273,79 @@ def test_get_skills_by_profile_flat_domain_fallback(plan_context, monkeypatch):
 
     assert result['status'] == 'success'
     assert 'skills_by_profile' in result
+
+
+# =============================================================================
+# configure-execute-task-skills / resolve-execute-task-skill Tests (Tier 2)
+#
+# Regression for the per-profile execute-task-{profile} → unified
+# plan-marshall:execute-task mapping fix. Pre-fix, cmd_configure_execute_task_skills
+# synthesized a per-profile skill name (f'plan-marshall:execute-task-{profile}')
+# that does not exist; the corrected verb maps every discovered profile to the
+# single unified plan-marshall:execute-task skill.
+# =============================================================================
+
+
+def test_configure_execute_task_skills_maps_every_profile_to_unified_skill(plan_context, monkeypatch):
+    """configure-execute-task-skills maps every discovered profile to the unified skill.
+
+    Regression: pre-fix the verb produced `plan-marshall:execute-task-{profile}`
+    (a non-existent per-profile skill). This test FAILS against the pre-fix verb
+    because the discovered `module_testing` profile would map to
+    `plan-marshall:execute-task-module_testing`, and PASSES after the fix maps it
+    to the unified `plan-marshall:execute-task`.
+    """
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_configure_execute_task_skills(Namespace())
+
+    assert result['status'] == 'success'
+    skills = result['skills']
+    assert skills, 'expected at least one discovered profile to be mapped'
+    # The discriminating assertion: every mapped value is the unified skill,
+    # never a per-profile execute-task-{profile} variant.
+    assert all(value == 'plan-marshall:execute-task' for value in skills.values()), (
+        f'every profile must map to the unified plan-marshall:execute-task skill, got {skills}'
+    )
+    # No mapped value carries the retired per-profile suffix.
+    assert not any(value.startswith('plan-marshall:execute-task-') for value in skills.values()), (
+        f'no profile may map to a per-profile execute-task-* skill, got {skills}'
+    )
+
+
+def test_configure_execute_task_skills_excludes_quality_profile(plan_context, monkeypatch):
+    """The quality profile is handled by the verify phase, not task execution."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_configure_execute_task_skills(Namespace())
+
+    assert result['status'] == 'success'
+    assert 'quality' not in result['skills'], (
+        'quality profile must be excluded from execute_task_skills (verify-phase owned)'
+    )
+
+
+def test_resolve_execute_task_skill_returns_unified_skill_after_configure(plan_context, monkeypatch):
+    """resolve-execute-task-skill returns the unified skill for a configured profile."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+    cmd_configure_execute_task_skills(Namespace())
+
+    result = cmd_resolve_execute_task_skill(Namespace(profile='module_testing'))
+
+    assert result['status'] == 'success'
+    assert result['profile'] == 'module_testing'
+    assert result['execute_task_skill'] == 'plan-marshall:execute-task'
+
+
+def test_resolve_execute_task_skill_unknown_profile_errors(plan_context, monkeypatch):
+    """resolve-execute-task-skill returns an error for an unconfigured profile."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+    cmd_configure_execute_task_skills(Namespace())
+
+    result = cmd_resolve_execute_task_skill(Namespace(profile='nonexistent-profile'))
+
+    assert result['status'] == 'error'
+    assert 'nonexistent-profile' in result['error']
 
 
 # =============================================================================

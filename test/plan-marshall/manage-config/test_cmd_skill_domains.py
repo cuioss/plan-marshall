@@ -248,6 +248,9 @@ def test_skill_domains_get_system_has_execute_task_skills(plan_context, monkeypa
     assert 'defaults' in result
     assert 'plan-marshall:dev-agent-behavior-rules' in result['defaults']
     assert 'execute_task_skills' in result
+    # Every profile maps to the unified execute-task skill (no per-profile
+    # execute-task-{profile} variants exist).
+    assert all(skill == 'plan-marshall:execute-task' for skill in result['execute_task_skills'].values())
 
 
 # =============================================================================
@@ -924,7 +927,7 @@ def test_configure_preserves_project_skills(plan_context, monkeypatch):
             'system': {
                 'defaults': ['plan-marshall:dev-agent-behavior-rules'],
                 'project_skills': ['project:system-skill'],
-                'execute_task_skills': {'implementation': 'plan-marshall:execute-task-implementation'},
+                'execute_task_skills': {'implementation': 'plan-marshall:execute-task'},
             },
             'java': {
                 'bundle': 'pm-dev-java',
@@ -992,7 +995,7 @@ def test_configure_preserves_build_map_and_active_profiles(plan_context, monkeyp
             'system': {
                 'defaults': ['plan-marshall:dev-agent-behavior-rules'],
                 'project_skills': ['project:system-skill'],
-                'execute_task_skills': {'implementation': 'plan-marshall:execute-task-implementation'},
+                'execute_task_skills': {'implementation': 'plan-marshall:execute-task'},
             },
             'java': {
                 'bundle': 'pm-dev-java',

@@ -236,13 +236,17 @@ def cmd_configure_execute_task_skills(args) -> dict:
                 if key != 'core':
                     discovered_profiles.add(key)
 
-    # Build execute_task_skills mapping using convention: profile X → plan-marshall:execute-task-X
+    # Build execute_task_skills mapping: every profile maps to the unified
+    # plan-marshall:execute-task skill (the lone skill that exists; there are no
+    # per-profile execute-task-{profile} skills). This matches the
+    # DEFAULT_EXECUTE_TASK_SKILLS seed and the phase-5 resolve-execute-task-skill
+    # consumer.
     execute_task_skills = {}
     for profile in sorted(discovered_profiles):
         # Skip quality profile - it's handled by verify phase, not task execution
         if profile == 'quality':
             continue
-        execute_task_skills[profile] = f'plan-marshall:execute-task-{profile}'
+        execute_task_skills[profile] = 'plan-marshall:execute-task'
 
     # Update system domain with execute_task_skills
     system_config = skill_domains['system']
