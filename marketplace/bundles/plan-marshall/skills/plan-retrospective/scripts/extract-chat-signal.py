@@ -172,13 +172,14 @@ def read_transcript_lines(path: Path) -> list[str]:
     """Return the raw lines of the transcript at ``path``.
 
     A missing file raises ``FileNotFoundError`` so the caller can map it to the
-    ``transcript_unavailable`` reason; an unreadable file (permission / decode
-    error) raises ``OSError`` / ``UnicodeDecodeError`` and is surfaced by
-    ``safe_main`` as a structured ``internal_error`` TOON.
+    ``transcript_unavailable`` reason; an unreadable file (permission error)
+    raises ``OSError`` and is surfaced by ``safe_main`` as a structured
+    ``internal_error`` TOON.  Invalid UTF-8 bytes are replaced with the Unicode
+    replacement character so the pre-pass proceeds robustly on malformed input.
     """
     if not path.is_file():
         raise FileNotFoundError(f'Transcript not found: {path}')
-    return path.read_text(encoding='utf-8').splitlines()
+    return path.read_text(encoding='utf-8', errors='replace').splitlines()
 
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
