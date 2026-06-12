@@ -241,6 +241,7 @@ class Extension(ExtensionBase):
         non_npm_paths = set()
         gradle_paths = set()
         non_gradle_paths = set()
+        maven_paths = set()
 
         for mod in existing_modules:
             if 'paths' not in mod:
@@ -255,6 +256,8 @@ class Extension(ExtensionBase):
                 gradle_paths.add(mod_path)
             else:
                 non_gradle_paths.add(mod_path)
+            if 'maven' in build_systems:
+                maven_paths.add(mod_path)
 
         nested = []
         all_gradle_modules = None
@@ -267,12 +270,19 @@ class Extension(ExtensionBase):
                 if module:
                     nested.append(module)
 
-        # Find build.gradle[.kts] in non-gradle module paths
+        # Find build.gradle[.kts] in non-gradle module paths. A path already
+        # occupied by a Maven module is excluded: Maven and Gradle are mutually
+        # exclusive JVM build systems for one physical module, so a co-located
+        # build.gradle at a Maven module's path is the same-path duplicate that
+        # primary _discover_gradle already suppressed (Maven wins). Re-adding it
+        # here would defeat that dedup and yield two successful modules for one
+        # directory. (Contrast the npm arm above: npm + Maven at one path is a
+        # legitimate pairing, e.g. a Maven module that also runs Playwright.)
         for mod_path in non_gradle_paths:
             abs_path = root / mod_path if mod_path != '.' else root
             gradle_files = [BUILD_GRADLE_KTS, BUILD_GRADLE]
             has_gradle = any((abs_path / gf).exists() for gf in gradle_files)
-            if has_gradle and mod_path not in gradle_paths:
+            if has_gradle and mod_path not in gradle_paths and mod_path not in maven_paths:
                 if all_gradle_modules is None:
                     all_gradle_modules = discover_gradle_modules(project_root)
                 for gm in all_gradle_modules:
