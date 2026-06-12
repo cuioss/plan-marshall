@@ -217,20 +217,9 @@ def parse_csv_filter(value: str | None) -> set[str] | None:
 def _resolve_marketplace_root(args) -> Path | dict:
     """Resolve the marketplace root for a verb, containing bad-input errors.
 
-    Wraps ``find_marketplace_root`` so the two failure modes every verb shares
-    become a structured ``{status: error}`` dict instead of an uncaught raise or
-    a per-callsite ``None``-guard repetition:
-
-    - ``ValueError`` from ``find_marketplace_root`` (the supplied
-      ``--marketplace-root`` / ``PM_MARKETPLACE_ROOT`` override lacks a
-      ``bundles/`` subdirectory) → ``{'error': 'invalid_marketplace_root'}``
-      carrying the offending-path message verbatim.
-    - a falsy (``None``) return (no marketplace candidate found) →
-      ``{'error': 'not_found'}``.
-
-    On success the resolved ``Path`` to the ``bundles/`` directory is returned.
-    Callers branch on ``isinstance(result, dict)`` to short-circuit with the
-    error envelope, else use the ``Path``.
+    Returns the resolved ``Path`` to the ``bundles/`` directory on success, or
+    a structured ``{status: error}`` dict on failure. Callers branch on
+    ``isinstance(result, dict)`` to short-circuit with the error envelope.
     """
     try:
         root = find_marketplace_root(getattr(args, 'marketplace_root', None))
