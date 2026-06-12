@@ -18,6 +18,10 @@ Manage lessons learned with global scope. Stores lessons as markdown files with 
 - Lessons are global-scoped (not plan-specific); no `--plan-id` parameter
 - The `from-error` command expects JSON context as `--context` argument
 
+**Canonical flag names (do not invent aliases):**
+- The lesson-selector flag is **`--lesson-id`** on every verb that targets a single lesson (`get`, `update`, `set-body`, `set-title`, `convert-to-plan`, `remove`, `supersede`, and the explicit-ids mode of `cleanup-superseded`). There is **no `--id` flag** — the bare `id` token appears only as an *output* field and as a *metadata* header key (see [Metadata Fields](#metadata-fields)), never as an input argument. Passing `--id` is rejected by argparse (`exit_code: 2`).
+- Lifecycle filtering on `list` is done with **`--status {active|superseded|removed|all}`** (default `active`; use `all` to include superseded/removed lessons). There is **no `--include-tombstoned` flag** — `--status all` is the canonical way to surface non-active lessons. Tombstones at `.tombstones/{id}.json` are the audit trail for supersede/remove events and are not listed by any verb; they are never exposed through a list flag.
+
 ## Storage Location
 
 Lessons are stored globally:
@@ -66,7 +70,7 @@ This affects all projects using jakarta.json without explicit dependency.
 
 | Field | Description |
 |-------|-------------|
-| `id` | Unique identifier (date-sequence) |
+| `id` | Unique identifier (date-sequence). Appears as a metadata header key and in command output; the input flag that selects a lesson by this value is **`--lesson-id`**, not `--id`. |
 | `component` | Component that lesson applies to |
 | `category` | bug, improvement, anti-pattern |
 | `created` | Creation date |
@@ -239,12 +243,16 @@ List lessons with filtering.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list \
   [--component maven-build] \
-  [--category bug]
+  [--category bug] \
+  [--status active|superseded|removed|all] \
+  [--full]
 ```
 
 **Parameters**:
 - `--component`: Filter by component name
 - `--category`: Filter by category (`bug`, `improvement`, `anti-pattern`)
+- `--status`: Filter by lifecycle status — `active` (default), `superseded`, `removed`, or `all`. Use `--status all` to surface superseded/removed lessons; this is the canonical mechanism (there is no `--include-tombstoned` flag).
+- `--full`: Include the full lesson body content in each row
 
 **Output** (TOON):
 ```toon
