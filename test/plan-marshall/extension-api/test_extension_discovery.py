@@ -138,6 +138,25 @@ def _prod_globs(entries: list[tuple[str, str]]) -> list[str]:
     return [glob for glob, role in entries if role == 'production']
 
 
+def _git_init_and_track(root, rel_paths: list[str]) -> None:
+    """Create + git-add each repo-relative path under ``root`` as a tracked file.
+
+    The route collector (``derive_globs_from_tree``) prunes any declared route
+    whose pattern matches no git-tracked file, so the synthetic-route bridge units
+    must seed a tree carrying a file for each route they expect to survive.
+    """
+    import subprocess
+
+    subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'T'], check=True)
+    for rel in rel_paths:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('')
+    subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True)
+
+
 # =============================================================================
 # Synthetic-route bridge units
 # =============================================================================
@@ -149,12 +168,17 @@ def test_bridge_returns_empty_for_no_extensions(tmp_path):
     assert result == {}
 
 
+_PYTHON_STUB_TREE = ['marketplace/bundles/foo.py', 'test/bar.py', 'pyproject.toml']
+
+
 def test_bridge_keys_result_by_domain_key(tmp_path):
     """The bridge returns a dict keyed by each build extension's served domain key.
 
     A documentation-only build extension contributes no routes (documentation is
-    not a build_map role), so its domain is omitted from the keyed result.
+    not a build_map role), so its domain is omitted from the keyed result. The
+    tree carries a file for each python route so none is pruned as dead.
     """
+    _git_init_and_track(tmp_path, _PYTHON_STUB_TREE)
     extensions = [
         {'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()},
         {'skill': 'build-docs', 'module': _StubDocsBuildExtension()},
@@ -163,8 +187,9 @@ def test_bridge_keys_result_by_domain_key(tmp_path):
     assert set(result.keys()) == {'python'}
 
 
-def test_bridge_collects_routes_verbatim(tmp_path):
-    """The bridge collects each build extension's declared routes verbatim (no tree scan)."""
+def test_bridge_collects_routes_present_in_tree(tmp_path):
+    """The bridge collects each build extension's declared routes present in the tree."""
+    _git_init_and_track(tmp_path, _PYTHON_STUB_TREE)
     extensions = [{'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()}]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     assert ('marketplace/bundles/*.py', 'production') in result['python']
@@ -172,8 +197,18 @@ def test_bridge_collects_routes_verbatim(tmp_path):
     assert ('pyproject.toml', 'config') in result['python']
 
 
+def test_bridge_prunes_route_absent_from_tree(tmp_path):
+    """A declared route whose pattern matches no tracked file is pruned by the bridge."""
+    # Only the production glob has a matching tracked file; test/ and pyproject.toml do not.
+    _git_init_and_track(tmp_path, ['marketplace/bundles/foo.py'])
+    extensions = [{'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()}]
+    result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
+    assert result['python'] == [('marketplace/bundles/*.py', 'production')]
+
+
 def test_bridge_omits_domains_with_no_routes(tmp_path):
     """A build extension whose classify_globs() returns no routes contributes nothing."""
+    _git_init_and_track(tmp_path, _PYTHON_STUB_TREE)
     extensions = [
         {'skill': 'build-empty', 'module': _StubEmptyBuildExtension()},
         {'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()},
@@ -184,6 +219,7 @@ def test_bridge_omits_domains_with_no_routes(tmp_path):
 
 def test_bridge_skips_entries_with_no_module(tmp_path):
     """Entries lacking a 'module' key are filtered before the collector runs."""
+    _git_init_and_track(tmp_path, _PYTHON_STUB_TREE)
     extensions = [
         {'skill': 'broken'},  # no 'module'
         {'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()},
@@ -194,6 +230,7 @@ def test_bridge_skips_entries_with_no_module(tmp_path):
 
 def test_bridge_separates_production_and_test_by_declared_role(tmp_path):
     """Production vs test is split by the declared route role, not a tree predicate."""
+    _git_init_and_track(tmp_path, _PYTHON_STUB_TREE)
     extensions = [{'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()}]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     entries = result['python']
@@ -206,6 +243,7 @@ def test_bridge_separates_production_and_test_by_declared_role(tmp_path):
 
 def test_bridge_returns_deduplicated_sorted_routes(tmp_path):
     """Collected routes are de-duplicated and returned in deterministic sorted order."""
+    _git_init_and_track(tmp_path, _PYTHON_STUB_TREE)
     extensions = [{'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()}]
     result = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     entries = result['python']
@@ -214,10 +252,12 @@ def test_bridge_returns_deduplicated_sorted_routes(tmp_path):
 
 def test_bridge_is_deterministic(tmp_path):
     """Two collections over the same extensions return identical results."""
+    _git_init_and_track(tmp_path, _PYTHON_STUB_TREE)
     extensions = [{'skill': 'build-pyproject', 'module': _StubPythonBuildExtension()}]
     first = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     second = _discovery.derive_build_map_globs(tmp_path, extensions=extensions)
     assert first == second
+    assert first  # non-empty: the python routes survived the tree-presence filter
 
 
 def test_bridge_merges_routes_across_same_domain_build_extensions(tmp_path):
@@ -226,6 +266,7 @@ def test_bridge_merges_routes_across_same_domain_build_extensions(tmp_path):
     build-maven and build-gradle both serve ``java``; the bridge must union their
     declared routes under ``java`` rather than let the second overwrite the first.
     """
+    _git_init_and_track(tmp_path, ['src/main/App.java', 'pom.xml', 'build.gradle'])
     extensions = [
         {'skill': 'build-maven', 'module': _StubMavenBuildExtension()},
         {'skill': 'build-gradle', 'module': _StubGradleBuildExtension()},

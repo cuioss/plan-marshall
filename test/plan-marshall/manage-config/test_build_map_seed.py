@@ -376,20 +376,61 @@ class _NoRouteExtension(BuildExtensionBase):
         return {'applicable': True, 'confidence': 'high', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 
 
-def _wire_real_aggregator(monkeypatch, extension: BuildExtensionBase, modules: dict | None = None) -> None:
-    """Redirect aggregate_build_map()'s extension-set and module-discovery collaborators.
+# Tracked files matching the stub extensions' routes. The route deriver
+# (derive_globs_from_tree) now prunes any route whose pattern matches no
+# git-tracked file, so the aggregator's project_root must be a git tree carrying
+# one file per route the stub declares (marketplace/targets/*.py production and
+# test/*.py test), or every route would be pruned as dead.
+_STUB_ROUTE_TRACKED_FILES = ['marketplace/targets/generate.py', 'test/sample_test.py']
+
+
+def _make_tracked_project_root(rel_paths: list[str]) -> Path:
+    """Create a git-tracked fixture tree and return its root.
+
+    aggregate_build_map() resolves ``project_root = get_tracked_config_dir().parent``
+    and the route deriver runs ``git ls-files`` under it, pruning routes whose
+    pattern matches no tracked file. This builds a throwaway git repo carrying a
+    file for each supplied repo-relative path so the stub routes survive the
+    tree-presence filter.
+    """
+    import subprocess
+    import tempfile
+
+    root = Path(tempfile.mkdtemp(prefix='build-map-seed-tree-'))
+    subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'T'], check=True)
+    for rel in rel_paths:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('')
+    subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True)
+    return root
+
+
+def _wire_real_aggregator(
+    monkeypatch,
+    extension: BuildExtensionBase,
+    modules: dict | None = None,
+    tracked_files: list[str] | None = None,
+) -> None:
+    """Redirect aggregate_build_map()'s extension-set, module-discovery, and project root.
 
     aggregate_build_map() resolves derive_build_map_globs + discover_build_extensions
     + discover_all_extensions + discover_project_modules from the extension_discovery
-    module at call time. The single supplied fake is wired as BOTH the build-extension
-    set (route + build_class source via discover_build_extensions) AND the language-
-    extension set (applicability source via discover_all_extensions) — each fake is a
-    BuildExtensionBase subclass that overrides classify_globs / get_skill_domains /
-    applies_to_module, so it serves both roles. The discovered module set is patched
-    to ``modules`` (default: one applicable module), leaving the real
-    derive_build_map_globs / derive_globs_from_tree route-collection wiring intact so
-    the REAL aggregator consumes the declared routes. Route collection no longer reads
-    the project tree, so the project root need not be redirected.
+    module at call time, and derives ``project_root`` from
+    ``get_tracked_config_dir().parent``. The single supplied fake is wired as BOTH the
+    build-extension set (route + build_class source via discover_build_extensions) AND
+    the language-extension set (applicability source via discover_all_extensions) —
+    each fake is a BuildExtensionBase subclass overriding classify_globs /
+    get_skill_domains / applies_to_module, so it serves both roles. The discovered
+    module set is patched to ``modules`` (default: one applicable module).
+
+    The route deriver now reads the project tree to prune dead globs, so this also
+    points ``project_root`` at a git-tracked fixture carrying a file for each stub
+    route (``tracked_files`` defaults to the standard stub-route corpus). The
+    ``PLAN_TRACKED_CONFIG_DIR`` override resolves ``get_tracked_config_dir()`` to a
+    ``.plan`` subdir of that fixture, so its ``.parent`` is the tracked tree.
     """
     fake_build_entries = [{'skill': 'fake', 'path': 'fake/extension.py', 'module': extension}]
     fake_lang_entries = [{'bundle': 'fake', 'path': 'fake/extension.py', 'module': extension}]
@@ -404,6 +445,12 @@ def _wire_real_aggregator(monkeypatch, extension: BuildExtensionBase, modules: d
         'discover_project_modules',
         lambda project_root: _APPLICABLE_MODULES if modules is None else modules,
     )
+
+    files = _STUB_ROUTE_TRACKED_FILES if tracked_files is None else tracked_files
+    tracked_root = _make_tracked_project_root(files)
+    # get_tracked_config_dir() returns this path; aggregate_build_map() takes its
+    # .parent as project_root, so make the tracked tree the parent.
+    monkeypatch.setenv('PLAN_TRACKED_CONFIG_DIR', str(tracked_root / '.plan'))
 
 
 def test_aggregate_build_map_collects_route_matching_out_of_scripts_production_py(monkeypatch):
@@ -781,3 +828,72 @@ def test_force_reseed_overwrites_user_correction(plan_context, monkeypatch):
     assert forced['action'] == 're-derived'
     after = json.loads(marshal_path.read_text(encoding='utf-8'))
     assert after['build']['map']['python'][0]['build_class'] == 'compile'
+
+
+# =============================================================================
+# Seed-boundary dead-glob regression — the user-visible contract of D1's filter
+# =============================================================================
+#
+# The end-to-end guarantee deliverable 1's per-route tree-presence filter exists
+# to provide: after a build.map seeding pass, a declared route whose file type is
+# absent from the project tree (a dead glob) does NOT appear in the persisted
+# build.map, while a live route (whose pattern matches a tracked file) survives.
+# This drives the REAL seed pipeline (cmd_build_map_seed → aggregate_build_map →
+# derive_globs_from_tree → persisted build.map) against a deterministic extension
+# declaring BOTH a live and a dead route — distinct from the unit-level filter
+# coverage in test_extension_base_classify_paths.py / test_extension_base.py.
+
+
+class _LiveAndDeadRouteExtension(BuildExtensionBase):
+    """A python-domain build extension declaring one LIVE and one DEAD route.
+
+    The live route (``marketplace/targets/*.py``) matches a tracked fixture file;
+    the dead route (``vendor/*.tsx``) matches nothing in the fixture tree. The
+    seed must persist the live glob and prune the dead one. Declares itself
+    applicable so the applicability filter keeps the domain.
+    """
+
+    def get_skill_domains(self) -> list[dict]:
+        return [{'domain': {'key': 'python', 'name': 'Python', 'description': 'Test'}, 'profiles': {}}]
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        return [
+            ('marketplace/targets/*.py', ROLE_PRODUCTION),  # live — fixture has a match
+            ('vendor/*.tsx', ROLE_PRODUCTION),  # dead — no .tsx anywhere in the fixture
+        ]
+
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        return {'applicable': True, 'confidence': 'high', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+
+
+def test_seed_persists_live_glob_and_prunes_dead_glob(plan_context, monkeypatch):
+    """End-to-end: the seeded build.map carries the live glob and NOT the dead glob.
+
+    Genuine regression coverage for the build-map-seed-prune-dead-globs fix: against
+    the unfixed deriver the dead ``vendor/*.tsx`` route would survive into the
+    persisted build.map; with D1's tree-presence filter it is pruned at seed time.
+    The fixture tree carries only the live route's file, so the dead route matches
+    nothing and must be absent from the output.
+    """
+    # Arrange — init, then wire the real aggregator over a tracked tree that
+    # carries the LIVE route's file but no file for the DEAD route.
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    _wire_real_aggregator(
+        monkeypatch,
+        _LiveAndDeadRouteExtension(),
+        tracked_files=['marketplace/targets/generate.py'],
+    )
+
+    # Act — seed through the real CLI pipeline.
+    result = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
+    assert result['status'] == 'success'
+    assert result['action'] == 'seeded'
+
+    # Assert — the persisted build.map carries ONLY the live glob; the dead glob is absent.
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    build_map = config['build']['map']
+    assert 'python' in build_map
+    globs = [entry['glob'] for entry in build_map['python']]
+    assert 'marketplace/targets/*.py' in globs, f'live glob was pruned; globs={globs}'
+    assert 'vendor/*.tsx' not in globs, f'dead glob leaked into seeded build.map; globs={globs}'
