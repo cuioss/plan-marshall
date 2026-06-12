@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import fnmatch
 import json
 import shlex
 import subprocess
@@ -903,6 +904,22 @@ def _log_whole_tree_gate_omitted(
     _emit_decision_log(plan_id, message)
 
 
+def _log_whole_tree_gate_trigger_activated(plan_id: str, affected_files_count: int) -> None:
+    """Emit the decision-log entry for trigger-arm activation of the whole-tree gate.
+
+    Distinct from the breaking-arm activation (which produces no dedicated line —
+    a kept-via-breaking gate is the default and needs no audit entry) so that a
+    gate kept by the additive whole-tree-invariant trigger arm is auditable on
+    its own. Emitted only when the trigger arm kept the step regardless of
+    compatibility posture.
+    """
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) finalize-step-whole-tree-gate activated via '
+        f'whole-tree-invariant trigger — changed set hit a trigger glob, affected_files_count={affected_files_count}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
 def _log_bot_enforcement_guard_fired(plan_id: str, provider: str) -> None:
     """Emit the decision-log entry for the ``bot_enforcement_guard`` violation.
 
@@ -1153,6 +1170,57 @@ def _apply_simplify_inactive(
 _WHOLE_TREE_GATE_CHANGE_TYPES = frozenset({'tech_debt', 'feature', 'enhancement', 'bug_fix'})
 
 
+# The SINGLE source of the three whole-tree-invariant trigger categories' globs.
+# A plan whose changed set intersects any of these globs touches a surface whose
+# correctness can ONLY be verified by exercising the entire tree — so the
+# whole-tree gate must fire regardless of the plan's compatibility posture. This
+# is the additive OR-arm that complements the clean-slate/breaking activation
+# arm in ``_apply_whole_tree_gate_inactive``. Matching is via ``fnmatch.fnmatch``
+# against the repo-relative changed paths the composer reads from
+# ``_read_bundle_change_paths``. See standards/decision-rules.md
+# § Pre-Filter: whole_tree_gate_inactive for the per-category rationale.
+#
+#   (a) doctor trigger        — plugin-doctor / plan-doctor analyzer & rule
+#                               scripts; a changed rule re-classifies the whole
+#                               marketplace, so the marketplace-wide doctor pass
+#                               must re-run.
+#   (b) sweep-test trigger    — whole-tree grep-sweep guard tests; a changed
+#                               guard test must be re-run with the full
+#                               marketplace scan root.
+#   (c) generator/drift trigger — the multi-target generator engine and every
+#                               bundle source; a change here can drift the
+#                               generated target tree's content.
+_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS = (
+    # (a) doctor trigger
+    'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**/*.py',
+    'marketplace/bundles/plan-marshall/skills/plan-doctor/**/*.py',
+    # (b) sweep-test trigger
+    'test/plan-marshall/**/test_*sweep*.py',
+    'test/marketplace/**/test_*sweep*.py',
+    # (c) generator/drift trigger
+    'marketplace/targets/**',
+    'marketplace/bundles/**',
+)
+
+
+def _changed_set_hits_whole_tree_invariant(changed_paths: list[str]) -> bool:
+    """Return True when any changed path matches a whole-tree-invariant trigger glob.
+
+    Mirrors the glob-match style of the build_map predicate: each repo-relative
+    changed path is tested against every glob in
+    ``_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS`` via ``fnmatch.fnmatch``. The first
+    match short-circuits to True. An empty ``changed_paths`` (the common
+    pre-execute shape, or a plan whose sources lie outside the trigger surface)
+    yields False, so the additive arm contributes nothing in that case and the
+    breaking-arm alone governs activation.
+    """
+    for path in changed_paths:
+        for pattern in _WHOLE_TREE_INVARIANT_TRIGGER_GLOBS:
+            if fnmatch.fnmatch(path, pattern):
+                return True
+    return False
+
+
 def _read_compatibility() -> str:
     """Read ``plan.phase-2-refine.compatibility`` from marshal.json.
 
@@ -1188,12 +1256,16 @@ def _apply_whole_tree_gate_inactive(
     compatibility: str,
     change_type: str,
     affected_files_count: int,
-) -> tuple[list[str], bool]:
+    changed_paths: list[str] | None = None,
+) -> tuple[list[str], bool, bool]:
     """Pre-filter: drop ``finalize-step-whole-tree-gate`` when its gate fails.
 
-    The whole-tree completeness gate exists to catch survivors of deletions a
-    clean-slate/breaking plan was meant to remove, so the gate activates the
-    step (keeps it) whenever ALL of:
+    The gate activates (keeps the step) when EITHER activation arm passes:
+
+    **Breaking arm** — the original clean-slate/breaking activation. The
+    whole-tree completeness gate exists to catch survivors of deletions a
+    clean-slate/breaking plan was meant to remove, so this arm passes whenever
+    ALL of:
 
     1. ``compatibility == 'breaking'`` — a ``deprecation`` / ``smart_and_ask``
        plan deliberately keeps old surfaces alongside new ones, so a surviving
@@ -1203,14 +1275,25 @@ def _apply_whole_tree_gate_inactive(
        nothing; and
     3. ``affected_files_count > 0``.
 
-    When any condition fails, ``finalize-step-whole-tree-gate`` is removed from
+    **Trigger arm** (additive) — the gate ALSO passes, regardless of
+    compatibility posture, when the plan's changed set intersects a whole-tree
+    invariant trigger glob AND ``affected_files_count > 0``. A plugin-doctor /
+    plan-doctor rule change, a whole-tree grep-sweep guard test change, or a
+    generator / bundle-source change can violate an invariant that only the
+    whole tree exercises — so the gate must fire even on a ``deprecation`` /
+    ``smart_and_ask`` plan. This arm bypasses the breaking and change-type
+    restrictions by design (see standards/decision-rules.md § Decision 1).
+
+    When NEITHER arm passes, ``finalize-step-whole-tree-gate`` is removed from
     ``phase_6_candidates``. The pre-filter is a no-op when the step is already
     absent from the candidate set (e.g., a project marshal.json that never lists
-    it). Returns the filtered list plus a flag indicating whether the pre-filter
-    fired (i.e., the step was active in the input but dropped after the check).
+    it). Returns a triple of (filtered candidates, omitted flag, trigger-activated
+    flag): ``omitted`` is True when the pre-filter dropped the step; ``trigger``
+    is True when the step was KEPT via the additive trigger arm (so the call site
+    can log trigger-activation distinctly from breaking-arm activation).
     """
     if 'finalize-step-whole-tree-gate' not in phase_6_candidates:
-        return phase_6_candidates, False
+        return phase_6_candidates, False, False
 
     if (
         compatibility == 'breaking'
@@ -1218,9 +1301,14 @@ def _apply_whole_tree_gate_inactive(
         and affected_files_count > 0
     ):
         # Gate passes — keep the step.
-        return phase_6_candidates, False
+        return phase_6_candidates, False, False
 
-    return [s for s in phase_6_candidates if s != 'finalize-step-whole-tree-gate'], True
+    # Additive trigger arm: a whole-tree-invariant trigger fired, so keep the
+    # gate regardless of compatibility / change_type.
+    if affected_files_count > 0 and _changed_set_hits_whole_tree_invariant(changed_paths or []):
+        return phase_6_candidates, False, True
+
+    return [s for s in phase_6_candidates if s != 'finalize-step-whole-tree-gate'], True, False
 
 
 # Scope-gated phase-6 subtraction sets. Each entry lists the step references the
@@ -2129,18 +2217,32 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates, args.change_type, affected_files_count
     )
 
-    # Pre-filter 5 (whole_tree_gate_inactive) drops finalize-step-whole-tree-gate
-    # unless the plan is clean-slate/breaking and code-bearing: compatibility ==
+    # Pre-filter 5 (whole_tree_gate_inactive) keeps finalize-step-whole-tree-gate
+    # when EITHER activation arm passes: the breaking arm (compatibility ==
     # breaking AND change_type ∈ {tech_debt, feature, enhancement, bug_fix} AND
-    # affected_files_count > 0. The whole-tree survivor sweep only makes sense on
-    # a breaking plan — deprecation / smart_and_ask plans deliberately keep old
-    # surfaces, so a surviving reference there is expected, not a defect.
-    # compatibility is read from marshal.json (plan.phase-2-refine.compatibility,
-    # default breaking). It runs after simplify_inactive and before
-    # scope_gated_finalize per standards/decision-rules.md.
+    # affected_files_count > 0) OR the additive whole-tree-invariant trigger arm
+    # (the changed set intersects a doctor / sweep-test / generator-drift trigger
+    # glob AND affected_files_count > 0, regardless of compatibility). The
+    # breaking arm: the whole-tree survivor sweep only makes sense on a breaking
+    # plan — deprecation / smart_and_ask plans deliberately keep old surfaces, so
+    # a surviving reference there is expected, not a defect. The trigger arm: a
+    # plugin-doctor rule, grep-sweep guard test, or generator / bundle-source
+    # change can break an invariant that only the whole tree exercises, so the
+    # gate must fire even on a non-breaking plan. compatibility is read from
+    # marshal.json (plan.phase-2-refine.compatibility, default breaking); the
+    # changed set is the union from _read_bundle_change_paths. Runs after
+    # simplify_inactive and before scope_gated_finalize per
+    # standards/decision-rules.md.
     compatibility = _read_compatibility()
-    phase_6_candidates, whole_tree_gate_omitted = _apply_whole_tree_gate_inactive(
-        phase_6_candidates, compatibility, args.change_type, affected_files_count
+    whole_tree_changed_paths = _read_bundle_change_paths(plan_id)
+    phase_6_candidates, whole_tree_gate_omitted, whole_tree_gate_trigger_activated = (
+        _apply_whole_tree_gate_inactive(
+            phase_6_candidates,
+            compatibility,
+            args.change_type,
+            affected_files_count,
+            whole_tree_changed_paths,
+        )
     )
 
     # Pre-filter 6 (scope_gated_finalize) drops heavyweight phase-6 review/audit
@@ -2261,6 +2363,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_simplify_omitted(plan_id, args.change_type, affected_files_count)
     if whole_tree_gate_omitted:
         _log_whole_tree_gate_omitted(plan_id, compatibility, args.change_type, affected_files_count)
+    if whole_tree_gate_trigger_activated:
+        _log_whole_tree_gate_trigger_activated(plan_id, affected_files_count)
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
     for change in ceremony_forced_in:

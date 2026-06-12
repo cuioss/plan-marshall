@@ -14,6 +14,7 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `affected_files_count` | `references.json::affected_files` length | int (≥0) |
 | `commit_and_push` | `manage-config plan phase-5-execute get --field commit_and_push` | bool (default: `true`) |
 | `build_map_globs` | derived from `marshal.json::build.map` — the union of every entry's `glob` across all domains | list[string] (default: empty when build_map absent) |
+| `whole_tree_invariant_trigger_globs` | the constant `_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS` in `manage-execution-manifest.py` — the three trigger categories (doctor / sweep-test / generator-drift) consumed by the `whole_tree_gate_inactive` additive arm; the bundle changed-set (`affected_files` ∪ outline/legacy fallbacks, via `_read_bundle_change_paths`) is matched against these globs | list[string] (fixed) |
 | `live_footprint` | derived on demand from the worktree (`{base}...HEAD` ∪ porcelain via `compute_plan_branch_diff`); empty before the worktree is materialized | list[string] (default: empty) |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.steps` | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
@@ -77,7 +78,7 @@ The pre-filters run in this order:
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
 3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when the live plan footprint is empty.
 4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
-5. **`whole_tree_gate_inactive`** — drops `finalize-step-whole-tree-gate` unless the plan is clean-slate/breaking and code-bearing: `compatibility == breaking` AND `change_type ∈ {tech_debt, feature, enhancement, bug_fix}` AND `affected_files_count > 0`.
+5. **`whole_tree_gate_inactive`** — drops `finalize-step-whole-tree-gate` unless EITHER the breaking arm (`compatibility == breaking` AND `change_type ∈ {tech_debt, feature, enhancement, bug_fix}` AND `affected_files_count > 0`) OR the additive trigger arm (`affected_files_count > 0` AND the changed set intersects a whole-tree-invariant trigger glob, regardless of compatibility) passes.
 6. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. `automated-review` is dropped ONLY via the explicit `drop_review_on_scope_gate` opt-in, never by the implicit scope gate.
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
@@ -165,21 +166,40 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt}` AND `affec
 
 ### Pre-Filter: `whole_tree_gate_inactive`
 
-**Condition**: `compatibility != breaking` OR `change_type ∉ {tech_debt, feature, enhancement, bug_fix}` OR `affected_files_count == 0`.
+**Gate-pass predicate**: `finalize-step-whole-tree-gate` is KEPT (the pre-filter is a no-op) whenever **EITHER** activation arm passes:
 
-**Effect**: `finalize-step-whole-tree-gate` is removed from `phase_6_candidates` before the rows are evaluated. Equivalently — phrased as the activation gate — `default:finalize-step-whole-tree-gate` lands in `phase_6.steps` **whenever `compatibility == breaking` AND `change_type ∈ {tech_debt, feature, enhancement, bug_fix}` AND `affected_files_count > 0`** (and the step is present in the candidate set). The pre-filter is the subtraction-only expression of that gate: the step is a candidate by default and dropped when the gate fails, matching the manifest architecture where rows and pre-filters only ever narrow the candidate list.
+- **Breaking arm**: `compatibility == breaking` AND `change_type ∈ {tech_debt, feature, enhancement, bug_fix}` AND `affected_files_count > 0`.
+- **Trigger arm** (additive): `affected_files_count > 0` AND the plan's changed set intersects a whole-tree-invariant trigger glob — **regardless of `compatibility` or `change_type`**.
 
-**Why a clean-slate/breaking gate**: the whole-tree completeness gate exists to catch survivors of deletions a clean-slate/breaking plan was meant to remove — a deleted symbol, contract, or description that still survives somewhere in the `marketplace/` tree. A `deprecation` or `smart_and_ask` plan deliberately KEEPS old surfaces alongside new ones, so a surviving reference is the expected outcome, not a defect — running the survivor sweep there would FAIL legitimately-retained references. The gate therefore activates only for `compatibility == breaking`. The `change_type` restriction excludes `analysis` (no code change) and `verification` (tests only, deletes nothing); the `affected_files_count > 0` condition excludes plans that touched zero files (nothing was deleted).
+**Effect**: when NEITHER arm passes, `finalize-step-whole-tree-gate` is removed from `phase_6_candidates` before the rows are evaluated. The pre-filter is the subtraction-only expression of the gate: the step is a candidate by default and dropped when both arms fail, matching the manifest architecture where rows and pre-filters only ever narrow the candidate list.
 
-**Why a pre-filter (not an eighth row)**: Activation depends only on `compatibility`, `change_type`, and `affected_files_count` and uses no language detection — it is domain-agnostic by construction (the whole-tree grep sweep applies to any code or doc deletion in scope). The gate is orthogonal to the scope / recipe inputs the seven-row matrix consumes, and expressing it as a pre-filter keeps the seven-row matrix unchanged. It mirrors the `simplify_inactive` pre-filter's shape verbatim, adding `compatibility` as the clean-slate discriminator.
+**Why a clean-slate/breaking arm**: the whole-tree completeness gate's original purpose is to catch survivors of deletions a clean-slate/breaking plan was meant to remove — a deleted symbol, contract, or description that still survives somewhere in the `marketplace/` tree. A `deprecation` or `smart_and_ask` plan deliberately KEEPS old surfaces alongside new ones, so a surviving reference is the expected outcome, not a defect — running the survivor sweep there would FAIL legitimately-retained references. The breaking arm therefore activates the survivor sweep only for `compatibility == breaking`. The `change_type` restriction excludes `analysis` (no code change) and `verification` (tests only, deletes nothing); the `affected_files_count > 0` condition excludes plans that touched zero files (nothing was deleted).
 
-**Decision log line** (in addition to the row's own log line and any other pre-filter log line):
+**Why the additive trigger arm**: some whole-tree invariants can be broken by a NON-breaking plan. A changed plugin-doctor / plan-doctor rule re-classifies the entire marketplace; a changed whole-tree grep-sweep guard test must re-run with the full scan root; a changed generator source or bundle source can drift the generated target tree's content. These violations only surface when the ENTIRE tree is verified — phase-5 task verification is build-map-scoped and false-greens on them. So when the changed set touches one of these surfaces the gate must fire even on a `deprecation` / `smart_and_ask` plan. The trigger arm therefore bypasses the breaking and `change_type` restrictions by design (per Decision 1 — the trigger surface, not the compatibility posture, is what makes the whole-tree check necessary).
+
+**Whole-tree-invariant trigger globs** — this section is the single doc home for the three trigger categories (D2's gate-body doc cross-references here, it does not duplicate). The composer matches each repo-relative changed path against these globs via `fnmatch.fnmatch`; the constant `_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS` in `manage-execution-manifest.py` is the single source of the literal patterns.
+
+| Trigger category | Globs | Why whole-tree |
+|------------------|-------|----------------|
+| doctor | `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**/*.py`, `marketplace/bundles/plan-marshall/skills/plan-doctor/**/*.py` | A changed analyzer / rule re-classifies the whole marketplace — the marketplace-wide doctor pass must re-run. |
+| sweep-test | `test/plan-marshall/**/test_*sweep*.py`, `test/marketplace/**/test_*sweep*.py` | A changed whole-tree grep-sweep guard test must re-run with the full `marketplace/` scan root, not module-scoped. |
+| generator/drift | `marketplace/targets/**`, `marketplace/bundles/**` | A changed generator engine or bundle source can drift the generated target tree's content. |
+
+**Why a pre-filter (not an eighth row)**: Activation depends only on `compatibility`, `change_type`, `affected_files_count`, and the changed-set ∩ trigger-globs predicate, and uses no language detection — it is domain-agnostic by construction (both the survivor sweep and the trigger checks apply to any code or doc change in scope). The gate is orthogonal to the scope / recipe inputs the seven-row matrix consumes, and expressing it as a pre-filter keeps the seven-row matrix unchanged. It mirrors the `simplify_inactive` pre-filter's shape, adding `compatibility` as the clean-slate discriminator for the breaking arm and the trigger-glob predicate as the additive arm.
+
+**Decision log lines** (in addition to the row's own log line and any other pre-filter log line):
 
 ```
 (plan-marshall:manage-execution-manifest:compose) finalize-step-whole-tree-gate omitted — compatibility={value} change_type={value} affected_files_count={N}
 ```
 
-When the gate passes (`compatibility == breaking` AND `change_type ∈ {tech_debt, feature, enhancement, bug_fix}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-whole-tree-gate` survives into the seven-row matrix.
+is emitted when both arms fail and the step is dropped. When the step is KEPT via the additive trigger arm (NOT the breaking arm), a distinct line records the trigger-based activation so it is auditable apart from the default breaking-arm activation:
+
+```
+(plan-marshall:manage-execution-manifest:compose) finalize-step-whole-tree-gate activated via whole-tree-invariant trigger — changed set hit a trigger glob, affected_files_count={N}
+```
+
+When the gate passes via the breaking arm, the pre-filter is a no-op and emits no log entry (a kept-via-breaking gate is the default and needs no audit line); `finalize-step-whole-tree-gate` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `simplify_inactive` and *before* `scope_gated_finalize` and every row of the seven-row matrix.
 
