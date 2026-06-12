@@ -569,6 +569,99 @@ class TestGenerateExecutorInjectsResolver:
 # =============================================================================
 
 
+# =============================================================================
+# Tests: cwd-walk fallback (_resolve_notation_by_cwd_walk in the template)
+# =============================================================================
+
+EXECUTOR_TEMPLATE = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'tools-script-executor'
+    / 'templates'
+    / 'execute-script.py.template'
+)
+
+
+def _extract_cwd_walk_resolver() -> types.ModuleType:
+    """Extract ``_resolve_notation_by_cwd_walk`` from the literal template.
+
+    The cwd-walk fallback lives in the literal template (not in the generated
+    target-aware resolver string), so it is parsed out of the rendered template
+    and executed in an isolated namespace with the names it references
+    (``Path``, ``os``) injected. Returns the namespace so tests can call
+    ``ns._resolve_notation_by_cwd_walk(notation)``.
+    """
+    import ast as _ast
+
+    template = EXECUTOR_TEMPLATE.read_text(encoding='utf-8')
+    tree = _ast.parse(template)
+    fn_src: str | None = None
+    for node in tree.body:
+        if isinstance(node, _ast.FunctionDef) and node.name == '_resolve_notation_by_cwd_walk':
+            fn_src = _ast.get_source_segment(template, node)
+            break
+    assert fn_src is not None, '_resolve_notation_by_cwd_walk not found in template'
+
+    ns = types.ModuleType('cwd_walk_under_test')
+    ns.__dict__['Path'] = Path
+    ns.__dict__['os'] = os
+    exec(compile(fn_src, '<cwd-walk>', 'exec'), ns.__dict__)
+    return ns
+
+
+class TestCwdWalkResolver:
+    """Tests for the cwd-walk-to-marketplace fallback branch."""
+
+    def _make_marketplace_script(self, root: Path) -> Path:
+        """Create marketplace/bundles/b/skills/s/scripts/sc.py under ``root``."""
+        scripts_dir = (
+            root / 'marketplace' / 'bundles' / 'plan-marshall'
+            / 'skills' / 'manage-status' / 'scripts'
+        )
+        scripts_dir.mkdir(parents=True)
+        script_file = scripts_dir / 'manage-status.py'
+        script_file.write_text('# stub', encoding='utf-8')
+        return script_file
+
+    def test_finds_script_by_walking_up_from_cwd(self, tmp_path, monkeypatch):
+        """Discovers a live marketplace tree by walking up from cwd."""
+        ns = _extract_cwd_walk_resolver()
+
+        checkout = tmp_path / 'checkout'
+        script = self._make_marketplace_script(checkout)
+
+        # cwd is a deep subdir of the checkout — the walk must climb to it.
+        deep = checkout / 'a' / 'b' / 'c'
+        deep.mkdir(parents=True)
+        monkeypatch.chdir(deep)
+
+        result = ns._resolve_notation_by_cwd_walk('plan-marshall:manage-status:manage-status')
+        assert result is not None, 'Expected the cwd-walk to locate the marketplace script'
+        assert os.path.isabs(result), f'Returned path must be absolute, got {result!r}'
+        assert result == str(script.resolve())
+
+    def test_returns_none_when_no_marketplace_tree(self, tmp_path, monkeypatch):
+        """Returns None when no marketplace/bundles tree is found above cwd."""
+        ns = _extract_cwd_walk_resolver()
+
+        empty = tmp_path / 'empty'
+        empty.mkdir()
+        monkeypatch.chdir(empty)
+
+        result = ns._resolve_notation_by_cwd_walk('plan-marshall:manage-status:manage-status')
+        assert result is None
+
+    def test_invalid_notation_returns_none(self, tmp_path, monkeypatch):
+        """A notation with other than 3 parts returns None."""
+        ns = _extract_cwd_walk_resolver()
+        monkeypatch.chdir(tmp_path)
+
+        assert ns._resolve_notation_by_cwd_walk('two:parts') is None
+        assert ns._resolve_notation_by_cwd_walk('too:many:parts:here') is None
+        assert ns._resolve_notation_by_cwd_walk('') is None
+
+
 class TestCmdGenerateTargetFlag:
     """Tests for the --target flag on the generate subcommand."""
 

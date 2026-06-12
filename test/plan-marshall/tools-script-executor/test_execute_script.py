@@ -29,6 +29,16 @@ TEMPLATE_DIR = SKILL_DIR / 'templates'
 SCRIPTS_DIR = SKILL_DIR / 'scripts'
 LOGGING_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace/bundles/plan-marshall/skills/logging/scripts'
 
+# resolve_notation existence-checks embedded SCRIPTS paths (self-healing contract),
+# so the mapped targets must be real files on disk for the direct-hit branch to return
+# them. Create stub files in a temp dir and map the test notations to them.
+_MAPPED_DIR = Path(tempfile.mkdtemp(prefix='executor-mappings-'))
+_MAP_MANAGE_FILES = _MAPPED_DIR / 'manage-files.py'
+_MAP_MAVEN = _MAPPED_DIR / 'maven.py'
+_MAP_TEST_SKILL = _MAPPED_DIR / 'test-skill.py'
+for _stub in (_MAP_MANAGE_FILES, _MAP_MAVEN, _MAP_TEST_SKILL):
+    _stub.write_text('# test stub\n')
+
 
 def load_executor_module():
     """Load the execute-script module from template for testing."""
@@ -39,10 +49,10 @@ def load_executor_module():
     # Replace the placeholders with test values
     code = code.replace(
         '{{SCRIPT_MAPPINGS}}',
-        """
-    "plan-marshall:manage-files": "/test/path/manage-files.py",
-    "pm-dev-builder:builder-maven-rules": "/test/path/maven.py",
-    "test:skill": "/test/path/test-skill.py",
+        f"""
+    "plan-marshall:manage-files": "{_MAP_MANAGE_FILES}",
+    "pm-dev-builder:builder-maven-rules": "{_MAP_MAVEN}",
+    "test:skill": "{_MAP_TEST_SKILL}",
 """,
     )
     code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
@@ -78,7 +88,7 @@ def test_resolve_exact_match():
     """Resolve exact notation match."""
     executor = load_executor_module()
     result = executor.resolve_notation('plan-marshall:manage-files')
-    assert result == '/test/path/manage-files.py', f"Expected '/test/path/manage-files.py', got {result}"
+    assert result == str(_MAP_MANAGE_FILES), f"Expected '{_MAP_MANAGE_FILES}', got {result}"
 
 
 def test_resolve_partial_match():
