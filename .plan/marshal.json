@@ -156,9 +156,10 @@
       "defaults": [],
       "optionals": [],
       "execute_task_skills": {
-        "documentation": "plan-marshall:execute-task-documentation",
-        "implementation": "plan-marshall:execute-task-implementation",
-        "module_testing": "plan-marshall:execute-task-module_testing"
+        "implementation": "plan-marshall:execute-task",
+        "module_testing": "plan-marshall:execute-task",
+        "integration_testing": "plan-marshall:execute-task",
+        "verification": "plan-marshall:execute-task"
       }
     },
     "general-dev": {
