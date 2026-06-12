@@ -1158,7 +1158,7 @@ def cmd_validate_contracts(args) -> dict:
     marketplace_root = result
 
     return validate_extension_contracts(
-        marketplace_root,
+        marketplace_root.parent,
         extension_type=args.extension_type,
         skill_filter=args.skill,
     )
