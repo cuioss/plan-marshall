@@ -74,7 +74,7 @@ def discover_python_modules(project_root: str) -> list:
         List of module dicts conforming to module-discovery.md contract.
     """
     root = Path(project_root).resolve()
-    log_entry('script', 'global', 'INFO', f'[PYTHON-DISCOVER] Starting discovery in {project_root}')
+    log_entry('script', 'global', 'DEBUG', f'[PYTHON-DISCOVER] Starting discovery in {project_root}')
     modules = []
 
     # Find directories that contain test/ or tests/ subdirectories
@@ -85,7 +85,7 @@ def discover_python_modules(project_root: str) -> list:
         if module:
             modules.append(module)
 
-    log_entry('script', 'global', 'INFO', f'[PYTHON-DISCOVER] Discovered {len(modules)} modules')
+    log_entry('script', 'global', 'DEBUG', f'[PYTHON-DISCOVER] Discovered {len(modules)} modules')
     return modules
 
 
