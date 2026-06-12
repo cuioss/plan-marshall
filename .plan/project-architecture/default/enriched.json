@@ -31,6 +31,10 @@
         {
           "description": "Language-agnostic code quality, refactoring, and documentation principles",
           "skill": "plan-marshall:dev-general-code-quality"
+        },
+        {
+          "description": "Core Python patterns \u2014 types, data structures, error handling, naming",
+          "skill": "pm-dev-python:python-core"
         }
       ]
     },
@@ -47,6 +51,14 @@
         {
           "description": "Language-agnostic testing methodology (AAA, coverage, reliability, determinism)",
           "skill": "plan-marshall:dev-general-module-testing"
+        },
+        {
+          "description": "Core Python patterns \u2014 types, data structures, error handling, naming",
+          "skill": "pm-dev-python:python-core"
+        },
+        {
+          "description": "Pytest standards \u2014 fixtures, isolation, mocking, assertions, coverage",
+          "skill": "pm-dev-python:pytest-testing"
         }
       ]
     },
@@ -59,6 +71,10 @@
         {
           "description": "Language-agnostic code quality, refactoring, and documentation principles",
           "skill": "plan-marshall:dev-general-code-quality"
+        },
+        {
+          "description": "Core Python patterns \u2014 types, data structures, error handling, naming",
+          "skill": "pm-dev-python:python-core"
         }
       ]
     }

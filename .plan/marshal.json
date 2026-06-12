@@ -1,5 +1,10 @@
 {
   "build": {
+    "queue": {
+      "max_slots": 5,
+      "max_retries": 10,
+      "upper_limit_seconds": 600
+    },
     "map": {
       "python": [
         {
@@ -45,17 +50,17 @@
     "phase-1-init": {
       "branch_strategy": "feature",
       "use_worktree": true,
+      "effort": "level-3",
       "init_without_asking": true,
       "deep_lane": "auto",
-      "escalation": "auto",
-      "effort": "level-3"
+      "escalation": "auto"
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
       "compatibility": "breaking",
       "simplicity": "lean",
-      "revalidation": "auto",
-      "effort": "level-3"
+      "effort": "level-3",
+      "revalidation": "auto"
     },
     "phase-3-outline": {
       "plan_without_asking": false,
@@ -67,13 +72,14 @@
       "effort": "level-3"
     },
     "phase-5-execute": {
-      "commit_strategy": "per_plan",
+      "commit_and_push": true,
       "max_iterations": 5,
       "per_deliverable_build": "compile+scoped-test",
       "per_task_budget_reserve_tokens": "50K",
       "steps": [
         "default:quality_check",
-        "default:build_verify"
+        "default:build_verify",
+        "default:coverage_check"
       ],
       "effort": {
         "default": "level-4",
@@ -82,22 +88,24 @@
     },
     "phase-6-finalize": {
       "max_iterations": 3,
-      "review_bot_buffer_seconds": 300,
+      "review_bot_buffer_seconds": 180,
       "pr_merge_strategy": "squash",
-      "checks_wait_timeout_seconds": 600,
-      "auto_rebase_threshold": "no_overlap_only",
       "finalize_without_asking": true,
-      "loop_back_without_asking": true,
+      "loop_back_without_asking": false,
       "auto_merge_after_ci": true,
       "self_review": "auto",
       "qgate": "auto",
       "plugin_doctor": "auto",
       "simplify": "auto",
+      "checks_wait_timeout_seconds": 600,
+      "auto_rebase_threshold": "no_overlap_only",
       "drop_review_on_scope_gate": false,
       "steps": [
         "default:pre-push-quality-gate",
-        "project:finalize-step-pre-submission-self-review",
         "project:finalize-step-plugin-doctor",
+        "project:finalize-step-pre-submission-self-review",
+        "default:finalize-step-simplify",
+        "default:finalize-step-whole-tree-gate",
         "default:commit-push",
         "default:create-pr",
         "default:ci-verify",
@@ -108,6 +116,7 @@
         "project:finalize-step-sync-plugin-cache",
         "default:record-metrics",
         "plan-marshall:plan-retrospective",
+        "project:finalize-step-lessons-housekeeping",
         "default:finalize-step-print-phase-breakdown",
         "default:archive-plan"
       ],
@@ -146,20 +155,20 @@
     "system": {
       "defaults": [],
       "optionals": [],
-      "task_executors": {
-        "documentation": "plan-marshall:task-documentation",
-        "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module_testing"
-      },
       "execute_task_skills": {
-        "implementation": "plan-marshall:execute-task",
-        "module_testing": "plan-marshall:execute-task",
-        "integration_testing": "plan-marshall:execute-task",
-        "verification": "plan-marshall:execute-task"
+        "documentation": "plan-marshall:execute-task-documentation",
+        "implementation": "plan-marshall:execute-task-implementation",
+        "module_testing": "plan-marshall:execute-task-module_testing"
       }
     },
     "general-dev": {
       "bundle": "plan-marshall"
+    },
+    "python": {
+      "bundle": "pm-dev-python",
+      "workflow_skill_extensions": {
+        "triage": "pm-dev-python:ext-triage-python"
+      }
     },
     "documentation": {
       "bundle": "pm-documents",
@@ -188,8 +197,8 @@
     "retention": {
       "logs_days": 1,
       "archived_plans_days": 5,
-      "temp_on_maintenance": true,
-      "lessons_superseded_days": 0
+      "lessons_superseded_days": 0,
+      "temp_on_maintenance": true
     }
   }
 }
