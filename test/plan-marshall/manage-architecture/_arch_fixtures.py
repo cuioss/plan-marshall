@@ -119,7 +119,12 @@ def seed_project(
     When ``with_enrichment_stubs`` is true, also writes a per-module
     ``enriched.json`` using ``enrichment_stub`` (defaulting to the
     superset stub from :func:`_default_enrichment_stub`).
+
+    Drops the process-lifetime crawl memo (``crawl_all_modules`` caches by
+    resolved project_dir) so a re-seed of the same tmpdir within one test is
+    observed by the next crawl rather than returning a stale snapshot.
     """
+    _architecture_core.invalidate_crawl_cache()
     _save_project_meta(
         {
             'name': 'test-project',

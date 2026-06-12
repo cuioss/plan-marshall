@@ -51,8 +51,10 @@ from _arch_fixtures import seed_project as _seed_project  # noqa: E402
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
+_maven_cmd_discover = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover')
 
 cmd_resolve = _cmd_client.cmd_resolve
+resolve_command = _cmd_client.resolve_command
 
 
 # Canonical Bucket B executable shape ``cmd_resolve`` returns for a pyproject
@@ -353,3 +355,131 @@ def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, m
     assert result['exceeds_bash_ceiling'] is True
     assert result['execution_tier'] == 'orchestrator'
     assert result['hint'] == 'Exceeds Bash ceiling; orchestrator-tier only'
+
+
+# =============================================================================
+# Case (g): --module default resolves to the real root module
+# =============================================================================
+
+
+def _seed_multi_module(tmpdir: str) -> None:
+    """Seed a root module (paths.module='.') plus a nested child module."""
+    modules = {
+        'root-mod': {
+            'name': 'root-mod',
+            'build_systems': ['maven'],
+            'paths': {'module': '.'},
+            'metadata': {'packaging': 'pom'},
+            'stats': {},
+            'commands': {
+                'verify': 'mvn verify',
+                'compile': 'mvn compile',
+            },
+        },
+        'child-mod': {
+            'name': 'child-mod',
+            'build_systems': ['maven'],
+            'paths': {'module': 'child-mod'},
+            'metadata': {'packaging': 'jar'},
+            'stats': {'source_files': 3, 'test_files': 2},
+            'commands': {
+                'verify': 'mvn verify -pl child-mod',
+                'compile': 'mvn compile -pl child-mod',
+                'test-compile': 'mvn test-compile -pl child-mod',
+                'module-tests': 'mvn test -pl child-mod',
+                # quality-gate present but == verify base: profile MIGHT override.
+                'quality-gate': 'mvn verify -pl child-mod',
+            },
+        },
+    }
+    _seed_project(tmpdir, modules)
+
+
+def test_resolve_default_alias_resolves_to_root_module():
+    """``--module default`` resolves to the real root module (paths.module='.')."""
+    _architecture_core.invalidate_crawl_cache()
+    _cmd_client._ENRICH_CACHE.clear()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_multi_module(tmpdir)
+        try:
+            result = resolve_command('verify', 'default', tmpdir)
+        finally:
+            _architecture_core.invalidate_crawl_cache(tmpdir)
+
+    assert result['module'] == 'root-mod'
+    assert result['command'] == 'verify'
+
+
+# =============================================================================
+# Case (h): profile-canonical request triggers at most one lazy enrich;
+#           plain build verbs trigger ZERO _get_maven_metadata calls.
+# =============================================================================
+
+
+def test_resolve_coverage_triggers_at_most_one_enrich(monkeypatch):
+    """A ``coverage`` request (absent from cheap map) lazily enriches ONE module."""
+    _architecture_core.invalidate_crawl_cache()
+    _cmd_client._ENRICH_CACHE.clear()
+
+    enrich_calls = []
+
+    def _spy_enrich(module_path, project_root):
+        enrich_calls.append((module_path, project_root))
+        # Return a coverage profile so the rebuilt command map carries coverage.
+        return {
+            'artifact_id': 'child-mod',
+            'group_id': 'com.example',
+            'packaging': 'jar',
+            'profiles': [{'id': 'jacoco', 'canonical': 'coverage'}],
+            'dependencies': [],
+        }
+
+    monkeypatch.setattr(_maven_cmd_discover, 'enrich_maven_module', _spy_enrich)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_multi_module(tmpdir)
+        try:
+            result = resolve_command('coverage', 'child-mod', tmpdir)
+        finally:
+            _architecture_core.invalidate_crawl_cache(tmpdir)
+            _cmd_client._ENRICH_CACHE.clear()
+
+    assert result['command'] == 'coverage'
+    # The enriched coverage canonical maps to the jacoco profile invocation.
+    assert '-Pjacoco' in result['executable']
+    assert len(enrich_calls) <= 1, f'coverage must enrich at most once, got {len(enrich_calls)}'
+    assert len(enrich_calls) == 1
+
+
+def test_resolve_plain_verbs_trigger_zero_enrich(monkeypatch):
+    """``compile`` / ``verify`` / ``test`` (module-tests) NEVER enrich."""
+    _architecture_core.invalidate_crawl_cache()
+    _cmd_client._ENRICH_CACHE.clear()
+
+    metadata_calls = []
+    enrich_calls = []
+
+    def _spy_metadata(module_path, project_root):
+        metadata_calls.append((module_path, project_root))
+        return None
+
+    def _spy_enrich(module_path, project_root):
+        enrich_calls.append((module_path, project_root))
+        return None
+
+    monkeypatch.setattr(_maven_cmd_discover, '_get_maven_metadata', _spy_metadata)
+    monkeypatch.setattr(_maven_cmd_discover, 'enrich_maven_module', _spy_enrich)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_multi_module(tmpdir)
+        try:
+            for verb in ('compile', 'verify', 'module-tests'):
+                _architecture_core.invalidate_crawl_cache(tmpdir)
+                _cmd_client._ENRICH_CACHE.clear()
+                resolve_command(verb, 'child-mod', tmpdir)
+        finally:
+            _architecture_core.invalidate_crawl_cache(tmpdir)
+            _cmd_client._ENRICH_CACHE.clear()
+
+    assert metadata_calls == [], 'plain build verbs must not call _get_maven_metadata'
+    assert enrich_calls == [], 'plain build verbs must not call enrich_maven_module'

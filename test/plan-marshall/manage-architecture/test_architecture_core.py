@@ -41,6 +41,8 @@ load_module_enriched_or_empty = _architecture_core.load_module_enriched_or_empty
 save_module_enriched = _architecture_core.save_module_enriched
 merge_module_data = _architecture_core.merge_module_data
 get_root_module = _architecture_core.get_root_module
+crawl_all_modules = _architecture_core.crawl_all_modules
+invalidate_crawl_cache = _architecture_core.invalidate_crawl_cache
 
 
 # =============================================================================
@@ -56,6 +58,7 @@ def _seed_project(tmpdir: str, modules: dict[str, dict] | None = None) -> None:
     """
     if modules is None:
         modules = {}
+    invalidate_crawl_cache()
     save_project_meta(
         {
             'name': 'test-project',
@@ -345,6 +348,104 @@ def test_get_root_module_returns_none_when_no_modules():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_project(tmpdir, {})
         assert get_root_module(tmpdir) is None
+
+
+# =============================================================================
+# Tests for crawl memoization + single-crawl get_root_module
+# =============================================================================
+
+
+def test_crawl_all_modules_memoizes_second_call(monkeypatch):
+    """A second crawl_all_modules for the same project hits the memo (no recompute)."""
+    invalidate_crawl_cache()
+    compute_calls = []
+    real_compute = _architecture_core._compute_all_modules
+
+    def _spy_compute(project_dir, project_path):
+        compute_calls.append(project_dir)
+        return real_compute(project_dir, project_path)
+
+    monkeypatch.setattr(_architecture_core, '_compute_all_modules', _spy_compute)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_project(tmpdir, {'a': {'name': 'a', 'paths': {'module': 'a'}}})
+        try:
+            first = crawl_all_modules(tmpdir)
+            second = crawl_all_modules(tmpdir)
+        finally:
+            invalidate_crawl_cache(tmpdir)
+
+    assert len(compute_calls) == 1, 'second crawl must hit the memo, not recompute'
+    assert first == second
+
+
+def test_crawl_all_modules_returns_independent_copies(monkeypatch):
+    """Each crawl_all_modules call returns a deep copy — mutating one is isolated."""
+    invalidate_crawl_cache()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_project(tmpdir, {'a': {'name': 'a', 'paths': {'module': 'a'}}})
+        try:
+            first = crawl_all_modules(tmpdir)
+            first['a']['name'] = 'MUTATED'
+            second = crawl_all_modules(tmpdir)
+        finally:
+            invalidate_crawl_cache(tmpdir)
+
+    assert second['a']['name'] == 'a', 'cached map must not be corrupted by a caller mutation'
+
+
+def test_invalidate_crawl_cache_forces_recrawl(monkeypatch):
+    """invalidate_crawl_cache drops the memo so the next call recomputes."""
+    invalidate_crawl_cache()
+    compute_calls = []
+    real_compute = _architecture_core._compute_all_modules
+
+    def _spy_compute(project_dir, project_path):
+        compute_calls.append(project_dir)
+        return real_compute(project_dir, project_path)
+
+    monkeypatch.setattr(_architecture_core, '_compute_all_modules', _spy_compute)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_project(tmpdir, {'a': {'name': 'a', 'paths': {'module': 'a'}}})
+        try:
+            crawl_all_modules(tmpdir)
+            invalidate_crawl_cache(tmpdir)
+            crawl_all_modules(tmpdir)
+        finally:
+            invalidate_crawl_cache(tmpdir)
+
+    assert len(compute_calls) == 2, 'invalidation must force a re-crawl'
+
+
+def test_get_root_module_uses_single_crawl(monkeypatch):
+    """get_root_module crawls exactly once (no per-module re-crawl)."""
+    invalidate_crawl_cache()
+    compute_calls = []
+    real_compute = _architecture_core._compute_all_modules
+
+    def _spy_compute(project_dir, project_path):
+        compute_calls.append(project_dir)
+        return real_compute(project_dir, project_path)
+
+    monkeypatch.setattr(_architecture_core, '_compute_all_modules', _spy_compute)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_project(
+            tmpdir,
+            {
+                'child': {'paths': {'module': 'child'}},
+                'parent': {'paths': {'module': '.'}},
+                'other': {'paths': {'module': 'other'}},
+            },
+        )
+        try:
+            root = get_root_module(tmpdir)
+        finally:
+            invalidate_crawl_cache(tmpdir)
+
+    assert root == 'parent'
+    assert len(compute_calls) == 1, 'get_root_module must crawl once, not once per module'
 
 
 # =============================================================================

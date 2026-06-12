@@ -355,6 +355,121 @@ def _compute_execution_tier_fields(bash_timeout_seconds: int) -> dict[str, Any]:
         'hint': hint,
     }
 
+
+# =============================================================================
+# Lazy Maven enrichment (subprocess-backed, per-module, cached)
+# =============================================================================
+#
+# The cheap architecture crawl is subprocess-free: it parses each pom.xml with
+# stdlib XML and does not run Maven, so the resolved dependency tree and the
+# Maven-resolved/inherited profiles are NOT populated. Two consumers need those
+# fields:
+#
+#   * ``resolve_command`` — when a profile-derived canonical (coverage /
+#     integration-tests / e2e / benchmark / profile-overridable quality-gate)
+#     is requested and absent from the cheap command map.
+#   * the dependency-graph path (``_build_internal_deps_map`` /
+#     ``get_module_graph``) — which reads each module's ``dependencies`` to
+#     compute internal edges.
+#
+# Both route through ``enrich_maven_module`` (build-maven), which runs
+# ``help:all-profiles dependency:tree`` for ONE module. The result is memoized
+# per (project_dir, module_name) for the lifetime of one CLI invocation so a
+# graph build enriches each module at most once.
+
+# Per-process enrich memo. Key: (resolved project_dir, module_name). Value: the
+# enrich dict (or None when the module could not be enriched). Mirrors the
+# crawl memo in _architecture_core — one CLI call resolves each module once.
+_ENRICH_CACHE: dict[tuple[str, str], dict[str, Any] | None] = {}
+
+
+def _enrich_maven_module_cached(module_name: str, derived: dict, project_dir: str) -> dict[str, Any] | None:
+    """Run (and memoize) the one-module Maven enrich for ``module_name``.
+
+    Resolves the module's directory from its ``paths.module`` and calls
+    ``enrich_maven_module`` (build-maven). The import is deferred and guarded so
+    manage-architecture still loads in isolation (without the build skills). A
+    failed import or a failed Maven run memoizes ``None`` so the caller falls
+    back to the cheap data without retrying.
+    """
+    cache_key = (str(Path(project_dir).resolve()), module_name)
+    if cache_key in _ENRICH_CACHE:
+        return _ENRICH_CACHE[cache_key]
+
+    try:
+        from _maven_cmd_discover import enrich_maven_module  # type: ignore[import-not-found]
+    except ImportError:
+        _ENRICH_CACHE[cache_key] = None
+        return None
+
+    module_rel = (derived.get('paths') or {}).get('module') or ''
+    module_dir = Path(project_dir) if module_rel in ('', '.') else Path(project_dir) / module_rel
+
+    try:
+        enriched = enrich_maven_module(module_dir, project_dir)
+    except Exception:
+        enriched = None
+
+    _ENRICH_CACHE[cache_key] = enriched
+    return enriched
+
+
+def _enrich_module_commands(module_name: str, derived: dict, project_dir: str) -> dict | None:
+    """Return ``derived``'s command map merged with profile-derived canonicals.
+
+    Lazily enriches ``module_name`` (one Maven run, memoized) and rebuilds the
+    profile-derived canonical commands (coverage / integration-tests / e2e /
+    benchmark / profile-mapped quality-gate) from the Maven-resolved profiles,
+    merging them onto the cheap command map. Returns ``None`` when enrichment is
+    unavailable (caller keeps the cheap map).
+    """
+    enriched = _enrich_maven_module_cached(module_name, derived, project_dir)
+    if enriched is None:
+        return None
+    profiles = enriched.get('profiles') or []
+    if not profiles:
+        return dict(derived.get('commands', {}))
+
+    try:
+        from _maven_cmd_discover import _build_commands  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+
+    relative_path = (derived.get('paths') or {}).get('module') or '.'
+    packaging = (derived.get('metadata') or {}).get('packaging') or 'jar'
+    stats = derived.get('stats') or {}
+    rebuilt = _build_commands(
+        module_name=module_name,
+        packaging=packaging,
+        has_sources=bool(stats.get('source_files', 0)),
+        has_tests=bool(stats.get('test_files', 0)),
+        profiles=profiles,
+        relative_path=relative_path,
+    )
+    # Overlay profile-derived canonicals onto the cheap map; keep the cheap map's
+    # entries for everything the rebuilt map does not carry.
+    merged = dict(derived.get('commands', {}))
+    merged.update({k: v for k, v in rebuilt.items() if k != 'conflicts'})
+    return merged
+
+
+def _enriched_dependencies(module_name: str, derived: dict, project_dir: str) -> list[str]:
+    """Return a module's resolved dependency list, enriching lazily when empty.
+
+    The cheap crawl leaves ``dependencies`` empty. The graph path needs the
+    resolved tree to compute internal edges, so this enriches the module (once,
+    memoized) and returns the enriched ``dependencies``. Falls back to whatever
+    ``derived`` already carries when enrichment is unavailable.
+    """
+    existing = derived.get('dependencies') or []
+    if existing:
+        return existing
+    enriched = _enrich_maven_module_cached(module_name, derived, project_dir)
+    if enriched is None:
+        return existing
+    return enriched.get('dependencies') or []
+
+
 # =============================================================================
 # API Functions
 # =============================================================================
@@ -501,7 +616,9 @@ def get_module_graph(
         elif 'internal_dependencies' in mod_data:
             internal_deps_map[mod_name] = mod_data['internal_dependencies']
         else:
-            deps = mod_data.get('dependencies', [])
+            # The cheap crawl leaves ``dependencies`` empty — enrich this one
+            # module lazily (memoized) so internal edges can be computed.
+            deps = _enriched_dependencies(mod_name, mod_data, project_dir)
             internal: set[str] = set()
             for dep in deps:
                 parts = dep.split(':')
@@ -654,38 +771,98 @@ def get_module_commands(module_name: str | None = None, project_dir: str = '.') 
     return {'module': module_name, 'commands': command_list}
 
 
+# Profile-derived canonical commands that the cheap (subprocess-free) Maven
+# crawl cannot fully populate: their presence/value depends on Maven profile
+# resolution. When one of these is requested and the module's cheap command map
+# lacks it (or carries only the plain ``verify`` base for ``quality-gate``,
+# which a profile MIGHT override), ``resolve_command`` lazily enriches that one
+# module via ``enrich_maven_module`` and re-resolves. The plain build verbs
+# (compile/verify/test/package/clean/install) NEVER trigger enrichment.
+_PROFILE_CANONICALS: frozenset[str] = frozenset(
+    {'coverage', 'integration-tests', 'e2e', 'benchmark'}
+)
+
+
+def _command_executable(commands: dict, command_name: str) -> str:
+    """Return the executable string for ``command_name`` in a command map."""
+    cmd_data = commands[command_name]
+    return cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
+
+
+def _needs_profile_enrichment(command_name: str, commands: dict) -> bool:
+    """Whether requesting ``command_name`` warrants a lazy profile enrich.
+
+    True when the requested command is a profile-derived canonical that is
+    absent from the cheap command map, OR is ``quality-gate`` whose cheap value
+    is still the plain ``verify`` base (a profile might override it). The plain
+    build verbs never warrant enrichment.
+    """
+    if command_name in _PROFILE_CANONICALS:
+        return command_name not in commands
+    if command_name == 'quality-gate':
+        if 'quality-gate' not in commands:
+            return False
+        executable = _command_executable(commands, 'quality-gate')
+        verify_exec = _command_executable(commands, 'verify') if 'verify' in commands else None
+        # Cheap quality-gate == verify base means no in-pom profile has been
+        # mapped onto it yet; an enrich might surface a profile-bearing one.
+        return verify_exec is not None and executable == verify_exec
+    return False
+
+
 def resolve_command(command_name: str, module_name: str | None = None, project_dir: str = '.') -> dict[str, str]:
     """Resolve command to executable form with cascading fallback.
 
     Resolution order:
-    1. Try command at specified module
+    1. Try command at specified module (lazily enriching that one module first
+       when the command is a profile-derived canonical absent from the cheap map)
     2. If not found AND module is not the root module -> try at root module
     3. If still not found -> raise ValueError
+
+    The ``default`` module alias resolves to the real root module. ``get_root_module``
+    is consulted exactly once and reused for both the default resolution and the
+    root cascade.
     """
+    root_module_name = get_root_module(project_dir)
+
+    # ``default`` is an alias for the real root module.
+    if module_name == 'default':
+        module_name = root_module_name
+
     if not module_name:
-        module_name = get_root_module(project_dir)
+        module_name = root_module_name
         if not module_name:
             raise ModuleNotFoundInProjectError('No modules found', [])
 
     derived = _load_module_or_raise(module_name, project_dir)
     commands = derived.get('commands', {})
 
+    # Lazy profile enrichment: a profile-derived canonical (coverage,
+    # integration-tests, e2e, benchmark, or a profile-overridable quality-gate)
+    # may be missing from the cheap crawl. Enrich this ONE module and merge the
+    # profile-derived commands before lookup. Plain build verbs skip this.
+    if _needs_profile_enrichment(command_name, commands):
+        enriched_commands = _enrich_module_commands(module_name, derived, project_dir)
+        if enriched_commands is not None:
+            commands = enriched_commands
+
     if command_name in commands:
-        cmd_data = commands[command_name]
-        executable = cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
+        executable = _command_executable(commands, command_name)
         return {'module': module_name, 'command': command_name, 'executable': executable, 'resolution_level': 'module'}
 
     # Cascade: try root module if current module is not already root.
-    root_module_name = get_root_module(project_dir)
     if root_module_name and module_name != root_module_name:
         try:
             root_derived = load_module_derived(root_module_name, project_dir)
         except DataNotFoundError:
             root_derived = {}
         root_commands = root_derived.get('commands', {})
+        if _needs_profile_enrichment(command_name, root_commands):
+            enriched_root = _enrich_module_commands(root_module_name, root_derived, project_dir)
+            if enriched_root is not None:
+                root_commands = enriched_root
         if command_name in root_commands:
-            cmd_data = root_commands[command_name]
-            executable = cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
+            executable = _command_executable(root_commands, command_name)
             return {
                 'module': root_module_name,
                 'command': command_name,
@@ -761,7 +938,9 @@ def _build_internal_deps_map(
         elif 'internal_dependencies' in mod_data:
             deps_map[mod_name] = sorted(set(mod_data['internal_dependencies']))
         else:
-            deps = mod_data.get('dependencies', [])
+            # The cheap crawl leaves ``dependencies`` empty — enrich this one
+            # module lazily (memoized) so internal edges can be computed.
+            deps = _enriched_dependencies(mod_name, mod_data, project_dir)
             internal: set[str] = set()
             for dep in deps:
                 parts = dep.split(':')
@@ -1289,9 +1468,12 @@ def cmd_resolve(args) -> dict:
             modules = []
         return error_result_module_not_found(args.module, modules)
     except ValueError:
-        # Command not found at the resolved module.
+        # Command not found at the resolved module. Resolve the ``default``
+        # alias here too so the error names the real root module, matching the
+        # alias handling in ``resolve_command``.
         try:
-            resolved_module = args.module or get_root_module(args.project_dir) or ''
+            requested = None if args.module == 'default' else args.module
+            resolved_module = requested or get_root_module(args.project_dir) or ''
             if resolved_module:
                 derived = load_module_derived(resolved_module, args.project_dir)
                 commands = list(derived.get('commands', {}).keys())

@@ -22,6 +22,7 @@ forced interruption mid-write leaves either the old layout or the new layout
 intact, never half-written state.
 """
 
+import copy
 import fnmatch
 import json
 import os
@@ -163,6 +164,38 @@ def save_project_meta(meta: dict[str, Any], project_dir: str = '.') -> Path:
     return path
 
 
+# Process-lifetime memo for ``crawl_all_modules``. Keyed by the resolved
+# absolute ``project_dir`` string. Each value is the canonical (post-processed)
+# module map for that project; callers receive a deep copy so a mutation by one
+# caller never corrupts the cached object another caller will read.
+#
+# The crawl shells out to the build tools (e.g. Maven runs ``help:all-profiles
+# dependency:tree`` per module), so a single ``architecture resolve`` against a
+# multi-module repo would otherwise pay that cost once per ``load_module_derived``
+# call — O(N²) subprocess invocations. Memoizing the crawl collapses that to one
+# crawl per project per process. The cache is invalidated by
+# :func:`invalidate_crawl_cache`, which ``swap_data_dir`` (the ``discover
+# --force`` path) calls so a forced refresh re-crawls.
+_CRAWL_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
+
+
+def invalidate_crawl_cache(project_dir: str | None = None) -> None:
+    """Clear the ``crawl_all_modules`` memo for one project, or the whole cache.
+
+    Args:
+        project_dir: When given, only the entry for this project's resolved
+            absolute path is dropped. When ``None``, the entire cache is
+            cleared. ``swap_data_dir`` (the ``discover --force`` atomic-swap
+            path) calls this so a forced refresh re-crawls instead of returning
+            stale memoized data.
+    """
+    if project_dir is None:
+        _CRAWL_CACHE.clear()
+        return
+    key = str(Path(project_dir).resolve())
+    _CRAWL_CACHE.pop(key, None)
+
+
 def crawl_all_modules(project_dir: str = '.') -> dict[str, dict[str, Any]]:
     """Compute per-module derived data for every module by crawling the worktree.
 
@@ -175,6 +208,16 @@ def crawl_all_modules(project_dir: str = '.') -> dict[str, dict[str, Any]]:
     The crawl is rooted at ``Path(project_dir)``; it never falls back to
     ``Path.cwd()`` or ``git rev-parse --show-toplevel``. This is what gives
     ``--project-dir <worktree>`` callers worktree-correct results.
+
+    Memoization: the crawl is expensive (it shells out to the build tools — e.g.
+    Maven runs ``help:all-profiles dependency:tree`` per module). The result is
+    memoized in :data:`_CRAWL_CACHE` keyed by the resolved absolute
+    ``project_dir`` so repeated calls within one process — the common case for a
+    single ``architecture resolve`` that touches several modules — crawl only
+    once. Each call returns a deep copy of the cached map so a caller that
+    mutates its result (e.g. ``_post_process_files`` runs in-place on the
+    discovery output) cannot corrupt the shared cache for the next caller.
+    :func:`invalidate_crawl_cache` clears the memo on forced refresh.
 
     The import of ``_post_process_files`` from ``_cmd_manage`` is deferred to
     call time to avoid the circular-import cycle (``_cmd_manage`` already
@@ -189,6 +232,24 @@ def crawl_all_modules(project_dir: str = '.') -> dict[str, dict[str, Any]]:
     to also stage the build files an extension discoverer would look for.
     Production worktrees (which always have at least one real module) never
     hit this path.
+    """
+    project_path = Path(project_dir).resolve()
+    cache_key = str(project_path)
+    cached = _CRAWL_CACHE.get(cache_key)
+    if cached is not None:
+        return copy.deepcopy(cached)
+
+    computed = _compute_all_modules(project_dir, project_path)
+    _CRAWL_CACHE[cache_key] = computed
+    return copy.deepcopy(computed)
+
+
+def _compute_all_modules(project_dir: str, project_path: Path) -> dict[str, dict[str, Any]]:
+    """Compute the canonical module map for ``project_dir`` (the cache-miss path).
+
+    Separated from :func:`crawl_all_modules` so the memoization wrapper stays a
+    thin cache lookup. Returns the post-processed module map; the caller stores
+    it in :data:`_CRAWL_CACHE` and hands out deep copies.
     """
     # Local imports — deliberately deferred to function-call time.
     #
@@ -207,7 +268,6 @@ def crawl_all_modules(project_dir: str = '.') -> dict[str, dict[str, Any]]:
     from _cmd_manage import _post_process_files  # type: ignore[import-not-found]
     from extension_discovery import discover_project_modules  # type: ignore[import-not-found]
 
-    project_path = Path(project_dir).resolve()
     result = discover_project_modules(project_path)
     modules: dict[str, dict[str, Any]] = result.get('modules', {}) or {}
     if not modules:
@@ -304,9 +364,15 @@ def save_module_derived(module_name: str, data: dict[str, Any], project_dir: str
 
     Production code MUST NOT use this writer to refresh the current-project
     derived data — derived data is ephemeral.
+
+    Drops the crawl memo for ``project_dir``: this writer is the disk-fallback
+    seam (and snapshot-fixture writer), so a write changes what the next crawl
+    of that project should observe. Invalidating keeps the fallback path
+    coherent when a test seeds, crawls, then re-seeds the same tmp project.
     """
     path = get_module_derived_path(module_name, project_dir)
     _write_json(path, data)
+    invalidate_crawl_cache(project_dir)
     return path
 
 
@@ -414,6 +480,11 @@ def swap_data_dir(tmp_dir: Path, project_dir: str = '.') -> Path:
     if backup.exists():
         shutil.rmtree(backup)
 
+    # A forced refresh (``discover --force``) just replaced the on-disk layout;
+    # drop the memoized crawl for this project so the next read re-crawls
+    # against the freshly-swapped tree rather than returning a stale snapshot.
+    invalidate_crawl_cache(project_dir)
+
     return real
 
 
@@ -433,21 +504,23 @@ def get_root_module(project_dir: str = '.') -> str | None:
         Module name, or None if the project has no modules.
     """
     try:
-        names = iter_modules(project_dir)
+        modules = crawl_all_modules(project_dir)
     except DataNotFoundError:
         return None
-    if not names:
+    if not modules:
         return None
-    for name in names:
-        try:
-            data = load_module_derived(name, project_dir)
-        except DataNotFoundError:
-            continue
+    # Single crawl, then iterate the returned map directly — no per-module
+    # ``load_module_derived`` re-crawl. ``crawl_all_modules`` is memoized so the
+    # first reader pays for the crawl and this iteration is over the cached map.
+    # Iterate names in sorted order so the fallback (first module) is
+    # deterministic, matching the historical ``iter_modules`` contract.
+    for name in sorted(modules.keys()):
+        data = modules[name]
         paths = data.get('paths', {})
         module_path = paths.get('module', '')
         if module_path in ('.', ''):
             return name
-    return names[0]
+    return sorted(modules.keys())[0]
 
 
 def merge_module_data(module_name: str, project_dir: str = '.') -> dict[str, Any]:
