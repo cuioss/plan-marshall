@@ -214,6 +214,33 @@ def parse_csv_filter(value: str | None) -> set[str] | None:
     return {v.strip() for v in value.split(',') if v.strip()}
 
 
+def _resolve_marketplace_root(args) -> Path | dict:
+    """Resolve the marketplace root for a verb, containing bad-input errors.
+
+    Wraps ``find_marketplace_root`` so the two failure modes every verb shares
+    become a structured ``{status: error}`` dict instead of an uncaught raise or
+    a per-callsite ``None``-guard repetition:
+
+    - ``ValueError`` from ``find_marketplace_root`` (the supplied
+      ``--marketplace-root`` / ``PM_MARKETPLACE_ROOT`` override lacks a
+      ``bundles/`` subdirectory) → ``{'error': 'invalid_marketplace_root'}``
+      carrying the offending-path message verbatim.
+    - a falsy (``None``) return (no marketplace candidate found) →
+      ``{'error': 'not_found'}``.
+
+    On success the resolved ``Path`` to the ``bundles/`` directory is returned.
+    Callers branch on ``isinstance(result, dict)`` to short-circuit with the
+    error envelope, else use the ``Path``.
+    """
+    try:
+        root = find_marketplace_root(getattr(args, 'marketplace_root', None))
+    except ValueError as e:
+        return {'status': 'error', 'error': 'invalid_marketplace_root', 'message': str(e)}
+    if not root:
+        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+    return root
+
+
 def collect_filtered_components(
     bundles: list[Path],
     type_filter: set[str] | None,
@@ -292,9 +319,10 @@ def cmd_list_components(args) -> dict:
     if hasattr(args, 'paths') and args.paths:
         return _list_components_paths(args.paths)
 
-    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
-    if not marketplace_root:
-        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+    result = _resolve_marketplace_root(args)
+    if isinstance(result, dict):
+        return result
+    marketplace_root = result
 
     bundle_filter = None
     if args.bundles:
@@ -332,9 +360,10 @@ def cmd_list_components(args) -> dict:
 
 def cmd_analyze(args) -> dict:
     """Analyze all components for issues."""
-    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
-    if not marketplace_root:
-        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+    result = _resolve_marketplace_root(args)
+    if isinstance(result, dict):
+        return result
+    marketplace_root = result
 
     bundles = find_bundles(marketplace_root, parse_csv_filter(args.bundles))
     component_list = collect_filtered_components(bundles, parse_csv_filter(args.type), parse_csv_filter(args.name))
@@ -562,9 +591,10 @@ def cmd_analyze(args) -> dict:
 
 def cmd_fix(args) -> dict:
     """Apply safe fixes across marketplace."""
-    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
-    if not marketplace_root:
-        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+    result = _resolve_marketplace_root(args)
+    if isinstance(result, dict):
+        return result
+    marketplace_root = result
 
     bundles = find_bundles(marketplace_root, parse_csv_filter(args.bundles))
     component_list = collect_filtered_components(bundles, parse_csv_filter(args.type), parse_csv_filter(args.name))
@@ -790,9 +820,10 @@ def cmd_quality_gate(args) -> dict:
         check cheap. ``missing-canonical-block`` is filtered to scoped SKILL.md
         files only.
     """
-    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
-    if not marketplace_root:
-        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+    result = _resolve_marketplace_root(args)
+    if isinstance(result, dict):
+        return result
+    marketplace_root = result
 
     paths = getattr(args, 'paths', None)
     scope_dirs = _resolve_scope_dirs(paths) if paths else []
@@ -1005,9 +1036,10 @@ def cmd_test_conventions(args) -> dict:
     See ``standards/doctor-test-conventions.md`` for rule definitions and
     severity. Exits non-zero on any error finding (build-failing).
     """
-    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
-    if not marketplace_root:
-        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+    result = _resolve_marketplace_root(args)
+    if isinstance(result, dict):
+        return result
+    marketplace_root = result
 
     project_root = marketplace_root.parent
     test_root_arg = getattr(args, 'test_root', None)
@@ -1040,9 +1072,10 @@ def cmd_test_conventions(args) -> dict:
 
 def cmd_report(args) -> dict:
     """Generate comprehensive report for LLM review."""
-    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
-    if not marketplace_root:
-        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+    result = _resolve_marketplace_root(args)
+    if isinstance(result, dict):
+        return result
+    marketplace_root = result
 
     bundle_filter = None
     if args.bundles:
@@ -1117,12 +1150,12 @@ def cmd_report(args) -> dict:
 # =============================================================================
 
 
-@safe_main
 def cmd_validate_contracts(args) -> dict:
     """Validate extension point contract compliance."""
-    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
-    if not marketplace_root:
-        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+    result = _resolve_marketplace_root(args)
+    if isinstance(result, dict):
+        return result
+    marketplace_root = result
 
     return validate_extension_contracts(
         marketplace_root,
@@ -1131,6 +1164,7 @@ def cmd_validate_contracts(args) -> dict:
     )
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Batch marketplace analysis and fixing',
@@ -1310,4 +1344,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()  # @safe_main wrapper calls sys.exit internally

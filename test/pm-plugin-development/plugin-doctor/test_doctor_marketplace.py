@@ -1620,6 +1620,17 @@ class _FakeArgs:
         self.enable_verb_chain = enable_verb_chain
 
 
+class _FakeMarketplaceArgs:
+    """Minimal Namespace stand-in for ``_resolve_marketplace_root`` tests.
+
+    The helper reads only ``args.marketplace_root`` via ``getattr``, so a
+    single attribute suffices to drive its three branches.
+    """
+
+    def __init__(self, marketplace_root=None):
+        self.marketplace_root = marketplace_root
+
+
 def test_parse_rules_flag_none_returns_empty_set():
     """``_parse_rules_flag(None)`` returns an empty frozenset (no opt-in)."""
     # Arrange + Act
@@ -1895,6 +1906,192 @@ def test_zero_hit_grep_pm_argument_naming_enabled_in_source():
         f'Found {len(hits)} residual reference(s) to {legacy_token} in marketplace tree: {hits}. '
         f'The breaking-refactor contract per lesson 2026-05-08-19-003 requires zero hits.'
     )
+
+
+# =============================================================================
+# _resolve_marketplace_root error-containment tests (deliverable 1)
+# =============================================================================
+#
+# TASK-1 added the ``_resolve_marketplace_root`` helper so every verb shares a
+# single bad-input boundary: a ``ValueError`` from ``find_marketplace_root``
+# (the supplied ``--marketplace-root`` / ``PM_MARKETPLACE_ROOT`` override lacks
+# a ``bundles/`` subdirectory) becomes a structured
+# ``{status: error, error: invalid_marketplace_root}`` dict instead of an
+# uncaught traceback that crashes the verb. These tests pin both the helper's
+# branch contract (direct-call) and the end-to-end no-traceback CLI behaviour.
+#
+# Note: the LOW-LEVEL ``find_marketplace_root`` RAISES ``ValueError`` on a bad
+# override — that contract is pinned by
+# ``test_marketplace_root_invalid_path_errors_clearly`` above. THIS section
+# pins the verb-entry wrapper that CONTAINS that raise.
+
+
+def test_resolve_marketplace_root_invalid_override_returns_structured_error(tmp_path, monkeypatch):
+    """An override lacking ``bundles/`` is contained as a structured error dict.
+
+    ``find_marketplace_root`` raises ``ValueError`` for such an override;
+    ``_resolve_marketplace_root`` must catch it and return
+    ``{status: error, error: invalid_marketplace_root}`` carrying the
+    underlying message verbatim — never let the raise escape.
+    """
+    # Arrange — tmp_path has no bundles/ subdir, so the override is invalid.
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+    assert not (tmp_path / 'bundles').exists(), 'Test precondition: tmp_path must lack bundles/'
+    args = _FakeMarketplaceArgs(marketplace_root=str(tmp_path))
+
+    # Act
+    result = _doctor_marketplace._resolve_marketplace_root(args)
+
+    # Assert — structured error envelope, not a Path and not a raise.
+    assert isinstance(result, dict), f'Expected an error dict, got: {result!r}'
+    assert result['status'] == 'error', f'Expected status: error, got: {result}'
+    assert result['error'] == 'invalid_marketplace_root', f'Expected invalid_marketplace_root, got: {result}'
+    # The offending-path message from the underlying ValueError is carried through.
+    assert 'bundles' in result['message'], f'Message should reference the bundles/ requirement: {result}'
+    assert str(tmp_path) in result['message'], f'Message should reference the offending path: {result}'
+
+
+def test_resolve_marketplace_root_valid_override_returns_bundles_path(tmp_path, monkeypatch):
+    """A valid override resolves to the ``{override}/bundles`` Path (success branch)."""
+    # Arrange — a fake marketplace with a bundles/ subdir.
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+    fake_marketplace = tmp_path / 'marketplace'
+    (fake_marketplace / 'bundles').mkdir(parents=True)
+    args = _FakeMarketplaceArgs(marketplace_root=str(fake_marketplace))
+
+    # Act
+    result = _doctor_marketplace._resolve_marketplace_root(args)
+
+    # Assert — the Path to bundles/, not an error dict.
+    assert not isinstance(result, dict), f'Expected a Path on success, got an error dict: {result!r}'
+    assert result == fake_marketplace / 'bundles', f'Expected {fake_marketplace / "bundles"}, got {result}'
+
+
+def test_resolve_marketplace_root_not_found_returns_structured_error(monkeypatch):
+    """A falsy ``find_marketplace_root`` return is contained as ``error: not_found``.
+
+    When no marketplace candidate exists, ``find_marketplace_root`` returns
+    ``None``; ``_resolve_marketplace_root`` must translate that into a
+    structured ``{status: error, error: not_found}`` envelope rather than
+    returning ``None`` for callers to mishandle.
+    """
+    # Arrange — patch the module's find_marketplace_root to return None.
+    monkeypatch.setattr(_doctor_marketplace, 'find_marketplace_root', lambda _override: None)
+    args = _FakeMarketplaceArgs(marketplace_root=None)
+
+    # Act
+    result = _doctor_marketplace._resolve_marketplace_root(args)
+
+    # Assert
+    assert isinstance(result, dict), f'Expected an error dict, got: {result!r}'
+    assert result['status'] == 'error', f'Expected status: error, got: {result}'
+    assert result['error'] == 'not_found', f'Expected not_found, got: {result}'
+
+
+def test_invalid_marketplace_root_cli_no_traceback(tmp_path):
+    """An invalid ``--marketplace-root`` on a verb yields structured TOON, no traceback.
+
+    End-to-end: ``quality-gate --marketplace-root {bad}`` (a directory without
+    a ``bundles/`` subdir) must exit 1 with a structured
+    ``invalid_marketplace_root`` TOON error and produce NO Python ``Traceback``
+    on stderr — the crash this deliverable fixes.
+    """
+    # Arrange — bad override: tmp_path has no bundles/ subdir.
+    bad_root = tmp_path / 'no-bundles-here'
+    bad_root.mkdir()
+    assert not (bad_root / 'bundles').exists(), 'Test precondition: override must lack bundles/'
+
+    # Act — run the verb against the bad override. PM_MARKETPLACE_ROOT must be
+    # unset so the --marketplace-root arg is the resolution input under test.
+    result = run_script(SCRIPT_PATH, 'quality-gate', '--marketplace-root', str(bad_root))
+
+    # Assert — contained failure, not a crash.
+    assert result.returncode == 1, f'Expected exit 1 on invalid --marketplace-root, got {result.returncode}'
+    assert 'Traceback' not in result.stderr, f'Verb must not crash with a traceback, got stderr: {result.stderr!r}'
+
+    data = parse_output(result)
+    assert data['status'] == 'error', f'Expected status: error, got: {data}'
+    assert data['error'] == 'invalid_marketplace_root', f'Expected invalid_marketplace_root, got: {data}'
+
+
+# =============================================================================
+# Dispatcher-guard regression: bad root → structured TOON, never a Traceback (deliverable 2)
+# =============================================================================
+#
+# The pre-fix defect is only observable end-to-end: the uncaught ``ValueError``
+# Traceback surfaced when the *real* ``main()`` dispatcher ran a verb against a
+# bad ``--marketplace-root``/``PM_MARKETPLACE_ROOT``. The D1 unit tests of
+# ``_resolve_marketplace_root`` cannot prove the dispatcher-level ``@safe_main``
+# backstop on ``main()`` nor the absence of a raw Traceback on the process
+# streams — that needs a subprocess round-trip through the script's true
+# entrypoint. ``test_invalid_marketplace_root_cli_no_traceback`` (D1, above)
+# pins the ``--marketplace-root`` *flag* path; the two tests below pin the
+# complementary surface this deliverable owns: the ``PM_MARKETPLACE_ROOT``
+# *env-var* override path, and the dispatcher-guard assertion that no
+# ``Traceback (most recent call last)`` appears on the COMBINED stdout+stderr
+# (the @safe_main backstop, not merely the per-verb catch).
+
+
+def test_bad_marketplace_root_env_var_structured_error_no_traceback(tmp_path):
+    """``PM_MARKETPLACE_ROOT`` at a bundles-less dir → structured TOON on stdout, exit 1.
+
+    Exercises the env-var override resolution path (distinct from the
+    ``--marketplace-root`` flag path pinned by D1's
+    ``test_invalid_marketplace_root_cli_no_traceback``): the real ``quality-gate``
+    subprocess entrypoint must emit a parseable ``invalid_marketplace_root`` TOON
+    on stdout, exit 1, and print NO Python ``Traceback`` on either stream.
+    """
+    # Arrange — PM_MARKETPLACE_ROOT points at a dir lacking bundles/.
+    bad_root = tmp_path / 'no-bundles-marketplace'
+    bad_root.mkdir()
+    assert not (bad_root / 'bundles').exists(), 'Test precondition: env-var root must lack bundles/'
+
+    # Act — drive resolution via the env var (no --marketplace-root flag).
+    result = run_script(
+        SCRIPT_PATH,
+        'quality-gate',
+        env_overrides={
+            'PM_MARKETPLACE_ROOT': str(bad_root),
+            'PLAN_BASE_DIR': str(tmp_path / '.plan'),
+            'PLAN_MARSHALL_CREDENTIALS_DIR': str(tmp_path / 'credentials'),
+        },
+    )
+
+    # Assert — contained failure: exit 1, structured TOON on stdout, no crash.
+    assert result.returncode == 1, f'Expected exit 1 on bad PM_MARKETPLACE_ROOT, got {result.returncode}'
+    assert 'Traceback' not in result.stderr, f'Verb must not crash with a traceback, got stderr: {result.stderr!r}'
+
+    # The structured error must be on STDOUT (output_toon target), not stderr.
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error', f'Expected status: error on stdout, got: {data}'
+    assert data['error'] == 'invalid_marketplace_root', f'Expected invalid_marketplace_root, got: {data}'
+
+
+def test_bad_marketplace_root_no_traceback_in_combined_streams(tmp_path):
+    """The @safe_main dispatcher backstop leaves NO ``Traceback`` on either stream.
+
+    Asserts the dispatcher-guard contract beyond the per-verb catch: the exact
+    Python crash banner ``Traceback (most recent call last)`` must be absent from
+    the COMBINED stdout+stderr for the bad-root invocation — proving ``main()``
+    never lets an uncaught exception reach the process streams as a raw traceback.
+    """
+    # Arrange — bad --marketplace-root flag (dir without bundles/).
+    bad_root = tmp_path / 'no-bundles-flag-root'
+    bad_root.mkdir()
+    assert not (bad_root / 'bundles').exists(), 'Test precondition: override must lack bundles/'
+
+    # Act
+    result = run_script(SCRIPT_PATH, 'quality-gate', '--marketplace-root', str(bad_root))
+
+    # Assert — the raw crash banner must not appear on EITHER stream.
+    combined = result.stdout + result.stderr
+    assert 'Traceback (most recent call last)' not in combined, (
+        f'Dispatcher guard must suppress the raw crash banner on both streams, got: {combined!r}'
+    )
+    # And the failure is still the contained, parseable one.
+    assert result.returncode == 1, f'Expected exit 1, got {result.returncode}'
+    data = parse_toon(result.stdout)
+    assert data['error'] == 'invalid_marketplace_root', f'Expected invalid_marketplace_root, got: {data}'
 
 
 # =============================================================================
