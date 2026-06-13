@@ -104,7 +104,7 @@ def require_references(plan_id: str) -> dict[Any, Any]:
 # Do NOT re-implement it elsewhere.
 
 
-def _run_git(worktree: Path, args: list[str]) -> subprocess.CompletedProcess:
+def _run_git(worktree: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     """Run a git command anchored to ``worktree`` and return the completed process."""
     return subprocess.run(
         ['git', '-C', str(worktree), *args],
