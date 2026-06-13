@@ -191,7 +191,9 @@ def get_skill_description(skill_notation: str) -> str:
             skill_path = resolve_bundle_path(BUNDLES_DIR, prefix, f'skills/{skill}/SKILL.md')
 
         return _parse_skill_md_description(skill_path, skill_notation)
-    except Exception:
+    except (OSError, ValueError):
+        # Path resolution or a SKILL.md read failure falls back to the raw
+        # notation; a genuine bug (e.g. a programming error) still propagates.
         return skill_notation
 
 
