@@ -1,45 +1,4 @@
 {
-  "build": {
-    "queue": {
-      "max_slots": 5,
-      "max_retries": 10,
-      "upper_limit_seconds": 600
-    },
-    "map": {
-      "python": [
-        {
-          "glob": ".claude/skills/*.py",
-          "role": "production",
-          "build_class": "compile"
-        },
-        {
-          "glob": "build.py",
-          "role": "production",
-          "build_class": "compile"
-        },
-        {
-          "glob": "marketplace/bundles/*.py",
-          "role": "production",
-          "build_class": "compile"
-        },
-        {
-          "glob": "marketplace/targets/*.py",
-          "role": "production",
-          "build_class": "compile"
-        },
-        {
-          "glob": "pyproject.toml",
-          "role": "config",
-          "build_class": "verify"
-        },
-        {
-          "glob": "test/*.py",
-          "role": "test",
-          "build_class": "module-tests"
-        }
-      ]
-    }
-  },
   "plan": {
     "effort": "level-3",
     "open_in_ide": true,
@@ -125,6 +84,47 @@
         "verification-feedback": "level-3",
         "post-run-review": "level-4"
       }
+    }
+  },
+  "build": {
+    "queue": {
+      "max_slots": 5,
+      "max_retries": 10,
+      "upper_limit_seconds": 600
+    },
+    "map": {
+      "python": [
+        {
+          "glob": ".claude/skills/*.py",
+          "role": "production",
+          "build_class": "compile"
+        },
+        {
+          "glob": "build.py",
+          "role": "production",
+          "build_class": "compile"
+        },
+        {
+          "glob": "marketplace/bundles/*.py",
+          "role": "production",
+          "build_class": "compile"
+        },
+        {
+          "glob": "marketplace/targets/*.py",
+          "role": "production",
+          "build_class": "compile"
+        },
+        {
+          "glob": "pyproject.toml",
+          "role": "config",
+          "build_class": "verify"
+        },
+        {
+          "glob": "test/*.py",
+          "role": "test",
+          "build_class": "module-tests"
+        }
+      ]
     }
   },
   "project": {

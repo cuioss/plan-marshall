@@ -130,6 +130,53 @@ def test_footprint_intersecting_a_glob_is_build(monkeypatch):
     assert 'reason' not in verdict
 
 
+def test_bare_basename_glob_matches_subdir_only_footprint(monkeypatch):
+    """A bare-basename build glob matches a config file living in a subdirectory.
+
+    Regression for the bare-basename subdir-matching fix: ``should_execute_build``
+    now matches via ``_route_matches``, so a bare-basename glob (no ``/`` — e.g.
+    ``package.json``) matches its file *anywhere in the tree*. Before the fix the
+    decision used ``fnmatch.fnmatch('nifi-cuioss-ui/package.json', 'package.json')``,
+    which is False, so a change to a subdirectory-only config file wrongly
+    resolved to not_necessary and skipped the build.
+    """
+    # Arrange — a bare-basename config glob, footprint is the file in a subdir.
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['package.json'])
+    monkeypatch.setattr(
+        extension_base, '_resolve_plan_footprint', lambda _plan: ['nifi-cuioss-ui/package.json']
+    )
+
+    # Act
+    verdict = extension_base.should_execute_build('verify', 'my-plan')
+
+    # Assert — the subdir-only config change triggers a build.
+    assert verdict['decision'] == 'build'
+    assert verdict['canonical_command'] == 'verify'
+
+
+def test_path_bearing_glob_does_not_match_on_basename_alone(monkeypatch):
+    """A path-bearing glob matches the full path, not the basename alone.
+
+    The complementary regime of the matcher: a glob carrying a ``/`` (e.g.
+    ``scripts/*.py``) is matched against the whole repo-relative path, so a file
+    with the same basename under an unrelated directory (``vendor/foo.py``) does
+    NOT match — only the basename regime is unanchored.
+    """
+    # Arrange — a path-bearing production glob, footprint is a same-basename file
+    # under an unrelated directory the glob does not cover.
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
+    monkeypatch.setattr(
+        extension_base, '_resolve_plan_footprint', lambda _plan: ['vendor/foo.py']
+    )
+
+    # Act
+    verdict = extension_base.should_execute_build('quality-gate', 'my-plan')
+
+    # Assert — the path-bearing glob does not false-positive on a same-basename file.
+    assert verdict['decision'] == 'not_necessary'
+    assert verdict['reason']
+
+
 # =============================================================================
 # cmd_build_decision — manage-config build-decision handler
 # =============================================================================

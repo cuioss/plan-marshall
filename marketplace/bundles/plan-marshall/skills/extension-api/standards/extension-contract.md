@@ -454,18 +454,24 @@ def classify_globs(self) -> list[tuple[str, str]]:
     Each tuple is ``(pattern, role)`` — a concrete glob pattern paired with one
     of the four resolved file roles. The route declares both WHAT this domain
     owns and WHERE it lives, so the build_map seed consumes the routes verbatim.
-    Patterns are matched with ``fnmatch.fnmatch`` (the matcher the downstream
-    ``manage-execution-manifest`` build_map consumer uses), so a single ``*``
-    matches across ``/`` — declare single-``*`` globs, NOT recursive ``**``
-    forms. A production ``.py`` outside the obvious roots (e.g.
+    Patterns are matched with the shared route matcher (the matcher the
+    downstream ``manage-execution-manifest`` build_map consumer uses): a
+    path-bearing route is matched against the whole repo-relative path via
+    ``fnmatch.fnmatch``, so a single ``*`` matches across ``/`` — declare
+    single-``*`` globs, NOT recursive ``**`` forms; a bare config-file basename
+    route (no ``/`` — e.g. ``pyproject.toml``, ``pom.xml``, ``package.json``)
+    matches the file by basename *anywhere in the tree*, so a subdirectory-only
+    config file is kept in the seed and matched at build-decision time, not only
+    a root-level instance. A production ``.py`` outside the obvious roots (e.g.
     ``marketplace/targets/*.py`` or every
     ``marketplace/bundles/*/skills/plan-marshall-plugin/*.py``) is covered by
     declaring a route whose pattern matches it.
 
     Returns:
         List of ``(pattern, role)`` tuples. ``pattern`` is an fnmatch-style glob
-        (e.g. ``test/*.py``) or an exact path for a single config file (e.g.
-        ``pyproject.toml``). ``role`` is one of the four roles — ``production`` /
+        (e.g. ``test/*.py``) or a bare basename for a single config file (e.g.
+        ``pyproject.toml``), which matches that file at any tree depth. ``role``
+        is one of the four roles — ``production`` /
         ``test`` / ``documentation`` / ``config``. Example for the python domain:
         ``[('build.py', 'production'), ('marketplace/bundles/*.py', 'production'),
         ('marketplace/targets/*.py', 'production'), ('test/*.py', 'test')]``.
@@ -477,7 +483,7 @@ def classify_globs(self) -> list[tuple[str, str]]:
 
 #### Why explicit routes plus a completeness validator
 
-A route declares both the pattern and the role directly, so the seed is compact — a handful of routes per domain rather than one glob per directory. Patterns use single-`*` fnmatch globs: because `fnmatch.fnmatch` lets a single `*` span `/`, `marketplace/targets/*.py` covers `marketplace/targets/generate.py` and any file beneath `targets/`, and `marketplace/bundles/*.py` covers every nested `.py` under `marketplace/bundles/`. Recursive `**` forms are NOT used.
+A route declares both the pattern and the role directly, so the seed is compact — a handful of routes per domain rather than one glob per directory. Path-bearing routes use single-`*` fnmatch globs: because `fnmatch.fnmatch` lets a single `*` span `/`, `marketplace/targets/*.py` covers `marketplace/targets/generate.py` and any file beneath `targets/`, and `marketplace/bundles/*.py` covers every nested `.py` under `marketplace/bundles/`. A bare config-file basename route (no `/` — e.g. `pom.xml`, `package.json`, `tsconfig.json`) is matched by basename anywhere in the tree, so a config file that lives only in subdirectories is kept in the seed and matched at build-decision time, not only a repo-root instance. Recursive `**` forms are NOT used.
 
 The risk an explicit-route contract carries is the inverse of an over-broad glob: an author can forget a route, leaving a production `.py` outside the declared patterns covered by no `build_class`. That omission is caught by a separate **git-tracked completeness validator** (`validate_tree_completeness` in `script-shared`). The validator scans `git ls-files`, and reports any tracked source file (suffix `.py`) that no `production`/`test` route matches. Because the scan is git-tracked-only, untracked build output (`target/**`, `.venv/**`, `node_modules/**`) is never flagged. A forgotten production module surfaces as an uncovered path; a generated file under `target/` does not.
 
@@ -547,7 +553,7 @@ The python domain returns explicit routes `[('build.py', 'production'), ('market
 | `marketplace/targets/*.py` | `production` | `compile` |
 | `test/*.py` | `test` | `module-tests` |
 
-Because `fnmatch` lets a single `*` span `/`, the `marketplace/bundles/*.py` route covers every nested `.py` under `marketplace/bundles/` — including each `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py` — and `marketplace/targets/*.py` covers `marketplace/targets/generate.py` and any file beneath `targets/`. The `build_class` of each production route is the canonical command `compile` directly. The git-tracked completeness validator confirms no tracked `.py` is left uncovered; a production module the routes forgot surfaces as an uncovered path rather than silently classifying to no build.
+Because `fnmatch` lets a single `*` span `/`, the `marketplace/bundles/*.py` route covers every nested `.py` under `marketplace/bundles/` — including each `marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py` — and `marketplace/targets/*.py` covers `marketplace/targets/generate.py` and any file beneath `targets/`. A bare config-file basename route (no `/` — e.g. `pyproject.toml`, `pom.xml`, `package.json`) matches its file by basename anywhere in the tree, so a config file living only in subdirectories is kept in the seed and matched at build-decision time, not only a repo-root instance. The `build_class` of each production route is the canonical command `compile` directly. The git-tracked completeness validator confirms no tracked `.py` is left uncovered; a production module the routes forgot surfaces as an uncovered path rather than silently classifying to no build.
 
 ---
 

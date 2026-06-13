@@ -93,8 +93,11 @@ class BuildExtension(BuildExtensionBase):
         (``*.spec.js`` / ``*.test.js``); the seed aggregator's longest-glob-wins
         specificity comparison routes a ``.spec.`` / ``.test.`` file to ``test``
         even though the broad production glob also matches it. Config files are
-        claimed by exact basename. See the base classify_globs() contract for the
-        route-collection wiring.
+        bare-basename routes that match the file at any tree depth (basename
+        anywhere), so a ``package.json`` / ``tsconfig.json`` living only in a
+        subdirectory is still kept in the seed and matched at build-decision time,
+        not only a repo-root instance. See the base classify_globs() contract for
+        the route-collection wiring.
         """
         routes: list[tuple[str, str]] = []
         # Production source — broad per-suffix route (a single ``*`` spans ``/``,

@@ -82,9 +82,10 @@ class BuildExtension(BuildExtensionBase):
         under any module's ``src/main`` tree (the leading ``*/`` admits the
         nested-module layout) and ``src/main/*.java`` covers the repo-root
         single-module layout; the parallel ``src/test`` routes claim test
-        sources. The ``pom.xml`` reactor descriptor is claimed by exact basename
-        under ``config``. See the base classify_globs() contract for the
-        route-collection wiring.
+        sources. The bare ``pom.xml`` reactor descriptor is a basename-only route
+        under ``config``: it matches the descriptor at any tree depth (every
+        module's ``pom.xml``), not only a repo-root instance. See the base
+        classify_globs() contract for the route-collection wiring.
         """
         return [
             ('*/src/main/*.java', 'production'),

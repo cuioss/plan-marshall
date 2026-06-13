@@ -763,15 +763,18 @@ def test_build_map_round_trips_at_top_level_build_path(tmp_path, monkeypatch):
 # save_config() in _config_core.py enforces a canonical top-level key order when
 # persisting marshal.json. After the D1–D6 dissolutions and the build_map
 # relocation to the top-level build block, the surviving top-level blocks
-# (ci/ceremony_policy/build_map_overrides removed) are listed alphabetically:
-# build, extension_defaults, plan, project, providers, skill_domains, system.
-# These tests pin that contract and prove the committed marshal.json already
-# round-trips through save_config with its key order unchanged.
+# (ci/ceremony_policy/build_map_overrides removed) lead with ``extension_defaults``
+# (the extension-seeded defaults block), then ``plan`` (the primary user-facing
+# config), then ``build`` (build infrastructure), and finally the remaining
+# top-level keys alphabetically: extension_defaults, plan, build, project,
+# providers, skill_domains, system. These tests pin that contract and prove the
+# committed marshal.json already round-trips through save_config with its key
+# order unchanged.
 
 _EXPECTED_CANONICAL_KEY_ORDER = [
-    'build',
     'extension_defaults',
     'plan',
+    'build',
     'project',
     'providers',
     'skill_domains',
@@ -799,11 +802,12 @@ def _save_config_to(tmp_marshal_path, config, monkeypatch):
 
 
 def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
-    """save_config must emit the six surviving top-level keys in canonical order.
+    """save_config must emit the surviving top-level keys in canonical order.
 
     A scrambled-input dict carrying every surviving top-level block must come
-    back out in the alphabetical canonical order, proving save_config's key_order
-    is the authoritative ordering — independent of insertion order.
+    back out in the canonical order (extension_defaults, plan, build, then the
+    rest alphabetically), proving save_config's key_order is the authoritative
+    ordering — independent of insertion order.
     """
     # Arrange — every canonical key present, deliberately reverse-scrambled
     scrambled = {
@@ -908,6 +912,30 @@ def test_committed_marshal_json_round_trips_through_save_config_unchanged(tmp_pa
 
     # Assert — key order is unchanged by the round-trip
     assert after == before
+
+
+def test_save_config_orders_build_after_plan(tmp_path, monkeypatch):
+    """save_config must order the ``build`` block immediately after ``plan``.
+
+    Regression for the key-order fix: ``build`` was previously emitted as the
+    FIRST top-level block (ahead of ``plan``), producing a spurious reorder diff
+    on every save. The canonical order now leads with the primary user-facing
+    ``plan`` block and places ``build`` (build infrastructure) directly after it,
+    ahead of the remaining alphabetical keys.
+    """
+    # Arrange — only plan + build present, with build deliberately inserted first
+    config = {
+        'build': {},
+        'plan': {},
+    }
+    marshal_path = tmp_path / 'marshal.json'
+
+    # Act
+    actual_order = _save_config_to(marshal_path, config, monkeypatch)
+
+    # Assert — plan precedes build regardless of insertion order
+    assert actual_order == ['plan', 'build']
+    assert actual_order.index('plan') < actual_order.index('build')
 
 
 # =============================================================================

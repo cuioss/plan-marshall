@@ -21,6 +21,7 @@ ModuleBase, ModulePaths) are available via direct import from _build_discover.
 import fnmatch
 import subprocess
 from abc import ABC, abstractmethod
+from posixpath import basename
 
 # Re-export build vocabulary constants from private implementation.
 from _extension_constants import (  # noqa: F401 — re-exported for backward compat
@@ -74,13 +75,17 @@ def derive_globs_from_tree(
     ``config``). This function gathers those declared routes,
     keyed by the extension's first domain key, then filters them to the routes
     actually present in the project tree: a route survives only when at least one
-    git-tracked file matches its ``pattern`` via :func:`fnmatch.fnmatch` (the same
+    git-tracked file matches its ``pattern`` via :func:`_route_matches` (the same
     matcher the downstream ``manage-execution-manifest`` consumer and
-    :func:`validate_tree_completeness` use). Dead routes — patterns whose file
-    type is absent from the tree (e.g. ``pom.xml``, ``*.tsx``, ``tsconfig.json``
-    on a project that has none) — are pruned before any consumer sees them, so the
-    seed carries only live globs rather than the full theoretical toolchain
-    superset.
+    :func:`validate_tree_completeness` use). A bare-basename route (no ``/`` — e.g.
+    ``pom.xml``, ``package.json``, ``tsconfig.json``) matches the config file
+    *anywhere in the tree*, so a config file that lives only in subdirectories
+    survives the prune; a path-bearing route matches against the whole
+    repo-relative path with a single ``*`` spanning ``/``. Dead routes — patterns
+    whose file type is absent from the tree (e.g. ``pom.xml``, ``*.tsx``,
+    ``tsconfig.json`` on a project that has none) — are pruned before any consumer
+    sees them, so the seed carries only live globs rather than the full
+    theoretical toolchain superset.
 
     Tree completeness is a SEPARATE concern: :func:`validate_tree_completeness`
     scans git-tracked source files within build-covered roots and reports any
@@ -140,7 +145,7 @@ def derive_globs_from_tree(
             live := sorted(
                 route
                 for route in routes
-                if fnmatch.filter(tracked, route[0])
+                if any(_route_matches(p, route[0]) for p in tracked)
             )
         )
     }
@@ -173,6 +178,37 @@ def _list_tracked_files(project_root: str) -> list[str]:
     decoded = completed.stdout.decode('utf-8', errors='replace')
     rel_paths = [p.replace('\\', '/') for p in decoded.split('\0') if p]
     return sorted(rel_paths)
+
+
+def _route_matches(path: str, pattern: str) -> bool:
+    """Return True when repo-relative ``path`` matches route ``pattern``.
+
+    A single matcher shared by the three build-map matching sites
+    (:func:`derive_globs_from_tree` seed-prune, :func:`validate_tree_completeness`
+    coverage check, :func:`should_execute_build` footprint loop). Two regimes,
+    selected by whether the pattern names a directory segment:
+
+    - **Bare-basename routes** (``pattern`` contains no ``/`` — e.g. ``pom.xml``,
+      ``package.json``, ``tsconfig.json``): match on the path's *basename* via
+      :func:`fnmatch.fnmatch`, so a config file is matched wherever it lives in the
+      tree, not only at repo root. This is what keeps a subdirectory-only config
+      file (``nifi-cuioss-ui/package.json``) in the seed and matched at
+      build-decision time.
+    - **Path-bearing routes** (``pattern`` contains ``/`` — e.g.
+      ``marketplace/bundles/*.py``): match against the whole repo-relative path via
+      :func:`fnmatch.fnmatch`, preserving the single-``*``-spans-``/`` behavior the
+      downstream ``manage-execution-manifest`` consumer relies on.
+
+    Args:
+        path: Repo-relative, forward-slashed candidate path.
+        pattern: A route glob — a bare basename (no ``/``) or a path-bearing glob.
+
+    Returns:
+        True when ``path`` matches ``pattern`` under the regime its shape selects.
+    """
+    if '/' not in pattern:
+        return fnmatch.fnmatch(basename(path), pattern)
+    return fnmatch.fnmatch(path, pattern)
 
 
 def _route_root(pattern: str) -> str:
@@ -266,12 +302,14 @@ def validate_tree_completeness(project_root: str, extensions: list) -> list[str]
     file is covered when it matches at least one ``production`` or ``test`` route
     declared by any extension.
 
-    Route patterns are matched with :func:`fnmatch.fnmatch` — the SAME matcher
-    the downstream build_map consumer (``manage-execution-manifest``) uses — so a
-    single ``*`` matches across ``/`` (e.g. ``marketplace/targets/*.py`` covers
-    ``marketplace/targets/generate.py`` and any file beneath ``targets/``).
-    Routes are therefore declared with single-``*`` fnmatch globs, not recursive
-    ``**`` forms.
+    Route patterns are matched with :func:`_route_matches` — the SAME matcher
+    the downstream build_map consumer (``manage-execution-manifest``) uses. A
+    path-bearing route matches via :func:`fnmatch.fnmatch` so a single ``*``
+    matches across ``/`` (e.g. ``marketplace/targets/*.py`` covers
+    ``marketplace/targets/generate.py`` and any file beneath ``targets/``); a
+    bare-basename route (no ``/``) matches the file by basename anywhere in the
+    tree. Routes are therefore declared with single-``*`` fnmatch globs (or bare
+    basenames for config files), not recursive ``**`` forms.
 
     Args:
         project_root: Absolute path to the project root to scan.
@@ -305,7 +343,7 @@ def validate_tree_completeness(project_root: str, extensions: list) -> list[str]
             continue
         if not _within_buildable_roots(rel_path, buildable_roots):
             continue
-        if not any(fnmatch.fnmatch(rel_path, pattern) for pattern in source_routes):
+        if not any(_route_matches(rel_path, pattern) for pattern in source_routes):
             uncovered.append(rel_path)
     return sorted(uncovered)
 
@@ -489,7 +527,7 @@ def should_execute_build(
 
     for path in footprint:
         for glob in globs:
-            if fnmatch.fnmatch(path, glob):
+            if _route_matches(path, glob):
                 return {'decision': 'build', 'canonical_command': canonical_command}
 
     return {
@@ -1111,10 +1149,16 @@ class BuildExtensionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis
         one of the three resolved file roles. The route declares both WHAT this
         build extension owns and WHERE it lives, so the build_map seed consumes
         the routes verbatim: no tree scan enumerates one glob per directory.
-        Patterns are matched with :func:`fnmatch.fnmatch` (the matcher the
-        downstream ``manage-execution-manifest`` build_map consumer uses), so a
-        single ``*`` matches across ``/`` — declare single-``*`` globs, NOT
-        recursive ``**`` forms. A production ``.py`` outside the obvious roots
+        Patterns are matched with :func:`_route_matches` (the matcher the
+        downstream ``manage-execution-manifest`` build_map consumer uses): a
+        path-bearing route is matched against the whole repo-relative path via
+        :func:`fnmatch.fnmatch`, so a single ``*`` matches across ``/`` — declare
+        single-``*`` globs, NOT recursive ``**`` forms; a bare-basename config
+        route (no ``/`` — e.g. ``pom.xml``, ``package.json``) matches the file by
+        basename *anywhere in the tree*, so a config file that lives only in
+        subdirectories is still kept in the seed and matched at build-decision
+        time, not only a root-level instance. A production ``.py`` outside the
+        obvious roots
         (e.g. ``marketplace/targets/*.py`` or every
         ``marketplace/bundles/*/skills/plan-marshall-plugin/*.py``) is covered by
         declaring a route whose pattern matches it. The git-tracked completeness
@@ -1125,8 +1169,9 @@ class BuildExtensionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis
 
         Returns:
             A list of ``(pattern, role)`` tuples. ``pattern`` is an
-            fnmatch-style glob (e.g. ``test/*.py``) or an exact path for a single
-            config file (e.g. ``pyproject.toml``). ``role`` is one of the three
+            fnmatch-style glob (e.g. ``test/*.py``) or a bare basename for a
+            config file (e.g. ``pyproject.toml``), which matches that file at any
+            tree depth. ``role`` is one of the three
             ``BUILD_MAP_ROLES`` — ``production`` / ``test`` / ``config`` — and
             maps straight through to a ``classify_build_class``
             build_class with no name-to-name indirection. The default

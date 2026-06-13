@@ -104,9 +104,16 @@ class TestGitignoreSetupUnchanged:
     """Test gitignore_setup.py when no changes needed via direct import."""
 
     def test_unchanged_when_all_entries_exist(self, tmp_path):
-        """Should report unchanged when all entries already present."""
+        """Should report unchanged when all entries and comments already present.
+
+        Both managed comments must be present for an unchanged verdict: after the
+        duplicate-comment fix, a missing ``# Planning system`` header makes the
+        run an update (it appends the absent comment), so the fixture pins both
+        comment headers alongside the entries.
+        """
         gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text(
+            '# Planning system (managed by /marshall-steward)\n'
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
             '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.plan/local/worktrees/\n'
@@ -153,6 +160,62 @@ class TestGitignoreSetupUnchanged:
         content = gitignore_path.read_text()
         assert '.plan/local/worktrees/' in content
         assert '.claude/worktrees/' not in content
+
+
+class TestGitignoreSetupIdempotency:
+    """Test gitignore_setup.py does not duplicate managed comments on re-run.
+
+    Regression for the duplicate-comment defect: setup_gitignore emitted the
+    ``# Planning system`` and ``# Runtime state`` header comments unconditionally
+    on every update, so a second run over a partially-populated .gitignore
+    appended a duplicate comment header. The fix guards each comment behind a
+    not-already-present check (needs_managed_comment / needs_local_comment).
+    """
+
+    def test_managed_comment_not_duplicated_on_second_run(self, tmp_path):
+        """Running setup twice must not duplicate the managed-comment header."""
+        # Arrange / Act — first run creates the file, second run is a no-op.
+        setup_gitignore(tmp_path)
+        second = setup_gitignore(tmp_path)
+
+        # Assert — second run is unchanged; the comment appears exactly once.
+        assert second['status'] == 'unchanged'
+        assert second['entries_added'] == 0
+        content = (tmp_path / '.gitignore').read_text()
+        assert content.count('# Planning system (managed by /marshall-steward)') == 1
+        assert content.count(
+            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+            '— managed by plan-marshall)'
+        ) == 1
+
+    def test_comment_not_re_emitted_when_entries_added_to_commented_file(self, tmp_path):
+        """An update that adds missing entries must not re-emit an existing comment.
+
+        A .gitignore that already carries the managed comment but is missing some
+        entries gets the entries added WITHOUT a second copy of the comment.
+        """
+        # Arrange — managed comment present, but worktrees entry missing.
+        gitignore_path = tmp_path / '.gitignore'
+        gitignore_path.write_text(
+            '# Planning system (managed by /marshall-steward)\n'
+            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+            '— managed by plan-marshall)\n'
+            '.plan/*\n!.plan/marshal.json\n!.plan/project-architecture/\n'
+        )
+
+        # Act — adds the missing .plan/local/worktrees/ entry.
+        result = setup_gitignore(tmp_path)
+
+        # Assert — entry added, but neither comment is duplicated.
+        assert result['status'] == 'updated'
+        assert result['entries_added'] == 1
+        content = gitignore_path.read_text()
+        assert content.count('# Planning system (managed by /marshall-steward)') == 1
+        assert content.count(
+            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+            '— managed by plan-marshall)'
+        ) == 1
+        assert '.plan/local/worktrees/' in content
 
 
 class TestGitignoreSetupDryRun:

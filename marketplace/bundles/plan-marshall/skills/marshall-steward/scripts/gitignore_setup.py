@@ -88,6 +88,7 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
     has_marshal_exception = False
     has_architecture_exception = False
     has_plan_local_worktrees = False
+    has_managed_comment = False
     has_local_comment = False
     content = ''
 
@@ -107,6 +108,8 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
             # Accept .plan/local/worktrees/ (preferred) and .plan/local/worktrees (no trailing slash)
             if stripped in ('.plan/local/worktrees/', '.plan/local/worktrees'):
                 has_plan_local_worktrees = True
+            if stripped == GITIGNORE_COMMENT:
+                has_managed_comment = True
             if stripped == GITIGNORE_LOCAL_COMMENT:
                 has_local_comment = True
 
@@ -116,6 +119,7 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
         'has_marshal_exception': has_marshal_exception,
         'has_architecture_exception': has_architecture_exception,
         'has_plan_local_worktrees': has_plan_local_worktrees,
+        'has_managed_comment': has_managed_comment,
         'has_local_comment': has_local_comment,
         'content': content,
     }
@@ -146,6 +150,7 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
     if not status['has_plan_local_worktrees']:
         entries_to_add.append(GITIGNORE_PLAN_LOCAL_WORKTREES)
 
+    needs_managed_comment = not status['has_managed_comment']
     needs_local_comment = not status['has_local_comment']
 
     result = {
@@ -154,7 +159,7 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
         'dry_run': dry_run,
     }
 
-    if not entries_to_add and not needs_local_comment:
+    if not entries_to_add and not needs_managed_comment and not needs_local_comment:
         result['status'] = 'unchanged'
         return result
 
@@ -182,8 +187,11 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
         if content and not content.endswith('\n\n'):
             content += '\n'
 
-        # Add comment and entries (include the local-state doc comment too)
-        content += f'{GITIGNORE_COMMENT}\n'
+        # Add comment and entries (include the local-state doc comment too).
+        # Emit the managed-comment header only when it is not already present so
+        # a re-run does not duplicate it.
+        if needs_managed_comment:
+            content += f'{GITIGNORE_COMMENT}\n'
         if needs_local_comment:
             content += f'{GITIGNORE_LOCAL_COMMENT}\n'
         for entry in entries_to_add:

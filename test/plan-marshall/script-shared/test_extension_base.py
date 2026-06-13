@@ -13,6 +13,7 @@ from extension_base import (  # type: ignore[import-not-found]
     ROLE_TEST,
     BuildExtensionBase,
     ExtensionBase,
+    _route_matches,
     derive_globs_from_tree,
 )
 
@@ -546,6 +547,94 @@ def test_filter_live_and_dead_route_same_domain_yields_only_live(tmp_path):
     _git_init_and_track(tmp_path, ['scripts/live.py'])
     derived = derive_globs_from_tree(str(tmp_path), [_MixedExtension()])
     assert derived['minimal'] == [('scripts/*.py', 'production')]
+
+
+# =============================================================================
+# _route_matches() — bare-basename vs path-bearing matching regimes
+# =============================================================================
+#
+# The shared matcher behind the build-map fix. A route pattern with no ``/`` is a
+# bare-basename route and matches on the path's BASENAME anywhere in the tree (so
+# a config file living only in a subdirectory still matches); a route pattern
+# carrying a ``/`` is a path-bearing route and matches against the WHOLE
+# repo-relative path. These tests pin both regimes — the unit contract behind the
+# bare-basename subdir-matching defect fix.
+
+
+def test_route_matches_bare_basename_at_repo_root():
+    """A bare-basename route matches the file at repo root."""
+    assert _route_matches('package.json', 'package.json') is True
+
+
+def test_route_matches_bare_basename_in_subdirectory():
+    """A bare-basename route matches the file in a subdirectory (anchored on basename).
+
+    The core defect fix: ``package.json`` (no ``/``) must match
+    ``nifi-cuioss-ui/package.json``. The pre-fix full-path fnmatch would have
+    returned False and wrongly pruned the subdir-only config route.
+    """
+    assert _route_matches('nifi-cuioss-ui/package.json', 'package.json') is True
+
+
+def test_route_matches_bare_basename_glob_in_subdirectory():
+    """A bare-basename GLOB (e.g. ``*.tsx``) matches by basename anywhere in the tree."""
+    assert _route_matches('src/components/App.tsx', '*.tsx') is True
+
+
+def test_route_matches_bare_basename_no_false_positive_on_different_basename():
+    """A bare-basename route does NOT match a file whose basename differs.
+
+    Anchoring on the basename keeps the match precise: ``package.json`` must not
+    match ``nifi-cuioss-ui/package-lock.json`` (a different basename) even though
+    it lives in a subdirectory.
+    """
+    assert _route_matches('nifi-cuioss-ui/package-lock.json', 'package.json') is False
+
+
+def test_route_matches_path_bearing_matches_full_path():
+    """A path-bearing route matches against the whole repo-relative path."""
+    assert _route_matches('scripts/foo.py', 'scripts/*.py') is True
+
+
+def test_route_matches_path_bearing_no_false_positive_on_unrelated_dir():
+    """A path-bearing route does NOT false-positive on a same-basename file elsewhere.
+
+    The complementary half of the bare-basename fix: a path-bearing glob
+    (``scripts/*.py``) stays anchored to its directory, so a file with the same
+    basename under an unrelated directory (``vendor/foo.py``) does NOT match.
+    """
+    assert _route_matches('vendor/foo.py', 'scripts/*.py') is False
+
+
+def test_route_matches_path_bearing_single_star_spans_slash():
+    """A single ``*`` in a path-bearing route spans ``/`` (fnmatch semantics)."""
+    assert _route_matches('marketplace/targets/generate.py', 'marketplace/*.py') is True
+
+
+def test_derive_globs_retains_bare_basename_subdir_only_config(tmp_path):
+    """derive_globs_from_tree retains a bare-basename config route whose file is subdir-only.
+
+    End-to-end regression for the bare-basename subdir-matching defect at the
+    deriver: a ``package.json`` config route survives the tree-presence prune even
+    though the only tracked ``package.json`` lives in a subdirectory
+    (``nifi-cuioss-ui/package.json``), because the deriver matches via
+    ``_route_matches`` (basename-anchored for bare-basename routes). Before the
+    fix the full-path fnmatch pruned it as a dead glob.
+    """
+
+    class _SubdirConfigExtension(BuildExtensionBase):
+        def get_skill_domains(self) -> list[dict]:
+            return [{
+                'domain': {'key': 'frontend', 'name': 'Frontend', 'description': 'Test only'},
+                'profiles': {},
+            }]
+
+        def classify_globs(self) -> list[tuple[str, str]]:
+            return [('package.json', ROLE_CONFIG)]
+
+    _git_init_and_track(tmp_path, ['nifi-cuioss-ui/package.json'])
+    derived = derive_globs_from_tree(str(tmp_path), [_SubdirConfigExtension()])
+    assert derived['frontend'] == [('package.json', 'config')]
 
 
 if __name__ == '__main__':
