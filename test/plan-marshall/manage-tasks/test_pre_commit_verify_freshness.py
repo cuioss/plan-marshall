@@ -31,6 +31,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from conftest import PROJECT_ROOT
+from toon_parser import serialize_toon
 
 # Load the cmd module via importlib (mirrors the qgate-mechanical test bootstrap).
 _SCRIPTS_DIR = (
@@ -131,6 +132,34 @@ def _write_ledger(tmp_path: Path, entries: list[dict]) -> Path:
     lines = [json.dumps(entry, sort_keys=True) for entry in entries]
     ledger_path.write_text('\n'.join(lines) + ('\n' if lines else ''), encoding='utf-8')
     return ledger_path
+
+
+def _write_manifest(plan_dir: Path, *, verification_steps: list[str]) -> Path:
+    """Write an ``execution.toon`` manifest whose ``phase_5.verification_steps`` is set.
+
+    The ``documentation_only`` exemption (``_is_documentation_only``) reads
+    ``execution.toon`` from the plan dir and parses TOON, returning ``True`` only
+    when ``phase_5.verification_steps`` is an empty list. Serializing via
+    ``serialize_toon`` guarantees the on-disk format round-trips through the
+    ``parse_toon`` the helper-under-test uses to read it back — the same path the
+    production ``manage-execution-manifest`` composer writes.
+
+    An empty ``verification_steps`` list models a documentation-only plan (no
+    build step runs); a non-empty list models a code-only / mixed plan that must
+    still be gated by the ledger scan.
+    """
+    manifest = {
+        'manifest_version': 1,
+        'plan_id': plan_dir.name,
+        'phase_5': {
+            'early_terminate': len(verification_steps) == 0,
+            'verification_steps': verification_steps,
+        },
+        'phase_6': {'steps': []},
+    }
+    manifest_path = plan_dir / 'execution.toon'
+    manifest_path.write_text(serialize_toon(manifest), encoding='utf-8')
+    return manifest_path
 
 
 def _stub_worktree_sha(monkeypatch, sha: str | None) -> None:
@@ -326,3 +355,192 @@ def test_malformed_ledger_lines_are_skipped(plan_context, monkeypatch, tmp_path)
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-malformed'))
 
     assert result['status'] == 'fresh', result
+
+
+# =============================================================================
+# documentation_only exemption
+# =============================================================================
+#
+# A documentation-only plan composes an empty ``phase_5.verification_steps`` in
+# its ``execution.toon`` manifest, runs no build, and therefore stamps no
+# ``kind=build`` ledger entry. The gate must EXEMPT such a plan (short-circuit to
+# ``fresh`` / ``documentation_only`` BEFORE the ledger scan) rather than fail
+# closed on the missing build proof. The exemption fires ONLY when the manifest
+# is present AND ``phase_5.verification_steps`` is empty; an absent manifest, a
+# malformed manifest, or a non-empty step list must fall through to the ledger
+# scan unchanged (regression coverage that code-only / mixed plans stay gated).
+
+
+def test_documentation_only_exempts_when_verification_steps_empty(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """Empty ``phase_5.verification_steps`` -> fresh / documentation_only.
+
+    The exemption short-circuits BEFORE the ledger scan, so the gate passes even
+    though no build proof exists. Both the sha stub and the ledger stub are set
+    to fail-closed values (``None`` sha, missing ledger file) to prove the
+    short-circuit fires ahead of them.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-docs-only')
+    _write_status(plan_dir)
+    _write_manifest(plan_dir, verification_steps=[])
+    # Fail-closed boundary values — if the exemption did NOT short-circuit first,
+    # the None sha would force ``undecidable / head_unresolvable``.
+    _stub_worktree_sha(monkeypatch, None)
+    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-docs-only'))
+
+    assert result['status'] == 'fresh', result
+    assert result['reason'] == 'documentation_only'
+    assert result['plan_id'] == 'freshness-docs-only'
+    # No ledger fields — the short-circuit returns before the scan.
+    assert 'worktree_sha' not in result
+    assert 'ledger_path' not in result
+
+
+def test_documentation_only_exemption_ignores_stale_ledger(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """Empty steps exempt even when the ledger would otherwise report stale.
+
+    A real worktree sha plus a ledger holding only a build for a DIFFERENT sha is
+    the canonical ``stale`` setup. The exemption must still win because it
+    precedes the ledger scan.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-docs-stale-ledger')
+    _write_status(plan_dir)
+    _write_manifest(plan_dir, verification_steps=[])
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(
+        Namespace(plan_id='freshness-docs-stale-ledger')
+    )
+
+    assert result['status'] == 'fresh', result
+    assert result['reason'] == 'documentation_only'
+
+
+def test_non_empty_verification_steps_still_gated_by_ledger(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A code-only / mixed plan (non-empty steps) is NOT exempted -> still gated.
+
+    Regression guard: the exemption must fire ONLY for empty steps. With a
+    non-empty step list and a ledger that holds no matching build, the gate falls
+    through to the ledger scan and reports ``stale``.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-code-only')
+    _write_status(plan_dir)
+    _write_manifest(plan_dir, verification_steps=['quality-gate', 'module-tests'])
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-code-only'))
+
+    assert result['status'] == 'stale', result
+    assert 'reason' not in result or result.get('reason') != 'documentation_only'
+
+
+def test_non_empty_verification_steps_still_resolves_fresh_with_matching_build(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A non-exempt plan with a matching build still resolves fresh via the scan.
+
+    Confirms the fall-through path is the ORDINARY ledger gate (not a degraded
+    branch): a code-only plan with a successful build for the current sha passes
+    on its own freshness proof, with no documentation_only reason attached.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-code-fresh')
+    _write_status(plan_dir)
+    _write_manifest(plan_dir, verification_steps=['quality-gate'])
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-code-fresh'))
+
+    assert result['status'] == 'fresh', result
+    assert result.get('reason') != 'documentation_only'
+    assert result['worktree_sha'] == _CURRENT_SHA
+
+
+def test_absent_manifest_falls_through_to_ledger_scan(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """No ``execution.toon`` -> no exemption -> ordinary ledger scan.
+
+    Regression guard: a missing manifest must NOT be treated as documentation_only.
+    With no matching build, the gate reports ``stale``.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-no-manifest')
+    _write_status(plan_dir)
+    # Deliberately do NOT write execution.toon.
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-manifest'))
+
+    assert result['status'] == 'stale', result
+    assert result.get('reason') != 'documentation_only'
+
+
+def test_malformed_manifest_falls_through_to_ledger_scan(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A manifest that does not parse -> no exemption -> ordinary ledger scan.
+
+    ``_is_documentation_only`` degrades to ``False`` (no exemption) on any parse
+    error, so the gate falls through to the ledger scan rather than failing on
+    the unreadable manifest.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-bad-manifest')
+    _write_status(plan_dir)
+    (plan_dir / 'execution.toon').write_text(
+        '{ this is not valid toon\n  : : :\n', encoding='utf-8'
+    )
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-bad-manifest'))
+
+    # Fell through to the scan, which finds the matching build -> fresh, but via
+    # the ordinary path, NOT the documentation_only short-circuit.
+    assert result['status'] == 'fresh', result
+    assert result.get('reason') != 'documentation_only'
+    assert result['worktree_sha'] == _CURRENT_SHA
+
+
+def test_manifest_without_verification_steps_key_falls_through(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A ``phase_5`` block lacking ``verification_steps`` -> no exemption.
+
+    ``_is_documentation_only`` returns ``True`` only when ``verification_steps``
+    is present AND an empty list. An absent key (``None``) is not an empty list,
+    so the plan is not exempted and the ledger scan governs the outcome.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-no-steps-key')
+    _write_status(plan_dir)
+    manifest = {
+        'manifest_version': 1,
+        'plan_id': 'freshness-no-steps-key',
+        'phase_5': {'early_terminate': False},
+        'phase_6': {'steps': []},
+    }
+    (plan_dir / 'execution.toon').write_text(
+        serialize_toon(manifest), encoding='utf-8'
+    )
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-steps-key'))
+
+    assert result['status'] == 'stale', result
+    assert result.get('reason') != 'documentation_only'

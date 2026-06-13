@@ -31,6 +31,15 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 Run the returned `executable` as the verification command for the task.
 
+## Tier routing
+
+The `architecture resolve` envelope carries an `execution_tier` field that decides **who runs the build**, not just how long it may take:
+
+- **`execution_tier=per_task`** — the resolved `executable` runs **inline** in the step body. Pass `timeout: bash_timeout_seconds * 1000` on the Bash call so the synchronous build is not silently moved to the background.
+- **`execution_tier=orchestrator`** — the build is **handed off to the orchestrator** and is **NOT run inline** by this step. `build_verify` is the long-running full-test-suite step and is the prime candidate for this tier; the step body returns control to the orchestrator, which runs the build in its own envelope with the correct timeout. Do not background the command and do not poll for its completion from inside the step.
+
+Pass `--audit-plan-id {plan_id}` on the `architecture resolve` call so the resolved build's execution-log entries stay **plan-scoped regardless of which tier ultimately runs the build** — the routing holds whether the build runs inline (`per_task`) or is handed off (`orchestrator`).
+
 ## Return Contract
 
 Follows the standard phase-5-execute verification result shape: a non-zero exit code or test failures in the build log surface as failures and are routed through the Step 10 triage loop (fix-task creation, suppress, or accept) with `max_iterations` from config.

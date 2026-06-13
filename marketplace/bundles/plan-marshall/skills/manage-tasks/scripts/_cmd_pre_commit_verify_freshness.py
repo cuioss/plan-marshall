@@ -26,8 +26,19 @@ working-tree sha folds in the staged + unstaged + untracked-not-ignored state,
 so an uncommitted edit after a clean-tree build changes the sha and the gate
 correctly reports ``stale``.
 
-Three possible outcomes:
+Outcomes:
 
+- ``fresh`` / ``documentation_only`` — a documentation-only plan composes an
+                     empty ``phase_5.verification_steps`` in its
+                     ``execution.toon`` manifest, so it legitimately runs no
+                     build and therefore stamps no ``kind=build`` ledger entry.
+                     The gate short-circuits to ``status: fresh`` with
+                     ``reason: documentation_only`` BEFORE the ledger scan: a
+                     plan with no build step needs no freshness proof. This
+                     branch fires only when the manifest is present AND its
+                     ``phase_5.verification_steps`` list is empty; an absent
+                     manifest or a non-empty step list falls through to the
+                     ledger scan below.
 - ``fresh``        — a ``kind=build`` entry with ``exit_code == 0`` and a
                      matching ``worktree_sha`` exists; a successful build has
                      been observed against the current on-disk state, so the
@@ -59,7 +70,14 @@ from _ledger_core import (  # type: ignore[import-not-found]
 from _tasks_core import get_plan_dir  # type: ignore[import-not-found]
 from constants import FILE_STATUS  # type: ignore[import-not-found]
 from file_ops import read_json  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]
 from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
+
+# The per-plan execution manifest lives alongside status.json at
+# .plan/local/plans/{plan_id}/execution.toon. Its name is owned by
+# manage-execution-manifest (MANIFEST_FILENAME); duplicated here as a literal
+# to keep this command inside the manage-tasks sys.path island.
+_MANIFEST_FILENAME = 'execution.toon'
 
 
 def _read_status_metadata(plan_id: str) -> dict:
@@ -102,6 +120,38 @@ def _resolve_worktree_root(plan_id: str) -> Path:
     return Path.cwd()
 
 
+def _is_documentation_only(plan_id: str) -> bool:
+    """Return True when the plan's execution manifest declares no phase-5 build.
+
+    A documentation-only plan composes an empty ``phase_5.verification_steps``
+    list in its ``execution.toon`` manifest and therefore never stamps a
+    ``kind=build`` ledger entry. The freshness gate must exempt such plans
+    rather than fail closed on the missing build proof.
+
+    Reads ``execution.toon`` directly via the same plan-dir resolution the
+    command already uses for ``status.json``, parsing TOON to stay inside the
+    manage-tasks sys.path island. Returns ``False`` (no exemption — fall
+    through to the ledger scan) when the manifest is absent, unreadable, or
+    when ``phase_5.verification_steps`` is present and non-empty. Returns
+    ``True`` only when the manifest parses AND its ``phase_5.verification_steps``
+    is an empty list.
+    """
+    manifest_path = get_plan_dir(plan_id) / _MANIFEST_FILENAME
+    if not manifest_path.is_file():
+        return False
+    try:
+        manifest = parse_toon(manifest_path.read_text(encoding='utf-8'))
+    except Exception:  # noqa: BLE001 — degrade to no-exemption on any parse error
+        return False
+    if not isinstance(manifest, dict):
+        return False
+    phase_5 = manifest.get('phase_5', {})
+    if not isinstance(phase_5, dict):
+        return False
+    verification_steps = phase_5.get('verification_steps', None)
+    return isinstance(verification_steps, list) and len(verification_steps) == 0
+
+
 def cmd_pre_commit_verify_freshness(args) -> dict:
     """Handle ``pre-commit-verify-freshness`` subcommand.
 
@@ -109,6 +159,24 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
     deliverable 4 of the plan ``solution_outline.md``.
     """
     plan_id: str = args.plan_id
+
+    # Documentation-only short-circuit: a docs-only plan composes an empty
+    # phase_5.verification_steps and therefore never stamps a kind=build ledger
+    # entry. It needs no freshness proof, so exempt it BEFORE the ledger scan
+    # rather than fail closed on the missing build. Fires only when the manifest
+    # is present AND phase_5.verification_steps is empty; an absent manifest or a
+    # non-empty step list falls through to the ledger scan unchanged.
+    if _is_documentation_only(plan_id):
+        return {
+            'status': 'fresh',
+            'plan_id': plan_id,
+            'reason': 'documentation_only',
+            'message': (
+                'Plan composes an empty phase_5.verification_steps '
+                '(documentation-only); no build step runs, so no freshness '
+                'proof is required. Gate permitted without a ledger scan.'
+            ),
+        }
 
     worktree_root = _resolve_worktree_root(plan_id)
     current_sha = compute_worktree_sha(worktree_root)
