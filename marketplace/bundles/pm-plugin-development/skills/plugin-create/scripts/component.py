@@ -67,10 +67,6 @@ Examples:
 
     args = parser.parse_args()
 
-    if not args.command:
-        parser.print_help()
-        return 1
-
     result = args.func(args)
     output_toon(result)
     return 0

@@ -126,7 +126,7 @@ def get_configured_mapped_profiles(project_dir: str = '.') -> set[str]:
         return set()
 
     # Parse comma-separated pairs (profile:canonical), extract profile IDs
-    mapped = set()
+    mapped: set[str] = set()
     for pair in map_value.split(','):
         pair = pair.strip()
         if ':' in pair:
@@ -248,7 +248,7 @@ def get_unmatched_profiles(project_dir: str = '.') -> list[str]:
         List of unmatched profile IDs (excluding configured profiles)
     """
     result = list_profiles(project_dir)
-    unmatched = set()
+    unmatched: set[str] = set()
 
     for module in result['modules']:
         for profile in module['profiles']:
@@ -273,7 +273,7 @@ def suggest_classifications(project_dir: str = '.') -> list[dict[str, str]]:
         List of suggestions with profile_id, suggested, and reason
     """
     unmatched = get_unmatched_profiles(project_dir)
-    suggestions = []
+    suggestions: list[dict[str, str]] = []
 
     for profile_id in unmatched:
         classification = classify_profile(profile_id)
@@ -376,6 +376,7 @@ def cmd_suggest(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    """Parse arguments, resolve the project dir, and dispatch the subcommand."""
     parser = argparse.ArgumentParser(description='Maven profile management operations', allow_abbrev=False)
     parser.add_argument(
         '--project-dir',

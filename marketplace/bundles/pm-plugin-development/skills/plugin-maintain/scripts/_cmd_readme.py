@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Readme subcommand for generating bundle README files."""
 
+import argparse
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 
 def extract_description(file_path: Path) -> str:
@@ -125,7 +127,7 @@ def generate_readme_content(bundle_name: str, commands: list[dict], agents: list
     return '\n'.join(lines)
 
 
-def cmd_readme(args) -> dict:
+def cmd_readme(args: argparse.Namespace) -> dict[str, Any]:
     """Handle readme subcommand."""
     bundle_path = Path(args.bundle_path)
 

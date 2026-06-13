@@ -81,7 +81,7 @@ def serialize_toon_simple(data: dict[str, Any]) -> str:
     return '\n'.join(lines)
 
 
-def _format_dict_inline(d: dict) -> str:
+def _format_dict_inline(d: dict[str, Any]) -> str:
     """Format a dict inline for list items."""
     parts = [f'{k}: {v}' for k, v in d.items()]
     return ', '.join(parts)

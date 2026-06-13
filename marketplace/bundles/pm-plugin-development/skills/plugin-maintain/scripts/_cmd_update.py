@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Update subcommand for applying updates to component files."""
 
+import argparse
 import json
 import re
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 
 def create_backup(path: Path) -> str:
@@ -15,7 +17,7 @@ def create_backup(path: Path) -> str:
     return str(backup_path)
 
 
-def restore_backup(path: Path, backup_path: str):
+def restore_backup(path: Path, backup_path: str) -> None:
     """Restore file from backup."""
     shutil.copy2(backup_path, path)
 
@@ -82,7 +84,7 @@ def apply_section_update(content: str, section: str, new_content: str) -> str:
     return content
 
 
-def apply_updates(component_path: str, updates: list) -> dict:
+def apply_updates(component_path: str, updates: list[dict[str, Any]]) -> dict[str, Any]:
     """Apply a list of updates to component."""
     path = Path(component_path)
 
@@ -95,7 +97,7 @@ def apply_updates(component_path: str, updates: list) -> dict:
     try:
         content = path.read_text()
         updates_applied = 0
-        changes = []
+        changes: list[str] = []
 
         for update in updates:
             update_type = update.get('type', '')
@@ -149,7 +151,7 @@ def apply_updates(component_path: str, updates: list) -> dict:
         return {'component_path': component_path, 'success': False, 'error': str(e), 'backup_restored': True}
 
 
-def cmd_update(args) -> dict:
+def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
     """Handle update subcommand."""
     # Read updates from stdin or --updates argument
     if args.updates:

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Analyze subcommand for component quality analysis."""
 
+import argparse
 import re
 from pathlib import Path
+from typing import Any
 
 from _maintain_shared import parse_frontmatter
 
@@ -19,7 +21,7 @@ def detect_component_type(path: Path) -> str:
     return 'unknown'
 
 
-def check_sections(body: str) -> dict:
+def check_sections(body: str) -> dict[str, Any]:
     """Check for required and recommended sections."""
     missing_sections = []
 
@@ -36,9 +38,9 @@ def check_sections(body: str) -> dict:
     return {'sections_found': len(headers), 'missing_sections': missing_sections}
 
 
-def check_bloat(body: str, total_lines: int) -> list:
+def check_bloat(body: str, total_lines: int) -> list[dict[str, Any]]:
     """Check for bloat indicators."""
-    issues = []
+    issues: list[dict[str, Any]] = []
 
     if total_lines > 800:
         issues.append(
@@ -79,9 +81,9 @@ def check_bloat(body: str, total_lines: int) -> list:
     return issues
 
 
-def check_tool_compliance(frontmatter: dict | None, body: str) -> list:
+def check_tool_compliance(frontmatter: dict[str, Any] | None, body: str) -> list[dict[str, Any]]:
     """Check for tool compliance issues."""
-    issues: list[dict] = []
+    issues: list[dict[str, Any]] = []
 
     if frontmatter is None:
         return issues
@@ -118,7 +120,7 @@ def check_tool_compliance(frontmatter: dict | None, body: str) -> list:
     return issues
 
 
-def calculate_quality_score(frontmatter: dict | None, body: str, issues: list) -> int:
+def calculate_quality_score(frontmatter: dict[str, Any] | None, body: str, issues: list[dict[str, Any]]) -> int:
     """Calculate quality score 0-100."""
     score = 100
 
@@ -144,9 +146,11 @@ def calculate_quality_score(frontmatter: dict | None, body: str, issues: list) -
     return max(0, min(100, score))
 
 
-def generate_suggestions(frontmatter: dict | None, body: str, issues: list, section_info: dict) -> list:
+def generate_suggestions(
+    frontmatter: dict[str, Any] | None, body: str, issues: list[dict[str, Any]], section_info: dict[str, Any]
+) -> list[str]:
     """Generate improvement suggestions."""
-    suggestions = []
+    suggestions: list[str] = []
 
     if frontmatter is None:
         suggestions.append('Add YAML frontmatter with name, description, and tools fields')
@@ -165,7 +169,7 @@ def generate_suggestions(frontmatter: dict | None, body: str, issues: list, sect
     return list(set(suggestions))  # Deduplicate
 
 
-def analyze_component(component_path: str) -> dict:
+def analyze_component(component_path: str) -> dict[str, Any]:
     """Main analysis function."""
     path = Path(component_path)
 
@@ -188,7 +192,7 @@ def analyze_component(component_path: str) -> dict:
                 break
 
     # Perform checks
-    issues = []
+    issues: list[dict[str, Any]] = []
 
     if frontmatter is None:
         issues.append(
@@ -222,7 +226,7 @@ def analyze_component(component_path: str) -> dict:
     }
 
 
-def cmd_analyze(args) -> dict:
+def cmd_analyze(args: argparse.Namespace) -> dict[str, Any]:
     """Handle analyze subcommand."""
     result = analyze_component(args.component)
     result['status'] = 'success' if 'error' not in result else 'error'
