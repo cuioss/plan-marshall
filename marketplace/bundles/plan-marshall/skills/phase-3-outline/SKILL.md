@@ -615,7 +615,8 @@ All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgat
 - [solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) - Deliverable structure
 - [workflow-architecture](../../ref-workflow-architecture) - Workflow architecture overview
 - [outline-workflow-detail.md](standards/outline-workflow-detail.md) - Detailed track procedures (Q-Gate re-entry, recipe detection, change-type detection, Simple/Complex track steps)
-- [consumer-sweep.md](standards/consumer-sweep.md) - Outline-time procedure that enumerates cross-bundle consumers of deleted/renamed public symbols before deliverable finalization (mandatory when delete/rename language applies to a public symbol)
+- [consumer-sweep.md](standards/consumer-sweep.md) - Outline-time procedure that enumerates cross-bundle consumers of deleted/renamed public symbols before deliverable finalization (mandatory when delete/rename language applies to a public symbol) — the *consume-side* sibling of [contract-surface-enumeration.md](standards/contract-surface-enumeration.md)
+- [contract-surface-enumeration.md](standards/contract-surface-enumeration.md) - Outline-time procedure that enumerates the *describe-side* surface (docstrings, help strings, SKILL.md command tables/Output examples, cross-referencing standards docs) asserting a script's old contract before deliverable finalization (mandatory when a deliverable changes a contract/semantic surface — output keys, seeding semantics, default-config behavior, verb side-effects, returned schema)
 - [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) - Dispatch granularity heuristics (10K rule, script-over-dispatch, bundle-over-iterate) — orienting reference for why the Complex Track bundles Steps 9c + 10 into one `phase-3-outline` dispatch rather than dispatching per-deliverable
 
 ### Phase-boundary metric bookkeeping
