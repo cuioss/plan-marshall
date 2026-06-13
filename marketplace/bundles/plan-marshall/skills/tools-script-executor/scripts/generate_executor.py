@@ -832,7 +832,7 @@ def check_paths_exist(mappings: dict[str, str]) -> tuple[list, list]:
 # ============================================================================
 
 
-def cmd_generate(args) -> dict:
+def cmd_generate(args: argparse.Namespace) -> dict:
     """Generate executor with embedded script mappings."""
     # Resolve base path
     try:
@@ -909,7 +909,7 @@ def cmd_generate(args) -> dict:
     return result
 
 
-def cmd_verify(args) -> dict:
+def cmd_verify(args: argparse.Namespace) -> dict:
     """Verify existing executor."""
     valid, count = verify_executor()
     if valid:
@@ -991,7 +991,7 @@ def _detect_notation_drift(
     return drift
 
 
-def cmd_drift(args) -> dict:
+def cmd_drift(args: argparse.Namespace) -> dict:
     """Compare executor mappings with current bundles state."""
     executor_mappings = get_executor_mappings()
 
@@ -1052,7 +1052,7 @@ def cmd_drift(args) -> dict:
     }
 
 
-def cmd_paths(args) -> dict:
+def cmd_paths(args: argparse.Namespace) -> dict:
     """Verify all mapped paths exist."""
     mappings = get_executor_mappings()
 
@@ -1070,7 +1070,7 @@ def cmd_paths(args) -> dict:
     }
 
 
-def cmd_cleanup(args) -> dict:
+def cmd_cleanup(args: argparse.Namespace) -> dict:
     """Clean up old global logs."""
     deleted = cleanup_old_logs(max_age_days=args.max_age_days)
     return {'status': 'success', 'deleted': deleted}
