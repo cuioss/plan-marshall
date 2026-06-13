@@ -108,7 +108,7 @@ The boundary with `consumer-sweep.md`: that standard owns the *discovery procedu
 ## 5. Cross-References
 
 - [`consumer-sweep.md`](consumer-sweep.md) — The consume-side sibling. Owns the discovery procedure for structural symbol removals/renames (every importer/caller of a deleted/renamed public symbol). Run alongside this standard when a contract change also removes or renames a symbol (§4).
-- `outline-workflow-detail.md` — Step 7 (Simple Track) and Step 10 (Complex Track) apply this standard before deliverable finalization when the trigger heuristic (§1) fires.
-- `change-feature.md` and `change-tech_debt.md` — discovery sub-sections cross-reference this standard for contract/semantic changes.
+- [`outline-workflow-detail.md`](../outline-workflow-detail.md) — Step 7 (Simple Track) and Step 10 (Complex Track) apply this standard before deliverable finalization when the trigger heuristic (§1) fires.
+- [`change-feature.md`](../change-feature.md) and [`change-tech_debt.md`](../change-tech_debt.md) — discovery sub-sections cross-reference this standard for contract/semantic changes.
 - `plan-marshall:phase-3-outline/SKILL.md` — `## Related` section carries a one-line cross-reference pointing here, parallel to the `consumer-sweep.md` entry.
 - Rationale: contract/semantic changes that update code but not the describe surface ship self-contradicting components; the stale prose is discovered late (after deliverable finalization) during pre-submission self-review. Enumerating the describe surface before finalization prevents the drift.
