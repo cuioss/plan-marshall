@@ -6,6 +6,8 @@ The user edits the file directly to add real secrets.
 No interactive input, no secrets through the LLM.
 """
 
+import argparse
+
 from _list_providers import find_provider_with_details  # type: ignore[import-not-found]
 from _providers_core import (
     SECRET_PLACEHOLDERS,
@@ -20,7 +22,7 @@ from _providers_core import (
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
-def run_configure(args) -> int:
+def run_configure(args: argparse.Namespace) -> int:
     """Execute the configure subcommand."""
     providers = load_declared_providers()
 

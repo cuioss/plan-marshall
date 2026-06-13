@@ -6,6 +6,7 @@ security boundary. These deny rules are an additional layer that is
 fundamentally incomplete (blocklist approach).
 """
 
+import argparse
 import os
 import sys
 
@@ -33,7 +34,7 @@ DENY_RULES = [
 ]
 
 
-def run_ensure_denied(args) -> int:
+def run_ensure_denied(args: argparse.Namespace) -> int:
     """Execute the ensure-denied subcommand."""
     target = args.target
 

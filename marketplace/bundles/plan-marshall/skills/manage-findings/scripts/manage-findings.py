@@ -96,10 +96,7 @@ def cmd_query(args: argparse.Namespace) -> dict:
 
 def cmd_get(args: argparse.Namespace) -> dict:
     """Handle: get"""
-    result = get_finding(args.plan_id, args.hash_id)
-    if result:
-        return result
-    return {'status': 'error', 'message': f'Finding not found: {args.hash_id}'}
+    return get_finding(args.plan_id, args.hash_id)
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict:

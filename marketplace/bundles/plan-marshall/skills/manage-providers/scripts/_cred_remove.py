@@ -2,11 +2,13 @@
 Remove credential file.
 """
 
+import argparse
+
 from _providers_core import get_project_name, remove_credential
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
-def run_remove(args) -> int:
+def run_remove(args: argparse.Namespace) -> int:
     """Execute the remove subcommand."""
     skill = args.skill
     scope = args.scope

@@ -4,13 +4,15 @@ List configured credential skills by scanning CREDENTIALS_DIR.
 Outputs metadata only — never includes credential values.
 """
 
+import argparse
 import json
+from pathlib import Path
 
 from _providers_core import CREDENTIALS_DIR, get_project_name
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
-def _read_entry(path, scope: str) -> dict | None:
+def _read_entry(path: Path, scope: str) -> dict | None:
     """Read credential file and return non-secret metadata entry.
 
     Returns None if the file is not valid JSON.
@@ -31,7 +33,7 @@ def _read_entry(path, scope: str) -> dict | None:
     }
 
 
-def _scan_dir(directory, scope: str) -> list[dict]:
+def _scan_dir(directory: Path, scope: str) -> list[dict]:
     """Scan directory for *.json credential files (non-recursive)."""
     if not directory.exists() or not directory.is_dir():
         return []
@@ -45,7 +47,7 @@ def _scan_dir(directory, scope: str) -> list[dict]:
     return entries
 
 
-def run_list(args) -> int:
+def run_list(args: argparse.Namespace) -> int:
     """Execute the list subcommand."""
     scope = args.scope
 

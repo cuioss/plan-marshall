@@ -27,6 +27,7 @@ is also ``never``), ``auto`` (the default) defers to the signals.
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from typing import Any
@@ -208,7 +209,7 @@ def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def cmd_planning_lane_route(args) -> dict:
+def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
     """Resolve ``{light|deep}`` from the DQ1 signal set and persist it.
 
     ``--lane-override {deep|light}`` seeds ``status.metadata.planning_lane_override``
@@ -303,7 +304,7 @@ def cmd_planning_lane_route(args) -> dict:
     }
 
 
-def cmd_planning_lane_escalate(args) -> dict:
+def cmd_planning_lane_escalate(args: argparse.Namespace) -> dict[str, Any]:
     """One-way ratchet: set ``planning_lane=deep`` + ``lane_escalated=true``.
 
     Monotonic light→deep. Refuses any attempt to set a lane back to ``light``

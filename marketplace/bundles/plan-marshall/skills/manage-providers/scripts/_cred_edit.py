@@ -5,6 +5,8 @@ Updates non-secret fields (URL, auth_type) via CLI args.
 For secret changes, the user edits the credential file directly.
 """
 
+import argparse
+
 from _providers_core import (
     VALID_AUTH_TYPES,
     check_credential_completeness,
@@ -15,7 +17,7 @@ from _providers_core import (
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
-def run_edit(args) -> int:
+def run_edit(args: argparse.Namespace) -> int:
     """Execute the edit subcommand."""
     skill = args.skill
     scope = args.scope

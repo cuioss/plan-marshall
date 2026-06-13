@@ -5,6 +5,7 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 
 import argparse
 import shutil
+from pathlib import Path
 from typing import Any
 
 from _handshake_commands import cmd_verify  # type: ignore[import-not-found]
@@ -39,7 +40,7 @@ VERIFY_REFUSAL_ERRORS = frozenset({
 })
 
 
-def verify_blocks_transition(verify_result: dict) -> bool:
+def verify_blocks_transition(verify_result: dict[str, Any]) -> bool:
     """Return True when a cmd_verify result MUST block the transition.
 
     Consumed by both ``cmd_transition`` (refuse to mutate state) and
@@ -51,7 +52,7 @@ def verify_blocks_transition(verify_result: dict) -> bool:
     return verify_result.get('error') in VERIFY_REFUSAL_ERRORS
 
 
-def cmd_create(args: argparse.Namespace) -> dict:
+def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
     """Create status.json for a new plan.
 
     When the plan runs in an isolated worktree, the caller passes
@@ -134,7 +135,7 @@ def cmd_create(args: argparse.Namespace) -> dict:
     return result
 
 
-def cmd_transition(args: argparse.Namespace) -> dict | None:
+def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     """Transition to next phase."""
     status = require_status(args)
     if status is None:
@@ -211,7 +212,7 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
     return result
 
 
-def cmd_archive(args: argparse.Namespace) -> dict | None:
+def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     """Archive a completed plan.
 
     Atomically closes the active phase before moving the plan directory:
@@ -278,7 +279,7 @@ def cmd_archive(args: argparse.Namespace) -> dict | None:
     return {'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)}
 
 
-def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Any) -> tuple[bool, list[str]]:
+def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> tuple[bool, list[str]]:
     """Scan ``plan_dir`` for lesson-{id}.md files and move each one back to the
     global lessons-learned directory.
 
@@ -328,7 +329,7 @@ def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Any) -> tuple[bool, li
     return bool(restored_ids), restored_ids
 
 
-def cmd_delete_plan(args: argparse.Namespace) -> dict:
+def cmd_delete_plan(args: argparse.Namespace) -> dict[str, Any]:
     """Delete an entire plan directory."""
     require_valid_plan_id(args)
 

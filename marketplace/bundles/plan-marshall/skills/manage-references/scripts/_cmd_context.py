@@ -4,13 +4,15 @@
 Handles: get-context
 """
 
+import argparse
+
 from _references_core import (
     require_references,
 )
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
-def cmd_get_context(args) -> dict:
+def cmd_get_context(args: argparse.Namespace) -> dict:
     """Get all references context in one call."""
     require_valid_plan_id(args)
 

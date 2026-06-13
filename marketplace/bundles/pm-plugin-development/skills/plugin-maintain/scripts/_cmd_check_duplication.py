@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Check-duplication subcommand for detecting duplicate knowledge in skills."""
 
+import argparse
 import re
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import Any
 
 
 def normalize_text(text: str) -> str:
@@ -50,9 +52,11 @@ def calculate_similarity(text1: str, text2: str) -> float:
     return SequenceMatcher(None, normalized1, normalized2).ratio()
 
 
-def find_duplicate_sections(new_sections: dict, existing_sections: dict) -> list:
+def find_duplicate_sections(
+    new_sections: dict[str, str], existing_sections: dict[str, str]
+) -> list[dict[str, Any]]:
     """Find sections that have high overlap."""
-    duplicates = []
+    duplicates: list[dict[str, Any]] = []
 
     for new_name, new_content in new_sections.items():
         for existing_name, existing_content in existing_sections.items():
@@ -69,7 +73,7 @@ def find_duplicate_sections(new_sections: dict, existing_sections: dict) -> list
     return duplicates
 
 
-def check_duplication(skill_path: str, content_file: str) -> dict:
+def check_duplication(skill_path: str, content_file: str) -> dict[str, Any]:
     """Main duplication checking function."""
     skill_dir = Path(skill_path)
     content_path = Path(content_file)
@@ -115,7 +119,7 @@ def check_duplication(skill_path: str, content_file: str) -> dict:
         }
 
     # Scan existing references
-    duplicate_files = []
+    duplicate_files: list[dict[str, Any]] = []
     max_overlap: float = 0
 
     for ref_file in refs_dir.glob('*.md'):
@@ -158,7 +162,7 @@ def check_duplication(skill_path: str, content_file: str) -> dict:
     }
 
 
-def cmd_check_duplication(args) -> dict:
+def cmd_check_duplication(args: argparse.Namespace) -> dict[str, Any]:
     """Handle check-duplication subcommand."""
     result = check_duplication(args.skill_path, args.content_file)
     result['status'] = 'success' if 'error' not in result else 'error'

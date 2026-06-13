@@ -8,7 +8,7 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 EXIT_SUCCESS = 0
 
 
-def parse_frontmatter(content: str) -> tuple[dict | None, str]:
+def parse_frontmatter(content: str) -> tuple[dict[str, Any] | None, str]:
     """Parse YAML frontmatter from content. Returns (frontmatter_dict, body)."""
     if not content.startswith('---'):
         return None, content
@@ -44,6 +44,6 @@ def parse_frontmatter(content: str) -> tuple[dict | None, str]:
     return frontmatter, body
 
 
-def output_toon(data: dict) -> None:
+def output_toon(data: dict[str, Any]) -> None:
     """Output TOON result to stdout."""
     print(serialize_toon(data))

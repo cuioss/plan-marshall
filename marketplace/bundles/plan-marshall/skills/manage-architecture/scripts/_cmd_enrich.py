@@ -9,6 +9,7 @@ Persistence model: per-module on-disk layout under
 touched module's ``enriched.json``.
 """
 
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,7 @@ from _architecture_core import (
 # =============================================================================
 
 
-def enrich_project(description: str, project_dir: str = '.', reasoning: str | None = None) -> dict:
+def enrich_project(description: str, project_dir: str = '.', reasoning: str | None = None) -> dict[str, Any]:
     """Update project description on ``_project.json``.
 
     Args:
@@ -59,7 +60,7 @@ def enrich_project(description: str, project_dir: str = '.', reasoning: str | No
 
 def _load_module_or_raise(
     module_name: str, project_dir: str, crawled_modules: dict[str, dict[str, Any]] | None = None
-) -> dict:
+) -> dict[str, Any]:
     """Validate the module exists in the live crawl and return its derived dict.
 
     When ``crawled_modules`` is supplied (the per-call discovery result produced
@@ -89,7 +90,7 @@ def enrich_module(
     reasoning: str | None = None,
     responsibility_reasoning: str | None = None,
     purpose_reasoning: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Update module responsibility and purpose."""
     _load_module_or_raise(module_name, project_dir)
 
@@ -121,8 +122,8 @@ def enrich_package(
     package_name: str,
     description: str,
     project_dir: str = '.',
-    components: list | None = None,
-) -> dict:
+    components: list[str] | None = None,
+) -> dict[str, Any]:
     """Add or update key package description and components."""
     _load_module_or_raise(module_name, project_dir)
 
@@ -147,7 +148,7 @@ def enrich_package(
 
     save_module_enriched(module_name, enriched, project_dir)
 
-    result = {'status': 'success', 'module': module_name, 'package': package_name, 'action': action}
+    result: dict[str, Any] = {'status': 'success', 'module': module_name, 'package': package_name, 'action': action}
 
     if 'components' in pkg_data:
         result['components'] = pkg_data['components']
@@ -155,7 +156,7 @@ def enrich_package(
     return result
 
 
-def _extract_skill_names_from_profile(profile_data: dict) -> list[str]:
+def _extract_skill_names_from_profile(profile_data: dict[str, Any]) -> list[str]:
     """Extract skill names from a profile's structured format."""
     skills = []
     for section in ['defaults', 'optionals']:
@@ -170,7 +171,7 @@ def _extract_skill_names_from_profile(profile_data: dict) -> list[str]:
     return skills
 
 
-def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
+def _validate_skills_by_profile_structure(skills_by_profile: dict[str, Any]) -> list[str]:
     """Validate the skills_by_profile structure."""
     warnings: list[str] = []
 
@@ -243,7 +244,7 @@ def enrich_add_domain(
     reasoning: str | None = None,
     profiles: set[str] | None = None,
     crawled_modules: dict[str, dict[str, Any]] | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Add a domain's skills to a module's skills_by_profile additively.
 
     ``crawled_modules`` is the optional per-call discovery result threaded by
@@ -350,7 +351,7 @@ def enrich_add_domain(
     }
 
 
-def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasoning: str | None = None) -> dict:
+def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasoning: str | None = None) -> dict[str, Any]:
     """Populate skills_by_profile for every module × every applicable extension.
 
     Iterates all modules from ``_project.json`` and all discovered extensions.
@@ -385,7 +386,7 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
 
     # Pre-compute (bundle, domains) pairs once — get_skill_domains() does not
     # depend on module_name, so calling it inside the module loop is wasteful.
-    ext_domains: list[tuple[str, list]] = []
+    ext_domains: list[tuple[str, list[dict[str, Any]]]] = []
     for ext in extensions:
         ext_module = ext.get('module')
         bundle = ext.get('bundle', 'unknown')
@@ -439,8 +440,8 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
 
 
 def enrich_skills_by_profile(
-    module_name: str, skills_by_profile: dict, project_dir: str = '.', reasoning: str | None = None
-) -> dict:
+    module_name: str, skills_by_profile: dict[str, Any], project_dir: str = '.', reasoning: str | None = None
+) -> dict[str, Any]:
     """Update skills organized by profile."""
     _load_module_or_raise(module_name, project_dir)
 
@@ -455,7 +456,7 @@ def enrich_skills_by_profile(
 
     save_module_enriched(module_name, enriched, project_dir)
 
-    result = {'status': 'success', 'module': module_name, 'skills_by_profile': skills_by_profile}
+    result: dict[str, Any] = {'status': 'success', 'module': module_name, 'skills_by_profile': skills_by_profile}
 
     if warnings:
         result['warnings'] = warnings
@@ -465,11 +466,11 @@ def enrich_skills_by_profile(
 
 def enrich_dependencies(
     module_name: str,
-    key_deps: list | None = None,
-    internal_deps: list | None = None,
+    key_deps: list[str] | None = None,
+    internal_deps: list[str] | None = None,
     project_dir: str = '.',
     reasoning: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Update key and internal dependencies."""
     module_data = _load_module_or_raise(module_name, project_dir)
 
@@ -501,22 +502,22 @@ def enrich_dependencies(
     return result
 
 
-def enrich_tip(module_name: str, tip: str, project_dir: str = '.') -> dict:
+def enrich_tip(module_name: str, tip: str, project_dir: str = '.') -> dict[str, Any]:
     """Add implementation tip to a module."""
     return _append_to_list(module_name, 'tips', tip, project_dir)
 
 
-def enrich_insight(module_name: str, insight: str, project_dir: str = '.') -> dict:
+def enrich_insight(module_name: str, insight: str, project_dir: str = '.') -> dict[str, Any]:
     """Add learned insight to a module."""
     return _append_to_list(module_name, 'insights', insight, project_dir)
 
 
-def enrich_best_practice(module_name: str, practice: str, project_dir: str = '.') -> dict:
+def enrich_best_practice(module_name: str, practice: str, project_dir: str = '.') -> dict[str, Any]:
     """Add best practice to a module."""
     return _append_to_list(module_name, 'best_practices', practice, project_dir)
 
 
-def _append_to_list(module_name: str, field: str, value: str, project_dir: str = '.') -> dict:
+def _append_to_list(module_name: str, field: str, value: str, project_dir: str = '.') -> dict[str, Any]:
     """Append value to a list field in module enrichment."""
     _load_module_or_raise(module_name, project_dir)
 
@@ -538,7 +539,7 @@ def _append_to_list(module_name: str, field: str, value: str, project_dir: str =
 # =============================================================================
 
 
-def _enrichment_not_found_result(module_name: str, project_dir: str) -> dict:
+def _enrichment_not_found_result(module_name: str, project_dir: str) -> dict[str, Any]:
     """Return enrichment data not found error dict for a specific module."""
     return {
         'status': 'error',
@@ -549,7 +550,7 @@ def _enrichment_not_found_result(module_name: str, project_dir: str) -> dict:
     }
 
 
-def cmd_enrich_project(args) -> dict:
+def cmd_enrich_project(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for enrich project command."""
     try:
         reasoning = getattr(args, 'reasoning', None)
@@ -560,7 +561,7 @@ def cmd_enrich_project(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_module(args) -> dict:
+def cmd_enrich_module(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for enrich module command."""
     try:
         reasoning = getattr(args, 'reasoning', None)
@@ -583,7 +584,7 @@ def cmd_enrich_module(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_package(args) -> dict:
+def cmd_enrich_package(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for enrich package command."""
     try:
         components = None
@@ -598,7 +599,7 @@ def cmd_enrich_package(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_skills_by_profile(args) -> dict:
+def cmd_enrich_skills_by_profile(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for enrich skills-by-profile command."""
     import json
 
@@ -616,7 +617,7 @@ def cmd_enrich_skills_by_profile(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_dependencies(args) -> dict:
+def cmd_enrich_dependencies(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for enrich dependencies command."""
     try:
         key_deps = None
@@ -636,7 +637,7 @@ def cmd_enrich_dependencies(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_tip(args) -> dict:
+def cmd_enrich_tip(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for enrich tip command."""
     try:
         return enrich_tip(args.module, args.tip, args.project_dir)
@@ -648,7 +649,7 @@ def cmd_enrich_tip(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_insight(args) -> dict:
+def cmd_enrich_insight(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for enrich insight command."""
     try:
         return enrich_insight(args.module, args.insight, args.project_dir)
@@ -660,7 +661,7 @@ def cmd_enrich_insight(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_best_practice(args) -> dict:
+def cmd_enrich_best_practice(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for enrich best-practice command."""
     try:
         return enrich_best_practice(args.module, args.practice, args.project_dir)
@@ -672,7 +673,7 @@ def cmd_enrich_best_practice(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_add_domain(args) -> dict:
+def cmd_enrich_add_domain(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for enrich add-domain command."""
     try:
         include_optionals = getattr(args, 'include_optionals', False)
@@ -695,7 +696,7 @@ def cmd_enrich_add_domain(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_all(args) -> dict:
+def cmd_enrich_all(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for enrich all command."""
     try:
         include_optionals = getattr(args, 'include_optionals', False)

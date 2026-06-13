@@ -31,7 +31,7 @@ def load_settings(path: str | None) -> tuple[dict, str | None]:
         return {}, f'Settings file not found: {path}'
 
     try:
-        with open(settings_path) as f:
+        with open(settings_path, encoding='utf-8') as f:
             data = json.load(f)
 
         if 'permissions' not in data:
@@ -49,10 +49,10 @@ def save_settings(path: str, settings: dict) -> bool:
     """Save settings to a JSON file."""
     try:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, 'w') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             json.dump(settings, f, indent=2)
         return True
-    except Exception:
+    except (OSError, TypeError):
         return False
 
 
@@ -62,7 +62,7 @@ def load_settings_path(path: Path) -> dict[str, Any]:
         return {'permissions': {'allow': [], 'deny': [], 'ask': []}}
 
     try:
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             data: dict[str, Any] = json.load(f)
         if 'permissions' not in data:
             data['permissions'] = {}

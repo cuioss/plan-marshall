@@ -24,6 +24,7 @@ script never silently fabricates a value but does record absence in
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 from typing import Any
@@ -75,7 +76,7 @@ def _validate_score(name: str, value: Any) -> float:
     return score
 
 
-def _load_scores(args) -> tuple[dict[str, float], list[str]]:
+def _load_scores(args: argparse.Namespace) -> tuple[dict[str, float], list[str]]:
     """Return ``(scores_by_dimension, missing_dimensions)``.
 
     The caller may supply scores either via ``--scores-file PATH`` (JSON
@@ -117,7 +118,7 @@ def _load_scores(args) -> tuple[dict[str, float], list[str]]:
     return scores, missing
 
 
-def cmd_aggregate_confidence(args) -> dict[str, Any]:
+def cmd_aggregate_confidence(args: argparse.Namespace) -> dict[str, Any]:
     """Compute the weighted confidence aggregate for phase-2-refine Step 10."""
     plan_id: str = args.plan_id
     persist: bool = bool(getattr(args, 'persist', False))

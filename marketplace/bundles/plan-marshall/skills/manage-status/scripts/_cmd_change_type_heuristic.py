@@ -18,8 +18,9 @@ identical narratives identically when both are exercised.
 
 from __future__ import annotations
 
+import argparse
 import re
-from pathlib import Path
+from typing import Any
 
 from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
 from _status_core import read_status, write_status
@@ -177,7 +178,7 @@ def _pick_winner(scores: dict[str, int]) -> tuple[str | None, float, bool]:
     return top_key, round(confidence, 3), ambiguous
 
 
-def cmd_change_type_heuristic(args) -> dict:
+def cmd_change_type_heuristic(args: argparse.Namespace) -> dict[str, Any]:
     """Run the deterministic change-type classifier for a plan.
 
     With ``--persist`` (default off), the resolved change type lands in
@@ -245,8 +246,3 @@ def cmd_change_type_heuristic(args) -> dict:
         'scores': scores,
         'persisted': persisted,
     }
-
-
-# Ensure the import is resolvable in static-analysis contexts that don't
-# inherit the executor's PYTHONPATH.
-_ = Path

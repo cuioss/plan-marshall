@@ -4,6 +4,8 @@
 Handles: create, read, get, set
 """
 
+import argparse
+
 from _references_core import (
     get_references_path,
     read_references,
@@ -13,7 +15,7 @@ from _references_core import (
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
-def cmd_create(args) -> dict:
+def cmd_create(args: argparse.Namespace) -> dict:
     """Create references.json with basic fields."""
     require_valid_plan_id(args)
 
@@ -48,7 +50,7 @@ def cmd_create(args) -> dict:
     }
 
 
-def cmd_read(args) -> dict:
+def cmd_read(args: argparse.Namespace) -> dict:
     """Read entire references.json."""
     require_valid_plan_id(args)
 
@@ -67,7 +69,7 @@ def cmd_read(args) -> dict:
     return {'status': 'success', 'plan_id': args.plan_id, 'references': summary}
 
 
-def cmd_get(args) -> dict:
+def cmd_get(args: argparse.Namespace) -> dict:
     """Get a specific field value."""
     require_valid_plan_id(args)
 
@@ -88,7 +90,7 @@ def cmd_get(args) -> dict:
     return {'status': 'success', 'plan_id': args.plan_id, 'field': args.field, 'value': value}
 
 
-def cmd_set(args) -> dict:
+def cmd_set(args: argparse.Namespace) -> dict:
     """Set a specific field value."""
     require_valid_plan_id(args)
 

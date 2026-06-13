@@ -56,13 +56,13 @@ CERTAINTY_VALUES = VALID_CERTAINTIES
 # --- Path Helpers ---
 
 
-def get_findings_dir(plan_id: str) -> 'Path':
+def get_findings_dir(plan_id: str) -> Path:
     """Returns .plan/local/plans/{plan_id}/artifacts/findings/"""
     validate_plan_id(plan_id)
     return get_artifact_path(plan_id, FILE_FINDINGS_DIR)
 
 
-def get_findings_path(plan_id: str, finding_type: str) -> 'Path':
+def get_findings_path(plan_id: str, finding_type: str) -> Path:
     """Returns .plan/local/plans/{plan_id}/artifacts/findings/{type}.jsonl
 
     Per-type splitting: each finding type lives in its own JSONL file under the
@@ -74,7 +74,7 @@ def get_findings_path(plan_id: str, finding_type: str) -> 'Path':
     return get_findings_dir(plan_id) / f'{finding_type}.jsonl'
 
 
-def get_qgate_path(plan_id: str, phase: str) -> 'Path':
+def get_qgate_path(plan_id: str, phase: str) -> Path:
     """Returns .plan/local/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl"""
     if phase not in QGATE_PHASES:
         raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
@@ -533,7 +533,7 @@ def clear_qgate_findings(
 # --- Assessment Path Helper ---
 
 
-def get_assessments_path(plan_id: str) -> 'Path':
+def get_assessments_path(plan_id: str) -> Path:
     """Returns .plan/local/plans/{plan_id}/artifacts/findings/assessments.jsonl"""
     return get_findings_dir(plan_id) / 'assessments.jsonl'
 
@@ -631,7 +631,7 @@ def clear_assessments(
         remaining = [r for r in records if r.get('agent') != agent]
         cleared = original_count - len(remaining)
         ensure_parent_dir(path)
-        with open(path, 'w', encoding='utf-8') as f:
+        with path.open('w', encoding='utf-8') as f:
             for record in remaining:
                 f.write(json.dumps(record, ensure_ascii=False) + '\n')
     else:

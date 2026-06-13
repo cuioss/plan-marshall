@@ -17,6 +17,7 @@ Where ``live`` is the union of:
     - parsed paths from ``git -C {worktree_path} status --porcelain``
 """
 
+import argparse
 import subprocess
 from pathlib import Path
 
@@ -29,7 +30,7 @@ from _references_core import (
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
-def cmd_compute_footprint(args) -> dict:
+def cmd_compute_footprint(args: argparse.Namespace) -> dict:
     """Return the live plan-branch-only footprint set.
 
     Read-only — never writes references.json.

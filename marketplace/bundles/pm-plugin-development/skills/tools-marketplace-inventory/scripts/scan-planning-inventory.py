@@ -23,6 +23,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
@@ -56,7 +57,7 @@ def find_marketplace_inventory_script() -> Path:
     return script_dir / 'scan-marketplace-inventory.py'
 
 
-def run_marketplace_inventory(include_descriptions: bool) -> dict:
+def run_marketplace_inventory(include_descriptions: bool) -> dict[str, Any]:
     """Run marketplace-inventory with planning filters."""
     script_path = find_marketplace_inventory_script()
 
@@ -75,21 +76,21 @@ def run_marketplace_inventory(include_descriptions: bool) -> dict:
         args.extend(['--include-descriptions', '--format', 'json'])
     # TOON is default format
 
-    result = subprocess.run(args, capture_output=True, text=True)
+    result = subprocess.run(args, capture_output=True, text=True, check=False)
 
     if result.returncode != 0:
         raise RuntimeError(f'marketplace-inventory failed: {result.stderr}')
 
     if include_descriptions:
         # Parse JSON when using --format json
-        data: dict = json.loads(result.stdout)
+        data: dict[str, Any] = json.loads(result.stdout)
     else:
         # Parse TOON for default format
         data = parse_toon(result.stdout)
     return data
 
 
-def categorize_components(inventory: dict) -> dict:
+def categorize_components(inventory: dict[str, Any]) -> dict[str, Any]:
     """Categorize components into core and derived.
 
     Handles two formats:
@@ -98,17 +99,17 @@ def categorize_components(inventory: dict) -> dict:
 
     Items may be strings (default mode) or dicts (with --include-descriptions).
     """
-    core = {
+    core: dict[str, Any] = {
         'bundle': CORE_BUNDLE,
         'agents': [],
         'commands': [],
         'skills': [],
         'scripts': [],
     }
-    derived = []
+    derived: list[dict[str, Any]] = []
 
     # Normalize items to dicts with 'name' key for consistent processing
-    def normalize_items(items):
+    def normalize_items(items: list[Any]) -> list[dict[str, Any]]:
         """Convert items to dicts with 'name' key."""
         if not items:
             return []
@@ -148,7 +149,7 @@ def categorize_components(inventory: dict) -> dict:
     }
 
 
-def calculate_statistics(categorized: dict) -> dict:
+def calculate_statistics(categorized: dict[str, Any]) -> dict[str, Any]:
     """Calculate statistics for categorized components."""
     core = categorized['core']
     derived = categorized['derived']
@@ -179,7 +180,7 @@ def calculate_statistics(categorized: dict) -> dict:
     }
 
 
-def generate_summary(categorized: dict, stats: dict) -> dict:
+def generate_summary(categorized: dict[str, Any], stats: dict[str, Any]) -> dict[str, Any]:
     """Generate summary output format."""
     core = categorized['core']
     derived = categorized['derived']

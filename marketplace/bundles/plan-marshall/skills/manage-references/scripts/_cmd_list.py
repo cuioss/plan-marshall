@@ -4,6 +4,8 @@
 Handles: add-list, set-list
 """
 
+import argparse
+
 from _references_core import (
     read_references,
     require_references,
@@ -12,7 +14,7 @@ from _references_core import (
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
-def cmd_add_list(args) -> dict:
+def cmd_add_list(args: argparse.Namespace) -> dict:
     """Add multiple values to a list field."""
     require_valid_plan_id(args)
 
@@ -49,7 +51,7 @@ def cmd_add_list(args) -> dict:
     }
 
 
-def cmd_set_list(args) -> dict:
+def cmd_set_list(args: argparse.Namespace) -> dict:
     """Set a list field to new values (replaces existing list)."""
     require_valid_plan_id(args)
 

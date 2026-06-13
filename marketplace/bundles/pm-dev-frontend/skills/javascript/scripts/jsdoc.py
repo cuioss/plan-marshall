@@ -112,9 +112,9 @@ def extract_function_params(param_str: str) -> list[str]:
     return params
 
 
-def check_function_jsdoc(jsdoc: str, params: list[str], has_return: bool) -> list[dict]:
+def check_function_jsdoc(jsdoc: str, params: list[str], has_return: bool) -> list[dict[str, Any]]:
     """Check JSDoc block for a function, return violations."""
-    violations = []
+    violations: list[dict[str, Any]] = []
 
     documented_params = PARAM_TAG_PATTERN.findall(jsdoc)
     documented_param_names = [p[1] for p in documented_params]
@@ -154,14 +154,14 @@ def check_function_jsdoc(jsdoc: str, params: list[str], has_return: bool) -> lis
     return violations
 
 
-def analyze_file(file_path: str, scope: str) -> list[dict]:
+def analyze_file(file_path: str, scope: str) -> list[dict[str, Any]]:
     """Analyze a single file for JSDoc violations."""
-    violations = []
+    violations: list[dict[str, Any]] = []
 
     try:
         with open(file_path, encoding='utf-8') as f:
             content = f.read()
-    except Exception as e:
+    except OSError as e:
         return [
             {
                 'file': file_path,
@@ -386,8 +386,8 @@ def analyze_jsdoc(target: str, is_directory: bool, scope: str) -> dict[str, Any]
             },
         }
 
-    all_violations = []
-    files_with_violations = set()
+    all_violations: list[dict[str, Any]] = []
+    files_with_violations: set[str] = set()
 
     for file_path in files:
         violations = analyze_file(file_path, scope)
@@ -415,7 +415,7 @@ def analyze_jsdoc(target: str, is_directory: bool, scope: str) -> dict[str, Any]
     }
 
 
-def cmd_analyze(args) -> int:
+def cmd_analyze(args: argparse.Namespace) -> int:
     """Handle analyze subcommand."""
     if args.directory:
         result = analyze_jsdoc(args.directory, is_directory=True, scope=args.scope)
@@ -433,6 +433,7 @@ def cmd_analyze(args) -> int:
 
 
 def main() -> int:
+    """Parse arguments and dispatch the JSDoc analysis subcommand."""
     parser = argparse.ArgumentParser(
         description='JSDoc documentation analysis tool',
         formatter_class=argparse.RawDescriptionHelpFormatter,

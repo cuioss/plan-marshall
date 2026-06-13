@@ -141,7 +141,7 @@ def add_default_permissions(allow_list: list[str]) -> list[str]:
     return added
 
 
-def resolve_settings_arg(args) -> str:
+def resolve_settings_arg(args: argparse.Namespace) -> str:
     """Resolve settings path from --settings or --scope argument."""
     if hasattr(args, 'settings') and args.settings:
         return str(args.settings)
@@ -150,7 +150,7 @@ def resolve_settings_arg(args) -> str:
     return str(get_project_settings_path_for_write())
 
 
-def cmd_apply_fixes(args) -> dict:
+def cmd_apply_fixes(args: argparse.Namespace) -> dict:
     """Handle apply-fixes subcommand."""
     settings_path = resolve_settings_arg(args)
     settings, error = load_settings(settings_path)
@@ -205,7 +205,7 @@ def cmd_apply_fixes(args) -> dict:
 # =============================================================================
 
 
-def cmd_add(args) -> dict:
+def cmd_add(args: argparse.Namespace) -> dict:
     """Handle add subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -238,7 +238,7 @@ def cmd_add(args) -> dict:
 # =============================================================================
 
 
-def cmd_remove(args) -> dict:
+def cmd_remove(args: argparse.Namespace) -> dict:
     """Handle remove subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -270,7 +270,7 @@ def cmd_remove(args) -> dict:
 # =============================================================================
 
 
-def cmd_ensure(args) -> dict:
+def cmd_ensure(args: argparse.Namespace) -> dict:
     """Handle ensure subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -362,7 +362,7 @@ def generate_wildcard(parsed_permissions: list[dict]) -> str:
     return f'{perm_type}(**/{base_name}-*.{extension})'
 
 
-def cmd_consolidate(args) -> dict:
+def cmd_consolidate(args: argparse.Namespace) -> dict:
     """Handle consolidate subcommand."""
     settings_path = resolve_settings_arg(args)
     settings, error = load_settings(settings_path)
@@ -493,7 +493,7 @@ def generate_required_wildcards(marketplace: dict) -> list[str]:
     return wildcards
 
 
-def cmd_ensure_wildcards(args) -> dict:
+def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
     """Handle ensure-wildcards subcommand."""
     settings, error = load_settings(args.settings)
     if error:
@@ -558,7 +558,7 @@ def cmd_ensure_wildcards(args) -> dict:
 # =============================================================================
 
 
-def cmd_remove_redundant(args) -> dict:
+def cmd_remove_redundant(args: argparse.Namespace) -> dict:
     """Handle remove-redundant subcommand.
 
     Removes permissions from local/project settings that are redundant with
@@ -675,7 +675,7 @@ def cmd_remove_redundant(args) -> dict:
 # =============================================================================
 
 
-def cmd_apply_project_step_permissions(args) -> dict:
+def cmd_apply_project_step_permissions(args: argparse.Namespace) -> dict:
     """Handle apply-project-step-permissions subcommand.
 
     Detects project:{skill} step references in marshal.json that lack matching
@@ -905,7 +905,7 @@ def scan_marketplace_dir(marketplace_dir: str) -> dict:
     }
 
 
-def cmd_generate_wildcards(args) -> dict:
+def cmd_generate_wildcards(args: argparse.Namespace) -> dict:
     """Handle generate-wildcards subcommand."""
     if args.marketplace_dir:
         inventory = scan_marketplace_dir(args.marketplace_dir)
@@ -984,7 +984,7 @@ def cmd_generate_wildcards(args) -> dict:
 # =============================================================================
 
 
-def cmd_ensure_executor(args) -> dict:
+def cmd_ensure_executor(args: argparse.Namespace) -> dict:
     """Handle ensure-executor subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -1025,7 +1025,7 @@ def is_individual_script_permission(permission: str) -> bool:
     return permission.startswith('Bash(python3 ') and '/marketplace/bundles/' in permission and '/scripts' in permission
 
 
-def cmd_cleanup_scripts(args) -> dict:
+def cmd_cleanup_scripts(args: argparse.Namespace) -> dict:
     """Handle cleanup-scripts subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -1080,7 +1080,7 @@ def cmd_cleanup_scripts(args) -> dict:
 # =============================================================================
 
 
-def cmd_migrate_executor(args) -> dict:
+def cmd_migrate_executor(args: argparse.Namespace) -> dict:
     """Handle migrate-executor subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -1140,7 +1140,7 @@ def cmd_migrate_executor(args) -> dict:
 # =============================================================================
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Permission fix - write operations for Claude Code settings', allow_abbrev=False
     )

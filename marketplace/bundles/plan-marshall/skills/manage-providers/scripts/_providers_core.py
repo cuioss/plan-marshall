@@ -12,11 +12,14 @@ Security constraints:
 - RestClient enforces HTTPS when auth headers are present
 """
 
+import base64
 import http.client
 import json
 import os
 import re
+import shlex
 import ssl
+import subprocess
 import time
 import urllib.parse
 from datetime import UTC, datetime
@@ -340,7 +343,7 @@ def load_declared_providers() -> list[dict[str, Any]]:
 class RestClientError(Exception):
     """HTTP error with status code and redacted response body."""
 
-    def __init__(self, status: int, body: str):
+    def __init__(self, status: int, body: str) -> None:
         self.status = status
         self.body = body
         super().__init__(f'HTTP {status}: {body[:200]}')
@@ -361,7 +364,7 @@ class RestClient:
     USER_AGENT = 'plan-marshall-rest/1.0'
     _SENSITIVE_PATTERN = re.compile(r'(token|bearer|password|secret|key)["\s:=]+\S+', re.IGNORECASE)
 
-    def __init__(self, base_url: str, headers: dict):
+    def __init__(self, base_url: str, headers: dict) -> None:
         parsed = urllib.parse.urlparse(base_url)
         self.scheme = parsed.scheme
 
@@ -405,7 +408,7 @@ class RestClient:
         if conn is not None:
             try:
                 conn.close()
-            except Exception:
+            except OSError:
                 pass
             self._conn = None
 
@@ -530,8 +533,6 @@ def get_authenticated_client(skill_name: str, project_name: str | None = None) -
                 )
             headers[header_name] = template.format(token=token)
         elif auth_type == 'basic':
-            import base64
-
             username = credential.get('username', '')
             password = credential.get('password', '')
             if not username:
@@ -582,8 +583,6 @@ def verify_system_auth(provider: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dict with keys: success, skill, command, exit_code, output
     """
-    import subprocess
-
     skill_name = provider.get('skill_name', 'unknown')
     verify_command = provider.get('verify_command', '')
 
@@ -597,8 +596,6 @@ def verify_system_auth(provider: dict[str, Any]) -> dict[str, Any]:
         }
 
     try:
-        import shlex
-
         result = subprocess.run(
             shlex.split(verify_command),
             capture_output=True,

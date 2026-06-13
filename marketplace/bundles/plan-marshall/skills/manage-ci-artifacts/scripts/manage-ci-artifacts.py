@@ -46,7 +46,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from file_ops import get_base_dir, get_plan_dir  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from toon_parser import (  # type: ignore[import-not-found]
+    ToonParseError,
+    parse_toon,
+    serialize_toon,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -267,7 +271,7 @@ def persist(
     if manifest_path.is_file():
         try:
             existing_manifest = parse_toon(manifest_path.read_text(encoding='utf-8'))
-        except Exception as exc:
+        except (OSError, ToonParseError) as exc:
             return {
                 'status': 'error',
                 'error': f'existing manifest at {manifest_path} unparseable: {exc}',
@@ -291,9 +295,13 @@ def persist(
             try:
                 raw_content = fetcher(provider, run_id, job)
             except Exception as exc:
-                # A single-job fetch failure must not abort the whole
-                # persist call — write an explanatory stub so the
-                # retrospective still sees a per-job artifact.
+                # ``fetcher`` is a pluggable seam (test double, or the
+                # provider-API ``ci checks logs`` path) whose exception
+                # surface cannot be enumerated ahead of time. A single-job
+                # fetch failure must not abort the whole persist call, so
+                # the failure is captured into the per-job artifact rather
+                # than swallowed — the retrospective still sees an
+                # explanatory ``[fetch-failed]`` stub.
                 raw_content = f'[fetch-failed] {exc}\n'
         log_target.write_text(raw_content or '', encoding='utf-8')
         log_paths[stem] = _relative_str(log_target)
@@ -465,7 +473,7 @@ def read_manifest(*, plan_id: str, run_id: str) -> dict:
         }
     try:
         manifest = parse_toon(path.read_text(encoding='utf-8'))
-    except Exception as exc:
+    except (OSError, ToonParseError) as exc:
         return {
             'status': 'error',
             'error': f'manifest at {path} unparseable: {exc}',
@@ -542,7 +550,10 @@ def list_runs(*, plan_id: str) -> dict:
             continue
         try:
             manifest = parse_toon(manifest_path.read_text(encoding='utf-8'))
-        except Exception:
+        except (OSError, ToonParseError):
+            # A corrupt or unreadable manifest is skipped so enumeration
+            # survives a single bad run dir; a genuine bug (e.g. a
+            # programming error in the parser) still propagates.
             continue
         rows.append(
             {

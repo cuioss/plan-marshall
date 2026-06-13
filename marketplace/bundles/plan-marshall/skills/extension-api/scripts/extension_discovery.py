@@ -546,15 +546,20 @@ def cmd_apply_config_defaults(args) -> int:
 
     results = apply_config_defaults(project_root)
 
-    # Output in TOON format
-    print('status\tsuccess')
-    print(f'extensions_called\t{results["extensions_called"]}')
-    print(f'extensions_skipped\t{results["extensions_skipped"]}')
-    print(f'errors_count\t{len(results["errors"])}')
-
-    if results['errors']:
-        for error in results['errors']:
-            print(f'error\t{error}')
+    # Emit via the shared TOON serializer for parity with the error path above
+    # and cmd_list_retrospective_aspects below (the former hand-rolled
+    # tab-delimited rows were not valid `key: value` TOON).
+    print(
+        serialize_toon(
+            {
+                'status': 'success' if not results['errors'] else 'error',
+                'extensions_called': results['extensions_called'],
+                'extensions_skipped': results['extensions_skipped'],
+                'errors_count': len(results['errors']),
+                'errors': results['errors'],
+            }
+        )
+    )
 
     return 0 if not results['errors'] else 1
 

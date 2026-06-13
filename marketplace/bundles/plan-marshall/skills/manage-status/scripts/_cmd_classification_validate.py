@@ -32,6 +32,7 @@ what fired; routing is never gated.
 
 from __future__ import annotations
 
+import argparse
 import json
 from typing import Any
 
@@ -224,7 +225,7 @@ def _emit_finding(plan_id: str, descriptor: dict[str, Any]) -> tuple[str, str | 
     return str(result.get('status', 'unrecorded')), result.get('hash_id')
 
 
-def cmd_classification_validate(args) -> dict:
+def cmd_classification_validate(args: argparse.Namespace) -> dict[str, Any]:
     """Handle ``classification-validate --plan-id PLAN_ID`` (standalone gate run)."""
     plan_id: str = args.plan_id
 

@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import sys
 import time
+from typing import Any
 
 from run_config import timeout_get, timeout_set  # type: ignore[import-not-found]
 
@@ -16,7 +17,7 @@ DEFAULT_TIMEOUT = 300
 DEFAULT_INTERVAL = 30
 
 
-def match(parsed, pattern):
+def match(parsed: dict[str, Any], pattern: str) -> bool:
     """Check if parsed TOON matches field=value pattern."""
     if '=' in pattern:
         field, expected = pattern.split('=', 1)
@@ -24,12 +25,19 @@ def match(parsed, pattern):
     return bool(parsed.get(pattern))
 
 
-def finish(status, start, polls, command_key, error=None):
+def finish(
+    status: str, start: float, polls: int, command_key: str, error: str | None = None
+) -> dict[str, Any]:
     """Save timeout and build result dict."""
     duration = int(time.time() - start)
     timeout_set(command_key, duration)
 
-    output = {'status': status, 'duration_seconds': duration, 'polls': polls, 'command_key': command_key}
+    output: dict[str, Any] = {
+        'status': status,
+        'duration_seconds': duration,
+        'polls': polls,
+        'command_key': command_key,
+    }
     if error:
         output['error'] = error
 

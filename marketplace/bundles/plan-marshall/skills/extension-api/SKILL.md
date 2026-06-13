@@ -228,10 +228,11 @@ python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery 
 
 **Output (TOON)**:
 ```toon
-status	success
-extensions_called	3
-extensions_skipped	2
-errors_count	0
+status: success
+extensions_called: 3
+extensions_skipped: 2
+errors_count: 0
+errors[0]:
 ```
 
 ### Python Import Usage

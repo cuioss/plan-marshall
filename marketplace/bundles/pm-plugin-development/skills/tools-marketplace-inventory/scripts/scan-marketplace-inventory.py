@@ -38,6 +38,7 @@ Exit codes:
 
 import argparse
 import fnmatch
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -173,7 +174,7 @@ def discover_skill_subdirs(
     return subdirs
 
 
-def discover_agents(bundle_dir: Path, include_descriptions: bool, full: bool = False) -> list[dict]:
+def discover_agents(bundle_dir: Path, include_descriptions: bool, full: bool = False) -> list[dict[str, Any]]:
     """Discover agent .md files in bundle/agents/."""
     agents_dir = bundle_dir / 'agents'
     if not agents_dir.is_dir():
@@ -194,7 +195,7 @@ def discover_agents(bundle_dir: Path, include_descriptions: bool, full: bool = F
     return agents
 
 
-def discover_commands(bundle_dir: Path, include_descriptions: bool, full: bool = False) -> list[dict]:
+def discover_commands(bundle_dir: Path, include_descriptions: bool, full: bool = False) -> list[dict[str, Any]]:
     """Discover command .md files in bundle/commands/."""
     commands_dir = bundle_dir / 'commands'
     if not commands_dir.is_dir():
@@ -221,7 +222,7 @@ def discover_skills(
     full: bool = False,
     content_include: list[str] | None = None,
     content_exclude: list[str] | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Discover skill directories containing SKILL.md.
 
     When content_include/content_exclude are provided with full=True,
@@ -249,7 +250,7 @@ def discover_skills(
     return skills
 
 
-def discover_scripts(bundle_dir: Path, bundle_name: str) -> list[dict]:
+def discover_scripts(bundle_dir: Path, bundle_name: str) -> list[dict[str, Any]]:
     """Discover script files (.sh, .py) in skill/scripts/ directories.
 
     Returns scripts with 'notation' field in {bundle}:{skill}:{script} format.
@@ -300,7 +301,7 @@ def discover_scripts(bundle_dir: Path, bundle_name: str) -> list[dict]:
     return scripts
 
 
-def discover_tests(bundle_name: str) -> list[dict]:
+def discover_tests(bundle_name: str) -> list[dict[str, Any]]:
     """Discover test files for a bundle from test/{bundle-name}/ directory.
 
     Returns test files (test_*.py, conftest.py) with type indicator.
@@ -333,7 +334,7 @@ def discover_tests(bundle_name: str) -> list[dict]:
     return sorted(tests, key=lambda x: (x['name'], x['path']))
 
 
-def discover_project_skills() -> dict | None:
+def discover_project_skills() -> dict[str, Any] | None:
     """Discover project-level skills from .claude/skills/ directory.
 
     Returns a pseudo-bundle dict for project-skills, or None if no skills found.
@@ -384,7 +385,7 @@ def matches_name_pattern(name: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(name, pattern) for pattern in patterns)
 
 
-def filter_resources_by_pattern(resources: list[dict], patterns: list[str]) -> list[dict]:
+def filter_resources_by_pattern(resources: list[dict[str, Any]], patterns: list[str]) -> list[dict[str, Any]]:
     """Filter resources list by name patterns."""
     if not patterns:
         return resources
@@ -397,10 +398,10 @@ def matches_any_content_pattern(content: str, patterns: list[str]) -> bool:
 
 
 def filter_resources_by_content(
-    resources: list[dict],
+    resources: list[dict[str, Any]],
     include_patterns: list[str],
     exclude_patterns: list[str],
-) -> tuple[list[dict], dict[str, int]]:
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Filter resources by content patterns.
 
     Args:
@@ -464,7 +465,7 @@ def filter_resources_by_content(
 VALID_RESOURCE_TYPES = ('agents', 'commands', 'skills', 'scripts', 'tests')
 
 
-def parse_resource_types(resource_types_str: str) -> tuple[dict, str | None]:
+def parse_resource_types(resource_types_str: str) -> tuple[dict[str, bool], str | None]:
     """Parse resource types string and return inclusion flags and optional error."""
     if resource_types_str == 'all':
         return dict.fromkeys(VALID_RESOURCE_TYPES, True), None
@@ -560,7 +561,7 @@ def get_base_path(scope: str) -> Path:
     return _shared_get_base_path(scope)
 
 
-def serialize_inventory_toon(data: dict, full: bool = False) -> str:
+def serialize_inventory_toon(data: dict[str, Any], full: bool = False) -> str:
     """Serialize inventory to TOON with bundle-block structure.
 
     Bundles are top-level keys. Components are nested lists.
@@ -643,7 +644,9 @@ def serialize_inventory_toon(data: dict, full: bool = False) -> str:
     return '\n'.join(lines)
 
 
-def write_file_output(output: dict, output_dir: Path, custom_output: str = '', full: bool = False) -> tuple[Path, str]:
+def write_file_output(
+    output: dict[str, Any], output_dir: Path, custom_output: str = '', full: bool = False
+) -> tuple[Path, str]:
     """Write full output to TOON file, return (file_path, summary_toon_for_stdout).
 
     Args:
@@ -858,8 +861,6 @@ def main() -> int:
     if args.direct_result:
         # Direct mode: output to stdout (for small results or piped usage)
         if args.format == 'json':
-            import json
-
             # For JSON, convert bundles list to dict keyed by name
             json_output = {
                 'status': 'success',

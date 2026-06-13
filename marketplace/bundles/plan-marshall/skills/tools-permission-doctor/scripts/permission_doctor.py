@@ -312,7 +312,7 @@ def load_approved_permissions(approved_file: str | None) -> set[str]:
         return set()
 
     try:
-        with open(approved_path) as f:
+        with open(approved_path, encoding='utf-8') as f:
             data = json.load(f)
         commands = data.get('commands', {})
         setup_perms = commands.get('setup-project-permissions', {})
@@ -411,7 +411,7 @@ def load_marshal_config(path: str) -> tuple[dict, str | None]:
         return {}, f'marshal.json not found: {path}'
 
     try:
-        with open(marshal_path) as f:
+        with open(marshal_path, encoding='utf-8') as f:
             data = json.load(f)
         return data, None
     except json.JSONDecodeError as e:

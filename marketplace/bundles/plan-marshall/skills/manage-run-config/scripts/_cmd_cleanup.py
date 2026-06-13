@@ -7,11 +7,13 @@ calling manage-config via subprocess — intentional optimization
 to avoid process overhead for a frequently-called internal module.
 """
 
+import argparse
 import json
 import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
 from constants import DIR_ARCHIVED, DIR_LOGS  # type: ignore[import-not-found]
@@ -43,7 +45,7 @@ class CleanupStats:
     archived_plans_bytes: int = 0
 
 
-def get_retention_settings() -> dict | None:
+def get_retention_settings() -> dict[str, Any] | None:
     """
     Get retention settings from marshal.json.
 
@@ -76,7 +78,7 @@ def get_retention_settings() -> dict | None:
         )
         return None
 
-    retention: dict = config['system']['retention']
+    retention: dict[str, Any] = config['system']['retention']
     return retention
 
 
@@ -87,11 +89,6 @@ def get_path_age_days(path: Path) -> float:
         return (time.time() - mtime) / 86400
     except OSError:
         return 0
-
-
-# Aliases for backward compatibility
-get_dir_age_days = get_path_age_days
-get_file_age_days = get_path_age_days
 
 
 def clean_temp(dry_run: bool = False) -> tuple[int, int]:
@@ -147,7 +144,7 @@ def clean_logs(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
     total_bytes = 0
 
     for log_file in logs_dir.glob('*.log'):
-        if get_file_age_days(log_file) > max_age_days:
+        if get_path_age_days(log_file) > max_age_days:
             try:
                 size = log_file.stat().st_size
                 if not dry_run:
@@ -178,7 +175,7 @@ def clean_archived_plans(max_age_days: int, dry_run: bool = False) -> tuple[int,
         if not plan_dir.is_dir():
             continue
 
-        if get_dir_age_days(plan_dir) > max_age_days:
+        if get_path_age_days(plan_dir) > max_age_days:
             # Calculate size
             dir_size = 0
             try:
@@ -200,7 +197,7 @@ def clean_archived_plans(max_age_days: int, dry_run: bool = False) -> tuple[int,
     return deleted, total_bytes
 
 
-def get_status() -> dict | None:
+def get_status() -> dict[str, Any] | None:
     """
     Get status of all cleanable directories.
 
@@ -232,7 +229,7 @@ def get_status() -> dict | None:
     if logs_dir.exists():
         for f in logs_dir.glob('*.log'):
             logs_total += 1
-            if get_file_age_days(f) > retention['logs_days']:
+            if get_path_age_days(f) > retention['logs_days']:
                 logs_old += 1
                 try:
                     logs_old_bytes += f.stat().st_size
@@ -248,7 +245,7 @@ def get_status() -> dict | None:
         for d in archived_dir.iterdir():
             if d.is_dir():
                 archived_total += 1
-                if get_dir_age_days(d) > retention['archived_plans_days']:
+                if get_path_age_days(d) > retention['archived_plans_days']:
                     archived_old += 1
                     try:
                         for f in d.rglob('*'):
@@ -265,7 +262,7 @@ def get_status() -> dict | None:
     }
 
 
-def cmd_clean(args) -> dict | None:
+def cmd_clean(args: argparse.Namespace) -> dict[str, Any] | None:
     """Execute cleanup based on retention settings."""
     retention = get_retention_settings()
     if retention is None:
@@ -310,8 +307,9 @@ def cmd_clean(args) -> dict | None:
     }
 
 
-def cmd_status(args) -> dict | None:
+def cmd_status(args: argparse.Namespace) -> dict[str, Any] | None:
     """Show cleanup status."""
+    del args  # unused — fixed-shape verb
     status = get_status()
     if status is None:
         return None

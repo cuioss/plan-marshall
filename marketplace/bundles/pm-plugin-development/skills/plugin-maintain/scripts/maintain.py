@@ -26,6 +26,7 @@ from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 @safe_main
 def main() -> int:
+    """Parse arguments and dispatch the selected maintain subcommand."""
     parser = argparse.ArgumentParser(
         description='Plugin component maintenance tools',
         allow_abbrev=False,
@@ -71,10 +72,6 @@ Examples:
     p_readme.set_defaults(func=cmd_readme)
 
     args = parser.parse_args()
-
-    if args.command is None:
-        parser.print_help()
-        return 1
 
     result = args.func(args)
     output_toon(result)

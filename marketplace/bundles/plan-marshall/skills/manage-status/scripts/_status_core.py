@@ -3,6 +3,7 @@
 Core functions for manage-status: TypedDicts, path resolution, read/write, and shared constants.
 """
 
+import argparse
 import json
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
@@ -67,7 +68,7 @@ def read_status(plan_id: str) -> dict[Any, Any]:
     return cast(dict[Any, Any], read_json(get_status_path(plan_id)))
 
 
-def write_status(plan_id: str, status: dict) -> None:
+def write_status(plan_id: str, status: dict[Any, Any]) -> None:
     """Write status.json for a plan."""
     status['updated'] = now_utc_iso()
     write_json(get_status_path(plan_id), status)
@@ -109,7 +110,7 @@ def _try_read_status_json(plan_dir: Path) -> dict[Any, Any] | None:
     return None
 
 
-def require_status(args) -> dict[Any, Any] | None:
+def require_status(args: argparse.Namespace) -> dict[Any, Any] | None:
     """Validate plan_id and read status, returning None with TOON error if missing."""
     require_valid_plan_id(args)
     status = read_status(args.plan_id)
