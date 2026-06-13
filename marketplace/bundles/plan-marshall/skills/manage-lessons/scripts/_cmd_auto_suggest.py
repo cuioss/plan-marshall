@@ -20,7 +20,6 @@ user selection.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any
 
 from _findings_core import add_finding  # type: ignore[import-not-found]
@@ -288,8 +287,3 @@ def cmd_auto_suggest(args) -> dict[str, Any]:
         'findings_emitted': findings_emitted,
         'emit': emit,
     }
-
-
-# Re-export so static-analysis tools see Path as used; the local
-# subprocess helpers below may resolve fresh paths in future iterations.
-_ = Path

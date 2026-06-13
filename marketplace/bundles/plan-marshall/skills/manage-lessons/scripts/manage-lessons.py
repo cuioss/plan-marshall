@@ -274,7 +274,7 @@ def _allocate_and_write_scaffold(metadata_factory: Callable[[str], dict], title:
         path = lessons_dir / f'{lesson_id}.md'
 
         try:
-            with open(path, 'x', encoding='utf-8') as f:
+            with path.open('x', encoding='utf-8') as f:
                 f.write(content)
         except FileExistsError:
             # ``manage-lessons`` is a global script with no plan context, so the
