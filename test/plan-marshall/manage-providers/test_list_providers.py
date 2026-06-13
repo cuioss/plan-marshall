@@ -13,6 +13,8 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
+from marketplace_paths import CLAUDE_DIR, PLUGIN_CACHE_SUBPATH
+
 import conftest  # noqa: F401
 
 _SCRIPTS_DIR = (
@@ -137,6 +139,90 @@ class TestScanForProviders:
         names = [p['skill_name'] for p in result]
         assert 'alpha' in names
         assert 'beta' in names
+
+
+class TestScanForProvidersCacheOnly:
+    """Regression: provider discovery through the cache-only ``get_base_path`` path.
+
+    Exercises the auto-scope cache fallback fix end-to-end: with NO marketplace
+    discoverable by the cwd walk-up and NO explicit anchor, ``get_base_path()``
+    (auto) now resolves to the plugin cache instead of raising. These tests do
+    NOT mock ``get_base_path`` or ``collect_script_dirs`` — they build a real
+    versioned plugin-cache layout, point ``Path.home()`` at it, and let the real
+    resolution chain (``get_base_path`` → cache fallback → ``collect_script_dirs``)
+    drive ``_scan_for_providers()``. The pre-fix behavior raised
+    ``FileNotFoundError`` here, so provider discovery was impossible in a
+    cache-only (installed-plugin, no source tree) environment.
+    """
+
+    @staticmethod
+    def _write_cache_provider(home: Path, body: str) -> Path:
+        """Create a versioned plugin-cache provider file under ``home``.
+
+        Layout mirrors the installed-plugin cache structure
+        (``<bundle>/<version>/skills/<skill>/scripts/<name>_provider.py``) so
+        ``collect_script_dirs`` discovers it via its versioned-structure branch.
+
+        Returns:
+            The path to the written provider file.
+        """
+        cache = home / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
+        scripts_dir = cache / 'plan-marshall' / '0.1-BETA' / 'skills' / 'integration-git' / 'scripts'
+        scripts_dir.mkdir(parents=True)
+        provider_file = scripts_dir / 'git_provider.py'
+        provider_file.write_text(body)
+        return provider_file
+
+    def test_discovers_provider_from_cache_when_no_marketplace(self, tmp_path, monkeypatch):
+        """Cache-only discovery: no marketplace + populated cache yields the provider.
+
+        Arrange a bare cwd with no ``marketplace/bundles`` ancestor, unset the
+        explicit-anchor env var, and place a real provider in the versioned
+        plugin cache. ``_scan_for_providers`` must resolve the base path to the
+        cache and surface the declaration.
+        """
+        # Arrange: bare cwd (no marketplace ancestor) + unset explicit anchor.
+        bare = tmp_path / 'bare'
+        bare.mkdir()
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+        monkeypatch.chdir(bare)
+        # Arrange: a real provider in the versioned plugin cache under a fake home.
+        self._write_cache_provider(
+            tmp_path,
+            'def get_provider_declarations():\n'
+            '    return [{"skill_name": "plan-marshall:workflow-integration-git", "category": "version-control"}]\n',
+        )
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+
+        # Act: run the real, unmocked discovery chain.
+        result = _scan_for_providers()
+
+        # Assert: the provider declared in the cache was discovered.
+        assert len(result) == 1
+        assert result[0]['skill_name'] == 'plan-marshall:workflow-integration-git'
+        assert result[0]['category'] == 'version-control'
+
+    def test_returns_empty_when_no_marketplace_and_empty_cache(self, tmp_path, monkeypatch):
+        """Cache resolves but holds no provider files -> empty result, no raise.
+
+        The cache directory exists (so ``get_base_path`` resolves to it without
+        raising) but contains no ``*_provider.py`` files, so discovery yields an
+        empty list rather than an error.
+        """
+        # Arrange: bare cwd + unset explicit anchor + empty-but-present cache.
+        bare = tmp_path / 'bare'
+        bare.mkdir()
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+        monkeypatch.chdir(bare)
+        cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
+        cache.mkdir(parents=True)
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+
+        # Act: run the real discovery chain against an empty cache.
+        result = _scan_for_providers()
+
+        # Assert: no providers found, but the call completed without raising.
+        assert result == []
 
 
 # =============================================================================

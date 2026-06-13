@@ -189,7 +189,7 @@ def safe_relative_path(path: Path) -> str:
 
 
 def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
-    """Find ``marketplace/bundles`` directory using a four-step resolution order.
+    """Find ``marketplace/bundles`` directory using a three-step resolution order.
 
     Resolution order (highest priority first):
 
@@ -203,9 +203,6 @@ def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
        working directory IS main (phases 1-4) or the pinned worktree (phase-5+),
        so the source tree is found by walking up from cwd; there is no
        sideways resolution indirection.
-    4. cwd/parent discovery — the legacy fallback that probes ``Path.cwd()`` and
-       its immediate parent for the standard ``marketplace/bundles`` layout.
-       Retained for backward-compat with first-run bootstrap scenarios.
 
     Args:
         marketplace_root: Optional explicit override. When provided, takes
@@ -242,11 +239,6 @@ def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
         if candidate.is_dir():
             return candidate
 
-    # Branch 4: cwd/parent discovery (legacy bootstrap fallback)
-    if (Path.cwd() / MARKETPLACE_BUNDLES_PATH).is_dir():
-        return Path.cwd() / MARKETPLACE_BUNDLES_PATH
-    if (Path.cwd().parent / MARKETPLACE_BUNDLES_PATH).is_dir():
-        return Path.cwd().parent / MARKETPLACE_BUNDLES_PATH
     return None
 
 
@@ -272,9 +264,9 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
             scopes (``auto``, ``marketplace``, ``cache-first``); ignored for
             ``plugin-cache``, ``global``, and ``project`` scopes whose targets
             are not anchored on the marketplace root. See
-            :func:`find_marketplace_path` for the full four-step resolution
+            :func:`find_marketplace_path` for the full three-step resolution
             order (explicit param → ``PM_MARKETPLACE_ROOT`` env var →
-            script-relative walk → cwd-based discovery).
+            cwd walk-up).
 
     Returns:
         Path to the bundles directory (or .claude for global/project scope)
@@ -294,10 +286,28 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
     explicit_anchor = marketplace_root is not None or bool(os.environ.get('PM_MARKETPLACE_ROOT'))
 
     if scope == 'auto':
+        if explicit_anchor:
+            # An explicit anchor short-circuits on the marketplace and raises
+            # without cache fallback, preserving the explicit-anchor contract.
+            marketplace = find_marketplace_path(marketplace_root=marketplace_root)
+            if marketplace:
+                return marketplace
+            raise FileNotFoundError(
+                f'Explicit marketplace anchor did not resolve to {MARKETPLACE_BUNDLES_PATH}. '
+                f'Set --marketplace-root or PM_MARKETPLACE_ROOT to a directory containing '
+                f'{MARKETPLACE_BUNDLES_PATH}.'
+            )
         marketplace = find_marketplace_path(marketplace_root=marketplace_root)
         if marketplace:
             return marketplace
-        raise FileNotFoundError(f'{MARKETPLACE_BUNDLES_PATH} not found. Run from marketplace repo root.')
+        cache = get_plugin_cache_path()
+        if cache:
+            return cache
+        raise FileNotFoundError(
+            f'Neither {MARKETPLACE_BUNDLES_PATH} nor the plugin cache '
+            f'({Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH}) found. '
+            f'Run from marketplace repo root or ensure the plugin is installed.'
+        )
 
     if scope == 'cache-first':
         if explicit_anchor:
