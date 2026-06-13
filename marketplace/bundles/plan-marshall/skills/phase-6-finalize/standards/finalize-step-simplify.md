@@ -58,7 +58,7 @@ The step derives the plan's live footprint on demand from the worktree (via `com
 
 ## HEAD-dependency
 
-`finalize-step-simplify` is a member of `HEAD_DEPENDENT_STEPS` (see `phase-6-finalize/SKILL.md`). Because it applies edits directly to the worktree, a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the simplification pass runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
+`finalize-step-simplify` is a member of `HEAD_DEPENDENT_STEPS` (see `phase-6-finalize/SKILL.md`). Because it applies edits directly to the worktree AND commits them on the feature branch (Step 4), a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the simplification pass runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call — after the step has committed its own edits, so the SHA reflects the simplify commit — and forward it via `--head-at-completion {sha}`.
 
 ## Workflow
 
@@ -146,14 +146,30 @@ Task: plan-marshall:{target}
       of editing. Return TOON with status, findings[] (file/line/anti_pattern/
       action), and applied_edits count.
 
-    WORKTREE: --plan-id {plan_id}
+    WORKTREE: {worktree_path}
 ```
 
 Parse the returned TOON: `findings[]` and `applied_edits`.
 
-### Step 4: Capture HEAD and mark step done
+### Step 4: Commit own edits, capture HEAD, and mark step done
 
-Capture the post-edit HEAD for the HEAD-dependency contract:
+The step always leaves the worktree clean before marking `done`. Branch on `applied_edits` (parsed from the Step 3 return TOON):
+
+**When `applied_edits > 0`** — commit the simplification edits on the feature branch so the tree is clean and the edits land as a forward commit. Load `plan-marshall:workflow-integration-git` and run its Commit Changes workflow:
+
+```
+Skill: plan-marshall:workflow-integration-git
+Parameters:
+  - message: "chore(simplify): collapse accidental complexity in {plan_id}"
+  - push: false
+  - create-pr: false
+```
+
+The commit advances HEAD; the downstream `commit-push` HEAD-comparison observes the advanced HEAD and pushes normally. Because the tree is now clean, the script-layer dirty-worktree guard in `mark-step-done` (`MAY_MUTATE_WORKTREE_STEPS`) is satisfied — this step records `done` directly and emits NO `loop_back` (see the dirty-worktree invariant note in `phase-6-finalize/SKILL.md`).
+
+**When `applied_edits == 0`** — no edits were applied, so there is nothing to commit and HEAD is unchanged. Skip the commit and proceed straight to the HEAD capture below.
+
+Capture the post-commit (or unchanged) HEAD for the HEAD-dependency contract:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -177,6 +193,7 @@ The `display_detail` string appears in the renderer's per-step `[OK]` row. The `
 | Live footprint empty (`compute-footprint` returns no `files`) | Mark `done` with `display_detail "Simplify: no changeset"` — nothing to review |
 | `simplicity` field absent | Default to the `lean` posture description and proceed |
 | Dispatched agent returns an error TOON | Mark `failed` with the agent's error in `display_detail`; finalize halts per the dispatcher's error handling |
+| Step-4 commit fails (`applied_edits > 0` but the Commit Changes workflow errors) | Mark `failed` with the commit error in `display_detail`; do NOT mark `done` with an uncommitted dirty tree — finalize halts per the dispatcher's error handling |
 
 ## Related
 

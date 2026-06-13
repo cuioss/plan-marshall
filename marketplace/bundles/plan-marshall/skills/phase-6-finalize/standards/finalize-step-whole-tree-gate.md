@@ -1,6 +1,6 @@
 ---
 name: default:finalize-step-whole-tree-gate
-description: Whole-tree invariant backstop — the NOT-diff-scoped pre-push gate. Beyond the deleted-symbol survivor sweep (greps the entire tree for surviving references to symbols/contracts the plan deleted and flags request-mandate items absent from the diff), it conditionally runs three whole-tree facet checks — a marketplace-wide static-analysis sweep, a re-run of the whole-tree grep-sweep guard tests, and a generated-target content-drift check — each gated on the plan's changed set intersecting the corresponding trigger; runs pre-commit so any genuine finding BLOCKS the push
+description: Whole-tree invariant backstop — the NOT-diff-scoped pre-push gate. Beyond the deleted-symbol survivor sweep (greps the entire tree for surviving references to symbols/contracts the plan deleted and flags request-mandate items absent from the diff), it conditionally runs two whole-tree facet checks — a marketplace-wide static-analysis sweep and a re-run of the whole-tree grep-sweep guard tests — each gated on the plan's changed set intersecting the corresponding trigger; runs pre-commit so any genuine finding BLOCKS the push
 order: 9
 ---
 
@@ -8,21 +8,20 @@ order: 9
 
 Whole-tree invariant backstop for the `default:finalize-step-whole-tree-gate` finalize step. Runs BEFORE `commit-push` materialises the commit so any whole-tree invariant the plan violated BLOCKS the push rather than landing on the branch. It is the NOT-diff-scoped complement to the diff-scoped finalize gates: where the simplify / self-review passes reason about the plan's own change surface, this gate verifies invariants that only surface when the ENTIRE tree is considered, not just the diff.
 
-The gate's scope is **four** whole-tree checks, not one:
+The gate's scope is **three** whole-tree checks, not one:
 
 1. **Deleted-symbol survivor sweep** (always runs) — greps the ENTIRE tree for surviving references to symbols/contracts the plan deleted, and flags request-mandate items absent from the diff. This is the original gate behaviour: it catches a half-applied clean-slate deletion that the diff-scoped gates cannot see.
 2. **Marketplace-wide static-analysis sweep** (conditional) — when the plan's changed set touches the static-analysis rule surface, the gate runs the marketplace-wide static-analysis quality gate over the full tree rather than the build-map-scoped subset, so a rule change that breaks an untouched component is caught before the push.
 3. **Whole-tree grep-sweep guard re-run** (conditional) — when the plan's changed set touches a whole-tree grep-sweep guard test, the gate re-runs those guard tests with the full tree as scan root rather than the module-scoped subset, so a guard that depends on the whole-tree scan is exercised against the whole tree.
-4. **Generated-target content-drift check** (conditional) — when the plan's changed set touches the generator source or any bundle, the gate regenerates the target tree to a throwaway location and diffs the regenerated content against the on-disk generated tree, so generated-content drift that the per-file build does not exercise is caught before the push.
 
-Checks 2–4 are each conditional on the plan's changed set intersecting the corresponding trigger; the survivor sweep (check 1) always runs when the gate is active. The concrete per-facet Workflow steps live in the Workflow section below.
+Checks 2–3 are each conditional on the plan's changed set intersecting the corresponding trigger; the survivor sweep (check 1) always runs when the gate is active. The concrete per-facet Workflow steps live in the Workflow section below.
 
 The gate is gated into the manifest at composition time by the `whole_tree_gate_inactive` pre-filter (see [`manage-execution-manifest/standards/decision-rules.md` § Pre-Filter: `whole_tree_gate_inactive`](../../manage-execution-manifest/standards/decision-rules.md#pre-filter-whole_tree_gate_inactive), the single source of truth for the activation predicate and the trigger-glob sets). The predicate is **additive** — the gate activates when EITHER arm holds:
 
 - **Breaking arm** (unchanged) — clean-slate/breaking, code-bearing plans: `compatibility == breaking` AND `change_type ∈ {tech_debt, feature, enhancement, bug_fix}` AND `affected_files_count > 0`. This arm is what makes the survivor sweep fire: a `deprecation` / `smart_and_ask` plan deliberately keeps old surfaces alongside new ones, so a surviving reference under those postures is the expected outcome, not a defect.
-- **Whole-tree-invariant-trigger arm** (additive) — the gate ALSO activates, regardless of compatibility posture, when the plan's changed set intersects the whole-tree invariant surface (the static-analysis rule trigger, the grep-sweep-guard-test trigger, or the generator/content-drift trigger). This arm is what makes facet checks 2–4 reachable on non-breaking plans: a rule change, a guard-test change, or a generator change carries a whole-tree invariant risk even when the plan's compatibility posture is `deprecation` or `smart_and_ask`.
+- **Whole-tree-invariant-trigger arm** (additive) — the gate ALSO activates, regardless of compatibility posture, when the plan's changed set intersects the whole-tree invariant surface (the static-analysis rule trigger or the grep-sweep-guard-test trigger). This arm is what makes facet checks 2–3 reachable on non-breaking plans: a rule change or a guard-test change carries a whole-tree invariant risk even when the plan's compatibility posture is `deprecation` or `smart_and_ask`.
 
-The concrete trigger-glob sets backing the additive arm are owned by `decision-rules.md`; this doc cross-references them and does not restate them. Which of facet checks 2–4 actually runs at gate time is decided by the same changed-set/trigger intersection — an activated gate runs the survivor sweep plus only the facet checks whose trigger fired.
+The concrete trigger-glob sets backing the additive arm are owned by `decision-rules.md`; this doc cross-references them and does not restate them. Which of facet checks 2–3 actually runs at gate time is decided by the same changed-set/trigger intersection — an activated gate runs the survivor sweep plus only the facet checks whose trigger fired.
 
 ## Exit-code convention for `manage-*` script calls
 
@@ -41,18 +40,18 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Workflow
 
-The workflow surfaces each active whole-tree check deterministically (the surfacer greps, runs the facet checks, and emits candidate rows — it makes no verdict), then classifies the surfaced rows in a single cognitive pass and terminates. Step 1 surfaces the always-on survivor sweep AND the three conditional facet checks (checks 2–4 above) in **one** `scan` call — the surfacer itself evaluates each facet's changed-set/trigger intersection and runs only the facets whose trigger fired. Sub-steps 1b/1c/1d below document what each facet's surfaced result means; they are NOT separate script calls. The classification pass (Step 2) and the terminate condition (Step 3) span every surfaced row regardless of which check produced it.
+The workflow surfaces each active whole-tree check deterministically (the surfacer greps, runs the facet checks, and emits candidate rows — it makes no verdict), then classifies the surfaced rows in a single cognitive pass and terminates. Step 1 surfaces the always-on survivor sweep AND the two conditional facet checks (checks 2–3 above) in **one** `scan` call — the surfacer itself evaluates each facet's changed-set/trigger intersection and runs only the facets whose trigger fired. Sub-steps 1b/1c below document what each facet's surfaced result means; they are NOT separate script calls. The classification pass (Step 2) and the terminate condition (Step 3) span every surfaced row regardless of which check produced it.
 
 ### Step 1: Surface survivors, mandate gaps, and the facet checks
 
-Run the deterministic surfacing helper. It resolves the plan diff (`{base}...HEAD`) via `git -C {worktree_path}`, extracts the identifiers/contracts the plan DELETED (removed lines), greps the entire `marketplace/` tree (NOT the diff, NOT only touched skills) with word-boundary anchoring for surviving references, compares the request's enumerated mandate against the diff's touched files, AND runs the three whole-tree facet checks (each gated on the changed set intersecting its trigger glob):
+Run the deterministic surfacing helper. It resolves the plan diff (`{base}...HEAD`) via `git -C {worktree_path}`, extracts the identifiers/contracts the plan DELETED (removed lines), greps the entire `marketplace/` tree (NOT the diff, NOT only touched skills) with word-boundary anchoring for surviving references, compares the request's enumerated mandate against the diff's touched files, AND runs the two whole-tree facet checks (each gated on the changed set intersecting its trigger glob):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:whole_tree_gate \
   scan --plan-id {plan_id}
 ```
 
-The helper excludes `.plan/archived-plans/**` and vendored snapshots from the sweep, and emits `survivors[]{file,line,identifier}`, `mandate_gaps[]`, plus a `facets` block with one entry per facet (`doctor`, `sweep_test`, `content_drift`). Each facet entry carries `triggered`, `ran`, `passed`, and a human-readable `summary`; the facet driver fires a facet only when the plan's changed set hits the matching trigger-glob category (the per-category trigger globs are owned by [`manage-execution-manifest/standards/decision-rules.md` § Pre-Filter: `whole_tree_gate_inactive`](../../manage-execution-manifest/standards/decision-rules.md#pre-filter-whole_tree_gate_inactive) — this doc cross-references them, it does not restate them).
+The helper excludes `.plan/archived-plans/**` and vendored snapshots from the sweep, and emits `survivors[]{file,line,identifier}`, `mandate_gaps[]`, plus a `facets` block with one entry per facet (`doctor`, `sweep_test`). Each facet entry carries `triggered`, `ran`, `passed`, and a human-readable `summary`; the facet driver fires a facet only when the plan's changed set hits the matching trigger-glob category (the per-category trigger globs are owned by [`manage-execution-manifest/standards/decision-rules.md` § Pre-Filter: `whole_tree_gate_inactive`](../../manage-execution-manifest/standards/decision-rules.md#pre-filter-whole_tree_gate_inactive) — this doc cross-references them, it does not restate them).
 
 #### Step 1b: Marketplace-wide static-analysis sweep (`facets.doctor`)
 
@@ -62,15 +61,11 @@ When the changed set touches a plugin-doctor / plan-doctor analyzer or rule scri
 
 When the changed set touches a whole-tree grep-sweep guard test, the surfacer re-runs the `whole_tree_sweep`-marked guard tests (`pytest -m whole_tree_sweep`) with the full tree as scan root. A pytest "no tests collected" outcome is a PASS (nothing to re-run). `facets.sweep_test.passed: false` is a surfaced test-failure finding for Step 2.
 
-#### Step 1d: Generated-target content-drift check (`facets.content_drift`)
-
-When the changed set touches the generator source or any bundle, the surfacer calls the regen-first `content_drift.run_content_drift_check`: it regenerates the Claude target into a throwaway temp dir and byte-diffs every regenerated `.md` against the on-disk `target/claude/` tree. `facets.content_drift.passed: false` (with `drift_count` and the drifted/missing/orphan file names in `summary`) is a surfaced drift finding for Step 2. The documented fix is to re-run `python3 marketplace/targets/generate.py --target claude --output target/claude` — never to edit the source `.md` files under `marketplace/bundles/`, which are canonical.
-
-A facet whose seam hit an infrastructure failure (the doctor/pytest could not be invoked, the content-drift engine could not be imported, or a seam timed out) reports `ran: false, passed: false` with an `error` key — an un-run facet is a FAIL surface, never silently treated as clean.
+A facet whose seam hit an infrastructure failure (the doctor/pytest could not be invoked, or a seam timed out) reports `ran: false, passed: false` with an `error` key — an un-run facet is a FAIL surface, never silently treated as clean.
 
 ### Step 2: Classify each surfaced row (cognitive pass)
 
-For each `survivors[]` row, classify it as a **genuine omission** (a deleted symbol/contract that still survives where it should have been removed → FAIL) versus a **legitimate retained reference** (e.g. a same-named identifier in an unrelated context the deletion never targeted → PASS). Each `mandate_gaps[]` row is a request-mandate item with no diff representation and is treated as a genuine gap unless the cognitive pass establishes it was satisfied by a path the surfacer did not attribute. For each `facets.{doctor,sweep_test,content_drift}` entry with `passed: false`, classify the surfaced finding the same way: a genuine whole-tree invariant violation (a real doctor finding, a real guard-test failure, a real generated-content drift, or an `error` indicating the facet could not run) → FAIL; a finding the cognitive pass establishes is a false positive or already remediated → PASS.
+For each `survivors[]` row, classify it as a **genuine omission** (a deleted symbol/contract that still survives where it should have been removed → FAIL) versus a **legitimate retained reference** (e.g. a same-named identifier in an unrelated context the deletion never targeted → PASS). Each `mandate_gaps[]` row is a request-mandate item with no diff representation and is treated as a genuine gap unless the cognitive pass establishes it was satisfied by a path the surfacer did not attribute. For each `facets.{doctor,sweep_test}` entry with `passed: false`, classify the surfaced finding the same way: a genuine whole-tree invariant violation (a real doctor finding, a real guard-test failure, or an `error` indicating the facet could not run) → FAIL; a finding the cognitive pass establishes is a false positive or already remediated → PASS.
 
 On any genuine survivor, unresolved mandate gap, or failed facet, the gate FAILs: do NOT mark the step done, and return a structured `blocked` payload to the orchestrator so the failure routes through the standard finalize triage loop (the same fix-task / suppress / accept branch the other finalize gates use).
 

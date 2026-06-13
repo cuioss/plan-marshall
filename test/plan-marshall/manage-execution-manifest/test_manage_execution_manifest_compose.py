@@ -2323,12 +2323,11 @@ def test_whole_tree_gate_inactive_no_decision_log_on_kept_branch(plan_context):
 # Pre-Filter: whole_tree_gate_inactive — ADDITIVE whole-tree-invariant TRIGGER arm
 #
 # The trigger arm keeps finalize-step-whole-tree-gate REGARDLESS of the plan's
-# compatibility posture whenever the changed set intersects one of the three
+# compatibility posture whenever the changed set intersects one of the two
 # whole-tree-invariant trigger glob categories AND affected_files_count > 0:
 #
 #   (a) doctor trigger        — plugin-doctor / plan-doctor analyzer & rule .py
 #   (b) sweep-test trigger    — whole-tree grep-sweep guard tests (test_*sweep*.py)
-#   (c) generator/drift trigger — marketplace/targets/** and marketplace/bundles/**
 #
 # These cases exercise the trigger arm against a NON-breaking compatibility
 # (deprecation / smart_and_ask) so the breaking arm can never be the reason the
@@ -2358,9 +2357,6 @@ _TRIGGER_ACTIVATION_LINE_TEMPLATE = (
         # (b) sweep-test trigger — whole-tree grep-sweep guard tests under both roots.
         ('sweep-plan', 'test/plan-marshall/plan-marshall/test_marketplace_sweep.py'),
         ('sweep-marketplace', 'test/marketplace/targets/test_bundle_sweep_guard.py'),
-        # (c) generator/drift trigger — the multi-target generator engine and bundle source.
-        ('generator-targets', 'marketplace/targets/claude/generate.py'),
-        ('generator-bundle', 'marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md'),
     ],
 )
 @pytest.mark.parametrize('compatibility', ['deprecation', 'smart_and_ask'])
@@ -2369,10 +2365,10 @@ def test_whole_tree_gate_trigger_arm_activates_regardless_of_compatibility(
 ):
     """The trigger arm KEEPS the gate on a non-breaking plan when a trigger glob is hit.
 
-    Each of the three trigger categories (doctor / sweep-test / generator-drift)
-    activates the gate even though compatibility != breaking, which alone would
-    drop the gate via the breaking arm. The only thing keeping the step is the
-    changed-set glob hit.
+    Each of the two trigger categories (doctor / sweep-test) activates the gate
+    even though compatibility != breaking, which alone would drop the gate via
+    the breaking arm. The only thing keeping the step is the changed-set glob
+    hit.
     """
     slug = f'{compatibility.replace("_", "-")}-{trigger_label}'
     plan_id = f'wtg-trig-{slug}'

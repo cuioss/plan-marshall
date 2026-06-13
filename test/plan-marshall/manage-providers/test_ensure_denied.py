@@ -16,14 +16,37 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.
 class TestEnsureDeniedRules:
     """Tests for deny rule content."""
 
-    def test_deny_rules_cover_both_path_forms(self):
-        """Deny rules must include both ~ and absolute path forms."""
-        from _cred_ensure_denied import DENY_RULES  # type: ignore[import-not-found]
+    def test_deny_rules_cover_both_path_forms(self, monkeypatch):
+        """Deny rules must include both ~ and absolute path forms.
 
-        tilde_rules = [r for r in DENY_RULES if '~/' in r]
-        abs_rules = [r for r in DENY_RULES if str(Path.home()) in r]
-        assert len(tilde_rules) > 0, 'Must have tilde-form rules'
-        assert len(abs_rules) > 0, 'Must have absolute-path-form rules'
+        The absolute-form rules derive from ``_providers_core.CREDENTIALS_DIR``,
+        which the autouse ``_credentials_dir_sandbox`` redirects to a tmp dir.
+        These deny rules exist to protect the REAL ``~/.plan-marshall-credentials``,
+        so pin ``CREDENTIALS_DIR`` back to the real home path and rebuild the
+        module's ``DENY_RULES`` against it (no write — DENY_RULES is pure strings).
+        """
+        import importlib
+
+        import _cred_ensure_denied  # type: ignore[import-not-found]
+        import _providers_core  # type: ignore[import-not-found]
+
+        # Capture the sandboxed dir so the global reload below is fully reverted
+        # in the finally block — otherwise _cred_ensure_denied.DENY_RULES would
+        # stay pinned to the real home path and leak into subsequent tests.
+        sandboxed_dir = _providers_core.CREDENTIALS_DIR
+        real_dir = Path.home() / '.plan-marshall-credentials'
+        monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', real_dir)
+        importlib.reload(_cred_ensure_denied)
+        try:
+            deny_rules = _cred_ensure_denied.DENY_RULES
+
+            tilde_rules = [r for r in deny_rules if '~/' in r]
+            abs_rules = [r for r in deny_rules if str(Path.home()) in r]
+            assert len(tilde_rules) > 0, 'Must have tilde-form rules'
+            assert len(abs_rules) > 0, 'Must have absolute-path-form rules'
+        finally:
+            monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', sandboxed_dir)
+            importlib.reload(_cred_ensure_denied)
 
     def test_deny_rules_cover_read_tool(self):
         """Deny rules must cover Read tool access."""

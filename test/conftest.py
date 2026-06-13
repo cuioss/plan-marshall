@@ -616,7 +616,8 @@ def pytest_configure(config):
         'markers',
         'allow_pollution: test may legitimately mutate the real '
         '~/.plan-marshall-credentials/ directory or the tracked .plan/ tree '
-        '(opts out of the autouse PLAN_BASE_DIR sandbox and the pollution guard).',
+        '(opts out of the autouse PLAN_BASE_DIR and CREDENTIALS_DIR sandboxes '
+        'and the pollution guard).',
     )
     config.addinivalue_line(
         'markers',
@@ -677,6 +678,51 @@ def _plan_base_dir_sandbox(request, tmp_path_factory, monkeypatch):
     monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', sandbox)
     monkeypatch.setattr(_config_core, 'MARSHAL_PATH', sandbox / 'marshal.json')
     monkeypatch.setattr(_config_core, 'RUN_CONFIG_PATH', sandbox / 'run-configuration.json')
+
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _credentials_dir_sandbox(request, tmp_path_factory, monkeypatch):
+    """Default ``CREDENTIALS_DIR`` to a per-test, xdist-worker-safe tmp sandbox.
+
+    The credentials sibling of ``_plan_base_dir_sandbox``: rather than relying on
+    each provider/sonar test to remember to redirect the credential store, EVERY
+    test is redirected into an isolated sandbox by default, so a credential
+    ``save_credential`` / ``ensure_credentials_dir`` / ``touch_verified_at`` write
+    into the real ``~/.plan-marshall-credentials/`` tree becomes structurally
+    impossible. This closes the asymmetry the ``_pollution_guard`` exposed: the
+    guard caught real-credentials leaks but there was no autouse redirect backing
+    it, so a single un-isolated credential write (or a subprocess inheriting the
+    real env) leaked into the developer's real credential dir.
+
+    ``_providers_core.CREDENTIALS_DIR`` is bound at module-import time
+    (``Path(os.environ.get('PLAN_MARSHALL_CREDENTIALS_DIR') or Path.home()/...)``),
+    so an env-var set alone does not reach already-imported in-process callers;
+    patch the module attribute the same way ``_plan_base_dir_sandbox`` patches
+    ``_config_core``. The env-var set additionally propagates to subprocess
+    callers (``run_script`` copies ``os.environ``), so child ``execute-script.py``
+    processes resolve the sandbox at their own import time.
+
+    Tests that intentionally exercise the real credentials path opt out with
+    ``@pytest.mark.allow_pollution`` (the same marker the PLAN_BASE_DIR sandbox
+    and the pollution guard honour). Tests that set their own per-test
+    ``CREDENTIALS_DIR`` (via ``monkeypatch.setattr`` / ``monkeypatch.setenv``)
+    still win — this fixture runs first and only sets a default.
+    """
+    if request.node.get_closest_marker('allow_pollution'):
+        yield
+        return
+
+    sandbox = tmp_path_factory.mktemp('plan-credentials-sandbox')
+
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(sandbox))
+
+    # Redirect in-process callers too — the module constant is import-bound.
+    # Imported lazily to avoid a top-level import cycle during test bootstrap.
+    import _providers_core  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', sandbox)
 
     yield
 
