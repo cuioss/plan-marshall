@@ -71,21 +71,26 @@ def derive_globs_from_tree(
     ``classify_globs()`` — an fnmatch-style glob pattern (e.g.
     ``marketplace/bundles/*.py``)
     paired with one of the three resolved roles (``production`` / ``test`` /
-    ``config``). This function gathers those declared routes
-    verbatim, keyed by the extension's first domain key; it no longer scans the
-    tree to enumerate one glob per directory. The compact route set seeds
-    directly — a handful of routes per domain rather than one glob per matched
-    directory.
+    ``config``). This function gathers those declared routes,
+    keyed by the extension's first domain key, then filters them to the routes
+    actually present in the project tree: a route survives only when at least one
+    git-tracked file matches its ``pattern`` via :func:`fnmatch.fnmatch` (the same
+    matcher the downstream ``manage-execution-manifest`` consumer and
+    :func:`validate_tree_completeness` use). Dead routes — patterns whose file
+    type is absent from the tree (e.g. ``pom.xml``, ``*.tsx``, ``tsconfig.json``
+    on a project that has none) — are pruned before any consumer sees them, so the
+    seed carries only live globs rather than the full theoretical toolchain
+    superset.
 
     Tree completeness is a SEPARATE concern: :func:`validate_tree_completeness`
     scans git-tracked source files within build-covered roots and reports any
-    such source file no declared route covers. The seed consumes the routes here;
-    the validator gates completeness.
+    such source file no declared route covers. The seed consumes the (now
+    tree-filtered) routes here; the validator gates completeness.
 
     Args:
-        project_root: Absolute path to the project root (accepted for signature
-            parity with :func:`validate_tree_completeness`; route collection does
-            not read the tree).
+        project_root: Absolute path to the project root. The tracked-file list is
+            read once from this root (via :func:`_list_tracked_files`) to prune
+            routes whose pattern matches no file in the tree.
         extensions: List of :class:`BuildExtensionBase` instances exposing
             ``classify_globs()``, keyed by the domain each serves via
             ``get_skill_domains()``. Build extensions whose ``classify_globs()``
@@ -93,11 +98,12 @@ def derive_globs_from_tree(
 
     Returns:
         A dict keyed by domain-key with a list of de-duplicated ``(pattern, role)``
-        tuples as values, in deterministic sorted order. Domains declaring no
-        routes are omitted entirely. When several build extensions serve the same
-        domain key (e.g. build-maven and build-gradle both serving ``java``), their
-        routes are MERGED under that key — the per-domain route sets are unioned,
-        not overwritten.
+        tuples as values, in deterministic sorted order, filtered to routes whose
+        pattern matches at least one git-tracked file. Domains declaring no routes
+        — or whose every route was pruned as dead — are omitted entirely. When
+        several build extensions serve the same domain key (e.g. build-maven and
+        build-gradle both serving ``java``), their routes are MERGED under that key
+        — the per-domain route sets are unioned, not overwritten.
     """
     by_domain: dict[str, set[tuple[str, str]]] = {}
 
@@ -126,7 +132,18 @@ def derive_globs_from_tree(
                 continue
             seen.add((pattern, role))
 
-    return {key: sorted(routes) for key, routes in by_domain.items() if routes}
+    tracked = _list_tracked_files(project_root)
+    return {
+        key: live
+        for key, routes in by_domain.items()
+        if (
+            live := sorted(
+                route
+                for route in routes
+                if fnmatch.filter(tracked, route[0])
+            )
+        )
+    }
 
 
 def _list_tracked_files(project_root: str) -> list[str]:

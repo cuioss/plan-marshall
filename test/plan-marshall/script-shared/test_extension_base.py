@@ -3,10 +3,18 @@
 
 # Tier 2 direct imports via importlib for uniform import style
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
-from extension_base import ExtensionBase  # type: ignore[import-not-found]
+from extension_base import (  # type: ignore[import-not-found]
+    ROLE_CONFIG,
+    ROLE_PRODUCTION,
+    ROLE_TEST,
+    BuildExtensionBase,
+    ExtensionBase,
+    derive_globs_from_tree,
+)
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
@@ -446,6 +454,98 @@ def test_applies_to_module_accepts_active_profiles():
     ext = ConcreteExtension()
     result = ext.applies_to_module({'build_systems': []}, active_profiles={'implementation'})
     assert result['applicable'] is False  # ConcreteExtension always returns not applicable
+
+
+# =============================================================================
+# derive_globs_from_tree() per-route tree-presence filter
+# =============================================================================
+#
+# The build-map seed fix: derive_globs_from_tree retains a declared route only
+# when at least one git-tracked file matches its pattern (fnmatch), pruning dead
+# globs (file types absent from the tree) before any consumer sees them. The
+# five scenarios below drive the deriver directly against a git-tracked fixture
+# tree. (The broader deriver suite — keying, dedup, sort, role filtering — lives
+# in test_extension_base_classify_paths.py; this class is the focused
+# tree-presence-filter contract for the seed fix.)
+
+
+class _DeriverRouteExtension(BuildExtensionBase):
+    """A build extension declaring one route per resolved role under domain 'minimal'."""
+
+    def get_skill_domains(self) -> list[dict]:
+        return [{
+            'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
+            'profiles': {},
+        }]
+
+    def classify_globs(self) -> list[tuple[str, str]]:
+        return [
+            ('scripts/*.py', ROLE_PRODUCTION),
+            ('test/*.py', ROLE_TEST),
+            ('pyproject.toml', ROLE_CONFIG),
+        ]
+
+
+def _git_init_and_track(root, rel_paths: list[str]) -> None:
+    """Create + git-add each repo-relative path under ``root`` as a tracked file."""
+    subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'T'], check=True)
+    for rel in rel_paths:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('')
+    subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True)
+
+
+def test_filter_retains_route_matching_tracked_file(tmp_path):
+    """(a) A route whose pattern matches a tracked file is retained."""
+    _git_init_and_track(tmp_path, ['scripts/foo.py', 'test/bar.py', 'pyproject.toml'])
+    derived = derive_globs_from_tree(str(tmp_path), [_DeriverRouteExtension()])
+    assert ('scripts/*.py', 'production') in derived['minimal']
+
+
+def test_filter_prunes_route_matching_no_tracked_file(tmp_path):
+    """(b) A route whose pattern matches NO tracked file is pruned."""
+    # Only scripts/ has a matching file — test/ and pyproject.toml routes are dead.
+    _git_init_and_track(tmp_path, ['scripts/foo.py'])
+    derived = derive_globs_from_tree(str(tmp_path), [_DeriverRouteExtension()])
+    assert derived['minimal'] == [('scripts/*.py', 'production')]
+
+
+def test_filter_omits_domain_when_every_route_is_pruned(tmp_path):
+    """(c) A domain whose every route is pruned is omitted from the result."""
+    _git_init_and_track(tmp_path, ['README.md'])  # matches none of the routes
+    derived = derive_globs_from_tree(str(tmp_path), [_DeriverRouteExtension()])
+    assert derived == {}
+
+
+def test_filter_empty_tracked_set_prunes_all_routes(tmp_path):
+    """(d) An empty tracked-file set prunes all routes (returns empty)."""
+    _git_init_and_track(tmp_path, [])
+    derived = derive_globs_from_tree(str(tmp_path), [_DeriverRouteExtension()])
+    assert derived == {}
+
+
+def test_filter_live_and_dead_route_same_domain_yields_only_live(tmp_path):
+    """(e) A live route and a dead route in the same domain yield only the live route."""
+
+    class _MixedExtension(BuildExtensionBase):
+        def get_skill_domains(self) -> list[dict]:
+            return [{
+                'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
+                'profiles': {},
+            }]
+
+        def classify_globs(self) -> list[tuple[str, str]]:
+            return [
+                ('scripts/*.py', ROLE_PRODUCTION),  # live — matches scripts/live.py
+                ('vendor/*.py', ROLE_PRODUCTION),  # dead — no vendor/ file tracked
+            ]
+
+    _git_init_and_track(tmp_path, ['scripts/live.py'])
+    derived = derive_globs_from_tree(str(tmp_path), [_MixedExtension()])
+    assert derived['minimal'] == [('scripts/*.py', 'production')]
 
 
 if __name__ == '__main__':

@@ -441,6 +441,18 @@ def test_classify_globs_returns_resolved_roles():
 # =============================================================================
 
 
+def _git_init_and_track(root, rel_paths: list[str]) -> None:
+    """Create + git-add each repo-relative path under ``root`` as a tracked file."""
+    subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'T'], check=True)
+    for rel in rel_paths:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('')
+    subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True)
+
+
 def _matches_any(path: str, globs: list[str]) -> bool:
     """Return True when ``path`` matches at least one collected route pattern."""
     return any(fnmatch.fnmatchcase(path, g) for g in globs)
@@ -457,19 +469,25 @@ def test_derive_globs_skips_extension_with_no_routes():
     assert derive_globs_from_tree('/irrelevant', [_MinimalExtension()]) == {}
 
 
-def test_derive_globs_keys_result_by_domain_key():
-    """The collected dict is keyed by the extension's first domain key."""
-    derived = derive_globs_from_tree('/irrelevant', [_RouteExtension()])
+def test_derive_globs_keys_result_by_domain_key(tmp_path):
+    """The collected dict is keyed by the extension's first domain key.
+
+    The tree carries a file matching each of _RouteExtension's routes so none is
+    pruned by the tree-presence filter.
+    """
+    _git_init_and_track(tmp_path, ['scripts/foo.py', 'test/bar.py', 'pyproject.toml'])
+    derived = derive_globs_from_tree(str(tmp_path), [_RouteExtension()])
     assert set(derived.keys()) == {'minimal'}
 
 
-def test_derive_globs_returns_declared_routes_verbatim():
-    """The collected routes are the declared (pattern, role) tuples, sorted.
+def test_derive_globs_returns_declared_routes_present_in_tree(tmp_path):
+    """The collected routes are the declared (pattern, role) tuples present in the tree, sorted.
 
-    No tree scan, no per-directory enumeration — the compact declared route set
-    seeds directly.
+    No per-directory enumeration — the compact declared route set seeds directly,
+    filtered to routes whose pattern matches at least one tracked file.
     """
-    derived = derive_globs_from_tree('/irrelevant', [_RouteExtension()])
+    _git_init_and_track(tmp_path, ['scripts/foo.py', 'test/bar.py', 'pyproject.toml'])
+    derived = derive_globs_from_tree(str(tmp_path), [_RouteExtension()])
     assert derived['minimal'] == sorted([
         ('scripts/*.py', 'production'),
         ('test/*.py', 'test'),
@@ -477,26 +495,53 @@ def test_derive_globs_returns_declared_routes_verbatim():
     ])
 
 
-def test_derive_globs_is_compact_not_per_directory():
+def test_derive_globs_is_compact_not_per_directory(tmp_path):
     """A single production route stays one entry regardless of tree breadth.
 
     The regression this fixes: the old deriver emitted one glob per matched
     directory (167 globs); the explicit-route contract keeps the declared route
-    count compact.
+    count compact even when many files match the single route.
     """
-    derived = derive_globs_from_tree('/irrelevant', [_RouteExtension()])
+    _git_init_and_track(
+        tmp_path,
+        ['scripts/a.py', 'scripts/b.py', 'scripts/sub/c.py', 'test/bar.py', 'pyproject.toml'],
+    )
+    derived = derive_globs_from_tree(str(tmp_path), [_RouteExtension()])
     prod = [(p, r) for p, r in derived['minimal'] if r == 'production']
     assert prod == [('scripts/*.py', 'production')]
 
 
-def test_derive_globs_does_not_read_project_root(tmp_path):
-    """Route collection ignores the tree — project_root is signature parity only."""
-    # An empty tmp_path tree must not change the collected routes.
+def test_derive_globs_prunes_route_absent_from_tree(tmp_path):
+    """A declared route whose pattern matches no tracked file is pruned.
+
+    The tree carries only ``scripts/foo.py`` — the ``test/*.py`` and
+    ``pyproject.toml`` routes match nothing and are pruned, while the live
+    ``scripts/*.py`` route survives. This is the dead-glob fix.
+    """
+    _git_init_and_track(tmp_path, ['scripts/foo.py'])
     derived = derive_globs_from_tree(str(tmp_path), [_RouteExtension()])
-    assert ('scripts/*.py', 'production') in derived['minimal']
+    assert derived['minimal'] == [('scripts/*.py', 'production')]
 
 
-def test_derive_globs_deduplicates_routes():
+def test_derive_globs_omits_domain_whose_every_route_is_dead(tmp_path):
+    """A domain left with no surviving routes is omitted entirely.
+
+    An empty tracked-file set prunes every route, so the extension's domain key
+    does not appear in the result.
+    """
+    _git_init_and_track(tmp_path, ['README.md'])
+    derived = derive_globs_from_tree(str(tmp_path), [_RouteExtension()])
+    assert derived == {}
+
+
+def test_derive_globs_empty_tree_prunes_all_routes(tmp_path):
+    """An empty git-tracked file set prunes all routes (returns empty)."""
+    _git_init_and_track(tmp_path, [])
+    derived = derive_globs_from_tree(str(tmp_path), [_RouteExtension()])
+    assert derived == {}
+
+
+def test_derive_globs_deduplicates_routes(tmp_path):
     """Duplicate declared routes collapse to one entry."""
 
     class _DupRouteExtension(_MinimalExtension):
@@ -506,11 +551,12 @@ def test_derive_globs_deduplicates_routes():
                 ('scripts/*.py', ROLE_PRODUCTION),
             ]
 
-    derived = derive_globs_from_tree('/irrelevant', [_DupRouteExtension()])
+    _git_init_and_track(tmp_path, ['scripts/foo.py'])
+    derived = derive_globs_from_tree(str(tmp_path), [_DupRouteExtension()])
     assert derived['minimal'] == [('scripts/*.py', 'production')]
 
 
-def test_derive_globs_entries_are_sorted_and_deterministic():
+def test_derive_globs_entries_are_sorted_and_deterministic(tmp_path):
     """The per-domain entries are emitted in deterministic sorted order."""
 
     class _UnsortedRouteExtension(_MinimalExtension):
@@ -521,8 +567,9 @@ def test_derive_globs_entries_are_sorted_and_deterministic():
                 ('m/*.py', ROLE_PRODUCTION),
             ]
 
-    first = derive_globs_from_tree('/irrelevant', [_UnsortedRouteExtension()])
-    second = derive_globs_from_tree('/irrelevant', [_UnsortedRouteExtension()])
+    _git_init_and_track(tmp_path, ['z/x.py', 'a/x.py', 'm/x.py'])
+    first = derive_globs_from_tree(str(tmp_path), [_UnsortedRouteExtension()])
+    second = derive_globs_from_tree(str(tmp_path), [_UnsortedRouteExtension()])
     assert first == second
     assert first['minimal'] == sorted(first['minimal'])
 
@@ -549,25 +596,27 @@ def test_derive_globs_ignores_route_with_unknown_role():
     assert derived == {}
 
 
-def test_derive_globs_survives_extension_raising_in_classify_globs():
+def test_derive_globs_survives_extension_raising_in_classify_globs(tmp_path):
     """A broken extension is skipped, not allowed to abort the whole derivation."""
 
     class _RaisingExtension(_MinimalExtension):
         def classify_globs(self) -> list[tuple[str, str]]:
             raise RuntimeError('boom')
 
-    derived = derive_globs_from_tree('/irrelevant', [_RaisingExtension(), _RouteExtension()])
+    _git_init_and_track(tmp_path, ['scripts/foo.py', 'test/bar.py', 'pyproject.toml'])
+    derived = derive_globs_from_tree(str(tmp_path), [_RaisingExtension(), _RouteExtension()])
     # The raising extension is skipped; the well-behaved one still contributes.
     assert 'minimal' in derived
 
 
-def test_derive_globs_every_entry_role_resolves_to_a_build_class():
+def test_derive_globs_every_entry_role_resolves_to_a_build_class(tmp_path):
     """Each (pattern, role) route resolves to a BUILD_CLASSES member.
 
     This is exactly the per-entry lookup the build_map seed aggregator performs.
     """
     ext = _RouteExtension()
-    derived = derive_globs_from_tree('/irrelevant', [ext])
+    _git_init_and_track(tmp_path, ['scripts/foo.py', 'test/bar.py', 'pyproject.toml'])
+    derived = derive_globs_from_tree(str(tmp_path), [ext])
     for _pattern, role in derived['minimal']:
         assert ext.classify_build_class(_pattern, role) in BUILD_CLASSES
 
@@ -575,18 +624,6 @@ def test_derive_globs_every_entry_role_resolves_to_a_build_class():
 # =============================================================================
 # validate_tree_completeness() — git-tracked completeness validator
 # =============================================================================
-
-
-def _git_init_and_track(root, rel_paths: list[str]) -> None:
-    """Create + git-add each repo-relative path under ``root`` as a tracked file."""
-    subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
-    subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
-    subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'T'], check=True)
-    for rel in rel_paths:
-        target = root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('')
-    subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True)
 
 
 def test_validate_completeness_returns_empty_when_all_covered(tmp_path):
