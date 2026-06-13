@@ -71,6 +71,13 @@ python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build ru
 
 `--project-dir` and `--plan-id` are mutually exclusive.
 
+**Two independent budgets — distinct, non-confusable failure envelopes.** `run` is governed by two separate ceilings that do NOT extend one another:
+
+1. **`--timeout` (build-EXECUTION deadline).** `--timeout` — falling back to the config default when omitted — is the subprocess execution deadline. An overrun surfaces as `status: timeout`.
+2. **`--plan-id` slot (build-QUEUE concurrency limiter).** When `--plan-id` is set, the build is additionally enrolled in the `manage-locks` build-queue concurrency limiter. Its slot-acquisition ceiling is a separate `manage-locks` knob (`build.queue.max_retries × 60s`, ~600s default) that `--timeout` does NOT extend. Under sustained saturation past that retry ceiling the build returns `status: error` / `error: queue_saturated` (exit 1) WITHOUT ever running the build — this envelope is DISTINGUISHABLE from a `status: timeout` execution timeout, never confusable with it. A `status: timeout` under `--plan-id` is therefore always an execution-deadline overrun, never a slot-acquisition timeout.
+
+**Escape hatch.** The `--project-dir` path (mutually exclusive with `--plan-id`) makes the queue slot a NO-OP passthrough, bypassing the concurrency limiter entirely. On a contended machine where a saturated queue is starving a build, switching from `--plan-id` to `--project-dir` is the documented way to bypass the queue and let the build run.
+
 ### parse
 
 ```bash
