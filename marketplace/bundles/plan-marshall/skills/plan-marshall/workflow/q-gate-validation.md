@@ -546,20 +546,25 @@ Verify, for lesson-derived plans, that every concrete code claim in the source l
 
      Probing only the leaf help shows only the field flag, so a leaf-only check would mark the claim `invalid` spuriously for the audit-plan-id flag. That flag is an executor-stripped flag (removed before argparse sees it), so it appears in no help output yet is always valid; the analogous parent-chain case is a top-level flag declared on the `manage-architecture` notation rather than its `resolve` leaf — probing the full chain reveals it. Classify `valid`, emit no finding.
    - Behavioral assertion → `Read` the cited file/region and reason about current behavior
-4. Classify each claim as: `valid` (narrative matches code), `stale` (code has moved but the underlying intent remains valid), or `invalid` (code never matched the narrative). Emit a finding per `stale` or `invalid` claim.
+4. Classify each claim as: `valid` (narrative matches code), `stale` (code has moved but the underlying intent remains valid), or `invalid` (code never matched the narrative). Emit a finding per `stale` or `invalid` claim — but the two classifications carry different *severity* and *verdict semantics*, and the validator MUST preserve that distinction:
+
+   - **`invalid`** → an outright invalid finding. The narrative was never true against any code state (e.g., the cited path matches no file, the cited mapping contradicts the configured baseline). This is a high-confidence discrepancy: the narrative is wrong, full stop. Emit at `--severity high`.
+   - **`stale`** → a **low-confidence / outline-confirm-required** signal, NOT an outright invalid finding. The narrative *was* true at lesson-capture time and the underlying intent remains valid; only the surface (path, symbol name, signature) has moved under refactor/rename. The validator cannot tell from the narrative alone whether the moved surface or the lesson's original intent represents the desired end state — so a `stale` claim is a flag for the outline phase to confirm, not a blocker and not an assertion that the narrative is wrong. Emit at `--severity low` and word the finding so it reads as "confirm at outline", not "narrative is invalid".
+
+   The STALE-vs-INVALID distinction is load-bearing: collapsing `stale` into the same outright-invalid treatment as `invalid` would over-report routine refactor drift as narrative errors, defeating the validator's purpose of surfacing genuine baseline mismatches.
 
 **Finding emission template**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 2-refine \
-  --source qgate --type triage \
+  --source qgate --type triage --severity {severity} \
   --title "Q-Gate: narrative_vs_code_validator — {classification} claim in lesson {lesson_id}" \
   --detail "Lesson narrative claims '{claim_text}' but current code shows '{actual_state}' at {file_path}:{line}. {classification_detail}. Discrepancies are scope-expansion signals, not blockers — surface both readings to the user and ask which represents the desired end state before treating the narrative as authoritative." \
   --audit-plan-id {plan_id}
 ```
 
-`{classification}` is one of `stale`, `invalid`. `{classification_detail}` adds context: e.g., "Lesson was authored 2026-04-08; the cited symbol was renamed in PR #199 (2026-04-15)" for `stale`, or "No file matching the cited path was found in the worktree" for `invalid`.
+`{classification}` is one of `stale`, `invalid`. `{severity}` follows the classification per step 4: `low` for `stale` (a low-confidence, outline-confirm-required signal), `high` for `invalid` (an outright invalid finding). `{classification_detail}` adds context AND signals the verdict semantics: for `stale`, frame it as a confirm-at-outline prompt — e.g., "Lesson was authored 2026-04-08; the cited symbol was renamed in PR #199 (2026-04-15) — the intent is likely still valid, confirm at outline whether the renamed surface is the desired target"; for `invalid`, state the outright mismatch — e.g., "No file matching the cited path was found in the worktree; the narrative never matched any code state".
 
 **Positive example**: A lesson-derived plan claims "implementation profile runs `module-tests`". Validator queries `manage-config plan phase-2-refine get --field profile_command_map`, finds `implementation` profile maps to `compile`, not `module-tests`. Validator emits `invalid` finding — the narrative was wrong about the baseline.
 
