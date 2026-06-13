@@ -529,6 +529,8 @@ For each step in task's `steps[]` array:
 2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `execution-context`, the subagent inherits the pinned cwd per the **Dispatch Protocol** section above; pass `plan_id` as the structured input and optionally embed the reminder header.
 3. Mark step complete via `manage-tasks:finalize-step`
 
+**Infeasible deliverable — report, never silently substitute**: when a step's declared deliverable turns out to be infeasible during execution — the target cannot be cleanly built as the task specifies (the required surface does not exist, a precondition the deliverable assumed is false, or building the named artifact is structurally impossible as scoped) — the agent MUST report the infeasibility back through the gate and MUST NOT silently substitute a different, weaker deliverable under the same name. Mark the task `blocked` with an infeasibility reason and route the structured failure into the established failure surface: the `blocked` task flows into the **Step 11 (Triage Verification Failure)** path exactly as a `no_changes_detected` / `verification_mismatch` block does, and the leaf returns the `triage_required` signal to the orchestrator carrying the infeasibility reason. Narrowing the deliverable into a buildable-but-valueless artifact under the original name — so the step "passes" while delivering none of the declared value — is prohibited; the infeasibility is a real failure and belongs on the triage surface, not hidden behind a substituted deliverable.
+
 ### Step 6.5: Scope-Creep Guard (per-task)
 
 After Step 6 completes its file-system changes but BEFORE running task verification (Step 7's `finalize-step` records "done" only after this guard clears), invoke the deterministic scope-creep helper. The helper computes the residual file-set drift — files modified since the plan was created that are NOT declared in the union of all deliverables' `affected_files` — and emits a `scope_creep_warning` finding when the residual cardinality exceeds the configured threshold.
@@ -762,7 +764,8 @@ The mid-execute per-deliverable build is **focused** by design: it consumes the 
 
 **Applies when**:
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
-- Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
+- Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`, OR
+- A task was marked `blocked` with an infeasibility reason per Step 6 ("Infeasible deliverable — report, never silently substitute")
 
 The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md). This per-task body is a leaf and does NOT dispatch it — the leaf persists the findings and returns a `triage_required` signal; the main-context orchestrator dispatches `verification-feedback` under `--phase phase-5-execute --role verification-feedback` with `producer=build-runner` (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) and the canonical contract in [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md)).
 

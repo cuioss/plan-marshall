@@ -219,7 +219,17 @@ The following rule IDs appear in `_doctor_shared.py::FIXABLE_ISSUE_TYPES` becaus
 |---------|-------|---------|--------|
 | `skill-resolver-gap` (already listed under Skill rules) | content | `_doctor_analysis.py` (also surfaced under sub-docs via `subdoc-skill-resolver-gap` channel inside `_doctor_analysis.py`) | Lesson `2026-04-27-18-005`. Listed once under Skill rules. |
 
+### Zero-match rule detector
+
+| Rule ID | Class | Emitter | Source |
+|---------|-------|---------|--------|
+| `zero-match-rule` | structural | `_analyze_zero_match_rule.py` | Lesson `2026-06-10-22-003` (a doctor rule whose target pattern is textually indistinguishable from a legitimate shape never fires and is dead) and plan `a-doctor-rule-whose-target-pattern-is-textually-i` (D4) — mechanical enforcement of the zero-match acceptance criterion in § "Provenance contract for new rules". A positive-fixture self-test: runs the registered analyzers against a curated known-defect fixture corpus and flags each claimed-and-registered rule ID that fired on no fixture. Severity `warning`, `fixable: False`. |
+
 ## Provenance contract for new rules
+
+Before adding a new rule, the author MUST complete a corpus-feasibility check and record its result:
+
+0. **Corpus-feasibility check** — grep the marketplace corpus for BOTH (a) the defect pattern the rule targets AND (b) the count of legitimate occurrences of the same textual shape, and record a one-line legitimate-occurrence note stating that count. A target whose defect shape is textually indistinguishable from a legitimate shape — no structural discriminator separates a real defect from a benign occurrence — is infeasible as a static check and MUST be reported as such rather than shipped. **Zero-match acceptance criterion**: a new rule that matches zero occurrences in the existing corpus is inadmissible unless it ships a positive-fixture proving the matcher fires on a known-defect instance (the mechanism enforced by Deliverable 4 — see the `zero-match-rule` entry in § "Zero-match rule detector" above). A zero-match rule with no positive fixture is presumed dead and MUST be dropped or justified. The `zero-match-rule` rule is the mechanical enforcement of this criterion.
 
 Adding a new rule to plugin-doctor requires three artifacts created in lockstep:
 

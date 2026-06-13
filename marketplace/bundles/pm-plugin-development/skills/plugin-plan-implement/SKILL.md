@@ -109,6 +109,8 @@ The step `title` is a file path. Apply changes based on:
 - Apply changes per task description
 - Write updated content
 
+**Infeasible step — report, never silently substitute**: when a step's declared deliverable turns out to be infeasible during execution — the target cannot be cleanly built as the task specifies (the required surface does not exist, a precondition the deliverable assumed is false, or building the named artifact is structurally impossible as scoped) — report the infeasibility as a recoverable error in the **Step 7 return** (`status: error`, `next_action: requires_attention`) naming the infeasibility reason. Do NOT mark the step done, and do NOT narrow the deliverable into a buildable-but-valueless substitute under the original name so the step "passes" while delivering none of the declared value. The infeasibility is a real failure that belongs in the structured return, not hidden behind a substituted deliverable.
+
 Load step execution patterns if needed:
 ```
 Read standards/step-execution.md
