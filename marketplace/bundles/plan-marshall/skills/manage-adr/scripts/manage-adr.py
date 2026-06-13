@@ -65,7 +65,7 @@ def parse_metadata_block(content: str) -> dict:
     `tags`/`affects`/`supersedes` (list[str]); absent fields default to an
     empty string / empty list. A missing block yields all-empty defaults.
     """
-    metadata: dict = {field: '' for field in METADATA_SCALAR_FIELDS}
+    metadata: dict = dict.fromkeys(METADATA_SCALAR_FIELDS, '')
     for field in METADATA_LIST_FIELDS:
         metadata[field] = []
 
