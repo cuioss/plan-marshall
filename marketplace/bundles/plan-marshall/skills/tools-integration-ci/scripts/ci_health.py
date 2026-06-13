@@ -14,8 +14,8 @@ Usage:
     python3 ci-health.py status
     python3 ci-health.py persist
 
-Output (JSON format):
-    All subcommands return JSON with status field.
+Output (TOON format):
+    All subcommands serialize their result dict to TOON via serialize_toon.
 """
 
 import argparse

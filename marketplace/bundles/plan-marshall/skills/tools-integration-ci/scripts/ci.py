@@ -81,7 +81,7 @@ def get_provider() -> str | None:
 
     marshal_path = plan_dir / 'marshal.json'
     try:
-        with open(marshal_path) as f:
+        with open(marshal_path, encoding='utf-8') as f:
             config = json.load(f)
 
             for entry in config.get('providers', []):
