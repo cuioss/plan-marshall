@@ -942,7 +942,7 @@ These rules govern how the outline must verify actual state — defect liveness,
    python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get --lesson-id {id}
    ```
 
-   A registered ID returns the lesson; an unregistered ID returns a not-found status. To enumerate the full registered set in one call (e.g. when several tokens are being validated at once), use `python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list`.
+   A registered ID returns the lesson; an unregistered ID returns the canonical error shape (`status: error` with `error: not_found`). To enumerate the full registered set in one call (e.g. when several tokens are being validated at once), use `python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list`.
 
 2. **On a not-found result, choose one of two resolutions** (do NOT write the bare ID):
 
