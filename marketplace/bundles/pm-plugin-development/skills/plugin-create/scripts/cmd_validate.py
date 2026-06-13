@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """Validate subcommand for validating marketplace component structure."""
 
+import argparse
 import re
+from typing import Any
+
+Finding = dict[str, Any]
+Frontmatter = dict[str, Any]
 
 
-def parse_simple_yaml(yaml_text):
-    """Parse simple YAML (key: value pairs only) without external dependencies."""
-    result = {}
+def parse_simple_yaml(yaml_text: str) -> Frontmatter:
+    """Parse simple YAML (key: value pairs only) without external dependencies.
+
+    Raises:
+        ValueError: If indentation or syntax is malformed.
+    """
+    result: Frontmatter = {}
     lines = yaml_text.strip().split('\n')
 
     for line_num, line in enumerate(lines, 1):
@@ -42,8 +51,16 @@ def parse_simple_yaml(yaml_text):
     return result
 
 
-def extract_frontmatter(content):
-    """Extract YAML frontmatter from markdown content."""
+def extract_frontmatter(content: str) -> tuple[Frontmatter | None, str | None]:
+    """Extract YAML frontmatter from markdown content.
+
+    Args:
+        content: Full markdown file content.
+
+    Returns:
+        A tuple of the parsed frontmatter (or ``None``) and an error message
+        (or ``None`` on success).
+    """
     pattern = r'^---\s*\n(.*?)\n---\s*\n'
     match = re.match(pattern, content, re.DOTALL)
 
@@ -59,10 +76,10 @@ def extract_frontmatter(content):
         return None, f'Invalid YAML syntax: {str(e)}'
 
 
-def validate_frontmatter_agent(frontmatter):
+def validate_frontmatter_agent(frontmatter: Frontmatter) -> tuple[list[Finding], list[Finding]]:
     """Validate agent frontmatter fields."""
-    errors = []
-    warnings = []
+    errors: list[Finding] = []
+    warnings: list[Finding] = []
 
     for field in ['name', 'description']:
         if field not in frontmatter:
@@ -115,10 +132,10 @@ def validate_frontmatter_agent(frontmatter):
     return errors, warnings
 
 
-def validate_frontmatter_command(frontmatter):
+def validate_frontmatter_command(frontmatter: Frontmatter) -> tuple[list[Finding], list[Finding]]:
     """Validate command frontmatter fields."""
-    errors = []
-    warnings = []
+    errors: list[Finding] = []
+    warnings: list[Finding] = []
 
     for field in ['name', 'description']:
         if field not in frontmatter:
@@ -142,13 +159,13 @@ def validate_frontmatter_command(frontmatter):
     return errors, warnings
 
 
-def validate_frontmatter_skill(frontmatter):
+def validate_frontmatter_skill(frontmatter: Frontmatter) -> tuple[list[Finding], list[Finding]]:
     """Validate skill frontmatter fields.
 
     Skill frontmatter permits only: name, description, user-invocable.
     """
-    errors = []
-    warnings = []
+    errors: list[Finding] = []
+    warnings: list[Finding] = []
 
     for field in ['name', 'description']:
         if field not in frontmatter:
@@ -175,10 +192,10 @@ def validate_frontmatter_skill(frontmatter):
     return errors, warnings
 
 
-def validate_agent_content(content):
+def validate_agent_content(content: str) -> tuple[list[Finding], list[Finding]]:
     """Validate agent-specific content rules."""
-    errors = []
-    warnings = []
+    errors: list[Finding] = []
+    warnings: list[Finding] = []
 
     if '## CONTINUOUS IMPROVEMENT RULE' not in content:
         warnings.append(
@@ -222,10 +239,10 @@ def validate_agent_content(content):
     return errors, warnings
 
 
-def validate_command_content(content):
+def validate_command_content(content: str) -> tuple[list[Finding], list[Finding]]:
     """Validate command-specific content rules."""
-    errors = []
-    warnings = []
+    errors: list[Finding] = []
+    warnings: list[Finding] = []
 
     required_sections = ['# ', '## WORKFLOW', '## USAGE EXAMPLES']
 
@@ -252,10 +269,10 @@ def validate_command_content(content):
     return errors, warnings
 
 
-def validate_skill_content(content):
+def validate_skill_content(content: str) -> tuple[list[Finding], list[Finding]]:
     """Validate skill-specific content rules."""
-    errors = []
-    warnings = []
+    errors: list[Finding] = []
+    warnings: list[Finding] = []
 
     required_sections = ['# ', '## What This Skill Provides', '## When to', '## Workflow']
 
@@ -282,10 +299,10 @@ def validate_skill_content(content):
     return errors, warnings
 
 
-def cmd_validate(args) -> dict:
+def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
     """Validate marketplace component structure."""
-    errors: list[dict] = []
-    warnings: list[dict] = []
+    errors: list[Finding] = []
+    warnings: list[Finding] = []
 
     # Read file
     try:
@@ -298,7 +315,7 @@ def cmd_validate(args) -> dict:
             'errors': [{'type': 'file_not_found', 'message': f'File not found: {args.file}'}],
             'warnings': [],
         }
-    except Exception as e:
+    except OSError as e:
         return {
             'status': 'error',
             'valid': False,
@@ -309,8 +326,8 @@ def cmd_validate(args) -> dict:
     # Extract and validate frontmatter
     frontmatter, error = extract_frontmatter(content)
 
-    if error:
-        errors.append({'type': 'frontmatter_missing', 'message': error})
+    if error or frontmatter is None:
+        errors.append({'type': 'frontmatter_missing', 'message': error or 'Frontmatter could not be parsed'})
     else:
         # Validate frontmatter based on component type
         if args.type == 'agent':

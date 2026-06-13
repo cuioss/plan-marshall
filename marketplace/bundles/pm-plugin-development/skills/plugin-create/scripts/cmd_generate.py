@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Generate subcommand for creating YAML frontmatter."""
 
+import argparse
 import json
+from typing import Any
 
 
-def generate_agent_frontmatter(answers):
-    """Generate frontmatter for agent component."""
-    frontmatter = {'name': answers['name'], 'description': answers['description']}
+def generate_agent_frontmatter(answers: dict[str, Any]) -> dict[str, Any]:
+    """Generate frontmatter for agent component.
+
+    Raises:
+        ValueError: If the ``tools`` field is missing or empty.
+    """
+    frontmatter: dict[str, Any] = {'name': answers['name'], 'description': answers['description']}
 
     # Add optional model field if present
     if 'model' in answers and answers['model']:
@@ -27,18 +33,17 @@ def generate_agent_frontmatter(answers):
     return frontmatter
 
 
-def generate_command_frontmatter(answers):
+def generate_command_frontmatter(answers: dict[str, Any]) -> dict[str, Any]:
     """Generate frontmatter for command component."""
-    frontmatter = {'name': answers['name'], 'description': answers['description']}
-    return frontmatter
+    return {'name': answers['name'], 'description': answers['description']}
 
 
-def generate_skill_frontmatter(answers):
+def generate_skill_frontmatter(answers: dict[str, Any]) -> dict[str, Any]:
     """Generate frontmatter for skill component.
 
     Skill frontmatter permits only: name, description, user-invocable.
     """
-    frontmatter = {'name': answers['name'], 'description': answers['description']}
+    frontmatter: dict[str, Any] = {'name': answers['name'], 'description': answers['description']}
 
     # user-invocable defaults to false for skills
     frontmatter['user-invocable'] = answers.get('user-invocable', False)
@@ -46,7 +51,7 @@ def generate_skill_frontmatter(answers):
     return frontmatter
 
 
-def format_frontmatter(frontmatter_dict):
+def format_frontmatter(frontmatter_dict: dict[str, Any]) -> str:
     """Format frontmatter as YAML with --- delimiters."""
     lines = []
 
@@ -63,7 +68,7 @@ def format_frontmatter(frontmatter_dict):
     return f'---\n{yaml_content}\n---'
 
 
-def cmd_generate(args) -> dict:
+def cmd_generate(args: argparse.Namespace) -> dict[str, Any]:
     """Generate YAML frontmatter for marketplace component."""
     try:
         answers = json.loads(args.config)
@@ -84,7 +89,7 @@ def cmd_generate(args) -> dict:
             frontmatter_dict = generate_agent_frontmatter(answers)
         elif args.type == 'command':
             frontmatter_dict = generate_command_frontmatter(answers)
-        elif args.type == 'skill':
+        else:
             frontmatter_dict = generate_skill_frontmatter(answers)
     except ValueError as e:
         return {'status': 'error', 'error': 'generation_failed', 'message': str(e)}
