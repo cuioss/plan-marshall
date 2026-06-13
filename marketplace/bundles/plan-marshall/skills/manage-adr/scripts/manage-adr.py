@@ -19,6 +19,7 @@ Output format: TOON to stdout
 import argparse
 import re
 from pathlib import Path
+from typing import Any
 
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
@@ -56,7 +57,7 @@ METADATA_LIST_FIELDS = ('tags', 'affects', 'supersedes')
 METADATA_SCALAR_FIELDS = ('summary',)
 
 
-def parse_metadata_block(content: str) -> dict:
+def parse_metadata_block(content: str) -> dict[str, str | list[str]]:
     """Extract the progressive-disclosure metadata block from ADR content.
 
     The block is a run of AsciiDoc line comments delimited by
@@ -65,7 +66,7 @@ def parse_metadata_block(content: str) -> dict:
     `tags`/`affects`/`supersedes` (list[str]); absent fields default to an
     empty string / empty list. A missing block yields all-empty defaults.
     """
-    metadata: dict = dict.fromkeys(METADATA_SCALAR_FIELDS, '')
+    metadata: dict[str, str | list[str]] = dict.fromkeys(METADATA_SCALAR_FIELDS, '')
     for field in METADATA_LIST_FIELDS:
         metadata[field] = []
 
@@ -122,16 +123,16 @@ def get_next_number() -> int:
     if not existing:
         return 1
 
-    numbers = []
-    for f in existing:
-        match = re.match(r'^(\d{3})-', f.name)
+    numbers: list[int] = []
+    for filepath in existing:
+        match = re.match(r'^(\d{3})-', filepath.name)
         if match:
             numbers.append(int(match.group(1)))
 
     return max(numbers) + 1 if numbers else 1
 
 
-def parse_adr_file(filepath: Path) -> dict:
+def parse_adr_file(filepath: Path) -> dict[str, Any]:
     """Parse ADR file and extract metadata."""
     content = filepath.read_text()
 
@@ -162,7 +163,7 @@ def parse_adr_file(filepath: Path) -> dict:
     }
 
 
-def cmd_list(args) -> dict:
+def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
     """List all ADRs."""
     if not ADR_DIR.exists():
         return {'status': 'success', 'operation': 'list', 'count': 0, 'adrs': []}
@@ -177,7 +178,7 @@ def cmd_list(args) -> dict:
     return {'status': 'success', 'operation': 'list', 'count': len(adrs), 'adrs': adrs}
 
 
-def cmd_create(args) -> dict:
+def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
     """Create new ADR."""
     # Ensure ADR directory exists
     ADR_DIR.mkdir(parents=True, exist_ok=True)
@@ -247,7 +248,7 @@ def cmd_create(args) -> dict:
     }
 
 
-def cmd_read(args) -> dict:
+def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
     """Read ADR content."""
     if not ADR_DIR.exists():
         return {
@@ -278,7 +279,7 @@ def cmd_read(args) -> dict:
     return adr
 
 
-def cmd_update(args) -> dict:
+def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
     """Update ADR status or field."""
     if not ADR_DIR.exists():
         log_entry('script', 'global', 'ERROR', '[ADR] Directory does not exist')
@@ -339,7 +340,7 @@ def cmd_update(args) -> dict:
     }
 
 
-def cmd_delete(args) -> dict:
+def cmd_delete(args: argparse.Namespace) -> dict[str, Any]:
     """Delete ADR."""
     if not args.force:
         return {
@@ -384,13 +385,13 @@ def cmd_delete(args) -> dict:
     }
 
 
-def cmd_next_number(args) -> dict:
+def cmd_next_number(args: argparse.Namespace) -> dict[str, Any]:
     """Get next available ADR number."""
     number = get_next_number()
     return {'status': 'success', 'operation': 'next-number', 'next_number': number}
 
 
-def cmd_scan(args) -> dict:
+def cmd_scan(args: argparse.Namespace) -> dict[str, Any]:
     """List all ADRs with progressive-disclosure metadata.
 
     Returns each ADR's number/title/status plus the scannable metadata fields
@@ -427,7 +428,7 @@ def cmd_scan(args) -> dict:
 
 
 @safe_main
-def main():
+def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
         allow_abbrev=False,
