@@ -1,90 +1,96 @@
-# Multi-Target Marketplace Refactor — Overview
+# OpenCode Support — Remaining Work
 
-## Objective
+## What this directory is
 
-Redesign the plan-marshall marketplace for multi-target distribution (Claude Code native + OpenCode + future) without changing the source-of-truth format or duplicating content.
+The plan-marshall marketplace was redesigned for multi-target distribution (Claude
+Code native + OpenCode + future targets) without changing the source-of-truth format.
+The **foundational work has landed.** This directory no longer contains the original
+seven-cluster plan — that plan is superseded by the code now in the tree. What remains
+here is a focused record of the genuine next steps to take OpenCode from "fully built
+but never run" to "validated and installable."
 
-## Marketplace Inventory
+This is a **documentation plan, not an implementation.** Nothing here has been
+implemented by the rewrite that produced these files; the documents describe work to be
+done.
 
-10 production bundles containing 116 skills, 11 agents, and 2 commands (counts at the time of this refactor). Of the 116 skills, 13 are flagged `user-invocable: true` and require the dual-emit treatment on OpenCode (see [02 — Build System](02-build-system) "User-Invocable Skills (Dual Emission)").
+## Landed baseline (do not re-plan)
 
-## Core Insight
+These are in the tree today. Treat them as the foundation, not as open work.
 
-Multi-target portability without changing the source-of-truth format:
-- **Keep Claude Code format as source of truth** — body text is emitted verbatim except for a small bounded set of mechanical line-level transforms (see [02 — Build System](02-build-system) "Body Transforms")
-- **Abstract platform-specific behavior into scripts** — a `platform-runtime` layer
-- **Generate target outputs at build time** — frontmatter, manifest, and the bounded body transforms documented in `marketplace/targets/opencode/transforms.md`
+| Capability | Where it lives | Notes |
+|------------|----------------|-------|
+| `platform-runtime` abstraction (15 operations, goal-based API) | `marketplace/bundles/plan-marshall/skills/platform-runtime/` | Router + `runtime_base.py` + `claude_runtime.py` + `opencode_runtime.py` + `claude_hook.py`. **`opencode_runtime.py` implements every one of the 15 operations** (with `no-op` where OpenCode lacks the mechanism). |
+| Target generator framework | `marketplace/targets/` | `TargetBase`, `TARGET_REGISTRY`, `generate.py` CLI; `claude/` (verbatim mirror + always-generate `plugin.json` + variant emission) and `opencode/` (emitter, frontmatter transform, body transforms, dual-emit, mapping). |
+| Source-side prose cleanup | skill bodies + `references/*.md` | Claude-only plumbing prose moved out of skill bodies; tool-name rules rephrased role-first. |
+| Target-aware executor | `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py` | Reads `runtime.target`; emits the Claude-cache resolver or the OpenCode 7-root resolver. Same `{bundle}:{skill}:{script}` notation on both. |
+| `marketplace/adapters/` retired | (deleted) | Logic migrated into `marketplace/targets/opencode/`. |
+| Distribution pipeline | `.github/workflows/claude-distribute.yml` | Target-**parametrized** `strategy.matrix`; publishes `target/claude/` to the `dist-claude` orphan branch and immutable `claude/v*` dist tags. |
+| Tests | `test/plan-marshall/platform-runtime/`, `test/marketplace/targets/`, `test/plan-marshall/targets-claude/` | Router, both runtimes, hook, bootstrap, generator, variant emitter. |
+| Canonical docs (partial) | `doc/developer/marketplace-build.adoc`, `doc/developer/distribution.adoc`, `doc/concepts/execution-context.adoc` | The build + distribution architecture is already documented here — in present-tense AsciiDoc, not as flat `doc/*.md` plan ports. |
 
-## Cluster Structure
+## How reality diverged from the original plan
 
-This refactor is organized into 7 clusters plus cross-cutting principles:
+Three places where the codebase chose a different (better) path than the retired plan
+assumed. The next-step documents below reflect the *current* reality, not the old plan.
 
-| Cluster | Focus | Output |
-|---------|-------|--------|
-| [Principles](principles.md) | Rules that govern all clusters | Shared contract |
-| [00 — Cleanup / Precondition](00-cleanup-precondition/plan.md) | One-time source-side prose cleanup of skill bodies (Claude-only plumbing prose, tool-name rules) | Cleaned skill bodies + `references/{topic}.md` files; benefits Claude Code today, unblocks OpenCode tomorrow |
-| [01 — Design Platform API](01-design-platform-api/plan.md) ✅ | Goal-based platform-runtime abstraction | API contract + router spec |
-| [02 — Build System](02-build-system/plan.md) ✅ | Target generator, dual-mode Claude target (drift + verbatim emit), OpenCode emitter, deploy/sync finalize integration | `marketplace/targets/` framework |
-| [03 — Refactor for Portability](03-refactor-for-portability/plan.md) | Clean code of platform leakage | Updated skills + marshal.json |
-| [04 — Validate and Document](04-validate-and-document/plan.md) | Know when we're done + document it | Test plan + architecture doc |
-| [05 — Distribution](05-distribution/plan.md) | CI/CD, artifact hosting, end-user installation | Release pipeline + install docs |
-| [06 — Developer Workflow](06-developer-workflow/plan.md) | Local deployment: edit → test → iterate | Dev inner loop for Claude + OpenCode |
+1. **Distribution did not move `marketplace.json` to the repo root and did not use
+   GitHub Pages / tarballs.** Instead, `claude-distribute.yml` publishes the generated
+   `target/{name}/` tree to a `dist-{name}` orphan branch plus `{name}/v*` tags, and
+   `/plugin marketplace add` points at the dist ref. Adding OpenCode is therefore a
+   **matrix-entry change**, not a new hosting design. See
+   [03 — Distribution: OpenCode target](03-distribution-opencode-target.md).
 
-## Dependency Graph
+2. **Canonical documentation landed under `doc/developer/` and `doc/concepts/`**, in
+   present-tense AsciiDoc, rather than the old "port each cluster plan into a flat
+   `doc/{topic}.md`" table. New OpenCode docs extend that structure rather than create a
+   parallel one. See [05 — OpenCode documentation](05-opencode-documentation.md).
+
+3. **The agent effort-variant scheme is `-level-1` … `-level-7`**, not the
+   `low/medium/high/xhigh/xxhigh` names the original cluster-02 plan used. The build
+   emitter and `effort-levels.md` are the source of truth; any OpenCode validation must
+   assert against the level-N names.
+
+## Remaining workstreams
+
+| # | Workstream | Status going in | Document |
+|---|------------|-----------------|----------|
+| 01 | Finish portability gaps | platform-runtime is built; a handful of call sites and one bootstrap script still bypass it | [01-finish-portability.md](01-finish-portability.md) |
+| 02 | Validate the OpenCode runtime live | every OpenCode operation is coded but **never run in a live OpenCode session** | [02-validate-opencode-runtime.md](02-validate-opencode-runtime.md) |
+| 03 | Add the OpenCode distribution target | one matrix entry + an OpenCode-generation CI gate | [03-distribution-opencode-target.md](03-distribution-opencode-target.md) |
+| 04 | OpenCode developer inner loop | `sync-opencode` deploy skill does not exist yet | [04-developer-workflow-sync-opencode.md](04-developer-workflow-sync-opencode.md) |
+| 05 | OpenCode user + developer documentation | write once the runtime is validated | [05-opencode-documentation.md](05-opencode-documentation.md) |
+
+## Sequencing
 
 ```
-Principles (governs all)
-    │
-    ▼
-00-cleanup-precondition (precondition — pure source housekeeping)
-    │
-    ▼
-01-design-platform-api ──────┐
-    │                        │
-    ▼                        │
-02-build-system ──────────┐ │
-    │                       │ │
-    ▼                       │ │
-03-refactor-for-portability ◄┘ │
-    │                         │
-    ├──────────┬──────────────┤
-    ▼          ▼              ▼
-04-validate  05-distribution 06-developer-workflow
-             (can start      (can start
-              design in       design in
-              parallel)       parallel)
+01 finish-portability ──┐
+                        ▼
+            02 validate-opencode-runtime ──┬──► 03 distribution-opencode-target
+                                           ├──► 04 developer-workflow-sync-opencode
+                                           └──► 05 opencode-documentation
 ```
 
-**00 runs first** because it is pure source-side prose cleanup with no dependencies. It strips Claude-only plumbing prose from skill bodies, benefits Claude Code immediately, and leaves clean source for the rest of the refactor to operate on. Clusters 01, 02, 05, 06 do not depend on 00 directly but are easier to design and validate against cleaned source.
+- **01 first.** The remaining bypass call sites (bootstrap, phase-5/retrospective
+  capture, permission-tool delegation) should route through `platform-runtime` before
+  anyone runs the runtime on OpenCode, so the live validation in 02 exercises the real
+  path.
+- **02 is the gate.** OpenCode has never been run. 02 is where the accepted risks from
+  the original design (subagent `AskUserQuestion`, `task`-tool dispatch, parallel
+  dispatch) are confirmed or escalated. 03/04/05 are only worth finishing once 02
+  proves the runtime works.
+- **03, 04, 05 are independent** of each other and can proceed in parallel after 02.
 
-**01 must complete before 03** because the structural refactoring (03) depends on knowing the platform-runtime API surface (01).
+## Governing principles
 
-**02 can proceed in parallel with 01** because the target engine's OpenCode emitter is a separate concern from the runtime API. However, 03's migration of the adapter into the target engine requires 02 to exist.
+[`principles.md`](principles.md) still governs every workstream here — goal-based API,
+no-op policy, single source of truth, no universal templating syntax, terminology, and
+document hygiene. Read it before starting any document below.
 
-**03 must run after 00** so its behavioural rewrites apply on already-clean source.
+## What we are NOT doing
 
-**04 runs last** because validation criteria depend on all implementation being in place.
-
-**05 depends on 02** for the generator, but can be designed in parallel with 02 since both concern build artifacts. CI integration requires 02 to be complete.
-
-**06 can be designed in parallel with 02** because the developer workflow depends on the build system for OpenCode generation, but not on 01 or 03. The Claude Code portion of 06 already exists and is documented.
-
-## What We Are NOT Doing
-
-- No universal templating syntax (`{{ }}`) — there is no cross-platform body language
-- No open-ended body text transformations — body transforms are limited to the bounded set in `marketplace/targets/opencode/transforms.md`; adding a new transform is a deliberate spec change
-- No excluding `marshall-steward` from OpenCode — it stays, but with platform-agnostic instructions
-- No changing the 10-bundle structure or component model
-- No adding version numbers, changelogs, or dated update sections to any document
-
-## Terminology
-
-| Term | Meaning |
-|------|---------|
-| **target** | An AI assistant platform we generate output for (Claude, OpenCode) |
-| **platform-runtime** | The abstraction layer that routes platform-specific operations |
-| **source of truth** | The Claude Code format in `marketplace/bundles/` |
-| **drift** | When committed `.claude-plugin/` output differs from what the generator would produce |
-| **no-op** | When a target cannot implement an operation, it returns a graceful fallback |
-
-See [05 — Distribution](05-distribution) for the full `marketplace.json` structure and Claude Code plugin discovery details.
+- No change to the Claude Code source-of-truth format.
+- No universal templating syntax (`{{ }}`) for cross-platform body text.
+- No revival of the retired distribution design (repo-root `marketplace.json`, GitHub
+  Pages, release tarballs) — the dist-branch + matrix design supersedes it.
+- No re-porting of already-published canonical docs into flat `doc/*.md` files.
+- No version numbers, changelogs, or dated update sections in any document.
