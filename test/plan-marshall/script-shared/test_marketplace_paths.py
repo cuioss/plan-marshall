@@ -158,17 +158,16 @@ class TestFindMarketplacePath:
 
 
 class TestFindMarketplacePathResolutionOrder:
-    """Regression tests for the four-step resolution order in find_marketplace_path().
+    """Regression tests for the three-step resolution order in find_marketplace_path().
 
     Resolution priority (highest first):
         1. Explicit ``marketplace_root`` parameter
         2. ``PM_MARKETPLACE_ROOT`` environment variable
         3. cwd walk-up — nearest ancestor of cwd containing ``marketplace/bundles``
-        4. cwd/parent discovery (legacy bootstrap fallback)
 
     Branches 1 and 2 are hard short-circuits (a missing candidate returns None
-    without falling through). Branches 3 and 4 both probe cwd-relatively under
-    the uniform cwd rule (ADR-002).
+    without falling through). Branch 3 probes cwd-relatively under the uniform
+    cwd rule (ADR-002).
     """
 
     @staticmethod
@@ -358,8 +357,31 @@ class TestGetBasePath:
         result = get_base_path('auto')
         assert result == bundles
 
-    def test_auto_raises_without_marketplace(self, tmp_path, monkeypatch):
-        """auto scope no longer falls back to cache; it requires marketplace."""
+    def test_auto_falls_back_to_cache_without_marketplace(self, tmp_path, monkeypatch):
+        """auto scope falls back to the plugin cache when no marketplace resolves.
+
+        With no explicit anchor and no ``marketplace/bundles`` discoverable by the
+        cwd walk-up, ``auto`` resolves to the plugin cache rather than raising.
+        This is the auto-scope cache-fallback fix.
+        """
+        bare = tmp_path / 'bare'
+        bare.mkdir()
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+        monkeypatch.chdir(bare)
+        cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
+        cache.mkdir(parents=True)
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+        result = get_base_path('auto')
+        assert result == cache
+
+    def test_auto_explicit_param_raises_without_cache_fallback(self, tmp_path, monkeypatch):
+        """An explicit anchor that does not resolve raises WITHOUT cache fallback.
+
+        The explicit-anchor contract is preserved: passing ``marketplace_root``
+        (or setting ``PM_MARKETPLACE_ROOT``) short-circuits on the marketplace and
+        never falls back to the plugin cache, even when one exists.
+        """
+        explicit_anchor = tmp_path / 'does-not-exist'
         bare = tmp_path / 'bare'
         bare.mkdir()
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
@@ -368,7 +390,23 @@ class TestGetBasePath:
         cache.mkdir(parents=True)
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         with pytest.raises(FileNotFoundError):
-            get_base_path('auto')
+            get_base_path('auto', marketplace_root=explicit_anchor)
+
+    def test_auto_prefers_marketplace_over_cache(self, tmp_path, monkeypatch):
+        """When both marketplace and cache resolve, auto returns the marketplace.
+
+        The cache fallback only fires when the marketplace cannot be found; a
+        discoverable marketplace always wins over a present plugin cache.
+        """
+        bundles = tmp_path / 'marketplace' / 'bundles'
+        bundles.mkdir(parents=True)
+        cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
+        cache.mkdir(parents=True)
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+        result = get_base_path('auto')
+        assert result == bundles
 
     def test_auto_raises_when_nothing_found(self, tmp_path, monkeypatch):
         bare = tmp_path / 'bare'
