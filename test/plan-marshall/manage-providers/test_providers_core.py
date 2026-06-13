@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 import pytest
 from _providers_core import (  # type: ignore[import-not-found]
-    CREDENTIALS_DIR,
     VALID_AUTH_TYPES,
     RestClient,
     get_authenticated_client,
@@ -24,6 +23,7 @@ from _providers_core import (  # type: ignore[import-not-found]
 )
 from _providers_fixtures import stage_marshal
 
+import _providers_core  # type: ignore[import-not-found]  # noqa: E402
 import conftest  # noqa: F401
 
 # =============================================================================
@@ -79,12 +79,14 @@ class TestResolveCredentialPath:
     def test_global_scope(self):
         """Global scope resolves directly under CREDENTIALS_DIR."""
         path = resolve_credential_path('test-skill', 'global')
-        assert path == CREDENTIALS_DIR / 'test-skill.json'
+        # Reference the LIVE module attr (the autouse _credentials_dir_sandbox
+        # redirects it per-test) rather than the import-time binding.
+        assert path == _providers_core.CREDENTIALS_DIR / 'test-skill.json'
 
     def test_project_scope(self):
         """Project scope resolves under project subdirectory."""
         path = resolve_credential_path('test-skill', 'project', 'my-project')
-        assert path == CREDENTIALS_DIR / 'my-project' / 'test-skill.json'
+        assert path == _providers_core.CREDENTIALS_DIR / 'my-project' / 'test-skill.json'
 
     def test_rejects_symlink_escape(self, tmp_path, monkeypatch):
         """Paths that escape CREDENTIALS_DIR via symlinks are rejected."""
