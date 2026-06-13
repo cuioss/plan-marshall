@@ -53,7 +53,10 @@ Examples:
     python3 manage-log.py read --plan-id EXAMPLE-PLAN --type decision --phase 1-init
 """
 
+from __future__ import annotations
+
 import argparse
+from typing import Any
 
 # Direct imports from same directory (local imports)
 from constants import VALID_LOG_LEVELS, VALID_LOG_TYPES  # type: ignore[import-not-found]
@@ -69,7 +72,7 @@ VALID_TYPES = VALID_LOG_TYPES
 VALID_LEVELS = VALID_LOG_LEVELS
 
 
-def handle_read(args: argparse.Namespace) -> dict:
+def handle_read(args: argparse.Namespace) -> dict[str, Any]:
     """Handle read subcommand."""
     plan_id = args.plan_id
     log_type = args.type
@@ -119,13 +122,13 @@ def handle_read(args: argparse.Namespace) -> dict:
     return result
 
 
-def handle_separator(args: argparse.Namespace) -> dict | None:
+def handle_separator(args: argparse.Namespace) -> dict[str, Any] | None:
     """Handle separator subcommand."""
     log_separator(args.type, args.plan_id)
     return None
 
 
-def handle_write(args: argparse.Namespace) -> dict | None:
+def handle_write(args: argparse.Namespace) -> dict[str, Any] | None:
     """Handle write subcommand."""
     log_type = args.log_type
     plan_id = args.plan_id
@@ -135,7 +138,7 @@ def handle_write(args: argparse.Namespace) -> dict | None:
     # Log entry
     try:
         log_entry(log_type, plan_id, level, message)
-    except Exception as e:
+    except OSError as e:
         return {'status': 'error', 'error': 'write_failed', 'message': str(e)}
     return None
 
@@ -189,7 +192,7 @@ def main() -> int:
 
     args = parse_args_with_toon_errors(parser)
 
-    result: dict | None = None
+    result: dict[str, Any] | None = None
     if args.command == 'read':
         result = handle_read(args)
     elif args.command == 'separator':

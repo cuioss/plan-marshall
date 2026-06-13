@@ -17,12 +17,15 @@ Configuration via environment variables:
 - LOG_RETENTION_DAYS: Days to keep global logs (default: 7)
 """
 
+from __future__ import annotations
+
 import hashlib
 import os
 import re
 import time
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from constants import (  # type: ignore[import-not-found]
     DIR_LOGS,
@@ -32,7 +35,7 @@ from constants import (  # type: ignore[import-not-found]
     VALID_LOG_TYPES,
     VALID_WORK_CATEGORIES,
 )
-from file_ops import get_base_dir  # type: ignore[import-not-found]
+from file_ops import get_base_dir, now_utc_iso  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 
 # =============================================================================
@@ -74,8 +77,6 @@ def get_plans_dir() -> Path:
 
 def format_timestamp() -> str:
     """Get current time in ISO 8601 UTC format."""
-    from file_ops import now_utc_iso
-
     return now_utc_iso()
 
 
@@ -84,7 +85,7 @@ def compute_entry_hash(message: str) -> str:
     return hashlib.sha256(message.encode()).hexdigest()[:HASH_ID_LENGTH]
 
 
-def format_log_entry(level: str, message: str, **fields) -> str:
+def format_log_entry(level: str, message: str, **fields: Any) -> str:
     """
     Format a standard log entry with auto-generated hash.
 
@@ -107,7 +108,7 @@ def format_log_entry(level: str, message: str, **fields) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def extract_plan_id(args: list) -> str | None:
+def extract_plan_id(args: list[str]) -> str | None:
     """Extract --plan-id value from argument list."""
     for i, arg in enumerate(args):
         if arg == '--plan-id' and i + 1 < len(args):
@@ -202,7 +203,7 @@ def log_entry(log_type: str, plan_id: str | None, level: str, message: str) -> N
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(entry)
 
-    except Exception:
+    except Exception:  # noqa: BLE001 — logging is best-effort, never raises into a caller
         pass  # Silent failure for logging
 
 
@@ -252,7 +253,7 @@ def log_script_execution(
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(entry)
 
-    except Exception:
+    except Exception:  # noqa: BLE001 — logging is best-effort, never raises into a caller
         pass  # Silent failure for logging
 
 
@@ -281,7 +282,7 @@ def cleanup_old_script_logs(max_age_days: int | None = None) -> int:
             if log_file.stat().st_mtime < cutoff:
                 log_file.unlink()
                 deleted += 1
-        except Exception:
+        except OSError:
             pass
 
     return deleted
@@ -294,7 +295,7 @@ def cleanup_old_script_logs(max_age_days: int | None = None) -> int:
 VALID_CATEGORIES = VALID_WORK_CATEGORIES
 
 
-def log_work(plan_id: str, category: str, message: str, phase: str, detail: str | None = None) -> dict:
+def log_work(plan_id: str, category: str, message: str, phase: str, detail: str | None = None) -> dict[str, Any]:
     """
     Add entry to work.log.
 
@@ -357,11 +358,11 @@ def log_work(plan_id: str, category: str, message: str, phase: str, detail: str 
 
         return result
 
-    except Exception as e:
+    except OSError as e:
         return {'status': 'error', 'plan_id': plan_id, 'error': 'write_failed', 'message': str(e)}
 
 
-def read_work_log(plan_id: str, phase: str | None = None) -> dict:
+def read_work_log(plan_id: str, phase: str | None = None) -> dict[str, Any]:
     """
     Read work log entries.
 
@@ -394,11 +395,11 @@ def read_work_log(plan_id: str, phase: str | None = None) -> dict:
 
         return {'status': 'success', 'plan_id': plan_id, 'total_entries': len(entries), 'entries': entries}
 
-    except Exception as e:
+    except OSError as e:
         return {'status': 'error', 'plan_id': plan_id, 'error': 'read_failed', 'message': str(e)}
 
 
-def list_recent_work(plan_id: str, limit: int = 10) -> dict:
+def list_recent_work(plan_id: str, limit: int = 10) -> dict[str, Any]:
     """
     List most recent work log entries.
 
@@ -446,11 +447,11 @@ def log_separator(log_type: str, plan_id: str) -> None:
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write('\n')
 
-    except Exception:
+    except Exception:  # noqa: BLE001 — logging is best-effort, never raises into a caller
         pass  # Silent failure for logging
 
 
-def log_decision(plan_id: str, message: str, phase: str, detail: str | None = None) -> dict:
+def log_decision(plan_id: str, message: str, phase: str, detail: str | None = None) -> dict[str, Any]:
     """
     Add entry to decision.log.
 
@@ -498,11 +499,11 @@ def log_decision(plan_id: str, message: str, phase: str, detail: str | None = No
 
         return result
 
-    except Exception as e:
+    except OSError as e:
         return {'status': 'error', 'plan_id': plan_id, 'error': 'write_failed', 'message': str(e)}
 
 
-def read_decision_log(plan_id: str, phase: str | None = None) -> dict:
+def read_decision_log(plan_id: str, phase: str | None = None) -> dict[str, Any]:
     """
     Read decision log entries.
 
@@ -535,7 +536,7 @@ def read_decision_log(plan_id: str, phase: str | None = None) -> dict:
 
         return {'status': 'success', 'plan_id': plan_id, 'total_entries': len(entries), 'entries': entries}
 
-    except Exception as e:
+    except OSError as e:
         return {'status': 'error', 'plan_id': plan_id, 'error': 'read_failed', 'message': str(e)}
 
 
@@ -555,10 +556,10 @@ HEADER_PATTERN = re.compile(
 FIELD_PATTERN = re.compile(r'^  (\w+): (.+)$', re.MULTILINE)
 
 
-def _parse_log_file(log_file: Path) -> list:
+def _parse_log_file(log_file: Path) -> list[dict[str, str]]:
     """Parse log file into list of entry dicts."""
-    entries = []
-    current = None
+    entries: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
 
     content = log_file.read_text(encoding='utf-8')
     for line in content.split('\n'):
