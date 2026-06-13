@@ -1044,3 +1044,31 @@ The Q-Gate agent writes findings to `artifacts/qgate-3-outline.jsonl`. The phase
 - If `qgate_pending_count > 0`: Return with `qgate_pending_count` in output. The orchestrator auto-loops (re-enters this phase) until Q-Gate passes clean. No user prompt — Q-Gate findings are objective quality failures that must be self-corrected
 
 After Complex Q-Gate, proceed to Step 12.
+
+---
+
+## ADR consultation (loop-invariant input)
+
+The ADR-consultation step is a loop-invariant context read performed once at phase entry, alongside the other invariant inputs the `SKILL.md` § "Loop-invariant inputs (cached at phase entry)" block enumerates. It surfaces the established architectural decisions relevant to the plan's scope so deliverable authoring aligns with them and treats any superseded or deprecated decision as a constraint. The progressive-disclosure metadata that makes this read cheap is authored per the `manage-adr` skill — see `marketplace/bundles/plan-marshall/skills/manage-adr/SKILL.md` for the scan subcommand contract; this section is the consultation procedure, not the scan contract.
+
+### Which filters to use
+
+Scope the scan to the plan's declared footprint so the read stays cheap and relevant:
+
+- **By module** — for each module in the plan's `domains` / `module_mapping` / declared scope, run `manage-adr scan --affects {module}`. The `affects` metadata field is the module-overlap dimension, so this returns exactly the ADRs whose decisions bear on the modules the plan touches.
+- **By topic** — when the plan's request narrative centres on a named concern (a subsystem, a pattern, a cross-cutting capability), additionally run `manage-adr scan --tag {topic}` to pick up decisions that are topic-relevant but not module-scoped.
+- **Whole corpus** — when the plan's scope is broad (`multi_module` or wider) or the module mapping is not yet resolved, run `manage-adr scan` with no filter and read all `summary` fields.
+
+Read only the `summary` fields first. Load a full ADR (via `manage-adr read --number N`) only when a summary indicates the decision directly constrains a deliverable being authored.
+
+### How ADR summaries fold into deliverable authoring
+
+For each deliverable being composed:
+
+1. Cross-reference the deliverable's intent against the loaded ADR summaries.
+2. When a deliverable aligns with an established decision, the deliverable narrative SHOULD name the ADR (e.g. "aligns with ADR-NNN: {summary}") so the alignment is auditable.
+3. When a deliverable would act against a `Superseded` or `Deprecated` ADR, treat that ADR as a constraint — prefer the superseding decision, and do not re-introduce the superseded shape.
+
+### Contradiction is a design signal, not a hard gate
+
+A deliverable that contradicts an `Accepted` ADR is a **design signal to surface**, not a hard gate that blocks the outline in this plan's scope. When a contradiction is unavoidable (the request genuinely requires revisiting an established decision), the outline SHOULD note the contradiction in the deliverable narrative so the reviewer — and the downstream finalize `adr-propose` step — can decide whether the decision warrants a new or superseding ADR. The outline does not auto-block on the contradiction; it makes the tension visible.

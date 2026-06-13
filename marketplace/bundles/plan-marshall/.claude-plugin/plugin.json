@@ -39,6 +39,7 @@
     "./skills/dev-agent-behavior-rules",
     "./skills/execute-task",
     "./skills/extension-api",
+    "./skills/manage-adr",
     "./skills/manage-architecture",
     "./skills/manage-ci-artifacts",
     "./skills/manage-change-ledger",

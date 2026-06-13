@@ -119,7 +119,7 @@ A step is active if and only if it appears in `manifest.phase_6.steps`. Absent s
 
 ## Dispatched workflows vs inline steps
 
-Of the 16 default + project finalize steps, **7 dispatch** and **9 run inline**. Every dispatched step resolves under the phase-scoped registry — `manage-config effort resolve-target --phase phase-6-finalize [--role <subkey>]`. Step → resolved role: `pre-submission-self-review` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `finalize-step-whole-tree-gate` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `create-pr` → `phase-6-finalize` (no `--role`); `lessons-capture` → `phase-6-finalize --role post-run-review`; `automated-review` + `sonar-roundtrip` → `phase-6-finalize --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6-finalize` per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input). Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6-finalize --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6-finalize --role verification-feedback` (`producer=pr-state` runtime input). The 9 inline steps (`commit-push`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`) are pure scripts or trivial orchestration that earn no envelope. CI completion is no longer a sibling step in this roster — it is a dispatcher-resolved precondition (`requires: [ci-complete]`) checked inline before any consumer step runs; see Step 3 § "Precondition resolution" below. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
+Of the 17 default + project finalize steps, **8 dispatch** and **9 run inline**. Every dispatched step resolves under the phase-scoped registry — `manage-config effort resolve-target --phase phase-6-finalize [--role <subkey>]`. Step → resolved role: `pre-submission-self-review` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `finalize-step-whole-tree-gate` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `create-pr` → `phase-6-finalize` (no `--role`); `lessons-capture` + `adr-propose` → `phase-6-finalize --role post-run-review`; `automated-review` + `sonar-roundtrip` → `phase-6-finalize --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6-finalize` per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input). Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6-finalize --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6-finalize --role verification-feedback` (`producer=pr-state` runtime input). The 9 inline steps (`commit-push`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`) are pure scripts or trivial orchestration that earn no envelope. CI completion is no longer a sibling step in this roster — it is a dispatcher-resolved precondition (`requires: [ci-complete]`) checked inline before any consumer step runs; see Step 3 § "Precondition resolution" below. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
 
 ## Step Types
 
@@ -155,6 +155,7 @@ Each step declares an `order: <int>` value in its authoritative source — front
 | `default:automated-review` | `standards/automated-review.md` | CI automated review — orchestration prose; the per-finding LLM core dispatches [`workflow/triage.md`](workflow/triage.md) with `finding_type=pr-comment` (see [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
 | `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip — orchestration prose; the per-finding LLM core dispatches [`workflow/triage.md`](workflow/triage.md) with `finding_type=sonar-issue` |
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
+| `default:adr-propose` | `workflow/adr-propose.md` | Propose ADRs from the plan's architectural decisions — advisory, dispatcher-gated on a decision-shape Signal Gate (see Step 3 § "Adr-propose Signal Gate") |
 | `default:branch-cleanup` | `standards/branch-cleanup.md` | Branch cleanup — adapts to PR mode or local-only based on create-pr step presence |
 | `default:record-metrics` | `standards/record-metrics.md` | Record final plan metrics before archive |
 | `default:finalize-step-print-phase-breakdown` | `standards/finalize-step-print-phase-breakdown.md` | Optional override mode: capture the Phase Breakdown table from metrics.md so the renderer emits it in place of the per-step [OK] block |
@@ -538,6 +539,7 @@ Do NOT cache the live HEAD across loop iterations — read it fresh per step so 
 | `default:sonar-roundtrip` | 15 min (900s) | Full Sonar gate roundtrip plus optional fix-task creation |
 | `default:automated-review` | 15 min (900s) | CI wait + review-bot buffer + comment triage |
 | `default:lessons-capture` | 5 min (300s) | Bounded `manage-lessons add` + Write workflow |
+| `default:adr-propose` | 5 min (300s) | Bounded `manage-adr create` + Write workflow; advisory, never blocks |
 | All other steps | no explicit budget | Fall under the host platform's default per-call ceiling |
 
 For each step reference:
@@ -549,6 +551,7 @@ For each step reference:
 | `default:create-pr` | `--phase phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/create-pr.md` |
 | `default:ci-verify` | `--phase phase-6-finalize --role verification-feedback` (LLM core classifies failing checks into the multi-failure-mode taxonomy) | `plan-marshall:phase-6-finalize/workflow/ci-verify.md` |
 | `default:lessons-capture` | `--phase phase-6-finalize --role post-run-review` | `plan-marshall:phase-6-finalize/workflow/lessons-capture.md` |
+| `default:adr-propose` | `--phase phase-6-finalize --role post-run-review` | `plan-marshall:phase-6-finalize/workflow/adr-propose.md` |
 | `default:automated-review` | `--phase phase-6-finalize --role verification-feedback` (LLM core; outer wrapper tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/automated-review.md` |
 | `default:sonar-roundtrip` | `--phase phase-6-finalize --role verification-feedback` (LLM core; outer wrapper tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/sonar-roundtrip.md` |
 
@@ -720,6 +723,53 @@ FOR each step_id in manifest.phase_6.steps:
 
          Continue to item 5 (Dispatch with timeout wrapper).
 
+  4c. Adr-propose Signal Gate (run BEFORE dispatching the step if step_id == "adr-propose"):
+
+      The deterministic decision-shape Signal Gate is evaluated at dispatcher level so the envelope spawn cost is avoided when the plan carries no decision-shape signal. The dispatcher computes a coarse decision-shape precondition; the LLM workflow body applies the fine-grained decision-shape criteria and authors the proposals. When no decision-shape signal is present, short-circuit and record `outcome=skipped`. The decision-shape signal taxonomy is owned by `standards/adr-integration.md` § "Decision-shape signals" — do NOT inline-copy the pre-filter decision table; the deterministic precondition below is the coarse gate, not the full taxonomy.
+
+      a. Compute the coarse decision-shape signal. A plan that settled an architectural decision leaves at least one of the following deterministic markers:
+
+         **Marker 1 — a compatibility decision in the solution outline**:
+
+            python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
+              --plan-id {plan_id} --file solution_outline.md
+
+         The `compatibility:` line (e.g. `breaking`, `deprecation`, `smart_and_ask`) is a chosen-approach-with-rationale marker — a rejected-alternative signal. `marker_1 = 1` when the outline carries a non-empty `compatibility` value; `0` otherwise.
+
+         **Marker 2 — decision-log entries**:
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              read --plan-id {plan_id} --type decision
+
+         `marker_2 = 1` when the decision log carries at least one entry (a recorded fork-with-rationale during the plan); `0` otherwise.
+
+         `signal_decision_shape_count = marker_1 + marker_2`.
+
+      b. Zero short-circuit:
+
+         When `signal_decision_shape_count == 0`:
+            - Mark the step done with `outcome=skipped` directly from the dispatcher (do NOT dispatch the envelope):
+
+              python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+                --plan-id {plan_id} --phase 6-finalize --step adr-propose --outcome skipped \
+                --display-detail "no decision-shape signals"
+
+            - Log the skip decision:
+
+              python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+                decision --plan-id {plan_id} --level INFO \
+                --message "(plan-marshall:phase-6-finalize:adr-propose) Signal Gate skip — no decision-shape signal (compatibility=0, decision-log=0)"
+
+            - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step).
+
+      c. Forward gate count on dispatch (when the signal is non-zero):
+
+         When `signal_decision_shape_count >= 1`, dispatch the `adr-propose.md` workflow body. Reaching the body PROVES at least one decision-shape signal was present, so the body proceeds straight into ADR proposal without re-evaluating the gate (see `workflow/adr-propose.md` § "Dispatch contract"). Add the count field verbatim into the prompt body's runtime-inputs block alongside `plan_id`:
+
+            signal_decision_shape_count: {signal_decision_shape_count}
+
+         Continue to item 5 (Dispatch with timeout wrapper).
+
   5. Dispatch with timeout wrapper:
      Resolve the per-agent timeout budget from the table above (15 min for sonar/automated-review, 5 min for knowledge/lessons; no explicit budget for other steps).
 
@@ -741,6 +791,7 @@ FOR each step_id in manifest.phase_6.steps:
          * default:automated-review -> workflow: workflow/automated-review.md | --phase phase-6-finalize                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
          * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | --phase phase-6-finalize                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
          * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | --phase phase-6-finalize --role post-run-review       | timeout: 300s
+         * default:adr-propose      -> workflow: workflow/adr-propose.md      | --phase phase-6-finalize --role post-run-review       | timeout: 300s
 
        The subagent's body loads `dev-agent-behavior-rules` + the prompt's `skills[]`, then `Read`s the workflow doc and executes its steps inside the dispatch envelope. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}` as workflow-specific runtime inputs in the prompt body. The Worktree Header is conveyed via the always-required `WORKTREE` prompt-body field; the subagent resolves the worktree path internally and propagates it into any further dispatches it issues.
 
@@ -983,6 +1034,8 @@ END FOR
 
 **Lessons-capture unconditionality**: When `lessons-capture` IS in `manifest.phase_6.steps` (the composer includes it for every non-trivial change-type), this loop dispatches it on every Phase 6 entry. It is not gated on PR state, CI state, or earlier step outcomes — reaching Phase 6 is itself the trigger.
 
+**Adr-propose conditionality**: `adr-propose` is its sibling under the `post-run-review` role but is dispatcher-gated, not unconditional. When `adr-propose` IS in `manifest.phase_6.steps` (the composer includes it alongside `lessons-capture` for every non-trivial change-type), the loop evaluates the decision-shape Signal Gate (Step 3 § "Adr-propose Signal Gate") on every Phase 6 entry. The envelope is dispatched only when the plan carries a decision-shape signal; absent one, the dispatcher records `outcome=skipped` directly without spawning the envelope.
+
 **Symmetric auto-continuation invariant**: The `loop_back_without_asking` flag is the structural counterpart to `plan.phase-6-finalize.finalize_without_asking`. The two knobs together define the four corners of the unattended-vs-interactive matrix:
 
 | `finalize_without_asking` | `loop_back_without_asking` | Behaviour |
@@ -1110,6 +1163,7 @@ Finalize steps (10/10 done)
   [OK]  automated-review                  3 comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
   [OK]  lessons-capture                   no lessons recorded
+  [OK]  adr-propose                       no ADRs proposed
   [OK]  validation                        all required steps done
   [OK]  record-metrics                    1591s / 209327 tokens
   [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
@@ -1212,6 +1266,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/automated-review.md` | `default:automated-review` | Consume completed-CI signal, then consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX or pr-comment-overflow. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
+| `workflow/adr-propose.md` | `default:adr-propose` | manage-adr create command — propose ADRs from plan decisions (advisory, dispatcher-gated) |
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |
 | `standards/finalize-step-print-phase-breakdown.md` | `default:finalize-step-print-phase-breakdown` | Optional override mode: capture Phase Breakdown table for the renderer (replaces per-step [OK] block) |

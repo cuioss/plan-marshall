@@ -14,10 +14,10 @@ from pathlib import Path
 from conftest import get_script_path, load_script_module, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
-SCRIPT_PATH = get_script_path('pm-documents', 'manage-adr', 'manage-adr.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-adr', 'manage-adr.py')
 
 # Tier 2 direct imports - load hyphenated module via the conftest helper
-_mod = load_script_module('pm-documents', 'manage-adr', 'manage-adr.py', 'manage_adr')
+_mod = load_script_module('plan-marshall', 'manage-adr', 'manage-adr.py', 'manage_adr')
 
 cmd_list = _mod.cmd_list
 cmd_create = _mod.cmd_create
@@ -30,7 +30,6 @@ parse_metadata_block = _mod.parse_metadata_block
 parse_adr_file = _mod.parse_adr_file
 METADATA_BLOCK_START = _mod.METADATA_BLOCK_START
 METADATA_BLOCK_END = _mod.METADATA_BLOCK_END
-ADR_DIR_REF = _mod  # for patching ADR_DIR
 
 
 class TestManageAdr(unittest.TestCase):

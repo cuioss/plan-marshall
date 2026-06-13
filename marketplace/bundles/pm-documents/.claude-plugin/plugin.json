@@ -21,7 +21,6 @@
   "commands": [],
   "skills": [
     "./skills/ext-triage-docs",
-    "./skills/manage-adr",
     "./skills/manage-interface",
     "./skills/plan-marshall-plugin",
     "./skills/recipe-doc-verify",

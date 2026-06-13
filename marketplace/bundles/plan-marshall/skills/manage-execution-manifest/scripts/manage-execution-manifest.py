@@ -126,6 +126,7 @@ DEFAULT_PHASE_6_STEPS = (
     'automated-review',
     'sonar-roundtrip',
     'lessons-capture',
+    'adr-propose',
     'branch-cleanup',
     'record-metrics',
     'archive-plan',
@@ -292,7 +293,7 @@ def _decide(
                 'verification_steps': [],
             },
             'phase_6': {
-                'steps': [s for s in phase_6_candidates if s in {'lessons-capture', 'archive-plan'}],
+                'steps': [s for s in phase_6_candidates if s in {'lessons-capture', 'adr-propose', 'archive-plan'}],
             },
         }
         return body, 'early_terminate_analysis'
@@ -382,7 +383,7 @@ def _decide(
                 'verification_steps': list(phase_5_candidates),
             },
             'phase_6': {
-                'steps': [s for s in phase_6_candidates if s in {'lessons-capture', 'archive-plan'}],
+                'steps': [s for s in phase_6_candidates if s in {'lessons-capture', 'adr-propose', 'archive-plan'}],
             },
         }
         return body, 'verification_no_files'

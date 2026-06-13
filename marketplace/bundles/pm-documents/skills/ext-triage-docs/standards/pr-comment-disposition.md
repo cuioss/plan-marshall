@@ -12,7 +12,7 @@ Decision criteria for disposing of automated PR review comments (gemini-code-ass
 
 ## FIX-Eligible Categories
 
-Concrete violations of documentation standards (see `pm-documents:ref-asciidoc`, `pm-documents:ref-documentation`, `pm-documents:manage-adr`, `pm-documents:manage-interface`). Always FIX when the comment identifies one of these.
+Concrete violations of documentation standards (see `pm-documents:ref-asciidoc`, `pm-documents:ref-documentation`, `plan-marshall:manage-adr`, `pm-documents:manage-interface`). Always FIX when the comment identifies one of these.
 
 | Category | Example Findings | Authoritative Standard |
 |----------|------------------|------------------------|
@@ -126,6 +126,6 @@ Default → ESCALATE (do not silently fix or resolve unknown categories)
 - [suppression.md](suppression.md) — AsciiDoc / markdown comment-suppression syntax
 - `pm-documents:ref-asciidoc` — AsciiDoc formatting and validation
 - `pm-documents:ref-documentation` — Content quality, tone, and review standards
-- `pm-documents:manage-adr` — ADR format and lifecycle
+- `plan-marshall:manage-adr` — ADR format and lifecycle
 - `pm-documents:manage-interface` — Interface specification format
 - `plan-marshall:dev-agent-behavior-rules` — PR review hard rule (validate bot suggestions against plan intent)

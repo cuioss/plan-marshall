@@ -120,8 +120,10 @@ def test_early_terminate_analysis_with_empty_files(plan_context):
     assert result is not None and result['rule_fired'] == 'early_terminate_analysis'
     assert result['phase_5']['early_terminate'] is True
     assert result['phase_5']['verification_steps_count'] == 0
-    # Phase 6 keeps the records-and-archive duo (lessons-capture + archive-plan).
-    assert result['phase_6']['steps_count'] == 2
+    # Phase 6 keeps the records-and-archive trio: lessons-capture, adr-propose
+    # (an analysis plan that made a decision can still propose an ADR), and
+    # archive-plan.
+    assert result['phase_6']['steps_count'] == 3
 
 
 def test_early_terminate_analysis_falls_through_when_task_queue_pending(plan_context):
@@ -676,7 +678,100 @@ def test_verification_no_files_keeps_full_phase_5_trims_phase_6(plan_context):
     manifest = read_manifest('matrix-vnofiles')
     assert manifest is not None
     assert manifest['phase_5']['verification_steps'] == ['quality-gate', 'module-tests', 'coverage']
-    assert set(manifest['phase_6']['steps']) == {'lessons-capture', 'archive-plan'}
+    assert set(manifest['phase_6']['steps']) == {'lessons-capture', 'adr-propose', 'archive-plan'}
+
+
+# =============================================================================
+# adr-propose registration tests (deliverable 3)
+#
+# adr-propose is the writing-hook sibling of lessons-capture. It rides the
+# same post-run-review role and is registered in DEFAULT_PHASE_6_STEPS plus
+# the Rule 1 (early_terminate_analysis) and Rule 6 (verification_no_files)
+# minimal intersection sets, so an analysis/verification plan that settled a
+# decision can still propose an ADR.
+# =============================================================================
+
+
+def test_adr_propose_in_default_phase_6_steps():
+    """adr-propose is registered in DEFAULT_PHASE_6_STEPS, between
+    lessons-capture and branch-cleanup (matching its order: 62 frontmatter)."""
+    assert 'adr-propose' in DEFAULT_PHASE_6_STEPS
+    steps = list(DEFAULT_PHASE_6_STEPS)
+    assert steps.index('lessons-capture') < steps.index('adr-propose')
+    assert steps.index('adr-propose') < steps.index('branch-cleanup')
+
+
+def test_adr_propose_kept_in_rule_1_early_terminate_minimal_set(plan_context):
+    """Rule 1 (early_terminate_analysis) keeps adr-propose alongside
+    lessons-capture and archive-plan when it is in the candidate set."""
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='adr-rule-1',
+            change_type='analysis',
+            scope_estimate='none',
+            affected_files_count=0,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'early_terminate_analysis'
+    manifest = read_manifest('adr-rule-1')
+    assert manifest is not None
+    assert set(manifest['phase_6']['steps']) == {'lessons-capture', 'adr-propose', 'archive-plan'}
+
+
+def test_adr_propose_kept_in_rule_6_verification_no_files_minimal_set(plan_context):
+    """Rule 6 (verification_no_files) keeps adr-propose alongside
+    lessons-capture and archive-plan when it is in the candidate set."""
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='adr-rule-6',
+            change_type='verification',
+            scope_estimate='none',
+            affected_files_count=0,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'verification_no_files'
+    manifest = read_manifest('adr-rule-6')
+    assert manifest is not None
+    assert set(manifest['phase_6']['steps']) == {'lessons-capture', 'adr-propose', 'archive-plan'}
+
+
+def test_adr_propose_present_in_default_feature_phase_6(plan_context):
+    """A default feature plan (Rule 7) carries adr-propose in its phase-6 set
+    — the docs-only and surgical pre-filters pass it through unless explicitly
+    subtracted."""
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='adr-default-feature',
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=12,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'default'
+    manifest = read_manifest('adr-default-feature')
+    assert manifest is not None
+    assert 'adr-propose' in manifest['phase_6']['steps']
+
+
+def test_adr_propose_kept_in_docs_only_phase_6(plan_context):
+    """Row 3 (docs_only) passes phase_6_candidates through unchanged except
+    the simplify/whole-tree gates, so adr-propose survives. docs-only is
+    detected from the phase_5 candidate signal (no module-tests/coverage),
+    not a change_type."""
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='adr-docs-only',
+            change_type='tech_debt',
+            scope_estimate='surgical',
+            affected_files_count=3,
+            # docs-only candidate set: only quality-gate, no module-tests/coverage.
+            phase_5_steps='quality-gate',
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'docs_only'
+    manifest = read_manifest('adr-docs-only')
+    assert manifest is not None
+    assert 'adr-propose' in manifest['phase_6']['steps']
 
 
 # =============================================================================

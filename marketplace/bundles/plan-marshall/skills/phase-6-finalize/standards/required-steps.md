@@ -42,6 +42,7 @@ otherwise a manifest pruning would deadlock the phase transition.
 - branch-cleanup
 - validation
 - lessons-capture
+- adr-propose
 
 ## Loadability Contract
 
