@@ -12,7 +12,7 @@ Canonical Steps 1-6 for the per-finding triage decision loop (FIX / SUPPRESS / A
 
 | Prompt-body field | Required | Description |
 |-------------------|:--------:|-------------|
-| `finding_type` | Yes | One of `pr-comment`, `sonar-issue`, `verification-failure`, `quality-gate-failure`. Determines the producer surface, the suppression syntax, and which standards inside the loaded `ext-triage-{domain}` extension are load-bearing. |
+| `finding_type` | Yes | One of `pr-comment`, `sonar-issue`, `test-failure`, `lint-issue`. Determines the producer surface, the suppression syntax, and which standards inside the loaded `ext-triage-{domain}` extension are load-bearing. |
 | `plan_id` | Yes | Forwarded to every `manage-findings` / `manage-tasks` / `tools-integration-ci` call. |
 | `WORKTREE` | Yes | Used verbatim for `git -C {WORKTREE}` and as the root for every Edit/Write/Read. |
 | `pr_number` | Conditional | Required when `finding_type=pr-comment` (and for `sonar-issue` when triage needs thread replies on the active PR). |
@@ -34,7 +34,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
   --plan-id {plan_id} --type {finding_type} --resolution pending --include-qgate
 ```
 
-This is the unified read surface — see `manage-findings` Canonical invocations → `list`. `--include-qgate` merges the **pending** per-phase Q-Gate slice into the per-plan slice so the per-finding triage loop sweeps both stores in one read (the `verification-failure` / `quality-gate-failure` producers in phase-5-execute write to the Q-Gate store).
+This is the unified read surface — see `manage-findings` Canonical invocations → `list`. `--include-qgate` merges the **pending** per-phase Q-Gate slice into the per-plan slice so the per-finding triage loop sweeps both stores in one read (the `test-failure` / `lint-issue` producers in phase-5-execute write to the Q-Gate store).
 
 This is **by-reference** — the store is the single source of truth. Loop-back re-entry sees only findings still `pending`; the orchestrator's earlier query is just a gate-keeping count.
 
@@ -57,8 +57,8 @@ Build groups keyed by `(domain, rule_id)`. Findings with an empty `rule_id` (fre
 |--------------|------------------|--------------------|
 | `sonar-issue` | Sonar rule key (e.g., `java:S1135`) | 1–N per `(rule, file-cluster)` |
 | `pr-comment` | Bot rule tag when exposed; else `(comment thread + nearest rule_id/line_range)` heuristic; else singleton | usually 1, occasionally 2–5 |
-| `verification-failure` | Test class / test method name as a coarse `rule_id` | 1–N per failing class |
-| `quality-gate-failure` | Lint rule / compiler error code (e.g., `E501`, `unused-variable`, `mypy: arg-type`) | often many |
+| `test-failure` | Test class / test method name as a coarse `rule_id` | 1–N per failing class |
+| `lint-issue` | Lint rule / compiler error code (e.g., `E501`, `unused-variable`, `mypy: arg-type`) | often many |
 
 ## Step 3: Iterate groups sequentially, batched LLM decision within each
 
@@ -155,7 +155,7 @@ Cross-group feedback (TASK-N references) requires sequential action between grou
     --detail "{rationale citing loaded rule}"
   ```
 
-- **ACCEPT** — for `pr-comment` post a thread reply with rationale and resolve. For `sonar-issue` dismiss in Sonar with rationale (via `workflow-integration-sonar` dismissal surface). For `verification-failure` / `quality-gate-failure` no PR surface — accept is store-only. Then:
+- **ACCEPT** — for `pr-comment` post a thread reply with rationale and resolve. For `sonar-issue` dismiss in Sonar with rationale (via `workflow-integration-sonar` dismissal surface). For `test-failure` / `lint-issue` no PR surface — accept is store-only. Then:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \

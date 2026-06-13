@@ -69,7 +69,7 @@ Splitting into a foundation plan + a sweep plan keeps each plan's task count bou
 
 **Foundation batch composition rules**:
 
-- The validator / utility infrastructure MUST land in the foundation plan. The sweep plan operates on a code base where the contract is already enforced; if the validator is not merged before the sweep starts, every sweep deliverable has to re-verify the foundation as part of its verification step, and the planned-failure exception in (c) collapses into a generic verification-failure loop.
+- The validator / utility infrastructure MUST land in the foundation plan. The sweep plan operates on a code base where the contract is already enforced; if the validator is not merged before the sweep starts, every sweep deliverable has to re-verify the foundation as part of its verification step, and the planned-failure exception in (c) collapses into a generic verification failure loop.
 - The 3-5 representative consumers MUST exercise the consumer population's variability. Picking 3 leaf consumers when half the population is fan-out consumers proves nothing about the sweep's tractability. The planner SHOULD enumerate the consumer shapes (via `architecture find --pattern {producer_constant}` or `Grep --files-with-matches`) and pick one consumer per shape category.
 - The foundation batch MAY include a recipe seed for the sweep plan — `recipe-refactor-to-profile-standards` is the canonical seed when the sweep applies a standards-driven transformation to each consumer. The recipe key carries the foundation's contract forward so each sweep deliverable inherits the same activation heuristics.
 

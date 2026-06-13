@@ -256,7 +256,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │            │  leaf returns triage_required (Steps 11 / 11b persist                     │
 │            │  findings via manage-findings qgate add, then return);                    │
 │            │  ORCHESTRATOR owns the dispatch below                                     │
-│            │  finding_type = verification-failure OR quality-gate-failure              │
+│            │  finding_type = test-failure OR lint-issue                                │
 │            ╵┄═►  [verification-feedback]   (dispatched by the orchestrator             │
 │                    │                        after the leaf returns)                    │
 │                    │ fix_tasks_created                                                 │
@@ -342,8 +342,8 @@ The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-
 │  ══════════════════════════════                                                        │
 │                                                                                        │
 │   phase-5-execute leaf returns triage_required           ═╗                            │
-│   (Step 11 verification-failure / Step 11b              ═╣                             │
-│    quality-gate-failure); orchestrator dispatches      ═╝══►  [verification-           │
+│   (Step 11 test-failure / Step 11b                      ═╣                             │
+│    lint-issue); orchestrator dispatches                ═╝══►  [verification-           │
 │                                                          feedback]                     │
 │                                                          (orchestrator owns the        │
 │                                                          dispatch after the            │
