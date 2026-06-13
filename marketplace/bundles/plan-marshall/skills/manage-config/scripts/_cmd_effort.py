@@ -444,6 +444,8 @@ def cmd_effort_set(args) -> dict:
             return error_exit(err or 'invalid effort')
         config = load_config()
         plan_block = config.setdefault('plan', {})
+        if not isinstance(plan_block, dict):
+            return error_exit("plan block in marshal.json is not a dictionary")
         plan_block['effort'] = level
         save_config(config)
         return success_exit(
@@ -479,6 +481,8 @@ def cmd_effort_set(args) -> dict:
 
     config = load_config()
     plan_block = config.setdefault('plan', {})
+    if not isinstance(plan_block, dict):
+        return error_exit("plan block in marshal.json is not a dictionary")
     phase_entry = plan_block.setdefault(phase, {})
     if not isinstance(phase_entry, dict):
         return error_exit(

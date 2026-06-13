@@ -344,11 +344,11 @@ def _discover_all_recipes() -> list[dict]:
             # Frontmatter). recipe_domain is required; a recipe whose frontmatter
             # omits it is silently skipped (intentional discovery containment).
             domain_match = re.search(r'^recipe_domain:\s*(.+)$', content, re.MULTILINE)
-            domain = domain_match.group(1).strip() if domain_match else ''
+            domain = domain_match.group(1).strip().strip("'\"") if domain_match else ''
             profile_match = re.search(r'^recipe_profile:\s*(.+)$', content, re.MULTILINE)
-            profile = profile_match.group(1).strip() if profile_match else ''
+            profile = profile_match.group(1).strip().strip("'\"") if profile_match else ''
             package_source_match = re.search(r'^recipe_package_source:\s*(.+)$', content, re.MULTILINE)
-            package_source = package_source_match.group(1).strip() if package_source_match else ''
+            package_source = package_source_match.group(1).strip().strip("'\"") if package_source_match else ''
 
             if not domain:
                 continue
