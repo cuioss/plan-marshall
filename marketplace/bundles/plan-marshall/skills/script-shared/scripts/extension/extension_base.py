@@ -140,7 +140,7 @@ def derive_globs_from_tree(
             live := sorted(
                 route
                 for route in routes
-                if any(fnmatch.fnmatch(path, route[0]) for path in tracked)
+                if fnmatch.filter(tracked, route[0])
             )
         )
     }
