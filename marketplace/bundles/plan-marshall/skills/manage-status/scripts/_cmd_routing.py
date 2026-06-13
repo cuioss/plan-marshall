@@ -13,7 +13,7 @@ from _status_core import (
 from constants import PHASE_STATUS_DONE, PHASES  # type: ignore[import-not-found]
 
 
-def cmd_route(args: argparse.Namespace) -> dict:
+def cmd_route(args: argparse.Namespace) -> dict[str, Any]:
     """Get skill for a phase."""
     if args.phase not in PHASE_ROUTING:
         return {
@@ -29,7 +29,7 @@ def cmd_route(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'phase': args.phase, 'skill': skill, 'description': description}
 
 
-def cmd_get_routing_context(args: argparse.Namespace) -> dict | None:
+def cmd_get_routing_context(args: argparse.Namespace) -> dict[str, Any] | None:
     """Get combined routing context: phase, skill, and progress in one call."""
     status = require_status(args)
     if status is None:
@@ -61,7 +61,7 @@ def cmd_get_routing_context(args: argparse.Namespace) -> dict | None:
     }
 
 
-def cmd_self_test(_args: argparse.Namespace) -> dict:
+def cmd_self_test(_args: argparse.Namespace) -> dict[str, Any]:
     """Verify manage-status health: imports, routing, and directory access."""
     from _status_core import get_plans_dir
 

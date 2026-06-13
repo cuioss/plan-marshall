@@ -48,7 +48,7 @@ def _coerce_metadata_value(field: str, raw_value: Any) -> Any:
     return raw_value
 
 
-def cmd_read(args: argparse.Namespace) -> dict | None:
+def cmd_read(args: argparse.Namespace) -> dict[str, Any] | None:
     """Read plan status."""
     status = require_status(args)
     if status is None:
@@ -57,7 +57,7 @@ def cmd_read(args: argparse.Namespace) -> dict | None:
     return {'status': 'success', 'plan_id': args.plan_id, 'plan': status}
 
 
-def cmd_set_phase(args: argparse.Namespace) -> dict | None:
+def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
     """Set current phase."""
     status = require_status(args)
     if status is None:
@@ -87,7 +87,7 @@ def cmd_set_phase(args: argparse.Namespace) -> dict | None:
     return {'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous}
 
 
-def cmd_update_phase(args: argparse.Namespace) -> dict | None:
+def cmd_update_phase(args: argparse.Namespace) -> dict[str, Any] | None:
     """Update a specific phase status."""
     status = require_status(args)
     if status is None:
@@ -113,7 +113,7 @@ def cmd_update_phase(args: argparse.Namespace) -> dict | None:
     return {'status': 'success', 'plan_id': args.plan_id, 'phase': args.phase, 'phase_status': args.status}
 
 
-def cmd_progress(args: argparse.Namespace) -> dict | None:
+def cmd_progress(args: argparse.Namespace) -> dict[str, Any] | None:
     """Calculate plan progress."""
     status = require_status(args)
     if status is None:
@@ -136,7 +136,7 @@ def cmd_progress(args: argparse.Namespace) -> dict | None:
     }
 
 
-def cmd_metadata(args: argparse.Namespace) -> dict | None:
+def cmd_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
     """Get or set a metadata field in status.json."""
     status = require_status(args)
     if status is None:
@@ -194,7 +194,7 @@ def cmd_metadata(args: argparse.Namespace) -> dict | None:
         }
 
 
-def cmd_title_token(args: argparse.Namespace) -> dict | None:
+def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
     """Set or clear the field-only ``title_token`` marker in status.json.
 
     The title token is a bare state string (one of ``TITLE_TOKEN_STATES``)
@@ -244,7 +244,7 @@ def cmd_title_token(args: argparse.Namespace) -> dict | None:
     }
 
 
-def cmd_get_context(args: argparse.Namespace) -> dict | None:
+def cmd_get_context(args: argparse.Namespace) -> dict[str, Any] | None:
     """Get combined status context (phase, progress, metadata)."""
     status = require_status(args)
     if status is None:
@@ -272,7 +272,7 @@ def cmd_get_context(args: argparse.Namespace) -> dict | None:
     return context
 
 
-def cmd_get_worktree_path(args: argparse.Namespace) -> dict | None:
+def cmd_get_worktree_path(args: argparse.Namespace) -> dict[str, Any] | None:
     """Return the persisted worktree path for a plan as a tri-state response.
 
     Reads ``status.metadata.use_worktree`` and ``status.metadata.worktree_path``
@@ -353,7 +353,7 @@ def _passes_phase_filter(current_phase: str, filter_arg: str | None) -> bool:
     return current_phase in filter_phases
 
 
-def cmd_list(args: argparse.Namespace) -> dict:
+def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
     """Discover all plans across the main checkout AND its worktrees.
 
     Enumerates two sources and merges them deduped by plan id:
@@ -461,7 +461,7 @@ def cmd_list(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'total': len(plans), 'plans': plans}
 
 
-def cmd_list_orphans(args: argparse.Namespace) -> dict:  # noqa: ARG001
+def cmd_list_orphans(args: argparse.Namespace) -> dict[str, Any]:  # noqa: ARG001
     """Discover orphan plan directories (directories without a readable status.json).
 
     Inverse of ``cmd_list``: walks ``plans_dir.iterdir()`` and collects directory
@@ -488,7 +488,7 @@ def cmd_list_orphans(args: argparse.Namespace) -> dict:  # noqa: ARG001
     if not plans_dir.is_dir():
         return {'status': 'success', 'total': 0, 'orphans': []}
 
-    orphans = []
+    orphans: list[dict[str, Any]] = []
     for plan_dir in sorted(plans_dir.iterdir()):
         if not plan_dir.is_dir():
             continue
