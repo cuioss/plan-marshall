@@ -1,0 +1,182 @@
+= ADR-005: Growing-catalogue artifacts use a query substrate, not the boot skill-index
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: Unbounded-catalogue artifacts (decision records, lessons, domain-sparse skills) are discovered via an on-query scan substrate, never injected into the always-loaded boot skill-index.
+// tags: progressive-disclosure, context-budget, skills, adr, lessons, discovery
+// affects: plan-marshall, manage-adr, manage-lessons, phase-3-outline
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+The marketplace exposes one progressive-disclosure substrate for skills: every
+skill's frontmatter `name` + `description` is injected into each session's
+available-skills index, and the full body is loaded on demand. That substrate is
+sized for a *curated, bounded* set — every entry is plausibly relevant to any unit
+of work, and the index cost is paid once per session and is expected to stay
+roughly constant.
+
+Several other artifact families need the same "scan summaries, load the relevant
+body on demand" behaviour: architectural decision records, lessons-learned, and —
+prospectively — domain-specific skills that are irrelevant to most sessions. These
+families share one structural property that the curated skill set does not: **they
+grow without bound over a project's lifetime.** Decisions accumulate; lessons
+accumulate; a mature project carries hundreds of each.
+
+The choice point: when an unbounded-catalogue artifact needs progressive
+disclosure, does the architecture (a) build a bespoke per-family mechanism, (b)
+collapse the family into the skill type so it rides the existing index, or (c)
+share a discovery substrate that is *queried* rather than *always-injected*?
+
+The failure mode the architecture must avoid is a per-session context index whose
+size grows with the project's accumulated history — so that the cost of *having*
+decisions or lessons scales with their count even when none are relevant to the
+task at hand. An index entry is cheap once; an index entry per historical artifact,
+paid every session forever, is not.
+
+== Decision
+
+**Artifact families that grow without bound are discovered through a query
+substrate — a uniform `summary` / `tags` / `affects` metadata surface plus a `scan`
+verb that filters to relevance at call time — and are never injected into the
+always-loaded boot skill-index.** The boot index is reserved for the bounded,
+curated skill set whose every entry is plausibly relevant to any session.
+
+The substrate is shared *by contract*, not by collapsing the artifact types into
+one another:
+
+* Decision records carry a metadata block (`summary` / `tags` / `affects` /
+  `supersedes`) read by the `manage-adr` `scan` verb; planning phases consult
+  `scan --affects {module}` to surface only the decisions relevant to the work in
+  hand.
+* Lessons carry an equivalent metadata surface consumed by the `manage-lessons`
+  `list` / `auto-suggest` verbs.
+* A prospective *on-query skill* archetype — a frontmatter disclosure marker —
+  would let a skill stay out of the boot index and be surfaced only by query, the
+  same substrate applied to skills that are domain-irrelevant to most sessions.
+
+Each family keeps its own identity and lifecycle: a decision record stays
+append-only with a Status lifecycle, a lesson stays an ephemeral
+recurrence-detector, a skill stays live how-to guidance. They share a discovery
+mechanism, not a type.
+
+== Consequences
+
+=== Positive
+
+* Per-session context cost is bounded by the curated skill set, independent of how
+  many decisions, lessons, or optional skills have accumulated.
+* Relevance filtering happens at query time, so a session pays only for the
+  artifacts it explicitly asks about.
+* Each artifact family retains its own semantics and lifecycle; there is no forced
+  unification of "decision record" with "how-to guide."
+
+=== Negative
+
+* A shared substrate is itself an abstraction to define and maintain. Until it is
+  extracted, each family carries near-duplicate metadata-and-filter logic (the ADR
+  `scan` surface and the lessons `list` / `auto-suggest` surface are independent
+  re-implementations of the same shape).
+* A query-discovered artifact is only as reachable as the workflow step that
+  remembers to query it. Unlike a boot-injected skill, it is invisible unless a
+  phase explicitly scans — so the reading hooks that issue the scan are
+  load-bearing and must be maintained alongside the substrate.
+
+=== Risks
+
+* Extracting the shared substrate before a second independent consumer demonstrably
+  needs it is speculative complexity. The substrate should be unified when the
+  second family forces it, not pre-emptively.
+* The on-query skill archetype overlaps the existing `skill_domains` gating, which
+  already surfaces domain skills conditionally. Introducing the archetype without
+  reconciling it against domain-gating risks two mechanisms for "this skill is not
+  always relevant."
+
+== Alternatives Considered
+
+=== Collapse decision records into the skill type (ADRs become skills)
+
+Each ADR is authored as a skill, inheriting the skill loader's frontmatter scan and
+on-demand body load; no bespoke ADR discovery mechanism exists.
+
+*Solves:* removes the parallel progressive-disclosure mechanism — one loader, one
+frontmatter convention, one tooling pipeline.
+
+*Rejected because:* the skill index is injected every session, so an unbounded ADR
+catalogue inflates per-session context with the project's entire decision history —
+the opposite of the relevance-filtered scan it would replace. It also conflates a
+decision record (append-only, Status lifecycle, "why we chose X over Y") with
+how-to guidance (mutable, "do X this way"), and entangles project-local decisions
+with the plugin's shipped skill namespace. The architectural failure is routing an
+unbounded, sparsely-relevant catalogue through a bounded, always-relevant boot
+index.
+
+=== Keep a bespoke per-family mechanism indefinitely
+
+Each family implements its own metadata surface and `scan` / `list` independently,
+shaped exactly to its needs.
+
+*Solves:* each mechanism fits its family precisely; no shared abstraction to design.
+
+*Rejected as the long-term shape:* the metadata surface and filter logic recur
+across families with only cosmetic differences, so a change to the disclosure
+contract must be made in N places. Acceptable as the current state with one or two
+families; not the target once a third consumer appears.
+
+=== An on-query skill archetype as the only change
+
+Add a frontmatter marker that excludes a skill from the boot index and is
+discovered via a search verb; leave decision records and lessons on their existing
+mechanisms.
+
+*Solves:* attacks skill-index bloat directly for domain-irrelevant skills.
+
+*Rejected because:* it addresses only the skill family, leaving decision-record and
+lesson discovery on their own mechanisms — it is one *instance* of the substrate,
+not the substrate. It also overlaps domain-gating, which already surfaces domain
+skills conditionally.
+
+The alternatives fail in one class: they either route an unbounded catalogue through
+a bounded boot index, or they solve the disclosure problem one family at a time. The
+decision routes every unbounded family through a single query substrate while
+preserving each family's distinct identity.
+
+== Generalisation
+
+The underlying abstraction is two tiers of progressive disclosure:
+
+* A *boot index* holds a bounded, curated set whose every entry is plausibly
+  relevant to any unit of work. Its cost is paid once per session and must stay
+  constant.
+* A *query index* holds unbounded, history-accumulating artifacts whose relevance is
+  sparse per task. Its cost is paid only when a workflow step asks.
+
+The diagnostic question for any new artifact family is: *does this set grow without
+bound over the project's life?* If yes, it belongs behind a query verb, never in the
+boot index — regardless of how naturally its frontmatter resembles a boot-index
+entry's.
+
+== Implementation Note
+
+Realising this decision is a cross-cutting change: extracting the shared metadata +
+`scan` contract, backfilling the metadata surface across the existing artifact
+corpus, and — for the on-query skill archetype — marking the affected skills. When
+implemented, that work, including any large-scale skill-frontmatter migration it
+requires, should be scoped as a single coherent plan rather than landed piecemeal,
+so the disclosure contract is consistent across the whole corpus at every point in
+time rather than only after a long tail of small changes converges.
+
+== References
+
+* xref:001-Skills_are_the_source_of_truth_for_script_calls_drift_detection_is_dev-time_post-hoc.adoc[ADR-001] — the boot-index frontmatter convention this decision contrasts with.
+* `plan-marshall:manage-adr` `scan` — the decision-record query surface.
+* `plan-marshall:manage-lessons` (`list --full` / `auto-suggest`) — the lessons query surface.
+* `plan-marshall:phase-3-outline` — the planning reading hook that issues the relevance scan.
+* `plan-marshall:manage-config` `skill_domains` gating — the existing conditional-skill mechanism the on-query archetype must reconcile with.
