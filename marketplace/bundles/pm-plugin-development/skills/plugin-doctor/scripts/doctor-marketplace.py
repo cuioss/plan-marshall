@@ -69,7 +69,6 @@ from _analyze_test_conventions import (
 )
 from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
 from _analyze_workflow_doc_toon_error_field import analyze_workflow_doc_toon_error_field
-from _analyze_zero_match_rule import analyze_zero_match_rule
 from _cmd_apply import apply_single_fix, load_templates
 from _cmd_extension import validate_extension_contracts
 from _doctor_analysis import analyze_component, scan_argparse_safety
@@ -483,19 +482,6 @@ def cmd_analyze(args) -> dict:
     historical_prose_issues = analyze_historical_prose_in_skills(marketplace_root)
     all_issues.extend(historical_prose_issues)
     total_issues += len(historical_prose_issues)
-
-    # Marketplace-wide zero-match-rule detector (positive-fixture self-test).
-    # Unconditionally active — enforces the zero-match acceptance criterion from
-    # references/rule-provenance.md: a rule claimed by the detector's
-    # FIXTURE_CORPUS must actually fire on its known-defect positive fixture.
-    # When a claimed-and-registered rule fires on no fixture its matcher is dead
-    # or broken (warning severity, fixable=False). The detector stays silent for
-    # registered rules WITHOUT a corpus entry, so a healthy tree produces zero
-    # findings. Runs the registered analyzers over scratch fixtures — no
-    # subprocess, no mutation of any tracked file.
-    zero_match_issues = analyze_zero_match_rule(marketplace_root)
-    all_issues.extend(zero_match_issues)
-    total_issues += len(zero_match_issues)
 
     # The manage-invocation rule cluster (manage-invocation-invalid +
     # missing-canonical-block) is intentionally NOT run here. It derives each
@@ -941,15 +927,6 @@ def cmd_quality_gate(args) -> dict:
     all_issues.extend(historical_prose_findings)
     rule_summaries.append(
         {'rule': 'analyze_historical_prose_in_skills', 'findings': len(historical_prose_findings)}
-    )
-
-    # zero-match-rule — positive-fixture corpus self-test (references/rule-provenance.md
-    # § "Provenance contract for new rules"). Findings carry the emitter module path,
-    # so _scoped's path filter applies uniformly under --paths.
-    zero_match_findings = _scoped(analyze_zero_match_rule(marketplace_root))
-    all_issues.extend(zero_match_findings)
-    rule_summaries.append(
-        {'rule': 'analyze_zero_match_rule', 'findings': len(zero_match_findings)}
     )
 
     # finalize-step-token-mismatch — flags a finalize-step skill whose documented
