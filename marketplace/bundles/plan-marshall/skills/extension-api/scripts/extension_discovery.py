@@ -552,7 +552,7 @@ def cmd_apply_config_defaults(args) -> int:
     print(
         serialize_toon(
             {
-                'status': 'success',
+                'status': 'success' if not results['errors'] else 'error',
                 'extensions_called': results['extensions_called'],
                 'extensions_skipped': results['extensions_skipped'],
                 'errors_count': len(results['errors']),

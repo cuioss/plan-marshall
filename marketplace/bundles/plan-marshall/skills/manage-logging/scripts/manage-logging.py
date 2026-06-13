@@ -135,11 +135,9 @@ def handle_write(args: argparse.Namespace) -> dict[str, Any] | None:
     level = args.level
     message = args.message
 
-    # Log entry
-    try:
-        log_entry(log_type, plan_id, level, message)
-    except OSError as e:
-        return {'status': 'error', 'error': 'write_failed', 'message': str(e)}
+    # Log entry — log_entry is best-effort and never raises into the caller
+    # (it swallows all exceptions internally), so no guard is needed here.
+    log_entry(log_type, plan_id, level, message)
     return None
 
 
