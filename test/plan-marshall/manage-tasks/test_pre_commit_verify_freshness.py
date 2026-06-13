@@ -30,8 +30,9 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PROJECT_ROOT
 from toon_parser import serialize_toon
+
+from conftest import PROJECT_ROOT
 
 # Load the cmd module via importlib (mirrors the qgate-mechanical test bootstrap).
 _SCRIPTS_DIR = (
