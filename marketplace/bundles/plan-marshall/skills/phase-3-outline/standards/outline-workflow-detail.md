@@ -930,6 +930,31 @@ These rules govern how the outline must verify actual state — defect liveness,
 
 **Top-level vs subdirectory disambiguation**: a test file may exist BOTH at a top-level path (`test/{bundle}/`) AND in a subdirectory (`test/{bundle}/{skill}/`). When a basename appears at two distinct paths, treat the two paths as different files — they are not interchangeable. Be explicit in the deliverable about which directory the intent applies to. Reversing the two (writing the top-level path when the subdirectory path was meant, or vice versa) produces a `files_exist` Q-Gate failure in phase-4-plan and a corrective `rename-path` round-trip. Resolving the basename against disk and naming the exact directory before the outline is written is what prevents the swap.
 
+#### Validate cited lesson-ID tokens against the live inventory before writing the outline
+
+**Trigger predicate**: the outline is about to write a `YYYY-MM-DD-HH-NNN`-shaped lesson-ID token into any deliverable body field — `**Success Criteria:**`, `**Change per file:**`, or any narrative field in the composed deliverable.
+
+**Required action** (apply in order):
+
+1. **Validate each cited token against the live inventory.** A bare lesson-ID citation is only legitimate when the ID resolves to a registered lesson. Confirm registration with the deterministic `manage-lessons` read verb:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get --lesson-id {id}
+   ```
+
+   A registered ID returns the lesson; an unregistered ID returns a not-found status. To enumerate the full registered set in one call (e.g. when several tokens are being validated at once), use `python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list`.
+
+2. **On a not-found result, choose one of two resolutions** (do NOT write the bare ID):
+
+   - **(a) Drop-and-reword** — omit the bare ID from the deliverable body and reference the lesson by its logical role (what the lesson is *about*), not its identifier. This is the default for any field whose text would otherwise carry the bare token as narrative.
+   - **(b) Confine to plan-internal fields** — when the ID must be retained as provenance, keep it ONLY in the deliverable's plan-internal fields (`**Change per file:**`, `**Success Criteria:**`), which live in the plan workspace and never ship in a skill body. Never write the bare ID into a field that will be lifted verbatim into shipped prose.
+
+3. **Do NOT register the plan's own plan-source lesson to make a citation resolve.** When the unregistered ID is the plan's own plan-source lesson, it lives as a plan-local copy and is intentionally absent from the inventory. Registering it first is wrong: under the three-gate lesson-creation policy, Gate 2 finds the current plan IS the covering active plan and directs a fold-into-plan, not a create. Resolve the citation via resolution (a) or (b) instead.
+
+**Why this is the upstream complement to the write-time safety net**: `manage-tasks batch-add` / `commit-add` already reject unregistered lesson IDs at task-write time (`lesson_id_not_found`), but that write-time validation scans `title + description` ONLY — the `steps[]` affected-path field carrying a lesson ID inside a filename is NOT scanned and is safe. The write-time net therefore catches an unregistered citation in a phase-4 task body, but only after the outline has already committed it. Running this check at outline time catches the unregistered citation where it originates — in the composed deliverable body — so the failure never surfaces downstream at `manage-tasks batch-add`.
+
+This detail-standard prose carries the rule content; per the marketplace `no-lesson-id-in-skill-prose` rule (`analyze_lesson_id_in_skill_prose`) it MUST NOT cite the raw plan-source lesson-ID token in narrative — the wisdom is captured, the bare ID is not.
+
 ### Step 11: Q-Gate Verification
 
 **Purpose**: Verify skill output meets quality standards.
