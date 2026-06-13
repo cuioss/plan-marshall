@@ -60,7 +60,7 @@ Skill: plan-marshall:manage-adr
 
 Author the proposals from the plan's own record. Read the clarified request, the solution outline, the decision log, and the task descriptions as the evidence base for decision-shape detection.
 
-Read the original/clarified request via the canonical verb chain:
+Read the clarified request narrative via the canonical verb chain:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
