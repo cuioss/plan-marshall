@@ -533,26 +533,57 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
 
 _ATTEMPT_RE = re.compile(r'\[ATTEMPT\]')
 
-# Polling-language keywords that, when found within 5 lines of an [ATTEMPT] line,
-# suggest the agent dispatched a subagent then attempted to poll rather than wait
-# synchronously. This is a heuristic — the LLM applies judgement; the extractor
-# counts candidates only.
-_POLLING_KEYWORDS = frozenset(
-    {'sleeping', 'polling', 'background', 'sleep', 'run_in_background', 'wait'}
-)
+# Genuine background-poll signal: a ``run_in_background=true`` (or
+# ``run_in_background: true``) marker in a window line. This is the dispatch-then-
+# poll anti-pattern's load-bearing signature — the agent launched a background task
+# and is about to poll for it rather than waiting synchronously. The flag separator
+# is either ``=`` or ``:`` and tolerates surrounding whitespace; the value is
+# matched case-insensitively.
+_RUN_IN_BACKGROUND_RE = re.compile(r'run_in_background\s*[=:]\s*true', re.IGNORECASE)
+
+# Genuine background-poll signal: an ``until ... sleep ... done`` shell-loop shape
+# spanning the window — the hand-rolled poll loop the voluntary-checkpoint rule is
+# meant to catch. The three tokens must appear in order across the joined window
+# text, with ``until`` and ``sleep`` and ``done`` all present.
+_UNTIL_SLEEP_DONE_RE = re.compile(r'\buntil\b.*?\bsleep\b.*?\bdone\b', re.IGNORECASE | re.DOTALL)
+
+# CI-wait exemptions: line shapes that contain a generic ``wait`` token but are
+# legitimate SYNCHRONOUS CI waits, never voluntary-checkpoint polling. A window
+# line matching either shape is skipped when scanning for a background-poll signal
+# so it can neither trigger a candidate nor be confused for the poll-loop shape.
+#   - ``ci checks wait``: the CI-abstraction synchronous wait invocation.
+#   - ``ci_complete_precondition``: the work-log marker emitted around a synchronous
+#     CI-completion gate.
+_CI_WAIT_EXEMPT_RE = re.compile(r'ci\s+checks\s+wait|ci_complete_precondition', re.IGNORECASE)
 
 
 def detect_voluntary_checkpoint_polling(work_log_lines: list[str]) -> dict[str, Any]:
-    """Detect candidate [ATTEMPT] + polling-language consecutive-line pairs in work.log.
+    """Detect candidate [ATTEMPT] + background-poll consecutive-line pairs in work.log.
 
     Precondition: at least one ``[ATTEMPT]`` line must exist for the rule to fire.
     When the precondition is absent, ``precondition_met`` is False and
     ``polling_pairs_count`` is 0.
 
+    A candidate pair fires ONLY when the 5-line window after an ``[ATTEMPT]`` line
+    carries a GENUINE background-poll signal — a ``run_in_background=true`` marker in
+    a window line, OR an ``until ... sleep ... done`` shell-loop shape spanning the
+    window. A bare generic keyword (``wait``, ``background``, ``sleep``) with no such
+    signal no longer triggers a candidate: those produced the false-positive class
+    this detector was tightened to eliminate.
+
+    CI-wait line shapes — ``ci checks wait`` invocations and the
+    ``ci_complete_precondition`` work-log marker — are exempt: they contain the word
+    ``wait`` but are legitimate synchronous CI waits, not voluntary-checkpoint
+    polling. An exempt line is skipped when scanning the window so it cannot
+    contribute to a candidate (neither as a poll signal nor as part of the
+    ``until ... sleep ... done`` span).
+
+    The extractor counts candidates only; downstream LLM rules apply judgement.
+
     Returns:
       - precondition_met: True when any ``[ATTEMPT]`` line exists in work_log_lines
-      - polling_pairs_count: number of [ATTEMPT] lines followed within 5 lines by a
-            polling-language keyword (case-insensitive)
+      - polling_pairs_count: number of [ATTEMPT] lines whose window carries a genuine
+            background-poll signal (CI-wait lines excluded)
       - candidate_line_numbers: 1-based indices of the [ATTEMPT] lines that triggered
             a candidate pair (for LLM inspection)
     """
@@ -566,14 +597,20 @@ def detect_voluntary_checkpoint_polling(work_log_lines: list[str]) -> dict[str, 
 
     candidates: list[int] = []
     for idx in attempt_indices:
-        # Look at the next 5 lines (exclusive) for polling keywords
+        # Look at the next 5 lines (exclusive) for a genuine background-poll signal.
         window_end = min(idx + 6, len(work_log_lines))
         window = work_log_lines[idx + 1 : window_end]
-        for line in window:
-            lower = line.lower()
-            if any(kw in lower for kw in _POLLING_KEYWORDS):
-                candidates.append(idx + 1)  # 1-based line number
-                break
+        # Drop CI-wait lines before scanning — a legitimate synchronous CI wait
+        # never contributes to a voluntary-checkpoint-polling candidate.
+        non_exempt = [line for line in window if not _CI_WAIT_EXEMPT_RE.search(line)]
+        if not non_exempt:
+            continue
+        # Per-line run_in_background=true marker, OR the until..sleep..done shape
+        # spanning the joined (non-exempt) window text.
+        if any(_RUN_IN_BACKGROUND_RE.search(line) for line in non_exempt) or _UNTIL_SLEEP_DONE_RE.search(
+            '\n'.join(non_exempt)
+        ):
+            candidates.append(idx + 1)  # 1-based line number
 
     return {
         'precondition_met': True,

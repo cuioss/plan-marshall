@@ -285,6 +285,27 @@ This pattern enables:
 - Caching for fast subsequent lookups
 - Version-agnostic paths via glob
 
+## Broken Executor Recovery (Generated but Unrunnable)
+
+This case is distinct from the [Bootstrap Pattern](#bootstrap-pattern-before-executor-exists) above. Bootstrap covers the **first-run** state where `.plan/execute-script.py` does **not yet exist**. This section covers the state where the generated executor **exists on disk but fails to run** — for example, a template import-surface change makes the embedded preamble import a symbol the runtime no longer exports, so every `python3 .plan/execute-script.py …` call aborts before reaching any script body. Because the executor itself is broken, the normal `/marshall-steward` and `/sync-plugin-cache` regeneration paths — which route through the executor — cannot be used to repair it.
+
+### Recovery
+
+Regenerate the executor by invoking `generate_executor.py` **directly**, bypassing the broken `.plan/execute-script.py`:
+
+```bash
+python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate --marketplace --marketplace-root .
+```
+
+This is the same `generate_executor — generate` surface documented under [Canonical invocations](#canonical-invocations), run against the script file by its repository path rather than through the executor notation. The `--marketplace` flag selects the marketplace-source generation mode and `--marketplace-root .` pins discovery to the current checkout root (the directory that contains `marketplace/bundles`). After the direct call succeeds, the rewritten `.plan/execute-script.py` carries the corrected preamble and the normal executor-routed commands work again.
+
+### Distinguishing the two executor-unavailable cases
+
+| Case | Symptom | Recovery |
+|------|---------|----------|
+| First run (bootstrap) | `.plan/execute-script.py` does not exist | [Bootstrap Pattern](#bootstrap-pattern-before-executor-exists) — resolve the plugin root, run scripts directly |
+| Broken generated executor | `.plan/execute-script.py` exists but every invocation fails before reaching a script body | Run `generate_executor.py generate --marketplace --marketplace-root .` directly to rebuild it |
+
 ## Wait Pattern (Optional)
 
 The script executor includes a synchronous polling utility for blocking until async operations complete.
