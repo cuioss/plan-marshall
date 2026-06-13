@@ -9,6 +9,7 @@ list-providers: Reads the 'providers' list from marshal.json and outputs it.
 No filesystem scanning at runtime.
 """
 
+import argparse
 import importlib.util
 import subprocess
 from pathlib import Path
@@ -173,7 +174,7 @@ def _validate_provider_selection(
     return errors
 
 
-def run_discover_and_persist(args) -> int:
+def run_discover_and_persist(args: argparse.Namespace) -> int:
     """Execute the discover-and-persist subcommand.
 
     Scans PYTHONPATH for *_provider.py files and collects declarations.
@@ -312,7 +313,7 @@ def find_full_providers_by_category(category: str) -> list[dict[str, Any]]:
     return [p for p in _scan_for_providers() if p.get('category') == category]
 
 
-def run_find_by_category(args) -> int:
+def run_find_by_category(args: argparse.Namespace) -> int:
     """Execute the find-by-category subcommand."""
     require_initialized()
     results = find_by_category(args.category)
@@ -328,7 +329,7 @@ def run_find_by_category(args) -> int:
     return 0
 
 
-def run_list_providers(args) -> int:
+def run_list_providers(args: argparse.Namespace) -> int:
     """Execute the list-providers subcommand.
 
     Reads the 'providers' list from marshal.json. If not present,

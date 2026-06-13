@@ -5,6 +5,8 @@ Reports whether a credential file exists and has all secrets filled in
 (no placeholder values remaining).
 """
 
+import argparse
+
 from _providers_core import (
     check_credential_completeness,
     get_project_name,
@@ -12,7 +14,7 @@ from _providers_core import (
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
-def run_check(args) -> int:
+def run_check(args: argparse.Namespace) -> int:
     """Execute the check subcommand."""
     skill = args.skill
     scope = args.scope

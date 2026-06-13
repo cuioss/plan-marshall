@@ -4,6 +4,8 @@ Verify credential connectivity.
 Makes a test request using RestClient and updates verified_at metadata.
 """
 
+import argparse
+
 from _list_providers import find_provider_with_details  # type: ignore[import-not-found]
 from _providers_core import (
     get_authenticated_client,
@@ -14,7 +16,7 @@ from _providers_core import (
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
-def run_verify(args) -> int:
+def run_verify(args: argparse.Namespace) -> int:
     """Execute the verify subcommand."""
     skill = args.skill
     scope = args.scope
