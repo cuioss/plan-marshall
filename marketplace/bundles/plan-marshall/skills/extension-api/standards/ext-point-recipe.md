@@ -16,6 +16,38 @@ All recipe implementor skills must include in their SKILL.md frontmatter:
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 ```
 
+### Project Recipe Frontmatter
+
+Project recipes — `recipe-*` skills under `.claude/skills/` — declare their discovery
+metadata through SKILL.md YAML frontmatter keys. This frontmatter channel is the
+project-recipe counterpart to `provides_recipes()`: extension recipes return their
+discovery metadata from the `provides_recipes()` dict, while project recipes declare
+it as frontmatter keys.
+
+| Frontmatter Key | Required | Description |
+|-----------------|----------|-------------|
+| `recipe_domain` | Yes | Domain key for the recipe. **A project recipe whose frontmatter omits `recipe_domain` is silently skipped from discovery** — this is the intentional containment that keeps a half-authored recipe out of the recipe list. |
+| `recipe_profile` | No | Target profile (`implementation`, `module_testing`). Omit when the recipe does not constrain a profile. |
+| `recipe_package_source` | No | Package source (`packages`, `test_packages`). Omit when the recipe does not constrain a package source. |
+
+Canonical project-recipe frontmatter block:
+
+```yaml
+---
+name: recipe-example
+description: One-line recipe description shown during recipe selection
+implements: plan-marshall:extension-api/standards/ext-point-recipe
+recipe_domain: plan-marshall-plugin-dev
+recipe_profile: implementation
+recipe_package_source: packages
+---
+```
+
+**Frontmatter is the sole source of truth for these keys.** The discovery scanner reads
+`recipe_domain` / `recipe_profile` / `recipe_package_source` from frontmatter only — it
+does **not** read the markdown body for them. A body-table row or prose mention of any of
+these keys is structurally inert and never shadows the frontmatter value.
+
 ### Implementation Pattern
 
 ```python
@@ -43,6 +75,11 @@ class Extension(ExtensionBase):
 | `recipe_domain` | str | No | Domain key (user-selected or recipe-declared) |
 | `recipe_profile` | str | No | Target profile (`implementation`, `module_testing`) |
 | `recipe_package_source` | str | No | Package source (`packages`, `test_packages`) |
+
+The `recipe_domain` / `recipe_profile` / `recipe_package_source` values are recipe-declared:
+project recipes declare them as frontmatter keys (see [Project Recipe Frontmatter](#project-recipe-frontmatter)),
+while extension recipes return them from `provides_recipes()`. A user-supplied value at plan
+creation time overrides the recipe-declared default where the recipe omits the key.
 
 ### Pre-Conditions
 
@@ -73,7 +110,7 @@ class Extension(ExtensionBase):
 Recipes are discovered from two sources (in order):
 
 1. **Extension `provides_recipes()`** — domain bundle recipes (source: `extension`)
-2. **Project `recipe-*` skills in `.claude/skills/`** — project-level recipes (source: `project`)
+2. **Project `recipe-*` skills in `.claude/skills/`** — project-level recipes (source: `project`); metadata declared via frontmatter keys (`recipe_domain` required; `recipe_profile`/`recipe_package_source` optional). See [Project Recipe Frontmatter](#project-recipe-frontmatter).
 
 ## Hook API
 

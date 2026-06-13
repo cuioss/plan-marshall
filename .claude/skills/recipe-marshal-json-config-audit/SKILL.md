@@ -4,6 +4,8 @@ description: Domain-invariant recipe that audits and improves .plan/marshal.json
 user-invocable: false
 allowed-tools: Read, Glob, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-recipe
+recipe_domain: plan-marshall-plugin-dev
+recipe_profile: implementation
 ---
 
 # Recipe: marshal.json Configuration Audit
@@ -21,8 +23,8 @@ Unlike the interactive recipes, this recipe **hard-codes** its `(thoroughness, s
 | Parameter | Source |
 |-----------|--------|
 | `plan_id` | From phase-3-outline |
-| `recipe_domain` | `plan-marshall-plugin-dev` |
-| `recipe_profile` | `implementation` |
+
+The recipe's discovery metadata (`recipe_domain`, `recipe_profile`) is declared in this skill's YAML frontmatter — `manage-config list-recipes` reads it from frontmatter, the sole source of truth; the markdown body is never scanned for these keys.
 
 There is no `recipe_scope` / `recipe_thoroughness` input — the cell is fixed (see Step 1). The package-source parameter is omitted because the recipe audits a single config file and does not iterate packages. The recipe is plan-bound; it persists the resolved cell to status.json metadata.
 

@@ -4,6 +4,7 @@ description: Recipe skill that reviews a recently landed (archived) plan against
 user-invocable: false
 allowed-tools: Read, Glob, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-recipe
+recipe_domain: plan-marshall-plugin-dev
 ---
 
 # Recipe: Review and Improve a Recently Landed Plan
@@ -15,9 +16,8 @@ Recipe skill that reviews a recently landed (archived) plan against its original
 | Parameter | Source |
 |-----------|--------|
 | `plan_id` | From phase-3-outline |
-| `recipe_domain` | `plan-marshall-plugin-dev` |
 
-`recipe_profile` and `recipe_package_source` are not needed by this analytical recipe and are omitted — the recipe creates no implementation/test deliverables of its own.
+The recipe's discovery metadata (recipe_domain) is declared in this skill's YAML frontmatter — `manage-config list-recipes` reads it from frontmatter, the sole source of truth; the markdown body is never scanned for it. recipe_profile and recipe_package_source are not needed by this analytical recipe and are omitted from frontmatter — the recipe creates no implementation/test deliverables of its own.
 
 ## Enforcement
 
@@ -108,5 +108,5 @@ The recipe itself writes no source — the fix plan is the standard plan-marshal
 
 - [coverage-gathering-contract.md](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — the consume obligation, the pinned-cell expand/persist mechanism, and the cross-reference target this recipe consumes.
 - [ext-point-recipe.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md) — the recipe discovery/registration contract that governs project-local `recipe-*` auto-discovery.
-- `recipe-plugin-compliance` — sibling project-local, LLM-driven recipe; the convention template for frontmatter, the `recipe_domain` table row, and the coverage-cell step.
+- `recipe-plugin-compliance` — sibling project-local, LLM-driven recipe; the convention template for frontmatter, the frontmatter recipe_domain discovery key, and the coverage-cell step.
 - `audit-archived-plan-retrospectives` — reads the same `.plan/local/archived-plans/` corpus for a complementary retrospective audit.

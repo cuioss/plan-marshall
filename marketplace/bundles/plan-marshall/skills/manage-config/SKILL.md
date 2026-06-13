@@ -426,6 +426,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `system` | retention get, retention set |
 | `project` | `get/set` (`default_base_branch`, `working_prefixes`) |
 | `plan` | `{phase} get/set` (incl. run-at-all gates + finalize automation knobs), set-steps, add-step, remove-step, set-max-iterations |
+| `effort` | `read` (role/phase/`--default` resolver), `resolve-target` (`execution-context-{level}` variant name), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan --level` (surgical per-scope writer) |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `build-map` | `seed` (re-seed `build.map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `build.map`, fail-closed when absent) |
 | `build-decision` | `--command --plan-id` (centralized build-necessity verdict: `build` / `not_necessary`; `not_necessary` carries a log-friendly `reason`) |
@@ -893,6 +894,15 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort apply-preset \
   --preset PRESET
 ```
+
+### effort set
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort set \
+  --scope {phase}.{role}|plan --level LEVEL
+```
+
+Surgical per-scope writer. `--scope {phase}.{role}` (e.g. `phase-6-finalize.verification-feedback`) writes one nested effort scope, preserving sibling sub-keys (a pre-existing scalar `effort` string is normalised into an object first). `--scope plan` writes the `plan.effort` plan-wide scalar. Unknown phase/role and invalid `--level` are rejected.
 
 ### coverage read
 

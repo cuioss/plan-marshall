@@ -4,6 +4,8 @@ description: Project-local audit recipe that sweeps the plan-marshall bundle for
 user-invocable: false
 allowed-tools: Read, Write, Glob, Grep, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-recipe
+recipe_domain: plan-marshall-plugin-dev
+recipe_profile: implementation
 ---
 
 # Recipe: Bundle Generalization Sweep
@@ -19,10 +21,8 @@ Like the sibling project-local recipes it is LLM-driven (no backing script for a
 | Parameter | Source |
 |-----------|--------|
 | `plan_id` | From phase-3-outline |
-| `recipe_domain` | `plan-marshall-plugin-dev` |
-| `recipe_profile` | `implementation` |
 
-The backticked recipe-domain row above is **MANDATORY** — `manage-config list-recipes` scans `.claude/skills/recipe-*/SKILL.md` for that backticked row, and **silently skips** any recipe whose Input-Parameters table lacks it. This was the exact defect that hid `recipe-marshal-json-config-audit`. Keep the backticked recipe_domain token confined to the table row only — the discovery scanner matches the last line bearing that literal, so repeating it in prose would shadow the table value.
+The recipe's discovery metadata (`recipe_domain`, `recipe_profile`) is declared in this skill's YAML frontmatter — `manage-config list-recipes` reads it from frontmatter, the sole source of truth. A recipe whose frontmatter lacks `recipe_domain` is **silently skipped** from discovery (the containment that originally exposed the missing-metadata defect in `recipe-marshal-json-config-audit`). The discovery scanner does NOT read the markdown body for these keys.
 
 There is no `recipe_scope` / `recipe_thoroughness` input — the cell is pinned (Step 0). The package-source parameter is omitted because the sweep audits a bundle surface rather than iterating packages. The recipe is plan-bound; it persists the resolved cell to `status.json` metadata.
 

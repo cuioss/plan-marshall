@@ -4,6 +4,8 @@ description: Domain-invariant recipe that drives a modularization-audit campaign
 user-invocable: false
 allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-recipe
+recipe_domain: plan-marshall-plugin-dev
+recipe_profile: implementation
 ---
 
 # Recipe: Modularization Audit for plan-marshall Skills
@@ -24,8 +26,8 @@ Both the resolved cell and the resolved target root are persisted to `status.jso
 | Parameter | Source |
 |-----------|--------|
 | `plan_id` | From phase-3-outline |
-| `recipe_domain` | `plan-marshall-plugin-dev` |
-| `recipe_profile` | `implementation` |
+
+The recipe's discovery metadata (`recipe_domain`, `recipe_profile`) is declared in this skill's YAML frontmatter — `manage-config list-recipes` reads it from frontmatter, the sole source of truth; the markdown body is never scanned for these keys.
 
 There is no `recipe_scope` / `recipe_thoroughness` input — the COVERAGE CELL is fixed (see Step 1). The CORPUS ROOT is NOT a static input either — it is gathered at Step 1 via `AskUserQuestion`. The recipe is plan-bound; it persists BOTH the resolved cell AND the resolved target root to `status.json` metadata.
 
