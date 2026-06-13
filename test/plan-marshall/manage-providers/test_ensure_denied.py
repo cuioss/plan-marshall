@@ -30,15 +30,23 @@ class TestEnsureDeniedRules:
         import _cred_ensure_denied  # type: ignore[import-not-found]
         import _providers_core  # type: ignore[import-not-found]
 
+        # Capture the sandboxed dir so the global reload below is fully reverted
+        # in the finally block — otherwise _cred_ensure_denied.DENY_RULES would
+        # stay pinned to the real home path and leak into subsequent tests.
+        sandboxed_dir = _providers_core.CREDENTIALS_DIR
         real_dir = Path.home() / '.plan-marshall-credentials'
         monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', real_dir)
         importlib.reload(_cred_ensure_denied)
-        deny_rules = _cred_ensure_denied.DENY_RULES
+        try:
+            deny_rules = _cred_ensure_denied.DENY_RULES
 
-        tilde_rules = [r for r in deny_rules if '~/' in r]
-        abs_rules = [r for r in deny_rules if str(Path.home()) in r]
-        assert len(tilde_rules) > 0, 'Must have tilde-form rules'
-        assert len(abs_rules) > 0, 'Must have absolute-path-form rules'
+            tilde_rules = [r for r in deny_rules if '~/' in r]
+            abs_rules = [r for r in deny_rules if str(Path.home()) in r]
+            assert len(tilde_rules) > 0, 'Must have tilde-form rules'
+            assert len(abs_rules) > 0, 'Must have absolute-path-form rules'
+        finally:
+            monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', sandboxed_dir)
+            importlib.reload(_cred_ensure_denied)
 
     def test_deny_rules_cover_read_tool(self):
         """Deny rules must cover Read tool access."""
