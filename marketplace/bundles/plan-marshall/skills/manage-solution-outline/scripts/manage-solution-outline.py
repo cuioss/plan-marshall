@@ -147,7 +147,7 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
     return errors, warnings, info
 
 
-def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[str]]:
+def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str], list[str]]:
     """Validate a single deliverable against the deliverable contract.
 
     Contract requires:
@@ -157,8 +157,8 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
     - Verification section
     - Success criteria
     """
-    errors = []
-    warnings = []
+    errors: list[str] = []
+    warnings: list[str] = []
     num = deliverable['number']
 
     # Check 1: Metadata block exists
@@ -272,7 +272,7 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
 # =============================================================================
 
 
-def cmd_validate(args) -> dict:
+def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
     """Validate solution outline structure against deliverable contract."""
     require_valid_plan_id(args)
 
@@ -327,7 +327,7 @@ def cmd_validate(args) -> dict:
     return result
 
 
-def cmd_list_deliverables(args) -> dict:
+def cmd_list_deliverables(args: argparse.Namespace) -> dict[str, Any]:
     """List deliverables from solution outline."""
     require_valid_plan_id(args)
 
@@ -357,7 +357,7 @@ def cmd_list_deliverables(args) -> dict:
     }
 
 
-def cmd_read(args) -> dict:
+def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
     """Read solution outline."""
     require_valid_plan_id(args)
 
@@ -457,7 +457,7 @@ def cmd_read(args) -> dict:
         return result
 
 
-def cmd_get_field(args) -> dict:
+def cmd_get_field(args: argparse.Namespace) -> dict[str, Any]:
     """Read a single solution-level metadata field.
 
     Currently supports: scope_estimate. Returns ``unknown_field`` for unsupported
@@ -517,7 +517,7 @@ def cmd_get_field(args) -> dict:
     }
 
 
-def cmd_exists(args) -> dict:
+def cmd_exists(args: argparse.Namespace) -> dict[str, Any]:
     """Check if solution outline exists."""
     require_valid_plan_id(args)
 
@@ -590,7 +590,7 @@ def _validate_file_on_disk(plan_id: str, file_path: Path) -> tuple[int, dict[str
     return 0, result
 
 
-def cmd_resolve_path(args) -> dict:
+def cmd_resolve_path(args: argparse.Namespace) -> dict[str, Any]:
     """Return the target file path for the solution outline.
 
     Used by LLM to get the path for direct file write via Write tool.
@@ -607,7 +607,7 @@ def cmd_resolve_path(args) -> dict:
     }
 
 
-def cmd_write(args) -> dict:
+def cmd_write(args: argparse.Namespace) -> dict[str, Any]:
     """Validate solution outline already written to disk.
 
     File must be written externally (via Write tool) before calling this command.
@@ -624,7 +624,7 @@ def cmd_write(args) -> dict:
     return result
 
 
-def cmd_update(args) -> dict:
+def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
     """Validate an updated solution outline already written to disk.
 
     File must already exist and be updated externally (via Write tool).
@@ -649,7 +649,7 @@ def cmd_update(args) -> dict:
     return result
 
 
-def cmd_get_module_context(args) -> dict:
+def cmd_get_module_context(args: argparse.Namespace) -> dict[str, Any]:
     """Get project architecture context for placement decisions.
 
     Reads the per-module project-architecture layout (top-level
@@ -687,7 +687,7 @@ def cmd_get_module_context(args) -> dict:
     except Exception as e:
         return {'status': 'error', 'error': 'parse_error', 'file': str(meta_path.parent), 'message': str(e)}
 
-    modules_list: list[dict] = []
+    modules_list: list[dict[str, Any]] = []
     context: dict[str, Any] = {'status': 'success', 'module_count': len(module_names), 'modules': modules_list}
 
     for name in module_names:
