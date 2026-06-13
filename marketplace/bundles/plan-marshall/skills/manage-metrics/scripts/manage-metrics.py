@@ -27,6 +27,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -90,7 +91,6 @@ def _resolve_cwd() -> str:
             return result.stdout.strip()
     except (OSError, subprocess.SubprocessError):
         pass
-    import os
     return os.getcwd()
 
 
