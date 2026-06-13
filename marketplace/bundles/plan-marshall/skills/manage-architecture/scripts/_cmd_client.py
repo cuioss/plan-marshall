@@ -14,6 +14,7 @@ reader in this module threads ``project_dir`` through to the core helpers;
 nothing falls back to ``Path.cwd()`` or ``git rev-parse``.
 """
 
+import argparse
 import fnmatch
 import hashlib
 import importlib.util
@@ -383,7 +384,7 @@ def _compute_execution_tier_fields(bash_timeout_seconds: int) -> dict[str, Any]:
 _ENRICH_CACHE: dict[tuple[str, str], dict[str, Any] | None] = {}
 
 
-def _enrich_maven_module_cached(module_name: str, derived: dict, project_dir: str) -> dict[str, Any] | None:
+def _enrich_maven_module_cached(module_name: str, derived: dict[str, Any], project_dir: str) -> dict[str, Any] | None:
     """Run (and memoize) the one-module Maven enrich for ``module_name``.
 
     Resolves the module's directory from its ``paths.module`` and calls
@@ -414,7 +415,7 @@ def _enrich_maven_module_cached(module_name: str, derived: dict, project_dir: st
     return enriched
 
 
-def _enrich_module_commands(module_name: str, derived: dict, project_dir: str) -> dict | None:
+def _enrich_module_commands(module_name: str, derived: dict[str, Any], project_dir: str) -> dict[str, Any] | None:
     """Return ``derived``'s command map merged with profile-derived canonicals.
 
     Lazily enriches ``module_name`` (one Maven run, memoized) and rebuilds the
@@ -453,7 +454,7 @@ def _enrich_module_commands(module_name: str, derived: dict, project_dir: str) -
     return merged
 
 
-def _enriched_dependencies(module_name: str, derived: dict, project_dir: str) -> list[str]:
+def _enriched_dependencies(module_name: str, derived: dict[str, Any], project_dir: str) -> list[str]:
     """Return a module's resolved dependency list, enriching lazily when empty.
 
     The cheap crawl leaves ``dependencies`` empty. The graph path needs the
@@ -783,13 +784,13 @@ _PROFILE_CANONICALS: frozenset[str] = frozenset(
 )
 
 
-def _command_executable(commands: dict, command_name: str) -> str:
+def _command_executable(commands: dict[str, Any], command_name: str) -> str:
     """Return the executable string for ``command_name`` in a command map."""
     cmd_data = commands[command_name]
     return cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
 
 
-def _needs_profile_enrichment(command_name: str, commands: dict) -> bool:
+def _needs_profile_enrichment(command_name: str, commands: dict[str, Any]) -> bool:
     """Whether requesting ``command_name`` warrants a lazy profile enrich.
 
     True when the requested command is a profile-derived canonical that is
@@ -1091,7 +1092,7 @@ def _truncation_marker(budget: int, required: int) -> str:
     return f'{_TRUNCATION_MARKER_PREFIX}{budget}; full output requires --budget {required})'
 
 
-def _render_project_section(meta: dict) -> list[str]:
+def _render_project_section(meta: dict[str, Any]) -> list[str]:
     name = meta.get('name', '(unnamed project)')
     description = (meta.get('description') or '').strip()
     lines = [f'# {name}', '']
@@ -1100,7 +1101,7 @@ def _render_project_section(meta: dict) -> list[str]:
     return lines
 
 
-def _render_modules_section(enriched_by_name: dict[str, dict]) -> list[str]:
+def _render_modules_section(enriched_by_name: dict[str, dict[str, Any]]) -> list[str]:
     if not enriched_by_name:
         return []
 
@@ -1143,8 +1144,8 @@ def _count_profile_skills(profile_data: Any) -> int:
     return 0
 
 
-def _render_skills_by_profile_section(enriched_by_name: dict[str, dict]) -> list[str]:
-    rows: list[tuple[str, dict]] = []
+def _render_skills_by_profile_section(enriched_by_name: dict[str, dict[str, Any]]) -> list[str]:
+    rows: list[tuple[str, dict[str, Any]]] = []
     for name in sorted(enriched_by_name.keys()):
         skills_by_profile = enriched_by_name[name].get('skills_by_profile', {})
         if skills_by_profile:
@@ -1213,7 +1214,7 @@ def render_overview(project_dir: str = '.', budget: int = DEFAULT_OVERVIEW_BUDGE
             derived_by_name[name] = load_module_derived(name, project_dir)
         except DataNotFoundError:
             derived_by_name[name] = {}
-    enriched_by_name: dict[str, dict] = {
+    enriched_by_name: dict[str, dict[str, Any]] = {
         name: load_module_enriched_or_empty(name, project_dir) for name in module_names
     }
     deps_map, _ = _build_internal_deps_map(
@@ -1239,7 +1240,7 @@ def render_module_markdown(
     project_dir: str = '.',
     budget: int = DEFAULT_OVERVIEW_BUDGET,
     *,
-    merged: dict | None = None,
+    merged: dict[str, Any] | None = None,
 ) -> str:
     """Render budgeted markdown deep-dive for a single module.
 
@@ -1338,12 +1339,12 @@ def render_module_markdown(
 # =============================================================================
 
 
-def _extract_profile_keys(skills_by_profile: dict) -> set[str]:
+def _extract_profile_keys(skills_by_profile: dict[str, Any]) -> set[str]:
     """Extract profile keys from skills_by_profile structure."""
     return set(skills_by_profile.keys())
 
 
-def cmd_info(args) -> dict:
+def cmd_info(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for info command."""
     try:
         info = get_project_info(args.project_dir)
@@ -1354,7 +1355,7 @@ def cmd_info(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_modules(args) -> dict:
+def cmd_modules(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for modules command."""
     try:
         command_filter = getattr(args, 'filter_command', None)
@@ -1375,7 +1376,7 @@ def cmd_modules(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_graph(args) -> dict:
+def cmd_graph(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for graph command."""
     try:
         result = get_module_graph(args.project_dir, args.full)
@@ -1386,7 +1387,7 @@ def cmd_graph(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_module(args) -> Any:
+def cmd_module(args: argparse.Namespace) -> Any:
     """CLI handler for module command.
 
     Returns a TOON dict by default. When `--full --budget N` is supplied, returns
@@ -1415,7 +1416,7 @@ def cmd_module(args) -> Any:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_overview(args) -> Any:
+def cmd_overview(args: argparse.Namespace) -> Any:
     """CLI handler for overview command. Returns markdown string."""
     try:
         budget = getattr(args, 'budget', DEFAULT_OVERVIEW_BUDGET)
@@ -1426,7 +1427,7 @@ def cmd_overview(args) -> Any:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_commands(args) -> dict:
+def cmd_commands(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for commands command."""
     try:
         result = get_module_commands(args.module, args.project_dir)
@@ -1443,7 +1444,7 @@ def cmd_commands(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_resolve(args) -> dict:
+def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for resolve command.
 
     When the resolved ``executable`` is a Bucket B build notation, the result
@@ -1487,7 +1488,7 @@ def cmd_resolve(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def _augment_resolved(executable_result: dict, project_dir: str) -> dict:
+def _augment_resolved(executable_result: dict[str, Any], project_dir: str) -> dict[str, Any]:
     """Apply the Bucket B execution-tier augmentation to a resolved command dict.
 
     Shared by ``cmd_resolve`` and the deriver: when the resolved ``executable``
@@ -1526,7 +1527,7 @@ def _resolve_verbs_for_build_class(build_class: str) -> list[str]:
     return []
 
 
-def cmd_derive_verification(args) -> dict:
+def cmd_derive_verification(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for ``derive-verification`` — the single deterministic deriver.
 
     Reads the merged ``build_map`` from marshal.json, classifies each changed
@@ -1595,7 +1596,7 @@ def cmd_derive_verification(args) -> dict:
     }
 
 
-def cmd_profiles(args) -> dict:
+def cmd_profiles(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for profiles command.
 
     Extract unique profile keys from skills_by_profile for given modules.
@@ -1640,7 +1641,7 @@ def cmd_profiles(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_siblings(args) -> dict:
+def cmd_siblings(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for siblings command.
 
     Find sibling virtual modules for a given module.
@@ -1687,7 +1688,7 @@ def _modules_from_exception_or_fallback(exc: ModuleNotFoundInProjectError, proje
         return []
 
 
-def cmd_path(args) -> dict:
+def cmd_path(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for path command."""
     try:
         path = get_module_path(args.source, args.target, args.project_dir)
@@ -1707,7 +1708,7 @@ def cmd_path(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_neighbors(args) -> dict:
+def cmd_neighbors(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for neighbors command."""
     try:
         neighbors = get_module_neighbors(args.module, args.depth, args.project_dir)
@@ -1728,7 +1729,7 @@ def cmd_neighbors(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_impact(args) -> dict:
+def cmd_impact(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for impact command."""
     try:
         impact = get_module_impact(args.module, args.project_dir)
@@ -1751,7 +1752,7 @@ def cmd_impact(args) -> dict:
 # =============================================================================
 
 
-def _flatten_inventory(files_block: dict) -> list[tuple[str, str]]:
+def _flatten_inventory(files_block: dict[str, Any]) -> list[tuple[str, str]]:
     """Flatten a ``files`` block into ``(category, path)`` pairs.
 
     Elided categories contribute their ``sample`` paths only — callers that
@@ -1769,7 +1770,7 @@ def _flatten_inventory(files_block: dict) -> list[tuple[str, str]]:
     return pairs
 
 
-def cmd_files(args) -> dict:
+def cmd_files(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for the ``files`` reader.
 
     Loads the target module's ``derived.json`` and returns its ``files``
@@ -1816,7 +1817,7 @@ def cmd_files(args) -> dict:
     }
 
 
-def cmd_which_module(args) -> dict:
+def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for the ``which-module`` reader.
 
     Resolves a path to its owning module by scanning every module's
@@ -1864,7 +1865,7 @@ def cmd_which_module(args) -> dict:
     }
 
 
-def cmd_find(args) -> dict:
+def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for the ``find`` reader.
 
     Cross-module pattern search across the inventory. ``--pattern`` is
@@ -1923,7 +1924,7 @@ def _sha256_file(path: Path) -> str | None:
     return h.hexdigest()
 
 
-def _sha256_payload(payload: dict | None) -> str | None:
+def _sha256_payload(payload: dict[str, Any] | None) -> str | None:
     """Return the sha256 hexdigest of a module's derived payload.
 
     Computed over the canonical JSON serialisation (``json.dumps(payload,
@@ -1957,7 +1958,7 @@ def _resolve_snapshot_dir(pre: str) -> Path:
     return base
 
 
-def cmd_diff_modules(args) -> dict:
+def cmd_diff_modules(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for the ``diff-modules`` reader.
 
     Compares pre-snapshot per-module ``derived.json`` shas (read from the

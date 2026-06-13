@@ -586,7 +586,7 @@ def load_merged_build_map(project_dir: str = '.') -> dict[str, list[dict[str, st
     return _merge_build_map(config)
 
 
-def _merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
+def _merge_build_map(config: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
     """Delegate to ``manage-config`` ``merge_build_map`` (single source of read logic).
 
     The build_map read (from ``build.map``, single source of
@@ -701,7 +701,7 @@ def resolve_module_for_path(path: str, project_dir: str = '.') -> str | None:
 # =============================================================================
 
 
-def error_exit(message: str, context: dict[str, Any] | None = None) -> 'NoReturn':
+def error_exit(message: str, context: dict[str, Any] | None = None) -> NoReturn:
     """Print error in TOON format and raise ArchitectureError.
 
     CLI-boundary helper — only call from command handlers, not library functions.
@@ -716,15 +716,15 @@ def error_exit(message: str, context: dict[str, Any] | None = None) -> 'NoReturn
     raise ArchitectureError(message)
 
 
-def error_module_not_found(module_name: str, available: list):
+def error_module_not_found(module_name: str, available: list[str]) -> NoReturn:
     error_exit('Module not found', {'module': module_name, 'available': available})
 
 
-def error_command_not_found(module_name: str, command_name: str, available: list):
+def error_command_not_found(module_name: str, command_name: str, available: list[str]) -> NoReturn:
     error_exit('Command not found', {'module': module_name, 'command': command_name, 'available': available})
 
 
-def error_data_not_found(expected_file: str, resolution: str):
+def error_data_not_found(expected_file: str, resolution: str) -> NoReturn:
     error_exit('Data not found', {'expected_file': expected_file, 'resolution': resolution})
 
 
@@ -765,7 +765,7 @@ def handle_module_not_found(module_name: str, project_dir: str) -> int:
     return 1
 
 
-def error_result_module_not_found(module_name: str, available: list) -> dict:
+def error_result_module_not_found(module_name: str, available: list[str]) -> dict[str, Any]:
     return {
         'status': 'error',
         'error': 'architecture_error',
@@ -775,7 +775,7 @@ def error_result_module_not_found(module_name: str, available: list) -> dict:
     }
 
 
-def error_result_command_not_found(module_name: str, command_name: str, available: list) -> dict:
+def error_result_command_not_found(module_name: str, command_name: str, available: list[str]) -> dict[str, Any]:
     return {
         'status': 'error',
         'error': 'architecture_error',
@@ -786,7 +786,7 @@ def error_result_command_not_found(module_name: str, command_name: str, availabl
     }
 
 
-def require_project_meta_result(project_dir: str = '.') -> dict:
+def require_project_meta_result(project_dir: str = '.') -> dict[str, Any]:
     """Return ``_project.json`` not found error dict."""
     return {
         'status': 'error',
@@ -796,7 +796,7 @@ def require_project_meta_result(project_dir: str = '.') -> dict:
     }
 
 
-def handle_module_not_found_result(module_name: str, project_dir: str) -> dict:
+def handle_module_not_found_result(module_name: str, project_dir: str) -> dict[str, Any]:
     """Return module-not-found error dict with available modules list."""
     try:
         modules = iter_modules(project_dir)
@@ -812,7 +812,7 @@ def handle_module_not_found_result(module_name: str, project_dir: str) -> dict:
     }
 
 
-def print_skills_by_profile(skills_by_profile: dict) -> None:
+def print_skills_by_profile(skills_by_profile: dict[str, Any]) -> None:
     """Print skills_by_profile in TOON format."""
     print('skills_by_profile:')
     for profile, profile_data in skills_by_profile.items():

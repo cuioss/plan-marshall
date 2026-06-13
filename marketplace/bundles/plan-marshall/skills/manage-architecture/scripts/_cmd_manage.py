@@ -11,9 +11,11 @@ writes it to disk. ``api_discover()`` still writes via the tmp+swap protocol
 so an interrupted discover run never leaves a half-written tree behind.
 """
 
+import argparse
 import re
 import shutil
 from pathlib import Path
+from typing import Any
 
 from _architecture_core import (
     DataNotFoundError,
@@ -172,7 +174,7 @@ def _is_ignored_by_rules(
     return ignored
 
 
-def _is_marketplace_bundle_module(module_data: dict, project_path: Path) -> bool:
+def _is_marketplace_bundle_module(module_data: dict[str, Any], project_path: Path) -> bool:
     """Decide whether a module's paths.module sits under ``marketplace/bundles/``.
 
     Marketplace-specific categories (``skill``/``agent``/``command``/...) only
@@ -341,7 +343,7 @@ def _walk_module_root(
     return results
 
 
-def _apply_category_cap(paths: list[str]) -> list[str] | dict:
+def _apply_category_cap(paths: list[str]) -> list[str] | dict[str, Any]:
     """Apply the per-category cap. Below the cap return ``paths`` verbatim."""
     if len(paths) <= _FILES_CATEGORY_CAP:
         return paths
@@ -351,7 +353,7 @@ def _apply_category_cap(paths: list[str]) -> list[str] | dict:
     }
 
 
-def _post_process_files(modules: dict, project_dir: str = '.') -> None:
+def _post_process_files(modules: dict[str, Any], project_dir: str = '.') -> None:
     """Populate ``module['files']`` for every module in-place.
 
     Walks each module's ``paths.module`` (and any additional ``paths.tests``
@@ -420,7 +422,7 @@ def _post_process_files(modules: dict, project_dir: str = '.') -> None:
                 categorised.setdefault(category, []).append(inventory_path)
 
         # Sort each list deterministically and apply the per-category cap.
-        files_block: dict[str, list[str] | dict] = {}
+        files_block: dict[str, list[str] | dict[str, Any]] = {}
         for category in sorted(categorised.keys()):
             files_block[category] = _apply_category_cap(sorted(categorised[category]))
         module_data['files'] = files_block
@@ -431,7 +433,7 @@ def _post_process_files(modules: dict, project_dir: str = '.') -> None:
 # =============================================================================
 
 
-def _empty_module_enrichment() -> dict:
+def _empty_module_enrichment() -> dict[str, Any]:
     """Return the canonical empty-module enrichment dict.
 
     Shared between ``api_discover`` (which seeds per-module ``enriched.json``
@@ -455,7 +457,7 @@ def _empty_module_enrichment() -> dict:
     }
 
 
-def api_discover(project_dir: str = '.', force: bool = False) -> dict:
+def api_discover(project_dir: str = '.', force: bool = False) -> dict[str, Any]:
     """Run extension API discovery and persist non-derived results per-module.
 
     Writes ``_project.json`` plus per-module ``enriched.json`` stubs into
@@ -497,13 +499,13 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict:
 
     project_path = Path(project_dir).resolve()
     discovery_result = discover_project_modules(project_path)
-    modules: dict[str, dict] = discovery_result.get('modules', {}) or {}
+    modules: dict[str, dict[str, Any]] = discovery_result.get('modules', {}) or {}
     _post_process_files(modules, project_dir)
     extensions_used = discovery_result.get('extensions_used', [])
 
     # Build the project-meta document. The ``modules`` index here is the
     # canonical record of "which modules existed at last discover".
-    project_meta = {
+    project_meta: dict[str, Any] = {
         'name': project_path.name,
         'description': '',
         'description_reasoning': '',
@@ -542,7 +544,7 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict:
     }
 
 
-def api_init(project_dir: str = '.', check: bool = False, force: bool = False) -> dict:
+def api_init(project_dir: str = '.', check: bool = False, force: bool = False) -> dict[str, Any]:
     """Initialize per-module ``enriched.json`` stubs for every module.
 
     With the per-module layout, ``api_discover()`` already seeds empty stubs,
@@ -598,7 +600,7 @@ def api_init(project_dir: str = '.', check: bool = False, force: bool = False) -
     }
 
 
-def api_get_derived(project_dir: str = '.') -> dict:
+def api_get_derived(project_dir: str = '.') -> dict[str, Any]:
     """Get raw discovered data assembled across all modules.
 
     Re-assembles the legacy ``{project, modules, extensions_used}`` shape from
@@ -620,7 +622,7 @@ def api_get_derived(project_dir: str = '.') -> dict:
     }
 
 
-def api_get_derived_module(module_name: str, project_dir: str = '.') -> dict:
+def api_get_derived_module(module_name: str, project_dir: str = '.') -> dict[str, Any]:
     """Get raw discovered data for a single module from the live crawl.
 
     Raises:
@@ -633,7 +635,7 @@ def api_get_derived_module(module_name: str, project_dir: str = '.') -> dict:
     return modules[module_name]
 
 
-def list_modules(project_dir: str = '.') -> list:
+def list_modules(project_dir: str = '.') -> list[str]:
     """List module names from ``_project.json``."""
     return iter_modules(project_dir)
 
@@ -643,7 +645,7 @@ def list_modules(project_dir: str = '.') -> list:
 # =============================================================================
 
 
-def cmd_discover(args) -> dict:
+def cmd_discover(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for discover command."""
     try:
         return api_discover(args.project_dir, args.force)
@@ -651,7 +653,7 @@ def cmd_discover(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_init(args) -> dict:
+def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for init command."""
     try:
         return api_init(args.project_dir, args.check, args.force)
@@ -659,7 +661,7 @@ def cmd_init(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_derived(args) -> dict:
+def cmd_derived(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for derived command."""
     try:
         derived = api_get_derived(args.project_dir)
@@ -670,7 +672,7 @@ def cmd_derived(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_derived_module(args) -> dict:
+def cmd_derived_module(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for derived-module command."""
     try:
         module = api_get_derived_module(args.module, args.project_dir)

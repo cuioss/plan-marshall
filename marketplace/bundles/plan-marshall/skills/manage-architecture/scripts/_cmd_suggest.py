@@ -9,6 +9,7 @@ Persistence model: per-module on-disk layout under
 from ``_project.json``'s index — no monolithic file is ever read.
 """
 
+import argparse
 from typing import Any
 
 from _architecture_core import (
@@ -138,7 +139,7 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
 # =============================================================================
 
 
-def cmd_suggest_domains(args) -> dict:
+def cmd_suggest_domains(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for suggest-domains command."""
     try:
         return suggest_domains(args.module, args.project_dir)
