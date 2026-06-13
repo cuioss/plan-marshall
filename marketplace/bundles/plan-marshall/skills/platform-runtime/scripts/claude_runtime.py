@@ -1435,7 +1435,7 @@ class ClaudeRuntime(Runtime):
                                     "details": f"project:{skill_name} has no matching skill permission",
                                 }
                             )
-            except (ImportError, Exception):
+            except ImportError:
                 pass
 
         summary: dict[str, int] = {"high": 0, "medium": 0, "info": 0}

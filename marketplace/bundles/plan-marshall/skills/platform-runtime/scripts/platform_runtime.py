@@ -234,7 +234,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # project initial-setup
     # ------------------------------------------------------------------
     if operation == "project initial-setup":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime project initial-setup")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime project initial-setup")
         p.add_argument("--project-dir", default=".")
         p.add_argument("--target", default="claude", choices=list(_REGISTRY))
         ns = p.parse_args(remaining)
@@ -244,7 +244,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # project install-hook
     # ------------------------------------------------------------------
     if operation == "project install-hook":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime project install-hook")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime project install-hook")
         p.add_argument("--target", required=True)
         p.add_argument("--overwrite-statusline", action="store_true",
                        help="Overwrite an existing statusLine whose command differs from the renderer")
@@ -261,7 +261,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # session capture
     # ------------------------------------------------------------------
     if operation == "session capture":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime session capture")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session capture")
         p.add_argument("--plan-id", required=True)
         ns = p.parse_args(remaining)
         return runtime.session_capture(ns.plan_id)
@@ -270,7 +270,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # session render-title
     # ------------------------------------------------------------------
     if operation == "session render-title":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime session render-title")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session render-title")
         p.add_argument("--statusline", action="store_true",
                        help="Emit plain text (statusLine mode) instead of the JSON envelope")
         ns = p.parse_args(remaining)
@@ -280,7 +280,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # session push-title-token
     # ------------------------------------------------------------------
     if operation == "session push-title-token":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime session push-title-token")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session push-title-token")
         p.add_argument("--plan-id", required=True)
         p.add_argument("--icon", required=True)
         ns = p.parse_args(remaining)
@@ -290,7 +290,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # permission configure
     # ------------------------------------------------------------------
     if operation == "permission configure":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime permission configure")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission configure")
         p.add_argument("--scope", required=True, choices=["project", "global"])
         p.add_argument("--permissions", nargs="+", required=True)
         ns = p.parse_args(remaining)
@@ -300,7 +300,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # permission analyze
     # ------------------------------------------------------------------
     if operation == "permission analyze":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime permission analyze")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission analyze")
         p.add_argument("--scope", required=True)
         p.add_argument("--checks", required=True,
                        help="Comma-separated: redundant,suspicious,missing-steps,all")
@@ -313,7 +313,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # permission fix
     # ------------------------------------------------------------------
     if operation == "permission fix":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime permission fix")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission fix")
         p.add_argument("--scope", required=True)
         p.add_argument("--operation", required=True,
                        choices=["normalize", "add", "remove", "ensure", "consolidate"])
@@ -326,7 +326,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # permission ensure-wildcards
     # ------------------------------------------------------------------
     if operation == "permission ensure-wildcards":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime permission ensure-wildcards")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission ensure-wildcards")
         p.add_argument("--scope", required=True)
         p.add_argument("--marketplace-dir", default="marketplace/")
         p.add_argument("--dry-run", action="store_true")
@@ -337,7 +337,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # permission ensure-steps
     # ------------------------------------------------------------------
     if operation == "permission ensure-steps":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime permission ensure-steps")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission ensure-steps")
         p.add_argument("--marshal", required=True)
         p.add_argument("--scope", required=True)
         p.add_argument("--dry-run", action="store_true")
@@ -348,7 +348,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # permission web-analyze
     # ------------------------------------------------------------------
     if operation == "permission web-analyze":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime permission web-analyze")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission web-analyze")
         p.add_argument("--scope", required=True)
         ns = p.parse_args(remaining)
         return runtime.permission_web_analyze(ns.scope)
@@ -357,7 +357,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # permission web-apply
     # ------------------------------------------------------------------
     if operation == "permission web-apply":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime permission web-apply")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission web-apply")
         p.add_argument("--scope", required=True)
         p.add_argument("--add", default="[]")
         p.add_argument("--remove", default="[]")
@@ -378,7 +378,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # metrics capture
     # ------------------------------------------------------------------
     if operation == "metrics capture":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime metrics capture")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime metrics capture")
         p.add_argument("--plan-id", required=True)
         p.add_argument("--phase", required=True)
         p.add_argument("--total-tokens", type=int, default=None)
@@ -389,7 +389,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # subagent dispatch
     # ------------------------------------------------------------------
     if operation == "subagent dispatch":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime subagent dispatch")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime subagent dispatch")
         p.add_argument("--agent", required=True)
         p.add_argument("--prompt-file", default=None)
         p.add_argument("--context", default=None)
@@ -410,7 +410,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # health-check
     # ------------------------------------------------------------------
     if operation == "health-check":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime health-check")
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime health-check")
         p.add_argument("--checks", required=True,
                        help="Comma-separated: all,permissions,display,mcp-diagnostics")
         ns = p.parse_args(remaining)
@@ -485,7 +485,7 @@ def main(argv: list[str] | None = None) -> int:
     project_dir: str | None = None
     if operation == "project initial-setup":
         # Peek at --project-dir without consuming remaining.
-        peek = argparse.ArgumentParser(allow_abbrev=False,add_help=False)
+        peek = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
         peek.add_argument("--project-dir", default=None)
         peek.add_argument("--target", default="claude")
         ns_peek, _ = peek.parse_known_args(remaining)
@@ -509,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
         # marshal.json absent — only valid for ``project initial-setup``.
         if operation == "project initial-setup":
             # Extract --target from remaining to bootstrap the correct runtime.
-            peek2 = argparse.ArgumentParser(allow_abbrev=False,add_help=False)
+            peek2 = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
             peek2.add_argument("--target", default="claude")
             ns_peek2, _ = peek2.parse_known_args(remaining)
             target = ns_peek2.target
