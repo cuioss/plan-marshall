@@ -1171,7 +1171,7 @@ def _apply_simplify_inactive(
 _WHOLE_TREE_GATE_CHANGE_TYPES = frozenset({'tech_debt', 'feature', 'enhancement', 'bug_fix'})
 
 
-# The SINGLE source of the three whole-tree-invariant trigger categories' globs.
+# The SINGLE source of the two whole-tree-invariant trigger categories' globs.
 # A plan whose changed set intersects any of these globs touches a surface whose
 # correctness can ONLY be verified by exercising the entire tree — so the
 # whole-tree gate must fire regardless of the plan's compatibility posture. This
@@ -1188,9 +1188,6 @@ _WHOLE_TREE_GATE_CHANGE_TYPES = frozenset({'tech_debt', 'feature', 'enhancement'
 #   (b) sweep-test trigger    — whole-tree grep-sweep guard tests; a changed
 #                               guard test must be re-run with the full
 #                               marketplace scan root.
-#   (c) generator/drift trigger — the multi-target generator engine and every
-#                               bundle source; a change here can drift the
-#                               generated target tree's content.
 _WHOLE_TREE_INVARIANT_TRIGGER_GLOBS = (
     # (a) doctor trigger
     'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**/*.py',
@@ -1198,9 +1195,6 @@ _WHOLE_TREE_INVARIANT_TRIGGER_GLOBS = (
     # (b) sweep-test trigger
     'test/plan-marshall/**/test_*sweep*.py',
     'test/marketplace/**/test_*sweep*.py',
-    # (c) generator/drift trigger
-    'marketplace/targets/**',
-    'marketplace/bundles/**',
 )
 
 
@@ -2222,14 +2216,14 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # when EITHER activation arm passes: the breaking arm (compatibility ==
     # breaking AND change_type ∈ {tech_debt, feature, enhancement, bug_fix} AND
     # affected_files_count > 0) OR the additive whole-tree-invariant trigger arm
-    # (the changed set intersects a doctor / sweep-test / generator-drift trigger
-    # glob AND affected_files_count > 0, regardless of compatibility). The
-    # breaking arm: the whole-tree survivor sweep only makes sense on a breaking
-    # plan — deprecation / smart_and_ask plans deliberately keep old surfaces, so
-    # a surviving reference there is expected, not a defect. The trigger arm: a
-    # plugin-doctor rule, grep-sweep guard test, or generator / bundle-source
-    # change can break an invariant that only the whole tree exercises, so the
-    # gate must fire even on a non-breaking plan. compatibility is read from
+    # (the changed set intersects a doctor / sweep-test trigger glob AND
+    # affected_files_count > 0, regardless of compatibility). The breaking arm:
+    # the whole-tree survivor sweep only makes sense on a breaking plan —
+    # deprecation / smart_and_ask plans deliberately keep old surfaces, so a
+    # surviving reference there is expected, not a defect. The trigger arm: a
+    # plugin-doctor rule or grep-sweep guard test change can break an invariant
+    # that only the whole tree exercises, so the gate must fire even on a
+    # non-breaking plan. compatibility is read from
     # marshal.json (plan.phase-2-refine.compatibility, default breaking); the
     # changed set is the union from _read_bundle_change_paths. Runs after
     # simplify_inactive and before scope_gated_finalize per
