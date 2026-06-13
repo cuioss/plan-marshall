@@ -1,6 +1,6 @@
 ---
 name: manage-adr
-description: Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting
+description: Manage Architectural Decision Records (ADRs) with CRUD operations, progressive-disclosure metadata, scan-by-tag/affects, automatic numbering, and AsciiDoc formatting
 user-invocable: false
 ---
 
@@ -16,7 +16,7 @@ user-invocable: false
 - Do not create ADRs without automatic numbering via the create workflow
 
 **Constraints:**
-- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr ...`
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr ...`
 - Always validate ADR format after creation or update using ref-asciidoc
 - ADRs must be stored in `doc/adr/` directory
 
@@ -44,6 +44,7 @@ Provide structured management of architectural decisions:
 | **read-adr** | Read ADR content | `manage-adr.py read` |
 | **update-adr** | Update ADR status | `manage-adr.py update` |
 | **delete-adr** | Delete ADR (with confirmation) | `manage-adr.py delete` |
+| **scan-adrs** | List all ADRs with progressive-disclosure metadata | `manage-adr.py scan` |
 | **validate-adr** | Validate ADR format | ref-asciidoc workflows |
 
 ## Workflow: list-adrs
@@ -59,7 +60,7 @@ List all ADRs with optional status filtering.
 **Step 1: Execute List**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr list [--status {status}]
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr list [--status {status}]
 ```
 
 **Step 2: Parse Output**
@@ -91,7 +92,7 @@ Create a new ADR with automatic numbering.
 **Step 1: Create ADR**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create --title "{title}" [--status "{status}"]
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr create --title "{title}" [--status "{status}"]
 ```
 
 **Step 2: Parse Output**
@@ -140,7 +141,7 @@ Read ADR content by number.
 **Step 1: Read ADR**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr read --number {number}
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr read --number {number}
 ```
 
 **Step 2: Display Content**
@@ -161,7 +162,7 @@ Update ADR status through lifecycle.
 **Step 1: Update ADR**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr update --number {number} --status {status}
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr update --number {number} --status {status}
 ```
 
 **Step 2: Confirm Update**
@@ -182,12 +183,44 @@ Delete ADR with confirmation.
 **Step 1: Delete ADR**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr delete --number {number} --force
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr delete --number {number} --force
 ```
 
 **Step 2: Confirm Deletion**
 
 Report deletion to user.
+
+## Workflow: scan-adrs
+
+List all ADRs with their progressive-disclosure metadata so a caller can assess relevance without reading full files. This is the surface lifecycle hooks consume: the phase-3-outline reading hook scans `--affects {module}` to surface established decisions before deliverable authoring, and the phase-6 `adr-propose` step scans to avoid double-recording an already-captured decision.
+
+### Parameters
+
+- `tag` (optional): Filter to ADRs whose `tags` metadata list includes this value
+- `affects` (optional): Filter to ADRs whose `affects` metadata list includes this value
+
+### Steps
+
+**Step 1: Execute Scan**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr scan [--tag {tag}] [--affects {affects}]
+```
+
+**Step 2: Parse Output**
+
+Parse the TOON payload — each ADR carries `number`, `title`, `status`, `summary`, `tags`, `affects`, and `supersedes`. Read the `summary` fields for relevance scanning before loading any full ADR.
+
+### Output
+
+```toon
+status: success
+operation: scan
+count: 2
+adrs[2]{number,title,status,summary,tags,affects,supersedes}:
+1,Use PostgreSQL,Accepted,Relational store for persistence,persistence,plan-marshall,
+2,Per-tree derived state,Accepted,Each worktree owns its executor,worktree;executor,plan-marshall,
+```
 
 ## Workflow: validate-adr
 
@@ -239,7 +272,7 @@ Proposed → Accepted → [Deprecated | Superseded]
 
 ## ADR Template Structure
 
-Each ADR contains these sections:
+Each ADR opens with a progressive-disclosure metadata block, then these sections:
 
 1. **Status** - Current lifecycle status
 2. **Context** - Problem context and background
@@ -247,6 +280,28 @@ Each ADR contains these sections:
 4. **Consequences** - Positive, negative outcomes and risks
 5. **Alternatives Considered** - Options that were not chosen
 6. **References** - Related documents and links
+
+### Progressive-Disclosure Metadata Block
+
+Immediately after the `= ADR-NNN: Title` line, every ADR carries a machine-readable metadata block delimited by `// adr-metadata` … `// end-adr-metadata`. The block is authored as AsciiDoc line comments so it never renders, and is read by `manage-adr.py scan` to surface ADR relevance cheaply during the planning lifecycle.
+
+```
+// adr-metadata
+// summary: One-line statement of the decision
+// tags: comma, separated, topic, tags
+// affects: comma, separated, modules
+// supersedes: 3, 7
+// end-adr-metadata
+```
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `summary` | scalar | One-line decision statement for scanning |
+| `tags` | comma-separated list | Topic tags for `scan --tag` filtering |
+| `affects` | comma-separated list | Affected modules/components for `scan --affects` filtering |
+| `supersedes` | comma-separated list | ADR numbers this decision supersedes |
+
+`create` emits an empty block; fill the fields in as part of authoring the ADR. `parse_adr_file` and `scan` tolerate absent fields and a missing block (all fields default to empty).
 
 ## Authoring Discipline
 
@@ -306,7 +361,7 @@ Examples:
 
 ## Scripts
 
-Script: `pm-documents:manage-adr` → `manage-adr.py`
+Script: `plan-marshall:manage-adr` → `manage-adr.py`
 
 | Subcommand | Description |
 |------------|-------------|
@@ -315,17 +370,18 @@ Script: `pm-documents:manage-adr` → `manage-adr.py`
 | `read` | Read ADR content by number |
 | `update` | Update ADR status through lifecycle |
 | `delete` | Delete ADR (requires --force) |
+| `scan` | List all ADRs with progressive-disclosure metadata (optional `--tag` / `--affects` filters) |
 
 **Usage Examples:**
 ```bash
 # List all ADRs
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr list
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr list
 
 # Create new ADR
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create --title "Use PostgreSQL"
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr create --title "Use PostgreSQL"
 
 # Update ADR status
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr update --number 1 --status Accepted
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr update --number 1 --status Accepted
 ```
 
 ## Canonical invocations
@@ -335,40 +391,47 @@ The canonical argparse surface for `manage-adr.py`. The plugin-doctor analyzer (
 ### list
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr list \
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr list \
   [--status {Proposed,Accepted,Deprecated,Superseded}]
 ```
 
 ### create
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create \
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr create \
   --title TITLE [--status {Proposed,Accepted,Deprecated,Superseded}]
 ```
 
 ### read
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr read --number NUMBER
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr read --number NUMBER
 ```
 
 ### update
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr update \
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr update \
   --number NUMBER [--status {Proposed,Accepted,Deprecated,Superseded}]
 ```
 
 ### delete
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr delete --number NUMBER [--force]
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr delete --number NUMBER [--force]
 ```
 
 ### next-number
 
 ```bash
-python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr next-number
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr next-number
+```
+
+### scan
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr scan \
+  [--tag TAG] [--affects AFFECTS]
 ```
 
 ## Related Skills

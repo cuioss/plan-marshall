@@ -90,7 +90,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import get_script_path, run_script
 
-SCRIPT_PATH = get_script_path('pm-documents', 'manage-adr', 'manage-adr.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-adr', 'manage-adr.py')
 
 
 class TestManageAdr:

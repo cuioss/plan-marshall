@@ -3,6 +3,16 @@
 :toclevels: 2
 :sectnums:
 
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: {{SUMMARY}}
+// tags: {{TAGS}}
+// affects: {{AFFECTS}}
+// supersedes: {{SUPERSEDES}}
+// end-adr-metadata
+
 // Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
 // ADRs are durable architectural statements, not incident write-ups. No PR numbers,
 // commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state

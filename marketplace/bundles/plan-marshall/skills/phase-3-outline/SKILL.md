@@ -47,6 +47,7 @@ The Complex Track per-deliverable loop (Steps 9c + 10) iterates over the deliver
 - `module_mapping.toon` if present at `.plan/local/plans/{plan_id}/module_mapping.toon`.
 - The architecture topology (read via `manage-architecture overview` at phase entry).
 - The resolved domain outline skill notation (resolved once via Step 9 domain-resolution).
+- **The relevant ADR summaries** for the plan's declared module(s)/scope, read once via the `manage-adr scan` progressive-disclosure surface. Run `manage-adr scan --affects {module}` (and/or `--tag {topic}`) for each declared module, and load the returned `summary` fields into context so deliverable authoring aligns with established decisions and surfaces superseded/deprecated ADRs as constraints. The metadata that makes this scan cheap is authored per the `manage-adr` skill — see `marketplace/bundles/plan-marshall/skills/manage-adr/SKILL.md` for the scan subcommand contract; do not restate it here. The detailed consultation procedure (which filters to use, how to fold summaries into authoring, the contradiction-is-a-design-signal expectation) lives in [`standards/outline-workflow-detail.md` § ADR consultation](standards/outline-workflow-detail.md#adr-consultation-loop-invariant-input).
 
 **Prohibited actions:**
 - Never re-read loop-invariant inputs inside the per-deliverable loop body — re-reading inside the loop is envelope-cost waste; resolve all invariant inputs before the loop begins.

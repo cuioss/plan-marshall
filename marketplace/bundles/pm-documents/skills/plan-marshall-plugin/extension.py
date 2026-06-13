@@ -55,7 +55,7 @@ class Extension(ExtensionBase):
                         'defaults': [],
                         'optionals': [
                             {
-                                'skill': 'pm-documents:manage-adr',
+                                'skill': 'plan-marshall:manage-adr',
                                 'description': 'Manage Architectural Decision Records with CRUD operations and AsciiDoc formatting',
                             },
                             {

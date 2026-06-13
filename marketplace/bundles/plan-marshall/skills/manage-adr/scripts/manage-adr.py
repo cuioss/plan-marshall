@@ -11,6 +11,7 @@ Operations:
     update      - Update ADR status or content
     delete      - Delete ADR (requires --force)
     next-number - Get next available ADR number
+    scan        - List all ADRs with progressive-disclosure metadata
 
 Output format: TOON to stdout
 """
@@ -31,6 +32,10 @@ VALID_STATUSES = ['Proposed', 'Accepted', 'Deprecated', 'Superseded']
 # Template placeholders with defaults
 TEMPLATE_DEFAULTS = {
     '{{STATUS}}': 'Proposed',
+    '{{SUMMARY}}': '',
+    '{{TAGS}}': '',
+    '{{AFFECTS}}': '',
+    '{{SUPERSEDES}}': '',
     '{{CONTEXT}}': '// Describe the context and problem',
     '{{DECISION}}': '// Describe the decision',
     '{{POSITIVE_CONSEQUENCES}}': '// List positive outcomes',
@@ -39,6 +44,52 @@ TEMPLATE_DEFAULTS = {
     '{{ALTERNATIVES}}': '// Describe alternatives',
     '{{REFERENCES}}': '// Add references',
 }
+
+# Progressive-disclosure metadata block delimiters. The block sits immediately
+# after the `= ADR-NNN: Title` line as AsciiDoc line comments so it never
+# renders but stays deterministically parseable.
+METADATA_BLOCK_START = '// adr-metadata'
+METADATA_BLOCK_END = '// end-adr-metadata'
+
+# Metadata fields surfaced for scanning. List-valued fields are comma-split.
+METADATA_LIST_FIELDS = ('tags', 'affects', 'supersedes')
+METADATA_SCALAR_FIELDS = ('summary',)
+
+
+def parse_metadata_block(content: str) -> dict:
+    """Extract the progressive-disclosure metadata block from ADR content.
+
+    The block is a run of AsciiDoc line comments delimited by
+    METADATA_BLOCK_START / METADATA_BLOCK_END, each inner line of the form
+    `// field: value`. Returns a dict with keys `summary` (str) and
+    `tags`/`affects`/`supersedes` (list[str]); absent fields default to an
+    empty string / empty list. A missing block yields all-empty defaults.
+    """
+    metadata: dict = dict.fromkeys(METADATA_SCALAR_FIELDS, '')
+    for field in METADATA_LIST_FIELDS:
+        metadata[field] = []
+
+    block_match = re.search(
+        re.escape(METADATA_BLOCK_START) + r'\s*\n(.*?)' + re.escape(METADATA_BLOCK_END),
+        content,
+        flags=re.DOTALL,
+    )
+    if not block_match:
+        return metadata
+
+    block = block_match.group(1)
+    for line in block.splitlines():
+        field_match = re.match(r'^\s*//\s*([A-Za-z_-]+)\s*:\s*(.*?)\s*$', line)
+        if not field_match:
+            continue
+        key = field_match.group(1).strip().lower()
+        value = field_match.group(2).strip()
+        if key in METADATA_SCALAR_FIELDS:
+            metadata[key] = value
+        elif key in METADATA_LIST_FIELDS:
+            metadata[key] = [item.strip() for item in value.split(',') if item.strip()]
+
+    return metadata
 
 
 def get_template_path() -> Path:
@@ -96,12 +147,18 @@ def parse_adr_file(filepath: Path) -> dict:
     status_match = re.search(r'^== Status\s*\n\n(.+?)(?:\n\n|$)', content, re.MULTILINE)
     status = status_match.group(1).strip() if status_match else 'Unknown'
 
+    metadata = parse_metadata_block(content)
+
     return {
         'number': number,
         'title': title,
         'status': status,
         'path': str(filepath),
         'filename': filepath.name,
+        'summary': metadata['summary'],
+        'tags': metadata['tags'],
+        'affects': metadata['affects'],
+        'supersedes': metadata['supersedes'],
     }
 
 
@@ -333,6 +390,42 @@ def cmd_next_number(args) -> dict:
     return {'status': 'success', 'operation': 'next-number', 'next_number': number}
 
 
+def cmd_scan(args) -> dict:
+    """List all ADRs with progressive-disclosure metadata.
+
+    Returns each ADR's number/title/status plus the scannable metadata fields
+    (summary, tags, affects, supersedes) in a single TOON payload, so a caller
+    can assess relevance without reading full ADR files. Optional --tag and
+    --affects filters select only ADRs whose corresponding metadata list
+    overlaps the given value.
+    """
+    if not ADR_DIR.exists():
+        return {'status': 'success', 'operation': 'scan', 'count': 0, 'adrs': []}
+
+    adrs = []
+    for filepath in sorted(ADR_DIR.glob('*.adoc')):
+        adr = parse_adr_file(filepath)
+
+        if args.tag and args.tag not in adr['tags']:
+            continue
+        if args.affects and args.affects not in adr['affects']:
+            continue
+
+        adrs.append(
+            {
+                'number': adr['number'],
+                'title': adr['title'],
+                'status': adr['status'],
+                'summary': adr['summary'],
+                'tags': adr['tags'],
+                'affects': adr['affects'],
+                'supersedes': adr['supersedes'],
+            }
+        )
+
+    return {'status': 'success', 'operation': 'scan', 'count': len(adrs), 'adrs': adrs}
+
+
 @safe_main
 def main():
     """Main entry point."""
@@ -358,6 +451,15 @@ Examples:
 
   # Delete ADR (requires --force)
   %(prog)s delete --number 3 --force
+
+  # Scan all ADRs with metadata for progressive disclosure
+  %(prog)s scan
+
+  # Scan ADRs tagged "persistence"
+  %(prog)s scan --tag persistence
+
+  # Scan ADRs affecting the "plan-marshall" module
+  %(prog)s scan --affects plan-marshall
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -395,6 +497,14 @@ Examples:
     # Next-number command
     next_parser = subparsers.add_parser('next-number', help='Get next available number', allow_abbrev=False)
     next_parser.set_defaults(func=cmd_next_number)
+
+    # Scan command
+    scan_parser = subparsers.add_parser(
+        'scan', help='List all ADRs with progressive-disclosure metadata', allow_abbrev=False
+    )
+    scan_parser.add_argument('--tag', help='Filter to ADRs whose tags include this value')
+    scan_parser.add_argument('--affects', help='Filter to ADRs whose affects include this value')
+    scan_parser.set_defaults(func=cmd_scan)
 
     args = parser.parse_args()
     result = args.func(args)

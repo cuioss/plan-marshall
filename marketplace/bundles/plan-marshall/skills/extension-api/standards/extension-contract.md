@@ -609,7 +609,7 @@ class Extension(ExtensionBase):
                 "implementation": {
                     "defaults": [],
                     "optionals": [
-                        {"skill": "pm-documents:manage-adr", "description": "ADR creation and management"},
+                        {"skill": "plan-marshall:manage-adr", "description": "ADR creation and management"},
                     ]
                 },
                 "module_testing": {"defaults": [], "optionals": []},

@@ -4,7 +4,7 @@ AsciiDoc and documentation standards enforcement for projects. This bundle provi
 
 ## Purpose
 
-This bundle provides documentation domain knowledge through two core skills (`ref-asciidoc` for formatting/validation and `ref-documentation` for content quality/review), plus specialized management skills for ADRs and interface specifications.
+This bundle provides documentation domain knowledge through two core skills (`ref-asciidoc` for formatting/validation and `ref-documentation` for content quality/review), plus a specialized management skill for interface specifications.
 
 ## Components Included
 
@@ -28,16 +28,6 @@ This bundle provides documentation domain knowledge through two core skills (`re
 | **comprehensive-review** | Orchestrate all review workflows |
 | **sync-with-code** | Sync docs with code changes |
 | **cleanup-stale** | Remove stale documentation |
-
-**manage-adr** - Architectural Decision Records skill (5 workflows):
-
-| Workflow | Purpose |
-|----------|---------|
-| **list-adrs** | List all ADRs with filtering |
-| **create-adr** | Create new ADR from template |
-| **read-adr** | Read ADR content by number |
-| **update-adr** | Update ADR status |
-| **delete-adr** | Delete ADR with confirmation |
 
 **manage-interface** - Interface specifications skill (5 workflows):
 
@@ -83,10 +73,6 @@ pm-documents/
     │   ├── references/           # Tone, core, organization standards
     │   ├── workflow/            # Review orchestration, content review
     │   └── scripts/              # Review/tone analysis scripts
-    ├── manage-adr/               # ADR management skill (5 workflows)
-    │   ├── SKILL.md
-    │   ├── scripts/
-    │   └── templates/
     ├── manage-interface/         # Interface spec skill (5 workflows)
     │   ├── SKILL.md
     │   ├── scripts/
