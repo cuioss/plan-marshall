@@ -25,6 +25,11 @@ cmd_read = _mod.cmd_read
 cmd_update = _mod.cmd_update
 cmd_delete = _mod.cmd_delete
 cmd_next_number = _mod.cmd_next_number
+cmd_scan = _mod.cmd_scan
+parse_metadata_block = _mod.parse_metadata_block
+parse_adr_file = _mod.parse_adr_file
+METADATA_BLOCK_START = _mod.METADATA_BLOCK_START
+METADATA_BLOCK_END = _mod.METADATA_BLOCK_END
 ADR_DIR_REF = _mod  # for patching ADR_DIR
 
 
@@ -172,6 +177,191 @@ class TestManageAdr(unittest.TestCase):
         self.assertNotIn('!', filename)
 
     # =========================================================================
+    # Tier 2: Progressive-disclosure metadata block parsing
+    # =========================================================================
+
+    @staticmethod
+    def _build_metadata_block(*, summary='', tags='', affects='', supersedes=''):
+        """Build a well-formed ADR metadata comment block for tests."""
+        return (
+            f'{METADATA_BLOCK_START}\n'
+            f'// summary: {summary}\n'
+            f'// tags: {tags}\n'
+            f'// affects: {affects}\n'
+            f'// supersedes: {supersedes}\n'
+            f'{METADATA_BLOCK_END}\n'
+        )
+
+    def test_parse_metadata_block_all_fields_present(self):
+        """All four metadata fields are extracted; list fields are comma-split."""
+        content = (
+            '= ADR-001: Test\n\n'
+            + self._build_metadata_block(
+                summary='Use a fenced metadata block',
+                tags='persistence, scanning',
+                affects='plan-marshall, pm-documents',
+                supersedes='ADR-000',
+            )
+            + '\n== Status\n\nProposed\n'
+        )
+        metadata = parse_metadata_block(content)
+        self.assertEqual(metadata['summary'], 'Use a fenced metadata block')
+        self.assertEqual(metadata['tags'], ['persistence', 'scanning'])
+        self.assertEqual(metadata['affects'], ['plan-marshall', 'pm-documents'])
+        self.assertEqual(metadata['supersedes'], ['ADR-000'])
+
+    def test_parse_metadata_block_fields_absent(self):
+        """A block whose fields are blank yields empty scalar/list defaults."""
+        content = (
+            '= ADR-002: Empty\n\n'
+            + self._build_metadata_block()
+            + '\n== Status\n\nProposed\n'
+        )
+        metadata = parse_metadata_block(content)
+        self.assertEqual(metadata['summary'], '')
+        self.assertEqual(metadata['tags'], [])
+        self.assertEqual(metadata['affects'], [])
+        self.assertEqual(metadata['supersedes'], [])
+
+    def test_parse_metadata_block_missing_block(self):
+        """Content without any metadata block returns all-empty defaults."""
+        content = '= ADR-003: No Block\n\n== Status\n\nProposed\n'
+        metadata = parse_metadata_block(content)
+        self.assertEqual(metadata['summary'], '')
+        self.assertEqual(metadata['tags'], [])
+        self.assertEqual(metadata['affects'], [])
+        self.assertEqual(metadata['supersedes'], [])
+
+    def test_parse_metadata_block_malformed_lines_ignored(self):
+        """Lines that are not `// field: value` comments are skipped."""
+        content = (
+            '= ADR-004: Malformed\n\n'
+            f'{METADATA_BLOCK_START}\n'
+            '// summary: Has a summary\n'
+            'this is not a comment line\n'
+            '// not a known field but well formed: ignored\n'
+            '// tags: alpha,beta\n'
+            f'{METADATA_BLOCK_END}\n'
+            '\n== Status\n\nProposed\n'
+        )
+        metadata = parse_metadata_block(content)
+        self.assertEqual(metadata['summary'], 'Has a summary')
+        self.assertEqual(metadata['tags'], ['alpha', 'beta'])
+        # Unknown field is silently dropped, not surfaced.
+        self.assertNotIn('not a known field but well formed', metadata)
+
+    def test_parse_metadata_block_extra_whitespace_in_list(self):
+        """Comma-split list fields strip surrounding whitespace and empties."""
+        content = (
+            '= ADR-005: Whitespace\n\n'
+            + self._build_metadata_block(tags=' a ,  b ,, c ')
+            + '\n== Status\n\nProposed\n'
+        )
+        metadata = parse_metadata_block(content)
+        self.assertEqual(metadata['tags'], ['a', 'b', 'c'])
+
+    def test_parse_adr_file_surfaces_metadata(self):
+        """parse_adr_file folds metadata fields into its returned dict."""
+        adr_path = self.adr_dir / '007-With_Metadata.adoc'
+        adr_path.write_text(
+            '= ADR-007: With Metadata\n\n'
+            + self._build_metadata_block(
+                summary='Carry metadata through parse_adr_file',
+                tags='lifecycle',
+                affects='plan-marshall',
+                supersedes='',
+            )
+            + '\n== Status\n\nAccepted\n'
+        )
+        adr = parse_adr_file(adr_path)
+        self.assertEqual(adr['number'], 7)
+        self.assertEqual(adr['title'], 'With Metadata')
+        self.assertEqual(adr['status'], 'Accepted')
+        self.assertEqual(adr['summary'], 'Carry metadata through parse_adr_file')
+        self.assertEqual(adr['tags'], ['lifecycle'])
+        self.assertEqual(adr['affects'], ['plan-marshall'])
+        self.assertEqual(adr['supersedes'], [])
+
+    # =========================================================================
+    # Tier 2: scan subcommand
+    # =========================================================================
+
+    def _write_adr(self, filename, *, title, status='Proposed', **metadata):
+        """Write an ADR file with a metadata block into the test ADR dir."""
+        (self.adr_dir / filename).write_text(
+            f'= ADR-{filename[:3]}: {title}\n\n'
+            + self._build_metadata_block(**metadata)
+            + f'\n== Status\n\n{status}\n'
+        )
+
+    def test_scan_empty_dir(self):
+        """scan over an empty ADR dir returns zero ADRs."""
+        result = cmd_scan(Namespace(command='scan', tag=None, affects=None))
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['operation'], 'scan')
+        self.assertEqual(result['count'], 0)
+        self.assertEqual(result['adrs'], [])
+
+    def test_scan_no_filter_returns_all_with_metadata(self):
+        """scan with no filter returns every ADR plus its metadata fields."""
+        self._write_adr('001-First.adoc', title='First', summary='first summary', tags='alpha')
+        self._write_adr('002-Second.adoc', title='Second', summary='second summary', affects='plan-marshall')
+
+        result = cmd_scan(Namespace(command='scan', tag=None, affects=None))
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['count'], 2)
+
+        by_number = {adr['number']: adr for adr in result['adrs']}
+        self.assertEqual(by_number[1]['summary'], 'first summary')
+        self.assertEqual(by_number[1]['tags'], ['alpha'])
+        self.assertEqual(by_number[2]['summary'], 'second summary')
+        self.assertEqual(by_number[2]['affects'], ['plan-marshall'])
+        # scan payload carries the scannable fields for progressive disclosure.
+        for adr in result['adrs']:
+            for field in ('number', 'title', 'status', 'summary', 'tags', 'affects', 'supersedes'):
+                self.assertIn(field, adr)
+
+    def test_scan_tag_filter(self):
+        """scan --tag returns only ADRs whose tags include the value."""
+        self._write_adr('001-Persist.adoc', title='Persist', tags='persistence,db')
+        self._write_adr('002-Other.adoc', title='Other', tags='ui')
+
+        result = cmd_scan(Namespace(command='scan', tag='persistence', affects=None))
+        self.assertEqual(result['count'], 1)
+        self.assertEqual(result['adrs'][0]['number'], 1)
+
+    def test_scan_affects_filter(self):
+        """scan --affects returns only ADRs whose affects include the value."""
+        self._write_adr('001-Core.adoc', title='Core', affects='plan-marshall,pm-documents')
+        self._write_adr('002-Docs.adoc', title='Docs', affects='pm-documents')
+
+        result = cmd_scan(Namespace(command='scan', tag=None, affects='plan-marshall'))
+        self.assertEqual(result['count'], 1)
+        self.assertEqual(result['adrs'][0]['number'], 1)
+
+    def test_scan_filter_no_match(self):
+        """scan with a filter matching nothing returns zero ADRs."""
+        self._write_adr('001-Solo.adoc', title='Solo', tags='alpha')
+
+        result = cmd_scan(Namespace(command='scan', tag='nonexistent', affects=None))
+        self.assertEqual(result['count'], 0)
+        self.assertEqual(result['adrs'], [])
+
+    def test_create_emits_metadata_block(self):
+        """create produces an ADR carrying the (empty) metadata block."""
+        result = cmd_create(Namespace(command='create', title='Has Block', status='Proposed'))
+        self.assertEqual(result['status'], 'success')
+
+        created_file = self.adr_dir / f'{result["number"]:03d}-Has_Block.adoc'
+        content = created_file.read_text()
+        self.assertIn(METADATA_BLOCK_START, content)
+        self.assertIn(METADATA_BLOCK_END, content)
+        # The created ADR is scannable: parse_metadata_block yields empty defaults.
+        metadata = parse_metadata_block(content)
+        self.assertEqual(metadata['summary'], '')
+        self.assertEqual(metadata['tags'], [])
+
+    # =========================================================================
     # Tier 3: Subprocess CLI plumbing tests (retained)
     # =========================================================================
 
@@ -194,6 +384,16 @@ class TestManageAdr(unittest.TestCase):
         result = run_script(SCRIPT_PATH, 'list', cwd=self.temp_dir)
         self.assertEqual(result.returncode, 0)
         self.assertIn('success', result.stdout)
+
+    def test_cli_scan(self):
+        """Test CLI plumbing: create then scan via subprocess."""
+        result = run_script(SCRIPT_PATH, 'create', '--title', 'Scan Me', cwd=self.temp_dir)
+        self.assertEqual(result.returncode, 0)
+
+        result = run_script(SCRIPT_PATH, 'scan', cwd=self.temp_dir)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('success', result.stdout)
+        self.assertIn('scan', result.stdout)
 
 
 if __name__ == '__main__':
