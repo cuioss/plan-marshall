@@ -838,6 +838,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 This step runs AFTER the inline lightweight Q-Gate checks (above) and BEFORE Step 14 (Transition Phase). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the phase return; the orchestrator-side validator dispatch ensures lesson-driven findings can re-enter refine alongside the inline ones via the existing auto-loop predicate.
 
+**Preserve STALE-flagged deliverables as outline-depth confirmation signals**: the narrative-vs-code-validator classifies each concrete code claim as `valid`, `stale`, or `invalid`. A `stale` finding is NOT an outright invalid finding — it is a low-confidence / outline-confirm-required signal that the lesson's intent likely still holds but the surface (path, symbol name, signature) has moved under refactor/rename. The verdict definition and the low-confidence rule body live in the central standard ONLY — see [`plan-marshall/workflow/q-gate-validation.md` § 2.14](../../plan-marshall/workflow/q-gate-validation.md#214-narrative-vs-code-validator) for the authoritative STALE-vs-INVALID distinction; do not restate it here. The refine phase MUST NOT treat a `stale` finding as a blocker or discard the deliverable that carries it: any deliverable touched by a `stale` finding is **preserved** and carried forward so the outline phase can confirm whether the moved surface or the lesson's original intent is the desired end state. `invalid` findings (high severity, outright wrong) flow through the normal blocking path; `stale` findings (low severity, outline-confirm-required) are retained as confirmation prompts rather than removed.
+
 ---
 
 ## Step 14: Transition Phase
