@@ -3,6 +3,10 @@ name: recipe-plugin-compliance
 description: Recipe skill that sweeps marketplace bundles for plugin architecture compliance
 user-invocable: false
 allowed-tools: Read, Glob, Grep, Bash, Skill
+implements: plan-marshall:extension-api/standards/ext-point-recipe
+recipe_domain: plan-marshall-plugin-dev
+recipe_profile: implementation
+recipe_package_source: packages
 ---
 
 # Recipe: Plugin Compliance Sweep
@@ -14,9 +18,8 @@ Recipe skill for sweeping all marketplace bundles against plugin architecture st
 | Parameter | Source |
 |-----------|--------|
 | `plan_id` | From phase-3-outline |
-| `recipe_domain` | `plan-marshall-plugin-dev` |
-| `recipe_profile` | `implementation` |
-| `recipe_package_source` | `packages` |
+
+The recipe's discovery metadata (`recipe_domain`, `recipe_profile`, `recipe_package_source`) is declared in this skill's YAML frontmatter — `manage-config list-recipes` reads it from frontmatter, the sole source of truth; the markdown body is never scanned for these keys.
 
 ## Workflow
 
@@ -67,7 +70,7 @@ For each selected module (bundle), load its packages:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  module --name {module_name} --full
+  module --module {module_name} --full
 ```
 
 Iterate the `packages` field. For each package (skill/agent/command directory), create one deliverable:

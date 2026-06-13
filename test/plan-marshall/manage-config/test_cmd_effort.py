@@ -60,6 +60,7 @@ _cmd_effort_mod = _load_module(
 )
 cmd_effort = _cmd_effort_mod.cmd_effort
 cmd_effort_apply_preset = _cmd_effort_mod.cmd_effort_apply_preset
+cmd_effort_set = _cmd_effort_mod.cmd_effort_set
 KNOWN_ROLES = _cmd_effort_mod.KNOWN_ROLES
 
 
@@ -420,3 +421,268 @@ def test_apply_preset_round_trip_no_residue(plan_context):
     # (the new ladder pushes the three analytical phases up); the
     # writer keeps the string shorthand for flat-group overrides.
     assert on_disk['roles']['phase-2-refine'] == 'level-3'
+
+
+# =============================================================================
+# Half B — `effort set` per-scope writer (cmd_effort_set)
+#
+# Surgical per-scope writer: writes exactly one effort scope without
+# disturbing siblings. The on-disk storage shape is read RAW here (the
+# `_read_marshal_models` preset-payload view is for the whole-tree
+# apply-preset writer; the per-scope writer's invariant is about the
+# exact nested-dict shape it leaves behind, so these tests read
+# `plan.<phase>.effort` directly).
+# =============================================================================
+
+
+def _read_phase_effort(fixture_dir: Path, phase: str):
+    """Return the raw on-disk ``plan.<phase>.effort`` value (or None).
+
+    Unlike :func:`_read_marshal_models`, this returns the value verbatim
+    (string shorthand or nested dict) so per-scope-writer tests can assert
+    the exact shape the writer left behind.
+    """
+    marshal_path = fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    phase_entry = config.get('plan', {}).get(phase)
+    if isinstance(phase_entry, dict):
+        return phase_entry.get('effort')
+    return None
+
+
+# -----------------------------------------------------------------------------
+# (a) nested-scope write into an empty phase creates the effort object
+# -----------------------------------------------------------------------------
+
+
+def test_set_nested_scope_into_empty_phase(plan_context):
+    # Seed a phase entry with NO effort key (sibling knobs only) so the
+    # write must create the `effort` object from scratch.
+    create_marshal_json(plan_context.fixture_dir)
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config['plan']['phase-6-finalize'] = {'max_iterations': 3}
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    result = cmd_effort_set(
+        Namespace(scope='phase-6-finalize.verification-feedback', level='level-5')
+    )
+
+    assert result['status'] == 'success'
+    assert result['scope'] == 'phase-6-finalize.verification-feedback'
+    assert result['level'] == 'level-5'
+    assert result['target'] == 'plan.phase-6-finalize.effort.verification-feedback'
+
+    on_disk = _read_phase_effort(plan_context.fixture_dir, 'phase-6-finalize')
+    assert on_disk == {'verification-feedback': 'level-5'}
+
+    # Sibling phase knobs are preserved — the write touched only `effort`.
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert config['plan']['phase-6-finalize']['max_iterations'] == 3
+
+
+# -----------------------------------------------------------------------------
+# (b) nested-scope write preserves sibling sub-keys (does not clobber an
+#     existing `default` when setting `verification-feedback`)
+# -----------------------------------------------------------------------------
+
+
+def test_set_nested_scope_preserves_sibling_subkeys(plan_context):
+    # Pre-seed an effort OBJECT with a `default` sub-key. Setting a
+    # DIFFERENT sub-key must merge in — not replace the object — leaving
+    # `default` untouched.
+    create_marshal_json(plan_context.fixture_dir)
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config['plan']['phase-6-finalize'] = {
+        'effort': {'default': 'level-2', 'post-run-review': 'level-3'},
+    }
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    result = cmd_effort_set(
+        Namespace(scope='phase-6-finalize.verification-feedback', level='level-5')
+    )
+
+    assert result['status'] == 'success'
+
+    on_disk = _read_phase_effort(plan_context.fixture_dir, 'phase-6-finalize')
+    # The new sub-key is added; the pre-existing sub-keys are untouched.
+    assert on_disk == {
+        'default': 'level-2',
+        'post-run-review': 'level-3',
+        'verification-feedback': 'level-5',
+    }
+
+
+# -----------------------------------------------------------------------------
+# (c) scalar-to-object normalization — setting a scope on a phase whose
+#     effort is currently a scalar string seeds the prior value into
+#     `default` and then writes the requested sub-key
+# -----------------------------------------------------------------------------
+
+
+def test_set_nested_scope_normalizes_scalar_to_object(plan_context):
+    # Pre-seed a SCALAR effort string. The per-scope write must normalise
+    # it into an object, preserving the prior value's intent under the
+    # in-phase `default` slot, before writing the requested sub-key.
+    create_marshal_json(plan_context.fixture_dir)
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config['plan']['phase-6-finalize'] = {'effort': 'level-2'}
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    result = cmd_effort_set(
+        Namespace(scope='phase-6-finalize.verification-feedback', level='level-5')
+    )
+
+    assert result['status'] == 'success'
+
+    on_disk = _read_phase_effort(plan_context.fixture_dir, 'phase-6-finalize')
+    # Prior scalar 'level-2' is preserved under `default`; the requested
+    # sub-key is written alongside it — no clobber, no silent drop.
+    assert on_disk == {'default': 'level-2', 'verification-feedback': 'level-5'}
+
+
+# -----------------------------------------------------------------------------
+# (d) `--scope plan` writes the plan-wide scalar at plan.effort
+# -----------------------------------------------------------------------------
+
+
+def test_set_plan_scope_writes_plan_wide_scalar(plan_context):
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_effort_set(Namespace(scope='plan', level='level-3'))
+
+    assert result['status'] == 'success'
+    assert result['scope'] == 'plan'
+    assert result['level'] == 'level-3'
+    assert result['target'] == 'plan.effort'
+
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    # plan.effort is the plan-wide scalar fallback (a single string).
+    assert config['plan']['effort'] == 'level-3'
+
+    # The read resolver confirms the plan-wide fallback round-trips.
+    read_result = cmd_effort(Namespace(role=None, phase=None, default=True))
+    assert read_result['status'] == 'success'
+    assert read_result['level'] == 'level-3'
+    assert read_result['source'] == 'plan.effort'
+
+
+# -----------------------------------------------------------------------------
+# (e) invalid --level rejection
+# -----------------------------------------------------------------------------
+
+
+def test_set_invalid_level_rejected(plan_context):
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_effort_set(
+        Namespace(scope='phase-6-finalize.verification-feedback', level='level-99')
+    )
+
+    assert result['status'] == 'error'
+    # The error mentions the offending value and the allowed set.
+    assert 'level-99' in result['error']
+
+    # Nothing was written — the phase has no effort entry.
+    assert _read_phase_effort(plan_context.fixture_dir, 'phase-6-finalize') is None
+
+
+def test_set_plan_scope_invalid_level_rejected(plan_context):
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_effort_set(Namespace(scope='plan', level='bogus'))
+
+    assert result['status'] == 'error'
+    assert 'bogus' in result['error']
+
+    # plan.effort was not written.
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert 'effort' not in config.get('plan', {})
+
+
+# -----------------------------------------------------------------------------
+# (f) unknown phase / role rejection
+# -----------------------------------------------------------------------------
+
+
+def test_set_unknown_phase_rejected(plan_context):
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_effort_set(
+        Namespace(scope='phase-99-bogus.verification-feedback', level='level-3')
+    )
+
+    assert result['status'] == 'error'
+    assert 'phase-99-bogus' in result['error']
+
+    # No phase entry was created for the bogus phase.
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert 'phase-99-bogus' not in config.get('plan', {})
+
+
+def test_set_unknown_role_rejected(plan_context):
+    create_marshal_json(plan_context.fixture_dir)
+
+    # `phase-1-init` is a valid group but its only sub-key is `default`;
+    # `verification-feedback` is not in its schema, so the role is unknown.
+    result = cmd_effort_set(
+        Namespace(scope='phase-1-init.verification-feedback', level='level-3')
+    )
+
+    assert result['status'] == 'error'
+    assert 'verification-feedback' in result['error']
+
+    # No effort entry was written for phase-1-init.
+    assert _read_phase_effort(plan_context.fixture_dir, 'phase-1-init') is None
+
+
+def test_set_non_dotted_nested_scope_rejected(plan_context):
+    create_marshal_json(plan_context.fixture_dir)
+
+    # A bare (non-'plan', non-dotted) scope is neither the plan-wide
+    # scalar nor a valid '{phase}.{role}' nested scope.
+    result = cmd_effort_set(Namespace(scope='phase-6-finalize', level='level-3'))
+
+    assert result['status'] == 'error'
+    assert 'phase-6-finalize' in result['error']
+
+
+# -----------------------------------------------------------------------------
+# (g) CLI-plumbing subprocess test — `effort set` is wired through argparse
+#     end-to-end (subparser registered + routed to cmd_effort_set)
+# -----------------------------------------------------------------------------
+
+
+def test_set_wired_through_argparse_end_to_end(plan_context):
+    # The subprocess resolves MARSHAL_PATH from PLAN_BASE_DIR (set by the
+    # plan_context fixture and inherited by run_script's child env), so it
+    # reads/writes the same fixture marshal.json the in-process tests use.
+    _write_marshal_with_models(plan_context.fixture_dir, None)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'effort',
+        'set',
+        '--scope',
+        'phase-6-finalize.verification-feedback',
+        '--level',
+        'level-5',
+    )
+
+    assert result.success, (
+        f'effort set should succeed end-to-end; stderr={result.stderr}'
+    )
+    payload = result.toon()
+    assert payload['status'] == 'success'
+    assert payload['scope'] == 'phase-6-finalize.verification-feedback'
+    assert payload['level'] == 'level-5'
+    assert payload['target'] == 'plan.phase-6-finalize.effort.verification-feedback'
+
+    # The write landed on disk through the CLI plumbing.
+    on_disk = _read_phase_effort(plan_context.fixture_dir, 'phase-6-finalize')
+    assert on_disk == {'verification-feedback': 'level-5'}

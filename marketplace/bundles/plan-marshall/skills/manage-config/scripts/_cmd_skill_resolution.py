@@ -337,23 +337,18 @@ def _discover_all_recipes() -> list[dict]:
             if fm_match:
                 description = fm_match.group(1).strip()
 
-            # Extract recipe metadata from Input Parameters table
-            domain = ''
-            profile = ''
-            package_source = ''
-            for line in content.split('\n'):
-                if '`recipe_domain`' in line:
-                    m = re.search(r'`recipe_domain`.*?`([^`]+)`', line)
-                    if m:
-                        domain = m.group(1)
-                elif '`recipe_profile`' in line:
-                    m = re.search(r'`recipe_profile`.*?`([^`]+)`', line)
-                    if m:
-                        profile = m.group(1)
-                elif '`recipe_package_source`' in line:
-                    m = re.search(r'`recipe_package_source`.*?`([^`]+)`', line)
-                    if m:
-                        package_source = m.group(1)
+            # Extract recipe discovery metadata from frontmatter keys — the
+            # structured project-recipe counterpart to provides_recipes(). The
+            # markdown body is NOT scanned for these keys; frontmatter is the
+            # sole source of truth (see ext-point-recipe.md § Project Recipe
+            # Frontmatter). recipe_domain is required; a recipe whose frontmatter
+            # omits it is silently skipped (intentional discovery containment).
+            domain_match = re.search(r'^recipe_domain:\s*(.+)$', content, re.MULTILINE)
+            domain = domain_match.group(1).strip().strip("'\"") if domain_match else ''
+            profile_match = re.search(r'^recipe_profile:\s*(.+)$', content, re.MULTILINE)
+            profile = profile_match.group(1).strip().strip("'\"") if profile_match else ''
+            package_source_match = re.search(r'^recipe_package_source:\s*(.+)$', content, re.MULTILINE)
+            package_source = package_source_match.group(1).strip().strip("'\"") if package_source_match else ''
 
             if not domain:
                 continue

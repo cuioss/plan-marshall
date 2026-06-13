@@ -19,7 +19,12 @@ import argparse
 from _cmd_build_map import cmd_build_decision, cmd_build_map
 from _cmd_coverage import cmd_coverage_expand, cmd_coverage_read, cmd_coverage_resolve
 from _cmd_domain_detect import cmd_domain_detect
-from _cmd_effort import cmd_effort, cmd_effort_apply_preset, cmd_effort_resolve_target
+from _cmd_effort import (
+    cmd_effort,
+    cmd_effort_apply_preset,
+    cmd_effort_resolve_target,
+    cmd_effort_set,
+)
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_finalize_steps import cmd_finalize_steps_apply_preset
 from _cmd_init import cmd_init
@@ -422,6 +427,28 @@ def main() -> int:
         ),
     )
 
+    effort_set = effort_sub.add_parser(
+        'set',
+        help='Surgically write one effort scope (per-scope writer)',
+        allow_abbrev=False,
+    )
+    effort_set.add_argument(
+        '--scope',
+        required=True,
+        help=(
+            "Effort scope to write: a dotted '{phase}.{role}' nested scope "
+            '(e.g. "phase-6-finalize.verification-feedback"), or the literal '
+            '"plan" for the plan-wide scalar fallback. The nested write '
+            'preserves sibling sub-keys; a pre-existing scalar effort string '
+            'is normalised into an object first.'
+        ),
+    )
+    effort_set.add_argument(
+        '--level',
+        required=True,
+        help='Effort level keyword (level-1..level-7 or inherit).',
+    )
+
     # --- coverage ---
     # Two-dial coverage contract: thoroughness (T1-T5) x scope
     # (change-set..overall). The read/resolve verbs mirror the `effort`
@@ -653,6 +680,8 @@ def main() -> int:
             result = cmd_effort_apply_preset(args)
         elif args.verb == 'resolve-target':
             result = cmd_effort_resolve_target(args)
+        elif args.verb == 'set':
+            result = cmd_effort_set(args)
         else:
             result = cmd_effort(args)
     elif args.noun == 'coverage':

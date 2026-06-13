@@ -8,7 +8,8 @@ Handles:
     effort read --phase <g>             (bare-group lookup, polymorphic)
     effort read --default               (raw `plan.effort` lookup)
     effort resolve-target --role <name> (target variant name resolver)
-    effort apply-preset --preset <name> (preset writer)
+    effort apply-preset --preset <name> (whole-tree preset writer)
+    effort set --scope <scope> --level <v> (surgical per-scope writer)
 
 Storage layout — per-phase effort config lives **inside the matching
 plan-phase entry** under the ``effort`` key, alongside the rest of the
@@ -402,6 +403,116 @@ def _count_roles(expanded: dict[str, object]) -> int:
         elif isinstance(value, dict):
             count += len(value)
     return count
+
+
+def cmd_effort_set(args) -> dict:
+    """Handle ``effort set --scope <scope> --level <value>`` subcommand.
+
+    Surgical per-scope writer — the write-path counterpart to the
+    whole-tree :func:`cmd_effort_apply_preset`. Writes exactly one effort
+    scope without disturbing siblings:
+
+        - ``--scope {phase}.{role}`` (dotted nested scope, e.g.
+          ``phase-6-finalize.verification-feedback``): validate ``phase``
+          against :data:`KNOWN_ROLES` and ``role`` against that group's
+          schema, validate ``--level`` via :func:`_validate_level`, then
+          write ``config['plan'][phase]['effort'][role] = level`` —
+          creating the ``plan.<phase>`` entry and its ``effort`` object as
+          needed, and normalising a pre-existing **scalar** ``effort``
+          string into an object (seeding the prior value into ``default``)
+          so the per-scope write does not clobber sibling sub-keys.
+        - ``--scope plan`` (the plan-wide scalar): write
+          ``config['plan']['effort'] = level``.
+
+    Unknown phase/role and invalid level are rejected with clear errors
+    mirroring :func:`_resolve_level`'s messages.
+    """
+    if not is_initialized():
+        return error_exit('marshal.json not initialized; run /marshall-steward first')
+
+    scope = getattr(args, 'scope', None)
+    if not scope:
+        return error_exit('--scope is required')
+    level = getattr(args, 'level', None)
+    if not level:
+        return error_exit('--level is required')
+
+    # Plan-wide scalar scope.
+    if scope == 'plan':
+        ok, err = _validate_level(level, 'plan.effort')
+        if not ok:
+            return error_exit(err or 'invalid effort')
+        config = load_config()
+        plan_block = config.setdefault('plan', {})
+        if not isinstance(plan_block, dict):
+            return error_exit("plan block in marshal.json is not a dictionary")
+        plan_block['effort'] = level
+        save_config(config)
+        return success_exit(
+            {
+                'scope': 'plan',
+                'level': level,
+                'target': 'plan.effort',
+            }
+        )
+
+    # Nested scope: {phase}.{role}.
+    if '.' not in scope:
+        return error_exit(
+            f"scope '{scope}' must be 'plan' or a dotted '{{phase}}.{{role}}' scope "
+            f'(e.g. phase-6-finalize.verification-feedback)'
+        )
+    phase, role = scope.split('.', 1)
+
+    if phase not in KNOWN_ROLES:
+        return error_exit(
+            f"role group '{phase}' is not registered in effort-roles.md"
+        )
+    group_schema = KNOWN_ROLES[phase]
+    if role not in group_schema:
+        return error_exit(
+            f"subkey '{role}' is not registered under group "
+            f"'{phase}' in effort-roles.md (valid: {list(group_schema)})"
+        )
+
+    ok, err = _validate_level(level, f'plan.{phase}.effort.{role}')
+    if not ok:
+        return error_exit(err or 'invalid effort')
+
+    config = load_config()
+    plan_block = config.setdefault('plan', {})
+    if not isinstance(plan_block, dict):
+        return error_exit("plan block in marshal.json is not a dictionary")
+    phase_entry = plan_block.setdefault(phase, {})
+    if not isinstance(phase_entry, dict):
+        return error_exit(
+            f"plan['{phase}'] exists but is not a dict; "
+            f'cannot merge effort attribute'
+        )
+
+    existing_effort = phase_entry.get('effort')
+    if isinstance(existing_effort, dict):
+        effort_obj = existing_effort
+    elif isinstance(existing_effort, str):
+        # Normalise the scalar shorthand into an object, preserving the
+        # prior value's intent under the in-phase ``default`` slot so the
+        # per-scope write does not silently drop it.
+        effort_obj = {'default': existing_effort}
+        phase_entry['effort'] = effort_obj
+    else:
+        effort_obj = {}
+        phase_entry['effort'] = effort_obj
+
+    effort_obj[role] = level
+    save_config(config)
+
+    return success_exit(
+        {
+            'scope': scope,
+            'level': level,
+            'target': f'plan.{phase}.effort.{role}',
+        }
+    )
 
 
 def cmd_effort_apply_preset(args) -> dict:
