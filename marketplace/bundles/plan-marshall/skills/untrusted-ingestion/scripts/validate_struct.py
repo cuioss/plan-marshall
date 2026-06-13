@@ -22,6 +22,7 @@ Usage:
     validate_struct.py validate --schema research|ci-finding|issue-body --struct '<json>'
 """
 
+import argparse
 import re
 import sys
 from typing import Any
@@ -220,7 +221,7 @@ def _validate_object(
 # ============================================================================
 
 
-def cmd_validate(args) -> dict[str, Any]:
+def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
     schema = SCHEMAS.get(args.schema)
     if schema is None:
         return make_error(
