@@ -71,11 +71,14 @@ def save_config(config: dict) -> None:
     # Canonical key order for marshal.json. Several legacy top-level blocks were
     # dissolved or relocated: their config was distributed back into the owning
     # phase blocks, and the build map now lives at the top-level build.map. The
-    # order lists every surviving top-level key alphabetically.
+    # order leads with ``plan`` (the primary user-facing config) followed by
+    # ``build`` (build infrastructure), then lists the remaining top-level keys
+    # alphabetically. ``extension_defaults`` precedes both as the
+    # extension-seeded defaults block.
     key_order = [
-        'build',
         'extension_defaults',
         'plan',
+        'build',
         'project',
         'providers',
         'skill_domains',
