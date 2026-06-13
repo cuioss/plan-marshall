@@ -499,7 +499,7 @@ def cmd_list(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'plan_id': args.plan_id, 'files': files}
 
 
-def cmd_exists(args) -> dict:
+def cmd_exists(args: argparse.Namespace) -> dict:
     """Check if file exists in plan directory.
 
     Returns dict with exists: true/false.
@@ -527,7 +527,7 @@ def cmd_exists(args) -> dict:
     }
 
 
-def cmd_mkdir(args) -> dict:
+def cmd_mkdir(args: argparse.Namespace) -> dict:
     """Create subdirectory in plan directory.
 
     Returns dict with the created directory path.
@@ -557,7 +557,7 @@ def cmd_mkdir(args) -> dict:
     }
 
 
-def cmd_create_or_reference(args) -> dict:
+def cmd_create_or_reference(args: argparse.Namespace) -> dict:
     """Create plan directory if it doesn't exist, or reference existing one.
 
     Returns dict indicating whether the plan was created or already exists.
@@ -575,8 +575,6 @@ def cmd_create_or_reference(args) -> dict:
         status_path = plan_dir / 'status.json'
         if status_path.exists():
             try:
-                import json
-
                 status = json.loads(status_path.read_text(encoding='utf-8'))
                 result['current_phase'] = status.get('current_phase', 'unknown')
             except (ValueError, KeyError, OSError):
