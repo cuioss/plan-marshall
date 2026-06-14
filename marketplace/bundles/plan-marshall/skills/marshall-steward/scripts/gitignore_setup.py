@@ -80,6 +80,7 @@ _MANAGED_RULE_LINES = frozenset({
     '.plan',
     GITIGNORE_MARSHAL_EXCEPTION,
     GITIGNORE_ARCHITECTURE_EXCEPTION,
+    GITIGNORE_PLUGIN_DOCTOR_EXCEPTION,
     GITIGNORE_PLAN_LOCAL_WORKTREES,
     '.plan/local/worktrees',
 })
@@ -315,6 +316,15 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
             content += f'{GITIGNORE_LOCAL_COMMENT}\n'
         for entry in entries_to_add:
             content += f'{entry}\n'
+
+        # Re-consolidate so freshly-appended managed entries are pulled into the
+        # single canonical managed block in THIS run. Without this, a newly-added
+        # managed rule lands after a blank-line separator and the NEXT run's
+        # consolidation pass would relocate it into the block — making the add
+        # non-idempotent (the second run reports 'updated'). Re-consolidating here
+        # makes the first run's output already-canonical and every later run
+        # byte-stable.
+        content = consolidate_managed_blocks(content)
 
     result['entries_added'] = len(entries_to_add)
 

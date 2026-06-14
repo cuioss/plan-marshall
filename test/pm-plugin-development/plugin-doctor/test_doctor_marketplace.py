@@ -2124,6 +2124,7 @@ def _build_historical_prose_fixture(temp_root: Path, *, disable_frontmatter: boo
         'name: hist-skill\n'
         'description: A skill carrying historical-prose narrative\n'
         'user-invocable: false\n'
+        'mode: knowledge\n'
         f'{disable_line}'
         '---\n'
         '\n'

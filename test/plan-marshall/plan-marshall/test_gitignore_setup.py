@@ -371,6 +371,7 @@ class TestGitignoreConsolidation:
             '.plan/*\n'
             '!.plan/marshal.json\n'
             '!.plan/project-architecture/\n'
+            '!.plan/plugin-doctor.yml\n'
             '.plan/local/worktrees/\n'
         )
         gitignore_path.write_text(original)
