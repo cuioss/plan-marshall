@@ -10,6 +10,16 @@ Aspects are gated by plan domain at compose time: the retrospective resolves the
 
 ## Implementor Requirements
 
+### Implementor Frontmatter
+
+All retrospective-aspect implementor skills must include in their SKILL.md frontmatter:
+
+```yaml
+implements: plan-marshall:extension-api/standards/ext-point-retrospective
+```
+
+Frontmatter is the sole identification source for this extension point: the retrospective discovers implementors by the `implements:` declaration, not by a prose mention or a body-table row. The sole current implementor is the `pm-plugin-development` bundle manifest (see [Current Implementations](#current-implementations)); its manifest declares `implements:` against the domain-bundle archetype, and its `provides_retrospective_aspects()` hook contributes the aspect.
+
 ### Interface Contract
 
 Each retrospective aspect is a **deterministic, script-backed fragment producer** — the same shape as the generic script-backed aspects (artifact-consistency, log-analysis, direct-gh-glab-usage). The aspect script:

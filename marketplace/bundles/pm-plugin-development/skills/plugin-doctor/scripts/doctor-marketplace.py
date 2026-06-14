@@ -62,6 +62,7 @@ from _analyze_script_call_drift import analyze_script_call_drift
 from _analyze_self_declared_rule_compliance import analyze_self_declared_rule_compliance
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
 from _analyze_simplicity import scan_simplicity
+from _analyze_skill_mode import analyze_skill_mode
 from _analyze_skill_notation import analyze_skill_notation
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
@@ -973,6 +974,16 @@ def cmd_quality_gate(args) -> dict:
     role_field_findings = _scoped(analyze_role_field(marketplace_root))
     all_issues.extend(role_field_findings)
     rule_summaries.append({'rule': 'analyze_role_field', 'findings': len(role_field_findings)})
+
+    # skill-missing-mode — flags any skill SKILL.md whose frontmatter omits the
+    # ``mode:`` archetype field or carries a value outside the closed enum
+    # {knowledge, workflow, script-executor, manifest}. Scans both the
+    # marketplace bundle tree and the project-local .claude/skills tree (derived
+    # internally from marketplace_root). Findings carry absolute file paths, so
+    # _scoped's path filter applies uniformly under --paths.
+    skill_mode_findings = _scoped(analyze_skill_mode(marketplace_root))
+    all_issues.extend(skill_mode_findings)
+    rule_summaries.append({'rule': 'analyze_skill_mode', 'findings': len(skill_mode_findings)})
 
     # manage-invocation rule cluster — validates documented script invocations
     # against each script-bearing skill's live argparse surface derived from

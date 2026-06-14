@@ -109,6 +109,7 @@ _accf = _load('_cmd_cross_file.py', '_accf_fixtures')
 verify_findings = _accf.verify_findings
 _abfic = _load('_analyze_bash_fence_inline_code_exemption.py', '_abfic_fixtures')
 _amlbf = _load('_analyze_markdown_link_bare_filename.py', '_amlbf_fixtures')
+_asm = _load('_analyze_skill_mode.py', '_asm_fixtures')
 
 # ---------------------------------------------------------------------------
 # Registered-rule-ID extraction (relocated verbatim from the deleted
@@ -361,6 +362,12 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['WORKFLOW_DOC_TOON_ERROR_FIELD'] = FixtureSpec(
         analyzer=_awdtef.analyze_workflow_doc_toon_error_field,
         files={_PM_SKILL: '# F\n\n```toon\nstatus: error\nerror_type: cat\n```\n'},
+    )
+    # A SKILL.md with valid frontmatter but no ``mode:`` key fires skill-missing-mode
+    # (reason: mode_missing) and nothing else — _GOOD_SKILL_FM omits the key.
+    corpus['skill-missing-mode'] = FixtureSpec(
+        analyzer=_asm.analyze_skill_mode,
+        files={_PM_SKILL: _GOOD_SKILL_FM + '\n# F\n'},
     )
     corpus['no-historical-prose-in-skills'] = FixtureSpec(
         analyzer=_ahps.analyze_historical_prose_in_skills,

@@ -2,6 +2,7 @@
 name: recipe-verify-ascii-diagrams
 description: Recipe for verifying and fixing alignment of ASCII box diagrams across .md skill source and .adoc documentation, one deliverable per offending file
 user-invocable: false
+mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 

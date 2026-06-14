@@ -2,13 +2,13 @@
 name: css
 description: Modern CSS standards covering native nesting, cascade layers, Container Queries, custom properties, responsive design, accessibility, and PostCSS/Stylelint tooling
 user-invocable: false
+mode: knowledge
 ---
 
 # CSS Development Standards
 
 ## Enforcement
 
-- **Execution mode**: Reference — load specific standards on-demand based on current task
 - **Prohibited actions**: Do not generate legacy CSS patterns (vendor prefixes handled by Autoprefixer, no IE/legacy fallbacks)
 - **Constraints**: Prefer native CSS features (nesting, layers, custom properties) over preprocessor equivalents
 

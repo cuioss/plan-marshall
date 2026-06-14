@@ -2,6 +2,7 @@
 name: jest-testing
 description: JavaScript unit testing standards covering Jest framework, DOM and web component testing, mocking patterns, async testing, and coverage configuration
 user-invocable: false
+mode: knowledge
 ---
 
 # JavaScript Testing Standards
@@ -10,7 +11,6 @@ Unit testing standards for JavaScript projects using Jest, covering test structu
 
 ## Enforcement
 
-- **Execution mode**: Reference — load specific standards on-demand based on current task
 - **Prohibited actions**: Do not generate tests that depend on implementation internals; do not use arbitrary `setTimeout` waits in tests
 - **Constraints**: Tests must follow AAA (Arrange-Act-Assert) pattern; each test verifies one behavior
 

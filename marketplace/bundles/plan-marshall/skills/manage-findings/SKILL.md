@@ -2,6 +2,7 @@
 name: manage-findings
 description: Unified JSONL storage for plan-scoped findings, phase-scoped Q-Gate findings, and component assessments
 user-invocable: false
+mode: script-executor
 scope: plan
 ---
 

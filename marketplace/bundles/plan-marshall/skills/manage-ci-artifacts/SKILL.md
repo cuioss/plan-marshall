@@ -2,6 +2,7 @@
 name: manage-ci-artifacts
 description: Persist CI run artifacts (logs + manifest) under the plan directory for offline retrospectives
 user-invocable: false
+mode: script-executor
 scope: plan
 ---
 

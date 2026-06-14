@@ -2,6 +2,7 @@
 name: plugin-plan-implement
 description: Implement plugin tasks from plan with step iteration and progress tracking
 user-invocable: false
+mode: workflow
 ---
 
 # Plugin Plan Implement Skill

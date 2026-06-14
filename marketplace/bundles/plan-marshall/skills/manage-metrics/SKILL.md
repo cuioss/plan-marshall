@@ -2,6 +2,7 @@
 name: manage-metrics
 description: Plan metrics collection and reporting for duration and token usage per phase
 user-invocable: false
+mode: script-executor
 scope: hybrid
 ---
 

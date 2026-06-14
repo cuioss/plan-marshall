@@ -2,6 +2,7 @@
 name: ext-self-review-plan-marshall
 description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims) for pre-submission structural self-review.
 user-invocable: false
+mode: script-executor
 implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing
 ---
 

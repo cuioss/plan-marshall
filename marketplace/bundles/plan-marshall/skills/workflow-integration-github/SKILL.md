@@ -2,6 +2,7 @@
 name: workflow-integration-github
 description: GitHub provider for PR review workflows — fetch comments, triage, and respond to review feedback via gh CLI
 user-invocable: false
+mode: workflow
 ---
 
 # GitHub CI Integration Workflow Skill

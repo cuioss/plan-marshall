@@ -2,6 +2,7 @@
 name: tools-marketplace-inventory
 description: Scans and reports complete marketplace inventory (bundles, agents, commands, skills, scripts)
 user-invocable: false
+mode: script-executor
 ---
 
 # Marketplace Inventory Skill

@@ -2,6 +2,7 @@
 name: build-gradle
 description: Gradle build operations — Java/Kotlin builds with JaCoCo coverage, quality task detection, multi-project discovery, and OpenRewrite markers
 user-invocable: false
+mode: script-executor
 implements: plan-marshall:extension-api/standards/ext-point-build
 ---
 

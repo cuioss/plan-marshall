@@ -1044,6 +1044,7 @@ def _build_clean_fixture(temp_root: Path) -> Path:
 name: noop-skill
 description: Does nothing
 user-invocable: false
+mode: knowledge
 ---
 
 # Noop Skill
@@ -1158,7 +1159,7 @@ def _build_two_skill_scope_fixture(temp_root: Path) -> tuple[Path, Path, Path]:
     skill_a = bundle / 'skills' / 'skill-a'
     skill_a.mkdir(parents=True)
     (skill_a / 'SKILL.md').write_text(
-        '---\nname: skill-a\ndescription: A skill with a violating script\nuser-invocable: false\n---\n\n# Skill A\n'
+        '---\nname: skill-a\ndescription: A skill with a violating script\nuser-invocable: false\nmode: knowledge\n---\n\n# Skill A\n'
     )
     scripts_a = skill_a / 'scripts'
     scripts_a.mkdir()
@@ -1173,7 +1174,7 @@ def _build_two_skill_scope_fixture(temp_root: Path) -> tuple[Path, Path, Path]:
     skill_b = bundle / 'skills' / 'skill-b'
     skill_b.mkdir(parents=True)
     (skill_b / 'SKILL.md').write_text(
-        '---\nname: skill-b\ndescription: A clean skill\nuser-invocable: false\n---\n\n# Skill B\n'
+        '---\nname: skill-b\ndescription: A clean skill\nuser-invocable: false\nmode: knowledge\n---\n\n# Skill B\n'
     )
     return temp_root, skill_a, skill_b
 

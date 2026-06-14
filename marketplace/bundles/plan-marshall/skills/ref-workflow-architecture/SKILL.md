@@ -2,6 +2,7 @@
 name: ref-workflow-architecture
 description: Centralized architecture documentation for the plan-marshall bundle with visual diagrams
 user-invocable: false
+mode: knowledge
 ---
 
 # Plan-Marshall Architecture

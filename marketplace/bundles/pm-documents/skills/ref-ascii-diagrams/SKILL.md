@@ -2,6 +2,7 @@
 name: ref-ascii-diagrams
 description: Authoring standards for ASCII box diagrams in skill and doc source — box-drawing conventions, right-border alignment, and a deterministic check/fix validator over fenced/literal code blocks in .md and .adoc files
 user-invocable: false
+mode: knowledge
 ---
 
 # ASCII Diagrams Skill

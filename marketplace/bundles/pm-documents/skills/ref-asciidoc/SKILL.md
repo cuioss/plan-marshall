@@ -2,6 +2,7 @@
 name: ref-asciidoc
 description: AsciiDoc formatting, validation, link verification, and template creation workflows
 user-invocable: false
+mode: workflow
 ---
 
 # AsciiDoc Skill

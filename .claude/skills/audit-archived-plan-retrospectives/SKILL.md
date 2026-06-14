@@ -2,6 +2,7 @@
 name: audit-archived-plan-retrospectives
 description: Audit archived plans across fifteen retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, PR-merge velocity, task-count efficiency, global-log analysis, token-economics, quality-chain, sequence-and-build-minimality, input-integrity corpus completeness, task-graph redundancy, and cross-check-synthesis facet-completeness — file lessons through the three-gate policy, and dormate reviewed plans
 user-invocable: true
+mode: workflow
 allowed-tools: Bash, Read, Grep, Write, AskUserQuestion
 ---
 

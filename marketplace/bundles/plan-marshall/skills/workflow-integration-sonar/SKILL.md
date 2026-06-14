@@ -2,6 +2,7 @@
 name: workflow-integration-sonar
 description: SonarQube/SonarCloud issue workflow - fetch issues, triage, and fix or suppress based on context
 user-invocable: false
+mode: workflow
 ---
 
 # Sonar Workflow Skill

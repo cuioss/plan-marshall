@@ -2,6 +2,7 @@
 name: manage-adr
 description: Manage Architectural Decision Records (ADRs) with CRUD operations, progressive-disclosure metadata, scan-by-tag/affects, automatic numbering, and AsciiDoc formatting
 user-invocable: false
+mode: script-executor
 ---
 
 # ADR Management Skill

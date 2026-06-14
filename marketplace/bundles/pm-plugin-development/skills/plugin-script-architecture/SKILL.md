@@ -2,6 +2,7 @@
 name: plugin-script-architecture
 description: Script development standards covering implementation patterns, testing, and output contracts
 user-invocable: false
+mode: knowledge
 ---
 
 # Plugin Script Architecture Skill

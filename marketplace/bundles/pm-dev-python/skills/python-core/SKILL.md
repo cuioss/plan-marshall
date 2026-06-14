@@ -2,6 +2,7 @@
 name: python-core
 description: "Use when writing, reviewing, or refactoring Python 3.10+ code — covers type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports. Activate for any Python production code task. Also use when working with pathlib, dataclass, pydantic, match statements, or structural pattern matching."
 user-invocable: false
+mode: knowledge
 ---
 
 # Python Core Standards

@@ -2,6 +2,7 @@
 name: tools-permission-doctor
 description: Diagnose permission issues across settings files (read-only analysis)
 user-invocable: true
+mode: script-executor
 ---
 
 # Permission Doctor Skill

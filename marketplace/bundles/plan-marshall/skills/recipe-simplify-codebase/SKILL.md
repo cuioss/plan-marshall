@@ -2,6 +2,7 @@
 name: recipe-simplify-codebase
 description: Domain-invariant recipe for deliberate wide-scope simplification campaigns across a scope x thoroughness cell, with a T4+ relation-graph pre-deliverable
 user-invocable: false
+mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 

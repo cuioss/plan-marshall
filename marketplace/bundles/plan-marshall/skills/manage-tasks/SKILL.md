@@ -2,6 +2,7 @@
 name: manage-tasks
 description: Manage implementation tasks with sequential sub-steps within a plan
 user-invocable: false
+mode: script-executor
 scope: plan
 ---
 

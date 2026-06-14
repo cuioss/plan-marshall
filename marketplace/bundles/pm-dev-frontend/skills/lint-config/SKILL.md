@@ -2,13 +2,13 @@
 name: lint-config
 description: ESLint flat config, Prettier, and Stylelint configuration, rule customization, and build integration standards for JavaScript projects
 user-invocable: false
+mode: knowledge
 ---
 
 # JavaScript Linting and Formatting Standards
 
 ## Enforcement
 
-- **Execution mode**: Reference — load specific standards on-demand based on current task
 - **Prohibited actions**: Do not generate legacy ESLint config (`.eslintrc.*`); always use flat config (`eslint.config.js`)
 - **Constraints**: All configurations require `"type": "module"` in package.json; flat config only
 

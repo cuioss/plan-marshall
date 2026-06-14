@@ -2,6 +2,7 @@
 name: plugin-maintain
 description: Comprehensive maintenance skill for marketplace components - update components, manage knowledge, maintain READMEs, restructure, and apply orchestration compliance
 user-invocable: true
+mode: workflow
 ---
 
 # Plugin Maintain Skill

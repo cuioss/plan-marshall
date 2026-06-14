@@ -2,6 +2,7 @@
 name: java-core
 description: Core Java development standards for patterns, modern features, and performance optimization
 user-invocable: false
+mode: knowledge
 ---
 
 # Java Core Skill

@@ -2,6 +2,7 @@
 name: manage-interface
 description: Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting
 user-invocable: false
+mode: script-executor
 ---
 
 # Interface Management Skill

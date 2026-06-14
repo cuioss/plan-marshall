@@ -2,6 +2,7 @@
 name: ext-triage-python
 description: Triage extension for Python findings during plan-finalize phase
 user-invocable: false
+mode: knowledge
 implements: plan-marshall:extension-api/standards/ext-point-triage
 ---
 

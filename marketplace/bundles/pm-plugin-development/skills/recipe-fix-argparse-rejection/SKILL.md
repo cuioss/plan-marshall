@@ -2,6 +2,7 @@
 name: recipe-fix-argparse-rejection
 description: Remediation recipe for the exit_code=2 / argparse_rejection defect class — invented or paraphrased manage-* subcommands and flags that do not exist in the script's argparse choices
 user-invocable: false
+mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 

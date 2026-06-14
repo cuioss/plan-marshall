@@ -2,6 +2,7 @@
 name: tools-input-validation
 description: Shared input validation module for plan-marshall scripts — validates plan IDs, file paths, enums, and skill notation
 user-invocable: false
+mode: knowledge
 ---
 
 # Input Validation Base Skill

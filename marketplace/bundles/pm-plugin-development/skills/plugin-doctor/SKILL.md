@@ -2,6 +2,7 @@
 name: plugin-doctor
 description: Diagnose and fix quality issues in marketplace components with automated safe fixes and prompted risky fixes
 user-invocable: true
+mode: script-executor
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 

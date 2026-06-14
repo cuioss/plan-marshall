@@ -2,6 +2,7 @@
 name: ext-triage-docs
 description: Triage extension for documentation findings during plan-finalize phase
 user-invocable: false
+mode: knowledge
 implements: plan-marshall:extension-api/standards/ext-point-triage
 ---
 

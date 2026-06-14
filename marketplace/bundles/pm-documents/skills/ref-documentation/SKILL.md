@@ -2,6 +2,7 @@
 name: ref-documentation
 description: Content quality, tone analysis, organization standards, and review orchestration for technical documentation
 user-invocable: false
+mode: workflow
 ---
 
 # Documentation Skill

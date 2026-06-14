@@ -2,6 +2,7 @@
 name: manage-references
 description: Manage references.json files with field-level access and list management
 user-invocable: false
+mode: script-executor
 scope: plan
 ---
 

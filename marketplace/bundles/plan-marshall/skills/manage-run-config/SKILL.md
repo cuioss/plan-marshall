@@ -2,6 +2,7 @@
 name: manage-run-config
 description: Run configuration handling for persistent command configuration storage
 user-invocable: false
+mode: script-executor
 scope: global
 ---
 

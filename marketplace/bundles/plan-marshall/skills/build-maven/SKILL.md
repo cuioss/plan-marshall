@@ -2,6 +2,7 @@
 name: build-maven
 description: Maven build operations — compile, test, verify with JaCoCo coverage, OpenRewrite markers, and multi-module profile management
 user-invocable: false
+mode: script-executor
 implements: plan-marshall:extension-api/standards/ext-point-build
 ---
 

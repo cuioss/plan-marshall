@@ -2,6 +2,7 @@
 name: finalize-step-plugin-doctor
 description: Finalize-phase wrapper that runs the scopeable plugin-doctor quality-gate against the marketplace source of skills the plan touched, gating structural lint before push
 user-invocable: false
+mode: script-executor
 allowed-tools: Bash
 order: 6
 ---

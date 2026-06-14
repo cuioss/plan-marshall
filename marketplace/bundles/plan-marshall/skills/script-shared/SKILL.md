@@ -2,6 +2,7 @@
 name: script-shared
 description: Shared Python modules consumed by other plan-marshall scripts via PYTHONPATH
 user-invocable: false
+mode: knowledge
 ---
 
 # Script Shared

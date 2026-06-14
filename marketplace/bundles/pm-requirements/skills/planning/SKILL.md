@@ -2,6 +2,7 @@
 name: planning
 description: Standards for creating and maintaining project planning documentation with task tracking, status indicators, and traceability to requirements
 user-invocable: false
+mode: knowledge
 ---
 
 # Planning Documentation Standards

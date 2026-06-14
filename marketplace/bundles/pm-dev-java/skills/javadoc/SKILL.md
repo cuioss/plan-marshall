@@ -2,6 +2,7 @@
 name: javadoc
 description: JavaDoc documentation standards including class, method, and code example patterns
 user-invocable: false
+mode: knowledge
 ---
 
 # JavaDoc Skill
