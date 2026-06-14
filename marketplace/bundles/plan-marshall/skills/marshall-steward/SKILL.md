@@ -241,7 +241,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `architecture-setup.md` | Extension defaults, module discovery, build commands, Maven profiles, LLM analysis + architecture_refresh tier knobs (extracted from wizard-flow.md) | Linked from `wizard-flow.md` Step 8 |
 | `build-map-setup.md` | Build-map seed/read workflow — `build.map` file-to-build contract, write-once seed, menu re-seed operation | Linked from `wizard-flow.md` Step 8b and `menu-configuration.md` (Project Structure) |
 | `skill-domains-setup.md` | Skill-domain configuration, profile activation, execute-task/recipe registration (extracted from wizard-flow.md) | Linked from `wizard-flow.md` Step 9 |
-| `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
+| `menu-maintenance.md` | Regenerate executor, cleanup. The cleanup operation routes to the `Action: cleanup` workflow, which now includes a stalled-lesson-sourced-plan restore pass (restoring trapped lessons to the active corpus via `restore-from-plan`) — see [`../plan-marshall/workflow/planning.md`](../plan-marshall/workflow/planning.md) § "Action: cleanup" for the authoritative procedure. | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
 | `menu-configuration.md` | Build systems, skill domains, architecture refresh tier knobs | Menu option 3 |
 | `standards/effort-menu.md` | Per-phase effort configuration (Effort submenu) | Menu option 4 |
