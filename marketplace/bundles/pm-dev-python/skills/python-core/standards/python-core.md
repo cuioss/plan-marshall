@@ -143,15 +143,27 @@ def process_file(path: Path) -> dict:
     ...
 ```
 
+### Type-Guard at the External-Config Boundary
+
+After reading a block from external or user-editable config (`config.setdefault(key, {})` / `config.get(key, {})`) and before treating it as a dict (item-assignment, `.setdefault`, `.get`, iteration), guard it with `isinstance(block, dict)` and raise or return a structured error on the off-type case — a hand-edited malformed config then yields a clear diagnostic instead of an `AttributeError` / `TypeError`. This is the "fail fast — validate early" principle applied at the system boundary: re-apply the guard on every mutating path and for each nested descent.
+
+```python
+config = load_config()  # parsed from a hand-editable file
+
+system = config.get("system", {})
+if not isinstance(system, dict):
+    raise ValueError(f"system block is not a dict, got {type(system).__name__}")
+
+# Guard each nested descent before mutating it.
+retention = system.get("retention", {})
+if not isinstance(retention, dict):
+    raise ValueError(f"system.retention is not a dict, got {type(retention).__name__}")
+retention["logs_days"] = 7
+```
+
 ### Anti-Patterns to Avoid
 
 ```python
-# BAD: Bare except catches everything including KeyboardInterrupt
-try:
-    result = risky_operation()
-except:
-    pass
-
 # BAD: Catching Exception hides bugs
 try:
     result = operation()
@@ -581,6 +593,24 @@ Module docstrings are one summary line plus a short paragraph describing the mod
 ## Comprehensions and Generators
 
 Prefer list/dict comprehensions for simple transformations (`[x ** 2 for x in range(10)]`, `{user.id: user for user in users}`) and fall back to a regular loop when the logic branches or mutates state. Use generator expressions (`sum(order.amount for order in orders)`) for large datasets to avoid materializing intermediate lists. Filter-and-transform dict comprehensions read cleanly when the source has an explicit `if` clause.
+
+### Batch Glob Matching Over Per-Element Loops
+
+When testing whether a glob pattern matches any name in a corpus, prefer `fnmatch.filter(names, pattern)` over `any(fnmatch.fnmatch(name, pattern) for name in names)` — `filter` does one batch pass instead of re-dispatching the matcher per element. Pair it with the basename-vs-full-path regime: a bare-basename pattern (no `/`) matches against the names' basenames so the file is found at any tree depth; only match against the full path when the pattern itself contains a path separator. See the [Path Handling](#path-handling) section for `Path.name` / `Path.parts`.
+
+```python
+import fnmatch
+from pathlib import Path
+
+# BAD: re-dispatches the matcher per element
+matched = any(fnmatch.fnmatch(name, pattern) for name in names)
+
+# GOOD: one batch pass — and regime-aware
+def pattern_matches_any(pattern: str, names: list[str]) -> bool:
+    if "/" not in pattern:  # bare-basename: match at any depth
+        return bool(fnmatch.filter([Path(n).name for n in names], pattern))
+    return bool(fnmatch.filter(names, pattern))  # path-bearing: full path
+```
 
 ## String Handling
 

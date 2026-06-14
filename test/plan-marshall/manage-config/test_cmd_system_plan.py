@@ -37,6 +37,7 @@ def _load_module(name, filename):
 _cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
 
 cmd_system = _cmd_system_plan.cmd_system
+cmd_project = _cmd_system_plan.cmd_project
 
 from conftest import run_script  # noqa: E402
 
@@ -107,6 +108,85 @@ def test_cli_system_retention_set(plan_context):
     result = run_script(SCRIPT_PATH, 'system', 'retention', 'set', '--field', 'logs_days', '--value', '7')
 
     assert result.success, f'Should succeed: {result.stderr}'
+
+
+# =============================================================================
+# Malformed (non-dict) marshal.json block guards (Pattern B2)
+# =============================================================================
+#
+# `config['system']`, `config['system']['retention']`, and `config['project']`
+# are read from a hand-editable marshal.json and consumed as dicts (item
+# assignment / `.get`). A non-dict value at any of those keys must produce a
+# structured `status: error` (error_type='invalid_type') rather than crashing
+# with an AttributeError/TypeError — the isinstance-guard contract.
+
+
+def _marshal_with_block(**block_overrides) -> dict:
+    """Return a minimal valid marshal.json config with the named top-level blocks set."""
+    config: dict = {
+        'skill_domains': {},
+        'system': {'retention': {'logs_days': 1}},
+        'plan': {},
+        'project': {'default_base_branch': 'main'},
+        'providers': [],
+    }
+    config.update(block_overrides)
+    return config
+
+
+def test_system_non_dict_system_block_returns_structured_error(plan_context):
+    """A non-dict `config['system']` yields status: error from cmd_system."""
+    create_marshal_json(plan_context.fixture_dir, config=_marshal_with_block(system=['not', 'a', 'dict']))
+
+    result = cmd_system(Namespace(sub_noun='retention', verb='get'))
+
+    assert result['status'] == 'error'
+    assert result['error_type'] == 'invalid_type'
+    assert 'system block' in result['error']
+
+
+def test_system_non_dict_retention_block_set_returns_structured_error(plan_context):
+    """A non-dict `config['system']['retention']` yields status: error on the set verb."""
+    create_marshal_json(
+        plan_context.fixture_dir,
+        config=_marshal_with_block(system={'retention': 'totally-wrong'}),
+    )
+
+    result = cmd_system(
+        Namespace(sub_noun='retention', verb='set', field='logs_days', value='7')
+    )
+
+    assert result['status'] == 'error'
+    assert result['error_type'] == 'invalid_type'
+    assert 'retention block' in result['error']
+
+
+def test_project_non_dict_project_block_get_returns_structured_error(plan_context):
+    """A non-dict `config['project']` yields status: error from cmd_project get."""
+    create_marshal_json(
+        plan_context.fixture_dir,
+        config=_marshal_with_block(project=['not', 'a', 'dict']),
+    )
+
+    result = cmd_project(Namespace(verb='get', field='default_base_branch'))
+
+    assert result['status'] == 'error'
+    assert result['error_type'] == 'invalid_type'
+    assert 'project block' in result['error']
+
+
+def test_project_non_dict_project_block_set_returns_structured_error(plan_context):
+    """A non-dict `config['project']` yields status: error from cmd_project set."""
+    create_marshal_json(
+        plan_context.fixture_dir,
+        config=_marshal_with_block(project='totally-wrong'),
+    )
+
+    result = cmd_project(Namespace(verb='set', field='default_base_branch', value='develop'))
+
+    assert result['status'] == 'error'
+    assert result['error_type'] == 'invalid_type'
+    assert 'project block' in result['error']
 
 
 # =============================================================================

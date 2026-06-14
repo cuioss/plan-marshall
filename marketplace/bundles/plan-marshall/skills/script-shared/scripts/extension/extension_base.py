@@ -145,7 +145,7 @@ def derive_globs_from_tree(
             live := sorted(
                 route
                 for route in routes
-                if any(_route_matches(p, route[0]) for p in tracked)
+                if _pattern_matches_any(route[0], tracked)
             )
         )
     }
@@ -209,6 +209,34 @@ def _route_matches(path: str, pattern: str) -> bool:
     if '/' not in pattern:
         return fnmatch.fnmatch(basename(path), pattern)
     return fnmatch.fnmatch(path, pattern)
+
+
+def _pattern_matches_any(pattern: str, tracked: list[str]) -> bool:
+    """Return True when route ``pattern`` matches at least one ``tracked`` path.
+
+    The batch counterpart to the per-element :func:`_route_matches` truthiness
+    loop. Both honour the same two regimes — :func:`_route_matches` decides them
+    per (path, pattern) pair; this function decides the regime once for the whole
+    corpus and hands the matching off to :func:`fnmatch.filter`, which does one
+    batch pass instead of re-dispatching the matcher for every tracked file:
+
+    - **Bare-basename routes** (``pattern`` contains no ``/``): match against the
+      list of path *basenames*, so a config file is matched wherever it lives in
+      the tree.
+    - **Path-bearing routes** (``pattern`` contains ``/``): match against the
+      whole repo-relative paths, preserving the single-``*``-spans-``/`` behavior.
+
+    Args:
+        pattern: A route glob — a bare basename (no ``/``) or a path-bearing glob.
+        tracked: Repo-relative, forward-slashed candidate paths.
+
+    Returns:
+        True when ``pattern`` matches at least one path under the regime its shape
+        selects — identical to ``any(_route_matches(p, pattern) for p in tracked)``.
+    """
+    if '/' not in pattern:
+        return bool(fnmatch.filter([basename(p) for p in tracked], pattern))
+    return bool(fnmatch.filter(tracked, pattern))
 
 
 def _route_root(pattern: str) -> str:
