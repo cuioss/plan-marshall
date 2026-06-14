@@ -59,7 +59,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 
 | `producer` | `{finding_type}` |
 |------------|------------------|
-| `build-runner` | `verification-failure` or `quality-gate-failure` (the orchestrator passes the type it staged) |
+| `build-runner` | `test-failure` or `lint-issue` (the orchestrator passes the type it staged) |
 | `sonar` | `sonar-issue` |
 | `pr-comment` | `pr-comment` |
 
@@ -119,7 +119,7 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
      --project-dir {worktree} checks status --pr-number {pr_number}
    ```
 
-   For each failed check in the output, emit a `verification-failure` finding to the store with `rule-id` set to the failing step name and `detail` set to the message + `details_url`.
+   For each failed check in the output, emit a `test-failure` finding to the store with `rule-id` set to the failing step name and `detail` set to the message + `details_url`.
 
 5. **Fetch PR comments**:
 

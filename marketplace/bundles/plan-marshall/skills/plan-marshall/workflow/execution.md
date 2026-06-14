@@ -261,7 +261,7 @@ guard in `manage-tasks finalize-step`.
 
 ### Verification-feedback triage (leaf returned triage_required)
 
-**Trigger**: the just-returned phase-5-execute dispatch carries `triage_required: true` in its terminal payload (the leaf detected a verification-failure or quality-gate-failure in Step 11 / Step 11b, persisted each finding to the per-plan Q-Gate store via `manage-findings qgate add`, and returned the signal instead of dispatching). The payload carries `producer` (always `build-runner`) and `finding_type` (`verification-failure` or `quality-gate-failure`). The leaf is a **leaf** — it cannot dispatch `verification-feedback` itself; the orchestrator owns that dispatch. See [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
+**Trigger**: the just-returned phase-5-execute dispatch carries `triage_required: true` in its terminal payload (the leaf detected a test-failure or lint-issue in Step 11 / Step 11b, persisted each finding to the per-plan Q-Gate store via `manage-findings qgate add`, and returned the signal instead of dispatching). The payload carries `producer` (always `build-runner`) and `finding_type` (`test-failure` or `lint-issue`). The leaf is a **leaf** — it cannot dispatch `verification-feedback` itself; the orchestrator owns that dispatch. See [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
 
 **Handling procedure** (runs in the orchestrator's main context):
 
