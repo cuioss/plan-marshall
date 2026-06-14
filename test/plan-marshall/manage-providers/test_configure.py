@@ -406,6 +406,215 @@ class TestConfigureMarshalJsonSeparation:
         assert 'project_key' not in loaded
 
 
+_POM_WITH_SONAR = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>de.cuioss</groupId>
+  <artifactId>example</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <properties>
+    <sonar.organization>cuioss-pom-org</sonar.organization>
+    <sonar.projectKey>de.cuioss:example-pom-key</sonar.projectKey>
+  </properties>
+</project>
+"""
+
+_POM_WITHOUT_SONAR = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>de.cuioss</groupId>
+  <artifactId>example</artifactId>
+  <version>1.0-SNAPSHOT</version>
+</project>
+"""
+
+
+class TestConfigureSonarPomDerive:
+    """Tests for auto-deriving Sonar organization/project_key from pom.xml.
+
+    Each test stages a ``pom.xml`` at the project root (the parent of the
+    tracked ``.plan`` config dir) and a sonar-provider-seeded ``marshal.json``,
+    then runs ``configure`` via subprocess and inspects the resulting
+    ``provider_config`` and the result TOON.
+    """
+
+    def _stage(self, tmp_path, monkeypatch, pom_content: str | None):
+        import json as _json
+
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        (plan_dir / 'marshal.json').write_text(_json.dumps({'providers': [_SONAR_PROVIDER]}))
+        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+        # Project root is the parent of the tracked .plan dir.
+        if pom_content is not None:
+            (tmp_path / 'pom.xml').write_text(pom_content)
+        return {'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)}
+
+    def test_auto_derives_org_and_project_key_from_pom(self, tmp_path, monkeypatch):
+        """Maven-detected Sonar configure auto-derives org/project_key from pom.xml."""
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        creds_env = self._stage(tmp_path, monkeypatch, _POM_WITH_SONAR)
+        skill = 'plan-marshall:workflow-integration-sonar'
+        result = run_script(
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            skill,
+            '--auth-type',
+            'token',
+            env_overrides=creds_env,
+        )
+        assert result.returncode == 0
+
+        provider_config = read_provider_config(skill)
+        assert provider_config.get('organization') == 'cuioss-pom-org'
+        assert provider_config.get('project_key') == 'de.cuioss:example-pom-key'
+
+    def test_supplied_matching_value_no_warning(self, tmp_path, monkeypatch):
+        """A supplied --extra value matching the pom value succeeds with no warning."""
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        creds_env = self._stage(tmp_path, monkeypatch, _POM_WITH_SONAR)
+        skill = 'plan-marshall:workflow-integration-sonar'
+        result = run_script(
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            skill,
+            '--auth-type',
+            'token',
+            '--extra',
+            'organization=cuioss-pom-org',
+            env_overrides=creds_env,
+        )
+        assert result.returncode == 0
+        assert 'warning' not in result.stdout.lower()
+        assert 'mismatch' not in result.stdout.lower()
+
+        provider_config = read_provider_config(skill)
+        assert provider_config.get('organization') == 'cuioss-pom-org'
+        # project_key was not supplied → still auto-derived from pom.
+        assert provider_config.get('project_key') == 'de.cuioss:example-pom-key'
+
+    def test_supplied_mismatch_warns_and_preserves_user_value(self, tmp_path, monkeypatch):
+        """A supplied value disagreeing with the pom value warns but keeps the user's value."""
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        creds_env = self._stage(tmp_path, monkeypatch, _POM_WITH_SONAR)
+        skill = 'plan-marshall:workflow-integration-sonar'
+        result = run_script(
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            skill,
+            '--auth-type',
+            'token',
+            '--extra',
+            'organization=user-supplied-org',
+            env_overrides=creds_env,
+        )
+        assert result.returncode == 0
+        assert 'warning' in result.stdout.lower()
+
+        provider_config = read_provider_config(skill)
+        # User's explicit value is preserved, NOT overwritten by the pom value.
+        assert provider_config.get('organization') == 'user-supplied-org'
+
+    def test_non_maven_project_unchanged(self, tmp_path, monkeypatch):
+        """Without a pom.xml, configure behavior is unchanged — no derivation, no warning."""
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        creds_env = self._stage(tmp_path, monkeypatch, pom_content=None)
+        skill = 'plan-marshall:workflow-integration-sonar'
+        result = run_script(
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            skill,
+            '--auth-type',
+            'token',
+            '--extra',
+            'organization=user-org',
+            env_overrides=creds_env,
+        )
+        assert result.returncode == 0
+        assert 'warning' not in result.stdout.lower()
+
+        provider_config = read_provider_config(skill)
+        assert provider_config.get('organization') == 'user-org'
+        # No pom → project_key is not auto-derived.
+        assert 'project_key' not in provider_config
+
+    def test_pom_without_sonar_properties_unchanged(self, tmp_path, monkeypatch):
+        """A pom.xml without Sonar properties leaves behavior unchanged."""
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        creds_env = self._stage(tmp_path, monkeypatch, _POM_WITHOUT_SONAR)
+        skill = 'plan-marshall:workflow-integration-sonar'
+        result = run_script(
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            skill,
+            '--auth-type',
+            'token',
+            env_overrides=creds_env,
+        )
+        assert result.returncode == 0
+        assert 'warning' not in result.stdout.lower()
+
+        provider_config = read_provider_config(skill)
+        assert 'organization' not in provider_config
+        assert 'project_key' not in provider_config
+
+    def test_non_sonar_provider_skips_derivation(self, tmp_path, monkeypatch):
+        """A non-Sonar provider is unaffected even when a Sonar-bearing pom.xml is present."""
+        import json as _json
+
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        non_sonar_provider = {
+            'skill_name': 'plan-marshall:workflow-integration-git',
+            'category': 'version-control',
+            'display_name': 'Git',
+            'default_url': 'https://github.com',
+            'description': 'Git provider',
+        }
+        (plan_dir / 'marshal.json').write_text(_json.dumps({'providers': [non_sonar_provider]}))
+        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+        (tmp_path / 'pom.xml').write_text(_POM_WITH_SONAR)
+
+        skill = 'plan-marshall:workflow-integration-git'
+        result = run_script(
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            skill,
+            '--auth-type',
+            'token',
+            '--url',
+            'https://github.com',
+            env_overrides={'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)},
+        )
+        assert result.returncode == 0
+
+        provider_config = read_provider_config(skill)
+        # Non-Sonar provider must NOT receive pom-derived Sonar coordinates.
+        assert 'organization' not in provider_config
+        assert 'project_key' not in provider_config
+
+
 class TestConfigureAuthTypeMismatch:
     """Tests for configure reconfiguring when auth_type changes."""
 
