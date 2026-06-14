@@ -728,7 +728,11 @@ def _build_commands(
     """
     skill = 'plan-marshall:build-maven:maven'
     is_root_module = not relative_path or relative_path == '.'
-    pl_arg = '' if is_root_module else f' -pl {relative_path}'
+    # ``-am`` (--also-make) builds the selected module's upstream reactor
+    # dependencies first, so an intra-reactor test-jar resolves on a clean
+    # checkout. It is a no-op when there are no upstream reactor dependencies,
+    # so it is universally safe to emit for every non-root module command.
+    pl_arg = '' if is_root_module else f' -pl {relative_path} -am'
 
     # 1. Always (all modules including pom): clean, the verify/quality-gate
     #    gate, install, plus the compile/package reactor passthrough.
