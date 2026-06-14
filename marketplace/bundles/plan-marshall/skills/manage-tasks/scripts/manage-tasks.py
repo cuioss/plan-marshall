@@ -210,7 +210,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_list.add_argument('--ready', action='store_true', help='Only show tasks with no unmet dependencies')
     add_domain_arg(p_list, required=False)
     p_list.add_argument('--profile', help='Filter by profile (e.g., implementation, module_testing)')
-    p_read = subparsers.add_parser('read', help='Read a single task', allow_abbrev=False)
+    # read (get is an accepted alias for the same operation)
+    p_read = subparsers.add_parser('read', aliases=['get'], help='Read a single task', allow_abbrev=False)
     add_plan_id_arg(p_read)
     add_task_number_arg(p_read)
 
@@ -414,6 +415,7 @@ COMMANDS = {
     'remove': cmd_remove,
     'list': cmd_list,
     'read': cmd_read,
+    'get': cmd_read,  # accepted alias for 'read' (argparse subparser alias → same handler)
     'exists': cmd_exists,
     'next': cmd_next,
     'next-tasks': cmd_next_tasks,

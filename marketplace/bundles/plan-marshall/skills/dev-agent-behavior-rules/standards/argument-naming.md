@@ -44,6 +44,16 @@ Use the verb that matches the operation's semantics:
 
 **Why**: callers reach for `read` when they want a body and `get` when they want a value. Mixing these — for example using `get` to return a record body — produces typos that cost time at every call site and make scripts in the same bundle feel arbitrarily inconsistent.
 
+**Accepted-secondary spellings**: three single-record read verbs accept the sibling spelling as an argparse alias so the two interchangeable forms both resolve to the same handler. The canonical verb in the left column stays primary — it is the form documentation and new call sites use; the alias is accepted only so an existing call site spelling the other verb does not fail at parse time:
+
+| Script | Canonical verb | Accepted alias |
+|---|---|---|
+| `manage-lessons` | `get` | `read` |
+| `manage-tasks` | `read` | `get` |
+| `manage-status` | `read` | `get` |
+
+The alias is purely additive at the CLI boundary; it does not change which verb Rule 2's semantics prescribe, and it does not introduce a second handler.
+
 ### Rule 3 — Module-name arguments
 
 When a script argument names a module, prefer `--module` over `--name`. Reserve `--name` for generic strings whose referent is unambiguous from the surrounding subcommand context (for example, naming a brand-new entity at creation time).
@@ -105,18 +115,18 @@ The cross-cutting `--plan-id` and `--audit-plan-id` flags are accepted by virtua
 | `manage-findings` | Clear Q-Gate findings for a phase | `manage-findings qgate clear --plan-id {id} --phase {phase}` |
 | `manage-findings` | List component assessments | `manage-findings assessment list --plan-id {id} [--certainty {c}] [--min-confidence {n}] [--max-confidence {n}] [--file-pattern {glob}]` |
 | `manage-tasks` | List tasks (optionally filtered) | `manage-tasks list --plan-id {id} [--status {s}] [--deliverable {n}] [--ready] [--domain {d}] [--profile {p}]` |
-| `manage-lessons` | Read a lesson by id | `manage-lessons get --lesson-id {id}` |
+| `manage-lessons` | Read a lesson by id | `manage-lessons get --lesson-id {id}` (alias: `read`) |
 | `manage-logging` | Emit a warning-level log entry | `manage-logging work --plan-id {id} --level WARNING --message "{msg}"` |
 | `manage-references` | Read the entire references body | `manage-references read --plan-id {id}` |
 | `manage-references` | Get one field from references | `manage-references get --plan-id {id} --field {name}` |
 | `manage-references` | Set one field in references | `manage-references set --plan-id {id} --field {name} --value {v}` |
-| `manage-status` | Read plan status | `manage-status read --plan-id {id}` |
+| `manage-status` | Read plan status | `manage-status read --plan-id {id}` (alias: `get`) |
 | `manage-status` | Get a metadata field | `manage-status metadata --get --plan-id {id} --field {name}` |
 | `manage-status` | Set a metadata field | `manage-status metadata --set --plan-id {id} --field {name} --value {v}` |
 | `manage-status` | Transition to next phase | `manage-status transition --plan-id {id} --completed {phase}` |
 | `manage-status` | Resolve the worktree path for a plan | `manage-status get-worktree-path --plan-id {id}` |
 | `manage-status` | Classify a change type heuristically | `manage-status change-type-heuristic --plan-id {id}` |
-| `manage-tasks` | Read a task body | `manage-tasks read --plan-id {id} --task-number {n}` |
+| `manage-tasks` | Read a task body | `manage-tasks read --plan-id {id} --task-number {n}` (alias: `get`) |
 | `manage-tasks` | Update a task | `manage-tasks update --plan-id {id} --task-number {n}` |
 | `manage-tasks` | Finalize a step | `manage-tasks finalize-step --plan-id {id} --task-number {n} --step {s} --outcome {done|failed|skipped}` |
 
