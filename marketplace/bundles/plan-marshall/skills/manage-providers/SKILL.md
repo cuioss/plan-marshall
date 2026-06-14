@@ -68,13 +68,14 @@ plan-marshall:manage-providers:credentials
      --skill {skill} --url {url} --auth-type {auth_type} [--scope global|project] \
      [--extra KEY=VALUE ...]
    ```
-3. **If `needs_editing: true`**: Tell user to open the file path and replace placeholders with real secrets
-4. **After user confirms**: Run check to verify completeness:
+3. **If `warnings` is present**: relay each warning string to the user. A warning means a supplied `--extra` value (e.g. `organization`) disagreed with the project's `pom.xml` Sonar property; the script kept the supplied value but surfaces the mismatch so the user can reconcile it.
+4. **If `needs_editing: true`**: Tell user to open the file path and replace placeholders with real secrets
+5. **After user confirms**: Run check to verify completeness:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-providers:credentials check \
      --skill {skill} [--scope global|project]
    ```
-5. **Optionally verify** connectivity:
+6. **Optionally verify** connectivity:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verify \
      --skill {skill} [--scope global|project]
@@ -86,8 +87,10 @@ plan-marshall:manage-providers:credentials
 - `--auth-type none|token|basic` — Auth type (uses provider default if omitted)
 - `--extra KEY=VALUE ...` — Extra fields (e.g., `--extra organization=cuioss project_key=cuioss_repo`)
 
+For the Sonar provider on a Maven project, `configure` auto-derives `organization` and `project_key` from the project's `pom.xml` `<sonar.organization>` / `<sonar.projectKey>` properties when they are not supplied via `--extra`. When such a value IS supplied via `--extra` and disagrees with the pom-derived value, the supplied value is kept and a non-fatal mismatch warning is surfaced (see `warnings` / `mismatches` below).
+
 **Return statuses**:
-- `created` — New file created. If `needs_editing: true`, user must edit the file to add secrets.
+- `created` — New file created. If `needs_editing: true`, user must edit the file to add secrets. May carry `warnings` (list of human-readable mismatch strings — relay each to the user) and `mismatches` (structured `{field, supplied, pom_value}` entries) when a supplied `--extra` value disagrees with the project's `pom.xml` Sonar property.
 - `exists_complete` — File already exists with real secrets. LLM asks user whether to reuse.
 - `exists_incomplete` — File exists but has placeholder secrets. LLM tells user to finish editing.
 
