@@ -39,11 +39,6 @@ include("core", "web")
     return tmp_path
 
 
-# =============================================================================
-# find_settings_file
-# =============================================================================
-
-
 def test_find_settings_kts(gradle_project):
     """Finds settings.gradle.kts file."""
     result = find_settings_file(gradle_project)
@@ -70,11 +65,6 @@ def test_find_settings_prefers_kts(tmp_path):
 def test_find_settings_returns_none(tmp_path):
     """Returns None when no settings file exists."""
     assert find_settings_file(tmp_path) is None
-
-
-# =============================================================================
-# parse_included_projects
-# =============================================================================
 
 
 def test_parse_included_projects_kts(gradle_project):
@@ -110,11 +100,6 @@ def test_parse_included_projects_empty(tmp_path):
     assert projects == []
 
 
-# =============================================================================
-# get_root_project_name
-# =============================================================================
-
-
 def test_get_root_project_name(gradle_project):
     """Extracts rootProject.name from settings."""
     settings = gradle_project / 'settings.gradle.kts'
@@ -126,11 +111,6 @@ def test_get_root_project_name_returns_none(tmp_path):
     settings = tmp_path / 'settings.gradle.kts'
     settings.write_text('include("core")\n')
     assert get_root_project_name(settings) is None
-
-
-# =============================================================================
-# find_build_files
-# =============================================================================
 
 
 def test_find_build_files(gradle_project):
@@ -148,11 +128,6 @@ def test_find_build_files_excludes_hidden_dirs(tmp_path):
     (tmp_path / 'build.gradle').write_text('// root')
     build_files = find_build_files(tmp_path)
     assert len(build_files) == 1
-
-
-# =============================================================================
-# project_path_to_gradle_notation
-# =============================================================================
 
 
 def test_project_path_to_gradle_notation(gradle_project):

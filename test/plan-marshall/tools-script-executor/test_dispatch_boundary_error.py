@@ -46,10 +46,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 from test_execute_script import load_executor_module  # noqa: E402
 
-# =============================================================================
-# CONSTANTS
-# =============================================================================
-
 # Notation used as a generic "normal" failing script in the tests below.
 TEST_NOTATION = 'plan-marshall:manage-files:manage-files'
 
@@ -66,11 +62,6 @@ DEFAULT_STDERR = 'boom: something went wrong'
 DEFAULT_PLAN_ID = 'unit-test-plan'
 
 
-# =============================================================================
-# FIXTURES
-# =============================================================================
-
-
 @pytest.fixture
 def executor_with_mock_log_entry():
     """
@@ -84,11 +75,6 @@ def executor_with_mock_log_entry():
     mock_log_entry = MagicMock()
     executor.log_entry = mock_log_entry
     return executor, mock_log_entry
-
-
-# =============================================================================
-# TESTS: script_internal_failure (exit_code != 2)
-# =============================================================================
 
 
 def test_emit_records_script_internal_failure_for_exit_code_1(executor_with_mock_log_entry):
@@ -159,11 +145,6 @@ def test_emit_records_script_internal_failure_for_unusual_exit_code(executor_wit
     )
 
 
-# =============================================================================
-# TESTS: argparse_rejection (exit_code == 2)
-# =============================================================================
-
-
 def test_emit_records_argparse_rejection_for_exit_code_2(executor_with_mock_log_entry):
     """
     Exit code 2 — Python's argparse convention for parse failures — maps
@@ -209,11 +190,6 @@ def test_emit_records_argparse_rejection_for_exit_code_2(executor_with_mock_log_
     assert '\n' not in message, (
         f'Boundary message must be single-line; embedded newline found: {message!r}'
     )
-
-
-# =============================================================================
-# TESTS: manage-logging recursion no-op (rule #2)
-# =============================================================================
 
 
 def test_emit_suppresses_log_for_manage_logging_recursion_target(executor_with_mock_log_entry):
@@ -268,11 +244,6 @@ def test_emit_suppresses_log_for_manage_logging_recursion_even_with_argparse_exi
     )
 
 
-# =============================================================================
-# TESTS: plan-id fallback chain (rule #3)
-# =============================================================================
-
-
 def test_emit_uses_audit_plan_id_when_script_args_lack_plan_id(executor_with_mock_log_entry):
     """
     When the dispatched script's args do not carry ``--plan-id``, the
@@ -318,11 +289,6 @@ def test_emit_drops_entry_when_no_plan_id_available(executor_with_mock_log_entry
         f'Boundary must drop the entry when no plan_id is available; got '
         f'{mock_log_entry.call_count} call(s).'
     )
-
-
-# =============================================================================
-# TESTS: detail truncation
-# =============================================================================
 
 
 def test_emit_truncates_long_detail_to_configured_limit(executor_with_mock_log_entry):

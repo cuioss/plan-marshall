@@ -62,39 +62,30 @@ LINUX_LAUNCHER_PRIORITY = _mod.LINUX_LAUNCHER_PRIORITY
     list(MACOS_JETBRAINS_BUNDLE_IDS.items()),
 )
 def test_detect_ide_macos_jetbrains_bundle(bundle_id, expected_app):
-    # Arrange
     env = {'__CFBundleIdentifier': bundle_id}
 
-    # Act
     result = detect_ide(env, 'darwin')
 
-    # Assert
     assert result is not None
     assert result.name == expected_app
     assert result.launcher_argv == ('open', '-a', expected_app)
 
 
 def test_detect_ide_macos_vscode():
-    # Arrange
     env = {'TERM_PROGRAM': 'vscode'}
 
-    # Act
     result = detect_ide(env, 'darwin')
 
-    # Assert
     assert result is not None
     assert result.name == 'Visual Studio Code'
     assert result.launcher_argv == ('open', '-a', 'Visual Studio Code')
 
 
 def test_detect_ide_macos_cursor():
-    # Arrange
     env = {'TERM_PROGRAM': 'cursor'}
 
-    # Act
     result = detect_ide(env, 'darwin')
 
-    # Assert
     assert result is not None
     assert result.name == 'Cursor'
     assert result.launcher_argv == ('open', '-a', 'Cursor')
@@ -102,36 +93,27 @@ def test_detect_ide_macos_cursor():
 
 def test_detect_ide_macos_cursor_not_substituted_with_vscode():
     """Regression guard: Cursor must NEVER silently become VS Code."""
-    # Arrange
     env = {'TERM_PROGRAM': 'cursor'}
 
-    # Act
     result = detect_ide(env, 'darwin')
 
-    # Assert
     assert result is not None
     assert 'Visual Studio Code' not in result.name
 
 
 def test_detect_ide_macos_unknown_returns_none():
-    # Arrange
     env = {'TERM_PROGRAM': 'unknown-terminal'}
 
-    # Act
     result = detect_ide(env, 'darwin')
 
-    # Assert
     assert result is None
 
 
 def test_detect_ide_macos_empty_env_returns_none():
-    # Arrange
     env: dict[str, str] = {}
 
-    # Act
     result = detect_ide(env, 'darwin')
 
-    # Assert
     assert result is None
 
 
@@ -141,14 +123,11 @@ def test_detect_ide_macos_empty_env_returns_none():
 
 
 def test_detect_ide_linux_vscode_with_code_on_path():
-    # Arrange
     env = {'TERM_PROGRAM': 'vscode'}
 
-    # Act
     with mock.patch.object(_mod.shutil, 'which', side_effect=lambda name: '/usr/bin/code' if name == 'code' else None):
         result = detect_ide(env, 'linux')
 
-    # Assert
     assert result is not None
     assert result.name == 'Visual Studio Code'
     assert result.launcher_argv == ('code',)
@@ -156,26 +135,21 @@ def test_detect_ide_linux_vscode_with_code_on_path():
 
 def test_detect_ide_linux_vscode_without_code_falls_through_to_jetbrains_probe():
     """When `code` is missing on Linux, fall through to JetBrains probe (not bare open)."""
-    # Arrange
     env = {'TERM_PROGRAM': 'vscode'}
 
-    # Act
     with mock.patch.object(_mod.shutil, 'which', return_value=None):
         result = detect_ide(env, 'linux')
 
-    # Assert: TERM_PROGRAM=vscode but `code` missing AND no JetBrains launcher → None
+    # TERM_PROGRAM=vscode but `code` missing AND no JetBrains launcher → None
     assert result is None
 
 
 def test_detect_ide_linux_cursor_with_cursor_on_path():
-    # Arrange
     env = {'TERM_PROGRAM': 'cursor'}
 
-    # Act
     with mock.patch.object(_mod.shutil, 'which', side_effect=lambda name: '/usr/bin/cursor' if name == 'cursor' else None):
         result = detect_ide(env, 'linux')
 
-    # Assert
     assert result is not None
     assert result.name == 'Cursor'
     assert result.launcher_argv == ('cursor',)
@@ -184,14 +158,13 @@ def test_detect_ide_linux_cursor_with_cursor_on_path():
 @pytest.mark.parametrize('launcher', list(LINUX_LAUNCHER_PRIORITY))
 def test_detect_ide_linux_jetbrains_priority_probe(launcher):
     """Each launcher in LINUX_LAUNCHER_PRIORITY can be detected in isolation."""
-    # Arrange — env has no TERM_PROGRAM signal
+    # env has no TERM_PROGRAM signal
     env: dict[str, str] = {}
 
-    # Act — only `launcher` resolves on PATH
+    # only `launcher` resolves on PATH
     with mock.patch.object(_mod.shutil, 'which', side_effect=lambda name, want=launcher: f'/usr/bin/{name}' if name == want else None):
         result = detect_ide(env, 'linux')
 
-    # Assert
     assert result is not None
     assert result.name == launcher
     assert result.launcher_argv == (launcher,)
@@ -199,39 +172,31 @@ def test_detect_ide_linux_jetbrains_priority_probe(launcher):
 
 def test_detect_ide_linux_priority_first_match_wins():
     """When multiple launchers are on PATH, the priority-ordered first match wins."""
-    # Arrange
     env: dict[str, str] = {}
     on_path = {'pycharm', 'idea', 'webstorm'}
 
-    # Act — all three on PATH; idea has the highest priority
+    # all three on PATH; idea has the highest priority
     with mock.patch.object(_mod.shutil, 'which', side_effect=lambda name: f'/usr/bin/{name}' if name in on_path else None):
         result = detect_ide(env, 'linux')
 
-    # Assert
     assert result is not None
     assert result.name == 'idea'
 
 
 def test_detect_ide_linux_no_launchers_returns_none():
-    # Arrange
     env: dict[str, str] = {}
 
-    # Act
     with mock.patch.object(_mod.shutil, 'which', return_value=None):
         result = detect_ide(env, 'linux')
 
-    # Assert
     assert result is None
 
 
 def test_detect_ide_unknown_platform_returns_none():
-    # Arrange
     env = {'TERM_PROGRAM': 'vscode'}
 
-    # Act
     result = detect_ide(env, 'win32')
 
-    # Assert
     assert result is None
 
 
@@ -241,26 +206,20 @@ def test_detect_ide_unknown_platform_returns_none():
 
 
 def test_build_launch_command_macos_open_a():
-    # Arrange
     ide = IdeRecord(name='IntelliJ IDEA', launcher_argv=('open', '-a', 'IntelliJ IDEA'))
     path = Path('/abs/path/to/file.md')
 
-    # Act
     argv = build_launch_command(ide, path)
 
-    # Assert
     assert argv == ['open', '-a', 'IntelliJ IDEA', '/abs/path/to/file.md']
 
 
 def test_build_launch_command_linux_code():
-    # Arrange
     ide = IdeRecord(name='Visual Studio Code', launcher_argv=('code',))
     path = Path('/abs/path/to/file.md')
 
-    # Act
     argv = build_launch_command(ide, path)
 
-    # Assert
     assert argv == ['code', '/abs/path/to/file.md']
 
 
@@ -270,66 +229,51 @@ def test_build_launch_command_linux_code():
 
 
 def test_is_open_in_ide_enabled_explicit_true(plan_context):
-    # Arrange
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
 
-    # Act
     result = is_open_in_ide_enabled()
 
-    # Assert
     assert result is True
 
 
 def test_is_open_in_ide_enabled_explicit_false(plan_context):
-    # Arrange
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': False}}), encoding='utf-8'
     )
 
-    # Act
     result = is_open_in_ide_enabled()
 
-    # Assert
     assert result is False
 
 
 def test_is_open_in_ide_enabled_missing_open_in_ide_key_defaults_true(plan_context):
     """plan namespace present but no `open_in_ide` key → default True."""
-    # Arrange
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'phase-1-init': {'use_worktree': True}}}), encoding='utf-8'
     )
 
-    # Act
     result = is_open_in_ide_enabled()
 
-    # Assert
     assert result is True
 
 
 def test_is_open_in_ide_enabled_missing_plan_namespace_defaults_true(plan_context):
     """No plan namespace at all → default True."""
-    # Arrange
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'skill_domains': {}}), encoding='utf-8'
     )
 
-    # Act
     result = is_open_in_ide_enabled()
 
-    # Assert
     assert result is True
 
 
 def test_is_open_in_ide_enabled_no_marshal_file_defaults_true(plan_context):
     """marshal.json absent entirely → default True."""
-    # Arrange
-    # Act
     result = is_open_in_ide_enabled()
 
-    # Assert
     assert result is True
 
 
@@ -344,11 +288,9 @@ def test_is_open_in_ide_enabled_non_dict_top_level_raises_value_error(plan_conte
     implementation called `data.get('plan')` directly, which raises AttributeError
     when `data` is a list/scalar. The guard turns that into a clear ValueError.
     """
-    # Arrange
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     marshal_path.write_text(top_level_value, encoding='utf-8')
 
-    # Act / Assert
     with pytest.raises(ValueError) as exc_info:
         is_open_in_ide_enabled()
 
@@ -380,13 +322,11 @@ def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(plan_context, 
     fails loudly instead.
     """
     label, value = open_in_ide_value
-    # Arrange
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     marshal_path.write_text(
         json.dumps({'plan': {'open_in_ide': value}}), encoding='utf-8'
     )
 
-    # Act / Assert
     with pytest.raises(ValueError) as exc_info:
         is_open_in_ide_enabled()
 
@@ -400,7 +340,6 @@ def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(plan_context, 
 
 
 def test_cmd_open_in_ide_mode_a_macos_vscode_success(plan_context):
-    # Arrange
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
@@ -416,10 +355,8 @@ def test_cmd_open_in_ide_mode_a_macos_vscode_success(plan_context):
     ):
         mock_subprocess.run.return_value = completed
 
-        # Act
         result = cmd_open_in_ide(args)
 
-    # Assert
     assert result['status'] == 'success'
     assert result['ide'] == 'Visual Studio Code'
     assert '/abs/path/file.md' in result['command']
@@ -428,7 +365,6 @@ def test_cmd_open_in_ide_mode_a_macos_vscode_success(plan_context):
 
 def test_cmd_open_in_ide_disabled_by_config_short_circuits(plan_context):
     """Disabled-by-config: detect_ide and subprocess.run are NEVER called."""
-    # Arrange
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': False}}), encoding='utf-8'
     )
@@ -438,10 +374,8 @@ def test_cmd_open_in_ide_disabled_by_config_short_circuits(plan_context):
         mock.patch.object(_mod, 'detect_ide') as mock_detect,
         mock.patch.object(_mod, 'subprocess') as mock_subprocess,
     ):
-        # Act
         result = cmd_open_in_ide(args)
 
-    # Assert
     assert result['status'] == 'success'
     assert result['action'] == 'skipped'
     assert result['reason'] == 'disabled_by_config'
@@ -451,7 +385,6 @@ def test_cmd_open_in_ide_disabled_by_config_short_circuits(plan_context):
 
 def test_cmd_open_in_ide_missing_key_acts_as_enabled(plan_context):
     """Missing plan.open_in_ide sub-namespace → behaves as if enabled=true."""
-    # Arrange
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {}}), encoding='utf-8'
     )
@@ -465,16 +398,14 @@ def test_cmd_open_in_ide_missing_key_acts_as_enabled(plan_context):
     ):
         mock_subprocess.run.return_value = completed
 
-        # Act
         result = cmd_open_in_ide(args)
 
-    # Assert: detection ran (we matched VS Code on macOS via TERM_PROGRAM)
+    # detection ran (we matched VS Code on macOS via TERM_PROGRAM)
     assert result['status'] == 'success'
     assert result['ide'] == 'Visual Studio Code'
 
 
 def test_cmd_open_in_ide_unknown_ide_returns_ide_not_detected(plan_context):
-    # Arrange
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
@@ -484,16 +415,13 @@ def test_cmd_open_in_ide_unknown_ide_returns_ide_not_detected(plan_context):
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
         mock.patch.dict(_mod.os.environ, {}, clear=True),
     ):
-        # Act
         result = cmd_open_in_ide(args)
 
-    # Assert
     assert result['status'] == 'error'
     assert result['reason'] == 'ide_not_detected'
 
 
 def test_cmd_open_in_ide_launcher_missing_returns_launcher_missing(plan_context):
-    # Arrange
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
@@ -506,32 +434,27 @@ def test_cmd_open_in_ide_launcher_missing_returns_launcher_missing(plan_context)
     ):
         mock_subprocess.run.side_effect = FileNotFoundError('open not found')
 
-        # Act
         result = cmd_open_in_ide(args)
 
-    # Assert
     assert result['status'] == 'error'
     assert result['reason'] == 'launcher_missing'
 
 
 def test_cmd_open_in_ide_mode_b_without_document_returns_invalid_arguments(plan_context):
-    # Arrange — emulate the case where argparse let through plan-id without --document
+    # emulate the case where argparse let through plan-id without --document
     # (e.g., direct function call rather than CLI invocation).
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
     args = Namespace(path=None, plan_id='some-plan', document=None)
 
-    # Act
     result = cmd_open_in_ide(args)
 
-    # Assert
     assert result['status'] == 'error'
     assert result['reason'] == 'invalid_arguments'
 
 
 def test_cmd_open_in_ide_mode_b_document_resolution_failure(plan_context):
-    # Arrange
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
@@ -542,10 +465,8 @@ def test_cmd_open_in_ide_mode_b_document_resolution_failure(plan_context):
     with mock.patch.object(_mod, 'subprocess') as mock_subprocess:
         mock_subprocess.run.return_value = proc
 
-        # Act
         result = cmd_open_in_ide(args)
 
-    # Assert
     assert result['status'] == 'error'
     assert result['reason'] == 'document_resolution_failed'
 
@@ -557,11 +478,9 @@ def test_cmd_open_in_ide_mode_b_document_resolution_failure(plan_context):
 
 def test_manage_files_source_does_not_import_tempfile():
     """AST guard: `tempfile` MUST NOT appear in any import statement."""
-    # Arrange
     source = _MANAGE_FILES_SCRIPT.read_text(encoding='utf-8')
     tree = ast.parse(source)
 
-    # Act
     bad_imports: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -572,13 +491,11 @@ def test_manage_files_source_does_not_import_tempfile():
             if node.module == 'tempfile' or (node.module or '').startswith('tempfile.'):
                 bad_imports.append(node.module or '')
 
-    # Assert
     assert bad_imports == [], f'manage-files.py must not import tempfile, found: {bad_imports}'
 
 
 def test_manage_files_source_has_no_temp_file_tokens():
     """Regex guard: source must not contain tempfile-related identifiers."""
-    # Arrange
     source = _MANAGE_FILES_SCRIPT.read_text(encoding='utf-8')
 
     # Strip module-level docstring lines that may legitimately mention the token
@@ -593,7 +510,6 @@ def test_manage_files_source_has_no_temp_file_tokens():
 
     forbidden = ('tempfile', 'NamedTemporaryFile', 'mkstemp', 'mkdtemp')
 
-    # Act
     hits: list[str] = []
     for token in forbidden:
         # Use word-boundary regex so partial matches inside other identifiers
@@ -601,16 +517,14 @@ def test_manage_files_source_has_no_temp_file_tokens():
         if re.search(rf'\b{re.escape(token)}\b', source_without_doc):
             hits.append(token)
 
-    # Assert
     assert hits == [], f'manage-files.py contains forbidden temp-file tokens (outside docstring): {hits}'
 
 
 def test_open_in_ide_path_and_plan_id_share_mutex_group():
     """AST guard: --path and --plan-id MUST be added to the same mutex group."""
-    # Arrange
     source = _MANAGE_FILES_SCRIPT.read_text(encoding='utf-8')
 
-    # Act / Assert — locate the open-in-ide subparser block and verify both
+    # locate the open-in-ide subparser block and verify both
     # --path and --plan-id are added via the SAME mutex variable.
     # The simplest deterministic check: scan for a block that contains both
     # `open_mutex.add_argument('--path'` and `open_mutex.add_argument('--plan-id'`

@@ -104,10 +104,10 @@ def test_ceremony_policy_handler_script_is_deleted():
 
 def test_each_automation_knob_reads_via_phase_get(plan_context):
     """Each migrated knob reads back through ``plan phase-6-finalize get`` with its default."""
-    # Arrange — fresh marshal.json (no overrides → default merge)
+    # fresh marshal.json (no overrides → default merge)
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # Act / Assert — each knob resolves to its migrated default via the phase get path
+    # each knob resolves to its migrated default via the phase get path
     for knob, expected in _MIGRATED_KNOBS:
         result = _cmd_quality_phases_mod.cmd_phase(
             Namespace(verb='get', field=knob), 'phase-6-finalize'
@@ -118,10 +118,9 @@ def test_each_automation_knob_reads_via_phase_get(plan_context):
 
 def test_automation_knob_set_then_get_roundtrips(plan_context):
     """``plan phase-6-finalize set --field auto_merge_after_ci --value false`` round-trips."""
-    # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # Act — set then get
+    # set then get
     set_result = _cmd_quality_phases_mod.cmd_phase(
         Namespace(verb='set', field='auto_merge_after_ci', value='false'), 'phase-6-finalize'
     )
@@ -129,17 +128,15 @@ def test_automation_knob_set_then_get_roundtrips(plan_context):
         Namespace(verb='get', field='auto_merge_after_ci'), 'phase-6-finalize'
     )
 
-    # Assert — bool coercion + persistence
+    # bool coercion + persistence
     assert set_result['status'] == 'success'
     assert get_result['value'] is False
 
 
 def test_run_at_all_gate_set_then_get_roundtrips(plan_context):
     """``plan phase-6-finalize set --field self_review --value always`` round-trips."""
-    # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # Act
     set_result = _cmd_quality_phases_mod.cmd_phase(
         Namespace(verb='set', field='self_review', value='always'), 'phase-6-finalize'
     )
@@ -147,7 +144,6 @@ def test_run_at_all_gate_set_then_get_roundtrips(plan_context):
         Namespace(verb='get', field='self_review'), 'phase-6-finalize'
     )
 
-    # Assert
     assert set_result['status'] == 'success'
     assert set_result['value'] == 'always'
     assert get_result['value'] == 'always'

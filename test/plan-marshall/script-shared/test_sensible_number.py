@@ -35,10 +35,8 @@ class TestParseSensibleIntAccepted:
         ],
     )
     def test_accepted_form_resolves_to_int(self, value, expected):
-        # Arrange / Act
         result = parse_sensible_int(value)
 
-        # Assert
         assert result == expected
         assert isinstance(result, int)
 
@@ -64,33 +62,26 @@ class TestParseSensibleIntRejected:
         ],
     )
     def test_rejected_form_raises_value_error(self, value):
-        # Arrange / Act / Assert
         with pytest.raises(ValueError):
             parse_sensible_int(value)
 
     def test_fractional_result_is_rejected(self):
-        # Arrange: 1.5 * 1 (no suffix) does not divide cleanly into an int.
+        # 1.5 with no suffix does not divide cleanly into an int.
         with pytest.raises(ValueError):
             parse_sensible_int('1.5')
 
     def test_error_message_names_offending_input(self):
-        # Arrange
         offending = '50T'
 
-        # Act
         with pytest.raises(ValueError) as exc_info:
             parse_sensible_int(offending)
 
-        # Assert
         assert '50T' in str(exc_info.value)
 
     def test_error_message_names_garbage_input(self):
-        # Arrange
         offending = 'totally-not-a-number'
 
-        # Act
         with pytest.raises(ValueError) as exc_info:
             parse_sensible_int(offending)
 
-        # Assert
         assert offending in str(exc_info.value)

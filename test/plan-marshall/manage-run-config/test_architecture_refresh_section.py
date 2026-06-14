@@ -91,11 +91,9 @@ def test_set_tier_0_round_trip(plan_context):
     assert set_data.get('field') == 'tier_0'
     assert set_data.get('value') == 'disabled'
 
-    # Verify file contents on disk
     config = json.loads((plan_dir / 'run-configuration.json').read_text())
     assert config['architecture_refresh']['tier_0'] == 'disabled'
 
-    # Round-trip via get
     get_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0')
     assert get_result.success, f'get should succeed: {get_result.stderr}'
     assert get_result.toon().get('value') == 'disabled'
@@ -121,7 +119,6 @@ def test_set_tier_0_rejects_unknown_value(plan_context):
 
     result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'maybe')
 
-    # argparse choices=… rejects with non-zero exit
     assert result.returncode != 0, 'Unknown value should be rejected by argparse'
 
 
@@ -180,11 +177,9 @@ def test_set_tier_1_round_trip(plan_context):
     assert set_data.get('field') == 'tier_1'
     assert set_data.get('value') == 'auto'
 
-    # Verify file contents on disk
     config = json.loads((plan_dir / 'run-configuration.json').read_text())
     assert config['architecture_refresh']['tier_1'] == 'auto'
 
-    # Round-trip via get
     get_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-1')
     assert get_result.success, f'get should succeed: {get_result.stderr}'
     assert get_result.toon().get('value') == 'auto'
@@ -238,7 +233,6 @@ def test_tier_0_and_tier_1_persist_independently(plan_context):
     assert config['architecture_refresh']['tier_0'] == 'disabled'
     assert config['architecture_refresh']['tier_1'] == 'auto'
 
-    # Re-read via the CLI to confirm
     t0 = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0').toon()
     t1 = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-1').toon()
     assert t0.get('value') == 'disabled'

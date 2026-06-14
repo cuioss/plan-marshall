@@ -79,11 +79,6 @@ def load_executor_module():
     return module
 
 
-# =============================================================================
-# TESTS: resolve_notation
-# =============================================================================
-
-
 def test_resolve_exact_match():
     """Resolve exact notation match."""
     executor = load_executor_module()
@@ -113,11 +108,6 @@ def test_resolve_all_mappings():
     assert 'plan-marshall:manage-files' in executor.SCRIPTS
     assert 'pm-dev-builder:builder-maven-rules' in executor.SCRIPTS
     assert 'test:skill' in executor.SCRIPTS
-
-
-# =============================================================================
-# TESTS: extract_audit_plan_id
-# =============================================================================
 
 
 def test_extract_audit_plan_id_space_separated():
@@ -160,11 +150,6 @@ def test_extract_audit_plan_id_at_end():
     plan_id, cleaned = executor.extract_audit_plan_id(['--bundles', 'pm-dev-java', '--audit-plan-id', 'end-plan'])
     assert plan_id == 'end-plan', f"Expected 'end-plan', got {plan_id}"
     assert cleaned == ['--bundles', 'pm-dev-java'], f"Expected ['--bundles', 'pm-dev-java'], got {cleaned}"
-
-
-# =============================================================================
-# TESTS: Script execution via subprocess
-# =============================================================================
 
 
 def test_successful_script_execution():
@@ -220,11 +205,6 @@ print(json.dumps(sys.argv[1:]))
         assert received_args == args, f'Expected {args}, got {received_args}'
 
 
-# =============================================================================
-# TESTS: should_skip_logging (meta-logging noise prevention)
-# =============================================================================
-
-
 def test_skip_logging_for_manage_log_success():
     """Skip logging for successful manage-log calls (avoids meta-logging noise)."""
     executor = load_executor_module()
@@ -253,11 +233,6 @@ def test_log_normal_scripts_failure():
     assert result is False, 'Should log normal script calls on failure'
 
 
-# =============================================================================
-# TESTS: generate_executor.py script
-# =============================================================================
-
-
 def test_generate_script_help():
     """Generate script shows help."""
     script_path = SCRIPTS_DIR / 'generate_executor.py'
@@ -284,27 +259,19 @@ def test_verify_script_help():
         assert 'check' in result.stdout, "Missing 'check' subcommand in help"
 
 
-# =============================================================================
-# TESTS: _derive_failure_detail (option-A precedence)
-# =============================================================================
-#
 # The dispatch-boundary [ERROR] line surfaces a single-line ``detail=`` field
 # describing why a dispatched script exited non-zero. plan-marshall scripts
 # report structured errors on STDOUT as a ``status: error`` TOON payload while
 # exiting non-zero with EMPTY stderr — so a stderr-only diagnostic would render
 # the work.log entry blank and undiagnosable. ``_derive_failure_detail``
 # implements option-A precedence:
-#
 #   1. stdout parses as a ``status: error`` TOON with a ``message`` → that message
 #   2. else stdout non-empty → raw stdout
 #   3. else stderr non-empty → raw stderr (last resort, real stderr-only crashes)
-#
 # The chosen text is truncated to ``_DISPATCH_FAILURE_DETAIL_LIMIT`` and has its
 # newlines collapsed so the entry stays single-line. These tests pin each
 # precedence rung; the boundary-level behaviour (recursion guard, plan-id
 # fallback) lives in test_dispatch_boundary_error.py and is not duplicated here.
-
-
 def test_derive_detail_precedence1_status_error_toon_message():
     """Precedence (1): a status: error TOON on stdout yields its message field.
 
@@ -424,10 +391,6 @@ def test_derive_detail_truncated_toon_message_is_capped():
     )
 
 
-# =============================================================================
-# TESTS: emit_dispatch_failure_work_log surfaces stdout-derived detail=
-# =============================================================================
-#
 # These assert the BOUNDARY emits a ``detail=`` field carrying the
 # stdout-derived reason — the regression being that a non-zero exit reporting
 # its error on stdout (empty stderr) must NOT produce a bare ``stderr=`` field
@@ -495,10 +458,6 @@ def test_emit_detail_is_not_blank_for_stdout_only_failure():
     assert 'something broke' in after_detail, f'Expected the stdout message after detail=: {message!r}'
 
 
-# =============================================================================
-# TESTS: end-to-end dispatch-failure work.log regression
-# =============================================================================
-#
 # Reproduces the original symptom through the FULL executor main() path: a stub
 # script that prints a ``status: error`` TOON to stdout and exits non-zero with
 # EMPTY stderr is dispatched via a materialized execute-script.py. The plan is
@@ -506,8 +465,6 @@ def test_emit_detail_is_not_blank_for_stdout_only_failure():
 # is read back to assert the script_failure line carries the stub message and is
 # NOT a blank diagnostic. This test FAILS against the pre-fix template (which
 # emitted only stderr) and PASSES after the stdout-forwarding fix.
-
-
 def _materialize_executor(target_path: Path, stub_notation: str, stub_script_path: Path) -> None:
     """Render the execute-script template to ``target_path`` with a single
     stub-script notation registered, so the full main() dispatch path can run as

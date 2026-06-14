@@ -4,8 +4,7 @@ Tests the centralized cmd_run routing that replaces duplicated code
 across Maven, Gradle, npm, and Python build skills.
 """
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
+import importlib.util
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,10 +33,6 @@ _build_shared_mod = _load_module('_build_shared', '_build_shared.py')
 Issue = _build_parse_mod.Issue
 UnitTestSummary = _build_parse_mod.UnitTestSummary
 cmd_run_common = _build_shared_mod.cmd_run_common
-
-# =============================================================================
-# Fixtures
-# =============================================================================
 
 
 def _make_result(
@@ -89,11 +84,6 @@ def _command_parser(log_file, command):
     return issues, None, 'FAILURE'
 
 
-# =============================================================================
-# Tests: Success path
-# =============================================================================
-
-
 class TestCmdRunCommonSuccess:
     """Tests for successful build result routing."""
 
@@ -115,11 +105,6 @@ class TestCmdRunCommonSuccess:
         assert '[EXEC] ./mvnw clean verify' in stderr
 
 
-# =============================================================================
-# Tests: Timeout path
-# =============================================================================
-
-
 class TestCmdRunCommonTimeout:
     """Tests for timeout result routing."""
 
@@ -136,11 +121,6 @@ class TestCmdRunCommonTimeout:
         assert 'timeout' in stdout
 
 
-# =============================================================================
-# Tests: Execution error path (exit_code == -1)
-# =============================================================================
-
-
 class TestCmdRunCommonExecutionError:
     """Tests for execution error routing (wrapper not found, log file failed)."""
 
@@ -154,11 +134,6 @@ class TestCmdRunCommonExecutionError:
         cmd_run_common(result, _noop_parser, 'maven')
         stdout = capsys.readouterr().out
         assert 'log_file' in stdout
-
-
-# =============================================================================
-# Tests: Build failure path (parsing)
-# =============================================================================
 
 
 class TestCmdRunCommonBuildFailure:
@@ -205,11 +180,6 @@ class TestCmdRunCommonBuildFailure:
         assert 'build_failed' in stdout
 
 
-# =============================================================================
-# Tests: parser_needs_command flag
-# =============================================================================
-
-
 class TestCmdRunCommonParserNeedsCommand:
     """Tests for parser_needs_command=True (npm-style parsers)."""
 
@@ -218,11 +188,6 @@ class TestCmdRunCommonParserNeedsCommand:
         cmd_run_common(result, _command_parser, 'npm', parser_needs_command=True)
         stdout = capsys.readouterr().out
         assert 'error in npm run test' in stdout
-
-
-# =============================================================================
-# Tests: Output format selection
-# =============================================================================
 
 
 class TestCmdRunCommonOutputFormat:
@@ -242,11 +207,6 @@ class TestCmdRunCommonOutputFormat:
         assert 'status: success' in stdout
 
 
-# =============================================================================
-# Tests: Mode filtering
-# =============================================================================
-
-
 class TestCmdRunCommonModeFiltering:
     """Tests for mode-based warning filtering."""
 
@@ -254,14 +214,8 @@ class TestCmdRunCommonModeFiltering:
         result = _make_result(status='error', exit_code=1, error='Build failed')
         cmd_run_common(result, _error_parser, 'maven', mode='errors')
         stdout = capsys.readouterr().out
-        # Errors should be present, warnings should not
         assert 'cannot find symbol' in stdout
         assert 'deprecated API' not in stdout
-
-
-# =============================================================================
-# Tests: Green-build reconciliation of pending build findings
-# =============================================================================
 
 
 class TestCmdRunCommonGreenBuildReconciliation:

@@ -10,34 +10,15 @@ and every input/output pair is reproducible.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PROJECT_ROOT
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
+_mod = load_script_module(
+    'plan-marshall', 'manage-status', '_cmd_aggregate_confidence.py', '_cmd_aggregate_confidence_under_test'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mod = _load_module('_cmd_aggregate_confidence_under_test', '_cmd_aggregate_confidence.py')
 cmd_aggregate_confidence = _mod.cmd_aggregate_confidence
 
 
@@ -272,7 +253,9 @@ def test_aggregate_confidence_registered_in_manage_status_dispatch():
     """argparse routes 'aggregate-confidence' to cmd_aggregate_confidence."""
     import argparse  # noqa: PLC0415
 
-    manage_status = _load_module('_manage_status_dispatch_check_ac', 'manage-status.py')
+    manage_status = load_script_module(
+        'plan-marshall', 'manage-status', 'manage-status.py', '_manage_status_dispatch_check_ac'
+    )
     assert manage_status.cmd_aggregate_confidence is cmd_aggregate_confidence or callable(
         manage_status.cmd_aggregate_confidence
     )

@@ -108,13 +108,12 @@ def _patch_aggregate(monkeypatch):
 
 def test_merge_build_map_returns_seed_from_build_block():
     """merge_build_map returns a deep copy of build.map unchanged."""
-    # Arrange — build_map lives under the top-level build block (relocated).
+    # build_map lives under the top-level build block (relocated).
     config = {'build': {'map': _FAKE_AGGREGATED}}
 
-    # Act
     merged = _config_core_mod.merge_build_map(config)
 
-    # Assert — same structure, deep-copied (mutating result must not touch config)
+    # same structure, deep-copied (mutating result must not touch config)
     assert merged == _FAKE_AGGREGATED
     merged['python'][0]['build_class'] = 'mutated'
     assert config['build']['map']['python'][0]['build_class'] == 'compile'
@@ -175,14 +174,12 @@ def test_build_map_seed_writes_aggregated_structure_under_build_block(plan_conte
     Init no longer seeds build_map, so a bare init leaves the block absent; the
     first explicit seed against the deterministic fake is the authoritative write.
     """
-    # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _patch_aggregate(monkeypatch)
 
-    # Act
     result = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
 
-    # Assert — handler reports a seed action and the persisted block matches
+    # handler reports a seed action and the persisted block matches
     assert result['status'] == 'success'
     assert result['action'] == 'seeded'
     assert result['domain_count'] == 1
@@ -196,7 +193,7 @@ def test_build_map_seed_writes_aggregated_structure_under_build_block(plan_conte
 
 def test_build_map_seed_is_write_once(plan_context, monkeypatch):
     """A re-seed preserves an existing seed (write-once) — never clobbers it."""
-    # Arrange — first seed writes the fake map (init no longer pre-seeds)
+    # first seed writes the fake map (init no longer pre-seeds)
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _patch_aggregate(monkeypatch)
     first = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
@@ -209,10 +206,10 @@ def test_build_map_seed_is_write_once(plan_context, monkeypatch):
     config['build']['map']['python'][0]['build_class'] = 'none'
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
-    # Act — re-seed
+    # re-seed
     second = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
 
-    # Assert — re-seed preserved the user correction, did not clobber
+    # re-seed preserved the user correction, did not clobber
     assert second['action'] == 'preserved'
     after = json.loads(marshal_path.read_text(encoding='utf-8'))
     assert after['build']['map']['python'][0]['build_class'] == 'none'
@@ -220,7 +217,7 @@ def test_build_map_seed_is_write_once(plan_context, monkeypatch):
 
 def test_user_correction_survives_reseed_and_wins_at_read(plan_context, monkeypatch):
     """A direct correction to build.map survives a re-seed and wins at read."""
-    # Arrange — seed, then correct an entry directly on the seeded block.
+    # seed, then correct an entry directly on the seeded block.
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _patch_aggregate(monkeypatch)
     _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
@@ -230,11 +227,11 @@ def test_user_correction_survives_reseed_and_wins_at_read(plan_context, monkeypa
     config['build']['map']['python'][0]['build_class'] = 'none'
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
-    # Act — re-seed (write-once preserves the corrected seed), then read.
+    # re-seed (write-once preserves the corrected seed), then read.
     _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
     read_result = _cmd_build_map_mod.cmd_build_map_read(Namespace(verb='read'))
 
-    # Assert — correction survived re-seed and wins at read
+    # correction survived re-seed and wins at read
     persisted = json.loads(marshal_path.read_text(encoding='utf-8'))
     assert persisted['build']['map']['python'][0]['build_class'] == 'none'
     assert read_result['status'] == 'success'
@@ -244,15 +241,12 @@ def test_user_correction_survives_reseed_and_wins_at_read(plan_context, monkeypa
 
 def test_build_map_read_returns_seed(plan_context, monkeypatch):
     """build-map read returns the seed from build.map unchanged."""
-    # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _patch_aggregate(monkeypatch)
     _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
 
-    # Act
     result = _cmd_build_map_mod.cmd_build_map_read(Namespace(verb='read'))
 
-    # Assert
     assert result['status'] == 'success'
     assert result['build_map'] == _FAKE_AGGREGATED
     assert result['domain_count'] == 1
@@ -264,13 +258,12 @@ def test_build_map_read_fails_closed_when_seed_absent(plan_context):
     Init no longer seeds the block, so a bare init already leaves build_map absent
     — read must fail closed without any pre-read stripping.
     """
-    # Arrange — bare init leaves the config without a build.map block.
+    # bare init leaves the config without a build.map block.
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # Act
     result = _cmd_build_map_mod.cmd_build_map_read(Namespace(verb='read'))
 
-    # Assert — fail-closed surfaces as a structured error, not an empty success.
+    # fail-closed surfaces as a structured error, not an empty success.
     assert result['status'] == 'error'
     assert 'build.map' in result['error']
 
@@ -288,12 +281,11 @@ def test_seed_never_writes_retired_override_keys(plan_context, monkeypatch):
     seeded entries. The build_map cluster no longer carries any activation_globs of
     its own — pre-push activation derives from the build_map's per-entry globs.
     """
-    # Arrange / Act
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _patch_aggregate(monkeypatch)
     _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
 
-    # Assert — the retired override key never appears anywhere in the persisted config.
+    # the retired override key never appears anywhere in the persisted config.
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
     assert 'build_map_overrides' not in config
@@ -462,13 +454,13 @@ def test_aggregate_build_map_collects_route_matching_out_of_scripts_production_p
     explicit route ``marketplace/targets/*.py`` — the old static-glob seed
     would have silently missed it.
     """
-    # Arrange — an extension declaring an out-of-scripts production route.
+    # an extension declaring an out-of-scripts production route.
     _wire_real_aggregator(monkeypatch, _PythonRouteExtension())
 
-    # Act — run the REAL aggregator.
+    # run the REAL aggregator.
     aggregated = _config_core_mod.aggregate_build_map()
 
-    # Assert — a production-role route in the python domain matches the
+    # a production-role route in the python domain matches the
     # out-of-scripts file.
     assert 'python' in aggregated
     prod_globs = [
@@ -490,13 +482,11 @@ def test_aggregate_build_map_stamps_each_entry_with_a_build_class(monkeypatch):
     not a bare (glob, role) tuple. The build_class NAMES the canonical command
     directly (no name-to-name indirection).
     """
-    # Arrange
     _wire_real_aggregator(monkeypatch, _PythonRouteExtension())
 
-    # Act
     aggregated = _config_core_mod.aggregate_build_map()
 
-    # Assert — every entry carries the three keys and a sensible build_class.
+    # every entry carries the three keys and a sensible build_class.
     entries = aggregated['python']
     for entry in entries:
         assert set(entry.keys()) == {'glob', 'role', 'build_class'}
@@ -513,15 +503,15 @@ def test_seed_cli_persists_route_for_out_of_scripts_glob(plan_context, monkeypat
     persisted build.map must carry a python-domain glob matching
     that file. Init no longer pre-seeds, so the seed writes the derived block.
     """
-    # Arrange — init, wire the real aggregator against an extension declaring an
+    # init, wire the real aggregator against an extension declaring an
     # out-of-scripts production route.
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _wire_real_aggregator(monkeypatch, _PythonRouteExtension())
 
-    # Act — seed through the CLI handler.
+    # seed through the CLI handler.
     result = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
 
-    # Assert — handler seeded, and the persisted block carries the matching glob.
+    # handler seeded, and the persisted block carries the matching glob.
     assert result['status'] == 'success'
     assert result['action'] == 'seeded'
 
@@ -545,15 +535,15 @@ def test_read_cli_returns_route_seed(plan_context, monkeypatch):
     through cmd_build_map_read: the merged build_map the read CLI returns must
     carry the python-domain glob that matches the out-of-scripts production .py.
     """
-    # Arrange — init, wire, seed.
+    # init, wire, seed.
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _wire_real_aggregator(monkeypatch, _PythonRouteExtension())
     _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed'))
 
-    # Act — read back through the CLI.
+    # read back through the CLI.
     result = _cmd_build_map_mod.cmd_build_map_read(Namespace(verb='read'))
 
-    # Assert — read succeeds and surfaces the matching glob.
+    # read succeeds and surfaces the matching glob.
     assert result['status'] == 'success'
     assert 'python' in result['build_map']
     prod_globs = [e['glob'] for e in result['build_map']['python'] if e['role'] == 'production']
@@ -573,13 +563,12 @@ def test_aggregate_build_map_omits_domain_with_no_routes(monkeypatch):
     than appearing with an empty list). The extension declares itself applicable,
     so the omission is attributable to the empty route set — not the filter.
     """
-    # Arrange — an applicable extension declaring no routes at all.
+    # an applicable extension declaring no routes at all.
     _wire_real_aggregator(monkeypatch, _NoRouteExtension())
 
-    # Act
     aggregated = _config_core_mod.aggregate_build_map()
 
-    # Assert — the python domain contributed nothing and is omitted.
+    # the python domain contributed nothing and is omitted.
     assert 'python' not in aggregated
 
 
@@ -640,13 +629,12 @@ def test_aggregate_includes_applicable_domain(monkeypatch):
     module for which applies_to_module() is applicable, the python domain's routes
     survive aggregation unchanged.
     """
-    # Arrange — an applicable extension with one discovered module.
+    # an applicable extension with one discovered module.
     _wire_real_aggregator(monkeypatch, _PythonRouteExtension(), modules=_APPLICABLE_MODULES)
 
-    # Act
     aggregated = _config_core_mod.aggregate_build_map()
 
-    # Assert — applicable domain's routes are present.
+    # applicable domain's routes are present.
     assert 'python' in aggregated
     by_role = {entry['role']: entry['build_class'] for entry in aggregated['python']}
     assert by_role['production'] == 'compile'
@@ -661,13 +649,12 @@ def test_aggregate_excludes_non_applicable_domain_with_routes(monkeypatch):
     discovered module, so its routes are dropped — a python-only project never
     receives routes from a domain that does not apply to its modules.
     """
-    # Arrange — a route-declaring extension that is never applicable.
+    # a route-declaring extension that is never applicable.
     _wire_real_aggregator(monkeypatch, _NonApplicablePythonExtension(), modules=_APPLICABLE_MODULES)
 
-    # Act
     aggregated = _config_core_mod.aggregate_build_map()
 
-    # Assert — the non-applicable domain contributed nothing.
+    # the non-applicable domain contributed nothing.
     assert 'python' not in aggregated
     assert aggregated == {}
 
@@ -679,13 +666,12 @@ def test_aggregate_empty_when_no_modules_discovered(monkeypatch):
     against, so the aggregation is empty rather than the unscoped full set — the
     seed runs only after architecture discovery (wizard Step 8b / sync-defaults).
     """
-    # Arrange — an applicable, route-declaring extension but NO discovered modules.
+    # an applicable, route-declaring extension but NO discovered modules.
     _wire_real_aggregator(monkeypatch, _PythonRouteExtension(), modules=_NO_MODULES)
 
-    # Act
     aggregated = _config_core_mod.aggregate_build_map()
 
-    # Assert — no modules → empty aggregation regardless of declared routes.
+    # no modules → empty aggregation regardless of declared routes.
     assert aggregated == {}
 
 
@@ -696,13 +682,13 @@ def test_aggregate_tolerates_raising_applies_to_module(monkeypatch):
     extension as not-applicable rather than propagating the exception — the seed
     completes and the raising domain is simply omitted.
     """
-    # Arrange — an extension whose applies_to_module() raises, with a discovered module.
+    # an extension whose applies_to_module() raises, with a discovered module.
     _wire_real_aggregator(monkeypatch, _RaisingApplicabilityExtension(), modules=_APPLICABLE_MODULES)
 
-    # Act — must not raise.
+    # must not raise.
     aggregated = _config_core_mod.aggregate_build_map()
 
-    # Assert — the raising domain is dropped; aggregation is empty.
+    # the raising domain is dropped; aggregation is empty.
     assert aggregated == {}
 
 
@@ -723,10 +709,10 @@ def test_fresh_init_does_not_seed_build_map(plan_context):
     so it must NOT seed the (applicability-scoped) build_map. The block is absent
     after a bare init and is materialised later at wizard Step 8b.
     """
-    # Arrange / Act — fresh init.
+    # fresh init.
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # Assert — the build.map block is absent after a bare init.
+    # the build.map block is absent after a bare init.
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
     assert 'map' not in config.get('build', {}), (
@@ -741,10 +727,9 @@ def test_get_default_config_has_skill_domains_without_build_map():
     must return skill_domains (with at least the system domain) and no build.map
     block.
     """
-    # Act
     config = _config_defaults_mod.get_default_config()
 
-    # Assert — skill_domains present, build.map absent.
+    # skill_domains present, build.map absent.
     assert 'skill_domains' in config
     assert 'system' in config['skill_domains']
     assert 'map' not in config.get('build', {})
@@ -767,16 +752,16 @@ def test_force_reseed_clears_and_rederives_existing_block(plan_context, monkeypa
     bypasses the write-once guard and re-derives the block from the current
     aggregation, reporting action: re-derived.
     """
-    # Arrange — seed once (deterministic fake), so a block already exists.
+    # seed once (deterministic fake), so a block already exists.
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _patch_aggregate(monkeypatch)
     first = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
     assert first['action'] == 'seeded'
 
-    # Act — forced reseed.
+    # forced reseed.
     forced = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=True))
 
-    # Assert — re-derived (not preserved), and the persisted block matches the
+    # re-derived (not preserved), and the persisted block matches the
     # current aggregation.
     assert forced['status'] == 'success'
     assert forced['action'] == 're-derived'
@@ -793,15 +778,15 @@ def test_default_seed_without_force_preserves_existing_block(plan_context, monke
     The negative control for the force path: with an existing block, a default
     seed (force=False) reports action: preserved and leaves the block untouched.
     """
-    # Arrange — seed once so a block exists.
+    # seed once so a block exists.
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _patch_aggregate(monkeypatch)
     _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
 
-    # Act — re-seed without force.
+    # re-seed without force.
     second = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
 
-    # Assert — preserved, not re-derived.
+    # preserved, not re-derived.
     assert second['action'] == 'preserved'
 
 
@@ -812,7 +797,7 @@ def test_force_reseed_overwrites_user_correction(plan_context, monkeypatch):
     migration escape hatch: it discards stale or hand-edited entries and re-derives
     a clean block from the current aggregation.
     """
-    # Arrange — seed, then hand-edit an entry directly on the seeded block.
+    # seed, then hand-edit an entry directly on the seeded block.
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _patch_aggregate(monkeypatch)
     _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
@@ -822,10 +807,10 @@ def test_force_reseed_overwrites_user_correction(plan_context, monkeypatch):
     config['build']['map']['python'][0]['build_class'] = 'none'
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
-    # Act — forced reseed.
+    # forced reseed.
     forced = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=True))
 
-    # Assert — the correction was overwritten by the re-derived aggregation.
+    # the correction was overwritten by the re-derived aggregation.
     assert forced['action'] == 're-derived'
     after = json.loads(marshal_path.read_text(encoding='utf-8'))
     assert after['build']['map']['python'][0]['build_class'] == 'compile'
@@ -876,7 +861,7 @@ def test_seed_persists_live_glob_and_prunes_dead_glob(plan_context, monkeypatch)
     The fixture tree carries only the live route's file, so the dead route matches
     nothing and must be absent from the output.
     """
-    # Arrange — init, then wire the real aggregator over a tracked tree that
+    # init, then wire the real aggregator over a tracked tree that
     # carries the LIVE route's file but no file for the DEAD route.
     _cmd_init_mod.cmd_init(Namespace(force=False))
     _wire_real_aggregator(
@@ -885,12 +870,12 @@ def test_seed_persists_live_glob_and_prunes_dead_glob(plan_context, monkeypatch)
         tracked_files=['marketplace/targets/generate.py'],
     )
 
-    # Act — seed through the real CLI pipeline.
+    # seed through the real CLI pipeline.
     result = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
     assert result['status'] == 'success'
     assert result['action'] == 'seeded'
 
-    # Assert — the persisted build.map carries ONLY the live glob; the dead glob is absent.
+    # the persisted build.map carries ONLY the live glob; the dead glob is absent.
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
     build_map = config['build']['map']

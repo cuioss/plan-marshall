@@ -122,33 +122,6 @@ def test_toon_noop_distinct_from_error():
 # =============================================================================
 
 
-def _make_partial_runtime(**overrides):
-    """Create a concrete subclass with only the provided overrides.
-
-    Any method not overridden remains abstract, so instantiation must fail.
-    """
-    methods = {
-        "project_initial_setup",
-        "project_install_hook",
-        "session_capture",
-        "session_render_title",
-        "session_push_title_token",
-        "permission_configure",
-        "permission_analyze",
-        "permission_fix",
-        "permission_ensure_wildcards",
-        "permission_ensure_steps",
-        "permission_web_analyze",
-        "permission_web_apply",
-        "metrics_capture",
-        "subagent_dispatch",
-        "health_check",
-    }
-    stubs = {m: lambda self, *a, **kw: "" for m in methods}
-    stubs.update(overrides)
-    return type("PartialRuntime", (Runtime,), stubs)
-
-
 class _ConcreteRuntime(Runtime):
     """Minimal concrete subclass that implements all 15 abstract methods."""
 

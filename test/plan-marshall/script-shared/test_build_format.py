@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Tests for build_format.py module."""
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
+import importlib.util
 import json
-import sys
 from pathlib import Path
 
 _SCRIPTS_DIR = (
@@ -40,10 +38,6 @@ SEVERITY_WARNING = _build_parse_mod.SEVERITY_WARNING
 Issue = _build_parse_mod.Issue
 UnitTestSummary = _build_parse_mod.UnitTestSummary
 
-# =============================================================================
-# Constants Tests
-# =============================================================================
-
 
 def test_core_fields_order():
     """CORE_FIELDS has expected fields in order."""
@@ -62,11 +56,6 @@ def test_structured_fields():
     assert 'errors' in STRUCTURED_FIELDS
     assert 'warnings' in STRUCTURED_FIELDS
     assert 'tests' in STRUCTURED_FIELDS
-
-
-# =============================================================================
-# format_toon Tests - Success Cases
-# =============================================================================
 
 
 def test_format_toon_success_basic():
@@ -119,11 +108,6 @@ def test_format_toon_with_extra_fields():
     output = format_toon(result)
 
     assert 'wrapper: ./mvnw' in output
-
-
-# =============================================================================
-# format_toon Tests - Error Cases
-# =============================================================================
 
 
 def test_format_toon_error_with_error_field():
@@ -204,11 +188,6 @@ def test_format_toon_errors_null_line():
     assert '  pom.xml,-,dependency error,dependency' in output
 
 
-# =============================================================================
-# format_toon Tests - Warnings
-# =============================================================================
-
-
 def test_format_toon_warnings_actionable_mode():
     """Formats warnings without accepted field (actionable mode)."""
     result = {
@@ -265,11 +244,6 @@ def test_format_toon_warnings_with_issue_objects():
     assert '[accepted]' in output
 
 
-# =============================================================================
-# format_toon Tests - Tests Section
-# =============================================================================
-
-
 def test_format_toon_tests_section():
     """Formats tests summary section."""
     result = {
@@ -304,11 +278,6 @@ def test_format_toon_tests_with_testsummary_object():
     assert '  passed: 10' in output
     assert '  failed: 2' in output
     assert '  skipped: 1' in output
-
-
-# =============================================================================
-# format_toon Tests - Empty/Missing Sections
-# =============================================================================
 
 
 def test_format_toon_empty_errors():
@@ -356,11 +325,6 @@ def test_format_toon_empty_tests():
     assert 'tests:' not in output
 
 
-# =============================================================================
-# format_toon Tests - Timeout
-# =============================================================================
-
-
 def test_format_toon_timeout():
     """Formats timeout result."""
     result = {
@@ -377,11 +341,6 @@ def test_format_toon_timeout():
     assert 'status: timeout' in output
     assert 'error: timeout' in output
     assert 'timeout_used_seconds: 300' in output
-
-
-# =============================================================================
-# format_json Tests
-# =============================================================================
 
 
 def test_format_json_success_basic():
@@ -499,54 +458,5 @@ def test_format_json_valid():
     }
     output = format_json(result)
 
-    # Should not raise
     parsed = json.loads(output)
     assert isinstance(parsed, dict)
-
-
-if __name__ == '__main__':
-    import traceback
-
-    tests = [
-        test_core_fields_order,
-        test_extra_fields,
-        test_structured_fields,
-        test_format_toon_success_basic,
-        test_format_toon_success_field_order,
-        test_format_toon_with_extra_fields,
-        test_format_toon_error_with_error_field,
-        test_format_toon_error_with_errors_list,
-        test_format_toon_errors_with_issue_objects,
-        test_format_toon_errors_null_line,
-        test_format_toon_warnings_actionable_mode,
-        test_format_toon_warnings_structured_mode,
-        test_format_toon_warnings_with_issue_objects,
-        test_format_toon_tests_section,
-        test_format_toon_tests_with_testsummary_object,
-        test_format_toon_empty_errors,
-        test_format_toon_empty_warnings,
-        test_format_toon_empty_tests,
-        test_format_toon_timeout,
-        test_format_json_success_basic,
-        test_format_json_with_errors,
-        test_format_json_with_issue_objects,
-        test_format_json_with_testsummary_object,
-        test_format_json_indentation,
-        test_format_json_valid,
-    ]
-
-    passed = 0
-    failed = 0
-
-    for test in tests:
-        try:
-            test()
-            passed += 1
-        except Exception:
-            failed += 1
-            print(f'FAILED: {test.__name__}')
-            traceback.print_exc()
-            print()
-
-    print(f'\nResults: {passed} passed, {failed} failed')
-    sys.exit(0 if failed == 0 else 1)

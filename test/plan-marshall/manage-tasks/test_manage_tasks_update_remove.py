@@ -11,6 +11,8 @@ the add path.
 
 import json
 
+import pytest
+
 from _helpers import (
     _add_ns,
     _read_ns,
@@ -200,16 +202,17 @@ def test_numbered_filename_ignores_title_length(plan_context):
 # =============================================================================
 
 
-def test_arbitrary_domains_accepted(plan_context):
+@pytest.mark.parametrize('domain', ['java', 'my-custom-domain', 'frontend-react', 'backend-api', 'devops'])
+def test_arbitrary_domains_accepted(plan_context, domain):
     """Arbitrary domain strings are accepted (config-driven, not hardcoded)."""
-    domains = ['java', 'my-custom-domain', 'frontend-react', 'backend-api', 'devops']
-    for i, domain in enumerate(domains, 1):
-        toon = build_task_toon(
-            title=f'Task {i}',
-            deliverable=i,
-            domain=domain,
-            description=f'Test {domain}',
-            steps=['src/main/java/File.java'],
-        )
-        result = cmd_add(_add_ns(plan_id='arb-domains', content=toon.replace('\n', '\\n')))
-        assert result['status'] == 'success', f'Domain {domain} failed'
+    toon = build_task_toon(
+        title=f'Task {domain}',
+        deliverable=1,
+        domain=domain,
+        description=f'Test {domain}',
+        steps=['src/main/java/File.java'],
+    )
+
+    result = cmd_add(_add_ns(plan_id=f'arb-domains-{domain}', content=toon.replace('\n', '\\n')))
+
+    assert result['status'] == 'success', f'Domain {domain} failed'

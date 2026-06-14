@@ -38,11 +38,8 @@ cmd_init = _cmd_init_mod.cmd_init
 
 def test_init_seeds_open_in_ide_true_under_plan_namespace(plan_context):
     """Fresh marshal.json must contain plan.open_in_ide = True (flat bool)."""
-    # Arrange
-    # Act
     result = cmd_init(Namespace(force=False))
 
-    # Assert
     assert result['status'] == 'success'
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     assert marshal_path.exists()

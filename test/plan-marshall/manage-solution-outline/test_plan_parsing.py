@@ -47,64 +47,51 @@ class TestSlugifySectionNameCharacterClasses:
     """Verify how `_slugify_section_name` collapses non-alnum character runs."""
 
     def test_parentheses_collapse_to_single_underscore(self):
-        # Arrange
         heading = 'Suggested fix (two options)'
 
-        # Act
         slug = _slugify_section_name(heading)
 
-        # Assert — parens and the spaces around them collapse to single underscores;
+        # parens and the spaces around them collapse to single underscores;
         # the trailing ')' becomes a trailing '_' that is stripped by .strip('_').
         assert slug == 'suggested_fix_two_options'
 
     def test_brackets_collapse_to_single_underscore(self):
-        # Arrange
         heading = 'Section [draft]'
 
-        # Act
         slug = _slugify_section_name(heading)
 
-        # Assert
         assert slug == 'section_draft'
 
     def test_ampersand_collapses_with_surrounding_spaces(self):
-        # Arrange
         heading = 'Tools & Tactics'
 
-        # Act
         slug = _slugify_section_name(heading)
 
-        # Assert — `' & '` (space-amp-space) is a single non-alnum run -> one '_'.
+        # `' & '` (space-amp-space) is a single non-alnum run -> one '_'.
         assert slug == 'tools_tactics'
 
     def test_slash_collapses_to_underscore(self):
-        # Arrange
         heading = 'input/output'
 
-        # Act
         slug = _slugify_section_name(heading)
 
-        # Assert
         assert slug == 'input_output'
 
     def test_multiple_spaces_collapse_to_single_underscore(self):
-        # Arrange — three internal spaces.
+        # three internal spaces.
         heading = 'a   b'
 
-        # Act
         slug = _slugify_section_name(heading)
 
-        # Assert — the run of three spaces collapses to one '_'.
+        # the run of three spaces collapses to one '_'.
         assert slug == 'a_b'
 
     def test_trailing_punctuation_is_stripped_leading_is_preserved(self):
-        # Arrange
         heading = '!hello!'
 
-        # Act
         slug = _slugify_section_name(heading)
 
-        # Assert — both '!' chars become '_' via the regex; the trailing '_' is
+        # both '!' chars become '_' via the regex; the trailing '_' is
         # stripped by .rstrip('_'), but the leading '_' is preserved so that
         # inputs whose first char is non-alnum stay distinguishable from inputs
         # that already start with an alphanumeric. (See helper docstring for
@@ -121,13 +108,12 @@ class TestSlugifySectionNameEdgeCases:
     """Edge cases that document the helper's behavior at the boundaries."""
 
     def test_all_punctuation_heading_returns_empty_string(self):
-        # Arrange — every character is non-alnum.
+        # every character is non-alnum.
         heading = '!@#$%'
 
-        # Act
         slug = _slugify_section_name(heading)
 
-        # Assert — the entire string collapses to one '_', and .rstrip('_')
+        # the entire string collapses to one '_', and .rstrip('_')
         # removes that single trailing underscore, leaving the empty string.
         # Documenting actual behavior: callers MUST be prepared to handle ''
         # as a section key for headings with no alphanumeric content.
@@ -139,14 +125,13 @@ class TestSlugifySectionNameEdgeCases:
         )
 
     def test_non_ascii_letters_are_treated_as_non_alnum(self):
-        # Arrange — German umlaut. The character class `[a-z0-9_-]` is ASCII-only,
+        # German umlaut. The character class `[a-z0-9_-]` is ASCII-only,
         # so the lowercase 'ü' is collapsed even though it is a letter in Unicode.
         heading = 'Über'
 
-        # Act
         slug = _slugify_section_name(heading)
 
-        # Assert — 'Ü' lowercases to 'ü' which is replaced by '_'. The leading
+        # 'Ü' lowercases to 'ü' which is replaced by '_'. The leading
         # '_' is preserved because the helper only rstrip's, never lstrip's.
         # This is a documented limitation: non-ASCII letters are lossy.
         assert slug == '_ber', (
@@ -172,13 +157,12 @@ class TestSlugifySectionNameEdgeCases:
         ],
     )
     def test_idempotence(self, heading):
-        # Arrange — `heading` is a parametrized input.
+        # `heading` is a parametrized input.
 
-        # Act
         first = _slugify_section_name(heading)
         second = _slugify_section_name(first)
 
-        # Assert — applying the helper twice MUST yield the same result as
+        # applying the helper twice MUST yield the same result as
         # applying it once. This guarantees stable section keys when the
         # helper is composed with itself (e.g., normalization passes).
         assert first == second, (
@@ -196,15 +180,14 @@ class TestParseDocumentSectionsRoundTrip:
     """Verify that `parse_document_sections` keys go through `_slugify_section_name`."""
 
     def test_parens_in_heading_produce_paren_free_key(self):
-        # Arrange — a minimal markdown document with one H2 heading containing
+        # a minimal markdown document with one H2 heading containing
         # parens. The implementation must call `_slugify_section_name` on the
         # heading text so the resulting key has no parens.
         content = '## Heading with (parens)\nbody\n'
 
-        # Act
         sections = parse_document_sections(content)
 
-        # Assert — the slugified key is present, and the legacy un-slugified
+        # the slugified key is present, and the legacy un-slugified
         # key (with literal parens) is absent. This protects against regressions
         # where the heading-to-key transform skips slugification.
         assert 'heading_with_parens' in sections, (
@@ -216,15 +199,14 @@ class TestParseDocumentSectionsRoundTrip:
         )
 
     def test_lesson_regression_suggested_fix_two_options(self):
-        # Arrange — exact regression case from the lesson
+        # exact regression case from the lesson
         # `lesson-2026-04-26-22-005`: a "Suggested fix (two options)" heading
         # was producing the un-slugified key, breaking section lookups.
         content = '## Suggested fix (two options)\nbody'
 
-        # Act
         sections = parse_document_sections(content)
 
-        # Assert — slugified key present, un-slugified key absent.
+        # slugified key present, un-slugified key absent.
         assert 'suggested_fix_two_options' in sections, (
             f'Expected slugified key "suggested_fix_two_options" in sections; got keys {list(sections.keys())}'
         )
@@ -314,17 +296,16 @@ class TestExtractProfilesBucketComment:
         ],
     )
     def test_inline_bucket_comment_parses_for_every_documented_bucket(self, bucket):
-        # Arrange — the widened `[^\n]*` lead-in must tolerate ANY documented
+        # the widened `[^\n]*` lead-in must tolerate ANY documented
         # bucket value on the `**Profiles:**` line, not just the one literal
         # ('documentation_only') the happy-path test uses. The six bucket names
         # are the canonical vocabulary from
         # phase-3-outline/standards/outline-workflow-detail.md § File-type classifier.
         content = f'**Profiles:** <!-- bucket: {bucket} -->\n- implementation\n'
 
-        # Act
         result = _extract_profiles(content)
 
-        # Assert — profiles come only from the bullet; the bucket token never leaks.
+        # profiles come only from the bullet; the bucket token never leaks.
         assert result == ['implementation'], (
             f'Widened regex must parse the inline bucket form for bucket {bucket!r}; '
             f'got {result!r}'
@@ -332,15 +313,13 @@ class TestExtractProfilesBucketComment:
         assert bucket not in result
 
     def test_inline_arbitrary_trailing_text_parses_profiles(self):
-        # Arrange — the widening is `[^\n]*` (any non-newline run), not a regex
+        # the widening is `[^\n]*` (any non-newline run), not a regex
         # that hard-codes the `<!-- bucket: ... -->` shape. Arbitrary trailing
         # prose on the `**Profiles:**` line must still let the bullets parse.
         content = '**Profiles:**   trailing notes — see deliverable 6\n- implementation\n'
 
-        # Act
         result = _extract_profiles(content)
 
-        # Assert
         assert result == ['implementation']
 
     def test_inline_bucket_comment_not_mis_parsed_as_profile(self):
@@ -359,27 +338,23 @@ class TestExtractProfilesBucketComment:
         assert result == ['implementation', 'verification']
 
     def test_indented_first_bullet_after_inline_comment_parses(self):
-        # Arrange — the `\s*` segment after the line break tolerates leading
+        # the `\s*` segment after the line break tolerates leading
         # whitespace before the first bullet. Pair it with the inline comment
         # to exercise both widening segments together.
         content = '**Profiles:** <!-- bucket: documentation_only -->\n  - implementation\n'
 
-        # Act
         result = _extract_profiles(content)
 
-        # Assert
         assert result == ['implementation']
 
     def test_inline_comment_form_is_case_insensitive(self):
-        # Arrange — `_extract_profiles` compiles its search with re.IGNORECASE,
+        # `_extract_profiles` compiles its search with re.IGNORECASE,
         # so a lower-cased `**profiles:**` heading still parses. Guard the flag
         # against accidental removal during a future regex edit.
         content = '**profiles:** <!-- bucket: documentation_only -->\n- implementation\n'
 
-        # Act
         result = _extract_profiles(content)
 
-        # Assert
         assert result == ['implementation']
 
     def test_no_profiles_section_returns_empty(self):

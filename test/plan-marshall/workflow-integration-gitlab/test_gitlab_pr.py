@@ -10,7 +10,6 @@ triage / triage-batch flow has been retired. The remaining callable surface is:
 
 import importlib.util
 import sys
-import unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,15 +35,16 @@ cmd_comments_stage = gitlab_pr.cmd_comments_stage
 # =============================================================================
 
 
-class TestIsObviousNoise(unittest.TestCase):
-    def test_empty_body_is_noise(self):
-        self.assertTrue(_is_obvious_noise(''))
+def test_empty_body_is_noise():
+    assert _is_obvious_noise('')
 
-    def test_lgtm_is_noise(self):
-        self.assertTrue(_is_obvious_noise('lgtm'))
 
-    def test_substantive_is_kept(self):
-        self.assertFalse(_is_obvious_noise('Please add validation for empty input'))
+def test_lgtm_is_noise():
+    assert _is_obvious_noise('lgtm')
+
+
+def test_substantive_is_kept():
+    assert not _is_obvious_noise('Please add validation for empty input')
 
 
 # =============================================================================
@@ -52,34 +52,37 @@ class TestIsObviousNoise(unittest.TestCase):
 # =============================================================================
 
 
-class TestFetchCommentsWrapper(unittest.TestCase):
-    def test_fetch_comments_success(self):
-        with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
-            mock_fetch.return_value = {
-                'status': 'success',
-                'provider': 'gitlab',
-                'comments': [
-                    {
-                        'id': 'C1',
-                        'kind': 'inline',
-                        'author': 'reviewer',
-                        'body': 'fix this',
-                        'path': 'src/Main.java',
-                        'line': 42,
-                        'thread_id': 'mr-thread-1',
-                    }
-                ],
-                'total': 1,
-                'unresolved': 1,
-            }
-            result = fetch_comments(123)
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['comments'][0]['kind'], 'inline')
+def test_fetch_comments_success():
+    with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
+        mock_fetch.return_value = {
+            'status': 'success',
+            'provider': 'gitlab',
+            'comments': [
+                {
+                    'id': 'C1',
+                    'kind': 'inline',
+                    'author': 'reviewer',
+                    'body': 'fix this',
+                    'path': 'src/Main.java',
+                    'line': 42,
+                    'thread_id': 'mr-thread-1',
+                }
+            ],
+            'total': 1,
+            'unresolved': 1,
+        }
+        result = fetch_comments(123)
 
-    def test_fetch_comments_provider_error(self):
-        with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
-            mock_fetch.return_value = {'status': 'error', 'error': 'auth'}
-            self.assertEqual(fetch_comments(123)['status'], 'error')
+    assert result['status'] == 'success'
+    assert result['comments'][0]['kind'] == 'inline'
+
+
+def test_fetch_comments_provider_error():
+    with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
+        mock_fetch.return_value = {'status': 'error', 'error': 'auth'}
+        result = fetch_comments(123)
+
+    assert result['status'] == 'error'
 
 
 # =============================================================================
@@ -149,18 +152,16 @@ def test_stage_persists_substantive_comments_only(plan_context):
 # =============================================================================
 
 
-class TestPRMain(unittest.TestCase):
-    def test_help_lists_only_supported_subcommands(self):
-        result = run_script(SCRIPT_PATH, '--help')
-        self.assertEqual(result.returncode, 0)
-        self.assertIn('fetch-comments', result.stdout)
-        self.assertIn('comments-stage', result.stdout)
-        self.assertNotIn('triage-batch', result.stdout)
+def test_help_lists_only_supported_subcommands():
+    result = run_script(SCRIPT_PATH, '--help')
 
-    def test_retired_triage_subcommand_rejected(self):
-        result = run_script(SCRIPT_PATH, 'triage', '--comment', '{}')
-        self.assertNotEqual(result.returncode, 0)
+    assert result.returncode == 0
+    assert 'fetch-comments' in result.stdout
+    assert 'comments-stage' in result.stdout
+    assert 'triage-batch' not in result.stdout
 
 
-if __name__ == '__main__':
-    unittest.main()
+def test_retired_triage_subcommand_rejected():
+    result = run_script(SCRIPT_PATH, 'triage', '--comment', '{}')
+
+    assert result.returncode != 0

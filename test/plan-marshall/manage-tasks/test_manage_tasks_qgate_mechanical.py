@@ -16,8 +16,6 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from conftest import PROJECT_ROOT
 
 # Load the cmd module via importlib (mirrors the batch-add test bootstrap).
@@ -677,7 +675,3 @@ def test_qgate_mechanical_registered_in_manage_tasks_dispatch():
     assert manage_tasks.COMMANDS['qgate-mechanical-checks'] is cmd_qgate_mechanical or callable(
         manage_tasks.COMMANDS['qgate-mechanical-checks']
     )
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])

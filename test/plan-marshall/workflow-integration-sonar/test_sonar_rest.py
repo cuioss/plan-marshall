@@ -4,34 +4,46 @@
 Tests REST client subcommands with mocked HTTP responses.
 """
 
+import importlib.util
+from argparse import Namespace
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'sonar_rest.py')
 
+# Module-level importlib load — the cmd_* logic tests call into the script's
+# functions in-process, so the module is imported once here rather than inside
+# each test.
+_spec = importlib.util.spec_from_file_location('sonar_rest', str(SCRIPT_PATH))
+assert _spec is not None and _spec.loader is not None
+sonar_rest = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(sonar_rest)
+
 
 class TestSonarRestCLI:
     """Tests for sonar_rest.py CLI plumbing."""
 
-    def test_search_requires_project(self):
-        """Search subcommand requires --project."""
-        result = run_script(SCRIPT_PATH, 'search')
-        assert result.returncode != 0
+    @pytest.mark.parametrize(
+        'argv',
+        [
+            pytest.param(['search'], id='search-requires-project'),
+            pytest.param(['transition', '--transition', 'accept'], id='transition-requires-issue-key'),
+            pytest.param(['metrics', '--project', 'foo'], id='metrics-requires-project-and-component'),
+        ],
+    )
+    def test_subcommand_rejects_missing_required_arg(self, argv):
+        """Each subcommand exits non-zero when a required argument is absent."""
+        result = run_script(SCRIPT_PATH, *argv)
 
-    def test_transition_requires_issue_key(self):
-        """Transition subcommand requires --issue-key."""
-        result = run_script(SCRIPT_PATH, 'transition', '--transition', 'accept')
-        assert result.returncode != 0
-
-    def test_metrics_requires_project_and_component(self):
-        """Metrics subcommand requires both --project and --component."""
-        result = run_script(SCRIPT_PATH, 'metrics', '--project', 'foo')
         assert result.returncode != 0
 
     def test_help(self):
         """--help works."""
         result = run_script(SCRIPT_PATH, '--help')
+
         assert result.returncode == 0
         assert 'search' in result.stdout
         assert 'transition' in result.stdout
@@ -42,6 +54,7 @@ class TestSonarRestCLI:
         pre-parse strips it before argparse runs, so combining it with --help
         must succeed."""
         result = run_script(SCRIPT_PATH, '--project-dir', '/tmp/wt-rest', '--help')
+
         assert result.returncode == 0, result.stderr
         assert 'search' in result.stdout
         assert 'unrecognized arguments' not in result.stderr
@@ -49,6 +62,7 @@ class TestSonarRestCLI:
     def test_project_dir_equals_form_accepted(self):
         """The --project-dir=PATH form is also accepted."""
         result = run_script(SCRIPT_PATH, '--project-dir=/tmp/wt-rest2', '--help')
+
         assert result.returncode == 0, result.stderr
         assert 'unrecognized arguments' not in result.stderr
 
@@ -60,6 +74,7 @@ class TestSonarRestCLI:
         must succeed regardless of whether the plan exists.
         """
         result = run_script(SCRIPT_PATH, '--plan-id', 'task-routing-canonical', '--help')
+
         # --help triggers SystemExit(0). The resolver may fail with worktree
         # resolution errors before --help runs (no real plan persisted), so
         # we accept either 0 (help reached) or 2 (resolver error) — the
@@ -78,6 +93,7 @@ class TestSonarRestCLI:
             str(tmp_path),
             '--help',
         )
+
         # The resolver branch emits a TOON error and exits 2 BEFORE --help
         # is processed.
         assert result.returncode == 2, f'Expected exit 2, got {result.returncode}; stdout={result.stdout!r}'
@@ -88,6 +104,7 @@ class TestSonarRestCLI:
     def test_neither_routing_flag_keeps_legacy_behaviour(self):
         """Neither flag → no auto-routing, no error; legacy "inherit cwd" preserved."""
         result = run_script(SCRIPT_PATH, '--help')
+
         assert result.returncode == 0
         # No TOON error payload on stdout.
         assert 'mutually_exclusive_args' not in result.stdout
@@ -97,14 +114,8 @@ class TestSonarRestCLI:
 class TestSonarSearchLogic:
     """Tests for search subcommand logic."""
 
-    def test_search_formats_issues(self):
+    def test_search_formats_issues(self, capsys):
         """Search extracts and formats issue data from API response."""
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location('sonar_rest', str(SCRIPT_PATH))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-
         mock_client = MagicMock()
         mock_client.get.return_value = {
             'issues': [
@@ -120,17 +131,12 @@ class TestSonarSearchLogic:
             ]
         }
 
-        with patch.object(mod, 'get_authenticated_client', return_value=mock_client):
-            from argparse import Namespace
+        with patch.object(sonar_rest, 'get_authenticated_client', return_value=mock_client):
+            result = sonar_rest.cmd_search(
+                Namespace(project='my-project', pr=None, severities=None, types=None)
+            )
 
-            # Capture stdout
-            from io import StringIO
-
-            captured = StringIO()
-            with patch('sys.stdout', captured):
-                result = mod.cmd_search(Namespace(project='my-project', pr=None, severities=None, types=None))
-
-            assert result == 0
-            output = captured.getvalue()
-            assert 'ISSUE-1' in output
-            assert 'BUG' in output
+        assert result == 0
+        output = capsys.readouterr().out
+        assert 'ISSUE-1' in output
+        assert 'BUG' in output

@@ -62,118 +62,92 @@ def repo(tmp_path: Path) -> Path:
     return root
 
 
-# ---------------------------------------------------------------------------
-# Happy path + determinism
-# ---------------------------------------------------------------------------
-
-
 def test_clean_repo_returns_hex_digest(repo: Path) -> None:
-    # Arrange / Act
     digest = compute_worktree_sha(repo)
 
-    # Assert
     assert digest is not None
     assert len(digest) == _HEX64
     assert all(c in '0123456789abcdef' for c in digest)
 
 
 def test_clean_tree_is_deterministic(repo: Path) -> None:
-    # Arrange / Act
     first = compute_worktree_sha(repo)
     second = compute_worktree_sha(repo)
 
-    # Assert — a clean tree hashes to a stable function of HEAD alone.
+    # A clean tree hashes to a stable function of HEAD alone.
     assert first == second
 
 
 def test_accepts_str_path(repo: Path) -> None:
-    # Arrange / Act — the signature is ``str | Path``; a str arg must work.
+    # The signature is ``str | Path``; a str arg must work.
     digest = compute_worktree_sha(str(repo))
 
-    # Assert
     assert digest is not None
     assert len(digest) == _HEX64
 
 
-# ---------------------------------------------------------------------------
-# Change detection — the whole reason the primitive captures working-tree state
-# ---------------------------------------------------------------------------
-
-
 def test_unstaged_edit_changes_digest(repo: Path) -> None:
-    # Arrange
     before = compute_worktree_sha(repo)
 
-    # Act — modify a tracked file without staging it.
     (repo / 'tracked.txt').write_text('modified\n')
     after = compute_worktree_sha(repo)
 
-    # Assert — the unstaged diff must move the digest (no false-positive fresh).
+    # The unstaged diff must move the digest (no false-positive fresh).
     assert before != after
 
 
 def test_staged_edit_changes_digest(repo: Path) -> None:
-    # Arrange
     before = compute_worktree_sha(repo)
 
-    # Act — stage (but do not commit) a tracked edit.
     (repo / 'tracked.txt').write_text('staged change\n')
     _git(repo, 'add', 'tracked.txt')
     after = compute_worktree_sha(repo)
 
-    # Assert — ``git diff HEAD`` covers staged modifications too.
+    # ``git diff HEAD`` covers staged modifications too.
     assert before != after
 
 
 def test_untracked_file_changes_digest(repo: Path) -> None:
-    # Arrange
     before = compute_worktree_sha(repo)
 
-    # Act — add a brand-new untracked, not-ignored file (a plan's new file).
+    # A brand-new untracked, not-ignored file (a plan's new file).
     (repo / 'brand_new.txt').write_text('new content\n')
     after = compute_worktree_sha(repo)
 
-    # Assert — the untracked stream is folded in (the stash-create blind spot).
+    # The untracked stream is folded in (the stash-create blind spot).
     assert before != after
 
 
 def test_untracked_file_content_matters(repo: Path) -> None:
-    # Arrange — first untracked content.
     (repo / 'brand_new.txt').write_text('content A\n')
     first = compute_worktree_sha(repo)
 
-    # Act — same path, different content.
+    # Same path, different content.
     (repo / 'brand_new.txt').write_text('content B\n')
     second = compute_worktree_sha(repo)
 
-    # Assert — content (not just presence) contributes to the digest.
+    # Content (not just presence) contributes to the digest.
     assert first != second
 
 
 def test_gitignored_file_does_not_change_digest(repo: Path) -> None:
-    # Arrange — commit a .gitignore that excludes a generated dir.
     (repo / '.gitignore').write_text('ignored/\n')
     _git(repo, 'add', '.gitignore')
     _git(repo, 'commit', '-q', '-m', 'add gitignore')
     before = compute_worktree_sha(repo)
 
-    # Act — drop a file in the ignored dir (excluded by --exclude-standard).
+    # A file in the ignored dir is excluded by --exclude-standard.
     ignored_dir = repo / 'ignored'
     ignored_dir.mkdir()
     (ignored_dir / 'build.log').write_text('noise\n')
     after = compute_worktree_sha(repo)
 
-    # Assert — ignored content must NOT move the digest.
+    # Ignored content must NOT move the digest.
     assert before == after
 
 
-# ---------------------------------------------------------------------------
-# Detached HEAD — HEAD is still a resolvable commit sha
-# ---------------------------------------------------------------------------
-
-
 def test_detached_head_resolves_digest(repo: Path) -> None:
-    # Arrange — a second commit so there is a prior sha to detach onto.
+    # A second commit so there is a prior sha to detach onto.
     (repo / 'tracked.txt').write_text('second\n')
     _git(repo, 'commit', '-aqm', 'second')
     head = subprocess.run(
@@ -183,48 +157,39 @@ def test_detached_head_resolves_digest(repo: Path) -> None:
         text=True,
     ).stdout.strip()
 
-    # Act — detach HEAD onto the explicit commit sha.
     _git(repo, 'checkout', '-q', head)
     digest = compute_worktree_sha(repo)
 
-    # Assert — a detached HEAD still resolves a working-tree digest.
+    # A detached HEAD still resolves a working-tree digest.
     assert digest is not None
     assert len(digest) == _HEX64
 
 
-# ---------------------------------------------------------------------------
-# Unresolvable HEAD → None
-# ---------------------------------------------------------------------------
-
-
 def test_non_git_directory_returns_none(tmp_path: Path) -> None:
-    # Arrange — a plain directory with no git repo.
     plain = tmp_path / 'plain'
     plain.mkdir()
 
-    # Act
     digest = compute_worktree_sha(plain)
 
-    # Assert — ``git rev-parse HEAD`` fails → None, never an exception.
+    # ``git rev-parse HEAD`` fails → None, never an exception.
     assert digest is None
 
 
 def test_repo_with_no_commit_returns_none(tmp_path: Path) -> None:
-    # Arrange — an initialised repo that has no commit yet (HEAD unresolvable).
+    # An initialised repo that has no commit yet (HEAD unresolvable).
     empty = tmp_path / 'empty'
     empty.mkdir()
     subprocess.run(['git', 'init', '-q', '-b', 'main', str(empty)], check=True)
 
-    # Act
     digest = compute_worktree_sha(empty)
 
-    # Assert — no commit means no HEAD sha → None.
+    # No commit means no HEAD sha → None.
     assert digest is None
 
 
 def test_missing_git_binary_returns_none(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Arrange — simulate the git binary being absent: the internal shell-out
-    # raises OSError, which ``_run_git`` maps to (1, b'').
+    # Simulate the git binary being absent: the internal shell-out raises OSError,
+    # which ``_run_git`` maps to (1, b'').
     import worktree_sha  # type: ignore[import-not-found]
 
     def _boom(*_args: object, **_kwargs: object) -> None:
@@ -232,8 +197,7 @@ def test_missing_git_binary_returns_none(repo: Path, monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(worktree_sha.subprocess, 'run', _boom)
 
-    # Act
     digest = compute_worktree_sha(repo)
 
-    # Assert — a subprocess failure surfaces as None, not a raised exception.
+    # A subprocess failure surfaces as None, not a raised exception.
     assert digest is None

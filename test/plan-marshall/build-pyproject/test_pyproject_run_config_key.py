@@ -68,11 +68,6 @@ CANONICAL_ARGS = [
 ]
 
 
-# =============================================================================
-# Test: TOON output shape
-# =============================================================================
-
-
 def test_run_config_key_returns_toon_with_required_fields():
     """``run-config-key`` returns TOON with build_tool, key_suffix, command_key."""
     result = run_script(
@@ -109,11 +104,6 @@ def test_run_config_key_json_format():
     assert data['command_key'] == 'python:verify'
 
 
-# =============================================================================
-# Test: Parametrised canonical args -> key suffix mapping
-# =============================================================================
-
-
 @pytest.mark.parametrize(
     'args, expected_suffix',
     [
@@ -136,11 +126,6 @@ def test_run_config_key_canonical_args(args, expected_suffix):
     assert data['command_key'] == f'python:{expected_suffix}'
 
 
-# =============================================================================
-# Test: Round-trip property — CLI key matches compute_command_key directly
-# =============================================================================
-
-
 @pytest.mark.parametrize('args', CANONICAL_ARGS)
 def test_run_config_key_round_trip_matches_compute_command_key(args):
     """The CLI-emitted ``command_key`` exactly matches ``compute_command_key(_CONFIG, args)``.
@@ -160,11 +145,6 @@ def test_run_config_key_round_trip_matches_compute_command_key(args):
         f'CLI command_key {data["command_key"]!r} drifted from '
         f'compute_command_key {expected_key!r} for args={args!r}'
     )
-
-
-# =============================================================================
-# Test: Error handling — missing required flag
-# =============================================================================
 
 
 def test_run_config_key_requires_command_args():

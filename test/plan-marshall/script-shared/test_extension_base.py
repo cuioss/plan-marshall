@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Tests for extension_base.py module (public API)."""
 
-# Tier 2 direct imports via importlib for uniform import style
 import importlib.util
 import subprocess
-import sys
 from pathlib import Path
 
 from extension_base import (  # type: ignore[import-not-found]
@@ -57,10 +55,6 @@ CMD_TEST_COMPILE = _extension_constants_mod.CMD_TEST_COMPILE
 CMD_VERIFY = _extension_constants_mod.CMD_VERIFY
 PROFILE_PATTERNS = _extension_constants_mod.PROFILE_PATTERNS
 
-# =============================================================================
-# Tests for CMD_* Constants
-# =============================================================================
-
 
 def test_cmd_constants_values():
     """CMD_* constants have expected string values."""
@@ -99,11 +93,6 @@ def test_all_canonical_commands_contains_all():
     assert ALL_CANONICAL_COMMANDS == expected
 
 
-# =============================================================================
-# Tests for CANONICAL_COMMANDS Metadata
-# =============================================================================
-
-
 def test_canonical_commands_only_aliased():
     """CANONICAL_COMMANDS only contains commands with aliases."""
     for cmd_name, meta in CANONICAL_COMMANDS.items():
@@ -115,11 +104,6 @@ def test_canonical_commands_expected_keys():
     """CANONICAL_COMMANDS contains the expected command keys."""
     expected = {CMD_INTEGRATION_TESTS, CMD_E2E, CMD_COVERAGE, CMD_BENCHMARK, CMD_QUALITY_GATE}
     assert set(CANONICAL_COMMANDS.keys()) == expected
-
-
-# =============================================================================
-# Tests for PROFILE_PATTERNS
-# =============================================================================
 
 
 def test_profile_patterns_integration_tests():
@@ -160,11 +144,6 @@ def test_profile_patterns_benchmark():
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
         assert PROFILE_PATTERNS[alias] == CMD_BENCHMARK
-
-
-# =============================================================================
-# Tests for ExtensionBase Class
-# =============================================================================
 
 
 class ConcreteExtension(ExtensionBase):
@@ -222,11 +201,6 @@ def test_extension_base_no_longer_exposes_axis_b_methods():
         assert not hasattr(ExtensionBase, axis_b), f"ExtensionBase still declares {axis_b}"
 
 
-# =============================================================================
-# Tests for applies_to_module() and _build_applicable_result()
-# =============================================================================
-
-
 def test_extension_base_default_applies_to_module():
     """Default applies_to_module returns not applicable."""
     ext = ConcreteExtension()
@@ -274,13 +248,11 @@ def test_build_applicable_result_merges_core():
     assert result['additive_to'] is None
 
     sbp = result['skills_by_profile']
-    # implementation should have core defaults + impl defaults
     impl = sbp['implementation']
     impl_default_skills = [e['skill'] if isinstance(e, dict) else e for e in impl['defaults']]
     assert 'bundle:core-skill' in impl_default_skills
     assert 'bundle:impl-skill' in impl_default_skills
 
-    # implementation optionals should include core optionals
     impl_opt_skills = [e['skill'] if isinstance(e, dict) else e for e in impl['optionals']]
     assert 'bundle:core-opt' in impl_opt_skills
 
@@ -312,11 +284,6 @@ def test_build_applicable_result_empty_profiles():
 
     assert result['applicable'] is True
     assert result['skills_by_profile'] == {}
-
-
-# =============================================================================
-# Tests for active_profiles filtering (three-layer resolution)
-# =============================================================================
 
 
 class ExtensionWithAllProfiles(ExtensionBase):
@@ -441,7 +408,6 @@ def test_signal_detection_without_it_module():
 def test_active_profiles_overrides_signal_detection():
     """active_profiles takes precedence over signal detection."""
     ext = ExtensionWithSignalDetection()
-    # Module has IT signals, but active_profiles only allows implementation
     result = ext._build_applicable_result(
         'high',
         ['signal'],
@@ -459,16 +425,12 @@ def test_applies_to_module_accepts_active_profiles():
     assert result['applicable'] is False  # ConcreteExtension always returns not applicable
 
 
-# =============================================================================
-# derive_globs_from_tree() per-route tree-presence filter
-# =============================================================================
-#
-# The build-map seed fix: derive_globs_from_tree retains a declared route only
-# when at least one git-tracked file matches its pattern (fnmatch), pruning dead
-# globs (file types absent from the tree) before any consumer sees them. The
-# five scenarios below drive the deriver directly against a git-tracked fixture
-# tree. (The broader deriver suite — keying, dedup, sort, role filtering — lives
-# in test_extension_base_classify_paths.py; this class is the focused
+# derive_globs_from_tree retains a declared route only when at least one
+# git-tracked file matches its pattern (fnmatch), pruning dead globs (file types
+# absent from the tree) before any consumer sees them. The five scenarios below
+# drive the deriver directly against a git-tracked fixture tree. (The broader
+# deriver suite — keying, dedup, sort, role filtering — lives in
+# test_extension_base_classify_paths.py; this class is the focused
 # tree-presence-filter contract for the seed fix.)
 
 
@@ -767,51 +729,3 @@ def test_tracked_basenames_cache_identity():
     first = _tracked_basenames(tracked)
     second = _tracked_basenames(tracked)
     assert first is second, 'expected lru_cache hit to return the same object'
-
-
-if __name__ == '__main__':
-    import traceback
-
-    tests = [
-        test_cmd_constants_values,
-        test_all_canonical_commands_contains_all,
-        test_canonical_commands_only_aliased,
-        test_canonical_commands_expected_keys,
-        test_profile_patterns_integration_tests,
-        test_profile_patterns_quality_gate,
-        test_profile_patterns_coverage,
-        test_profile_patterns_benchmark,
-        test_extension_base_abstract_methods,
-        test_extension_base_default_discover_modules,
-        test_extension_base_default_triage,
-        test_extension_base_default_outline_skill,
-        test_extension_base_default_verify_steps,
-        test_extension_base_no_longer_exposes_axis_b_methods,
-        test_extension_base_default_applies_to_module,
-        test_build_applicable_result_merges_core,
-        test_build_applicable_result_with_additive_to,
-        test_build_applicable_result_empty_profiles,
-        test_build_applicable_result_active_profiles_filters,
-        test_build_applicable_result_no_filter_includes_all,
-        test_detect_applicable_profiles_default_returns_none,
-        test_signal_detection_with_it_module,
-        test_signal_detection_without_it_module,
-        test_active_profiles_overrides_signal_detection,
-        test_applies_to_module_accepts_active_profiles,
-    ]
-
-    passed = 0
-    failed = 0
-
-    for test in tests:
-        try:
-            test()
-            passed += 1
-        except Exception:
-            failed += 1
-            print(f'FAILED: {test.__name__}')
-            traceback.print_exc()
-            print()
-
-    print(f'\nResults: {passed} passed, {failed} failed')
-    sys.exit(0 if failed == 0 else 1)

@@ -95,7 +95,6 @@ class TestRenamePath:
 
     def test_rewrites_step_targets(self, plan_context):
         """Rename-path rewrites matching step targets in pending tasks."""
-        # Create a task with steps targeting old paths
         content = _build_task_toon(
             title='Task with old paths',
             deliverable=1,
@@ -103,7 +102,6 @@ class TestRenamePath:
         )
         _add_task('rename-rewrite', content)
 
-        # Rename providers/ -> auth/providers/
         result = cmd_rename_path(
             _rename_ns(
                 plan_id='rename-rewrite',
@@ -115,7 +113,6 @@ class TestRenamePath:
         assert result['status'] == 'success'
         assert result['rewritten_count'] == 2
 
-        # Verify the rewritten entries
         rewritten_targets = {r['new_target'] for r in result['rewritten']}
         assert 'auth/providers/config.py' in rewritten_targets
         assert 'auth/providers/auth.py' in rewritten_targets

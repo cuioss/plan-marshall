@@ -11,34 +11,15 @@ workflow only fires on the ambiguous branch.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PROJECT_ROOT
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
+_mod = load_script_module(
+    'plan-marshall', 'manage-status', '_cmd_change_type_heuristic.py', '_cmd_change_type_heuristic_under_test'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mod = _load_module('_cmd_change_type_heuristic_under_test', '_cmd_change_type_heuristic.py')
 cmd_change_type_heuristic = _mod.cmd_change_type_heuristic
 
 
@@ -249,7 +230,9 @@ def test_change_type_heuristic_registered_in_manage_status_dispatch():
     """The subcommand is wired into manage-status.py argparse."""
     import argparse  # noqa: PLC0415
 
-    manage_status = _load_module('_manage_status_dispatch_check', 'manage-status.py')
+    manage_status = load_script_module(
+        'plan-marshall', 'manage-status', 'manage-status.py', '_manage_status_dispatch_check'
+    )
 
     # The cmd module exports cmd_change_type_heuristic; manage-status.py
     # imports the same callable. Confirm both halves of the wiring.

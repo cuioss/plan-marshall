@@ -8,6 +8,8 @@ Public API tests should use npm.py CLI instead.
 import tempfile
 from pathlib import Path
 
+import pytest
+
 # Cross-skill imports (PYTHONPATH set by conftest)
 from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 
@@ -27,11 +29,6 @@ parse_typescript = _npm_parse_typescript_mod.parse_log
 
 # Test data location (fixtures in test directory)
 TEST_DATA_DIR = Path(__file__).parent / 'fixtures' / 'log-test-data'
-
-
-# =============================================================================
-# TypeScript Parser Tests
-# =============================================================================
 
 
 def test_typescript_parse_log_returns_tuple():
@@ -82,11 +79,6 @@ def test_typescript_success_on_empty():
         Path(f.name).unlink()
 
 
-# =============================================================================
-# Jest Parser Tests
-# =============================================================================
-
-
 def test_jest_parse_log_returns_tuple():
     """parse_log returns tuple of (issues, test_summary, build_status)."""
     log_file = TEST_DATA_DIR / 'npm-jest-test-failure.log'
@@ -120,11 +112,6 @@ def test_jest_extracts_failures():
 
     failures = [i for i in issues if i.category == 'test_failure']
     assert len(failures) >= 1
-
-
-# =============================================================================
-# TAP Parser Tests
-# =============================================================================
 
 
 def test_tap_parse_log_success():
@@ -177,11 +164,6 @@ def test_tap_extracts_failures():
     assert len(issues_with_file) >= 1
 
 
-# =============================================================================
-# ESLint Parser Tests
-# =============================================================================
-
-
 def test_eslint_parse_log_returns_tuple():
     """parse_log returns tuple of (issues, test_summary, build_status)."""
     log_file = TEST_DATA_DIR / 'npm-eslint-errors.log'
@@ -232,11 +214,6 @@ def test_eslint_no_test_summary():
     assert test_summary is None
 
 
-# =============================================================================
-# npm Error Parser Tests
-# =============================================================================
-
-
 def test_npm_errors_eresolve():
     """npm error parser extracts ERESOLVE errors."""
     log_file = TEST_DATA_DIR / 'npm-dependency-error.log'
@@ -281,24 +258,18 @@ def test_npm_errors_success_on_empty():
         Path(f.name).unlink()
 
 
-# =============================================================================
-# Issue Object Tests
-# =============================================================================
-
-
 def test_issue_to_dict():
     """Issue.to_dict() returns proper dict structure."""
     log_file = TEST_DATA_DIR / 'npm-eslint-errors.log'
     issues, test_summary, build_status = parse_eslint(log_file)
 
-    if issues:
-        issue = issues[0]
-        d = issue.to_dict()
+    assert len(issues) >= 1
+    d = issues[0].to_dict()
 
-        assert 'file' in d
-        assert 'line' in d
-        assert 'message' in d
-        assert 'severity' in d
+    assert 'file' in d
+    assert 'line' in d
+    assert 'message' in d
+    assert 'severity' in d
 
 
 def test_test_summary_to_dict():
@@ -315,15 +286,8 @@ def test_test_summary_to_dict():
     assert d['total'] == 5
 
 
-# =============================================================================
-# Edge Cases
-# =============================================================================
-
-
 def test_parse_log_file_not_found():
     """Raises FileNotFoundError for missing log file."""
-    import pytest
-
     with pytest.raises(FileNotFoundError):
         parse_typescript('/nonexistent/path/to/log.log')
 

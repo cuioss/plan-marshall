@@ -73,11 +73,6 @@ def _install_queue(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble) -> Non
     monkeypatch.setattr(bqs, '_release_raw', double.release)
 
 
-# =============================================================================
-# No-op passthrough — the backward-compatibility guarantee
-# =============================================================================
-
-
 @pytest.mark.parametrize('plan_id', [None, ''])
 def test_no_plan_id_is_pure_noop(monkeypatch, plan_id):
     """A falsy plan_id yields with ZERO queue interaction — plan-less builds run
@@ -94,22 +89,12 @@ def test_no_plan_id_is_pure_noop(monkeypatch, plan_id):
     assert double.release_calls == []
 
 
-# =============================================================================
-# No title-token machinery — pure concurrency limiter
-# =============================================================================
-
-
 def test_queue_exposes_no_title_token_symbols():
     """The build queue is a pure concurrency limiter and writes no terminal-title
     state — none of the title-token seams exist on the module."""
     assert not hasattr(bqs, '_set_title_token')
     assert not hasattr(bqs, '_push_title_token')
     assert not hasattr(bqs, '_clear_title_token')
-
-
-# =============================================================================
-# Admit-immediately
-# =============================================================================
 
 
 def test_admitted_runs_body_and_releases(monkeypatch):
@@ -124,11 +109,6 @@ def test_admitted_runs_body_and_releases(monkeypatch):
 
     assert ran is True
     assert 'P:uuid-1' in double.released_ids
-
-
-# =============================================================================
-# Block-then-admit
-# =============================================================================
 
 
 def test_blocked_then_admitted_polls_and_runs(monkeypatch):
@@ -201,11 +181,6 @@ def test_sleep_called_once_per_retry(monkeypatch):
     assert sleeps == [bqs._WAIT_SECONDS, bqs._WAIT_SECONDS]
 
 
-# =============================================================================
-# Retries exhausted
-# =============================================================================
-
-
 def test_retries_exhausted_raises_and_releases(monkeypatch):
     """Staying blocked past max_retries releases the queued id and raises
     BuildQueueTimeout — the body never runs."""
@@ -257,11 +232,6 @@ def test_acquire_error_mid_wait_releases_queued_id(monkeypatch):
     assert 'P:uuid-Q' in double.released_ids
 
 
-# =============================================================================
-# Always-release on body exception
-# =============================================================================
-
-
 def test_body_exception_still_releases(monkeypatch):
     """A body that raises still releases the slot in the finally."""
     double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
@@ -274,27 +244,17 @@ def test_body_exception_still_releases(monkeypatch):
     assert 'P:uuid-1' in double.released_ids
 
 
-# =============================================================================
-# Release best-effort behaviour
-# =============================================================================
-
-
 def test_release_failure_is_logged_not_raised(monkeypatch):
     """A release that fails is logged at WARNING but never raises — the build
     has already finished."""
     double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
     _install_queue(monkeypatch, double)
-    # Override release to report an error.
     monkeypatch.setattr(bqs, '_release_raw', lambda _p, _i: {'status': 'error', 'error': 'queue gone'})
 
-    # Should not raise despite the release error.
+    # The release error is logged at WARNING, never raised — entering and exiting
+    # the slot without an exception is the assertion.
     with build_queue_slot('P'):
         pass
-
-
-# =============================================================================
-# max_retries resolution from marshal.json
-# =============================================================================
 
 
 class TestResolveMaxRetries:
@@ -328,11 +288,6 @@ class TestResolveMaxRetries:
     def test_non_dict_build_block_falls_back(self, monkeypatch):
         monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {'build': 'not-a-dict'})
         assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
-
-
-# =============================================================================
-# _emit_queue_timeout structured error
-# =============================================================================
 
 
 def test_emit_queue_timeout_renders_structured_error(capsys):

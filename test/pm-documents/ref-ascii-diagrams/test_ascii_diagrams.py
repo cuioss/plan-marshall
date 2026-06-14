@@ -78,7 +78,6 @@ BOX_OUTSIDE_FENCE = "\n".join(
 
 
 def test_is_top_rule_detects_top_border():
-    # Arrange / Act / Assert
     assert is_top_rule("┌────┐")
     assert is_top_rule("    ┌──┐")  # leading indent ignored
 
@@ -126,46 +125,39 @@ def test_is_box_line_requires_both_vertical_borders():
 
 
 def test_box_run_lines_matches_bottom_rule():
-    # Arrange
     lines = ["┌──┐", "│x│", "│yy│", "└──┘"]
 
-    # Act
     bottom = _box_run_lines(lines, 0)
 
-    # Assert
     assert bottom == 3
 
 
 def test_box_run_lines_returns_none_on_blank_break():
-    # Arrange — a blank line breaks the run before a bottom rule appears.
+    # A blank line breaks the run before a bottom rule appears.
     lines = ["┌──┐", "│x│", "", "└──┘"]
 
-    # Act
     bottom = _box_run_lines(lines, 0)
 
-    # Assert
     assert bottom is None
 
 
 def test_box_run_lines_treats_deeper_indent_as_interior():
-    # Arrange — a deeper-indented line is interior content, not a terminator.
+    # A deeper-indented line is interior content, not a terminator.
     lines = ["┌──┐", "│x│", "  nested content", "│y│", "└──┘"]
 
-    # Act
     bottom = _box_run_lines(lines, 0)
 
-    # Assert — deeper indent is interior; box run still finds the bottom rule.
+    # Deeper indent is interior; box run still finds the bottom rule.
     assert bottom == 4
 
 
 def test_box_run_lines_terminates_on_shallower_indent():
-    # Arrange — a line at shallower indent than the box exits the box context.
+    # A line at shallower indent than the box exits the box context.
     lines = ["  ┌──┐", "  │x│", "unindented line", "  └──┘"]
 
-    # Act
     bottom = _box_run_lines(lines, 0)
 
-    # Assert — shallower indent terminates the run; no bottom rule found.
+    # Shallower indent terminates the run; no bottom rule found.
     assert bottom is None
 
 
@@ -175,13 +167,11 @@ def test_box_run_lines_terminates_on_shallower_indent():
 
 
 def test_rebuild_box_aligns_right_borders_to_widest_line():
-    # Arrange
     lines = ["┌──┐", "│ short │", "│ a longer line │", "└──┘"]
 
-    # Act
     rebuilt = rebuild_box(lines, 0, 3)
 
-    # Assert — every line now has the same total length.
+    # Every line now has the same total length.
     widths = {len(line) for line in rebuilt}
     assert len(widths) == 1, f"expected uniform width, got {widths}"
     assert rebuilt[0].startswith("┌") and rebuilt[0].endswith("┐")
@@ -189,7 +179,7 @@ def test_rebuild_box_aligns_right_borders_to_widest_line():
 
 
 def test_rebuild_box_is_a_fixed_point_for_aligned_input():
-    # Arrange — an already-aligned box.
+    # An already-aligned box.
     lines = [
         "┌───────────────┐",
         "│ short         │",
@@ -197,10 +187,9 @@ def test_rebuild_box_is_a_fixed_point_for_aligned_input():
         "└───────────────┘",
     ]
 
-    # Act
     rebuilt = rebuild_box(lines, 0, 3)
 
-    # Assert — rebuilding an aligned box leaves it unchanged.
+    # Rebuilding an aligned box leaves it unchanged.
     assert rebuilt == lines
 
 
@@ -210,38 +199,31 @@ def test_rebuild_box_is_a_fixed_point_for_aligned_input():
 
 
 def test_process_file_detects_misalignment(tmp_path):
-    # Arrange
     md = tmp_path / "diagram.md"
     md.write_text(MISALIGNED_BOX, encoding="utf-8")
 
-    # Act
     _new_lines, changed = _process_file(md)
 
-    # Assert — at least one interior/border line is reported as changed.
+    # At least one interior/border line is reported as changed.
     assert changed, "expected misaligned lines to be detected"
 
 
 def test_process_file_reports_no_change_for_aligned_box(tmp_path):
-    # Arrange
     md = tmp_path / "aligned.md"
     md.write_text(ALIGNED_BOX, encoding="utf-8")
 
-    # Act
     _new_lines, changed = _process_file(md)
 
-    # Assert
     assert changed == []
 
 
 def test_process_file_ignores_boxes_outside_code_blocks(tmp_path):
-    # Arrange — a ragged box that is NOT inside a fence must be left alone.
+    # A ragged box that is NOT inside a fence must be left alone.
     md = tmp_path / "outside.md"
     md.write_text(BOX_OUTSIDE_FENCE, encoding="utf-8")
 
-    # Act
     _new_lines, changed = _process_file(md)
 
-    # Assert
     assert changed == []
 
 
@@ -255,14 +237,11 @@ def test_script_exists():
 
 
 def test_check_subcommand_reports_misalignment(tmp_path):
-    # Arrange
     md = tmp_path / "diagram.md"
     md.write_text(MISALIGNED_BOX, encoding="utf-8")
 
-    # Act
     result = run_script(SCRIPT_PATH, "check", "--path", str(md))
 
-    # Assert
     assert result.success, f"check failed: {result.stderr}"
     data = result.toon()
     assert data["operation"] == "check"
@@ -270,28 +249,23 @@ def test_check_subcommand_reports_misalignment(tmp_path):
 
 
 def test_check_subcommand_clean_on_aligned(tmp_path):
-    # Arrange
     md = tmp_path / "aligned.md"
     md.write_text(ALIGNED_BOX, encoding="utf-8")
 
-    # Act
     result = run_script(SCRIPT_PATH, "check", "--path", str(md))
 
-    # Assert
     assert result.success, f"check failed: {result.stderr}"
     data = result.toon()
     assert data["misaligned_count"] == 0
 
 
 def test_fix_subcommand_repairs_and_is_idempotent(tmp_path):
-    # Arrange
     md = tmp_path / "diagram.md"
     md.write_text(MISALIGNED_BOX, encoding="utf-8")
 
-    # Act — first fix pass repairs the file.
     first = run_script(SCRIPT_PATH, "fix", "--path", str(md))
 
-    # Assert — the file was reported as fixed.
+    # The file was reported as fixed.
     assert first.success, f"first fix failed: {first.stderr}"
     first_data = first.toon()
     assert first_data["files_fixed"] == 1
@@ -299,16 +273,16 @@ def test_fix_subcommand_repairs_and_is_idempotent(tmp_path):
 
     repaired = md.read_text(encoding="utf-8")
 
-    # Act — a re-check now reports zero misalignment.
+    # A re-check now reports zero misalignment.
     recheck = run_script(SCRIPT_PATH, "check", "--path", str(md))
     assert recheck.success
     assert recheck.toon()["misaligned_count"] == 0
 
-    # Act — a second fix pass is idempotent: nothing changes on disk and the
+    # A second fix pass is idempotent: nothing changes on disk and the
     # script reports zero files fixed.
     second = run_script(SCRIPT_PATH, "fix", "--path", str(md))
 
-    # Assert — idempotence: byte-identical content and no further fixes.
+    # Idempotence: byte-identical content and no further fixes.
     assert second.success, f"second fix failed: {second.stderr}"
     second_data = second.toon()
     assert second_data["files_fixed"] == 0
@@ -316,10 +290,9 @@ def test_fix_subcommand_repairs_and_is_idempotent(tmp_path):
 
 
 def test_main_requires_subcommand():
-    # Act — invoking with no subcommand is an argparse error.
+    # Invoking with no subcommand is an argparse error.
     result = run_script(SCRIPT_PATH)
 
-    # Assert
     assert not result.success
     combined = (result.stdout + result.stderr).lower()
     assert "usage" in combined or "error" in combined

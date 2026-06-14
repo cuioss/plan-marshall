@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for asciidoc.py - AsciiDoc formatting, validation, and link operations.
 
-Tier 2 (direct import) tests with 3 subprocess CLI plumbing tests retained.
+Tier 2 (direct import) tests with subprocess CLI plumbing tests retained.
 """
 
 import json
@@ -10,16 +10,16 @@ import warnings
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from conftest import get_script_path, load_script_module, run_script
 
-# Test directories
 TEST_DIR = Path(__file__).parent
 SCRIPT_PATH = get_script_path('pm-documents', 'ref-asciidoc', 'asciidoc.py')
 FIXTURES_DIR = TEST_DIR / 'fixtures'
 LINK_VERIFY_FIXTURES = FIXTURES_DIR / 'link-verify'
 
 
-# These modules have underscore names, so standard import via importlib works
 def _load_module(name, filename):
     return load_script_module('pm-documents', 'ref-asciidoc', filename, name)
 
@@ -37,69 +37,63 @@ cmd_format = _format_mod.cmd_format
 cmd_verify_links = _verify_links_mod.cmd_verify_links
 cmd_classify_links = _classify_links_mod.cmd_classify_links
 
-
-# =============================================================================
-# Main help tests (CLI plumbing - retained as subprocess)
-# =============================================================================
+FORMAT_FIX_TYPES = ['lists', 'xref', 'whitespace', 'all']
 
 
-def test_script_exists():
-    """Test that the script exists."""
+# Tier 2: Main help (CLI plumbing)
+
+
+def test_script_file_exists():
     assert SCRIPT_PATH.exists(), f'Script not found: {SCRIPT_PATH}'
 
 
-def test_fixtures_exist():
-    """Test that fixtures directory exists."""
+def test_fixtures_directory_exists():
     assert FIXTURES_DIR.exists(), f'Fixtures not found: {FIXTURES_DIR}'
 
 
-def test_main_help():
-    """Test main --help displays all subcommands (CLI plumbing)."""
+def test_main_help_lists_all_subcommands():
     result = run_script(SCRIPT_PATH, '--help')
+
     combined = result.stdout + result.stderr
     assert 'stats' in combined, 'stats subcommand in help'
     assert 'validate' in combined, 'validate subcommand in help'
     assert 'format' in combined, 'format subcommand in help'
 
 
-# =============================================================================
-# Stats subcommand tests (Tier 2)
-# =============================================================================
+# Tier 2: Stats subcommand
 
 
-def test_stats_help():
-    """Test stats --help displays usage (CLI plumbing)."""
+def test_stats_help_shows_usage():
     result = run_script(SCRIPT_PATH, 'stats', '--help')
+
     combined = result.stdout + result.stderr
     assert 'usage' in combined.lower(), f'Stats help not shown: {combined}'
 
 
-def test_stats_console_format():
-    """Test stats default console output produces dict with summary data."""
+def test_stats_console_format_returns_summary():
     result = cmd_stats(Namespace(command='stats', directory=str(FIXTURES_DIR), format='console', details=False))
+
     assert result['status'] == 'success', f'Expected success status, got: {result.get("status")}'
     assert 'summary' in result, 'Stats output should contain summary'
 
 
-def test_stats_json_format():
-    """Test stats JSON output format includes metadata and summary."""
+def test_stats_json_format_includes_metadata_and_summary():
     result = cmd_stats(Namespace(command='stats', directory=str(FIXTURES_DIR), format='json', details=False))
+
     assert 'metadata' in result, 'Result missing metadata'
     assert 'summary' in result, 'Result missing summary'
 
 
-def test_stats_details_flag():
-    """Test stats details flag includes file info."""
+def test_stats_details_flag_includes_files():
     result = cmd_stats(Namespace(command='stats', directory=str(FIXTURES_DIR), format='json', details=True))
+
     assert 'files' in result, 'Result with details flag should include files key'
 
 
-def test_stats_lists_count_on_indented_markers():
-    """Test lists statistic counts whitespace-indented list markers correctly.
-
-    Covers the regex fix: the leading horizontal-whitespace class must match
-    space-indented and tab-indented list markers (`*`, numbered, `::`). Six
-    list lines are present; non-list lines must not be counted.
+def test_stats_counts_indented_list_markers():
+    """The leading horizontal-whitespace class must match space-indented and
+    tab-indented list markers (``*``, numbered, ``::``). Six list lines are
+    present; non-list lines must not be counted.
     """
     content = (
         '= Title\n'
@@ -117,61 +111,62 @@ def test_stats_lists_count_on_indented_markers():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.adoc', delete=False) as f:
         f.write(content)
         temp_file = Path(f.name)
+
     try:
         stats = analyze_file_stats(temp_file)
+
         assert stats['lists'] == 6, f'Expected 6 list markers, got {stats["lists"]}'
     finally:
         temp_file.unlink(missing_ok=True)
 
 
-def test_stats_no_future_warning_on_lists_regex():
-    """Test the stats path raises no FutureWarning (POSIX-class regex regression guard)."""
+def test_stats_lists_regex_raises_no_future_warning():
+    """The stats path must not raise FutureWarning (POSIX-class regex regression guard)."""
     content = '= Title\n\n* bullet\n  * indented bullet\n\tterm:: def\n'
     with tempfile.NamedTemporaryFile(mode='w', suffix='.adoc', delete=False) as f:
         f.write(content)
         temp_file = Path(f.name)
+
     try:
         with warnings.catch_warnings(record=True) as recorded:
             warnings.simplefilter('always')
             analyze_file_stats(temp_file)
+
         future_warnings = [w for w in recorded if issubclass(w.category, FutureWarning)]
         assert not future_warnings, f'Unexpected FutureWarning(s): {[str(w.message) for w in future_warnings]}'
     finally:
         temp_file.unlink(missing_ok=True)
 
 
-def test_stats_empty_directory():
-    """Test stats handles empty directory."""
+def test_stats_handles_empty_directory():
     with tempfile.TemporaryDirectory() as temp_dir:
         result = cmd_stats(Namespace(command='stats', directory=temp_dir, format='console', details=False))
+
         assert result['status'] == 'success'
 
 
-def test_stats_nonexistent_dir():
-    """Test stats handles nonexistent directory."""
+def test_stats_nonexistent_directory_reports_error():
     result = cmd_stats(Namespace(command='stats', directory='/nonexistent/path', format='console', details=False))
+
     assert result['status'] == 'error', 'Nonexistent path should produce error status'
 
 
-# =============================================================================
-# Validate subcommand tests (Tier 2)
-# =============================================================================
+# Tier 2: Validate subcommand
 
 
-def test_validate_console_format():
-    """Test validate default console output."""
+def test_validate_console_format_returns_status():
     result = cmd_validate(Namespace(command='validate', path=str(FIXTURES_DIR), format='console', ignore_patterns=None))
+
     assert result['status'] in ('success', 'non_compliant'), f'Unexpected status: {result["status"]}'
 
 
-def test_validate_json_format():
-    """Test validate JSON output format."""
+def test_validate_json_format_includes_directory():
     result = cmd_validate(Namespace(command='validate', path=str(FIXTURES_DIR), format='json', ignore_patterns=None))
+
     assert 'directory' in result, "JSON format didn't produce expected output"
 
 
-def test_validate_missing_blank_line():
-    """Test validate detects missing blank line before list."""
+def test_validate_detects_missing_blank_line_before_list():
     content = """= Test Document
 :toc: left
 :toclevels: 3
@@ -187,8 +182,10 @@ Some text directly before list:
     with tempfile.NamedTemporaryFile(mode='w', suffix='.adoc', delete=False) as f:
         f.write(content)
         temp_file = f.name
+
     try:
         result = cmd_validate(Namespace(command='validate', path=temp_file, format='console', ignore_patterns=None))
+
         assert result['status'] == 'non_compliant' or 'blank' in str(result).lower(), (
             'Missing blank line should be detected'
         )
@@ -196,115 +193,90 @@ Some text directly before list:
         Path(temp_file).unlink(missing_ok=True)
 
 
-def test_validate_ignore_pattern():
-    """Test validate ignore pattern flag."""
+def test_validate_accepts_ignore_pattern():
     result = cmd_validate(
         Namespace(command='validate', path=str(FIXTURES_DIR), format='console', ignore_patterns=['missing-*.adoc'])
     )
+
     assert result['status'] in ('success', 'non_compliant', 'error')
 
 
-def test_validate_invalid_format_rejected():
-    """Test validate rejects invalid format (CLI plumbing - argparse)."""
+def test_validate_rejects_invalid_format():
     result = run_script(SCRIPT_PATH, 'validate', '-f', 'invalid_format')
+
     assert result.returncode != 0, 'Invalid format should be rejected'
 
 
-def test_validate_nonexistent_path():
-    """Test validate handles nonexistent path."""
+def test_validate_nonexistent_path_reports_error():
     result = cmd_validate(
         Namespace(command='validate', path='/nonexistent/path', format='console', ignore_patterns=None)
     )
+
     assert result['status'] == 'error', 'Nonexistent path should produce error status'
 
 
-# =============================================================================
-# Format subcommand tests (Tier 2)
-# =============================================================================
+# Tier 2: Format subcommand
 
 
-def test_format_no_backup_flag():
-    """Test format --no-backup flag prevents backup creation."""
+def test_format_no_backup_flag_succeeds():
     result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['lists'], no_backup=True))
+
     assert result['status'] == 'success'
 
 
-def test_format_lists_type():
-    """Test format -t lists fix type."""
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['lists'], no_backup=True))
+@pytest.mark.parametrize('fix_type', FORMAT_FIX_TYPES)
+def test_format_accepts_fix_type(fix_type):
+    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=[fix_type], no_backup=True))
+
     assert result['status'] == 'success'
 
 
-def test_format_xref_type():
-    """Test format -t xref fix type."""
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['xref'], no_backup=True))
-    assert result['status'] == 'success'
-
-
-def test_format_whitespace_type():
-    """Test format -t whitespace fix type."""
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['whitespace'], no_backup=True))
-    assert result['status'] == 'success'
-
-
-def test_format_all_types():
-    """Test format -t all fix type."""
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['all'], no_backup=True))
-    assert result['status'] == 'success'
-
-
-def test_format_invalid_type_rejected():
-    """Test format rejects invalid fix type (CLI plumbing - argparse)."""
+def test_format_rejects_invalid_fix_type():
     result = run_script(SCRIPT_PATH, 'format', '-t', 'invalid_type')
+
     assert result.returncode != 0, 'Invalid fix type should be rejected'
 
 
-def test_format_nonexistent_path():
-    """Test format handles nonexistent path."""
+def test_format_nonexistent_path_reports_error():
     result = cmd_format(Namespace(command='format', path='/nonexistent/path', fix_types=None, no_backup=False))
+
     assert result['status'] == 'error', 'Nonexistent path should produce error status'
 
 
-# =============================================================================
-# Verify-links subcommand tests (Tier 2)
-# =============================================================================
+# Tier 2: Verify-links subcommand
 
 
-def test_verify_links_single_file():
-    """Test verify-links processes single file."""
+def test_verify_links_processes_single_file():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
-    if not empty_file.exists():
-        return  # Skip if fixture doesn't exist
+
     result = cmd_verify_links(
         Namespace(command='verify-links', file=str(empty_file), directory=None, recursive=False, report=None)
     )
+
     assert str(result.get('data', {}).get('files_processed', '')) == '1', 'Single file mode processes one file'
 
 
-def test_verify_links_empty_file():
-    """Test verify-links handles empty file."""
+def test_verify_links_handles_empty_file():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
-    if not empty_file.exists():
-        return  # Skip if fixture doesn't exist
+
     result = cmd_verify_links(
         Namespace(command='verify-links', file=str(empty_file), directory=None, recursive=False, report=None)
     )
+
     assert result['status'] in ('success', 'failure', 'error')
 
 
-def test_verify_links_file_not_found():
-    """Test verify-links handles missing file."""
+def test_verify_links_missing_file_reports_error():
     result = cmd_verify_links(
         Namespace(command='verify-links', file='/nonexistent/file.adoc', directory=None, recursive=False, report=None)
     )
+
     assert result['status'] == 'error', 'Error when file does not exist'
 
 
-def test_verify_links_both_file_and_directory():
-    """Test verify-links rejects both --file and --directory."""
+def test_verify_links_rejects_both_file_and_directory():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
-    if not empty_file.exists():
-        return  # Skip if fixture doesn't exist
+
     result = cmd_verify_links(
         Namespace(
             command='verify-links',
@@ -314,28 +286,25 @@ def test_verify_links_both_file_and_directory():
             report=None,
         )
     )
+
     assert 'cannot specify both' in result.get('message', '').lower(), (
         'Error when both --file and --directory specified'
     )
 
 
-# =============================================================================
-# Classify-links subcommand tests (Tier 2)
-# =============================================================================
+# Tier 2: Classify-links subcommand
 
 
-def test_classify_links_with_files():
-    """Test classify-links with input/output files."""
+def test_classify_links_writes_categorized_output():
+    input_data = {
+        'issues': [
+            {'file': 'standards/security.adoc', 'line': 42, 'link': '<<owasp-top-10>>', 'type': 'broken_anchor'},
+            {'file': 'guide.adoc', 'line': 56, 'link': 'file:///local/path/doc.pdf', 'type': 'broken_link'},
+        ]
+    }
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-        input_data = {
-            'issues': [
-                {'file': 'standards/security.adoc', 'line': 42, 'link': '<<owasp-top-10>>', 'type': 'broken_anchor'},
-                {'file': 'guide.adoc', 'line': 56, 'link': 'file:///local/path/doc.pdf', 'type': 'broken_link'},
-            ]
-        }
         json.dump(input_data, f)
         input_file = Path(f.name)
-
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         output_file = Path(f.name)
 
@@ -343,6 +312,7 @@ def test_classify_links_with_files():
         result = cmd_classify_links(
             Namespace(command='classify-links', input=str(input_file), output=str(output_file), pretty=True)
         )
+
         assert result['status'] == 'success'
         assert output_file.exists(), 'Classification completed'
         content = output_file.read_text()

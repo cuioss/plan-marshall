@@ -45,11 +45,6 @@ def load_module():
     return module
 
 
-# =============================================================================
-# TESTS: generate_mappings_code
-# =============================================================================
-
-
 def test_generates_valid_python_dict_syntax():
     """Generated code is valid Python dict syntax."""
     module = load_module()
@@ -82,11 +77,6 @@ def test_sorts_mappings_alphabetically():
     # First line should be a-bundle, last should be z-bundle
     assert 'a-bundle' in lines[0], f"Expected 'a-bundle' in first line, got {lines[0]}"
     assert 'z-bundle' in lines[-1], f"Expected 'z-bundle' in last line, got {lines[-1]}"
-
-
-# =============================================================================
-# TESTS: compute_checksum
-# =============================================================================
 
 
 def test_same_mappings_same_checksum():
@@ -122,11 +112,6 @@ def test_checksum_is_8_chars():
     checksum = module.compute_checksum(mappings)
 
     assert len(checksum) == 8, f'Expected 8 chars, got {len(checksum)}'
-
-
-# =============================================================================
-# TESTS: cleanup_old_logs
-# =============================================================================
 
 
 def test_cleanup_deletes_old_logs(monkeypatch):
@@ -170,11 +155,6 @@ def test_cleanup_preserves_recent_logs(monkeypatch):
         deleted = module.cleanup_old_logs(max_age_days=7)
         assert deleted == 0, f'Expected 0 deleted, got {deleted}'
         assert recent_log.exists(), 'Recent log should be preserved'
-
-
-# =============================================================================
-# TESTS: Script execution
-# =============================================================================
 
 
 def test_help_output():
@@ -280,11 +260,6 @@ def test_paths_help():
     assert 'paths' in result.stdout.lower(), "Missing 'paths' in help"
 
 
-# =============================================================================
-# TESTS: _resolve_plan_marshall_path
-# =============================================================================
-
-
 def test_resolve_finds_versioned_path():
     """Resolves path in versioned cache structure (any version)."""
     module = load_module()
@@ -361,11 +336,6 @@ def test_resolve_skips_hidden_dirs():
 
         assert '.git' not in str(result), f'Should skip hidden dirs, got {result}'
         assert '1.0.0' in str(result), f'Should find real version, got {result}'
-
-
-# =============================================================================
-# TESTS: discover_scripts_fallback
-# =============================================================================
 
 
 def test_discovers_scripts_from_directory_structure():
@@ -448,11 +418,6 @@ def test_skips_private_modules():
         assert '_internal' not in path, 'Should not include _internal.py'
         assert '_helper' not in path, 'Should not include _helper.py'
         assert 'main.py' in path, 'Should include main.py'
-
-
-# =============================================================================
-# TESTS: _collect_script_dirs (subdirectory scanning)
-# =============================================================================
 
 
 def test_collect_script_dirs_includes_subdirectories():
@@ -555,11 +520,6 @@ def test_collect_script_dirs_versioned_includes_subdirectories():
         assert str(scripts_dir / 'build') in dirs, f'Expected versioned build subdir in {dirs}'
 
 
-# =============================================================================
-# Bootstrap isolation test -- verify script works WITHOUT executor PYTHONPATH
-# =============================================================================
-
-
 def test_generate_executor_imports_without_executor_pythonpath():
     """generate_executor.py must resolve its own imports without executor PYTHONPATH.
 
@@ -578,17 +538,12 @@ def test_generate_executor_imports_without_executor_pythonpath():
     assert result.returncode == 0, f'generate_executor.py failed without PYTHONPATH:\n{result.stderr}'
 
 
-# =============================================================================
-# TESTS: --marketplace-root flag and PM_MARKETPLACE_ROOT env var
-# =============================================================================
 # These tests pin the marketplace-discovery resolution order documented in
 # script-shared/marketplace_paths.find_marketplace_path: explicit param > env
 # var > script-relative walk > cwd. They construct a fake marketplace tree
 # with a sentinel bundle/skill/scripts/foo.py and verify the regenerated
 # executor's SCRIPTS dict reflects the fake path — not the project cwd or
 # plugin cache.
-
-
 def _build_fake_marketplace(tmp_path: Path) -> Path:
     """Build a minimal but functional fake marketplace under tmp_path.
 
@@ -808,9 +763,6 @@ def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
         )
 
 
-# =============================================================================
-# TESTS: _write_active_plan helper in execute-script.py.template
-# =============================================================================
 # These tests exercise the session active-plan cache writer that the executor
 # template emits in main() on every invocation carrying --plan-id or
 # --audit-plan-id. The helper feeds the per-target terminal-title reader
@@ -1017,14 +969,10 @@ def test_write_active_plan_overwrites_on_subsequent_calls(tmp_path, monkeypatch)
     assert cache_file.read_text(encoding='utf-8') == 'third-plan'
 
 
-# =============================================================================
-# TESTS: AST subcommand extractor removed (lesson 2026-05-26-09-001 / plan
+# AST subcommand extractor removed (lesson 2026-05-26-09-001 / plan
 # fix-generate-executor-ast-subcommands). The generator no longer emits a
 # SUBCOMMANDS dict; drift is now detected at dev-time via plugin-doctor and
 # post-hoc via plan-retrospective.
-# =============================================================================
-
-
 def test_ast_subcommand_extractor_symbols_removed():
     """Removed AST extractor symbols must be absent — guards against reintroduction."""
     module = load_module()
@@ -1068,17 +1016,12 @@ def test_write_active_plan_validate_helper_rejects_unsafe_session_id(tmp_path, m
     assert not escape_dir.exists(), 'Helper must not traverse out of sessions/ via malformed session id'
 
 
-# =============================================================================
-# TESTS: executor-guard backstop decision (ADR-002, deliverable 11)
-#
-# Under the move-based, cwd-pinned hermetic worktree model the structural
-# cwd-pinning is the PRIMARY enforcement; a secondary runtime worktree-write
-# refusal guard inside generate_executor.py was evaluated and REJECTED as
-# redundant. These tests pin the recorded decision so the rejected backstop is
-# not silently reintroduced and the ADR cross-reference does not rot.
-# =============================================================================
-
-
+# Executor-guard backstop decision (ADR-002, deliverable 11): under the
+# move-based, cwd-pinned hermetic worktree model the structural cwd-pinning is
+# the PRIMARY enforcement; a secondary runtime worktree-write refusal guard
+# inside generate_executor.py was evaluated and REJECTED as redundant. These
+# tests pin the recorded decision so the rejected backstop is not silently
+# reintroduced and the ADR cross-reference does not rot.
 def test_module_docstring_records_executor_guard_backstop_decision():
     """The module docstring MUST record the keep/remove backstop decision and
     cross-reference ADR-002 (deliverable 11 acceptance criterion)."""
@@ -1111,9 +1054,6 @@ def test_no_worktree_write_refusal_guard_symbol_present():
         )
 
 
-# =============================================================================
-# TESTS: build-class change-ledger append at the executor dispatch boundary
-#
 # The executor template appends one kind=build change-ledger entry after every
 # build-class dispatch (a notation under plan-marshall:build-pyproject /
 # build-maven / build-gradle / build-npm). The freshness gate reads these
@@ -1122,9 +1062,6 @@ def test_no_worktree_write_refusal_guard_symbol_present():
 # before dispatch, so only completed builds (regardless of exit_code) are
 # recorded. These tests pin the source-level presence, the structural import of
 # the ledger primitives, and the after-return ordering.
-# =============================================================================
-
-
 def test_template_contains_build_ledger_append_at_dispatch_boundary():
     """The executor template must invoke the build-class ledger append at the
     dispatch boundary, guarded by the build-class notation predicate."""

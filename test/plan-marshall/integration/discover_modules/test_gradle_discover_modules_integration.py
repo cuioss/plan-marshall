@@ -117,23 +117,23 @@ def run_integration_tests() -> int:
                     for em in error_modules:
                         print(f'    - {em.get("name", "?")}: {em.get("error", "?")}')
 
-                # Assert no null values (only on successful modules)
+                # no null values (only on successful modules)
                 if success_modules:
                     nulls = assert_no_null_values(success_modules)
                     if nulls:
                         errors.append(f'Null values found at: {", ".join(nulls)}')
 
-                    # Assert paths exist (only on successful modules)
+                    # paths exist (only on successful modules)
                     missing = assert_paths_exist(success_modules, project_path)
                     if missing:
                         errors.extend(missing)
 
-                # Assert Gradle-specific structure (handles error modules gracefully)
+                # Gradle-specific structure (handles error modules gracefully)
                 gradle_errors = assert_gradle_module_structure(gradle_modules)
                 if gradle_errors:
                     errors.extend(gradle_errors)
 
-                # Assert multi-module projects have root aggregator
+                # multi-module projects have root aggregator
                 root_errors = assert_has_root_aggregator(
                     gradle_modules, project_path, ['build.gradle', 'build.gradle.kts']
                 )

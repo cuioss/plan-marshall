@@ -39,10 +39,6 @@ _bcw = importlib.import_module('_build_check_warnings')
 
 from toon_parser import parse_toon  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _warn(message: str, wtype: str = 'other', severity: str = 'WARNING') -> dict:
     """Build a minimal warning dict."""
@@ -55,11 +51,6 @@ def _args(warnings_json: str | None = None, acceptable_json: str | None = None) 
         warnings=warnings_json,
         acceptable_warnings=acceptable_json,
     )
-
-
-# ---------------------------------------------------------------------------
-# create_check_warnings_handler factory
-# ---------------------------------------------------------------------------
 
 
 class TestFactory:
@@ -93,20 +84,14 @@ class TestFactory:
         )
         handler(args)
         output = parse_toon(capsys.readouterr().out)
-        # Only the WARNING-severity item should be processed
         assert output['total'] == 2
         assert output['acceptable'] == 1
-
-
-# ---------------------------------------------------------------------------
-# Exit code semantics
-# ---------------------------------------------------------------------------
 
 
 class TestExitCodes:
     """Exit code 0 means no fixable/unknown, 1 otherwise."""
 
-    def test_all_acceptable_returns_0(self, capsys):
+    def test_all_acceptable_returns_0(self):
         warnings = [_warn('known issue')]
         args = _args(
             warnings_json=json.dumps(warnings),
@@ -115,13 +100,13 @@ class TestExitCodes:
         exit_code = _bcw.cmd_check_warnings_base(args, matcher='substring')
         assert exit_code == 0
 
-    def test_fixable_returns_1(self, capsys):
+    def test_fixable_returns_1(self):
         warnings = [_warn('javadoc problem', wtype='javadoc_warning')]
         args = _args(warnings_json=json.dumps(warnings))
         exit_code = _bcw.cmd_check_warnings_base(args, matcher='substring')
         assert exit_code == 1
 
-    def test_unknown_returns_1(self, capsys):
+    def test_unknown_returns_1(self):
         warnings = [_warn('mystery warning', wtype='other')]
         args = _args(
             warnings_json=json.dumps(warnings),
@@ -130,15 +115,10 @@ class TestExitCodes:
         exit_code = _bcw.cmd_check_warnings_base(args, matcher='substring')
         assert exit_code == 1
 
-    def test_empty_warnings_returns_0(self, capsys):
+    def test_empty_warnings_returns_0(self):
         args = _args(warnings_json=json.dumps([]))
         exit_code = _bcw.cmd_check_warnings_base(args)
         assert exit_code == 0
-
-
-# ---------------------------------------------------------------------------
-# JSON input parsing
-# ---------------------------------------------------------------------------
 
 
 class TestJsonInput:
@@ -170,11 +150,6 @@ class TestJsonInput:
         assert 'must be an array' in output['error']
 
 
-# ---------------------------------------------------------------------------
-# No --warnings arg
-# ---------------------------------------------------------------------------
-
-
 class TestNoWarningsArg:
     """Tests for missing --warnings argument."""
 
@@ -184,11 +159,6 @@ class TestNoWarningsArg:
         assert exit_code == 1
         output = parse_toon(capsys.readouterr().out)
         assert 'No input provided' in output['error']
-
-
-# ---------------------------------------------------------------------------
-# Output structure
-# ---------------------------------------------------------------------------
 
 
 class TestOutputStructure:

@@ -2,9 +2,7 @@
 """Tests for profiles.py module.
 
 Seeds project architecture data using the per-module on-disk layout
-(``_project.json`` + per-module ``derived.json``) introduced by D2.
-The legacy monolithic ``derived-data.json`` shape is intentionally
-absent from this surface — TASK-2 removed it from ``_architecture_core``.
+(``_project.json`` + per-module ``derived.json``).
 """
 
 import tempfile
@@ -27,9 +25,8 @@ def create_test_derived_data(tmpdir: str, profiles: list | None = None) -> dict:
     """Seed per-module layout (``_project.json`` + per-module ``derived.json``).
 
     Writes a single Maven module ``module-a`` whose ``metadata.profiles`` is
-    the supplied (or default) profile list. Returns the same shape the
-    legacy helper returned so call-sites that inspect the dict (none today,
-    but kept stable for the test contract) continue to work.
+    the supplied (or default) profile list. Returns a dict mirroring the
+    seeded data for call-sites that inspect it.
     """
     if profiles is None:
         profiles = [

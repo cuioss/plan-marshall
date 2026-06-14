@@ -7,6 +7,8 @@ flow, validation rules at task creation, and verification.commands quoting
 contract (parse_stdin_task).
 """
 
+import json
+
 import pytest
 
 from _helpers import (
@@ -349,7 +351,6 @@ def test_commit_add_stores_each_valid_intent(plan_context, intent):
 
     assert result['status'] == 'success'
     task_dir = plan_context.plan_dir_for(f'intent-store-{intent}') / 'tasks'
-    import json
 
     task = json.loads((task_dir / 'TASK-001.json').read_text(encoding='utf-8'))
     assert task['steps'][0]['intent'] == intent

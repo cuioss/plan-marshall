@@ -107,7 +107,6 @@ def _read_ledger(ledger_path: Path) -> list[dict]:
 
 
 def test_append_build_writes_one_entry(env) -> None:
-    # Arrange / Act
     result = env.run(
         'append',
         '--kind',
@@ -124,7 +123,7 @@ def test_append_build_writes_one_entry(env) -> None:
         '/tmp/build.log',
     )
 
-    # Assert — success TOON shape.
+    # success TOON shape.
     assert result.success, result.stderr
     data = result.toon()
     assert data['status'] == 'success'
@@ -132,7 +131,7 @@ def test_append_build_writes_one_entry(env) -> None:
     assert data['worktree_sha']
     assert data['ledger_path']
 
-    # Assert — exactly one JSONL line with the build fields.
+    # exactly one JSONL line with the build fields.
     entries = _read_ledger(env.ledger_path)
     assert len(entries) == 1
     entry = entries[0]
@@ -149,7 +148,7 @@ def test_append_build_writes_one_entry(env) -> None:
 
 
 def test_append_build_records_nonzero_exit(env) -> None:
-    # Arrange / Act — a failed build is still recorded (the gate filters on it).
+    # a failed build is still recorded (the gate filters on it).
     result = env.run(
         'append',
         '--kind',
@@ -160,7 +159,6 @@ def test_append_build_records_nonzero_exit(env) -> None:
         '1',
     )
 
-    # Assert
     assert result.success, result.stderr
     entry = _read_ledger(env.ledger_path)[0]
     assert entry['exit_code'] == 1
@@ -169,22 +167,21 @@ def test_append_build_records_nonzero_exit(env) -> None:
 
 
 def test_append_build_requires_notation(env) -> None:
-    # Arrange / Act — --notation is mandatory for kind=build.
+    # --notation is mandatory for kind=build.
     result = env.run('append', '--kind', 'build', '--exit-code', '0')
 
-    # Assert — error TOON, no ledger line written.
+    # error TOON, no ledger line written.
     data = result.toon()
     assert data['status'] == 'error'
     assert not env.ledger_path.exists()
 
 
 def test_append_build_requires_exit_code(env) -> None:
-    # Arrange / Act — --exit-code is mandatory for kind=build.
+    # --exit-code is mandatory for kind=build.
     result = env.run(
         'append', '--kind', 'build', '--notation', 'plan-marshall:x:y'
     )
 
-    # Assert
     data = result.toon()
     assert data['status'] == 'error'
     assert not env.ledger_path.exists()
@@ -196,7 +193,6 @@ def test_append_build_requires_exit_code(env) -> None:
 
 
 def test_append_change_stores_paths_verbatim(env) -> None:
-    # Arrange / Act
     result = env.run(
         'append',
         '--kind',
@@ -209,13 +205,13 @@ def test_append_change_stores_paths_verbatim(env) -> None:
         'src/a.py,src/b.py,test/c.py',
     )
 
-    # Assert — success TOON.
+    # success TOON.
     assert result.success, result.stderr
     data = result.toon()
     assert data['status'] == 'success'
     assert data['kind'] == 'change'
 
-    # Assert — change fields stored verbatim.
+    # change fields stored verbatim.
     entry = _read_ledger(env.ledger_path)[0]
     assert entry['kind'] == 'change'
     assert entry['deliverable_id'] == '2'
@@ -226,7 +222,7 @@ def test_append_change_stores_paths_verbatim(env) -> None:
 
 
 def test_append_change_accepts_task_id_alias(env) -> None:
-    # Arrange / Act — --task-id is the accepted alternative to --deliverable-id.
+    # --task-id is the accepted alternative to --deliverable-id.
     result = env.run(
         'append',
         '--kind',
@@ -237,7 +233,7 @@ def test_append_change_accepts_task_id_alias(env) -> None:
         'def456',
     )
 
-    # Assert — the alias populates deliverable_id; empty --changed-paths → [].
+    # the alias populates deliverable_id; empty --changed-paths → [].
     assert result.success, result.stderr
     entry = _read_ledger(env.ledger_path)[0]
     assert entry['deliverable_id'] == 'TASK-7'
@@ -245,20 +241,18 @@ def test_append_change_accepts_task_id_alias(env) -> None:
 
 
 def test_append_change_requires_commit_sha(env) -> None:
-    # Arrange / Act — --commit-sha is mandatory for kind=change.
+    # --commit-sha is mandatory for kind=change.
     result = env.run('append', '--kind', 'change', '--deliverable-id', '2')
 
-    # Assert
     data = result.toon()
     assert data['status'] == 'error'
     assert not env.ledger_path.exists()
 
 
 def test_append_change_requires_deliverable_or_task(env) -> None:
-    # Arrange / Act — one of --deliverable-id / --task-id is required.
+    # one of --deliverable-id / --task-id is required.
     result = env.run('append', '--kind', 'change', '--commit-sha', 'abc123')
 
-    # Assert
     data = result.toon()
     assert data['status'] == 'error'
     assert not env.ledger_path.exists()
@@ -270,10 +264,10 @@ def test_append_change_requires_deliverable_or_task(env) -> None:
 
 
 def test_query_empty_ledger_returns_zero(env) -> None:
-    # Arrange / Act — query against a ledger that was never written.
+    # query against a ledger that was never written.
     result = env.run('query')
 
-    # Assert — count 0, no entries.
+    # count 0, no entries.
     assert result.success, result.stderr
     data = result.toon()
     assert data['status'] == 'success'
@@ -281,7 +275,7 @@ def test_query_empty_ledger_returns_zero(env) -> None:
 
 
 def test_query_round_trips_both_kinds(env) -> None:
-    # Arrange — one build entry and one change entry.
+    # one build entry and one change entry.
     env.run(
         'append', '--kind', 'build', '--notation', 'n', '--exit-code', '0'
     )
@@ -295,40 +289,38 @@ def test_query_round_trips_both_kinds(env) -> None:
         'sha1',
     )
 
-    # Act
     result = env.run('query')
 
-    # Assert — both entries are read back.
+    # both entries are read back.
     assert result.success, result.stderr
     data = result.toon()
     assert data['count'] == 2
 
 
 def test_query_kind_filter(env) -> None:
-    # Arrange — two builds, one change.
+    # two builds, one change.
     env.run('append', '--kind', 'build', '--notation', 'n1', '--exit-code', '0')
     env.run('append', '--kind', 'build', '--notation', 'n2', '--exit-code', '1')
     env.run(
         'append', '--kind', 'change', '--deliverable-id', '1', '--commit-sha', 's'
     )
 
-    # Act — filter to builds only.
+    # filter to builds only.
     result = env.run('query', '--kind', 'build')
 
-    # Assert
     data = result.toon()
     assert data['count'] == 2
 
 
 def test_query_exit_code_filter(env) -> None:
-    # Arrange — a passing and a failing build.
+    # a passing and a failing build.
     env.run('append', '--kind', 'build', '--notation', 'n1', '--exit-code', '0')
     env.run('append', '--kind', 'build', '--notation', 'n2', '--exit-code', '1')
 
-    # Act — filter to the failing build.
+    # filter to the failing build.
     result = env.run('query', '--exit-code', '1')
 
-    # Assert — only the exit_code=1 entry matches.
+    # only the exit_code=1 entry matches.
     data = result.toon()
     assert data['count'] == 1
 
@@ -339,7 +331,7 @@ def test_query_exit_code_filter(env) -> None:
 
 
 def test_worktree_sha_matches_appended_entry(env) -> None:
-    # Arrange — capture the current tree's hash via the dedicated verb.
+    # capture the current tree's hash via the dedicated verb.
     sha_result = env.run('worktree-sha')
     assert sha_result.success, sha_result.stderr
     sha_data = sha_result.toon()
@@ -347,17 +339,17 @@ def test_worktree_sha_matches_appended_entry(env) -> None:
     expected = sha_data['worktree_sha']
     assert expected
 
-    # Act — append a build entry against the same (unchanged) tree.
+    # append a build entry against the same (unchanged) tree.
     append_result = env.run(
         'append', '--kind', 'build', '--notation', 'n', '--exit-code', '0'
     )
 
-    # Assert — writer and verb hash the same tree to the same value.
+    # writer and verb hash the same tree to the same value.
     assert append_result.toon()['worktree_sha'] == expected
 
 
 def test_worktree_sha_honours_precomputed_value(env) -> None:
-    # Arrange / Act — a caller that already holds the hash passes it verbatim.
+    # a caller that already holds the hash passes it verbatim.
     result = env.run(
         'append',
         '--kind',
@@ -370,13 +362,13 @@ def test_worktree_sha_honours_precomputed_value(env) -> None:
         'precomputed-sha-value',
     )
 
-    # Assert — the stored hash is the supplied one (no recomputation).
+    # the stored hash is the supplied one (no recomputation).
     assert result.toon()['worktree_sha'] == 'precomputed-sha-value'
     assert _read_ledger(env.ledger_path)[0]['worktree_sha'] == 'precomputed-sha-value'
 
 
 def test_worktree_sha_non_git_directory_errors(tmp_path: Path) -> None:
-    # Arrange — run the verb in a plain non-git directory with an isolated base.
+    # run the verb in a plain non-git directory with an isolated base.
     from conftest import run_script
 
     plain = tmp_path / 'plain'
@@ -384,7 +376,6 @@ def test_worktree_sha_non_git_directory_errors(tmp_path: Path) -> None:
     base = tmp_path / 'base'
     base.mkdir()
 
-    # Act
     result = run_script(
         _SCRIPT,
         'worktree-sha',
@@ -392,7 +383,7 @@ def test_worktree_sha_non_git_directory_errors(tmp_path: Path) -> None:
         env_overrides={'PLAN_BASE_DIR': str(base)},
     )
 
-    # Assert — HEAD is unresolvable → structured error, code head_unresolvable.
+    # HEAD is unresolvable → structured error, code head_unresolvable.
     data = result.toon()
     assert data['status'] == 'error'
     assert data['error_code'] == 'head_unresolvable'

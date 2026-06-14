@@ -30,6 +30,40 @@ cmd_fetch_and_store = sonar_mod.cmd_fetch_and_store
 
 
 # =============================================================================
+# Helpers
+# =============================================================================
+
+
+def _make_args(plan_id, project='com.example:proj', pr=None, severities=None, types=None):
+    class _Args:
+        pass
+
+    a = _Args()
+    a.plan_id = plan_id
+    a.project = project
+    a.pr = pr
+    a.severities = severities
+    a.types = types
+    return a
+
+
+def _issue(key='ISSUE-1', type_='BUG', severity='MAJOR', file='src/Main.java', line=42,
+           rule='java:S99999', message='Possible null dereference',
+           component='com.example:proj:src/Main.java'):
+    """Build one Sonar issue payload dict, overriding only the fields a test cares about."""
+    return {
+        'key': key,
+        'type': type_,
+        'severity': severity,
+        'file': file,
+        'line': line,
+        'rule': rule,
+        'message': message,
+        'component': component,
+    }
+
+
+# =============================================================================
 # Pre-filter helpers
 # =============================================================================
 
@@ -47,23 +81,19 @@ class TestIsSuppressable:
 
 
 class TestMapSeverity:
-    def test_blocker_maps_to_error(self):
-        assert _map_severity('BLOCKER') == 'error'
-
-    def test_critical_maps_to_error(self):
-        assert _map_severity('CRITICAL') == 'error'
-
-    def test_major_maps_to_error(self):
-        assert _map_severity('MAJOR') == 'error'
-
-    def test_minor_maps_to_warning(self):
-        assert _map_severity('MINOR') == 'warning'
-
-    def test_info_maps_to_info(self):
-        assert _map_severity('INFO') == 'info'
-
-    def test_unknown_maps_to_none(self):
-        assert _map_severity('OTHER') is None
+    @pytest.mark.parametrize(
+        'sonar_severity,expected',
+        [
+            ('BLOCKER', 'error'),
+            ('CRITICAL', 'error'),
+            ('MAJOR', 'error'),
+            ('MINOR', 'warning'),
+            ('INFO', 'info'),
+            ('OTHER', None),
+        ],
+    )
+    def test_maps_sonar_severity_to_finding_severity(self, sonar_severity, expected):
+        assert _map_severity(sonar_severity) == expected
 
 
 # =============================================================================
@@ -71,36 +101,13 @@ class TestMapSeverity:
 # =============================================================================
 
 
-def _make_args(plan_id, project='com.example:proj', pr=None, severities=None, types=None):
-    class _Args:
-        pass
-
-    a = _Args()
-    a.plan_id = plan_id
-    a.project = project
-    a.pr = pr
-    a.severities = severities
-    a.types = types
-    return a
-
-
 class TestFetchAndStore:
     """fetch-and-store writes one sonar-issue finding per surviving issue."""
 
     def test_fetch_and_store_persists_findings(self, plan_context):
-        issues_payload = [
-            {
-                'key': 'ISSUE-1',
-                'type': 'BUG',
-                'severity': 'MAJOR',
-                'file': 'src/Main.java',
-                'line': 42,
-                'rule': 'java:S99999',
-                'message': 'Possible null dereference',
-                'component': 'com.example:proj:src/Main.java',
-            },
-        ]
+        issues_payload = [_issue()]
         plan_context.plan_dir_for('sonar-stage-1')
+
         with patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
             result = cmd_fetch_and_store(_make_args('sonar-stage-1'))
@@ -132,19 +139,9 @@ class TestFetchAndStore:
             pytest.skip('No suppressable rules configured in sonar-rules.json')
         rule = next(iter(SUPPRESSABLE_RULES.keys()))
 
-        issues_payload = [
-            {
-                'key': 'ISSUE-1',
-                'type': 'CODE_SMELL',
-                'severity': 'MINOR',
-                'file': 'src/Main.java',
-                'line': 1,
-                'rule': rule,
-                'message': 'm',
-                'component': 'com.example:proj:src/Main.java',
-            },
-        ]
+        issues_payload = [_issue(type_='CODE_SMELL', severity='MINOR', line=1, rule=rule, message='m')]
         plan_context.plan_dir_for('sonar-stage-skip')
+
         with patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
             result = cmd_fetch_and_store(_make_args('sonar-stage-skip'))
@@ -155,37 +152,30 @@ class TestFetchAndStore:
 
     def test_fetch_and_store_propagates_provider_error(self, plan_context):
         plan_context.plan_dir_for('sonar-stage-err')
+
         with patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_fetch.return_value = {'status': 'error', 'message': 'HTTP 401'}
             result = cmd_fetch_and_store(_make_args('sonar-stage-err'))
+
         assert result['status'] == 'error'
 
     def test_fetch_and_store_count_mismatch_produces_qgate_finding(self, plan_context):
         """When count_stored != expected_stored, a (producer-mismatch) Q-Gate
         finding must be recorded with type=sonar-issue and source=qgate."""
         issues_payload = [
-            {
-                'key': 'ISSUE-1',
-                'type': 'BUG',
-                'severity': 'MAJOR',
-                'file': 'src/Main.java',
-                'line': 42,
-                'rule': 'java:S99999',
-                'message': 'Possible null dereference',
-                'component': 'com.example:proj:src/Main.java',
-            },
-            {
-                'key': 'ISSUE-2',
-                'type': 'BUG',
-                'severity': 'CRITICAL',
-                'file': 'src/Other.java',
-                'line': 7,
-                'rule': 'java:S88888',
-                'message': 'Race condition',
-                'component': 'com.example:proj:src/Other.java',
-            },
+            _issue(),
+            _issue(
+                key='ISSUE-2',
+                severity='CRITICAL',
+                file='src/Other.java',
+                line=7,
+                rule='java:S88888',
+                message='Race condition',
+                component='com.example:proj:src/Other.java',
+            ),
         ]
         plan_context.plan_dir_for('sonar-stage-mismatch')
+
         with patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
             with patch('_findings_core.add_finding') as mock_add:
@@ -220,14 +210,19 @@ class TestFetchAndStore:
 class TestSonarMain:
     def test_help_lists_only_supported_subcommand(self):
         result = run_script(SCRIPT_PATH, '--help')
+
         assert result.returncode == 0
         assert 'fetch-and-store' in result.stdout
         assert 'triage-batch' not in result.stdout
 
-    def test_retired_triage_subcommand_rejected(self):
-        result = run_script(SCRIPT_PATH, 'triage', '--issue', '{}')
-        assert result.returncode != 0
+    @pytest.mark.parametrize(
+        'argv',
+        [
+            pytest.param(['triage', '--issue', '{}'], id='triage-rejected'),
+            pytest.param(['triage-batch', '--issues', '[]'], id='triage-batch-rejected'),
+        ],
+    )
+    def test_retired_subcommand_rejected(self, argv):
+        result = run_script(SCRIPT_PATH, *argv)
 
-    def test_retired_triage_batch_subcommand_rejected(self):
-        result = run_script(SCRIPT_PATH, 'triage-batch', '--issues', '[]')
         assert result.returncode != 0

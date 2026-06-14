@@ -24,7 +24,6 @@ module covers only the per-extension method contract, the base route deriver,
 and the validator.
 """
 
-import fnmatch
 import subprocess
 
 from extension_base import (  # type: ignore[import-not-found]
@@ -88,11 +87,6 @@ class _ClassifyingExtension(_MinimalExtension):
         return claims
 
 
-# =============================================================================
-# Default no-op contract
-# =============================================================================
-
-
 def test_default_classify_paths_returns_empty_four_role_dict():
     """Default classify_paths returns the empty four-role dict shape."""
     ext = _MinimalExtension()
@@ -142,14 +136,8 @@ def test_default_classify_path_specificity_returns_zero():
 def test_default_classify_paths_does_not_raise_on_unknown_paths():
     """Default no-op must accept arbitrary paths without raising."""
     ext = _MinimalExtension()
-    # Should not raise even on weird inputs
     result = ext.classify_paths(['', '../etc/passwd', '/abs/path', 'é'])
     assert result['production'] == []
-
-
-# =============================================================================
-# Subclass override contract
-# =============================================================================
 
 
 def test_subclass_override_produces_correct_production_claim():
@@ -192,7 +180,6 @@ def test_subclass_override_omits_unclaimed_paths():
     must NOT add unclaimed paths to any of the four roles.
     """
     ext = _ClassifyingExtension()
-    # mystery.xyz matches no predicate
     result = ext.classify_paths(['scripts/foo.py', 'mystery.xyz'])
     assert result['production'] == ['scripts/foo.py']
     assert 'mystery.xyz' not in result['production']
@@ -216,11 +203,6 @@ def test_subclass_override_mixed_input():
         'documentation': ['README.md'],
         'config': ['pyproject.toml'],
     }
-
-
-# =============================================================================
-# build_class vocabulary
-# =============================================================================
 
 
 def test_build_classes_is_the_closed_four_value_set():
@@ -254,11 +236,6 @@ def test_build_class_named_constants_are_members():
         BUILD_CLASS_NONE,
     ):
         assert value in BUILD_CLASSES
-
-
-# =============================================================================
-# Default classify_build_class role mapping
-# =============================================================================
 
 
 def test_default_classify_build_class_production_maps_to_compile():
@@ -319,11 +296,6 @@ def test_default_classify_build_class_ignores_path_for_role_mapping():
     )
 
 
-# =============================================================================
-# Subclass override of classify_build_class (path-discriminating)
-# =============================================================================
-
-
 class _PathDiscriminatingExtension(_MinimalExtension):
     """Override classify_build_class to derive `none` for generated production paths."""
 
@@ -352,11 +324,6 @@ def test_subclass_build_class_override_falls_through_for_other_roles():
     assert ext.classify_build_class('pyproject.toml', 'config') == BUILD_CLASS_BUILD_CONFIG_FULL
 
 
-# =============================================================================
-# build_map role vocabulary constants
-# =============================================================================
-
-
 def test_build_map_roles_is_the_closed_three_value_set():
     """BUILD_MAP_ROLES is exactly production / test / config — no documentation.
 
@@ -376,11 +343,6 @@ def test_build_map_role_named_constants_are_members():
     for value in (ROLE_PRODUCTION, ROLE_TEST, ROLE_CONFIG):
         assert value in BUILD_MAP_ROLES
     assert 'documentation' not in BUILD_MAP_ROLES
-
-
-# =============================================================================
-# classify_globs() accessor — explicit (pattern, role) routes
-# =============================================================================
 
 
 class _RouteExtension(_MinimalExtension):
@@ -436,11 +398,6 @@ def test_classify_globs_returns_resolved_roles():
         assert role in BUILD_MAP_ROLES
 
 
-# =============================================================================
-# derive_globs_from_tree() — explicit-route collection consumer
-# =============================================================================
-
-
 def _git_init_and_track(root, rel_paths: list[str]) -> None:
     """Create + git-add each repo-relative path under ``root`` as a tracked file."""
     subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
@@ -453,11 +410,6 @@ def _git_init_and_track(root, rel_paths: list[str]) -> None:
     subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True)
 
 
-def _matches_any(path: str, globs: list[str]) -> bool:
-    """Return True when ``path`` matches at least one collected route pattern."""
-    return any(fnmatch.fnmatchcase(path, g) for g in globs)
-
-
 def test_derive_globs_returns_empty_dict_for_no_extensions():
     """No registered extensions ⇒ no collected routes."""
     assert derive_globs_from_tree('/irrelevant', []) == {}
@@ -465,7 +417,6 @@ def test_derive_globs_returns_empty_dict_for_no_extensions():
 
 def test_derive_globs_skips_extension_with_no_routes():
     """An extension whose classify_globs() is empty contributes nothing."""
-    # _MinimalExtension keeps the base empty-route default.
     assert derive_globs_from_tree('/irrelevant', [_MinimalExtension()]) == {}
 
 
@@ -605,7 +556,6 @@ def test_derive_globs_survives_extension_raising_in_classify_globs(tmp_path):
 
     _git_init_and_track(tmp_path, ['scripts/foo.py', 'test/bar.py', 'pyproject.toml'])
     derived = derive_globs_from_tree(str(tmp_path), [_RaisingExtension(), _RouteExtension()])
-    # The raising extension is skipped; the well-behaved one still contributes.
     assert 'minimal' in derived
 
 
@@ -619,11 +569,6 @@ def test_derive_globs_every_entry_role_resolves_to_a_build_class(tmp_path):
     derived = derive_globs_from_tree(str(tmp_path), [ext])
     for _pattern, role in derived['minimal']:
         assert ext.classify_build_class(_pattern, role) in BUILD_CLASSES
-
-
-# =============================================================================
-# validate_tree_completeness() — git-tracked completeness validator
-# =============================================================================
 
 
 def test_validate_completeness_returns_empty_when_all_covered(tmp_path):

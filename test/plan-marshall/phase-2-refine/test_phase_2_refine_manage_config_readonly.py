@@ -165,7 +165,7 @@ def test_manage_config_set_dirties_marshal_json(tmp_path) -> None:
     """
     marshal_path = _init_synthetic_repo(tmp_path)
 
-    # Arrange — pre-condition: the file must be tracked and clean.
+    # pre-condition: the file must be tracked and clean.
     assert marshal_path.is_file(), (
         f'synthetic marshal.json not found at {marshal_path}'
     )
@@ -182,14 +182,14 @@ def test_manage_config_set_dirties_marshal_json(tmp_path) -> None:
         'The baseline commit in _init_synthetic_repo did not produce a clean tree.'
     )
 
-    # Act — invoke the mutating manage-config verb against the synthetic repo.
+    # invoke the mutating manage-config verb against the synthetic repo.
     result = _run_manage_config_set(tmp_path)
     assert result.returncode == 0, (
         f'manage-config set exited with code {result.returncode}.\n'
         f'stdout: {result.stdout}\nstderr: {result.stderr}'
     )
 
-    # Assert — the tracked file must now be dirty.
+    # the tracked file must now be dirty.
     post_status = subprocess.run(
         ['git', 'status', '--porcelain', '.plan/marshal.json'],
         capture_output=True,
@@ -225,7 +225,7 @@ def test_marshal_json_restored_after_checkout(tmp_path) -> None:
     """
     _init_synthetic_repo(tmp_path)
 
-    # Arrange — dirty the file first (same as test_manage_config_set_dirties_marshal_json).
+    # dirty the file first (same as test_manage_config_set_dirties_marshal_json).
     set_result = _run_manage_config_set(tmp_path)
     assert set_result.returncode == 0, (
         f'Arrange step failed — manage-config set returned code {set_result.returncode}.\n'
@@ -245,7 +245,7 @@ def test_marshal_json_restored_after_checkout(tmp_path) -> None:
         'marshal.json was not dirty after the arrange step — cannot test the restore path.'
     )
 
-    # Act — run the orchestrator recovery command.
+    # run the orchestrator recovery command.
     checkout_result = subprocess.run(
         ['git', 'checkout', '--', '.plan/marshal.json'],
         capture_output=True,
@@ -258,7 +258,7 @@ def test_marshal_json_restored_after_checkout(tmp_path) -> None:
         f'git checkout -- .plan/marshal.json failed: {checkout_result.stderr}'
     )
 
-    # Assert — clean state must be restored.
+    # clean state must be restored.
     post_restore_status = subprocess.run(
         ['git', 'status', '--porcelain', '.plan/marshal.json'],
         capture_output=True,

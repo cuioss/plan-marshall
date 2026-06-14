@@ -592,7 +592,7 @@ class TestLessonsCorpusMainAnchoring:
 
     def test_add_writes_lesson_under_main_base_from_worktree_cwd(self, tmp_path, monkeypatch):
         """``cmd_add`` from a worktree cwd lands the lesson under MAIN's corpus."""
-        # Arrange: PLAN_BASE_DIR = main-checkout stand-in; cwd pinned into a
+        # PLAN_BASE_DIR = main-checkout stand-in; cwd pinned into a
         # worktree fixture that owns its OWN .plan/local (empty corpus).
         main_base = tmp_path / 'main' / '.plan' / 'local'
         (main_base / 'lessons-learned').mkdir(parents=True)
@@ -604,7 +604,6 @@ class TestLessonsCorpusMainAnchoring:
         (worktree / '.plan' / 'local' / 'lessons-learned').mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        # Act
         result = cmd_add(
             Namespace(
                 component='worktree-cwd-component',
@@ -614,7 +613,7 @@ class TestLessonsCorpusMainAnchoring:
             )
         )
 
-        # Assert: the lesson landed under MAIN's lessons-learned, NOT the worktree.
+        # the lesson landed under MAIN's lessons-learned, NOT the worktree.
         assert result['status'] == 'success'
         path = Path(result['path'])
         assert path.parent == (main_base / 'lessons-learned').resolve()
@@ -650,8 +649,7 @@ class TestLessonsCorpusMainAnchoring:
         frozen = real_datetime(2025, 1, 1, 2, 30, 0)
         monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
 
-        # Act
         next_id = get_next_id()
 
-        # Assert: the main-anchored plans scan reserved 001 → next is 002.
+        # the main-anchored plans scan reserved 001 → next is 002.
         assert next_id == '2025-01-01-02-002'

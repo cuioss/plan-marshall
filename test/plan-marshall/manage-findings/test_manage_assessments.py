@@ -142,7 +142,6 @@ def test_assessment_add_invalid_certainty(plan_context):
         '--confidence',
         '50',
     )
-    # argparse should reject invalid choice
     assert not result.success
 
 
@@ -227,7 +226,6 @@ def test_assessment_clear_all(plan_context):
     assert result['status'] == 'success'
     assert result['cleared'] == 2
 
-    # Verify empty
     query_result = cmd_assessment_query(_query_ns())
     assert query_result['total_count'] == 0
 
@@ -242,7 +240,6 @@ def test_assessment_clear_by_agent(plan_context):
     assert result['status'] == 'success'
     assert result['cleared'] == 2
 
-    # Verify only agent-b remains
     query_result = cmd_assessment_query(_query_ns())
     assert query_result['total_count'] == 1
     assert 'file2.md' in query_result.get('file_paths', [])

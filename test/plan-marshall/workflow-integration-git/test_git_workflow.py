@@ -1,14 +1,16 @@
 """Tests for git-workflow.py - consolidated git workflow script.
 
-Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
+Tier 2 (direct import) tests with subprocess tests for CLI plumbing.
 """
 
+from __future__ import annotations
+
 import importlib.util
-import tempfile
-import unittest
+import subprocess
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 from conftest import get_script_path, run_script
@@ -40,164 +42,150 @@ def run_git_script(args: list) -> tuple:
     return result.stdout, result.stderr, result.returncode
 
 
-class TestFormatCommit(unittest.TestCase):
+def _format_commit_args(**overrides) -> Namespace:
+    """Build a cmd_format_commit Namespace with sensible defaults for unset fields."""
+    fields = {
+        'commit_type': 'feat',
+        'scope': None,
+        'subject': 'subject',
+        'body': None,
+        'breaking': None,
+        'footer': None,
+    }
+    fields.update(overrides)
+    return Namespace(**fields)
+
+
+def _create_file(root: Path, relpath: str) -> None:
+    """Create a file (with parents) within ``root``."""
+    full = root / relpath
+    full.parent.mkdir(parents=True, exist_ok=True)
+    full.write_text('test')
+
+
+def _git_init_with_identity(repo: Path) -> None:
+    """Initialise a git repo with a throwaway committer identity."""
+    subprocess.run(['git', 'init'], cwd=repo, capture_output=True)
+    subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=repo, capture_output=True)
+    subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=repo, capture_output=True)
+
+
+class TestFormatCommit:
     """Test git_workflow.py format-commit via direct import."""
 
     def test_basic_format(self):
-        """Test basic commit message formatting."""
-        result = cmd_format_commit(
-            Namespace(commit_type='feat', scope=None, subject='add new feature', body=None, breaking=None, footer=None)
-        )
-        self.assertEqual(result['type'], 'feat')
-        self.assertEqual(result['subject'], 'add new feature')
-        self.assertIn('feat: add new feature', result['formatted_message'])
-        self.assertEqual(result['status'], 'success')
+        """Basic commit message formatting."""
+        result = cmd_format_commit(_format_commit_args(commit_type='feat', subject='add new feature'))
+
+        assert result['type'] == 'feat'
+        assert result['subject'] == 'add new feature'
+        assert 'feat: add new feature' in result['formatted_message']
+        assert result['status'] == 'success'
 
     def test_format_with_scope(self):
-        """Test commit message with scope."""
-        result = cmd_format_commit(
-            Namespace(commit_type='fix', scope='auth', subject='fix login bug', body=None, breaking=None, footer=None)
-        )
-        self.assertEqual(result['scope'], 'auth')
-        self.assertIn('fix(auth):', result['formatted_message'])
+        """Commit message with scope."""
+        result = cmd_format_commit(_format_commit_args(commit_type='fix', scope='auth', subject='fix login bug'))
+
+        assert result['scope'] == 'auth'
+        assert 'fix(auth):' in result['formatted_message']
 
     def test_format_with_body(self):
-        """Test commit message with body."""
+        """Commit message with body."""
         result = cmd_format_commit(
-            Namespace(
-                commit_type='docs',
-                scope=None,
-                subject='update readme',
-                body='Added installation instructions',
-                breaking=None,
-                footer=None,
-            )
+            _format_commit_args(commit_type='docs', subject='update readme', body='Added installation instructions')
         )
-        self.assertEqual(result['body'], 'Added installation instructions')
+
+        assert result['body'] == 'Added installation instructions'
 
     def test_format_with_breaking_change(self):
-        """Test commit message with breaking change."""
+        """Commit message with breaking change."""
         result = cmd_format_commit(
-            Namespace(
-                commit_type='feat',
-                scope=None,
-                subject='change api',
-                body=None,
-                breaking='API signature changed',
-                footer=None,
-            )
+            _format_commit_args(commit_type='feat', subject='change api', breaking='API signature changed')
         )
-        self.assertIn('feat!:', result['formatted_message'])
-        self.assertIn('BREAKING CHANGE:', result['formatted_message'])
+
+        assert 'feat!:' in result['formatted_message']
+        assert 'BREAKING CHANGE:' in result['formatted_message']
 
     def test_format_with_footer(self):
-        """Test commit message with footer."""
-        result = cmd_format_commit(
-            Namespace(
-                commit_type='fix',
-                scope=None,
-                subject='fix crash',
-                body=None,
-                breaking=None,
-                footer='Fixes #123',
-            )
-        )
-        self.assertIn('Fixes #123', result['formatted_message'])
+        """Commit message with footer."""
+        result = cmd_format_commit(_format_commit_args(commit_type='fix', subject='fix crash', footer='Fixes #123'))
 
-    def test_all_commit_types(self):
-        """Test all valid commit types."""
-        for commit_type in VALID_TYPES:
-            result = cmd_format_commit(
-                Namespace(
-                    commit_type=commit_type, scope=None, subject='test subject', body=None, breaking=None, footer=None
-                )
-            )
-            self.assertEqual(result['type'], commit_type, f'Failed for type: {commit_type}')
+        assert 'Fixes #123' in result['formatted_message']
+
+    @pytest.mark.parametrize('commit_type', sorted(VALID_TYPES))
+    def test_valid_commit_type_accepted(self, commit_type):
+        """Every valid commit type is accepted and echoed back."""
+        result = cmd_format_commit(_format_commit_args(commit_type=commit_type, subject='test subject'))
+
+        assert result['type'] == commit_type
 
     def test_validation_warning_long_subject(self):
-        """Test validation warning for long subject."""
+        """Subject over 50 chars warns but stays valid."""
         long_subject = 'a' * 55  # Exceeds 50 chars
-        result = cmd_format_commit(
-            Namespace(commit_type='fix', scope=None, subject=long_subject, body=None, breaking=None, footer=None)
-        )
-        self.assertTrue(result['validation']['valid'])
-        self.assertTrue(any('50 chars' in w for w in result['validation']['warnings']))
+
+        result = cmd_format_commit(_format_commit_args(commit_type='fix', subject=long_subject))
+
+        assert result['validation']['valid']
+        assert any('50 chars' in w for w in result['validation']['warnings'])
 
     def test_validation_error_very_long_subject(self):
-        """Test validation error for very long subject."""
+        """Subject over 72 chars fails validation."""
         very_long_subject = 'a' * 75  # Exceeds 72 chars
-        result = cmd_format_commit(
-            Namespace(commit_type='fix', scope=None, subject=very_long_subject, body=None, breaking=None, footer=None)
-        )
-        self.assertFalse(result['validation']['valid'])
+
+        result = cmd_format_commit(_format_commit_args(commit_type='fix', subject=very_long_subject))
+
+        assert not result['validation']['valid']
 
     def test_validation_warning_past_tense(self):
-        """Test validation warning for past tense verb."""
-        result = cmd_format_commit(
-            Namespace(commit_type='fix', scope=None, subject='fixed the bug', body=None, breaking=None, footer=None)
-        )
-        self.assertTrue(any('imperative' in w.lower() for w in result['validation']['warnings']))
+        """Past-tense verb produces an imperative-mood warning."""
+        result = cmd_format_commit(_format_commit_args(commit_type='fix', subject='fixed the bug'))
+
+        assert any('imperative' in w.lower() for w in result['validation']['warnings'])
 
     def test_co_authored_by_not_appended_by_script(self):
-        """Test that format-commit does NOT append Co-Authored-By."""
-        result = cmd_format_commit(
-            Namespace(commit_type='feat', scope=None, subject='add feature', body=None, breaking=None, footer=None)
-        )
-        self.assertNotIn('Co-Authored-By', result['formatted_message'])
+        """format-commit does NOT append Co-Authored-By."""
+        result = cmd_format_commit(_format_commit_args(commit_type='feat', subject='add feature'))
+
+        assert 'Co-Authored-By' not in result['formatted_message']
 
     def test_ci_commit_type(self):
-        """Test that ci is a valid commit type."""
-        result = cmd_format_commit(
-            Namespace(commit_type='ci', scope=None, subject='update workflow', body=None, breaking=None, footer=None)
-        )
-        self.assertEqual(result['type'], 'ci')
-        self.assertIn('ci: update workflow', result['formatted_message'])
+        """'ci' is a valid commit type."""
+        result = cmd_format_commit(_format_commit_args(commit_type='ci', subject='update workflow'))
 
-    def test_imperative_allowlist_no_false_warnings(self):
-        """Test that imperative allowlist words don't trigger past-tense warnings."""
-        allowlist_samples = [
-            'embed',
-            'spread',
-            'thread',
-            'overhead',
-            'string',
-            'bring',
-            'caching',
-            'hashing',
-            'nothing',
-        ]
-        for word in allowlist_samples:
-            result = cmd_format_commit(
-                Namespace(
-                    commit_type='fix', scope=None, subject=f'{word} the module', body=None, breaking=None, footer=None
-                )
-            )
-            warnings = result['validation']['warnings']
-            imperative_warnings = [w for w in warnings if 'imperative' in w.lower()]
-            self.assertEqual(
-                len(imperative_warnings), 0, f'False imperative warning for allowlisted word "{word}": {warnings}'
-            )
+        assert result['type'] == 'ci'
+        assert 'ci: update workflow' in result['formatted_message']
+
+    @pytest.mark.parametrize(
+        'word',
+        ['embed', 'spread', 'thread', 'overhead', 'string', 'bring', 'caching', 'hashing', 'nothing'],
+    )
+    def test_imperative_allowlist_word_no_false_warning(self, word):
+        """Allowlisted words must not trigger a past-tense imperative warning."""
+        result = cmd_format_commit(_format_commit_args(commit_type='fix', subject=f'{word} the module'))
+
+        imperative_warnings = [w for w in result['validation']['warnings'] if 'imperative' in w.lower()]
+        assert imperative_warnings == []
 
     def test_breaking_and_footer_combined(self):
-        """Test commit message with both --breaking and --footer simultaneously."""
+        """Commit message with both --breaking and --footer simultaneously."""
         result = cmd_format_commit(
-            Namespace(
+            _format_commit_args(
                 commit_type='feat',
                 scope='api',
                 subject='change auth endpoint',
-                body=None,
                 breaking='Old /auth endpoint removed',
                 footer='Fixes #123',
             )
         )
-        self.assertIn('feat(api)!:', result['formatted_message'])
-        self.assertIn('BREAKING CHANGE:', result['formatted_message'])
-        self.assertIn('Fixes #123', result['formatted_message'])
+
+        assert 'feat(api)!:' in result['formatted_message']
+        assert 'BREAKING CHANGE:' in result['formatted_message']
+        assert 'Fixes #123' in result['formatted_message']
 
     def test_all_params_combined(self):
-        """Test commit message with body + breaking + footer + scope."""
+        """Commit message with body + breaking + footer + scope."""
         result = cmd_format_commit(
-            Namespace(
+            _format_commit_args(
                 commit_type='feat',
                 scope='api',
                 subject='change auth endpoint',
@@ -206,27 +194,30 @@ class TestFormatCommit(unittest.TestCase):
                 footer='Fixes #123',
             )
         )
-        self.assertIn('feat(api)!:', result['formatted_message'])
-        self.assertIn('BREAKING CHANGE:', result['formatted_message'])
-        self.assertIn('Fixes #123', result['formatted_message'])
-        self.assertIn('Migrated to OAuth 2.0 flow', result['formatted_message'])
+
+        assert 'feat(api)!:' in result['formatted_message']
+        assert 'BREAKING CHANGE:' in result['formatted_message']
+        assert 'Fixes #123' in result['formatted_message']
+        assert 'Migrated to OAuth 2.0 flow' in result['formatted_message']
 
     def test_long_scope_plus_subject_exceeds_72(self):
-        """Header exceeding 72 chars should fail validation."""
+        """Header exceeding 72 chars fails validation."""
         long_scope = 'very-long-module-name'
         long_subject = 'a' * 50  # type(scope): subject -> 5 + 23 + 4 + 50 = 82 chars
+
         result = cmd_format_commit(
-            Namespace(commit_type='feat', scope=long_scope, subject=long_subject, body=None, breaking=None, footer=None)
+            _format_commit_args(commit_type='feat', scope=long_scope, subject=long_subject)
         )
-        self.assertFalse(result['validation']['valid'])
-        self.assertTrue(any('Header' in w for w in result['validation']['warnings']))
+
+        assert not result['validation']['valid']
+        assert any('Header' in w for w in result['validation']['warnings'])
 
 
-class TestAnalyzeDiff(unittest.TestCase):
+class TestAnalyzeDiff:
     """Test git_workflow.py analyze-diff via direct import."""
 
     def test_analyze_bug_fix(self):
-        """Test analysis detects bug fix patterns from comment keywords."""
+        """Analysis detects bug-fix patterns from comment keywords."""
         diff_content = """diff --git a/src/main/java/Service.java b/src/main/java/Service.java
 --- a/src/main/java/Service.java
 +++ b/src/main/java/Service.java
@@ -236,27 +227,31 @@ class TestAnalyzeDiff(unittest.TestCase):
 +    return value;
 """
         suggestions = analyze_diff(diff_content)
-        self.assertEqual(suggestions['type'], 'fix')
+
+        assert suggestions['type'] == 'fix'
 
     def test_analyze_file_not_found(self):
-        """Test error when diff file not found."""
+        """Error when diff file not found."""
         result = cmd_detect_artifacts(Namespace(root='/nonexistent/path', no_gitignore=False))
-        self.assertEqual(result['status'], 'error')
-        self.assertIn('not found', result['error'])
+
+        assert result['status'] == 'error'
+        assert 'not found' in result['error']
 
     def test_analyze_feat_detection(self):
-        """Test analysis detects feat when additions far exceed deletions."""
+        """Analysis detects feat when additions far exceed deletions."""
         lines = ['diff --git a/src/main/java/New.java b/src/main/java/New.java']
         lines.append('@@ -1 +1,20 @@')
         lines.append('-old line')
         for i in range(20):
             lines.append(f'+    new line {i}')
         diff_content = '\n'.join(lines) + '\n'
+
         suggestions = analyze_diff(diff_content)
-        self.assertEqual(suggestions['type'], 'feat')
+
+        assert suggestions['type'] == 'feat'
 
     def test_analyze_refactor_detection(self):
-        """Test analysis detects refactor when additions roughly equal deletions."""
+        """Analysis detects refactor when additions roughly equal deletions."""
         diff_content = """diff --git a/src/main/java/Util.java b/src/main/java/Util.java
 --- a/src/main/java/Util.java
 +++ b/src/main/java/Util.java
@@ -268,10 +263,11 @@ class TestAnalyzeDiff(unittest.TestCase):
 +        String s = formatOutput(x);
 """
         suggestions = analyze_diff(diff_content)
-        self.assertEqual(suggestions['type'], 'refactor')
+
+        assert suggestions['type'] == 'refactor'
 
     def test_analyze_ci_detection(self):
-        """Test analysis detects ci type for CI config files."""
+        """Analysis detects ci type for CI config files."""
         diff_content = """diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
@@ -279,10 +275,11 @@ class TestAnalyzeDiff(unittest.TestCase):
 +    runs-on: ubuntu-22.04
 """
         suggestions = analyze_diff(diff_content)
-        self.assertEqual(suggestions['type'], 'ci')
+
+        assert suggestions['type'] == 'ci'
 
     def test_analyze_monorepo_scope(self):
-        """Test scope detection for monorepo layouts (packages/<name>/...)."""
+        """Scope detection for monorepo layouts (packages/<name>/...)."""
         diff_content = """diff --git a/packages/auth-service/src/login.ts b/packages/auth-service/src/login.ts
 --- a/packages/auth-service/src/login.ts
 +++ b/packages/auth-service/src/login.ts
@@ -291,10 +288,11 @@ class TestAnalyzeDiff(unittest.TestCase):
 +export function refresh() { return true; }
 """
         suggestions = analyze_diff(diff_content)
-        self.assertEqual(suggestions['scope'], 'auth-service')
+
+        assert suggestions['scope'] == 'auth-service'
 
     def test_analyze_python_scope_detection(self):
-        """Test scope detection for Python file layouts (src/<package>/*.py)."""
+        """Scope detection for Python file layouts (src/<package>/*.py)."""
         diff_content = """diff --git a/src/mypackage/utils.py b/src/mypackage/utils.py
 --- a/src/mypackage/utils.py
 +++ b/src/mypackage/utils.py
@@ -306,10 +304,11 @@ class TestAnalyzeDiff(unittest.TestCase):
 +    return None
 """
         suggestions = analyze_diff(diff_content)
-        self.assertEqual(suggestions['scope'], 'mypackage')
+
+        assert suggestions['scope'] == 'mypackage'
 
     def test_analyze_generic_scope_detection(self):
-        """Test scope detection falls back to top-level directory."""
+        """Scope detection falls back to top-level directory."""
         diff_content = """diff --git a/config/settings.ini b/config/settings.ini
 --- a/config/settings.ini
 +++ b/config/settings.ini
@@ -318,10 +317,11 @@ class TestAnalyzeDiff(unittest.TestCase):
 +port = 5432
 """
         suggestions = analyze_diff(diff_content)
-        self.assertEqual(suggestions['scope'], 'config')
+
+        assert suggestions['scope'] == 'config'
 
     def test_analyze_test_only_changes(self):
-        """Test analysis detects 'test' type when only test files change."""
+        """Analysis detects 'test' type when only test files change."""
         diff_content = """diff --git a/test/java/ServiceTest.java b/test/java/ServiceTest.java
 --- a/test/java/ServiceTest.java
 +++ b/test/java/ServiceTest.java
@@ -331,10 +331,11 @@ class TestAnalyzeDiff(unittest.TestCase):
 +    }
 """
         suggestions = analyze_diff(diff_content)
-        self.assertEqual(suggestions['type'], 'test')
+
+        assert suggestions['type'] == 'test'
 
     def test_analyze_docs_only_changes(self):
-        """Test analysis detects 'docs' type when only documentation files change."""
+        """Analysis detects 'docs' type when only documentation files change."""
         diff_content = """diff --git a/README.md b/README.md
 --- a/README.md
 +++ b/README.md
@@ -342,17 +343,19 @@ class TestAnalyzeDiff(unittest.TestCase):
 +Run `npm install` to get started.
 """
         suggestions = analyze_diff(diff_content)
-        self.assertEqual(suggestions['type'], 'docs')
+
+        assert suggestions['type'] == 'docs'
 
     def test_analyze_empty_diff(self):
-        """Test analysis of an empty diff returns default suggestions."""
+        """Analysis of an empty diff returns default suggestions."""
         suggestions = analyze_diff('')
-        self.assertEqual(suggestions['type'], 'chore')
-        self.assertIsNone(suggestions['scope'])
+
+        assert suggestions['type'] == 'chore'
+        assert suggestions['scope'] is None
 
 
-class TestAnalyzeDiffCli(unittest.TestCase):
-    """CLI-level tests for analyze-diff --worktree-path / --cached.
+class TestAnalyzeDiffCli:
+    """CLI-level tests for analyze-diff --project-dir / --cached.
 
     These exercise ``cmd_analyze_diff`` end-to-end: a real git worktree is
     initialised, changes are introduced (unstaged or staged), and the script
@@ -360,38 +363,27 @@ class TestAnalyzeDiffCli(unittest.TestCase):
     ``git diff`` capture, TOON output) is covered.
     """
 
-    def setUp(self):
-        """Create a temporary directory and seed it as a git worktree."""
-        self.tmpdir = tempfile.mkdtemp()
-
-    def tearDown(self):
-        """Clean up temporary directory."""
-        import shutil
-
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
-
-    def _git(self, *args: str) -> None:
+    @staticmethod
+    def _git(repo: Path, *args: str) -> None:
         """Run a git command in the fixture worktree."""
-        import subprocess as sp
+        subprocess.run(['git', '-C', str(repo), *args], capture_output=True, check=True)
 
-        sp.run(['git', '-C', self.tmpdir, *args], capture_output=True, check=True)
-
-    def _seed_worktree(self) -> None:
+    def _seed_worktree(self, repo: Path) -> None:
         """Initialise the fixture worktree with a single committed file."""
-        self._git('init')
-        self._git('config', 'user.email', 'test@test.com')
-        self._git('config', 'user.name', 'Test')
-        seed = Path(self.tmpdir) / 'src' / 'mypackage' / 'utils.py'
+        self._git(repo, 'init')
+        self._git(repo, 'config', 'user.email', 'test@test.com')
+        self._git(repo, 'config', 'user.name', 'Test')
+        seed = repo / 'src' / 'mypackage' / 'utils.py'
         seed.parent.mkdir(parents=True, exist_ok=True)
         seed.write_text('def existing():\n    return 1\n')
-        self._git('add', 'src/mypackage/utils.py')
-        self._git('commit', '-m', 'initial')
+        self._git(repo, 'add', 'src/mypackage/utils.py')
+        self._git(repo, 'commit', '-m', 'initial')
 
-    def test_unstaged_diff_captured_and_analyzed(self):
-        """--worktree-path captures the unstaged diff and emits suggestions."""
-        self._seed_worktree()
+    def test_unstaged_diff_captured_and_analyzed(self, tmp_path: Path):
+        """--project-dir captures the unstaged diff and emits suggestions."""
+        self._seed_worktree(tmp_path)
         # Introduce an unstaged feat-style change (many additions, few deletions).
-        target = Path(self.tmpdir) / 'src' / 'mypackage' / 'utils.py'
+        target = tmp_path / 'src' / 'mypackage' / 'utils.py'
         new_lines = ['def existing():', '    return 1', '']
         for i in range(20):
             new_lines.append(f'def helper_{i}():')
@@ -399,37 +391,37 @@ class TestAnalyzeDiffCli(unittest.TestCase):
             new_lines.append('')
         target.write_text('\n'.join(new_lines))
 
-        stdout, stderr, code = run_git_script(['analyze-diff', '--project-dir', self.tmpdir])
-        self.assertEqual(code, 0, f'stderr={stderr}')
-        result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(result['mode'], 'analysis')
-        suggestions = result['suggestions']
-        self.assertIn('type', suggestions)
-        self.assertIn('scope', suggestions)
-        # Scope is detected from the Python file layout (src/<package>/...).
-        self.assertEqual(suggestions['scope'], 'mypackage')
+        stdout, stderr, code = run_git_script(['analyze-diff', '--project-dir', str(tmp_path)])
 
-    def test_cached_flag_captures_staged_changes(self):
+        assert code == 0, f'stderr={stderr}'
+        result = parse_toon(stdout)
+        assert result['status'] == 'success'
+        assert result['mode'] == 'analysis'
+        suggestions = result['suggestions']
+        assert 'type' in suggestions
+        # Scope is detected from the Python file layout (src/<package>/...).
+        assert suggestions['scope'] == 'mypackage'
+
+    def test_cached_flag_captures_staged_changes(self, tmp_path: Path):
         """--cached selects the staged diff so unstaged-only changes are ignored."""
-        self._seed_worktree()
+        self._seed_worktree(tmp_path)
         # Stage a docs change.
-        readme = Path(self.tmpdir) / 'README.md'
+        readme = tmp_path / 'README.md'
         readme.write_text('## Installation\nRun the thing.\n')
-        self._git('add', 'README.md')
+        self._git(tmp_path, 'add', 'README.md')
         # Add an unstaged-only change in another file that --cached must NOT see.
-        unstaged = Path(self.tmpdir) / 'src' / 'mypackage' / 'utils.py'
+        unstaged = tmp_path / 'src' / 'mypackage' / 'utils.py'
         unstaged.write_text('def existing():\n    return 999\n')
 
-        stdout, stderr, code = run_git_script(['analyze-diff', '--project-dir', self.tmpdir, '--cached'])
-        self.assertEqual(code, 0, f'stderr={stderr}')
-        result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'success')
-        suggestions = result['suggestions']
-        # Staged content was a docs-only change, so analyzer should classify it as docs.
-        self.assertEqual(suggestions['type'], 'docs')
+        stdout, stderr, code = run_git_script(['analyze-diff', '--project-dir', str(tmp_path), '--cached'])
 
-    def test_invalid_worktree_path_returns_error(self):
+        assert code == 0, f'stderr={stderr}'
+        result = parse_toon(stdout)
+        assert result['status'] == 'success'
+        # Staged content was a docs-only change, so analyzer classifies it as docs.
+        assert result['suggestions']['type'] == 'docs'
+
+    def test_invalid_worktree_path_returns_error(self, tmp_path: Path):
         """A non-existent worktree path produces a structured error result.
 
         Per the script's TOON output contract (see ``script-shared`` helpers),
@@ -437,396 +429,326 @@ class TestAnalyzeDiffCli(unittest.TestCase):
         and the process still exits 0 — non-zero exits are reserved for
         uncaught exceptions.
         """
-        bogus = str(Path(self.tmpdir) / 'does-not-exist')
+        bogus = str(tmp_path / 'does-not-exist')
+
         stdout, stderr, code = run_git_script(['analyze-diff', '--project-dir', bogus])
-        self.assertEqual(code, 0, f'stderr={stderr}')
+
+        assert code == 0, f'stderr={stderr}'
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'error')
+        assert result['status'] == 'error'
         # Error message should reference the missing worktree path.
-        self.assertIn('not found', result.get('error', '').lower())
+        assert 'not found' in result.get('error', '').lower()
 
 
-class TestDetectArtifacts(unittest.TestCase):
+class TestDetectArtifacts:
     """Test git_workflow.py detect-artifacts via direct import."""
 
-    def setUp(self):
-        """Create a temporary directory with artifact files."""
-        self.tmpdir = tempfile.mkdtemp()
+    def test_detects_safe_artifacts(self, tmp_path: Path):
+        """Detection of safe-to-delete artifacts."""
+        _create_file(tmp_path, 'src/main/java/Example.class')
+        _create_file(tmp_path, '.DS_Store')
+        _create_file(tmp_path, 'module/__pycache__/foo.pyc')
+        _create_file(tmp_path, 'scratch.temp')
 
-    def tearDown(self):
-        """Clean up temporary directory."""
-        import shutil
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
 
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
-
-    def _create_file(self, relpath: str) -> None:
-        """Create a file within the temp directory."""
-        full = Path(self.tmpdir) / relpath
-        full.parent.mkdir(parents=True, exist_ok=True)
-        full.write_text('test')
-
-    def test_detects_safe_artifacts(self):
-        """Test detection of safe-to-delete artifacts."""
-        self._create_file('src/main/java/Example.class')
-        self._create_file('.DS_Store')
-        self._create_file('module/__pycache__/foo.pyc')
-        self._create_file('scratch.temp')
-
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
-        self.assertGreaterEqual(len(result['safe']), 4)
+        assert len(result['safe']) >= 4
         safe_str = '\n'.join(result['safe'])
-        self.assertIn('.class', safe_str)
-        self.assertIn('.DS_Store', safe_str)
+        assert '.class' in safe_str
+        assert '.DS_Store' in safe_str
 
-    def test_detects_uncertain_artifacts(self):
-        """Test detection of uncertain artifacts in target/build dirs."""
-        self._create_file('target/classes/App.class')
-        self._create_file('target/output.jar')
-        self._create_file('build/libs/app.jar')
+    def test_detects_uncertain_artifacts(self, tmp_path: Path):
+        """Detection of uncertain artifacts in target/build dirs."""
+        _create_file(tmp_path, 'target/classes/App.class')
+        _create_file(tmp_path, 'target/output.jar')
+        _create_file(tmp_path, 'build/libs/app.jar')
 
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
-        self.assertTrue(len(result['uncertain']) >= 1 or len(result['safe']) >= 1)
-        self.assertGreater(result['total'], 0)
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
 
-    def test_detects_python_egg_artifacts(self):
-        """Test detection of Python .egg-info and .eggs artifacts."""
-        self._create_file('mypackage.egg-info/PKG-INFO')
-        self._create_file('.eggs/some-egg.egg')
+        assert len(result['uncertain']) >= 1 or len(result['safe']) >= 1
+        assert result['total'] > 0
 
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
-        self.assertGreaterEqual(len(result['safe']), 2)
+    def test_detects_python_egg_artifacts(self, tmp_path: Path):
+        """Detection of Python .egg-info and .eggs artifacts."""
+        _create_file(tmp_path, 'mypackage.egg-info/PKG-INFO')
+        _create_file(tmp_path, '.eggs/some-egg.egg')
+
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
+
+        assert len(result['safe']) >= 2
         safe_str = '\n'.join(result['safe'])
-        self.assertIn('egg-info', safe_str)
-        self.assertIn('.eggs', safe_str)
+        assert 'egg-info' in safe_str
+        assert '.eggs' in safe_str
 
-    def test_detects_typescript_buildinfo(self):
-        """Test detection of TypeScript .tsbuildinfo files."""
-        self._create_file('tsconfig.tsbuildinfo')
-        self._create_file('packages/lib/tsconfig.tsbuildinfo')
+    def test_detects_typescript_buildinfo(self, tmp_path: Path):
+        """Detection of TypeScript .tsbuildinfo files."""
+        _create_file(tmp_path, 'tsconfig.tsbuildinfo')
+        _create_file(tmp_path, 'packages/lib/tsconfig.tsbuildinfo')
 
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
+
         safe_str = '\n'.join(result['safe'])
-        self.assertIn('tsbuildinfo', safe_str)
-        self.assertGreaterEqual(len(result['safe']), 2)
+        assert 'tsbuildinfo' in safe_str
+        assert len(result['safe']) >= 2
 
-    def test_detects_plan_temp_as_safe(self):
-        """Test that .plan/temp/ files are safe (not uncertain)."""
-        self._create_file('.plan/temp/scratch.txt')
-        self._create_file('.plan/temp/debug.log')
+    def test_detects_plan_temp_as_safe(self, tmp_path: Path):
+        """.plan/temp/ files are safe (not uncertain)."""
+        _create_file(tmp_path, '.plan/temp/scratch.txt')
+        _create_file(tmp_path, '.plan/temp/debug.log')
 
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
-        safe_str = '\n'.join(result['safe'])
-        self.assertIn('.plan/temp', safe_str)
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
+
+        assert '.plan/temp' in '\n'.join(result['safe'])
+        assert '.plan/temp' not in '\n'.join(result['uncertain'])
+
+    def test_detects_dist_next_as_uncertain(self, tmp_path: Path):
+        """dist/ and .next/ directories are uncertain."""
+        _create_file(tmp_path, 'dist/bundle.js')
+        _create_file(tmp_path, '.next/cache/data.json')
+
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
+
         uncertain_str = '\n'.join(result['uncertain'])
-        self.assertNotIn('.plan/temp', uncertain_str)
+        assert 'dist/' in uncertain_str
+        assert '.next/' in uncertain_str
 
-    def test_detects_dist_next_as_uncertain(self):
-        """Test that dist/ and .next/ directories are uncertain."""
-        self._create_file('dist/bundle.js')
-        self._create_file('.next/cache/data.json')
+    def test_detects_root_level_artifacts(self, tmp_path: Path):
+        """Detection of artifacts at repo root (#23)."""
+        _create_file(tmp_path, 'Example.class')
+        _create_file(tmp_path, '.DS_Store')
+        _create_file(tmp_path, 'scratch.temp')
 
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
-        uncertain_str = '\n'.join(result['uncertain'])
-        self.assertIn('dist/', uncertain_str)
-        self.assertIn('.next/', uncertain_str)
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
 
-    def test_detects_root_level_artifacts(self):
-        """Test detection of artifacts at repo root (#23)."""
-        self._create_file('Example.class')
-        self._create_file('.DS_Store')
-        self._create_file('scratch.temp')
-
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
-        self.assertGreaterEqual(len(result['safe']), 3)
+        assert len(result['safe']) >= 3
         safe_str = '\n'.join(result['safe'])
-        self.assertIn('Example.class', safe_str)
-        self.assertIn('.DS_Store', safe_str)
-        self.assertIn('scratch.temp', safe_str)
+        assert 'Example.class' in safe_str
+        assert '.DS_Store' in safe_str
+        assert 'scratch.temp' in safe_str
 
-    def test_clean_directory_returns_empty(self):
-        """Test scanning a directory with no artifacts."""
-        self._create_file('src/main/java/App.java')
-        self._create_file('README.md')
+    def test_clean_directory_returns_empty(self, tmp_path: Path):
+        """Scanning a directory with no artifacts returns empty results."""
+        _create_file(tmp_path, 'src/main/java/App.java')
+        _create_file(tmp_path, 'README.md')
 
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
-        self.assertEqual(result['total'], 0)
-        self.assertEqual(len(result['safe']), 0)
-        self.assertEqual(len(result['uncertain']), 0)
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
+
+        assert result['total'] == 0
+        assert result['safe'] == []
+        assert result['uncertain'] == []
 
     def test_nonexistent_root_fails(self):
-        """Test error when root directory doesn't exist."""
+        """Error when root directory doesn't exist."""
         result = cmd_detect_artifacts(Namespace(root='/nonexistent/path', no_gitignore=False))
-        self.assertEqual(result['status'], 'error')
-        self.assertIn('not found', result['error'])
 
-    def test_skips_git_directory(self):
-        """Test that .git/ directory contents are excluded from results."""
-        self._create_file('.git/objects/pack/pack-abc.class')
-        self._create_file('.git/hooks/pre-commit.pyc')
-        self._create_file('src/real.temp')
+        assert result['status'] == 'error'
+        assert 'not found' in result['error']
 
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
+    def test_skips_git_directory(self, tmp_path: Path):
+        """.git/ directory contents are excluded from results."""
+        _create_file(tmp_path, '.git/objects/pack/pack-abc.class')
+        _create_file(tmp_path, '.git/hooks/pre-commit.pyc')
+        _create_file(tmp_path, 'src/real.temp')
+
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
+
         all_files = result['safe'] + result['uncertain']
-        for f in all_files:
-            self.assertFalse(f.startswith('.git/'), f'.git file should be excluded: {f}')
-        self.assertTrue(any('real.temp' in f for f in result['safe']))
+        assert all(not f.startswith('.git/') for f in all_files)
+        assert any('real.temp' in f for f in result['safe'])
 
-    def test_fixture_path_classified_as_uncertain(self):
-        """Fixture files under test/**/fixtures/** should land in uncertain, not safe."""
-        self._create_file('test/foo/fixtures/sample.dat')
+    def test_fixture_path_classified_as_uncertain(self, tmp_path: Path):
+        """Fixture files under test/**/fixtures/** land in uncertain, not safe."""
+        _create_file(tmp_path, 'test/foo/fixtures/sample.dat')
 
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
-        uncertain_str = '\n'.join(result['uncertain'])
-        safe_str = '\n'.join(result['safe'])
-        self.assertIn('test/foo/fixtures/sample.dat', uncertain_str)
-        self.assertNotIn('test/foo/fixtures/sample.dat', safe_str)
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
 
-    def test_non_repo_graceful_degradation(self):
+        assert 'test/foo/fixtures/sample.dat' in '\n'.join(result['uncertain'])
+        assert 'test/foo/fixtures/sample.dat' not in '\n'.join(result['safe'])
+
+    def test_non_repo_graceful_degradation(self, tmp_path: Path):
         """scan_artifacts must not raise when called outside a git repo."""
-        # No git init — tmpdir is a plain directory. Create a benign file so
+        # No git init — tmp_path is a plain directory. Create a benign file so
         # traversal has something to process.
-        self._create_file('src/main.py')
+        _create_file(tmp_path, 'src/main.py')
 
-        # Must complete without raising and return a valid dict shape.
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
-        self.assertIsInstance(result, dict)
-        self.assertIn('safe', result)
-        self.assertIn('uncertain', result)
-        self.assertIn('total', result)
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
 
-        # get_tracked_files should degrade to an empty set when no git repo exists.
-        tracked = get_tracked_files(Path(self.tmpdir))
-        self.assertEqual(tracked, set())
+        assert isinstance(result, dict)
+        assert 'safe' in result
+        assert 'uncertain' in result
+        assert 'total' in result
+        # get_tracked_files degrades to an empty set when no git repo exists.
+        assert get_tracked_files(tmp_path) == set()
 
 
-class TestTrackedFileFilter(unittest.TestCase):
+class TestTrackedFileFilter:
     """Test that tracked files matching safe patterns are demoted to uncertain."""
 
-    def setUp(self):
-        """Create a temporary directory for git-backed scenarios."""
-        self.tmpdir = tempfile.mkdtemp()
+    def test_tracked_safe_pattern_file_downgrades_to_uncertain(self, tmp_path: Path):
+        """A committed *.log file appears in uncertain (never in safe)."""
+        _git_init_with_identity(tmp_path)
+        _create_file(tmp_path, 'debug.log')
+        subprocess.run(['git', 'add', 'debug.log'], cwd=tmp_path, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'commit debug.log'], cwd=tmp_path, capture_output=True)
 
-    def tearDown(self):
-        """Clean up temporary directory."""
-        import shutil
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
 
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        assert 'debug.log' in result['uncertain']
+        assert 'debug.log' not in result['safe']
 
-    def _create_file(self, relpath: str) -> None:
-        """Create a file within the temp directory."""
-        full = Path(self.tmpdir) / relpath
-        full.parent.mkdir(parents=True, exist_ok=True)
-        full.write_text('test')
-
-    def _git_init_with_identity(self) -> None:
-        """Initialise a git repo with a throwaway committer identity."""
-        import subprocess as sp
-
-        sp.run(['git', 'init'], cwd=self.tmpdir, capture_output=True)
-        sp.run(['git', 'config', 'user.email', 'test@test.com'], cwd=self.tmpdir, capture_output=True)
-        sp.run(['git', 'config', 'user.name', 'Test'], cwd=self.tmpdir, capture_output=True)
-
-    def test_tracked_safe_pattern_file_downgrades_to_uncertain(self):
-        """A committed *.log file must appear in uncertain (never in safe)."""
-        import subprocess as sp
-
-        self._git_init_with_identity()
-        self._create_file('debug.log')
-        sp.run(['git', 'add', 'debug.log'], cwd=self.tmpdir, capture_output=True)
-        sp.run(['git', 'commit', '-m', 'commit debug.log'], cwd=self.tmpdir, capture_output=True)
-
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
-
-        self.assertIn('debug.log', result['uncertain'])
-        self.assertNotIn('debug.log', result['safe'])
-
-    def test_untracked_safe_pattern_file_stays_safe(self):
-        """An untracked *.log file (not gitignored) must remain in safe (regression guard)."""
-        self._git_init_with_identity()
+    def test_untracked_safe_pattern_file_stays_safe(self, tmp_path: Path):
+        """An untracked *.log file (not gitignored) remains in safe (regression guard)."""
+        _git_init_with_identity(tmp_path)
         # No .gitignore is created, so the file is not gitignored.
         # No `git add` — the file remains untracked.
-        self._create_file('debug.log')
+        _create_file(tmp_path, 'debug.log')
 
-        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
 
-        self.assertIn('debug.log', result['safe'])
-        self.assertNotIn('debug.log', result['uncertain'])
+        assert 'debug.log' in result['safe']
+        assert 'debug.log' not in result['uncertain']
 
-    def test_tracked_file_scanned_from_subdir_still_downgrades(self):
-        """Scanning a subdirectory of a repo must still demote tracked safe matches.
+    def test_tracked_file_scanned_from_subdir_still_downgrades(self, tmp_path: Path):
+        """Scanning a subdirectory of a repo still demotes tracked safe matches.
 
         Regression guard for the ``--full-name`` bug: ``git ls-files`` must
         return paths relative to the scanned ``root`` (the subdir) so the
-        ``rel in tracked`` check matches. Without ``cwd=root`` + no
-        ``--full-name``, tracked files in a subdir scan leak into ``safe``.
+        ``rel in tracked`` check matches.
         """
-        import subprocess as sp
+        _git_init_with_identity(tmp_path)
+        _create_file(tmp_path, 'sub/debug.log')
+        subprocess.run(['git', 'add', 'sub/debug.log'], cwd=tmp_path, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'commit sub/debug.log'], cwd=tmp_path, capture_output=True)
 
-        self._git_init_with_identity()
-        self._create_file('sub/debug.log')
-        sp.run(['git', 'add', 'sub/debug.log'], cwd=self.tmpdir, capture_output=True)
-        sp.run(['git', 'commit', '-m', 'commit sub/debug.log'], cwd=self.tmpdir, capture_output=True)
+        result = scan_artifacts(tmp_path / 'sub', respect_gitignore=False)
 
-        subdir = Path(self.tmpdir) / 'sub'
-        result = scan_artifacts(subdir, respect_gitignore=False)
-
-        self.assertIn('debug.log', result['uncertain'])
-        self.assertNotIn('debug.log', result['safe'])
+        assert 'debug.log' in result['uncertain']
+        assert 'debug.log' not in result['safe']
 
 
-class TestDetectArtifactsGitignore(unittest.TestCase):
+class TestDetectArtifactsGitignore:
     """Test detect-artifacts with gitignore integration (subprocess-dependent)."""
 
-    def setUp(self):
-        """Create a temporary directory."""
-        self.tmpdir = tempfile.mkdtemp()
+    def test_respects_gitignore_by_default(self, tmp_path: Path):
+        """Gitignored files are excluded from results by default."""
+        _git_init_with_identity(tmp_path)
+        (tmp_path / '.gitignore').write_text('*.class\n')
+        subprocess.run(['git', 'add', '.gitignore'], cwd=tmp_path, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'init'], cwd=tmp_path, capture_output=True)
+        _create_file(tmp_path, 'src/Example.class')
+        _create_file(tmp_path, 'scratch.temp')
 
-    def tearDown(self):
-        """Clean up temporary directory."""
-        import shutil
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', str(tmp_path)])
 
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
-
-    def _create_file(self, relpath: str) -> None:
-        """Create a file within the temp directory."""
-        full = Path(self.tmpdir) / relpath
-        full.parent.mkdir(parents=True, exist_ok=True)
-        full.write_text('test')
-
-    def test_respects_gitignore_by_default(self):
-        """Test that gitignored files are excluded from results by default."""
-        import subprocess as sp
-
-        sp.run(['git', 'init'], cwd=self.tmpdir, capture_output=True)
-        sp.run(['git', 'config', 'user.email', 'test@test.com'], cwd=self.tmpdir, capture_output=True)
-        sp.run(['git', 'config', 'user.name', 'Test'], cwd=self.tmpdir, capture_output=True)
-
-        (Path(self.tmpdir) / '.gitignore').write_text('*.class\n')
-        sp.run(['git', 'add', '.gitignore'], cwd=self.tmpdir, capture_output=True)
-        sp.run(['git', 'commit', '-m', 'init'], cwd=self.tmpdir, capture_output=True)
-
-        self._create_file('src/Example.class')
-        self._create_file('scratch.temp')
-
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
-        self.assertEqual(code, 0)
+        assert code == 0
         result = parse_toon(stdout)
         safe_files = result['safe']
-        self.assertFalse(any('.class' in f for f in safe_files), f'.class should be excluded: {safe_files}')
-        self.assertTrue(any('.temp' in f for f in safe_files), f'.temp should be present: {safe_files}')
+        assert not any('.class' in f for f in safe_files), f'.class should be excluded: {safe_files}'
+        assert any('.temp' in f for f in safe_files), f'.temp should be present: {safe_files}'
 
-    def test_no_gitignore_flag_includes_all(self):
-        """Test that --no-gitignore includes gitignored files."""
-        import subprocess as sp
+    def test_no_gitignore_flag_includes_all(self, tmp_path: Path):
+        """--no-gitignore includes gitignored files."""
+        _git_init_with_identity(tmp_path)
+        (tmp_path / '.gitignore').write_text('*.class\n')
+        subprocess.run(['git', 'add', '.gitignore'], cwd=tmp_path, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'init'], cwd=tmp_path, capture_output=True)
+        _create_file(tmp_path, 'src/Example.class')
 
-        sp.run(['git', 'init'], cwd=self.tmpdir, capture_output=True)
-        sp.run(['git', 'config', 'user.email', 'test@test.com'], cwd=self.tmpdir, capture_output=True)
-        sp.run(['git', 'config', 'user.name', 'Test'], cwd=self.tmpdir, capture_output=True)
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', str(tmp_path), '--no-gitignore'])
 
-        (Path(self.tmpdir) / '.gitignore').write_text('*.class\n')
-        sp.run(['git', 'add', '.gitignore'], cwd=self.tmpdir, capture_output=True)
-        sp.run(['git', 'commit', '-m', 'init'], cwd=self.tmpdir, capture_output=True)
-
-        self._create_file('src/Example.class')
-
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir, '--no-gitignore'])
-        self.assertEqual(code, 0)
+        assert code == 0
         result = parse_toon(stdout)
         safe_files = result['safe']
-        self.assertTrue(
-            any('.class' in f for f in safe_files), f'.class should be present with --no-gitignore: {safe_files}'
-        )
+        assert any('.class' in f for f in safe_files), f'.class should be present with --no-gitignore: {safe_files}'
 
 
-class TestWrapText(unittest.TestCase):
+class TestWrapText:
     """Test wrap_text function directly."""
 
     def test_short_line_unchanged(self):
         """Lines within width are not wrapped."""
-        self.assertEqual(wrap_text('short line', 72), 'short line')
+        assert wrap_text('short line', 72) == 'short line'
 
     def test_long_line_wrapped(self):
         """Lines exceeding width are wrapped at word boundaries."""
         text = 'a ' * 40  # 80 chars
+
         result = wrap_text(text.strip(), 72)
-        for line in result.split('\n'):
-            self.assertLessEqual(len(line), 72)
+
+        assert all(len(line) <= 72 for line in result.split('\n'))
 
     def test_preserves_bullet_indentation(self):
         """Wrapped lines preserve leading indentation."""
         text_indented = '  - ' + 'word ' * 20
+
         result_indented = wrap_text(text_indented, 72)
-        for line in result_indented.split('\n'):
-            self.assertTrue(line.startswith('  '), f'Lost indent: {line!r}')
+
+        assert all(line.startswith('  ') for line in result_indented.split('\n'))
 
     def test_deep_indent_not_wrapped(self):
         """Lines with >52 chars indent are kept as-is (effective_width < 20)."""
         text = ' ' * 55 + 'deeply indented content that should not be wrapped'
-        result = wrap_text(text, 72)
-        self.assertEqual(result, text)
+
+        assert wrap_text(text, 72) == text
 
     def test_very_long_word_not_broken(self):
-        """A single word longer than width should not be split (#20)."""
+        """A single word longer than width is not split (#20)."""
         url = 'https://example.com/very/long/path/that/exceeds/seventy/two/characters/easily'
-        result = wrap_text(url, 72)
-        self.assertEqual(result, url)
+
+        assert wrap_text(url, 72) == url
 
     def test_multiline_preserves_paragraphs(self):
         """Multiple paragraphs separated by newlines are handled independently."""
         text = 'First paragraph.\nSecond paragraph.'
-        result = wrap_text(text, 72)
-        self.assertEqual(result, text)
+
+        assert wrap_text(text, 72) == text
 
 
-class TestArtifactConfigLoading(unittest.TestCase):
+class TestArtifactConfigLoading:
     """Test that artifact patterns are loaded from artifact-patterns.json config."""
 
     def test_safe_patterns_loaded(self):
-        """Test that safe artifact patterns are loaded from config."""
-        self.assertIsInstance(SAFE_ARTIFACT_PATTERNS, list)
-        self.assertTrue(len(SAFE_ARTIFACT_PATTERNS) > 0)
+        """Safe artifact patterns are loaded from config."""
+        assert isinstance(SAFE_ARTIFACT_PATTERNS, list)
+        assert len(SAFE_ARTIFACT_PATTERNS) > 0
         patterns_str = ' '.join(SAFE_ARTIFACT_PATTERNS)
-        self.assertIn('*.class', patterns_str)
-        self.assertIn('*.pyc', patterns_str)
-        self.assertIn('.DS_Store', patterns_str)
+        assert '*.class' in patterns_str
+        assert '*.pyc' in patterns_str
+        assert '.DS_Store' in patterns_str
 
     def test_uncertain_patterns_loaded(self):
-        """Test that uncertain artifact patterns are loaded from config."""
-        self.assertIsInstance(UNCERTAIN_ARTIFACT_PATTERNS, list)
-        self.assertTrue(len(UNCERTAIN_ARTIFACT_PATTERNS) > 0)
-        patterns_str = ' '.join(UNCERTAIN_ARTIFACT_PATTERNS)
-        self.assertIn('target/**', patterns_str)
+        """Uncertain artifact patterns are loaded from config."""
+        assert isinstance(UNCERTAIN_ARTIFACT_PATTERNS, list)
+        assert len(UNCERTAIN_ARTIFACT_PATTERNS) > 0
+        assert 'target/**' in ' '.join(UNCERTAIN_ARTIFACT_PATTERNS)
 
     def test_skip_dirs_loaded(self):
-        """Test that skip directories are loaded from config."""
-        self.assertIsInstance(_SKIP_DIRS, set)
-        self.assertIn('.git', _SKIP_DIRS)
-        self.assertIn('node_modules', _SKIP_DIRS)
-        self.assertIn('.venv', _SKIP_DIRS)
+        """Skip directories are loaded from config."""
+        assert isinstance(_SKIP_DIRS, set)
+        assert '.git' in _SKIP_DIRS
+        assert 'node_modules' in _SKIP_DIRS
+        assert '.venv' in _SKIP_DIRS
 
     def test_no_overlap_between_skip_dirs_and_uncertain(self):
-        """Test that skip_dirs entries are not also in uncertain_patterns."""
+        """skip_dirs entries are not also in uncertain_patterns."""
         for skip_dir in _SKIP_DIRS:
             for pattern in UNCERTAIN_ARTIFACT_PATTERNS:
-                self.assertFalse(
-                    pattern.startswith(f'{skip_dir}/') or pattern.startswith(f'{skip_dir}/**'),
-                    f'skip_dir "{skip_dir}" overlaps with uncertain pattern "{pattern}"',
-                )
+                assert not (
+                    pattern.startswith(f'{skip_dir}/') or pattern.startswith(f'{skip_dir}/**')
+                ), f'skip_dir "{skip_dir}" overlaps with uncertain pattern "{pattern}"'
 
 
-class TestToonContract(unittest.TestCase):
+class TestToonContract:
     """Verify output matches the contract documented in SKILL.md."""
 
     def test_format_commit_output_contract(self):
-        """Verify format-commit output has all documented fields."""
-        result = cmd_format_commit(
-            Namespace(commit_type='feat', scope='auth', subject='add login', body=None, breaking=None, footer=None)
-        )
+        """format-commit output has all documented fields."""
+        result = cmd_format_commit(_format_commit_args(commit_type='feat', scope='auth', subject='add login'))
+
         required_fields = {'type', 'scope', 'subject', 'formatted_message', 'validation', 'status'}
-        missing = required_fields - set(result.keys())
-        self.assertEqual(missing, set(), f'Missing contract fields: {missing}')
-        self.assertIn('valid', result['validation'])
-        self.assertIn('warnings', result['validation'])
+        assert required_fields - set(result.keys()) == set()
+        assert 'valid' in result['validation']
+        assert 'warnings' in result['validation']
 
 
 # =============================================================================
@@ -834,27 +756,26 @@ class TestToonContract(unittest.TestCase):
 # =============================================================================
 
 
-class TestMain(unittest.TestCase):
+class TestMain:
     """Test git_workflow.py main entry point (CLI plumbing)."""
 
     def test_no_subcommand(self):
-        """Test error when no subcommand provided."""
-        _, stderr, code = run_git_script([])
-        self.assertNotEqual(code, 0)
+        """Error when no subcommand provided."""
+        _, _stderr, code = run_git_script([])
+
+        assert code != 0
 
     def test_help(self):
-        """Test help output."""
+        """Help output lists the subcommands."""
         stdout, _, code = run_git_script(['--help'])
-        self.assertEqual(code, 0)
-        self.assertIn('format-commit', stdout)
-        self.assertIn('analyze-diff', stdout)
+
+        assert code == 0
+        assert 'format-commit' in stdout
+        assert 'analyze-diff' in stdout
 
     def test_missing_required_args(self):
-        """Test error when required args missing."""
+        """Error when required args missing."""
         _, stderr, code = run_git_script(['format-commit'])
-        self.assertNotEqual(code, 0)
-        self.assertIn('--type', stderr)
 
-
-if __name__ == '__main__':
-    unittest.main()
+        assert code != 0
+        assert '--type' in stderr

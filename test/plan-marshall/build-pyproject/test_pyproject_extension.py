@@ -70,11 +70,6 @@ def _load_pyproject_build_extension():
 BuildExtension = _load_pyproject_build_extension()
 
 
-# =============================================================================
-# Subclass contract
-# =============================================================================
-
-
 def test_build_extension_subclasses_build_extension_base():
     """The pyproject BuildExtension is a BuildExtensionBase (Axis-B), not ExtensionBase."""
     assert issubclass(BuildExtension, BuildExtensionBase)
@@ -84,11 +79,6 @@ def test_build_extension_is_instantiable():
     """The pyproject BuildExtension instantiates with no required arguments."""
     ext = BuildExtension()
     assert isinstance(ext, BuildExtensionBase)
-
-
-# =============================================================================
-# classify_paths() — config claim contract (pyproject.toml only)
-# =============================================================================
 
 
 def test_classify_paths_claims_pyproject_toml_as_config():
@@ -123,11 +113,6 @@ def test_classify_paths_claims_pyproject_but_not_lockfile_or_marshal_together():
     ext = BuildExtension()
     result = ext.classify_paths(['pyproject.toml', 'uv.lock', 'marshal.json'])
     assert result['config'] == ['pyproject.toml']
-
-
-# =============================================================================
-# classify_paths() — production / test roles
-# =============================================================================
 
 
 def test_classify_paths_claims_scripts_python_as_production():
@@ -209,11 +194,6 @@ def test_classify_paths_mixed_input():
     assert result['config'] == ['pyproject.toml']
 
 
-# =============================================================================
-# classify_path_specificity()
-# =============================================================================
-
-
 def test_classify_path_specificity_returns_score_for_claimed_role():
     """A claimed path returns the matched glob's non-wildcard segment count."""
     ext = BuildExtension()
@@ -238,11 +218,6 @@ def test_classify_path_specificity_returns_zero_for_unclaimed_path():
     assert ext.classify_path_specificity('uv.lock', 'config') == 0
     assert ext.classify_path_specificity('marshal.json', 'config') == 0
     assert ext.classify_path_specificity('mystery.xyz', 'production') == 0
-
-
-# =============================================================================
-# classify_globs() — explicit (pattern, role) build_map routes
-# =============================================================================
 
 
 def test_classify_globs_returns_pyproject_config_route():
@@ -287,11 +262,6 @@ def test_classify_globs_uses_single_star_not_recursive():
     ext = BuildExtension()
     for pattern, _role in ext.classify_globs():
         assert '**' not in pattern
-
-
-# =============================================================================
-# classify_build_class() — inherited role -> build_class default
-# =============================================================================
 
 
 def test_classify_build_class_production_maps_to_compile():

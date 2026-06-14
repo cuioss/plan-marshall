@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Tests for build_parse.py module."""
 
-# Tier 2 direct imports via importlib for uniform import style
 import contextlib
-import importlib.util  # noqa: E402
+import importlib.util
 import json
 import os
-import sys
 import tempfile
 from pathlib import Path
 
@@ -419,11 +417,6 @@ def test_partition_issues_preserves_order():
     assert errors[1].message == 'error 2'
 
 
-# =============================================================================
-# generate_summary_from_issues
-# =============================================================================
-
-
 def test_generate_summary_empty():
     """Returns zero counts for empty issues list."""
     summary = generate_summary_from_issues([])
@@ -468,67 +461,3 @@ def test_generate_summary_other_categories():
     assert summary['total_issues'] == 2
     assert summary['total_errors'] == 1
     assert summary['total_warnings'] == 1
-
-
-if __name__ == '__main__':
-    import traceback
-
-    tests = [
-        test_severity_constants,
-        test_mode_constants,
-        test_issue_creation_minimal,
-        test_issue_creation_full,
-        test_issue_none_file_and_line,
-        test_issue_to_dict_minimal,
-        test_issue_to_dict_with_category,
-        test_issue_to_dict_with_stack_trace,
-        test_issue_to_dict_with_accepted,
-        test_issue_to_dict_without_accepted_false,
-        test_test_summary_creation,
-        test_test_summary_to_dict,
-        test_test_summary_zero_values,
-        test_load_acceptable_warnings_nonexistent,
-        test_load_acceptable_warnings_missing_build_system,
-        test_load_acceptable_warnings_missing_key,
-        test_load_acceptable_warnings_loads,
-        test_load_acceptable_warnings_invalid_json,
-        test_is_warning_accepted_empty_patterns,
-        test_is_warning_accepted_substring,
-        test_is_warning_accepted_substring_case_insensitive,
-        test_is_warning_accepted_substring_no_match,
-        test_is_warning_accepted_regex,
-        test_is_warning_accepted_regex_case_insensitive,
-        test_is_warning_accepted_regex_no_match,
-        test_is_warning_accepted_invalid_regex,
-        test_is_warning_accepted_multiple_patterns,
-        test_filter_warnings_actionable,
-        test_filter_warnings_default_mode,
-        test_filter_warnings_structured_keeps_all,
-        test_filter_warnings_structured_marks_accepted,
-        test_filter_warnings_errors_returns_empty,
-        test_filter_warnings_preserves_fields,
-        test_partition_issues_empty,
-        test_partition_issues_errors_only,
-        test_partition_issues_warnings_only,
-        test_partition_issues_mixed,
-        test_partition_issues_preserves_order,
-        test_generate_summary_empty,
-        test_generate_summary_all_categories,
-        test_generate_summary_other_categories,
-    ]
-
-    passed = 0
-    failed = 0
-
-    for test in tests:
-        try:
-            test()
-            passed += 1
-        except Exception:
-            failed += 1
-            print(f'FAILED: {test.__name__}')
-            traceback.print_exc()
-            print()
-
-    print(f'\nResults: {passed} passed, {failed} failed')
-    sys.exit(0 if failed == 0 else 1)

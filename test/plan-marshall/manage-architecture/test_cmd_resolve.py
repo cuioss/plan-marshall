@@ -451,7 +451,8 @@ def test_resolve_coverage_triggers_at_most_one_enrich(monkeypatch):
     assert len(enrich_calls) == 1
 
 
-def test_resolve_plain_verbs_trigger_zero_enrich(monkeypatch):
+@pytest.mark.parametrize('verb', ['compile', 'verify', 'module-tests'])
+def test_resolve_plain_verbs_trigger_zero_enrich(monkeypatch, verb):
     """``compile`` / ``verify`` / ``test`` (module-tests) NEVER enrich."""
     _architecture_core.invalidate_crawl_cache()
     _cmd_client._ENRICH_CACHE.clear()
@@ -473,10 +474,7 @@ def test_resolve_plain_verbs_trigger_zero_enrich(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_multi_module(tmpdir)
         try:
-            for verb in ('compile', 'verify', 'module-tests'):
-                _architecture_core.invalidate_crawl_cache(tmpdir)
-                _cmd_client._ENRICH_CACHE.clear()
-                resolve_command(verb, 'child-mod', tmpdir)
+            resolve_command(verb, 'child-mod', tmpdir)
         finally:
             _architecture_core.invalidate_crawl_cache(tmpdir)
             _cmd_client._ENRICH_CACHE.clear()

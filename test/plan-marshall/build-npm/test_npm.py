@@ -20,19 +20,13 @@ _npm_execute_mod = load_script_module('plan-marshall', 'build-npm', '_npm_execut
 detect_command_type = _npm_execute_mod.detect_command_type
 execute_direct = _npm_execute_mod.execute_direct
 
-# =============================================================================
-# Test: API functions (via import)
-# =============================================================================
-
 
 def test_api_detect_command_type():
     """Test detect_command_type API function."""
-    # Test npm commands
     assert detect_command_type('run test') == 'npm'
     assert detect_command_type('install') == 'npm'
     assert detect_command_type('run build') == 'npm'
 
-    # Test npx commands
     assert detect_command_type('playwright test') == 'npx'
     assert detect_command_type('eslint src/') == 'npx'
     assert detect_command_type('jest --coverage') == 'npx'
@@ -41,7 +35,6 @@ def test_api_detect_command_type():
 
 def test_api_get_bash_timeout():
     """Test get_bash_timeout API adds buffer correctly."""
-    # Test various values
     assert get_bash_timeout(300) == 330  # 300 + 30 buffer
     assert get_bash_timeout(60) == 90  # 60 + 30 buffer
     assert get_bash_timeout(120) == 150  # 120 + 30 buffer
@@ -86,14 +79,9 @@ def test_api_execute_direct_npx_command():
         assert result['command_type'] == 'npm'
 
 
-# =============================================================================
-# Two-state ``--plan-id`` / ``--project-dir`` routing contract
-# =============================================================================
-#
-# npm.py uses the shared ``build_main()`` from ``_build_cli.py``. The
-# resolver semantics are pinned in
-# ``test/plan-marshall/script-shared/test_build_cli.py``; here we only
-# verify the parser surface.
+# npm.py uses the shared ``build_main()`` from ``_build_cli.py``. The resolver
+# semantics are pinned in ``test/plan-marshall/script-shared/test_build_cli.py``;
+# here we only verify the parser surface.
 
 from conftest import run_script  # noqa: E402
 
@@ -122,8 +110,3 @@ def test_run_rejects_both_plan_id_and_project_dir():
     data = result.toon_or_error()
     assert data.get('status') == 'error'
     assert data.get('error') == 'mutually_exclusive_args'
-
-
-# =============================================================================
-# Runner
-# =============================================================================

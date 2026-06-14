@@ -11,10 +11,6 @@ from unittest.mock import MagicMock, mock_open, patch
 
 from _build_execute import CaptureStrategy, execute_direct_base
 
-# =============================================================================
-# Helpers
-# =============================================================================
-
 
 def _build_command_fn(wrapper, args, log_file):
     """Test build command function that returns predictable command parts."""
@@ -57,11 +53,6 @@ def _call_execute(
             working_dir=working_dir,
             extra_result_fields=extra_result_fields,
         )
-
-
-# =============================================================================
-# Tests: CaptureStrategy.STDOUT_REDIRECT - success
-# =============================================================================
 
 
 class TestStdoutRedirectSuccess:
@@ -126,7 +117,6 @@ class TestStdoutRedirectSuccess:
 
         _call_execute(command_key='test:verify')
 
-        # timeout_set should be called with the actual duration
         mock_tset.assert_called_once()
         call_args = mock_tset.call_args
         assert call_args[0][0] == 'test:verify'
@@ -142,11 +132,6 @@ class TestStdoutRedirectSuccess:
         with patch('builtins.open', mock_open()) as mocked_open:
             _call_execute(capture_strategy=CaptureStrategy.STDOUT_REDIRECT)
             mocked_open.assert_called_once_with('/tmp/test.log', 'w')
-
-
-# =============================================================================
-# Tests: CaptureStrategy.TOOL_LOG_FLAG - success
-# =============================================================================
 
 
 class TestMavenLogFlagSuccess:
@@ -189,11 +174,6 @@ class TestMavenLogFlagSuccess:
 
         assert result['status'] == 'success'
         assert result['exit_code'] == 0
-
-
-# =============================================================================
-# Tests: Build failure (non-zero exit code)
-# =============================================================================
 
 
 class TestBuildFailure:
@@ -239,11 +219,6 @@ class TestBuildFailure:
         mock_tset.assert_called_once()
 
 
-# =============================================================================
-# Tests: Timeout handling
-# =============================================================================
-
-
 class TestTimeoutHandling:
     """Tests for subprocess.TimeoutExpired handling."""
 
@@ -282,7 +257,7 @@ class TestTimeoutHandling:
 
         _call_execute(command_key='test:verify')
 
-        # Adaptive learning: doubles timeout on timeout
+        # Adaptive learning doubles the timeout on a timeout (300 -> 600).
         mock_tset.assert_called_once_with('test:verify', 600, mock_tset.call_args[0][2])
 
     @patch('_build_execute.log_entry')
@@ -299,11 +274,6 @@ class TestTimeoutHandling:
         log_args = mock_log.call_args[0]
         assert log_args[2] == 'ERROR'
         assert 'Timeout' in log_args[3]
-
-
-# =============================================================================
-# Tests: FileNotFoundError handling
-# =============================================================================
 
 
 class TestFileNotFoundError:
@@ -359,11 +329,6 @@ class TestFileNotFoundError:
         assert result['duration_seconds'] == 0
 
 
-# =============================================================================
-# Tests: OSError handling
-# =============================================================================
-
-
 class TestOSError:
     """Tests for general OS errors during execution."""
 
@@ -407,11 +372,6 @@ class TestOSError:
         assert 'OS error' in log_args[3]
 
 
-# =============================================================================
-# Tests: Log file creation failure
-# =============================================================================
-
-
 class TestLogFileFailure:
     """Tests for log file creation failure."""
 
@@ -445,11 +405,6 @@ class TestLogFileFailure:
         assert result['command'] == ''
 
 
-# =============================================================================
-# Tests: Custom scope_fn
-# =============================================================================
-
-
 class TestCustomScopeFn:
     """Tests for custom scope function."""
 
@@ -463,7 +418,6 @@ class TestCustomScopeFn:
 
         _call_execute(args='core-api verify', scope_fn=_scope_fn)
 
-        # create_log_file should receive the scope from our scope_fn
         mock_log_file.assert_called_once()
         call_args = mock_log_file.call_args[0]
         assert call_args[1] == 'core-api'
@@ -481,11 +435,6 @@ class TestCustomScopeFn:
         mock_log_file.assert_called_once()
         call_args = mock_log_file.call_args[0]
         assert call_args[1] == 'default'
-
-
-# =============================================================================
-# Tests: env_vars injection
-# =============================================================================
 
 
 class TestEnvVarsInjection:
@@ -519,11 +468,6 @@ class TestEnvVarsInjection:
         assert call_kwargs['env'] is None
 
 
-# =============================================================================
-# Tests: min_timeout enforcement
-# =============================================================================
-
-
 class TestMinTimeoutEnforcement:
     """Tests for global minimum timeout floor (MIN_TIMEOUT=60)."""
 
@@ -537,7 +481,7 @@ class TestMinTimeoutEnforcement:
 
         result = _call_execute()
 
-        # Learned timeout is 30, but global floor is 60 -> should use 60
+        # Learned timeout 30 is below the global floor of 60, so 60 wins.
         assert result['timeout_used_seconds'] == 60
 
     @patch('_build_execute.timeout_set')
@@ -550,13 +494,8 @@ class TestMinTimeoutEnforcement:
 
         result = _call_execute()
 
-        # Learned timeout is 120, floor is 60 -> should use 120
+        # Learned timeout 120 is above the floor of 60, so 120 is used.
         assert result['timeout_used_seconds'] == 120
-
-
-# =============================================================================
-# Tests: extra_result_fields
-# =============================================================================
 
 
 class TestExtraResultFields:
@@ -648,11 +587,6 @@ class TestExtraResultFields:
         assert 'wrapper' not in result
 
 
-# =============================================================================
-# Tests: CaptureStrategy enum
-# =============================================================================
-
-
 class TestCaptureStrategyEnum:
     """Tests for CaptureStrategy enum values."""
 
@@ -664,11 +598,6 @@ class TestCaptureStrategyEnum:
 
     def test_enum_has_two_members(self):
         assert len(CaptureStrategy) == 2
-
-
-# =============================================================================
-# Tests: working_dir parameter
-# =============================================================================
 
 
 class TestWorkingDir:
@@ -709,11 +638,6 @@ class TestWorkingDir:
 
             call_kwargs = mock_run.call_args[1]
             assert call_kwargs['cwd'] == tmpdir
-
-
-# =============================================================================
-# Tests: project_dir propagation to subprocess cwd
-# =============================================================================
 
 
 class TestProjectDirPropagation:
@@ -802,16 +726,11 @@ class TestProjectDirPropagation:
         assert call_kwargs['cwd'] == worktree_path
 
 
-# =============================================================================
-# Two-state ``--plan-id`` / ``--project-dir`` routing — execute_direct_base
-# =============================================================================
-#
-# ``execute_direct_base`` itself is a Bucket B foundation primitive; it
-# accepts the resolved ``project_dir`` as a string and uses it as the
-# subprocess ``cwd``. The two-state contract is enforced by the layer
-# above (``build_main`` via ``resolve_project_dir``), so the test here
-# simply locks in that any path the resolver returns is honoured by
-# execute_direct_base.
+# ``execute_direct_base`` itself is a Bucket B foundation primitive; it accepts
+# the resolved ``project_dir`` as a string and uses it as the subprocess ``cwd``.
+# The two-state contract is enforced by the layer above (``build_main`` via
+# ``resolve_project_dir``), so these tests simply lock in that any path the
+# resolver returns is honoured by execute_direct_base.
 
 
 def test_execute_direct_base_honours_resolved_worktree_path(monkeypatch):

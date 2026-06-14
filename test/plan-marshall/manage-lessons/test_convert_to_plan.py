@@ -11,7 +11,11 @@ import json
 from argparse import Namespace
 from unittest.mock import patch
 
+import pytest
 from _lessons_helpers import _FakeDatetime, _mod, cmd_convert_to_plan, get_next_id
+
+# Path-separator / traversal sequences that must be rejected on either identifier.
+_TRAVERSAL_IDS = ('../escape', 'sub/dir', 'back\\slash')
 
 
 class TestCmdConvertToPlan:
@@ -85,18 +89,23 @@ Body.
         assert plan_dir.exists()
         assert (plan_dir / 'lesson-2025-01-01-001.md').exists()
 
-    def test_convert_to_plan_rejects_path_traversal(self, tmp_path):
-        """Should reject identifiers containing path separators or traversal sequences."""
+    @pytest.mark.parametrize('bad_id', _TRAVERSAL_IDS)
+    def test_convert_to_plan_rejects_lesson_id_traversal(self, tmp_path, bad_id):
+        """Should reject a lesson_id containing path separators or traversal sequences."""
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            for bad_id in ('../escape', 'sub/dir', 'back\\slash'):
-                result = cmd_convert_to_plan(Namespace(lesson_id=bad_id, plan_id='p'))
-                assert result['status'] == 'error'
-                assert result['error'] == 'invalid_id'
+            result = cmd_convert_to_plan(Namespace(lesson_id=bad_id, plan_id='p'))
 
-            for bad_plan in ('../escape', 'sub/dir', 'back\\slash'):
-                result = cmd_convert_to_plan(Namespace(lesson_id='good-id', plan_id=bad_plan))
-                assert result['status'] == 'error'
-                assert result['error'] == 'invalid_id'
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_id'
+
+    @pytest.mark.parametrize('bad_plan', _TRAVERSAL_IDS)
+    def test_convert_to_plan_rejects_plan_id_traversal(self, tmp_path, bad_plan):
+        """Should reject a plan_id containing path separators or traversal sequences."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_convert_to_plan(Namespace(lesson_id='good-id', plan_id=bad_plan))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_id'
 
 
 class TestConvertToPlanTombstoneReservation:
