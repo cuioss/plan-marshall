@@ -144,10 +144,24 @@ For ad-hoc inspection or non-finding-store integrations, `sonar_rest.py search` 
 
 ---
 
+## Gate Diagnosis
+
+When diagnosing a Sonar quality-gate failure, **MUST** read the verdict through the authoritative REST verbs on `sonar_rest.py` — never the `sonarqube` MCP convenience tool, which returns stale data during incidents:
+
+- **`gate-status`** — the authoritative quality-gate verdict from `GET /api/qualitygates/project_status`: the overall gate status plus one entry per condition (`metricKey`, `comparator`, `errorThreshold`, `actualValue`, per-condition `status`). This is the exact verdict the Maven Sonar plugin gates on.
+- **`ce-status`** — the Compute-Engine analysis-task status from `GET /api/ce/activity` (+ `GET /api/ce/component`). Use it to distinguish an infra processing failure (`errorType` / `errorMessage` on a task) from a real gate failure.
+- **`hotspots`** — security hotspots from `GET /api/hotspots/search`. Hotspots drive `new_security_hotspots_reviewed` and are NOT returned by the `search` issues verb, so a hotspots-only gate failure is invisible without this verb.
+
+**Authoritative-verb rule:** a CI-red / tool-green disagreement means **trusting CI**. The CI build runs the same `GET /api/qualitygates/project_status` verdict that `gate-status` reports; if a convenience tool reports green while CI reports red, the convenience tool is stale — trust the CI result and re-read through `gate-status` / `ce-status`.
+
+All three verbs are read-only (single GET, no transition behavior) and accept `--project` plus an optional `--branch` or `--pr`. See Canonical invocations below for the exact surface.
+
+---
+
 ## Scripts
 
 Script: `plan-marshall:workflow-integration-sonar:sonar` → `sonar.py` (producer-side fetch + pre-filter + finding store)
-Script: `plan-marshall:workflow-integration-sonar:sonar_rest` → `sonar_rest.py` (raw REST API client)
+Script: `plan-marshall:workflow-integration-sonar:sonar_rest` → `sonar_rest.py` (raw REST API client: issue search / transition / metrics + the `gate-status` / `ce-status` / `hotspots` gate-diagnosis verbs)
 
 ### sonar.py fetch-and-store
 
@@ -233,6 +247,27 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_r
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest metrics \
   --project PROJECT --component COMPONENT [--metrics METRICS]
+```
+
+### sonar_rest — gate-status
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest gate-status \
+  --project PROJECT [--branch BRANCH] [--pr PR]
+```
+
+### sonar_rest — ce-status
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest ce-status \
+  --project PROJECT [--branch BRANCH]
+```
+
+### sonar_rest — hotspots
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest hotspots \
+  --project PROJECT [--branch BRANCH] [--pr PR]
 ```
 
 ## Related
