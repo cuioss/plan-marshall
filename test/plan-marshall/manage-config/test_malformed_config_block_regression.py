@@ -29,7 +29,6 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-
 from test_helpers import create_marshal_json
 
 _SCRIPTS_DIR = (
