@@ -739,6 +739,99 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
     }
 
 
+# Lesson ids embedded in a plan's ``metadata.plan_source`` must match the
+# canonical ``YYYY-MM-DD-HH-NNN`` shape exactly (anchored full-match) to mark
+# the plan as lesson-sourced. The unanchored ``LESSON_ID_REGEX`` below is used
+# for free-text scanning; this one is the strict classifier gate.
+LESSON_SOURCE_ID_REGEX = re.compile(r'^\d{4}-\d{2}-\d{2}-\d{2}-\d{3}$')
+
+
+def cmd_list_stalled(args: argparse.Namespace) -> dict:  # noqa: ARG001
+    """List lesson-sourced plans whose relocated lesson is stranded (stalled).
+
+    A lesson-sourced plan relocates its lesson into the plan directory via
+    ``convert-to-plan`` (``plans/{plan_id}/lesson-{id}.md``). If such a plan
+    stalls or is abandoned in ``5-execute``/``6-finalize`` without running
+    ``restore-from-plan``, the lesson is trapped out of the active corpus and
+    silently lost. This read-only scanner surfaces every such plan so callers
+    can decide whether to restore or discard.
+    """
+    plans_root = resolve_main_anchored_path('plans')
+    if not plans_root.exists():
+        return {'status': 'success', 'stalled_count': 0, 'stalled_plans': []}
+
+    # Group relocated lesson files by their owning plan directory.
+    by_plan: dict[Path, list[str]] = {}
+    for lesson_file in sorted(plans_root.glob('*/lesson-*.md')):
+        if not lesson_file.is_file():
+            continue
+        plan_dir = lesson_file.parent
+        lesson_id = lesson_file.stem[len('lesson-'):]
+        by_plan.setdefault(plan_dir, []).append(lesson_id)
+
+    stalled_plans: list[dict] = []
+
+    for plan_dir in sorted(by_plan, key=lambda p: p.name):
+        lesson_ids = sorted(by_plan[plan_dir])
+        status_path = plan_dir / 'status.json'
+        if not status_path.exists():
+            # No status.json — cannot classify; skip rather than crash.
+            continue
+
+        try:
+            status = json.loads(status_path.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, OSError):
+            # Corrupt/unreadable status.json — skip rather than crash.
+            continue
+
+        metadata = status.get('metadata', {})
+        plan_source = metadata.get('plan_source', '') if isinstance(metadata, dict) else ''
+        if not isinstance(plan_source, str) or not LESSON_SOURCE_ID_REGEX.match(plan_source):
+            # Not lesson-sourced — the relocated lesson is unexpected, but a
+            # non-lesson-id plan_source is out of scope for stalled detection.
+            continue
+
+        current_phase = status.get('current_phase', '')
+        phase_status = ''
+        phases = status.get('phases', [])
+        if isinstance(phases, list):
+            for row in phases:
+                if isinstance(row, dict) and row.get('name') == current_phase:
+                    phase_status = row.get('status', '')
+                    break
+
+        # Terminal guard: a lesson-sourced plan whose current phase has fully
+        # completed is NOT stalled — its lesson was (or will be) restored on a
+        # normal terminal path. Stalled = the relocated lesson is present AND
+        # the current phase has not reached ``done`` (covers in_progress /
+        # blocked / pending in 5-execute / 6-finalize, and any non-terminal
+        # dormated-without-merge state).
+        is_stalled = current_phase in ('5-execute', '6-finalize') and phase_status != 'done'
+
+        if not is_stalled:
+            continue
+
+        plan_id = plan_dir.name
+        stalled_plans.append({
+            'plan_id': plan_id,
+            'plan_source': plan_source,
+            'current_phase': current_phase,
+            'phase_status': phase_status,
+            'lesson_ids': lesson_ids,
+            'restore_command': (
+                'python3 .plan/execute-script.py '
+                'plan-marshall:manage-lessons:manage-lessons '
+                f'restore-from-plan --plan-id {plan_id}'
+            ),
+        })
+
+    return {
+        'status': 'success',
+        'stalled_count': len(stalled_plans),
+        'stalled_plans': stalled_plans,
+    }
+
+
 def cmd_set_body(args: argparse.Namespace) -> dict:
     """Overwrite the body of an existing lesson stub.
 
@@ -1648,6 +1741,17 @@ def main() -> int:
     )
     add_plan_id_arg(restore_parser)
     restore_parser.set_defaults(func=cmd_restore_from_plan)
+
+    # list-stalled
+    list_stalled_parser = subparsers.add_parser(
+        'list-stalled',
+        help=(
+            'Read-only scanner: list lesson-sourced plans whose relocated lesson '
+            'is stranded (stalled in 5-execute/6-finalize without restore-from-plan)'
+        ),
+        allow_abbrev=False,
+    )
+    list_stalled_parser.set_defaults(func=cmd_list_stalled)
 
     # set-body
     set_body_parser = subparsers.add_parser(
