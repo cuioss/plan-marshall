@@ -190,7 +190,7 @@ def _executor_landed(executor_path: Path) -> bool:
     generation intent.
     """
     try:
-        return executor_path.is_file() and executor_path.stat().st_size > 0
+        return executor_path.is_file() and not executor_path.is_symlink() and executor_path.stat().st_size > 0
     except OSError:
         return False
 
@@ -243,7 +243,8 @@ def _copy_main_executor(worktree_path: Path, plan_id: str) -> tuple[bool, str]:
     wt_executor = _worktree_executor_path(worktree_path)
     try:
         wt_executor.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(str(main_executor), str(wt_executor))
+        wt_executor.unlink(missing_ok=True)
+        shutil.copy(str(main_executor), str(wt_executor))
     except OSError as exc:
         return False, f'copy-from-main failed: {exc}'
     if not _executor_landed(wt_executor):
