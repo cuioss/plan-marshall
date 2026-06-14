@@ -80,6 +80,7 @@ BODY_KIND_PR_EDIT = 'pr-edit'
 BODY_KIND_PR_REPLY = 'pr-reply'
 BODY_KIND_PR_THREAD_REPLY = 'pr-thread-reply'
 BODY_KIND_ISSUE_CREATE = 'issue-create'
+BODY_KIND_ISSUE_COMMENT = 'issue-comment'
 
 VALID_BODY_KINDS = frozenset(
     {
@@ -88,6 +89,7 @@ VALID_BODY_KINDS = frozenset(
         BODY_KIND_PR_REPLY,
         BODY_KIND_PR_THREAD_REPLY,
         BODY_KIND_ISSUE_CREATE,
+        BODY_KIND_ISSUE_COMMENT,
     }
 )
 
@@ -232,7 +234,7 @@ def add_body_consumer_args(subparser: argparse.ArgumentParser) -> None:
 
     Used on subcommands that now consume a prepared scratch body instead of a
     raw CLI argument (`pr create`, `pr edit`, `pr reply`, `pr thread-reply`,
-    `issue create`).
+    `issue create`, `issue comment`).
     """
     subparser.add_argument(
         '--plan-id',
@@ -856,6 +858,26 @@ def build_parser(
     )
     add_plan_id_arg(issue_prepare)
     issue_prepare.add_argument('--slot', default=None, help='Optional slot identifier (default: "default")')
+
+    # issue comment — body supplied via prepare-comment path-allocate pattern
+    issue_comment = issue_sub.add_parser(
+        'comment',
+        help='Post a comment on an existing issue',
+        allow_abbrev=False,
+    )
+    issue_comment.add_argument('--issue', required=True, help='Issue number or URL')
+    add_body_consumer_args(issue_comment)
+
+    # issue prepare-comment — allocate scratch path for the comment body
+    issue_prepare_comment = issue_sub.add_parser(
+        'prepare-comment',
+        help='Allocate a scratch path for an issue comment (path-allocate pattern)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(issue_prepare_comment)
+    issue_prepare_comment.add_argument(
+        '--slot', default=None, help='Optional slot identifier (default: "default")'
+    )
 
     # pr prepare-body — allocate scratch path for PR create description
     pr_prepare_body = pr_sub.add_parser(

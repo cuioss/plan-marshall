@@ -548,7 +548,7 @@ def test_gitlab_main_emits_mutually_exclusive_error_on_both_flags(monkeypatch, c
 
 def test_gitlab_main_project_dir_only_keeps_legacy_path(monkeypatch):
     """Pre-existing --project-dir-only callers must continue working."""
-    from ci_base import get_default_cwd, set_default_cwd
+    from ci_base import get_default_cwd
 
     monkeypatch.setattr(
         'sys.argv',
@@ -564,4 +564,128 @@ def test_gitlab_main_project_dir_only_keeps_legacy_path(monkeypatch):
     with _pytest.raises(SystemExit):
         gitlab_ops.main()
     assert get_default_cwd() == '/tmp/wt-gitlab-explicit'
-    set_default_cwd(None)
+
+
+# =============================================================================
+# issue comment
+# =============================================================================
+
+
+def _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Milestone reached', plan_id='p'):
+    """Seed PLAN_BASE_DIR with a prepared issue-comment body scratch file."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+
+    path = get_body_path(plan_id, BODY_KIND_ISSUE_COMMENT)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body_text, encoding='utf-8')
+    return plan_id
+
+
+def test_cmd_issue_comment_posts_prepared_body(monkeypatch, tmp_path):
+    """cmd_issue_comment posts the prepared body via `glab issue note {iid} --message`."""
+    captured: list[list[str]] = []
+
+    def run_glab_stub(args):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    plan_id = _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Outline ready')
+    ns = argparse.Namespace(issue='42', plan_id=plan_id, slot=None)
+    result = gitlab_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'success', result
+    assert result['operation'] == 'issue_comment'
+    assert result['issue_number'] == '42'
+    assert captured[-1] == ['issue', 'note', '42', '--message', 'Outline ready']
+
+
+def test_cmd_issue_comment_deletes_body_on_success(monkeypatch, tmp_path):
+    """The prepared scratch body is removed only after a successful post."""
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'run_glab', lambda args: (0, '', ''))
+
+    plan_id = _prepare_issue_comment_body(tmp_path, monkeypatch)
+    body_path = get_body_path(plan_id, BODY_KIND_ISSUE_COMMENT)
+    assert body_path.exists()
+
+    ns = argparse.Namespace(issue='42', plan_id=plan_id, slot=None)
+    result = gitlab_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'success', result
+    assert not body_path.exists()
+
+
+def test_cmd_issue_comment_body_not_prepared(monkeypatch, tmp_path):
+    """A missing prepared body yields a body_not_prepared error, no glab call."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    captured: list[list[str]] = []
+
+    def run_glab_stub(args):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    ns = argparse.Namespace(issue='42', plan_id='p', slot=None)
+    result = gitlab_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'issue_comment'
+    assert captured == []
+
+
+def test_cmd_issue_comment_api_failure_keeps_body(monkeypatch, tmp_path):
+    """A non-zero glab exit returns an error and leaves the scratch body in place."""
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'run_glab', lambda args: (1, '', 'glab: not found'))
+
+    plan_id = _prepare_issue_comment_body(tmp_path, monkeypatch)
+    body_path = get_body_path(plan_id, BODY_KIND_ISSUE_COMMENT)
+
+    ns = argparse.Namespace(issue='42', plan_id=plan_id, slot=None)
+    result = gitlab_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'error', result
+    assert body_path.exists()
+
+
+def test_cmd_issue_comment_auth_failure(monkeypatch, tmp_path):
+    """An auth failure short-circuits before any glab call."""
+    captured: list[list[str]] = []
+
+    def run_glab_stub(args):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(gitlab_ops, 'check_auth', lambda: (False, 'not logged in'))
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    ns = argparse.Namespace(issue='42', plan_id='p', slot=None)
+    result = gitlab_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'error', result
+    assert captured == []
+
+
+def test_cmd_issue_prepare_comment_allocates_path(monkeypatch, tmp_path):
+    """_cmd_issue_prepare_comment allocates an issue-comment scratch path."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = tmp_path / 'plans' / 'p'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+
+    ns = argparse.Namespace(plan_id='p', slot=None)
+    result = gitlab_ops._cmd_issue_prepare_comment(ns)
+
+    assert result['status'] == 'success', result
+    assert result['kind'] == 'issue-comment'
+    assert result['path'].endswith('issue-comment-default.md')

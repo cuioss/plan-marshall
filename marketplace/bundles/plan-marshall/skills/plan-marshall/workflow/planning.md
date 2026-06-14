@@ -443,6 +443,23 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
   --plan-id {plan_id} --phase 2-refine
 ```
 
+**Issue-documentation mode — milestone (a): mirror clarification answers**: After refine completes, if the plan originated from a GitHub issue, post each clarification-round answer captured this run back to the originating issue as a comment. This keeps the issue thread synchronized with the refinement dialogue. The hook is a clean no-op when the plan did not originate from an issue.
+
+1. Read the plan's `source` and `source_id` from `request.md`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
+     --plan-id {plan_id}
+   ```
+
+   When `source != issue`, skip the entire hook — no comment is posted.
+
+2. Derive the issue number from `source_id`: split the `source_id` issue URL on `/issues/` and take the first path segment of the tail (the same split the CI providers use, e.g. `https://github.com/org/repo/issues/789` → `789`).
+
+3. For each clarification-round answer captured this run, post it via the path-allocate flow documented in [`tools-integration-ci/standards/issue-operations.md`](../../tools-integration-ci/standards/issue-operations.md) § "Workflow: Comment on Issue" (`ci issue prepare-comment` → Write the body → `ci issue comment --issue {issue_number} --plan-id {plan_id}`). The canonical call shape is the `### issue` block in [`tools-integration-ci/SKILL.md`](../../tools-integration-ci/SKILL.md) § Canonical invocations — do not inline-copy it here.
+
+**Forbidden**: direct `gh` / `glab`. All issue interactions route through `plan-marshall:tools-integration-ci:ci`.
+
 The fused call already recorded the start of `3-outline`; the **Action: outline**
 section below MUST NOT call `start-phase 3-outline` again. Continue to
 **Action: outline** with the same plan_id.

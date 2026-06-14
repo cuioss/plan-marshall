@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 import ci_base
 import pytest
 from ci_base import (
+    BODY_KIND_ISSUE_COMMENT,
     BODY_KIND_ISSUE_CREATE,
     BODY_KIND_PR_CREATE,
     BODY_KIND_PR_EDIT,
@@ -23,6 +24,7 @@ from ci_base import (
     CI_LOG_TRUNCATE_LINES,
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,
+    VALID_BODY_KINDS,
     add_head_arg,
     add_pr_create_args,
     build_parser,
@@ -496,6 +498,72 @@ def test_build_parser_registers_issue_prepare_body():
     assert args.command == 'issue'
     assert args.issue_command == 'prepare-body'
     assert args.plan_id == 'my-plan'
+
+
+def test_issue_comment_body_kind_in_valid_set():
+    """The issue-comment body kind must be a recognised consumer surface."""
+    assert BODY_KIND_ISSUE_COMMENT == 'issue-comment'
+    assert BODY_KIND_ISSUE_COMMENT in VALID_BODY_KINDS
+
+
+def test_get_body_path_accepts_issue_comment_kind(plan_base_env):
+    """get_body_path must resolve a scratch path for the issue-comment kind."""
+    path = get_body_path('my-plan', BODY_KIND_ISSUE_COMMENT)
+    assert path.name == 'issue-comment-default.md'
+    assert 'work/ci-bodies' in str(path)
+
+
+def test_build_parser_registers_issue_comment():
+    """`issue comment` must be registered, require --issue and --plan-id, accept --slot."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['issue', 'comment', '--issue', '42', '--plan-id', 'my-plan'])
+    assert args.command == 'issue'
+    assert args.issue_command == 'comment'
+    assert args.issue == '42'
+    assert args.plan_id == 'my-plan'
+
+    args = parser.parse_args(['issue', 'comment', '--issue', '42', '--plan-id', 'my-plan', '--slot', 'milestone'])
+    assert args.slot == 'milestone'
+
+
+def test_issue_comment_requires_issue():
+    """`issue comment` must reject a missing --issue."""
+    parser, _, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['issue', 'comment', '--plan-id', 'my-plan'])
+
+
+def test_issue_comment_requires_plan_id():
+    """`issue comment` must reject a missing --plan-id (body consumer)."""
+    parser, _, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['issue', 'comment', '--issue', '42'])
+
+
+def test_issue_comment_rejects_body_flag():
+    """`issue comment` consumes a prepared body — a raw --body flag is rejected."""
+    parser, _, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['issue', 'comment', '--issue', '42', '--plan-id', 'p', '--body', 'X'])
+
+
+def test_build_parser_registers_issue_prepare_comment():
+    """`issue prepare-comment` must be registered and require --plan-id."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['issue', 'prepare-comment', '--plan-id', 'my-plan'])
+    assert args.command == 'issue'
+    assert args.issue_command == 'prepare-comment'
+    assert args.plan_id == 'my-plan'
+
+    args = parser.parse_args(['issue', 'prepare-comment', '--plan-id', 'my-plan', '--slot', 'alt'])
+    assert args.slot == 'alt'
+
+
+def test_issue_prepare_comment_requires_plan_id():
+    """`issue prepare-comment` must reject a missing --plan-id."""
+    parser, _, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['issue', 'prepare-comment'])
 
 
 # =============================================================================

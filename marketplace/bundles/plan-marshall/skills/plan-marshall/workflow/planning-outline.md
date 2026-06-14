@@ -193,6 +193,23 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
 The fused call already recorded the start of `4-plan`; Step 4 below MUST NOT
 call `start-phase 4-plan` again.
 
+**Issue-documentation mode — milestone (b): mirror the outline**: After the 3-outline phase has completed and `solution_outline.md` exists, if the plan originated from a GitHub issue, post the outline's `## Summary` and `## Overview` sections (NOT the Deliverables) to the originating issue as one comment, so the issue thread reflects the proposed solution shape before implementation begins. The hook is a clean no-op when the plan did not originate from an issue.
+
+1. Read `source` and `source_id` from `request.md`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
+     --plan-id {plan_id}
+   ```
+
+   When `source != issue`, skip the entire hook — no comment is posted.
+
+2. Derive the issue number from `source_id` by splitting the issue URL on `/issues/` and taking the first path segment of the tail.
+
+3. Read the outline's `## Summary` and `## Overview` sections only (exclude Deliverables) via `manage-solution-outline read`, then post them as a single comment via the path-allocate flow documented in [`tools-integration-ci/standards/issue-operations.md`](../../tools-integration-ci/standards/issue-operations.md) § "Workflow: Comment on Issue" (`ci issue prepare-comment` → Write the body → `ci issue comment --issue {issue_number} --plan-id {plan_id}`). The canonical call shape is the `### issue` block in [`tools-integration-ci/SKILL.md`](../../tools-integration-ci/SKILL.md) § Canonical invocations — do not inline-copy it here.
+
+**Forbidden**: direct `gh` / `glab`. All issue interactions route through `plan-marshall:tools-integration-ci:ci`.
+
 **Step 2d**: Auto-open solution outline in IDE for user review:
 
 ```bash

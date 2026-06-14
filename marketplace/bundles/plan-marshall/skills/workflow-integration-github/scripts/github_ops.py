@@ -22,6 +22,7 @@ Subcommands:
     ci rerun        Rerun a workflow run
     ci logs         Get failed run logs
     issue create    Create an issue
+    issue comment   Post a comment on an existing issue
     issue view      View issue details
     issue close     Close an issue
 
@@ -29,6 +30,7 @@ Usage (bodies supplied via path-allocate pattern: prepare-body â†’ write file â†
     python3 github.py pr prepare-body --plan-id EXAMPLE-PLAN [--for create|edit] [--slot name]
     python3 github.py pr prepare-comment --plan-id EXAMPLE-PLAN [--for reply|thread-reply] [--slot name]
     python3 github.py issue prepare-body --plan-id EXAMPLE-PLAN [--slot name]
+    python3 github.py issue prepare-comment --plan-id EXAMPLE-PLAN [--slot name]
     python3 github.py pr create --title "Title" --plan-id EXAMPLE-PLAN [--base main] [--draft]
     python3 github.py pr view
     python3 github.py pr list [--head feature/branch] [--state open|closed|all]
@@ -49,6 +51,7 @@ Usage (bodies supplied via path-allocate pattern: prepare-body â†’ write file â†
     python3 github.py ci rerun --run-id 12345
     python3 github.py ci logs --run-id 12345
     python3 github.py issue create --title "Title" --plan-id EXAMPLE-PLAN [--labels "bug,priority:high"]
+    python3 github.py issue comment --issue 123 --plan-id EXAMPLE-PLAN [--slot name]
     python3 github.py issue view --issue 123
     python3 github.py issue close --issue 123
 
@@ -63,6 +66,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ci_base import (  # type: ignore[import-not-found]
+    BODY_KIND_ISSUE_COMMENT,
     BODY_KIND_ISSUE_CREATE,
     BODY_KIND_PR_CREATE,
     BODY_KIND_PR_EDIT,
@@ -1707,6 +1711,30 @@ def cmd_issue_create(args: argparse.Namespace) -> dict:
     }
 
 
+def cmd_issue_comment(args: argparse.Namespace) -> dict:
+    """Handle 'issue comment' subcommand - post a comment on an existing issue."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('issue_comment', err)
+
+    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_ISSUE_COMMENT, getattr(args, 'slot', None))
+    if err_dict or body is None:
+        return make_error('issue_comment', (err_dict or {}).get('message', 'body not prepared'))
+
+    gh_args = ['issue', 'comment', str(args.issue), '--body', body]
+    returncode, stdout, stderr = run_gh(gh_args)
+    if returncode != 0:
+        return make_error('issue_comment', f'Failed to comment on issue {args.issue}', stderr.strip())
+
+    delete_consumed_body(args.plan_id, BODY_KIND_ISSUE_COMMENT, getattr(args, 'slot', None))
+    return {
+        'status': 'success',
+        'operation': 'issue_comment',
+        'issue_number': args.issue,
+        'output': stdout.strip(),
+    }
+
+
 def cmd_issue_view(args: argparse.Namespace) -> dict:
     """Handle 'issue view' subcommand."""
     # Check auth
@@ -1930,6 +1958,11 @@ def _cmd_issue_prepare_body(args: argparse.Namespace) -> dict:
     return prepare_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
 
 
+def _cmd_issue_prepare_comment(args: argparse.Namespace) -> dict:
+    """Allocate a scratch path for an issue comment."""
+    return prepare_body(args.plan_id, BODY_KIND_ISSUE_COMMENT, getattr(args, 'slot', None))
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1972,6 +2005,7 @@ def main() -> int:
         ('pr', 'prepare-body'): _cmd_pr_prepare_body,
         ('pr', 'prepare-comment'): _cmd_pr_prepare_comment,
         ('issue', 'prepare-body'): _cmd_issue_prepare_body,
+        ('issue', 'prepare-comment'): _cmd_issue_prepare_comment,
         ('pr', 'create'): cmd_pr_create,
         ('pr', 'view'): cmd_pr_view,
         ('pr', 'list'): cmd_pr_list,
@@ -1994,6 +2028,7 @@ def main() -> int:
         ('checks', 'rerun'): cmd_ci_rerun,
         ('checks', 'logs'): cmd_ci_logs,
         ('issue', 'create'): cmd_issue_create,
+        ('issue', 'comment'): cmd_issue_comment,
         ('issue', 'view'): cmd_issue_view,
         ('issue', 'close'): cmd_issue_close,
         ('issue', 'wait-for-close'): cmd_issue_wait_for_close,

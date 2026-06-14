@@ -589,6 +589,8 @@ For each issue found in Steps 8-9, formulate a clarification question mapped to 
 
 Ask the user via `AskUserQuestion` with explicit options that describe the implementation consequence of each choice. Ask at most 4 questions per iteration (AskUserQuestion limit), prioritize by Correctness > Consistency > Completeness > Ambiguity > Duplication, and provide concrete codebase examples when possible.
 
+**Mandatory persistence after every round**: Immediately after the user answers an AskUserQuestion round — before any other action and before looping back to Step 8 — run the Step 12 three-step path-allocate persistence to durably write the answers into `request.md`. The persistence is NOT optional and is NOT deferred to a later iteration: every clarification round produces a populated `## Clarifications` block on disk. Skipping the write because confidence already crossed threshold on this round, or because "the answers are still in context", is the exact defect this contract exists to prevent (clarification answers were silently lost across sessions in archived plans issue-334 / issue-338).
+
 ---
 
 ## Step 12: Update Request
@@ -597,6 +599,8 @@ After receiving user answers, update request.md using the three-step path-alloca
 pattern. The script allocates the canonical artifact path, the main context edits
 the file directly with its native Edit/Write tools, and a second subcommand records
 the clarification transition. No multi-line content crosses the shell boundary.
+
+**This step is mandatory after every AskUserQuestion round** (Step 11) — all three sub-steps (12a path-allocate → 12b Edit/Write → 12c mark-clarified) MUST run before the workflow continues. There is no path where a clarification round completes without persisting its answers to `request.md`.
 
 ### Step 12a: Allocate Canonical Path
 
@@ -647,8 +651,15 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 
 This validates that the Clarified Request section is present and records the
 transition in the script's response. Returns `status: error, error: not_clarified`
-if Step 12b did not add the section — a hard signal that the direct edit was
-skipped or incomplete.
+if Step 12b did not add the section.
+
+**`not_clarified` is a hard error that blocks loop continuation.** When
+`mark-clarified` returns `status: error, error: not_clarified`, the direct edit in
+Step 12b was skipped or incomplete — the clarification answers are NOT durably
+persisted. The workflow MUST NOT loop back to Step 8 and MUST NOT advance to Step
+13 on this signal. Re-run Step 12b to write the missing `## Clarifications` /
+`## Clarified Request` content, then re-run Step 12c, until `mark-clarified`
+returns `status: success`. Only a successful `mark-clarified` clears the round.
 
 **Synthesis pattern** (for the Clarified Request section you write in 12b):
 ```
@@ -680,6 +691,21 @@ Go back to Step 8.
 ## Step 13: Persist and Return Results
 
 When confidence reaches threshold, persist results to sinks and return minimal status.
+
+### First-Pass Clarified-Request Guarantee
+
+`request.md` MUST always carry a `## Clarified Request` section before this step
+completes — including the path where confidence reached threshold on the first pass
+and no Step 11 clarification round ever fired. When no clarification round ran this
+phase, run the Step 12 three-step path-allocate persistence once here against the
+synthesized request: (12a) `request path`, (12b) Edit/Write a `## Clarified Request`
+section containing the synthesized request narrative (no `## Clarifications` Q/A block
+is required when no questions were asked), (12c) `request mark-clarified`. A
+`not_clarified` return is the same hard error documented in Step 12c — re-run 12b/12c
+until `mark-clarified` returns `status: success` before continuing. When at least one
+clarification round already ran (each having persisted under Step 12's mandatory
+per-round rule), `request.md` already carries the section and this guarantee is a
+no-op — do not re-write or duplicate it.
 
 ### Persist Module Mapping to Work Directory
 

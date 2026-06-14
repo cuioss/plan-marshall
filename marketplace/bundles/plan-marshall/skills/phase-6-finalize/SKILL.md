@@ -1078,6 +1078,25 @@ See [standards/output-template.md#snapshot-procedure](standards/output-template.
 
 After the snapshot is captured, dispatch `default:archive-plan` normally (step 5 in the FOR body above) and capture its returned `archive_path` (step 6). Both the snapshot and `archive_path` flow into Step 4 "Render Final Output Template".
 
+#### Issue-documentation mode — milestone (c): mirror the final completion block
+
+After the merge has completed but BEFORE `default:archive-plan` runs (the plan directory must still be live so the `--plan-id` body store resolves), if the plan originated from a GitHub issue, post the final `[MERGED]` PR completion block to the originating issue as a comment so the issue thread records the shipped outcome. The hook is placed after the merge so the block reflects final state, and pre-archive so the body store is still resolvable via `--plan-id`. It is a clean no-op when the plan did not originate from an issue OR when the PR did not reach a merged state.
+
+1. Read `source` and `source_id` from `request.md` (the plan dir is still live at this point):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
+     --plan-id {plan_id}
+   ```
+
+   When `source != issue`, skip the entire hook — no comment is posted. When the pre-archive snapshot's PR `state != merged`, also skip (the block only mirrors a merged outcome).
+
+2. Derive the issue number from `source_id` by splitting the issue URL on `/issues/` and taking the first path segment of the tail.
+
+3. Render the same `[MERGED]` PR completion block that Step 4 emits (from the in-memory pre-archive snapshot — `standards/output-template.md` § Emission Procedure), then post it as a single comment via the path-allocate flow documented in [`tools-integration-ci/standards/issue-operations.md`](../tools-integration-ci/standards/issue-operations.md) § "Workflow: Comment on Issue" (`ci issue prepare-comment` → Write the block → `ci issue comment --issue {issue_number} --plan-id {plan_id}`). The canonical call shape is the `### issue` block in [`tools-integration-ci/SKILL.md`](../tools-integration-ci/SKILL.md) § Canonical invocations — do not inline-copy it here.
+
+**Forbidden**: direct `gh` / `glab`. All issue interactions route through `plan-marshall:tools-integration-ci:ci`.
+
 **Built-in step notes**:
 - `default:branch-cleanup`: Do NOT preemptively skip based on PR state. The executor always runs to completion and records `outcome=done` — the dispatcher contract is unchanged. The standard's internal `AskUserQuestion` confirmation gate is now **conditional on a conflict-severity classifier** (`baseline-reconcile --no-emit`) per `standards/branch-cleanup.md` § "Conflict-Severity Classifier": clean / auto-resolvable rebases bypass the prompt under the default `no_overlap_only` threshold; genuine `overlap_with_content_conflict` cases still fire the prompt. Only the standard's internal user-interaction surface narrowed; the dispatcher continues to treat the step as a single inline run-to-completion.
 - `default:record-metrics`: MUST immediately precede `default:archive-plan`. This step finalizes the `6-finalize` phase with two `manage-metrics` writes (`end-phase` for the closing phase + `generate` for `metrics.md`) and a separate `enrich` for session token capture. Plan finalization has no "next phase" so the fused `phase-boundary` subcommand does not apply here — see `standards/record-metrics.md` for the authoritative sequence. All writes MUST land on the live plan directory; if archive runs first, the target directory no longer exists and each command would recreate a post-archive orphan under `.plan/local/plans/{plan_id}/`.

@@ -265,11 +265,16 @@ Failure-Log Download on `checks wait` / `checks status`" above.
 
 ### issue
 
-Sub-verbs: `create`, `prepare-body`, `view`, `close`, `wait-for-close`, `wait-for-label`.
+Sub-verbs: `create`, `comment`, `prepare-body`, `prepare-comment`, `view`, `close`, `wait-for-close`, `wait-for-label`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue create \
   --title TITLE --plan-id PLAN_ID [--labels LABELS] [--slot SLOT]
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue comment \
+  --issue ISSUE --plan-id PLAN_ID [--slot SLOT]
 ```
 
 ### branch

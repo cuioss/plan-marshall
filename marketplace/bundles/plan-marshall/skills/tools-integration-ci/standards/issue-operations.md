@@ -1,6 +1,6 @@
 # Issue Operations
 
-Issue lifecycle operations: create, view, close.
+Issue lifecycle operations: create, comment, view, close.
 
 ---
 
@@ -47,6 +47,55 @@ status: success
 operation: issue_create
 issue_number: 789
 issue_url: https://github.com/org/repo/issues/789
+```
+
+---
+
+## Workflow: Comment on Issue
+
+**Pattern**: Provider-Agnostic Router
+
+Post a comment on an existing issue using the same three-step path-allocate
+pattern as issue creation. The script owns the scratch path; the comment body is
+written by the main context with its native Write tool, and the `issue comment`
+subcommand consumes the prepared file. No multi-line markdown crosses the shell
+boundary. On GitHub the comment is posted via `gh issue comment {n} --body`; on
+GitLab via `glab issue note {iid} --message`.
+
+### Step 1: Allocate Scratch Comment Path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue prepare-comment \
+    --plan-id {plan_id} --slot {unique_slot}
+```
+
+Read the `path` field from the returned TOON. It is the canonical, script-owned
+location for the comment body, bound to this plan and slot.
+
+### Step 2: Write the Comment Body
+
+```
+Write({path from prepare-comment}) with comment markdown content
+```
+
+### Step 3: Post the Comment
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue comment \
+    --issue {issue_number} --plan-id {plan_id} --slot {unique_slot}
+```
+
+The subcommand reads the body from the prepared scratch file, posts the comment,
+and deletes the scratch on success. When no body has been prepared the subcommand
+returns a `body_not_prepared` error and leaves no comment.
+
+### Step 4: Process Result
+
+```toon
+status: success
+operation: issue_comment
+issue_number: 123
+output: https://github.com/org/repo/issues/123#issuecomment-456
 ```
 
 ---
