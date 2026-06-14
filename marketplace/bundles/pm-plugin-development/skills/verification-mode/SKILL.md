@@ -205,31 +205,39 @@ All analyses MUST use this structured format:
 
 **CRITICAL**: Before verification mode activates, prepare a clean environment.
 
-Execute cleanup:
+Clear all existing plans by enumerating them through the manage-status API and deleting each one — this obeys the skill's own "Prohibited `.plan` Access" rule (scripts only, no raw-shell `find`/`rm`):
 
-```bash
-# Clear all log files
-find .plan/logs -type f -delete
+1. Enumerate every plan id:
 
-# Clear all existing plans (remove subdirectories)
-find .plan/plans -mindepth 1 -maxdepth 1 -exec rm -r {} +
-```
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list
+   ```
 
-**Verification**: Confirm both directories are empty.
+   Parse the `id` column from the returned `plans[]` table.
+
+2. For each enumerated `{id}`, delete the plan directory (which recursively removes the plan directory **including its plan-scoped logs**):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan --plan-id {id}
+   ```
+
+   `delete-plan` auto-restores any trapped `lesson-{id}.md` back to `.plan/local/lessons-learned/` before deletion, so no lesson is lost in the clean-slate.
+
+**Verification**: Re-run `manage-status list` and confirm the `plans[]` table is empty.
 
 **Output**:
 ```
-Environment prepared - logs and plans cleared for clean slate verification.
+Environment prepared - all plans cleared (each plan directory and its plan-scoped logs removed) for clean slate verification.
 ```
 
-**Note**: If cleanup fails, STOP and report the issue.
+**Note**: If `delete-plan` returns a non-zero exit for any plan, STOP and report the issue.
 
 ### Step 2: Acknowledge Verification Mode
 
 After Step 1 completes, acknowledge:
 
 ```
-Environment prepared - logs and plans cleared.
+Environment prepared - all plans cleared (each plan directory and its plan-scoped logs removed).
 Verification Mode Active - All operations will stop on failures, resolution issues, or workarounds for analysis.
 ```
 
