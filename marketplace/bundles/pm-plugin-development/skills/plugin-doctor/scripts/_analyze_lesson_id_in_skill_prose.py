@@ -61,14 +61,12 @@ exempt:
 For **Python** sources, the markdown-only structural exemptions (frontmatter,
 fenced code block, Source: line, inline-code span) do NOT apply — the entire
 point of scanning ``.py`` is to catch lesson IDs in comments, docstrings, and
-string literals, so those contexts are deliberately in scope. Only two
-exemptions apply to Python: the path-allowlist and the inline suppression
-marker.
+string literals, so those contexts are deliberately in scope. Only the
+path-allowlist applies to Python.
 
-In addition, for both file classes an inline suppression marker
-``<!-- doctor-ignore: lesson-id-prose -->`` placed on the same line as a
-match, or on the immediately preceding line, suppresses the finding on the
-marked line only.
+In addition, for both file classes a per-file frontmatter disable list
+(``plugin-doctor-disable: [no-lesson-id-in-skill-prose]``) suppresses every
+finding in that file (file-scoped, via the shared substrate).
 
 The path-allowlist (``_is_allowlisted``) is authoritative for both file
 classes inside ``marketplace/bundles/``. The project-local ``.claude/skills/**``
@@ -100,6 +98,12 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+
+from _analyze_shared import (
+    _config_layer_suppresses,
+    load_default_suppression_config,
+    read_frontmatter_disable_list,
+)
 
 RULE_ID = 'no-lesson-id-in-skill-prose'
 RULE_NAME = 'analyze_lesson_id_in_skill_prose'
@@ -136,39 +140,23 @@ _FENCE_CLOSE_RE = re.compile(r'^\s*```\s*$')
 # Source: line — structured provenance citation marker.
 _SOURCE_LINE_RE = re.compile(r'^\s*(?:[-*]\s*)?\*{0,2}Source:\*{0,2}', re.IGNORECASE)
 
-# Inline suppression marker.
-_SUPPRESS_MARKER = '<!-- doctor-ignore: lesson-id-prose -->'
-
 
 # ---------------------------------------------------------------------------
 # Allowlist
 # ---------------------------------------------------------------------------
 
 
-def _is_allowlisted(rel_to_bundles: str) -> bool:
-    """Return True if the file path is in the lesson-domain allowlist."""
-    if rel_to_bundles.startswith('plan-marshall/skills/manage-lessons/'):
-        return True
-    if rel_to_bundles.startswith('plan-marshall/skills/phase-6-finalize/workflow/lessons-'):
-        return True
-    if rel_to_bundles.startswith('plan-marshall/skills/phase-6-finalize/standards/lessons-'):
-        return True
-    if rel_to_bundles == 'pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md':
-        return True
-    # plan-retrospective analyses historical log data and emits findings that
-    # cite specific lesson IDs — lesson IDs are domain content here, not prose
-    # narrative drift.
-    if rel_to_bundles.startswith('plan-marshall/skills/plan-retrospective/'):
-        return True
-    # plan-doctor works with lesson IDs as domain content (the skill validates
-    # that task JSON files reference real lesson IDs).
-    if rel_to_bundles.startswith('plan-marshall/skills/plan-doctor/'):
-        return True
-    # plugin-doctor doctor-test-conventions.md cites lesson IDs as provenance
-    # for testing rules — these are authoritative design references, not prose narrative.
-    if rel_to_bundles == 'pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md':
-        return True
-    return False
+def _is_allowlisted(rel_to_bundles: str, default_cfg: dict[str, list[str]]) -> bool:
+    """Return True if the file path is exempt from this rule (Granularity-1).
+
+    The lesson-domain exemption table is no longer hardcoded here: it is
+    carried by the shipped default suppression config under the ``RULE_ID``
+    key (see ``config/default-suppression.yml``). The check delegates to the
+    shared layer-1 predicate, which applies the same path-prefix semantics the
+    former hardcoded table used (``rel_to_bundles.startswith(prefix)``;
+    exact-file entries match because a path is a prefix of itself).
+    """
+    return _config_layer_suppresses(RULE_ID, rel_to_bundles, default_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -226,16 +214,17 @@ def _offset_in_inline_code(offset: int, spans: list[tuple[int, int]]) -> bool:
     return any(start <= offset < end for start, end in spans)
 
 
-def _line_has_suppress_marker(line: str) -> bool:
-    return _SUPPRESS_MARKER in line
-
-
 # ---------------------------------------------------------------------------
 # File-level scanner
 # ---------------------------------------------------------------------------
 
 
-def _scan_file(path: Path, rel_to_bundles: str | None, kind: str = 'markdown') -> list[dict]:
+def _scan_file(
+    path: Path,
+    rel_to_bundles: str | None,
+    default_cfg: dict[str, list[str]],
+    kind: str = 'markdown',
+) -> list[dict]:
     """Scan a single source file and return all findings.
 
     ``rel_to_bundles`` is the file path relative to ``marketplace/bundles/``
@@ -249,7 +238,7 @@ def _scan_file(path: Path, rel_to_bundles: str | None, kind: str = 'markdown') -
     deliberately disabled so that citations in comments, docstrings, and
     string literals are caught.
     """
-    if rel_to_bundles is not None and _is_allowlisted(rel_to_bundles):
+    if rel_to_bundles is not None and _is_allowlisted(rel_to_bundles, default_cfg):
         return []
 
     try:
@@ -268,6 +257,13 @@ def _scan_file(path: Path, rel_to_bundles: str | None, kind: str = 'markdown') -
                 'description': f'Could not read file: {exc}',
             }
         ]
+
+    # Granularity-3 (per-file frontmatter): skip the whole file when its
+    # ``plugin-doctor-disable`` list names this rule. Applies to both file
+    # classes — a Python source may carry the key in a leading docstring/comment
+    # block parsed as frontmatter when present.
+    if RULE_ID in read_frontmatter_disable_list(text):
+        return []
 
     is_markdown = kind == 'markdown'
     lines = text.splitlines()
@@ -293,24 +289,6 @@ def _scan_file(path: Path, rel_to_bundles: str | None, kind: str = 'markdown') -
         has_bare = bool(_LESSON_ID_RE.search(line))
         has_backtick_prefix = bool(_LESSON_BACKTICK_ID_RE.search(line))
         if not has_bare and not has_backtick_prefix:
-            continue
-
-        # Suppression marker:
-        #   - Same line: suppresses findings on this line.
-        #   - Preceding line: suppresses findings on this line ONLY when the
-        #     preceding line is a standalone marker (no lesson-ID on it).
-        #     Otherwise the marker on the preceding line was consumed by its
-        #     own same-line suppression and must not double-suppress here.
-        suppressed = _line_has_suppress_marker(line)
-        if not suppressed and idx > 0:
-            prev = lines[idx - 1]
-            prev_has_lesson = (
-                bool(_LESSON_ID_RE.search(prev))
-                or bool(_LESSON_BACKTICK_ID_RE.search(prev))
-            )
-            if _line_has_suppress_marker(prev) and not prev_has_lesson:
-                suppressed = True
-        if suppressed:
             continue
 
         # Inline-code spans are a markdown construct only. In Python a
@@ -462,10 +440,11 @@ def analyze_lesson_id_in_skill_prose(marketplace_root: Path) -> list[dict]:
 
     - ``marketplace_root/*/{skills,agents,commands}/**/*.md`` (markdown
       exemptions: allowlisted skill path, YAML frontmatter, fenced code block,
-      ``Source:`` provenance line, inline-code span, suppression marker).
+      ``Source:`` provenance line, inline-code span, per-file
+      ``plugin-doctor-disable`` frontmatter key).
     - ``marketplace_root/*/{skills,agents,commands}/**/*.py`` (Python
-      exemptions: allowlisted skill path, suppression marker — markdown-only
-      structural exemptions do not apply).
+      exemptions: allowlisted skill path, per-file ``plugin-doctor-disable``
+      frontmatter key — markdown-only structural exemptions do not apply).
     - ``<repo>/.claude/skills/**`` for both ``*.md`` and ``*.py`` (no
       allowlisted members; the project-local tree is scanned in full).
 
@@ -481,9 +460,10 @@ def analyze_lesson_id_in_skill_prose(marketplace_root: Path) -> list[dict]:
     list[dict]
         List of finding dicts (empty for a clean tree).
     """
+    default_cfg = load_default_suppression_config()
     findings: list[dict] = []
     for path, rel, kind in _skill_source_targets(marketplace_root):
-        findings.extend(_scan_file(path, rel, kind))
+        findings.extend(_scan_file(path, rel, default_cfg, kind))
     for path, rel, kind in _claude_skill_source_targets(marketplace_root):
-        findings.extend(_scan_file(path, rel, kind))
+        findings.extend(_scan_file(path, rel, default_cfg, kind))
     return findings

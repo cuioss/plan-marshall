@@ -18,8 +18,11 @@ Body-invocation detection only matches the Claude Code tool vocabulary
 (``Read``, ``Write``, ``Edit``, ``Glob``, ``Grep``, ``Bash``,
 ``AskUserQuestion``, ``Skill``, ``Task``, ``WebFetch``) in directive shape:
 ``{ToolName}:`` at a line start (with optional list bullet) or the
-``Tool: {ToolName}`` prefixed form. Fenced code blocks and an inline
-``<!-- doctor-ignore: allowed-tools-drift -->`` marker exempt matches.
+``Tool: {ToolName}`` prefixed form. Fenced code blocks exempt matches, and a
+per-file ``plugin-doctor-disable: [allowed-tools-body-drift]`` frontmatter key
+suppresses every finding in that file (Granularity-3). The retired
+``<!-- doctor-ignore: allowed-tools-drift -->`` inline marker is no longer
+honored.
 
 Scope:
 
@@ -32,16 +35,19 @@ Test layers:
         non-empty list triggers a finding (both declaration forms).
   * (b) No-drift cases — declared list covers every invoked tool; missing
         declaration; empty declaration; unused declaration (one-directional).
-  * (c) Exemption cases — fenced code blocks and the suppression marker.
+  * (c) Exemption cases — fenced code blocks and per-file frontmatter disable.
   * (d) Detection-shape cases — directive forms and the known-tool gate.
   * (e) Scope cases — agents/commands dirs, out-of-scope paths.
   * (f) Project-local ``.claude/skills/**`` cases.
   * (g) Finding-shape case.
+  * (h) Inline-marker removal guard — the analyzer source references none of
+        the retired ``_SUPPRESS_MARKER`` / ``_IGNORE_MARKER`` / ``doctor-ignore``
+        markers.
 """
 
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module
 
 
 def _load_module(name: str, filename: str):
@@ -118,6 +124,20 @@ def _fm(declared: str, body: str) -> str:
     empty); ``body`` is the workflow prose below the closing fence.
     """
     return f'---\nname: test-skill\nallowed-tools: {declared}\n---\n{body}'
+
+
+def _fm_disable(declared: str, disable: str, body: str) -> str:
+    """Compose a component carrying both ``allowed-tools`` and ``plugin-doctor-disable``.
+
+    ``disable`` is the raw value placed after ``plugin-doctor-disable:`` (inline
+    list form, e.g. ``[allowed-tools-body-drift]``).
+    """
+    return (
+        f'---\nname: test-skill\n'
+        f'allowed-tools: {declared}\n'
+        f'plugin-doctor-disable: {disable}\n'
+        f'---\n{body}'
+    )
 
 
 # ===========================================================================
@@ -251,7 +271,7 @@ class TestNoDrift:
 
 
 class TestExemptions:
-    """Fenced blocks and the inline suppression marker exempt matches."""
+    """Fenced blocks and the per-file frontmatter disable exempt matches."""
 
     def test_invocation_inside_fenced_block_is_exempt(self, tmp_path: Path) -> None:
         """A tool directive inside a fenced block is an example, not an invocation."""
@@ -273,37 +293,56 @@ class TestExemptions:
         findings = analyze_allowed_tools_drift(marketplace_root)
         assert findings == []
 
-    def test_same_line_suppression_marker(self, tmp_path: Path) -> None:
-        """The marker on the same line suppresses the finding."""
+    def test_frontmatter_disable_suppresses_whole_file(self, tmp_path: Path) -> None:
+        """A ``plugin-doctor-disable`` naming the rule suppresses every drift in the file."""
+        content = _fm_disable(
+            'Read',
+            '[allowed-tools-body-drift]',
+            'Write: emit the file.\nBash: run the command.\n',
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_allowed_tools_drift(marketplace_root)
+        assert findings == []
+
+    def test_frontmatter_disable_block_list_form(self, tmp_path: Path) -> None:
+        """The YAML block-list ``plugin-doctor-disable`` form is honored."""
+        content = (
+            '---\n'
+            'name: test-skill\n'
+            'allowed-tools: Read\n'
+            'plugin-doctor-disable:\n'
+            '  - allowed-tools-body-drift\n'
+            '---\n'
+            'Write: emit the file.\n'
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_allowed_tools_drift(marketplace_root)
+        assert findings == []
+
+    def test_frontmatter_disable_for_other_rule_does_not_suppress(
+        self, tmp_path: Path
+    ) -> None:
+        """A disable list naming a DIFFERENT rule leaves the drift flagged."""
+        content = _fm_disable(
+            'Read',
+            '[some-other-rule]',
+            'Write: emit the file.\n',
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_allowed_tools_drift(marketplace_root)
+        assert len(findings) == 1
+        assert findings[0]['snippet'] == 'Write'
+
+    def test_retired_inline_marker_no_longer_suppresses(self, tmp_path: Path) -> None:
+        """The retired ``<!-- doctor-ignore: allowed-tools-drift -->`` marker is ignored."""
         content = _fm(
             'Read',
             'Write: emit the file. <!-- doctor-ignore: allowed-tools-drift -->\n',
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
-
-    def test_preceding_line_suppression_marker(self, tmp_path: Path) -> None:
-        """A standalone marker on the preceding line suppresses the finding."""
-        content = _fm(
-            'Read',
-            '<!-- doctor-ignore: allowed-tools-drift -->\nWrite: emit the file.\n',
-        )
-        marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
-
-    def test_marker_suppresses_only_the_marked_line(self, tmp_path: Path) -> None:
-        """The marker is per-line — an adjacent unmarked invocation still fires."""
-        content = _fm(
-            'Read',
-            'Write: emit. <!-- doctor-ignore: allowed-tools-drift -->\n'
-            'Bash: run the command.\n',
-        )
-        marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
         assert len(findings) == 1
-        assert findings[0]['snippet'] == 'Bash'
+        assert findings[0]['snippet'] == 'Write'
 
 
 # ===========================================================================
@@ -442,3 +481,27 @@ def test_finding_shape(tmp_path: Path) -> None:
     assert f['fixable'] is False
     assert f['snippet'] == 'Write'
     assert 'description' in f and f['description']
+
+
+# ===========================================================================
+# (h) Inline-marker removal guard
+# ===========================================================================
+
+
+def test_analyzer_source_has_no_inline_marker_references() -> None:
+    """The analyzer source references none of the retired inline markers.
+
+    The inline-marker suppression mechanism (``_SUPPRESS_MARKER`` /
+    ``_IGNORE_MARKER`` / ``doctor-ignore``) was removed in favor of the
+    config-based declarative-suppression substrate. This guard reads the live
+    analyzer source and asserts none of the retired tokens survive.
+    """
+    source = get_script_path(
+        'pm-plugin-development',
+        'plugin-doctor',
+        '_analyze_allowed_tools_drift.py',
+    ).read_text(encoding='utf-8')
+    for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
+        assert marker not in source, (
+            f'Retired inline marker {marker!r} still present in analyzer source'
+        )

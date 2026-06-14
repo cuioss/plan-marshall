@@ -30,12 +30,13 @@ exempt:
 For **Python** sources, the markdown-only structural exemptions (frontmatter,
 fenced code block, ``Source:`` line, inline-code span) do NOT apply — the
 whole point of scanning ``.py`` is to catch lesson IDs in comments,
-docstrings, and string literals. Only the path-allowlist and the inline
-suppression marker apply.
+docstrings, and string literals. Only the path-allowlist and the per-file
+frontmatter disable apply.
 
-For both file classes an inline suppression marker
-``<!-- doctor-ignore: lesson-id-prose -->`` (same-line or preceding line)
-suppresses the finding on the marked line only.
+Per-file suppression is carried by the YAML frontmatter
+``plugin-doctor-disable: [no-lesson-id-in-skill-prose]`` key, which suppresses
+every finding in that file (Granularity-3). The retired
+``<!-- doctor-ignore: lesson-id-prose -->`` inline marker is no longer honored.
 
 Test layers:
   * (a) Positive cases — narrative citation triggers a finding for each
@@ -44,20 +45,30 @@ Test layers:
         produce zero findings regardless of citation density.
   * (c) Skip-context cases — lesson IDs inside YAML frontmatter, ``Source:``
         lines, fenced code blocks, and inline-code spans produce no findings.
-  * (d) Suppression cases — the ``<!-- doctor-ignore: lesson-id-prose -->``
-        marker (same-line and prior-line) suppresses the finding.
+  * (d) Per-file frontmatter disable (Granularity-3) — a
+        ``plugin-doctor-disable: [no-lesson-id-in-skill-prose]`` frontmatter
+        key suppresses every finding in that file; a file naming a different
+        rule (or no disable key) is still flagged. The retired inline marker
+        is no longer honored.
   * (e) Boundary cases — non-lesson date-like tokens and out-of-scope paths
         produce no findings.
   * (g) Python-source cases — citations in ``.py`` comments, docstrings, and
         string literals are flagged; markdown-only exemptions do NOT apply;
-        the path-allowlist and suppression marker still apply.
+        the path-allowlist and per-file frontmatter disable still apply.
   * (h) Project-local ``.claude/skills/**`` cases — both ``*.md`` and
         ``*.py`` under the sibling project-local tree are scanned.
+  * (i) Suppression-aware cases — the allowlist delegates to the shipped
+        default suppression config (Granularity-1) via the shared
+        ``_config_layer_suppresses`` predicate. Paths registered in the config
+        remain suppressed; paths not registered are still flagged.
+  * (j) Inline-marker removal guard — the analyzer source references none of
+        the retired ``_SUPPRESS_MARKER`` / ``_IGNORE_MARKER`` / ``doctor-ignore``
+        markers.
 """
 
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module
 
 
 def _load_module(name: str, filename: str):
@@ -71,6 +82,8 @@ _alisp = _load_module(
 
 analyze_lesson_id_in_skill_prose = _alisp.analyze_lesson_id_in_skill_prose
 RULE_ID = _alisp.RULE_ID
+_is_allowlisted = _alisp._is_allowlisted
+load_default_suppression_config = _alisp.load_default_suppression_config
 
 
 # ---------------------------------------------------------------------------
@@ -412,125 +425,124 @@ class TestSkipContextExemption:
 
 
 # ===========================================================================
-# (d) Suppression marker cases
+# (d) Per-file frontmatter disable (Granularity-3)
 # ===========================================================================
 
 
-class TestSuppressionMarker:
-    """The ``<!-- doctor-ignore: lesson-id-prose -->`` marker suppresses
-    findings on the marked line only."""
+class TestFrontmatterDisable:
+    """A ``plugin-doctor-disable: [no-lesson-id-in-skill-prose]`` frontmatter key
+    suppresses every finding in that file; a file not naming this rule in its
+    disable list is still flagged.
 
-    def test_same_line_suppression(self, tmp_path: Path) -> None:
-        """Marker on the same line suppresses the finding."""
-        content = (
-            'See lesson 2026-04-17-012. <!-- doctor-ignore: lesson-id-prose -->\n'
-        )
-        marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
-        assert findings == []
-
-    def test_preceding_line_suppression(self, tmp_path: Path) -> None:
-        """Marker on the preceding line suppresses the finding."""
-        content = (
-            '<!-- doctor-ignore: lesson-id-prose -->\n'
-            'See lesson 2026-04-17-012 for context.\n'
-        )
-        marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
-        assert findings == []
-
-    def test_marker_only_suppresses_the_marked_line(
-        self, tmp_path: Path
-    ) -> None:
-        """The marker is per-line — adjacent unmarked lines still produce findings."""
-        content = (
-            'See lesson 2026-04-17-012. <!-- doctor-ignore: lesson-id-prose -->\n'
-            'Also see lesson 2026-04-29-23-002.\n'
-        )
-        marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
-        assert len(findings) == 1
-        assert findings[0]['line'] == 2
-
-
-# ===========================================================================
-# (d.1) Standalone-marker scoping — regression guards
-# ===========================================================================
-
-
-class TestStandaloneMarkerScoping:
-    """Regression: the suppression marker MUST scope to its own line (and the
-    immediately following one), and MUST NOT bleed across sections or files.
-
-    The marker semantics are line-local — a standalone marker at the top of a
-    section does NOT suppress lesson IDs deeper in the same section, and a
-    marker in one file has zero effect on findings in a sibling file.
+    Granularity-3 (per-file frontmatter) is file-scoped and supersedes the
+    retired ``<!-- doctor-ignore: lesson-id-prose -->`` inline marker, which is
+    no longer honored.
     """
 
-    def test_marker_does_not_bleed_two_lines_below(self, tmp_path: Path) -> None:
-        """Marker two lines above the citation does NOT suppress the finding."""
+    def test_inline_list_disable_suppresses_whole_file(self, tmp_path: Path) -> None:
+        """An inline-list disable naming the rule suppresses all findings in the file."""
         content = (
-            '<!-- doctor-ignore: lesson-id-prose -->\n'
-            '\n'
+            '---\n'
+            'name: test-skill\n'
+            'plugin-doctor-disable: [no-lesson-id-in-skill-prose]\n'
+            '---\n'
+            'See lesson 2026-04-17-012 for context.\n'
+            'And another lesson 2026-04-29-23-002.\n'
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert findings == []
+
+    def test_block_list_disable_suppresses_whole_file(self, tmp_path: Path) -> None:
+        """A YAML block-list disable form is also honored."""
+        content = (
+            '---\n'
+            'name: test-skill\n'
+            'plugin-doctor-disable:\n'
+            '  - no-lesson-id-in-skill-prose\n'
+            '---\n'
             'See lesson 2026-04-17-012 for context.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_lesson_id_in_skill_prose(marketplace_root)
-        assert len(findings) == 1
-        assert findings[0]['line'] == 3
+        assert findings == []
 
-    def test_marker_does_not_bleed_across_section_boundary(
-        self, tmp_path: Path
-    ) -> None:
-        """A marker in one section MUST NOT suppress citations in the next section."""
+    def test_disable_list_for_other_rule_does_not_suppress(self, tmp_path: Path) -> None:
+        """A disable list naming a DIFFERENT rule leaves this rule's findings flagged."""
         content = (
-            '## Section A\n'
-            '<!-- doctor-ignore: lesson-id-prose -->\n'
-            'See lesson 2026-04-17-012 (suppressed by marker above).\n'
-            '\n'
-            '## Section B\n'
-            'See lesson 2026-04-29-23-002 (must be flagged).\n'
+            '---\n'
+            'name: test-skill\n'
+            'plugin-doctor-disable: [some-other-rule]\n'
+            '---\n'
+            'See lesson 2026-04-17-012 — this rule is not in the disable list.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_lesson_id_in_skill_prose(marketplace_root)
         assert len(findings) == 1
-        assert findings[0]['line'] == 6
+        assert findings[0]['rule_id'] == RULE_ID
 
-    def test_standalone_marker_at_top_of_file_does_not_blanket_file(
-        self, tmp_path: Path
-    ) -> None:
-        """A single marker at file top does NOT act as a file-wide suppression."""
+    def test_no_disable_key_is_still_flagged(self, tmp_path: Path) -> None:
+        """Frontmatter without ``plugin-doctor-disable`` leaves findings flagged."""
         content = (
-            '<!-- doctor-ignore: lesson-id-prose -->\n'
-            '\n'
-            '## Heading\n'
-            'See lesson 2026-04-17-012 here.\n'
-            'And another: lesson 2026-04-29-23-002.\n'
+            '---\n'
+            'name: test-skill\n'
+            '---\n'
+            'See lesson 2026-04-17-012 — no disable key present.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_lesson_id_in_skill_prose(marketplace_root)
-        assert len(findings) == 2
+        assert len(findings) == 1
 
-    def test_marker_does_not_bleed_across_files(self, tmp_path: Path) -> None:
-        """A marker in one skill file does NOT affect findings in a sibling file."""
-        # File 1: has marker + citation (suppressed).
+    def test_py_frontmatter_disable_suppresses_whole_file(self, tmp_path: Path) -> None:
+        """A ``plugin-doctor-disable`` block in a ``.py`` docstring suppresses findings.
+
+        The per-file disable applies to Python sources too: the frontmatter
+        block parser reads the leading ``---`` fence even when it is embedded in
+        a module docstring, so a Python file opening with a disable block is
+        wholly suppressed.
+        """
+        content = (
+            '---\n'
+            'plugin-doctor-disable: [no-lesson-id-in-skill-prose]\n'
+            '---\n'
+            '# Guard added per lesson 2026-04-17-012.\n'
+        )
+        marketplace_root, _ = _make_skill_py(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert findings == []
+
+    def test_disable_does_not_bleed_across_files(self, tmp_path: Path) -> None:
+        """A per-file disable in one file has no effect on a sibling file."""
+        # File 1: disabled via frontmatter.
         skill_a_dir = tmp_path / 'bundle-a' / 'skills' / 'skill-a'
         skill_a_dir.mkdir(parents=True)
         (skill_a_dir / 'SKILL.md').write_text(
-            '<!-- doctor-ignore: lesson-id-prose -->\n'
-            'See lesson 2026-04-17-012.\n',
+            '---\n'
+            'plugin-doctor-disable: [no-lesson-id-in-skill-prose]\n'
+            '---\n'
+            'See lesson 2026-04-17-012 — suppressed in file A.\n',
             encoding='utf-8',
         )
-        # File 2: citation without marker (must be flagged).
+        # File 2: citation without disable key (must be flagged).
         skill_b_dir = tmp_path / 'bundle-b' / 'skills' / 'skill-b'
         skill_b_dir.mkdir(parents=True)
         (skill_b_dir / 'SKILL.md').write_text(
-            'See lesson 2026-04-29-23-002.\n',
+            'See lesson 2026-04-29-23-002 — flagged in file B.\n',
             encoding='utf-8',
         )
         findings = analyze_lesson_id_in_skill_prose(tmp_path)
         assert len(findings) == 1
         assert findings[0]['file'].endswith('bundle-b/skills/skill-b/SKILL.md')
+
+    def test_retired_inline_marker_no_longer_suppresses(self, tmp_path: Path) -> None:
+        """The retired ``<!-- doctor-ignore: lesson-id-prose -->`` marker is ignored."""
+        content = (
+            'See lesson 2026-04-17-012. <!-- doctor-ignore: lesson-id-prose -->\n'
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
 
 
 # ===========================================================================
@@ -684,14 +696,22 @@ class TestPythonSourceDetection:
         findings = analyze_lesson_id_in_skill_prose(tmp_path)
         assert findings == []
 
-    def test_py_suppression_marker_applies(self, tmp_path: Path) -> None:
-        """The inline suppression marker suppresses a finding in Python prose."""
+    def test_py_retired_inline_marker_no_longer_suppresses(
+        self, tmp_path: Path
+    ) -> None:
+        """The retired inline marker in a ``.py`` comment is ignored — still flagged.
+
+        Per-file suppression for Python sources is now carried by the
+        ``plugin-doctor-disable`` frontmatter block (see
+        ``TestFrontmatterDisable.test_py_frontmatter_disable_suppresses_whole_file``),
+        not by the removed inline marker.
+        """
         content = (
             '# See lesson 2026-04-17-012. <!-- doctor-ignore: lesson-id-prose -->\n'
         )
         marketplace_root, _ = _make_skill_py(tmp_path, content)
         findings = analyze_lesson_id_in_skill_prose(marketplace_root)
-        assert findings == []
+        assert len(findings) == 1
 
     def test_py_bare_date_token_not_flagged(self, tmp_path: Path) -> None:
         """A bare ``YYYY-MM-DD`` date in Python is not a lesson-ID format."""
@@ -789,3 +809,124 @@ class TestClaudeSkillsTree:
         )
         findings = analyze_lesson_id_in_skill_prose(bundles_root)
         assert len(findings) == 2
+
+
+# ===========================================================================
+# (i) Suppression-aware cases — config-driven Granularity-1 delegation
+# ===========================================================================
+
+
+class TestSuppressionAwareAllowlist:
+    """The allowlist is no longer a hardcoded table — it delegates to the
+    shipped default suppression config (Granularity-1) through the shared
+    ``_config_layer_suppresses`` predicate.
+
+    These cases pin the contract that the TASK-2 refactor preserves:
+
+    * Every lesson-domain path the former hardcoded table exempted is still
+      exempt, now because it is registered under ``RULE_ID`` in
+      ``config/default-suppression.yml`` (the analyzer loads the *real*
+      shipped config — resolved relative to the module, not ``tmp_path`` —
+      so these assertions exercise the live config).
+    * A path that resembles an allowlisted directory but is NOT a registered
+      prefix is still flagged.
+    * The ``_is_allowlisted`` delegation path returns True/False purely from
+      the config, with no private list left in the analyzer.
+    """
+
+    def test_default_config_carries_rule_prefixes(self) -> None:
+        """The shipped default config registers prefixes under ``RULE_ID``.
+
+        Confirms the lesson-domain exemption table moved into the config
+        rather than being dropped: the analyzer's rule-id key must exist with
+        a non-empty prefix list.
+        """
+        config = load_default_suppression_config()
+        assert RULE_ID in config
+        assert config[RULE_ID], 'default config must carry exemption prefixes'
+
+    def test_is_allowlisted_true_for_each_config_prefix(self) -> None:
+        """``_is_allowlisted`` returns True for every prefix in the config.
+
+        Drives the ``_is_allowlisted`` → ``_config_layer_suppresses``
+        delegation directly: each registered prefix must match itself
+        (``startswith`` is reflexive), proving suppression flows from the
+        config and not a private list.
+        """
+        config = load_default_suppression_config()
+        for prefix in config[RULE_ID]:
+            assert _is_allowlisted(prefix, config) is True
+
+    def test_is_allowlisted_false_for_unregistered_path(self) -> None:
+        """A path not registered under ``RULE_ID`` is NOT exempt."""
+        config = load_default_suppression_config()
+        unregistered = 'some-bundle/skills/some-other-skill/SKILL.md'
+        assert _is_allowlisted(unregistered, config) is False
+
+    def test_previously_exempt_path_remains_suppressed(
+        self, tmp_path: Path
+    ) -> None:
+        """A lesson-ID citation under an exempt prefix yields zero findings.
+
+        Builds a file under a registered exempt prefix — a lesson-domain
+        directory the former hardcoded table exempted and the shipped config
+        still registers — and asserts the analyzer suppresses the finding via
+        the loaded default config.
+        """
+        config = load_default_suppression_config()
+        # Pick the first registered prefix that names a skill directory so the
+        # constructed path lands inside the scanned {skills} sub-tree.
+        prefix = next(
+            p for p in config[RULE_ID] if '/skills/' in p and p.endswith('/')
+        )
+        target = tmp_path / prefix / 'SKILL.md'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            'This lesson-domain skill references lesson 2026-04-17-012 freely.\n',
+            encoding='utf-8',
+        )
+        findings = analyze_lesson_id_in_skill_prose(tmp_path)
+        assert findings == []
+
+    def test_path_not_in_config_is_still_flagged(self, tmp_path: Path) -> None:
+        """A lesson-ID citation outside every exempt prefix is flagged.
+
+        Guards against an over-broad suppression: a sibling skill that merely
+        shares a bundle with an exempt skill but is NOT registered must still
+        produce a finding.
+        """
+        # 'plan-marshall/skills/manage-lessons/' is exempt, but a sibling
+        # skill 'manage-tasks' under the same bundle is not.
+        skill_dir = tmp_path / 'plan-marshall' / 'skills' / 'manage-tasks'
+        skill_dir.mkdir(parents=True)
+        (skill_dir / 'SKILL.md').write_text(
+            'See lesson 2026-04-17-012 — this sibling skill is NOT exempt.\n',
+            encoding='utf-8',
+        )
+        findings = analyze_lesson_id_in_skill_prose(tmp_path)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
+
+
+# ===========================================================================
+# (j) Inline-marker removal guard
+# ===========================================================================
+
+
+def test_analyzer_source_has_no_inline_marker_references() -> None:
+    """The analyzer source references none of the retired inline markers.
+
+    The inline-marker suppression mechanism (``_SUPPRESS_MARKER`` /
+    ``_IGNORE_MARKER`` / ``doctor-ignore``) was removed in favor of the
+    config-based declarative-suppression substrate. This guard reads the live
+    analyzer source and asserts none of the retired tokens survive.
+    """
+    source = get_script_path(
+        'pm-plugin-development',
+        'plugin-doctor',
+        '_analyze_lesson_id_in_skill_prose.py',
+    ).read_text(encoding='utf-8')
+    for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
+        assert marker not in source, (
+            f'Retired inline marker {marker!r} still present in analyzer source'
+        )

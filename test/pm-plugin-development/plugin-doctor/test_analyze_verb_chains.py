@@ -12,15 +12,20 @@ class: prose claiming a ``request clarify`` sub-verb when only
 ``request read`` / ``request mark-clarified`` were registered.
 
 Test layers:
-  * Markdown parsing (``extract_invocations``): fence detection, ignore
-    marker, non-bash fences, backslash continuations.
+  * Markdown parsing (``extract_invocations``): fence detection,
+    non-bash fences, backslash continuations.
   * AST walker (``build_subparser_tree``): flat subparsers, nested
     subparsers (>=3 levels).
   * Chain matching (``match_chain``): happy path, unknown top-level,
     unknown nested.
   * End-to-end (``analyze_verb_chains``): scoped to ``SKILL.md`` +
-    ``standards/*.md``, ignore marker, nested validation, scope
-    exclusion of ``references/`` and ``templates/``.
+    ``standards/*.md``, per-file frontmatter disable (Granularity-3),
+    nested validation, scope exclusion of ``references/`` and ``templates/``.
+
+Per-file suppression is carried by the YAML frontmatter
+``plugin-doctor-disable: [prose-verb-chain-consistency]`` key, which suppresses
+every finding in that file. The retired ``<!-- doctor-ignore: verb-check -->``
+inline marker is no longer honored.
 
 Follows the ``_load_module`` convention from ``test_argparse_safety``
 so the module under test can be imported directly (Tier 2) without
@@ -32,7 +37,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -380,8 +385,14 @@ def test_extract_invocations_basic(tmp_path):
     assert inv.script_notation == ('plan-marshall:manage-plan-documents:manage-plan-documents')
 
 
-def test_extract_invocations_ignore_marker_suppresses(tmp_path):
-    """The doctor-ignore marker on the preceding line suppresses the fence."""
+def test_extract_invocations_retired_ignore_marker_no_longer_suppresses(tmp_path):
+    """The retired doctor-ignore marker no longer suppresses the fence.
+
+    The inline-marker mechanism was removed in favor of the per-file
+    frontmatter disable; the marker now reads as ordinary prose and the
+    invocation below it is still extracted.
+    """
+    # Arrange
     md = tmp_path / 'SKILL.md'
     md.write_text(
         'Doc text.\n'
@@ -390,19 +401,9 @@ def test_extract_invocations_ignore_marker_suppresses(tmp_path):
 
     invocations = extract_invocations(md)
 
-    assert invocations == []
-
-
-def test_extract_invocations_ignore_marker_tolerates_blank_line(tmp_path):
-    """Whitespace-only lines between marker and fence are permitted."""
-    md = tmp_path / 'SKILL.md'
-    md.write_text(
-        '<!-- doctor-ignore: verb-check -->\n   \n\n' + _bash_fence('python3 .plan/execute-script.py a:b:c verb')
-    )
-
-    invocations = extract_invocations(md)
-
-    assert invocations == []
+    # Assert
+    assert len(invocations) == 1
+    assert invocations[0].verb_chain == ('clarify',)
 
 
 def test_extract_invocations_skips_non_bash_fence(tmp_path):
@@ -538,8 +539,88 @@ def test_analyze_unknown_nested_verb_driving_lesson(tmp_path):
     assert finding['first_unknown_segment'] == 'clarify'
 
 
-def test_analyze_honors_ignore_marker(tmp_path):
-    """A drifted chain behind an ignore marker is suppressed."""
+def test_analyze_frontmatter_disable_suppresses_whole_file(tmp_path):
+    """A drifted chain in a file whose frontmatter disables the rule is suppressed."""
+    # Arrange
+    bundles = _make_marketplace(tmp_path)
+    target_skill = _make_skill(bundles, 'plan-marshall', 'manage-plan-documents')
+    _write_script(target_skill, 'manage-plan-documents', _request_clarify_script())
+
+    caller_skill = _make_skill(bundles, 'plan-marshall', 'phase-3-outline')
+    (caller_skill / 'SKILL.md').write_text(
+        '---\n'
+        'plugin-doctor-disable: [prose-verb-chain-consistency]\n'
+        '---\n'
+        + _bash_fence(
+            'python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request clarify'
+        )
+    )
+
+    # Act
+    findings = analyze_verb_chains(caller_skill)
+
+    # Assert
+    assert findings == []
+
+
+def test_analyze_frontmatter_disable_block_list_form(tmp_path):
+    """The YAML block-list ``plugin-doctor-disable`` form is honored."""
+    # Arrange
+    bundles = _make_marketplace(tmp_path)
+    target_skill = _make_skill(bundles, 'plan-marshall', 'manage-plan-documents')
+    _write_script(target_skill, 'manage-plan-documents', _request_clarify_script())
+
+    caller_skill = _make_skill(bundles, 'plan-marshall', 'phase-3-outline')
+    (caller_skill / 'SKILL.md').write_text(
+        '---\n'
+        'plugin-doctor-disable:\n'
+        '  - prose-verb-chain-consistency\n'
+        '---\n'
+        + _bash_fence(
+            'python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request clarify'
+        )
+    )
+
+    # Act
+    findings = analyze_verb_chains(caller_skill)
+
+    # Assert
+    assert findings == []
+
+
+def test_analyze_frontmatter_disable_for_other_rule_does_not_suppress(tmp_path):
+    """A disable list naming a DIFFERENT rule leaves the drift flagged."""
+    # Arrange
+    bundles = _make_marketplace(tmp_path)
+    target_skill = _make_skill(bundles, 'plan-marshall', 'manage-plan-documents')
+    _write_script(target_skill, 'manage-plan-documents', _request_clarify_script())
+
+    caller_skill = _make_skill(bundles, 'plan-marshall', 'phase-3-outline')
+    (caller_skill / 'SKILL.md').write_text(
+        '---\n'
+        'plugin-doctor-disable: [some-other-rule]\n'
+        '---\n'
+        + _bash_fence(
+            'python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request clarify'
+        )
+    )
+
+    # Act
+    findings = analyze_verb_chains(caller_skill)
+
+    # Assert
+    assert len(findings) == 1
+    assert findings[0]['rule_id'] == RULE_ID
+    assert findings[0]['first_unknown_segment'] == 'clarify'
+
+
+def test_analyze_retired_ignore_marker_no_longer_suppresses(tmp_path):
+    """A drifted chain behind the retired inline marker is now flagged.
+
+    The ``<!-- doctor-ignore: verb-check -->`` marker was removed; only the
+    per-file frontmatter disable suppresses findings.
+    """
+    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'plan-marshall', 'manage-plan-documents')
     _write_script(target_skill, 'manage-plan-documents', _request_clarify_script())
@@ -554,7 +635,10 @@ def test_analyze_honors_ignore_marker(tmp_path):
 
     findings = analyze_verb_chains(caller_skill)
 
-    assert findings == []
+    # Assert
+    assert len(findings) == 1
+    assert findings[0]['rule_id'] == RULE_ID
+    assert findings[0]['first_unknown_segment'] == 'clarify'
 
 
 def test_analyze_skips_non_bash_fence(tmp_path):
@@ -794,3 +878,27 @@ def test_fixture_scripts_are_well_formed(tmp_path, source):
     # a non-empty tree proves the fixture registers at least
     # one subparser. Specific shapes are asserted in dedicated tests.
     assert tree != {}
+
+
+# =============================================================================
+# Inline-marker removal guard
+# =============================================================================
+
+
+def test_analyzer_source_has_no_inline_marker_references():
+    """The analyzer source references none of the retired inline markers.
+
+    The inline-marker suppression mechanism (``_SUPPRESS_MARKER`` /
+    ``_IGNORE_MARKER`` / ``doctor-ignore``) was removed in favor of the
+    config-based declarative-suppression substrate. This guard reads the live
+    analyzer source and asserts none of the retired tokens survive.
+    """
+    source = get_script_path(
+        'pm-plugin-development',
+        'plugin-doctor',
+        '_analyze_verb_chains.py',
+    ).read_text(encoding='utf-8')
+    for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
+        assert marker not in source, (
+            f'Retired inline marker {marker!r} still present in analyzer source'
+        )
