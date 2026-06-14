@@ -258,6 +258,36 @@ Parse `path` from the output and `Write` the body. `references/lessons-proposal.
 
 In non-interactive finalize-step mode, emit lessons automatically only when confidence is high (documented in the reference). User-invocable mode uses `AskUserQuestion` for each draft.
 
+### Step 5.5: Stalled-lesson-sourced-plan detection (detection-and-prompt)
+
+When the audited plan is itself a **stalled lesson-sourced plan**, its relocated lesson is trapped inside the plan directory and out of the active corpus. The signal is self-evident from the plan's own `status.json` — no new script-backed aspect is needed. Detect it from the status already read in Step 1:
+
+- `status.metadata.plan_source` matches the lesson-id pattern `YYYY-MM-DD-HH-NNN` (the plan is lesson-sourced), AND
+- `status.current_phase` is one of `5-execute` / `6-finalize` with that phase's row `status != done` (the plan is stalled in a non-terminal state).
+
+When BOTH conditions hold, surface the stranded-lesson signal in the report and prompt the user (live modes only — skip the prompt in archived mode, which is read-only):
+
+```
+AskUserQuestion:
+  question: "This plan is a stalled lesson-sourced plan ({plan_id}) — its lesson(s) are trapped out of the active corpus. Resume the plan or restore the lesson(s)?"
+  header: "Stalled lesson"
+  options:
+    - label: "Resume plan"
+      description: "Continue the plan from its current phase ({current_phase}) to a terminal state"
+    - label: "Restore lesson(s)"
+      description: "Run restore-from-plan to return the lesson(s) to .plan/local/lessons-learned/"
+  multiSelect: false
+```
+
+On **"Restore lesson(s)"**, invoke the inverse of `convert-to-plan`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons restore-from-plan \
+  --plan-id {plan_id}
+```
+
+This detection note is the per-plan counterpart of the corpus-wide tooling: `manage-lessons list-stalled` (see [`../manage-lessons/SKILL.md`](../manage-lessons/SKILL.md) § `list-stalled`) scans every plan for the same signal, and the `Action: cleanup` stalled-lesson restore pass (see [`../plan-marshall/workflow/planning.md`](../plan-marshall/workflow/planning.md) § "Action: cleanup" → "Stalled-lesson-sourced-plan restore") restores them in bulk. Keep this addition thin — it is a detection-and-prompt note, not a new script-backed aspect in the Step 3 table.
+
 ### Step 6: Mode-Specific Termination
 
 **Finalize-step mode**: emit the `mark-step-done` handshake so the `phase_steps_complete` invariant is satisfied:

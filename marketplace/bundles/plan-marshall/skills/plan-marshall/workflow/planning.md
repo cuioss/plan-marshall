@@ -457,7 +457,7 @@ See [`workflow/planning-outline.md`](planning-outline.md) for the full workflow.
 
 ## Action: cleanup
 
-Two-pass user-facing maintenance: remove completed plans, then prune redundant superseded-lesson stubs. Both passes confirm with the user before deleting.
+Multi-pass user-facing maintenance: remove completed plans, prune redundant superseded-lesson stubs, prune orphan plan directories, and restore lessons trapped inside stalled lesson-sourced plans. Each destructive or restorative pass confirms with the user before acting.
 
 ---
 
@@ -622,6 +622,64 @@ For each orphan entry:
     decision --plan-id global --level INFO \
     --message "(plan-marshall:plan-marshall:cleanup) Orphan directory {id} ({path}) left in place by user — contents: {contents}"
   ```
+
+---
+
+### Step 4: Stalled-lesson-sourced-plan restore
+
+Restore lessons trapped inside stalled lesson-sourced plans. A lesson-sourced plan relocates its lesson into the plan directory via `convert-to-plan` (`plans/{plan_id}/lesson-{id}.md`), taking it out of the active corpus. If the plan stalls or is abandoned in `5-execute`/`6-finalize` without running `restore-from-plan`, the lesson stays stranded and is silently lost. This pass detects every such plan and restores its lesson(s) to the active corpus. Running `Action: cleanup` over the current corpus therefore doubles as the one-time scan-and-restore over all presently-stalled lesson-sourced plans.
+
+**`restore-from-plan` is the mandatory inverse**: it MUST run before a stalled lesson-sourced plan is dormated or deleted, so its lesson is never stranded.
+
+**4a — Enumerate stalled lesson-sourced plans:**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list-stalled
+```
+
+Parse `stalled_plans[]` from the TOON output. Each entry exposes `plan_id`, `plan_source`, `current_phase`, `phase_status`, `lesson_ids[]`, and `restore_command` (the exact `restore-from-plan --plan-id {plan_id}` invocation). If `stalled_count` is `0`, log and finish the cleanup action:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO \
+  --message "(plan-marshall:plan-marshall:cleanup) No stalled lesson-sourced plans to restore — skipping stalled-lesson restore pass"
+```
+
+**4b — Confirm and restore:** When `stalled_plans[]` is non-empty, present the entries via `AskUserQuestion` (multiSelect) so the user can pick which stalled plans to restore in one pass:
+
+```
+AskUserQuestion:
+  question: "Select stalled lesson-sourced plans whose lesson(s) should be restored to the active corpus."
+  header: "Restore"
+  options:
+    # For each stalled plan:
+    - label: "{plan_id}"
+      description: "stalled in {current_phase} ({phase_status}) — lesson(s): {comma-separated lesson_ids}"
+  multiSelect: true
+```
+
+For each confirmed plan, invoke `restore-from-plan` to return its lesson(s) to `.plan/local/lessons-learned/`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons restore-from-plan \
+  --plan-id {plan_id}
+```
+
+Log each restore:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO \
+  --message "(plan-marshall:plan-marshall:cleanup) Restored stalled lesson(s) {lesson_ids} from plan {plan_id} to the active corpus"
+```
+
+For each stalled plan the user declines, log the decline:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO \
+  --message "(plan-marshall:plan-marshall:cleanup) Stalled plan {plan_id} left unrestored by user — lesson(s) {lesson_ids} remain trapped"
+```
 
 ---
 

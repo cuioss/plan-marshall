@@ -407,6 +407,43 @@ Each group carries `tier` (the producing signal: `cross-ref` | `shared-component
 
 Singletons (lessons that match no other lesson at any signal tier) are dropped — only multi-member groups are emitted.
 
+### list-stalled
+
+Read-only scanner that surfaces lesson-sourced plans whose relocated lesson is **stranded** (stalled). When a lesson is moved into a plan directory via `convert-to-plan` (`plans/{plan_id}/lesson-{id}.md`), it leaves the active corpus. If that plan then stalls or is abandoned in `5-execute`/`6-finalize` without running `restore-from-plan`, the lesson stays trapped inside the plan directory and is silently lost. This verb reports every such plan so callers can decide whether to restore or discard. It never mutates lesson files or plan directories.
+
+Detection algorithm (deterministic, read-only):
+
+1. Resolve the plans root and glob `*/lesson-*.md` to find plan dirs still holding a relocated lesson; group the matched lesson files by owning plan dir.
+2. For each such plan dir, read the sibling `status.json` (a missing or corrupt `status.json` yields a skipped entry rather than a crash).
+3. Classify the plan as **stalled** when `metadata.plan_source` matches the lesson-id pattern (`YYYY-MM-DD-HH-NNN`, i.e. lesson-sourced) AND it is NOT in a terminal state — `current_phase` is one of `5-execute` / `6-finalize` and that phase's row `status != done`. A lesson-sourced plan whose current phase has fully completed is NOT stalled (its lesson was, or will be, restored on the normal terminal path).
+4. Emit each stalled plan with the exact `restore-from-plan --plan-id {plan_id}` invocation in `restore_command`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list-stalled
+```
+
+**Parameters**: none.
+
+**Output** (TOON):
+```toon
+status: success
+stalled_count: 1
+stalled_plans:
+  - plan_id: 2025-12-02-001-example-plan
+    plan_source: 2025-12-02-15-001
+    current_phase: 5-execute
+    phase_status: in_progress
+    lesson_ids:
+      - 2025-12-02-15-001
+    restore_command: "python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons restore-from-plan --plan-id 2025-12-02-001-example-plan"
+```
+
+An empty corpus (no plans root, or no stalled lesson-sourced plans) returns `stalled_count: 0` with an empty `stalled_plans`.
+
+#### Stalled-lesson lifecycle gap
+
+`convert-to-plan` is the move that takes a lesson out of the active corpus and into a plan directory; `restore-from-plan` is its inverse, returning the relocated lesson back to `.plan/local/lessons-learned/`. When a lesson-sourced plan stalls or is abandoned before reaching a terminal state, the relocated lesson is trapped at the plan-dir root and never resurfaces. `list-stalled` is the detection half of closing that gap — it identifies every trapped lesson; `restore-from-plan` is the remediation half that frees it. The `Action: cleanup` workflow consumes both as a paired scan-and-restore pass.
+
 ---
 
 ## References
@@ -433,7 +470,9 @@ The classification logic for the read-side corpus operations lives under `refere
 | `aggregate` | `[--top-n N]` | Read-only classifier: group active lessons that would land in one plan. Returns groups + headline commands. See [`references/aggregate-analysis.md`](references/aggregate-analysis.md). |
 | `from-error` | `--context` | Create from JSON error context (programmatic; body synthesized from context) |
 | `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
+| `restore-from-plan` | `--plan-id` | Inverse of `convert-to-plan`: move the relocated `lesson-*.md` back from a plan directory to the active corpus (`.plan/local/lessons-learned/`). Run on stall/abandon so a stranded lesson resurfaces. |
 | `cleanup-superseded` | `[--lesson-id ID ...] \| [--retention-days N] [--dry-run]` | Prune superseded `.md` stubs while preserving tombstones. Age-filtered when `--retention-days` (falls back to `system.retention.lessons_superseded_days`, hard fallback 7); explicit when `--lesson-id` is repeated. |
+| `list-stalled` | (none) | Read-only scanner: report lesson-sourced plans whose relocated lesson is stranded in a non-terminal `5-execute`/`6-finalize` state. Returns `stalled_count` and per-plan `restore_command`. Never mutates lesson files or plan dirs. |
 | `auto-suggest` | `--plan-id [--max-suggestions N] [--no-emit]` | Recipe-registry matcher for phase-1-init Step 5c. Scans the live recipe registry (`manage-config list-recipes`) and returns up to `--max-suggestions` recipes (default 3) ordered by deterministic confidence — keyword overlap (request narrative ∩ recipe description) + domain alignment + scope alignment. Each suggestion is also written as a plan-scoped `tip` finding (`artifacts/findings/tip.jsonl`) so the orchestrator can surface them in the audit log; pass `--no-emit` to inspect without writing findings. No LLM dispatch — the matcher is pure regex + set algebra. Falls through to the existing Step 5c LLM path when no recipe clears the 0.35 confidence floor. |
 
 ---
@@ -570,6 +609,19 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons clea
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons auto-suggest \
   --plan-id PLAN_ID [--max-suggestions N] [--no-emit]
+```
+
+### list-stalled
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list-stalled
+```
+
+### restore-from-plan
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons restore-from-plan \
+  --plan-id PLAN_ID
 ```
 
 ---

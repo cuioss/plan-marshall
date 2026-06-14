@@ -41,6 +41,7 @@ cmd_list = _mod.cmd_list
 cmd_update = _mod.cmd_update
 cmd_convert_to_plan = _mod.cmd_convert_to_plan
 cmd_restore_from_plan = _mod.cmd_restore_from_plan
+cmd_list_stalled = _mod.cmd_list_stalled
 cmd_from_error = _mod.cmd_from_error
 cmd_remove = _mod.cmd_remove
 cmd_supersede = _mod.cmd_supersede
