@@ -34,13 +34,19 @@ _POM_SONAR_PROPERTIES = {
 }
 
 
-def _strip_ns(tag: str) -> str:
+def _strip_ns(tag: object) -> str:
     """Return the local tag name, dropping any ``{namespace}`` prefix.
 
     Maven POMs declare the ``http://maven.apache.org/POM/4.0.0`` namespace, so
     ``ElementTree`` reports tags as ``{http://...}sonar.organization``. Matching
     on the local name handles both namespaced and namespace-less POMs.
+
+    XML comments and processing instructions have callable (non-string) tags in
+    ElementTree.  The type guard skips them cleanly instead of raising
+    ``AttributeError``.
     """
+    if not isinstance(tag, str):
+        return ''
     return tag.rsplit('}', 1)[-1]
 
 

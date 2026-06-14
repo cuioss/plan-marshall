@@ -1318,7 +1318,8 @@ def render_module_markdown(
         '',
     ]
 
-    deps = sorted(merged.get('internal_dependencies', []) or [])
+    deps_map, _ = _build_internal_deps_map(project_dir)
+    deps = deps_map.get(module_name, [])
     deps_section: list[str] = []
     if deps:
         deps_section = ['## Internal Dependencies', '']
