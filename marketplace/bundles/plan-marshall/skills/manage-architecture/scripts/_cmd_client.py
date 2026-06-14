@@ -631,22 +631,9 @@ def get_module_graph(
                             internal.add(dep_module)
             internal_deps_map[mod_name] = list(internal)
 
-    # Post-resolution augmentation: deterministic virtual-sibling cross-linking.
-    # Mirrors _build_internal_deps_map — every maven↔npm virtual-sibling pair is
-    # cross-linked in BOTH directions. sibling_modules is recorded symmetrically
-    # by _split_to_virtual_modules, so iterating every module and adding its
-    # declared siblings yields symmetric edges for ALL pairs. Applied after
-    # branch selection so it fires uniformly, including for modules whose
-    # internal_dependencies came from the LLM-curated enriched.json branch.
-    for mod_name, mod_data in derived_by_name.items():
-        siblings = mod_data.get('virtual_module', {}).get('sibling_modules', [])
-        if not siblings:
-            continue
-        augmented = set(internal_deps_map.get(mod_name, []))
-        for sibling in siblings:
-            if sibling in derived_by_name and sibling != mod_name:
-                augmented.add(sibling)
-        internal_deps_map[mod_name] = sorted(augmented)
+    # Post-resolution augmentation: symmetric virtual-sibling cross-linking.
+    # See _apply_sibling_cross_links for the full rationale.
+    _apply_sibling_cross_links(internal_deps_map, derived_by_name)
 
     # Filter out aggregator modules unless --full is specified.
     # Aggregators are pom-packaging modules (not jar, nar, war, etc.). However
@@ -896,6 +883,36 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
 # =============================================================================
 
 
+def _apply_sibling_cross_links(
+    deps_map: dict[str, list[str]],
+    derived_by_name: dict[str, Any],
+) -> None:
+    """Add symmetric virtual-sibling edges to ``deps_map`` in-place.
+
+    Every maven↔npm virtual-sibling pair must be cross-linked in both
+    directions.  ``_split_to_virtual_modules`` records ``sibling_modules``
+    symmetrically on both pair members, so iterating every module and adding
+    its declared siblings yields symmetric edges for all pairs — including
+    modules whose ``internal_dependencies`` came from the LLM-curated
+    ``enriched.json`` branch.
+
+    Args:
+        deps_map: Mutable mapping of module name → sorted dependency list.
+            Modified in-place; absent module entries are treated as empty.
+        derived_by_name: Mapping of module name → derived module data dict.
+            Used to validate that a sibling name actually exists as a module.
+    """
+    for mod_name, mod_data in derived_by_name.items():
+        siblings = mod_data.get('virtual_module', {}).get('sibling_modules', [])
+        if not siblings:
+            continue
+        augmented = set(deps_map.get(mod_name, []))
+        for sibling in siblings:
+            if sibling in derived_by_name and sibling != mod_name:
+                augmented.add(sibling)
+        deps_map[mod_name] = sorted(augmented)
+
+
 def _build_internal_deps_map(
     project_dir: str = '.',
     *,
@@ -970,23 +987,9 @@ def _build_internal_deps_map(
                             internal.add(dep_module)
             deps_map[mod_name] = sorted(internal)
 
-    # Post-resolution augmentation: deterministic virtual-sibling cross-linking.
-    # Every maven↔npm virtual-sibling pair must be cross-linked in BOTH
-    # directions. Because _split_to_virtual_modules records sibling_modules
-    # symmetrically on both members of a pair, iterating every module and adding
-    # its declared siblings yields symmetric edges for ALL pairs without a
-    # separate reverse-edge pass. Applied after branch selection so it fires
-    # uniformly — including for modules whose internal_dependencies came from the
-    # LLM-curated enriched.json branch, which is exactly the case that drifted.
-    for mod_name, mod_data in derived_by_name.items():
-        siblings = mod_data.get('virtual_module', {}).get('sibling_modules', [])
-        if not siblings:
-            continue
-        augmented = set(deps_map.get(mod_name, []))
-        for sibling in siblings:
-            if sibling in derived_by_name and sibling != mod_name:
-                augmented.add(sibling)
-        deps_map[mod_name] = sorted(augmented)
+    # Post-resolution augmentation: symmetric virtual-sibling cross-linking.
+    # See _apply_sibling_cross_links for the full rationale.
+    _apply_sibling_cross_links(deps_map, derived_by_name)
 
     return deps_map, module_names
 
