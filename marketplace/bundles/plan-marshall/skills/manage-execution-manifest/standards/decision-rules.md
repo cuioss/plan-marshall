@@ -315,6 +315,34 @@ When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-revie
 
 **Safety-net error path**: The function still has a non-`None` return contract (`str | None`) and the caller (`cmd_compose`) still translates a non-`None` return into a `bot_enforcement_violation` error TOON. In current code this branch is unreachable — the guard either no-ops (returns `None`) or remediates and returns `None`. The branch is retained as a hook for any future logic that detects a non-remediable violation (e.g., a malformed `phase_6_steps` list), so the legacy `bot-enforcement guard fired` log line and error TOON shape remain documented in the codebase even though they are not exercised by the current control flow.
 
+## MAY_MUTATE-after-commit-push Placement Invariant
+
+**This section is the central, single-source home for the MAY_MUTATE-after-commit-push ordering invariant.** Other docs that touch this invariant (`manage-execution-manifest/SKILL.md`, `phase-6-finalize/SKILL.md`, `phase-6-finalize/standards/finalize-step-simplify.md`, `manage-status/SKILL.md`) cross-reference this section by name rather than restating the rule body.
+
+**The invariant**: every step in the `MAY_MUTATE_WORKTREE_STEPS` set — `automated-review`, `sonar-roundtrip`, and `finalize-step-simplify` — MUST appear at a `phase_6.steps` index *later* than `commit-push`.
+
+**Type**: Composition-time placement validator (defense-in-depth, NOT a pre-filter, NOT a remediation). Runs *after* the seven-row matrix, the `ceremony_finalize_selection` and `execution_tier` transforms, the `bot_enforcement_guard`, AND the `automated-review` placement validator have produced the final `phase_6.steps` ordering — so it sees the ordering exactly as it will be persisted. It is the last placement check before the manifest is written.
+
+**Why the ordering is mandatory**: Phase-5 leaves defer their per-deliverable commits, so the worktree is dirty at the first finalize step. The script-layer dirty-worktree `done` guard in `manage-status mark-step-done` refuses `--outcome done` for any `MAY_MUTATE_WORKTREE_STEPS` member while the resolved worktree is dirty (`git status --porcelain` non-empty), returning `error: dirty_worktree_done_refused`. A MAY_MUTATE step ordered ahead of `commit-push` therefore runs against that dirty tree, hits the refusal, and emits `loop_back` instead of `done` — forcing an orchestrator commit-first recovery detour. This validator catches such a misordering at compose time rather than at finalize-time loop-back thrash.
+
+**Single source of truth for the set**: the `MAY_MUTATE_WORKTREE_STEPS` set is owned by `manage-status/scripts/_cmd_mark_step.py` (the dirty-worktree `done` guard). The composer imports it via the existing PYTHONPATH cross-skill mechanism (`_resolve_may_mutate_worktree_steps`) rather than re-declaring it inline, so the compose-time check and the script-layer refusal can never drift. Both the bare step names and their `default:`-prefixed forms are detected, so a re-prefixed candidate cannot slip past the check.
+
+**Carve-outs (validator returns `None`, manifest is accepted)**:
+
+- `commit-push` is absent — a no-push / `commit_push_omitted` plan has nothing to order against.
+- Every MAY_MUTATE step already appears at an index later than `commit-push`.
+- The MAY_MUTATE set could not be imported (degraded environment) — consistent with the composer's "missing data → rule does not fire" convention.
+
+**Effect on violation**: the composer emits the decision-log line below and returns a `may_mutate_placement_violation` error TOON instead of writing the manifest. The diagnostic names the first offending MAY_MUTATE step and both offending indexes.
+
+**Decision log line** (emitted only on violation):
+
+```
+(plan-marshall:manage-execution-manifest:compose) may_mutate_placement violation — {bare} at index {N} must follow commit-push at index {M}
+```
+
+When no violation is detected (any carve-out holds, or the ordering is correct), the validator is a no-op and emits no log entry.
+
 ## execution_tier Routing
 
 **Type**: Composition-time per-task routing pass. Runs *after* the seven-row matrix has produced the body's `phase_5.verification_steps` and `phase_6.steps`, *before* the bot-enforcement guard. Mutates both the manifest body and the plan's `TASK-*.json` files.

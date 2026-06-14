@@ -144,6 +144,17 @@ Before recording any per-task verification deviation that would soften a request
 
 **Resolution**: On user resolution, follow the side-effect contract in `scope-deviation-escalation.md`. The `[VERIFY]`, `[STATUS]`, or `[OUTCOME]` work-log line confirming the user's chosen option IS allowed AFTER the AskUserQuestion has resolved — never as a stand-in for it. When the user chooses "Hold the line", the per-task fix loop resumes (do NOT mark the task `blocked` on the same iteration just because the user refused the softening).
 
+#### Anti-pattern: never batch a destructive checkout to re-baseline
+
+**Prohibition**: When a fix iteration mishandled a too-narrow mechanical transform and the instinct is to "get back to a clean baseline" before re-applying it, NEVER batch `git checkout -- <files>` or `git restore <files>` across the modified files. These commands are **destructive of uncommitted working-tree content with no undo** — content that was never staged is not recoverable via `git fsck`. The risk is amplified by the per-deliverable-commit model this phase runs under: a file that shows as modified-vs-HEAD may carry **another deliverable's uncommitted output**, so a batched revert can silently roll a completed deliverable's files back to pristine while the plan still believes that work is done. The plan's task ledger then disagrees with the worktree, and the loss surfaces only after the missing changes are noticed downstream.
+
+**Safe alternatives** (in preference order):
+
+1. **Operate forward-only.** Do not revert at all. Broaden the mechanical transform so it is idempotent and re-apply it on top of the current tree — dry-run it against a synthetic fixture first to confirm the broadened form converges, then apply it to the real files. A forward-only re-apply never discards working-tree content.
+2. **If a revert is genuinely required, scope it to your own files only.** Revert ONLY the specific files YOU modified in THIS task, one path at a time, and only after confirming each carries no other uncommitted content. Per-path proof before each revert: `git status --short <path>` shows only your expected change, and `git diff --quiet HEAD -- <path>` (or an explicit review of `git diff HEAD -- <path>`) confirms there is no foreign work mixed in. A batched, whole-directory checkout never satisfies this proof — it cannot distinguish your changes from a sibling deliverable's.
+
+**When batching IS permissible**: a batched checkout/restore is only safe when every target path is known to hold no uncommitted work — e.g. the files are unmodified-vs-HEAD, or the worktree was committed clean immediately before. Absent that guarantee, treat the batched destructive checkout as forbidden and fall back to alternative 1.
+
 ### Step: Record Lessons
 
 On issues or unexpected patterns, first run the canonical three-gate lesson-creation policy in [`../manage-lessons/standards/lesson-creation-policy.md`](../manage-lessons/standards/lesson-creation-policy.md) — Gate 1 (dedup), Gate 2 (active-plan check), Gate 3 (create). The two-step path-allocate flow below is Gate 3, reached only when Gates 1 and 2 both clear; when Gate 1 returns `merge_into` / `already_closed` or Gate 2 finds a covering active plan, extend the existing lesson or fold into the plan instead of allocating a new one. Do not restate the gate mechanics — follow the standard.

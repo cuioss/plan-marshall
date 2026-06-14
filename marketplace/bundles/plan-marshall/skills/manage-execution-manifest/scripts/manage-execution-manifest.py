@@ -118,9 +118,9 @@ EXECUTION_LOG_KEY = 'execution_log'
 # decision matrix.
 DEFAULT_PHASE_5_STEPS = ('quality_check', 'build_verify')
 DEFAULT_PHASE_6_STEPS = (
-    'finalize-step-simplify',
     'finalize-step-whole-tree-gate',
     'commit-push',
+    'finalize-step-simplify',
     'create-pr',
     'ci-verify',
     'automated-review',
@@ -1785,6 +1785,79 @@ def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None
     return None
 
 
+def _resolve_may_mutate_worktree_steps() -> frozenset[str]:
+    """Resolve the ``MAY_MUTATE_WORKTREE_STEPS`` set from its single owner.
+
+    The set is owned by ``manage-status/scripts/_cmd_mark_step.py`` (the
+    dirty-worktree ``done`` guard). The composer imports it via the existing
+    PYTHONPATH cross-skill mechanism rather than re-declaring it, so the two
+    sources can never drift. On import failure — a partial environment where
+    the ``manage-status`` ``scripts/`` dir is not on ``sys.path`` — degrade to
+    the empty set, which makes :func:`_validate_may_mutate_placement` a no-op
+    (consistent with the composer's "missing data → rule does not fire"
+    convention).
+    """
+    try:
+        from _cmd_mark_step import (  # type: ignore[import-not-found]
+            MAY_MUTATE_WORKTREE_STEPS,
+        )
+    except ImportError:
+        return frozenset()
+    return frozenset(MAY_MUTATE_WORKTREE_STEPS)
+
+
+def _validate_may_mutate_placement(phase_6_steps: list[str]) -> str | None:
+    """Compose-time placement check for ``MAY_MUTATE_WORKTREE_STEPS`` ordering.
+
+    Every member of ``MAY_MUTATE_WORKTREE_STEPS`` (``automated-review``,
+    ``sonar-roundtrip``, ``finalize-step-simplify``) MUST run *after*
+    ``commit-push``. Phase-5 leaves defer their per-deliverable commits, so the
+    worktree is dirty at the first finalize step; a MAY_MUTATE step ordered
+    ahead of ``commit-push`` runs against that dirty tree, hits the
+    ``dirty_worktree_done_refused`` guard in ``mark-step-done``, and emits
+    ``loop_back`` instead of ``done`` — forcing an orchestrator commit-first
+    recovery detour. This validator catches such a misordering at compose time
+    rather than at finalize-time loop-back thrash.
+
+    The MAY_MUTATE set is imported from its single owner
+    (:func:`_resolve_may_mutate_worktree_steps`); it is not re-declared here.
+    Both the bare step names and their ``default:`` forms are detected so a
+    re-prefixed candidate cannot slip past the check.
+
+    Returns ``None`` when:
+
+    - ``commit-push`` is absent (a no-push / ``commit_push_omitted`` plan has
+      nothing to order against — the carve-out).
+    - Every MAY_MUTATE step appears at an index later than ``commit-push``.
+    - The MAY_MUTATE set could not be imported (degraded no-op).
+
+    Otherwise returns a diagnostic string naming the first MAY_MUTATE step that
+    precedes ``commit-push`` and both offending indexes.
+    """
+    may_mutate = _resolve_may_mutate_worktree_steps()
+    if not may_mutate:
+        return None
+
+    commit_push_index: int | None = None
+    for index, step in enumerate(phase_6_steps):
+        if step in {'commit-push', 'default:commit-push'}:
+            commit_push_index = index
+            break
+    if commit_push_index is None:
+        return None
+
+    for index, step in enumerate(phase_6_steps):
+        if index >= commit_push_index:
+            break
+        bare = _strip_default_prefix(step)
+        if bare in may_mutate:
+            return (
+                f'{bare} at index {index} must follow commit-push at '
+                f'index {commit_push_index}'
+            )
+    return None
+
+
 # =============================================================================
 # execution_tier Routing (per-task verification command classification)
 # =============================================================================
@@ -2338,6 +2411,27 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'plan_id': plan_id,
             'error': 'bot_enforcement_violation',
             'message': placement_diagnostic,
+        }
+
+    # Compose-time MAY_MUTATE placement validator (defense-in-depth): reject the
+    # manifest if any ``MAY_MUTATE_WORKTREE_STEPS`` member (``automated-review``,
+    # ``sonar-roundtrip``, ``finalize-step-simplify``) sits at an index earlier
+    # than ``commit-push``. Phase-5 leaves defer commits, so the tree is dirty at
+    # the first finalize step; a MAY_MUTATE step ahead of ``commit-push`` hits the
+    # ``dirty_worktree_done_refused`` guard in ``mark-step-done`` and loop-backs.
+    # The check runs on the final ordering (after the bot-enforcement guards) and
+    # is inert on no-push plans where ``commit-push`` is absent.
+    may_mutate_diagnostic = _validate_may_mutate_placement(final_phase_6_steps)
+    if may_mutate_diagnostic is not None:
+        _emit_decision_log(
+            plan_id,
+            f'(plan-marshall:manage-execution-manifest:compose) may_mutate_placement violation — {may_mutate_diagnostic}',
+        )
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'may_mutate_placement_violation',
+            'message': may_mutate_diagnostic,
         }
 
     manifest = {

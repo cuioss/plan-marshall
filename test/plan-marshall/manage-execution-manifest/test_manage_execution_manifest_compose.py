@@ -48,6 +48,7 @@ get_manifest_path = _mem.get_manifest_path
 DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 _role_of = _mem._role_of
+_resolve_may_mutate_worktree_steps = _mem._resolve_may_mutate_worktree_steps
 
 # Quiet down the best-effort decision-log subprocess so tests don't depend on a
 # running executor. The handler is wrapped in try/except so failures are
@@ -2999,6 +3000,139 @@ class TestAutomatedReviewPlacement:
         assert 'automated-review' in result['message']
         assert anchor in result['message']
         assert read_manifest(plan_id) is None
+
+
+# =============================================================================
+# Compose-time MAY_MUTATE placement validator — finalize-step-simplify after
+# commit-push (Deliverable 1 reorder + Deliverable 2 guard)
+#
+# Deliverable 1 moved ``finalize-step-simplify`` to a later index than
+# ``commit-push`` in ``DEFAULT_PHASE_6_STEPS`` so the step's may-mutate edits land
+# on a worktree that ``commit-push`` already flushed clean. Deliverable 2 added
+# ``_validate_may_mutate_placement`` (importing the MAY_MUTATE set from its single
+# owner ``manage-status/_cmd_mark_step.py``) to reject any composed manifest where
+# a MAY_MUTATE member precedes ``commit-push``.
+#
+# These tests defend both halves from the regression angle:
+#   1. The positive ordering assertion fails if the Deliverable 1 reorder is
+#      reverted (simplify back ahead of commit-push) — the composer would then
+#      either emit an out-of-order manifest OR be rejected by the Deliverable 2
+#      validator, both of which break the assertions below.
+#   2. The negative assertions mirror ``TestAutomatedReviewPlacement``: a candidate
+#      CSV that deliberately orders ``finalize-step-simplify`` before
+#      ``commit-push`` is rejected with ``may_mutate_placement_violation``.
+# =============================================================================
+
+
+class TestMayMutatePlacement:
+    """``finalize-step-simplify`` (a MAY_MUTATE step) must compose after ``commit-push``."""
+
+    def test_default_compose_places_simplify_after_commit_push(self, plan_context):
+        # Deliverable 1 reorder lock-in: a default code-shaped feature compose
+        # (change_type=feature, files>0, so simplify_inactive keeps the step)
+        # MUST emit ``finalize-step-simplify`` at a later index than
+        # ``commit-push``. Reverting the reorder (swapping the two in
+        # DEFAULT_PHASE_6_STEPS) re-orders the composed list and fails this test —
+        # OR trips the Deliverable 2 validator, which also fails compose here.
+        result = cmd_compose(_compose_ns(plan_id='may-mutate-default-order'))
+
+        assert result is not None
+        assert result['status'] == 'success', f'expected success, got {result!r}'
+
+        manifest = read_manifest('may-mutate-default-order')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Both steps survive the default feature compose.
+        assert 'commit-push' in steps
+        assert 'finalize-step-simplify' in steps
+        # The reorder invariant: simplify follows commit-push.
+        assert steps.index('finalize-step-simplify') > steps.index('commit-push')
+
+    def test_simplify_is_a_may_mutate_worktree_step(self):
+        # The placement invariant only matters because finalize-step-simplify is a
+        # MAY_MUTATE step. The validator imports the set from its single owner; if
+        # the membership ever changed, the Deliverable 1 reorder would no longer be
+        # load-bearing. Pin the membership against the imported source-of-truth.
+        may_mutate = _resolve_may_mutate_worktree_steps()
+        assert 'finalize-step-simplify' in may_mutate
+
+    def test_compose_rejects_simplify_before_commit_push(self, plan_context):
+        # Negative case (mirrors TestAutomatedReviewPlacement): an explicit
+        # candidate CSV that orders finalize-step-simplify BEFORE commit-push.
+        # Row 7 (default) preserves candidate ordering verbatim, so the
+        # misordering survives to the validator, which rejects it.
+        plan_id = 'may-mutate-simplify-before'
+        candidates = ','.join(
+            ['finalize-step-simplify', 'commit-push', 'create-pr', 'lessons-capture']
+        )
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',
+                affected_files_count=5,
+                phase_6_steps=candidates,
+            )
+        )
+
+        assert result is not None
+        assert result['status'] == 'error', f'expected error status, got {result!r}'
+        assert result['error'] == 'may_mutate_placement_violation'
+        # Diagnostic names the offending step and the commit-push anchor.
+        assert 'finalize-step-simplify' in result['message']
+        assert 'commit-push' in result['message']
+        # No manifest is persisted on rejection.
+        assert read_manifest(plan_id) is None
+
+    def test_compose_accepts_simplify_after_commit_push_explicit_candidates(self, plan_context):
+        # Symmetric positive case: the SAME candidate set with the two steps in
+        # the correct order composes successfully. Proves the validator fires on
+        # ordering, not on mere co-presence of the two steps.
+        plan_id = 'may-mutate-simplify-after'
+        candidates = ','.join(
+            ['commit-push', 'finalize-step-simplify', 'create-pr', 'lessons-capture']
+        )
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',
+                affected_files_count=5,
+                phase_6_steps=candidates,
+            )
+        )
+
+        assert result is not None
+        assert result['status'] == 'success', f'expected success, got {result!r}'
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert steps.index('finalize-step-simplify') > steps.index('commit-push')
+
+    def test_compose_inert_when_commit_push_absent(self, plan_context):
+        # Carve-out: a no-push plan (commit_and_push=false drops commit-push) has
+        # nothing to order against, so the validator is a no-op even though
+        # finalize-step-simplify would otherwise be present. The compose succeeds.
+        plan_id = 'may-mutate-no-commit-push'
+        candidates = ','.join(
+            ['finalize-step-simplify', 'create-pr', 'lessons-capture']
+        )
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',
+                affected_files_count=5,
+                phase_6_steps=candidates,
+                commit_and_push='false',
+            )
+        )
+
+        assert result is not None
+        assert result['status'] == 'success', f'expected success, got {result!r}'
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        assert 'commit-push' not in manifest['phase_6']['steps']
 
 
 # =============================================================================
