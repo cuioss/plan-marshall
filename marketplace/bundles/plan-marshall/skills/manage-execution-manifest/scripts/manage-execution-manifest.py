@@ -963,19 +963,6 @@ def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> N
     _emit_decision_log(plan_id, message)
 
 
-def _log_may_mutate_placement_violation(plan_id: str, diagnostic: str) -> None:
-    """Emit the decision-log entry for the MAY_MUTATE placement rejection.
-
-    Logged whenever the compose-time placement validator detects that a
-    ``MAY_MUTATE_WORKTREE_STEPS`` member (``automated-review``,
-    ``sonar-roundtrip``, ``finalize-step-simplify``) sits at an index earlier
-    than ``commit-push``. The diagnostic string carries both step names and
-    indexes for downstream auditing.
-    """
-    message = f'(plan-marshall:manage-execution-manifest:compose) may_mutate_placement violation — {diagnostic}'
-    _emit_decision_log(plan_id, message)
-
-
 # =============================================================================
 # Pre-Filter Helpers
 # =============================================================================
@@ -2436,7 +2423,10 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # is inert on no-push plans where ``commit-push`` is absent.
     may_mutate_diagnostic = _validate_may_mutate_placement(final_phase_6_steps)
     if may_mutate_diagnostic is not None:
-        _log_may_mutate_placement_violation(plan_id, may_mutate_diagnostic)
+        _emit_decision_log(
+            plan_id,
+            f'(plan-marshall:manage-execution-manifest:compose) may_mutate_placement violation — {may_mutate_diagnostic}',
+        )
         return {
             'status': 'error',
             'plan_id': plan_id,
