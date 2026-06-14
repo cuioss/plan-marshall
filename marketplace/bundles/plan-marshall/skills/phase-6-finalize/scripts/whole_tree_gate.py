@@ -481,17 +481,27 @@ def extract_deleted_identifiers(diff_text: str) -> list[str]:
     """
     removed_tokens: set[str] = set()
     retained_tokens: set[str] = set()
+    in_hunk = False
     for raw in diff_text.splitlines():
+        if raw.startswith('diff '):
+            # New file section — reset hunk state; metadata lines follow.
+            in_hunk = False
+            continue
+        if raw.startswith('@@'):
+            # Hunk header — content lines follow.
+            in_hunk = True
+            continue
+        if not in_hunk:
+            # git diff metadata lines (index, mode, rename from/to, etc.) —
+            # not content; skip to avoid polluting retained_tokens.
+            continue
         if raw.startswith('---') or raw.startswith('+++'):
-            # Unified-diff file headers, not content lines.
+            # Unified-diff file headers inside a hunk boundary — not content.
             continue
         if raw.startswith('-'):
             removed_tokens |= _line_identifiers(raw[1:])
         elif raw.startswith('+'):
             retained_tokens |= _line_identifiers(raw[1:])
-        elif raw.startswith('@@') or raw.startswith('diff '):
-            # Hunk header / diff-command line — carries no content tokens.
-            continue
         else:
             # Context (unchanged) line: the leading space (or bare text for the
             # no-newline marker) is retained content surrounding the change.
