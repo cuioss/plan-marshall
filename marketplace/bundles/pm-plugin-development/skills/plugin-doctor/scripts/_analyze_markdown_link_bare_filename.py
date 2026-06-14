@@ -327,7 +327,6 @@ def _scan_odd_one_out_lists(path: Path, lines: list[str], fenced: set[int]) -> l
 
 
 def _scan_file(path: Path) -> list[dict]:
-    """Scan a single markdown file and return all findings."""
     try:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:

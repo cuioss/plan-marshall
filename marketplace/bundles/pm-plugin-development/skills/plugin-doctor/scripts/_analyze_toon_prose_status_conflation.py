@@ -129,7 +129,6 @@ def _build_fence_map(lines: list[str]) -> dict[int, str]:
 
 
 def _inline_code_spans(line: str) -> list[str]:
-    """Return the inner text of every inline-code span on ``line``."""
     return [m.group(1) for m in _INLINE_CODE_RE.finditer(line)]
 
 
@@ -160,7 +159,6 @@ def _make_finding(path: Path, line_no: int, snippet_src: str) -> dict:
 
 
 def _scan_file(path: Path) -> list[dict]:
-    """Scan a single markdown file and return all findings."""
     try:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:
