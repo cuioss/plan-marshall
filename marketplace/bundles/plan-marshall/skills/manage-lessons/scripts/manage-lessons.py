@@ -784,6 +784,11 @@ def cmd_list_stalled(args: argparse.Namespace) -> dict:  # noqa: ARG001
             # Corrupt/unreadable status.json — skip rather than crash.
             continue
 
+        if not isinstance(status, dict):
+            # Valid JSON but not an object (e.g. a list or string) — calling
+            # status.get() would raise AttributeError; skip rather than crash.
+            continue
+
         metadata = status.get('metadata', {})
         plan_source = metadata.get('plan_source', '') if isinstance(metadata, dict) else ''
         if not isinstance(plan_source, str) or not LESSON_SOURCE_ID_REGEX.match(plan_source):
