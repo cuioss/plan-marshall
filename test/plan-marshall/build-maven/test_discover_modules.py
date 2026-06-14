@@ -541,7 +541,11 @@ def test_nested_module_uses_relative_path_for_pl():
 
 
 def test_nested_module_pl_in_all_commands():
-    """Test that all commands for a nested module use the correct -pl path with -am."""
+    """Test that non-root module commands use -pl with -am, except clean.
+
+    clean uses -pl WITHOUT -am to avoid wiping upstream reactor target dirs.
+    All other commands use -pl -am so upstream deps are built first.
+    """
     commands = _build_commands(
         module_name='oauth-sheriff-quarkus',
         packaging='jar',
@@ -550,10 +554,13 @@ def test_nested_module_pl_in_all_commands():
         profiles=[],
         relative_path='oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus',
     )
-    for cmd_name in ['clean', 'compile', 'verify', 'module-tests', 'quality-gate']:
+    for cmd_name in ['compile', 'verify', 'module-tests', 'quality-gate']:
         assert '-pl oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus -am' in commands[cmd_name], (
             f'{cmd_name} should use relative_path for -pl with -am'
         )
+    # clean uses -pl without -am to avoid cleaning upstream reactor dependencies
+    assert '-pl oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus' in commands['clean']
+    assert '-am' not in commands['clean']
 
 
 def test_root_module_has_no_pl_arg():
