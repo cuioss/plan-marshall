@@ -15,6 +15,7 @@ from extension_base import (  # type: ignore[import-not-found]
     ExtensionBase,
     _pattern_matches_any,
     _route_matches,
+    _tracked_basenames,
     derive_globs_from_tree,
 )
 
@@ -731,6 +732,41 @@ def test_pattern_matches_any_equivalent_to_per_element_loop():
         assert _pattern_matches_any(pattern, corpus) == _loop_matches_any(pattern, corpus), (
             f'batch/loop mismatch for pattern {pattern!r}'
         )
+
+
+# =============================================================================
+# _tracked_basenames() — lru_cache-backed basename helper
+# =============================================================================
+
+
+def test_tracked_basenames_extracts_basenames():
+    """_tracked_basenames returns the basename of each path in the tuple."""
+    result = _tracked_basenames(('src/app.py', 'nifi-cuioss-ui/package.json', 'build.py'))
+    assert result == ['app.py', 'package.json', 'build.py']
+
+
+def test_tracked_basenames_empty_tuple():
+    """An empty tuple returns an empty list."""
+    assert _tracked_basenames(()) == []
+
+
+def test_tracked_basenames_repo_root_paths():
+    """Paths at repo root (no directory separator) return the path itself."""
+    result = _tracked_basenames(('README.md', 'pyproject.toml'))
+    assert result == ['README.md', 'pyproject.toml']
+
+
+def test_tracked_basenames_cache_identity():
+    """The lru_cache returns the same list object for the same tuple input.
+
+    Calling ``_tracked_basenames`` twice with the same tuple must return the
+    identical list object (cache hit) — this confirms the cache is active and
+    avoids recomputation on repeated bare-basename pattern evaluation.
+    """
+    tracked = ('a/b.py', 'c/d.py')
+    first = _tracked_basenames(tracked)
+    second = _tracked_basenames(tracked)
+    assert first is second, 'expected lru_cache hit to return the same object'
 
 
 if __name__ == '__main__':

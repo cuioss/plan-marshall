@@ -19,6 +19,7 @@ ModuleBase, ModulePaths) are available via direct import from _build_discover.
 """
 
 import fnmatch
+import functools
 import subprocess
 from abc import ABC, abstractmethod
 from posixpath import basename
@@ -211,6 +212,27 @@ def _route_matches(path: str, pattern: str) -> bool:
     return fnmatch.fnmatch(path, pattern)
 
 
+@functools.lru_cache(maxsize=4)
+def _tracked_basenames(tracked_tuple: tuple[str, ...]) -> list[str]:
+    """Return the basenames of ``tracked_tuple``, cached by identity.
+
+    Called by :func:`_pattern_matches_any` for every bare-basename pattern
+    evaluated against the same tracked-file list.  A single ``discover`` call
+    invokes :func:`_pattern_matches_any` once per route, all sharing the same
+    ``tracked`` list — without caching, ``[basename(p) for p in tracked]`` is
+    recomputed O(routes) times.  The ``lru_cache`` key is the tuple of paths, so
+    each unique tracked-file snapshot is computed exactly once per process.
+
+    Args:
+        tracked_tuple: Repo-relative, forward-slashed candidate paths as a tuple
+            (hashable for ``lru_cache`` keying).
+
+    Returns:
+        List of ``posixpath.basename`` values, one per entry in ``tracked_tuple``.
+    """
+    return [basename(p) for p in tracked_tuple]
+
+
 def _pattern_matches_any(pattern: str, tracked: list[str]) -> bool:
     """Return True when route ``pattern`` matches at least one ``tracked`` path.
 
@@ -222,7 +244,9 @@ def _pattern_matches_any(pattern: str, tracked: list[str]) -> bool:
 
     - **Bare-basename routes** (``pattern`` contains no ``/``): match against the
       list of path *basenames*, so a config file is matched wherever it lives in
-      the tree.
+      the tree.  Basenames are computed once per unique ``tracked`` list via
+      :func:`_tracked_basenames` (``lru_cache``-backed) to avoid O(routes × files)
+      repeated work.
     - **Path-bearing routes** (``pattern`` contains ``/``): match against the
       whole repo-relative paths, preserving the single-``*``-spans-``/`` behavior.
 
@@ -235,7 +259,7 @@ def _pattern_matches_any(pattern: str, tracked: list[str]) -> bool:
         selects — identical to ``any(_route_matches(p, pattern) for p in tracked)``.
     """
     if '/' not in pattern:
-        return bool(fnmatch.filter([basename(p) for p in tracked], pattern))
+        return bool(fnmatch.filter(_tracked_basenames(tuple(tracked)), pattern))
     return bool(fnmatch.filter(tracked, pattern))
 
 
