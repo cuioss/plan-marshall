@@ -2,6 +2,7 @@
 name: cui-testing
 description: CUI test library standards for test data generation, value object contracts, and JUL log testing
 user-invocable: false
+mode: knowledge
 ---
 
 # CUI Testing Skill
