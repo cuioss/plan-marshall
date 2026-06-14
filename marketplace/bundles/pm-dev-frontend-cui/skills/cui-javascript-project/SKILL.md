@@ -2,13 +2,12 @@
 name: cui-javascript-project
 description: JavaScript project structure, package.json configuration, dependency management, and Maven integration standards for consistent project setup and builds
 user-invocable: false
+mode: knowledge
 ---
 
 # JavaScript Project Structure and Build Standards
 
 ## Enforcement
-
-**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 **Build output parsing**: Use `plan-marshall:build-npm` for npm/npx output analysis — this skill does not provide its own parser.
 

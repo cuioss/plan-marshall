@@ -1,7 +1,9 @@
 ---
 name: plan-marshall-plugin
 description: CUI JavaScript domain manifest for plan-marshall workflow integration
+implements: plan-marshall:extension-api/standards/ext-point-domain-bundle
 user-invocable: false
+mode: manifest
 ---
 
 # Plan Marshall Plugin - CUI JavaScript Domain
@@ -9,8 +11,6 @@ user-invocable: false
 Domain manifest skill providing CUI-specific JavaScript project patterns as an **additive extension** to `pm-dev-frontend`.
 
 ## Enforcement
-
-**Execution mode**: Extension manifest; modify only via Extension API contract.
 
 **Prohibited actions:**
 - Do not modify extension.py without updating this manifest documentation
