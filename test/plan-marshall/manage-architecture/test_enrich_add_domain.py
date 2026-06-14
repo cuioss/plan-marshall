@@ -12,6 +12,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -170,30 +172,21 @@ def test_add_domain_system_rejected():
     """Adding the 'system' domain raises ValueError."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
-        try:
+        with pytest.raises(ValueError, match='system'):
             enrich_add_domain('module-a', 'system', tmpdir)
-            assert False, 'Should have raised ValueError'
-        except ValueError as e:
-            assert 'system' in str(e)
 
 
 def test_add_domain_nonexistent_domain():
     """Non-existent domain raises ValueError."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
-        try:
+        with pytest.raises(ValueError, match='(?i)not found'):
             enrich_add_domain('module-a', 'nonexistent-domain-xyz', tmpdir)
-            assert False, 'Should have raised ValueError'
-        except ValueError as e:
-            assert 'not found' in str(e).lower()
 
 
 def test_add_domain_nonexistent_module():
     """Non-existent module raises ModuleNotFoundInProjectError."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
-        try:
+        with pytest.raises(ModuleNotFoundInProjectError):
             enrich_add_domain('nonexistent-module', 'general-dev', tmpdir)
-            assert False, 'Should have raised ModuleNotFoundInProjectError'
-        except ModuleNotFoundInProjectError:
-            pass

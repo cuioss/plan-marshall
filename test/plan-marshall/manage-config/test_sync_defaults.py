@@ -58,23 +58,18 @@ def _read_marshal(fixture_dir: Path) -> dict:
 
 def test_sync_defaults_errors_when_uninitialized(plan_context):
     """sync-defaults fails cleanly when marshal.json does not exist."""
-    # Arrange / Act
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
-    # Assert
     assert result['status'] == 'error'
     assert 'marshal.json' in result['error'].lower()
 
 
 def test_sync_defaults_empty_marshal_gains_all_defaults(plan_context):
     """An empty marshal.json gains every key present in get_default_config()."""
-    # Arrange
     _write_marshal(plan_context.fixture_dir, {})
 
-    # Act
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
-    # Assert
     assert result['status'] == 'success'
     assert result['added_count'] > 0
     config = _read_marshal(plan_context.fixture_dir)
@@ -87,16 +82,14 @@ def test_sync_defaults_empty_marshal_gains_all_defaults(plan_context):
 
 def test_sync_defaults_preserves_user_set_keys(plan_context):
     """A user-set scalar survives the sync; missing siblings are added."""
-    # Arrange — user pinned pr_merge_strategy to a non-default value
+    # user pinned pr_merge_strategy to a non-default value
     _write_marshal(
         plan_context.fixture_dir,
         {'plan': {'phase-6-finalize': {'pr_merge_strategy': 'merge'}}},
     )
 
-    # Act
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
-    # Assert
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     finalize = config['plan']['phase-6-finalize']
@@ -116,16 +109,15 @@ def test_sync_defaults_preserves_user_set_false(plan_context):
     comparison), so an explicit False survives the True default and is not
     reported as added.
     """
-    # Arrange — user explicitly disabled auto_merge_after_ci (default is True)
+    # user explicitly disabled auto_merge_after_ci (default is True)
     _write_marshal(
         plan_context.fixture_dir,
         {'plan': {'phase-6-finalize': {'auto_merge_after_ci': False}}},
     )
 
-    # Act
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
-    # Assert — present means "key exists"; no value comparison, no re-add
+    # present means "key exists"; no value comparison, no re-add
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     assert config['plan']['phase-6-finalize']['auto_merge_after_ci'] is False
@@ -134,16 +126,14 @@ def test_sync_defaults_preserves_user_set_false(plan_context):
 
 def test_sync_defaults_adds_deeply_nested_missing_key(plan_context):
     """A missing nested sub-key is added when its parent dict already exists."""
-    # Arrange — phase-6-finalize exists but lacks auto_rebase_threshold
+    # phase-6-finalize exists but lacks auto_rebase_threshold
     _write_marshal(
         plan_context.fixture_dir,
         {'plan': {'phase-6-finalize': {'max_iterations': 3}}},
     )
 
-    # Act
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
-    # Assert
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     finalize = config['plan']['phase-6-finalize']
@@ -154,16 +144,15 @@ def test_sync_defaults_adds_deeply_nested_missing_key(plan_context):
 
 def test_sync_defaults_lists_are_atomic(plan_context):
     """A user's list value is kept verbatim even when the default list differs."""
-    # Arrange — user pruned the finalize steps list to a single step
+    # user pruned the finalize steps list to a single step
     _write_marshal(
         plan_context.fixture_dir,
         {'plan': {'phase-6-finalize': {'steps': ['default:commit-push']}}},
     )
 
-    # Act
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
-    # Assert — list preserved verbatim (not merged element-wise)
+    # list preserved verbatim (not merged element-wise)
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     assert config['plan']['phase-6-finalize']['steps'] == ['default:commit-push']
@@ -172,16 +161,14 @@ def test_sync_defaults_lists_are_atomic(plan_context):
 
 def test_sync_defaults_is_idempotent(plan_context):
     """Re-running sync-defaults immediately produces an empty added list."""
-    # Arrange
     _write_marshal(plan_context.fixture_dir, {})
     first = cmd_sync_defaults(Namespace(audit_plan_id=None))
     assert first['status'] == 'success'
     assert first['added_count'] > 0
 
-    # Act — second run
+    # second run
     second = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
-    # Assert
     assert second['status'] == 'success'
     assert second['added'] == []
     assert second['added_count'] == 0
@@ -189,13 +176,10 @@ def test_sync_defaults_is_idempotent(plan_context):
 
 def test_sync_defaults_reports_added_paths_sorted(plan_context):
     """The TOON report enumerates added dotted paths in sorted order."""
-    # Arrange
     _write_marshal(plan_context.fixture_dir, {})
 
-    # Act
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
-    # Assert
     assert result['status'] == 'success'
     assert result['added'] == sorted(result['added'])
     assert result['added_count'] == len(result['added'])

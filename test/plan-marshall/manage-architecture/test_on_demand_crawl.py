@@ -19,6 +19,8 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
@@ -94,11 +96,8 @@ def test_crawl_module_derived_returns_module_payload():
 def test_load_module_derived_missing_raises_data_not_found():
     """load_module_derived raises DataNotFoundError when the module is absent."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        try:
+        with pytest.raises(DataNotFoundError, match='(?i)discover|crawl'):
             load_module_derived('nonexistent', tmpdir)
-            assert False, 'Should have raised DataNotFoundError'
-        except DataNotFoundError as e:
-            assert 'discover' in str(e).lower() or 'crawl' in str(e).lower()
 
 
 def test_discover_does_not_persist_derived_json():

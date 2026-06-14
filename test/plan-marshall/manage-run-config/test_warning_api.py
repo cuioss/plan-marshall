@@ -34,10 +34,8 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.
 
 def test_warning_add_creates_entry(plan_context):
     """Test warning add creates entry in run-configuration.json."""
-    # First init the config
     cmd_init(Namespace(force=False))
 
-    # Add a warning pattern
     result = cmd_warning_add(
         Namespace(
             category='transitive_dependency', pattern='uses commons-logging via spring-core', build_system='maven'
@@ -47,7 +45,6 @@ def test_warning_add_creates_entry(plan_context):
     assert result['status'] == 'success', 'Should return success'
     assert result['action'] == 'added', "Action should be 'added'"
 
-    # Verify in config file
     config_path = plan_context.fixture_dir / 'run-configuration.json'
     config = json.loads(config_path.read_text())
     warnings = config['maven']['acceptable_warnings']['transitive_dependency']
@@ -58,7 +55,6 @@ def test_warning_add_skips_duplicate(plan_context):
     """Test warning add skips duplicate pattern."""
     cmd_init(Namespace(force=False))
 
-    # Add same pattern twice
     cmd_warning_add(Namespace(category='transitive_dependency', pattern='duplicate pattern', build_system='maven'))
     result = cmd_warning_add(
         Namespace(category='transitive_dependency', pattern='duplicate pattern', build_system='maven')
@@ -74,7 +70,6 @@ def test_warning_add_invalid_category(plan_context):
 
     result = cmd_warning_add(Namespace(category='invalid_category', pattern='some pattern', build_system='maven'))
 
-    # cmd_warning_add returns error dict for invalid category
     assert result['status'] == 'error', 'Should reject invalid category'
 
 
@@ -87,7 +82,6 @@ def test_warning_list_all_categories(plan_context):
     """Test warning list returns all categories."""
     cmd_init(Namespace(force=False))
 
-    # Add patterns to different categories
     cmd_warning_add(Namespace(category='transitive_dependency', pattern='pattern1', build_system='maven'))
     cmd_warning_add(Namespace(category='plugin_compatibility', pattern='pattern2', build_system='maven'))
 
@@ -130,7 +124,6 @@ def test_warning_remove_existing(plan_context):
     """Test warning remove removes existing pattern."""
     cmd_init(Namespace(force=False))
 
-    # Add then remove
     cmd_warning_add(Namespace(category='transitive_dependency', pattern='to be removed', build_system='maven'))
     result = cmd_warning_remove(
         Namespace(category='transitive_dependency', pattern='to be removed', build_system='maven')
@@ -139,7 +132,6 @@ def test_warning_remove_existing(plan_context):
     assert result['status'] == 'success'
     assert result['action'] == 'removed', "Action should be 'removed'"
 
-    # Verify removed from config
     config_path = plan_context.fixture_dir / 'run-configuration.json'
     config = json.loads(config_path.read_text())
     warnings = config['maven']['acceptable_warnings']['transitive_dependency']
@@ -171,7 +163,6 @@ def test_warning_add_with_build_system(plan_context):
 
     assert result['status'] == 'success'
 
-    # Verify in npm section, not maven
     config_path = plan_context.fixture_dir / 'run-configuration.json'
     config = json.loads(config_path.read_text())
     npm_warnings = config.get('npm', {}).get('acceptable_warnings', {}).get('transitive_dependency', [])

@@ -39,7 +39,6 @@ def test_clean_temp(plan_context):
     temp_dir = plan_context.fixture_dir / 'temp'
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create test files
     (temp_dir / 'file1.txt').write_text('content1')
     (temp_dir / 'file2.json').write_text('{"key": "value"}')
     subdir = temp_dir / 'subdir'
@@ -51,7 +50,6 @@ def test_clean_temp(plan_context):
     assert 'status: success' in result.stdout
     assert 'temp_files: 3' in result.stdout
 
-    # Verify files were deleted
     remaining = list(temp_dir.iterdir())
     assert len(remaining) == 0, f'Files remain: {remaining}'
 
@@ -63,10 +61,8 @@ def test_clean_logs(plan_context):
     logs_dir = plan_context.fixture_dir / 'logs'
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create log files - one old, one recent
     old_log = logs_dir / 'old.log'
     old_log.write_text('old log content')
-    # Make it old (2 days ago)
     old_time = time.time() - (2 * 86400)
     os.utime(old_log, (old_time, old_time))
 
@@ -78,7 +74,6 @@ def test_clean_logs(plan_context):
     assert 'status: success' in result.stdout
     assert 'logs_deleted: 1' in result.stdout
 
-    # Verify old log deleted, recent kept
     assert not old_log.exists(), 'Old log should be deleted'
     assert recent_log.exists(), 'Recent log should be kept'
 
@@ -94,12 +89,10 @@ def test_clean_archived_plans(plan_context, monkeypatch):
     archived_dir = plan_context.fixture_dir / 'archived-plans'
     archived_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create archived plans - one old, one recent
     old_plan = archived_dir / 'old-plan'
     old_plan.mkdir()
     (old_plan / 'references.json').write_text('{"branch": "main"}')
     (old_plan / 'plan.md').write_text('plan')
-    # Make it old (6 days ago)
     old_time = time.time() - (6 * 86400)
     os.utime(old_plan, (old_time, old_time))
 
@@ -112,7 +105,6 @@ def test_clean_archived_plans(plan_context, monkeypatch):
     assert 'status: success' in result.stdout
     assert 'archived_plans_deleted: 1' in result.stdout
 
-    # Verify old plan deleted, recent kept
     assert not old_plan.exists(), 'Old plan should be deleted'
     assert recent_plan.exists(), 'Recent plan should be kept'
 
@@ -121,12 +113,10 @@ def test_clean_all(plan_context):
     """Clean all directories."""
     setup_marshal_json(plan_context.fixture_dir)
 
-    # Create temp
     temp_dir = plan_context.fixture_dir / 'temp'
     temp_dir.mkdir(parents=True, exist_ok=True)
     (temp_dir / 'temp.txt').write_text('temp')
 
-    # Create old log
     logs_dir = plan_context.fixture_dir / 'logs'
     logs_dir.mkdir(parents=True, exist_ok=True)
     old_log = logs_dir / 'old.log'
@@ -156,21 +146,18 @@ def test_clean_dry_run(plan_context):
     assert 'status: dry_run' in result.stdout
     assert 'temp_files: 1' in result.stdout
 
-    # Verify file was NOT deleted
     assert test_file.exists(), 'File should not be deleted in dry-run mode'
 
 
 def test_status(plan_context):
     """Status command shows directory statistics."""
-    clean_fixture_dirs(plan_context.fixture_dir)  # Ensure clean state
+    clean_fixture_dirs(plan_context.fixture_dir)
     setup_marshal_json(plan_context.fixture_dir)
 
-    # Create temp files
     temp_dir = plan_context.fixture_dir / 'temp'
     temp_dir.mkdir(parents=True, exist_ok=True)
     (temp_dir / 'file1.txt').write_text('12345')
 
-    # Create log
     logs_dir = plan_context.fixture_dir / 'logs'
     logs_dir.mkdir(parents=True, exist_ok=True)
     (logs_dir / 'test.log').write_text('log')
@@ -184,7 +171,7 @@ def test_status(plan_context):
 
 def test_clean_nonexistent(plan_context):
     """Clean on nonexistent directory succeeds with zero counts."""
-    clean_fixture_dirs(plan_context.fixture_dir)  # Ensure clean state
+    clean_fixture_dirs(plan_context.fixture_dir)
     setup_marshal_json(plan_context.fixture_dir)
 
     # The fixture_dir exists but temp/logs/etc don't
@@ -196,7 +183,6 @@ def test_clean_nonexistent(plan_context):
 
 def test_missing_marshal_json(plan_context):
     """Script outputs TOON error and exits 0 when marshal.json is missing."""
-    # Ensure no marshal.json exists (may persist from other tests)
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     if marshal_path.exists():
         marshal_path.unlink()
@@ -209,7 +195,6 @@ def test_missing_marshal_json(plan_context):
 
 def test_missing_retention_config(plan_context):
     """Script outputs TOON error and exits 0 when retention config is missing."""
-    # Create marshal.json without system.retention section
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     marshal_path.write_text(json.dumps({'other': 'config'}))
 

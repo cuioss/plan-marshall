@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Tests for module discovery utilities (via extension_base public API)."""
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
-import sys
+import importlib.util
 import tempfile
 from pathlib import Path
 
@@ -284,52 +282,3 @@ def test_find_readme_none():
 def test_find_readme_nonexistent():
     """Returns None for nonexistent directory."""
     assert find_readme('/nonexistent/path') is None
-
-
-if __name__ == '__main__':
-    import traceback
-
-    tests = [
-        test_readme_patterns_defined,
-        test_exclude_dirs_defined,
-        test_module_paths_creation,
-        test_module_paths_readme_none,
-        test_module_base_creation,
-        test_module_base_to_dict,
-        test_discover_descriptors_empty,
-        test_discover_descriptors_single,
-        test_discover_descriptors_nested,
-        test_discover_descriptors_depth_ordering,
-        test_discover_descriptors_excludes_git,
-        test_discover_descriptors_excludes_node_modules,
-        test_discover_descriptors_excludes_target,
-        test_discover_descriptors_nonexistent,
-        test_build_module_base_root,
-        test_build_module_base_nested,
-        test_build_module_base_deeply_nested,
-        test_build_module_base_with_readme,
-        test_build_module_base_without_readme,
-        test_find_readme_md,
-        test_find_readme_adoc,
-        test_find_readme_txt,
-        test_find_readme_no_extension,
-        test_find_readme_prefers_md,
-        test_find_readme_none,
-        test_find_readme_nonexistent,
-    ]
-
-    passed = 0
-    failed = 0
-
-    for test in tests:
-        try:
-            test()
-            passed += 1
-        except Exception:
-            failed += 1
-            print(f'FAILED: {test.__name__}')
-            traceback.print_exc()
-            print()
-
-    print(f'\nResults: {passed} passed, {failed} failed')
-    sys.exit(0 if failed == 0 else 1)

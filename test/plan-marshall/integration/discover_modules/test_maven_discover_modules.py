@@ -451,27 +451,27 @@ def run_integration_tests() -> int:
                 # Run assertions
                 errors = []
 
-                # Assert no null values (readme and description can be null)
+                # no null values (readme and description can be null)
                 nulls = assert_no_null_values(modules, allowed_null_suffixes=['.readme', '.description'])
                 if nulls:
                     errors.append(f'Null values found at: {", ".join(nulls)}')
 
-                # Assert paths exist
+                # paths exist
                 missing = assert_paths_exist(modules, project_path)
                 if missing:
                     errors.extend(missing)
 
-                # Assert Maven-specific structure
+                # Maven-specific structure
                 maven_errors = assert_maven_module_structure(modules)
                 if maven_errors:
                     errors.extend(maven_errors)
 
-                # Assert multi-module projects have root aggregator (if root pom.xml exists)
+                # multi-module projects have root aggregator (if root pom.xml exists)
                 root_errors = assert_has_root_aggregator(modules, project_path, ['pom.xml'])
                 if root_errors:
                     errors.extend(root_errors)
 
-                # Assert Phase B files-inventory schema: every module's
+                # Phase B files-inventory schema: every module's
                 # post-discovery dict must contain a ``files`` block whose
                 # values are either lists or the elision shape. Only schema
                 # / cardinality checks — exact path lists drift with project

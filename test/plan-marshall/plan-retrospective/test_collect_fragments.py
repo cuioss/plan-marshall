@@ -57,10 +57,8 @@ def _valid_fragment_body(aspect: str) -> str:
 
 class TestInitLiveMode:
     def test_creates_bundle_with_meta_mode_in_plan_dir(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'init',
@@ -70,7 +68,6 @@ class TestInitLiveMode:
             'live',
         )
 
-        # Assert
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'
@@ -85,13 +82,11 @@ class TestInitLiveMode:
         assert parsed['_meta']['mode'] == 'live'
 
     def test_init_is_idempotent_overwriting_existing_bundle(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
         bundle_path.parent.mkdir(parents=True, exist_ok=True)
         bundle_path.write_text('stale: data\n', encoding='utf-8')
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'init',
@@ -101,7 +96,6 @@ class TestInitLiveMode:
             'live',
         )
 
-        # Assert
         assert result.success, result.stderr
         from toon_parser import parse_toon
 
@@ -127,12 +121,10 @@ class TestInitArchivedMode:
     """
 
     def test_honours_archived_plan_path_when_provided(self, tmp_path):
-        # Arrange
         plan_id = 'archived-honored'
         archived_plan_path = tmp_path / '2026-04-27-archived-honored'
         archived_plan_path.mkdir(parents=True, exist_ok=True)
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'init',
@@ -144,7 +136,6 @@ class TestInitArchivedMode:
             str(archived_plan_path),
         )
 
-        # Assert
         assert result.success, result.stderr
         data = result.toon()
         bundle_path = Path(data['bundle_path']).resolve()
@@ -162,7 +153,7 @@ class TestInitArchivedMode:
         assert synthetic_root not in bundle_path.parents
 
     def test_falls_back_to_synthetic_tmp_when_archived_plan_path_missing(self):
-        # Arrange — resolve the synthetic root because resolve_bundle_path now
+        # resolve the synthetic root because resolve_bundle_path now
         # returns canonical absolute paths; on macOS tempfile.gettempdir()
         # is /var/folders/... while .resolve() canonicalizes to
         # /private/var/folders/...
@@ -175,7 +166,6 @@ class TestInitArchivedMode:
 
             shutil.rmtree(synthetic_root)
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'init',
@@ -185,7 +175,6 @@ class TestInitArchivedMode:
             'archived',
         )
 
-        # Assert
         try:
             assert result.success, result.stderr
             data = result.toon()
@@ -207,12 +196,11 @@ class TestInitArchivedMode:
 
 class TestAddHappyPath:
     def test_merges_valid_fragment_under_aspect_key(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         fragment_path = _write_fragment(tmp_path, 'aspect-a.toon', _valid_fragment_body('request-result-alignment'))
 
-        # Act — add no longer accepts --mode; it reads the mode from the bundle.
+        # add no longer accepts --mode; it reads the mode from the bundle.
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -224,7 +212,6 @@ class TestAddHappyPath:
             str(fragment_path),
         )
 
-        # Assert
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'
@@ -246,14 +233,12 @@ class TestAddHappyPath:
 
 class TestAddFaultPaths:
     def test_rejects_malformed_toon_fragment(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         # An empty fragment file is explicitly flagged as malformed by
         # _read_fragment (empty content raises ValueError).
         fragment_path = _write_fragment(tmp_path, 'empty.toon', '')
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -265,20 +250,19 @@ class TestAddFaultPaths:
             str(fragment_path),
         )
 
-        # Assert — script exits non-zero via @safe_main when ValueError raises.
+        # script exits non-zero via @safe_main when ValueError raises.
         assert not result.success
         assert (
             'empty' in (result.stderr + result.stdout).lower() or 'fragment' in (result.stderr + result.stdout).lower()
         )
 
     def test_rejects_duplicate_aspect_without_overwrite(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         fragment_path = _write_fragment(tmp_path, 'aspect.toon', _valid_fragment_body('request-result-alignment'))
         _add_aspect(plan_id, 'request-result-alignment', fragment_path)
 
-        # Act — second add for the same aspect without --overwrite.
+        # second add for the same aspect without --overwrite.
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -290,7 +274,7 @@ class TestAddFaultPaths:
             str(fragment_path),
         )
 
-        # Assert — cmd_add returns a structured error payload with status=error.
+        # cmd_add returns a structured error payload with status=error.
         # The process still exits 0 because the status is reported via output_toon.
         assert result.success, result.stderr
         data = result.toon()
@@ -323,14 +307,13 @@ class TestAddAspectKeyValidation:
     """
 
     def test_rejects_unregistered_aspect_key_with_status_error(self, tmp_path, monkeypatch):
-        # Arrange — an underscored variant of a real section key is exactly the
+        # an underscored variant of a real section key is exactly the
         # drift the guard protects against: the consumer's SECTION_SPEC uses
         # the hyphenated form, so the underscored key is unregistered.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('drift'))
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -342,7 +325,7 @@ class TestAddAspectKeyValidation:
             str(fragment_path),
         )
 
-        # Assert — structured error payload, process still exits 0 (status is
+        # structured error payload, process still exits 0 (status is
         # reported via output_toon, not the exit code).
         assert result.success, result.stderr
         data = result.toon()
@@ -362,12 +345,11 @@ class TestAddAspectKeyValidation:
         assert parsed['_meta'].get('aspects', []) == []
 
     def test_accepts_registered_static_aspect_key(self, tmp_path, monkeypatch):
-        # Arrange — a registered static section key (hyphenated) is accepted.
+        # a registered static section key (hyphenated) is accepted.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('static'))
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -379,7 +361,6 @@ class TestAddAspectKeyValidation:
             str(fragment_path),
         )
 
-        # Assert
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'
@@ -387,7 +368,7 @@ class TestAddAspectKeyValidation:
         assert data['aspects'] == ['request-result-alignment']
 
     def test_accepts_registered_domain_aspect_key(self, tmp_path, monkeypatch):
-        # Arrange — a domain-contributed aspect (e.g. wrapper-tangle from
+        # a domain-contributed aspect (e.g. wrapper-tangle from
         # pm-plugin-development) is registered through provides_retrospective_aspects
         # rather than the static SECTION_SPEC, and must also be accepted. The
         # exact domain-aspect set is discovered at add-time, so assert the guard
@@ -406,7 +387,6 @@ class TestAddAspectKeyValidation:
         _init_bundle(plan_id)
         fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('domain'))
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -418,7 +398,6 @@ class TestAddAspectKeyValidation:
             str(fragment_path),
         )
 
-        # Assert
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'
@@ -433,7 +412,6 @@ class TestAddAspectKeyValidation:
 
 class TestAddOverwrite:
     def test_overwrite_replaces_aspect_value_and_flags_overwrote_true(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         original = _write_fragment(
@@ -449,7 +427,6 @@ class TestAddOverwrite:
             'status: success\naspect: request-result-alignment\nmarker: replacement\n',
         )
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -462,7 +439,6 @@ class TestAddOverwrite:
             '--overwrite',
         )
 
-        # Assert
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'
@@ -489,7 +465,7 @@ class TestAddFragmentPathResolution:
     """
 
     def test_relative_fragment_file_resolves_against_live_plan_dir(self, tmp_path, monkeypatch):
-        # Arrange — write the fragment under <plan_dir>/work/ (the path
+        # write the fragment under <plan_dir>/work/ (the path
         # SKILL.md Step 3 documents) and pass only the relative path.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
@@ -499,7 +475,7 @@ class TestAddFragmentPathResolution:
             _valid_fragment_body('request-result-alignment'), encoding='utf-8'
         )
 
-        # Act — relative path; cwd is the test runner root, NOT the plan dir.
+        # relative path; cwd is the test runner root, NOT the plan dir.
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -511,7 +487,7 @@ class TestAddFragmentPathResolution:
             'work/fragment-alpha.toon',
         )
 
-        # Assert — the script must resolve the relative path against plan_dir
+        # the script must resolve the relative path against plan_dir
         # rather than cwd, so the fragment is found and merged.
         assert result.success, result.stderr
         bundle_content = (plan_dir / 'work' / 'retro-fragments.toon').read_text(encoding='utf-8')
@@ -519,12 +495,11 @@ class TestAddFragmentPathResolution:
         assert 'status: success' in bundle_content
 
     def test_absolute_fragment_file_still_resolves_unchanged(self, tmp_path, monkeypatch):
-        # Arrange — fragment outside the plan dir; pass its absolute path.
+        # fragment outside the plan dir; pass its absolute path.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         external = _write_fragment(tmp_path, 'external.toon', _valid_fragment_body('plan-efficiency'))
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -536,7 +511,7 @@ class TestAddFragmentPathResolution:
             str(external),
         )
 
-        # Assert — absolute paths are passed through unchanged, so a fragment
+        # absolute paths are passed through unchanged, so a fragment
         # outside the plan dir still resolves correctly.
         assert result.success, result.stderr
         bundle_content = (plan_dir / 'work' / 'retro-fragments.toon').read_text(encoding='utf-8')
@@ -558,7 +533,7 @@ class TestArchivedPathSubcommandAgreement:
     """
 
     def test_all_three_subcommands_use_archived_plan_path(self, tmp_path):
-        # Arrange — resolve both sides for cross-platform stability:
+        # resolve both sides for cross-platform stability:
         # macOS /var → /private/var symlink, Linux pytest tmp_path under /tmp.
         plan_id = 'archived-agreement'
         archived_plan_path = (tmp_path / 'archive-copy').resolve()
@@ -566,7 +541,7 @@ class TestArchivedPathSubcommandAgreement:
         fragment_path = _write_fragment(tmp_path, 'aspect.toon', _valid_fragment_body('request-result-alignment'))
         expected_bundle = archived_plan_path / 'work' / 'retro-fragments.toon'
 
-        # Act 1: init in archived mode under the caller-supplied root.
+        # init in archived mode under the caller-supplied root.
         init_result = run_script(
             SCRIPT_PATH,
             'init',
@@ -580,7 +555,7 @@ class TestArchivedPathSubcommandAgreement:
         assert init_result.success, init_result.stderr
         assert Path(init_result.toon()['bundle_path']).resolve() == expected_bundle
 
-        # Act 2: add — must read the same bundle init wrote.
+        # add — must read the same bundle init wrote.
         add_result = run_script(
             SCRIPT_PATH,
             'add',
@@ -596,7 +571,7 @@ class TestArchivedPathSubcommandAgreement:
         assert add_result.success, add_result.stderr
         assert Path(add_result.toon()['bundle_path']).resolve() == expected_bundle
 
-        # Act 3: finalize — must agree on the same bundle root.
+        # finalize — must agree on the same bundle root.
         finalize_result = run_script(
             SCRIPT_PATH,
             'finalize',
@@ -622,7 +597,7 @@ class TestArchivedPathSubcommandAgreement:
 
 class TestFinalize:
     def test_returns_bundle_path_and_aspect_list(self, tmp_path, monkeypatch):
-        # Arrange — bundle with two aspects, added in reverse-alpha order so
+        # bundle with two aspects, added in reverse-alpha order so
         # we can assert finalize returns the sorted list.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
@@ -631,7 +606,7 @@ class TestFinalize:
         _add_aspect(plan_id, 'log-analysis', frag_b)
         _add_aspect(plan_id, 'artifact-consistency', frag_a)
 
-        # Act — finalize no longer accepts --mode.
+        # finalize no longer accepts --mode.
         result = run_script(
             SCRIPT_PATH,
             'finalize',
@@ -639,7 +614,6 @@ class TestFinalize:
             plan_id,
         )
 
-        # Assert
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'
@@ -653,11 +627,9 @@ class TestFinalize:
         assert data['aspects'] == ['artifact-consistency', 'log-analysis']
 
     def test_finalize_on_empty_bundle_returns_empty_aspect_list(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'finalize',
@@ -665,7 +637,7 @@ class TestFinalize:
             plan_id,
         )
 
-        # Assert — _meta is filtered out of the aspect list.
+        # _meta is filtered out of the aspect list.
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'
@@ -697,7 +669,7 @@ class TestAuthoritativeAspectInventory:
     """
 
     def test_embedded_colon_block_scalar_does_not_inflate_aspect_count(self, tmp_path, monkeypatch):
-        # Arrange — register one aspect through the real init/add flow (so the
+        # register one aspect through the real init/add flow (so the
         # _meta.aspects block is serialized correctly), then inject the exact
         # leak trigger onto the bundle on disk: a flush-left continuation line
         # containing a colon, as a hand-authored ``summary: |`` block scalar
@@ -724,7 +696,6 @@ class TestAuthoritativeAspectInventory:
         phantom_keys = [k for k in parsed if not k.startswith('_') and k != 'lessons-proposal']
         assert phantom_keys, 'expected the embedded-colon block scalar to leak a phantom sibling key'
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'finalize',
@@ -732,7 +703,7 @@ class TestAuthoritativeAspectInventory:
             plan_id,
         )
 
-        # Assert — exactly the one registered aspect is reported, never the
+        # exactly the one registered aspect is reported, never the
         # inflated phantom count.
         assert result.success, result.stderr
         data = result.toon()
@@ -740,13 +711,12 @@ class TestAuthoritativeAspectInventory:
         assert int(data['aspect_count']) == 1
 
     def test_add_registers_aspect_in_authoritative_inventory(self, tmp_path, monkeypatch):
-        # Arrange — a clean fragment added via the normal flow records the
+        # a clean fragment added via the normal flow records the
         # aspect in _meta.aspects, and the add return reports from that list.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('lessons-proposal'))
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -758,7 +728,7 @@ class TestAuthoritativeAspectInventory:
             str(fragment_path),
         )
 
-        # Assert — the reported aspects come from _meta.aspects.
+        # the reported aspects come from _meta.aspects.
         assert result.success, result.stderr
         data = result.toon()
         assert data['aspects'] == ['lessons-proposal']
@@ -770,7 +740,7 @@ class TestAuthoritativeAspectInventory:
         assert parsed['_meta']['aspects'] == ['lessons-proposal']
 
     def test_overwrite_readd_does_not_duplicate_aspect_in_inventory(self, tmp_path, monkeypatch):
-        # Arrange — register an aspect, then re-add it with --overwrite.
+        # register an aspect, then re-add it with --overwrite.
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         original = _write_fragment(
@@ -785,7 +755,7 @@ class TestAuthoritativeAspectInventory:
             'status: success\naspect: log_analysis\nmarker: replacement\n',
         )
 
-        # Act — re-add the same aspect with --overwrite.
+        # re-add the same aspect with --overwrite.
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -798,7 +768,7 @@ class TestAuthoritativeAspectInventory:
             '--overwrite',
         )
 
-        # Assert — dedup invariant: the aspect appears exactly once.
+        # dedup invariant: the aspect appears exactly once.
         assert result.success, result.stderr
         data = result.toon()
         assert data['aspects'] == ['log-analysis']
@@ -863,10 +833,8 @@ class TestResolveBundlePath:
     """
 
     def test_rejects_empty_plan_id(self):
-        # Arrange
         module = _load_module()
 
-        # Act / Assert
         try:
             module.resolve_bundle_path('live', '')
         except ValueError as exc:
@@ -875,10 +843,8 @@ class TestResolveBundlePath:
             raise AssertionError('Expected ValueError for empty plan_id')
 
     def test_rejects_unknown_mode(self):
-        # Arrange
         module = _load_module()
 
-        # Act / Assert
         try:
             module.resolve_bundle_path('bogus', 'some-plan')
         except ValueError as exc:
@@ -887,36 +853,30 @@ class TestResolveBundlePath:
             raise AssertionError('Expected ValueError for unknown mode')
 
     def test_live_mode_returns_plan_work_path(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
 
-        # Act
         path = module.resolve_bundle_path('live', plan_id)
 
-        # Assert
         assert path == plan_dir / 'work' / 'retro-fragments.toon'
 
     def test_archived_mode_uses_archived_plan_path_when_provided(self, tmp_path):
-        # Arrange — resolve archived_plan_path to match resolve_bundle_path's
+        # resolve archived_plan_path to match resolve_bundle_path's
         # canonical-absolute return contract (macOS /var → /private/var).
         module = _load_module()
         archived_plan_path = (tmp_path / '2026-04-27-plan').resolve()
 
-        # Act
         path = module.resolve_bundle_path('archived', 'some-plan', str(archived_plan_path))
 
-        # Assert — bundle now lives under the caller-supplied archive root.
+        # bundle now lives under the caller-supplied archive root.
         assert path == archived_plan_path / 'work' / 'retro-fragments.toon'
 
     def test_archived_mode_falls_back_to_synthetic_tmp_when_no_archived_path(self):
-        # Arrange
         module = _load_module()
 
-        # Act
         path = module.resolve_bundle_path('archived', 'some-plan')
 
-        # Assert — synthetic per-plan dir under the OS tmpdir, with a
+        # synthetic per-plan dir under the OS tmpdir, with a
         # ``plan-<plan_id>`` segment to avoid collisions. Resolved because
         # resolve_bundle_path now returns canonical absolute paths (macOS
         # /var → /private/var symlink resolution).
@@ -932,11 +892,9 @@ class TestReadBundle:
     """Direct unit tests for _read_bundle error branches."""
 
     def test_missing_file_raises_value_error(self, tmp_path):
-        # Arrange
         module = _load_module()
         bundle_path = tmp_path / 'absent.toon'
 
-        # Act / Assert
         try:
             module._read_bundle(bundle_path)
         except ValueError as exc:
@@ -945,38 +903,31 @@ class TestReadBundle:
             raise AssertionError('Expected ValueError for missing bundle')
 
     def test_empty_file_returns_empty_dict(self, tmp_path):
-        # Arrange
         module = _load_module()
         bundle_path = tmp_path / 'empty.toon'
         bundle_path.write_text('', encoding='utf-8')
 
-        # Act
         result = module._read_bundle(bundle_path)
 
-        # Assert
         assert result == {}
 
     def test_whitespace_only_file_returns_empty_dict(self, tmp_path):
-        # Arrange
         module = _load_module()
         bundle_path = tmp_path / 'ws.toon'
         bundle_path.write_text('   \n  \n', encoding='utf-8')
 
-        # Act
         result = module._read_bundle(bundle_path)
 
-        # Assert
         assert result == {}
 
     def test_malformed_toon_raises_value_error(self, tmp_path):
-        # Arrange
         module = _load_module()
         bundle_path = tmp_path / 'bad.toon'
         # Contents that break the parser: inconsistent indentation after a
         # colon marker.
         bundle_path.write_text('foo:\n bar: value\n baz\n', encoding='utf-8')
 
-        # Act / Assert — either parse raises, or bundle is non-dict; both paths exit via ValueError.
+        # either parse raises, or bundle is non-dict; both paths exit via ValueError.
         try:
             module._read_bundle(bundle_path)
         except ValueError as exc:
@@ -988,14 +939,12 @@ class TestReadBundle:
             pass
 
     def test_non_dict_top_level_raises_value_error(self, tmp_path):
-        # Arrange
         module = _load_module()
         bundle_path = tmp_path / 'list.toon'
         # A top-level uniform array — parse_toon returns a list for this,
         # which _read_bundle should reject.
         bundle_path.write_text('items[1]:\n  - one\n', encoding='utf-8')
 
-        # Act / Assert
         # NOTE: depending on parser behavior this may succeed as {items:[]}
         # (the parser wraps arrays under the key). That's fine — both paths
         # are valid. We only assert that the function does not crash.
@@ -1010,10 +959,8 @@ class TestReadFragment:
     """Direct unit tests for _read_fragment error branches."""
 
     def test_missing_file_raises_value_error(self, tmp_path):
-        # Arrange
         module = _load_module()
 
-        # Act / Assert
         try:
             module._read_fragment(tmp_path / 'nope.toon')
         except ValueError as exc:
@@ -1022,12 +969,10 @@ class TestReadFragment:
             raise AssertionError('Expected ValueError for missing fragment')
 
     def test_empty_file_raises_value_error(self, tmp_path):
-        # Arrange
         module = _load_module()
         fragment = tmp_path / 'empty.toon'
         fragment.write_text('', encoding='utf-8')
 
-        # Act / Assert
         try:
             module._read_fragment(fragment)
         except ValueError as exc:
@@ -1036,15 +981,12 @@ class TestReadFragment:
             raise AssertionError('Expected ValueError for empty fragment')
 
     def test_valid_fragment_returns_dict(self, tmp_path):
-        # Arrange
         module = _load_module()
         fragment = tmp_path / 'ok.toon'
         fragment.write_text('status: success\naspect: demo\n', encoding='utf-8')
 
-        # Act
         result = module._read_fragment(fragment)
 
-        # Assert
         assert isinstance(result, dict)
         assert result['status'] == 'success'
         assert result['aspect'] == 'demo'
@@ -1054,7 +996,6 @@ class TestCmdInit:
     """Direct unit tests for cmd_init."""
 
     def test_creates_bundle_with_meta_mode_in_live_mode(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         args = _ArgsNS(
@@ -1063,10 +1004,8 @@ class TestCmdInit:
             archived_plan_path=None,
         )
 
-        # Act
         result = module.cmd_init(args)
 
-        # Assert
         assert result['status'] == 'success'
         assert result['operation'] == 'init'
         expected_path = plan_dir / 'work' / 'retro-fragments.toon'
@@ -1079,7 +1018,7 @@ class TestCmdInit:
         assert parsed == {'_meta': {'mode': 'live'}}
 
     def test_creates_parent_directory_when_missing(self, tmp_path, monkeypatch):
-        # Arrange — use a plan_id whose work dir does not yet exist.
+        # use a plan_id whose work dir does not yet exist.
         base = tmp_path / 'base'
         base.mkdir()
         plan_id = 'fresh-plan'
@@ -1088,10 +1027,8 @@ class TestCmdInit:
         module = _load_module()
         args = _ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None)
 
-        # Act
         result = module.cmd_init(args)
 
-        # Assert
         bundle_path = Path(result['bundle_path'])
         assert bundle_path.parent.exists()
         assert bundle_path.exists()
@@ -1112,7 +1049,6 @@ class TestCmdAdd:
         )
 
     def test_missing_aspect_raises_value_error(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         # init bundle so _read_bundle finds it.
@@ -1122,7 +1058,6 @@ class TestCmdAdd:
         # aspect is empty string — triggers the guard before _locate_bundle.
         args = self._args(plan_id, aspect='', fragment=fragment)
 
-        # Act / Assert
         try:
             module.cmd_add(args)
         except ValueError as exc:
@@ -1131,24 +1066,20 @@ class TestCmdAdd:
             raise AssertionError('Expected ValueError for empty aspect')
 
     def test_merges_fragment_and_reports_overwrote_false(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
         fragment = tmp_path / 'f.toon'
         fragment.write_text(_valid_fragment_body('request-result-alignment'), encoding='utf-8')
 
-        # Act
         result = module.cmd_add(self._args(plan_id, 'request-result-alignment', fragment))
 
-        # Assert
         assert result['status'] == 'success'
         assert result['overwrote'] is False
         # _meta is filtered out of the aspects list.
         assert result['aspects'] == ['request-result-alignment']
 
     def test_duplicate_without_overwrite_returns_error_status(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
@@ -1156,16 +1087,14 @@ class TestCmdAdd:
         fragment.write_text(_valid_fragment_body('request-result-alignment'), encoding='utf-8')
         module.cmd_add(self._args(plan_id, 'request-result-alignment', fragment))
 
-        # Act
         result = module.cmd_add(self._args(plan_id, 'request-result-alignment', fragment))
 
-        # Assert — duplicate add returns structured error, does not raise.
+        # duplicate add returns structured error, does not raise.
         assert result['status'] == 'error'
         assert result['operation'] == 'add'
         assert 'already registered' in result['error']
 
     def test_overwrite_replaces_existing_and_flags_overwrote_true(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
@@ -1175,10 +1104,8 @@ class TestCmdAdd:
         replacement = tmp_path / 'g.toon'
         replacement.write_text('status: success\naspect: x\nmarker: replacement\n', encoding='utf-8')
 
-        # Act
         result = module.cmd_add(self._args(plan_id, 'request-result-alignment', replacement, overwrite=True))
 
-        # Assert
         assert result['status'] == 'success'
         assert result['overwrote'] is True
 
@@ -1190,7 +1117,7 @@ class TestCmdAdd:
         must surface the problem via ValueError rather than silently falling
         back.
         """
-        # Arrange — set up a live plan, then write an empty bundle (no _meta).
+        # set up a live plan, then write an empty bundle (no _meta).
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
@@ -1199,7 +1126,7 @@ class TestCmdAdd:
         fragment = tmp_path / 'f.toon'
         fragment.write_text(_valid_fragment_body('request-result-alignment'), encoding='utf-8')
 
-        # Act / Assert — a REGISTERED aspect key is used so the aspect-key
+        # a REGISTERED aspect key is used so the aspect-key
         # validation guard (which runs first) passes and the _meta.mode
         # rejection path is the one exercised here.
         try:
@@ -1223,13 +1150,12 @@ class TestCmdAdd:
         Underscore-prefixed keys are reserved for internal metadata
         (e.g. ``_meta``) and would otherwise shadow mode resolution.
         """
-        # Arrange — bundle does not need to exist; the guard fires earlier.
+        # bundle does not need to exist; the guard fires earlier.
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         fragment = tmp_path / 'f.toon'
         fragment.write_text(_valid_fragment_body('ignored'), encoding='utf-8')
 
-        # Act / Assert
         try:
             module.cmd_add(
                 _ArgsNS(
@@ -1255,17 +1181,16 @@ class TestCmdAdd:
         structured ``status: error`` payload (it does NOT raise) and the bundle
         is left untouched.
         """
-        # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
         fragment = tmp_path / 'f.toon'
         fragment.write_text(_valid_fragment_body('drift'), encoding='utf-8')
 
-        # Act — an unregistered key (underscored variant of a real section).
+        # an unregistered key (underscored variant of a real section).
         result = module.cmd_add(self._args(plan_id, 'request_result_alignment', fragment))
 
-        # Assert — structured error, names the offending key and the valid set.
+        # structured error, names the offending key and the valid set.
         assert result['status'] == 'error'
         assert result['operation'] == 'add'
         assert result['aspect'] == 'request_result_alignment'
@@ -1275,17 +1200,14 @@ class TestCmdAdd:
 
     def test_accepts_registered_static_aspect(self, tmp_path, monkeypatch):
         """A registered static section key (hyphenated) passes the guard."""
-        # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
         fragment = tmp_path / 'f.toon'
         fragment.write_text(_valid_fragment_body('static'), encoding='utf-8')
 
-        # Act
         result = module.cmd_add(self._args(plan_id, 'lessons-proposal', fragment))
 
-        # Assert
         assert result['status'] == 'success'
         assert result['aspects'] == ['lessons-proposal']
 
@@ -1294,7 +1216,6 @@ class TestCmdFinalize:
     """Direct unit tests for cmd_finalize."""
 
     def test_returns_sorted_aspect_list_and_path(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
@@ -1321,7 +1242,6 @@ class TestCmdFinalize:
             )
         )
 
-        # Act
         result = module.cmd_finalize(
             _ArgsNS(
                 plan_id=plan_id,
@@ -1329,7 +1249,7 @@ class TestCmdFinalize:
             )
         )
 
-        # Assert — _meta is filtered out of the aspects list.
+        # _meta is filtered out of the aspects list.
         assert result['status'] == 'success'
         assert result['operation'] == 'finalize'
         assert result['aspect_count'] == 2
@@ -1337,12 +1257,10 @@ class TestCmdFinalize:
         assert Path(result['bundle_path']) == plan_dir / 'work' / 'retro-fragments.toon'
 
     def test_empty_bundle_returns_empty_aspect_list(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
 
-        # Act
         result = module.cmd_finalize(
             _ArgsNS(
                 plan_id=plan_id,
@@ -1350,7 +1268,7 @@ class TestCmdFinalize:
             )
         )
 
-        # Assert — only _meta is present, which is filtered out.
+        # only _meta is present, which is filtered out.
         assert result['aspect_count'] == 0
         assert result['aspects'] == []
 
@@ -1360,14 +1278,13 @@ class TestCmdFinalize:
         Finalize performs the same sanity guard as add; without the persisted
         mode, the bundle cannot be attributed to a resolution mode.
         """
-        # Arrange — set up a live plan, then write an empty bundle (no _meta).
+        # set up a live plan, then write an empty bundle (no _meta).
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
         bundle_path.parent.mkdir(parents=True, exist_ok=True)
         bundle_path.write_text('', encoding='utf-8')
 
-        # Act / Assert
         try:
             module.cmd_finalize(
                 _ArgsNS(
@@ -1395,7 +1312,6 @@ class TestDefensiveBranches:
     """
 
     def test_read_bundle_wraps_parse_exception(self, tmp_path, monkeypatch):
-        # Arrange
         module = _load_module()
         bundle_path = tmp_path / 'b.toon'
         bundle_path.write_text('anything\n', encoding='utf-8')
@@ -1405,7 +1321,6 @@ class TestDefensiveBranches:
 
         monkeypatch.setattr(module, 'parse_toon', _boom)
 
-        # Act / Assert
         try:
             module._read_bundle(bundle_path)
         except ValueError as exc:
@@ -1415,14 +1330,12 @@ class TestDefensiveBranches:
             raise AssertionError('Expected ValueError wrapping parse failure')
 
     def test_read_bundle_rejects_non_dict_top_level(self, tmp_path, monkeypatch):
-        # Arrange
         module = _load_module()
         bundle_path = tmp_path / 'b.toon'
         bundle_path.write_text('anything\n', encoding='utf-8')
 
         monkeypatch.setattr(module, 'parse_toon', lambda _c: ['a', 'b', 'c'])
 
-        # Act / Assert
         try:
             module._read_bundle(bundle_path)
         except ValueError as exc:
@@ -1432,7 +1345,6 @@ class TestDefensiveBranches:
             raise AssertionError('Expected ValueError for non-dict top level')
 
     def test_read_fragment_wraps_parse_exception(self, tmp_path, monkeypatch):
-        # Arrange
         module = _load_module()
         fragment = tmp_path / 'f.toon'
         fragment.write_text('anything\n', encoding='utf-8')
@@ -1442,7 +1354,6 @@ class TestDefensiveBranches:
 
         monkeypatch.setattr(module, 'parse_toon', _boom)
 
-        # Act / Assert
         try:
             module._read_fragment(fragment)
         except ValueError as exc:
@@ -1466,7 +1377,6 @@ class TestMainEntryPoint:
     """
 
     def test_main_init_live(self, tmp_path, monkeypatch, capsys):
-        # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         monkeypatch.setattr(
@@ -1474,20 +1384,17 @@ class TestMainEntryPoint:
             ['collect-fragments.py', 'init', '--plan-id', plan_id, '--mode', 'live'],
         )
 
-        # Act
         try:
             module.main()
         except SystemExit as exc:
             assert exc.code == 0, f'main() exited non-zero: {exc.code}'
 
-        # Assert
         captured = capsys.readouterr()
         assert 'status: success' in captured.out
         assert 'operation: init' in captured.out
         assert (plan_dir / 'work' / 'retro-fragments.toon').exists()
 
     def test_main_add_then_finalize(self, tmp_path, monkeypatch, capsys):
-        # Arrange
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         fragment = tmp_path / 'f.toon'
@@ -1536,7 +1443,7 @@ class TestMainEntryPoint:
             pass
         captured = capsys.readouterr()
 
-        # Assert — finalize output carries the aspect list.
+        # finalize output carries the aspect list.
         assert 'status: success' in captured.out
         assert 'operation: finalize' in captured.out
         assert 'aspect_count: 1' in captured.out

@@ -10,9 +10,6 @@ Tests functions:
 """
 
 import argparse
-import os
-import subprocess
-import tempfile
 from datetime import UTC, datetime, timedelta
 
 import ci_base
@@ -32,6 +29,7 @@ from ci_base import (
     compute_elapsed,
     compute_total_elapsed,
     delete_consumed_body,
+    enrich_failing_checks_with_logs,
     get_body_path,
     get_default_cwd,
     get_known_subcommands,
@@ -1441,9 +1439,6 @@ def test_add_error_style_arg_registers_default_generic():
 # isolated plan dir so no live CI access is required.
 
 
-from ci_base import enrich_failing_checks_with_logs  # noqa: E402
-
-
 def _failing_check(name: str, run_id: str, *, job_name: str | None = None) -> dict:
     """Build a minimal failing-check entry for the enrich hook."""
     return {
@@ -1689,7 +1684,3 @@ def test_enrich_passes_empty_job_id_when_absent(plan_context):
     )
 
     assert captured == [('322', '')]
-
-
-# Silence unused-import warnings caused by the fixtures above.
-_ = (os, tempfile, subprocess)

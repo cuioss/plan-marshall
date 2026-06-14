@@ -107,11 +107,9 @@ def test_set_round_trip(plan_context):
     assert set_data.get('field') == 'build_queue_upper_limit'
     assert set_data.get('value') == 1800
 
-    # Verify file contents on disk under the build.queue block.
     config = json.loads((plan_dir / 'run-configuration.json').read_text())
     assert config['build']['queue']['upper_limit_seconds'] == 1800
 
-    # Round-trip via get.
     get_result = run_script(SCRIPT_PATH, 'build-queue-limit', 'get')
     assert get_result.success, f'get should succeed: {get_result.stderr}'
     assert get_result.toon().get('value') == 1800

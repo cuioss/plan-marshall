@@ -9,14 +9,8 @@ from pathlib import Path
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import get_script_path, run_script
 
-# Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-npm', 'js_coverage.py')
 FIXTURES_DIR = Path(__file__).parent / 'coverage'
-
-
-# =============================================================================
-# Main help tests
-# =============================================================================
 
 
 def test_script_exists():
@@ -36,11 +30,6 @@ def test_analyze_help():
     result = run_script(SCRIPT_PATH, 'analyze', '--help')
     combined = result.stdout + result.stderr
     assert 'usage' in combined.lower(), 'Analyze help not shown'
-
-
-# =============================================================================
-# Analyze subcommand tests
-# =============================================================================
 
 
 def test_analyze_json_coverage():
@@ -116,10 +105,4 @@ def test_analyze_empty_coverage():
     """Test handling empty coverage report."""
     result = run_script(SCRIPT_PATH, 'analyze', '--report', str(FIXTURES_DIR / 'empty-coverage.json'))
     data = result.toon()
-    # Should handle empty gracefully
     assert data['status'] in ['success', 'error'], 'Handled empty coverage'
-
-
-# =============================================================================
-# Main
-# =============================================================================

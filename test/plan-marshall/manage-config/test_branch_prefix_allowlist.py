@@ -132,14 +132,12 @@ def _prefix_is_covered(prefix: str, triggers: list[str]) -> bool:
 
 def test_every_working_prefix_is_ci_push_triggered():
     """Every project.working_prefixes entry must be covered by a workflow push trigger."""
-    # Arrange
     prefixes = _working_prefixes()
     triggers = _parse_push_branches()
 
-    # Act
     uncovered = [p for p in prefixes if not _prefix_is_covered(p, triggers)]
 
-    # Assert — subset coverage: a working prefix with no CI trigger makes its
+    # subset coverage: a working prefix with no CI trigger makes its
     # PRs structurally unmergeable (no verify / verify check). See lesson
     # 2026-05-21-18-002 / CLAUDE.md Branch Naming.
     assert not uncovered, (
@@ -155,10 +153,9 @@ def test_every_working_prefix_is_ci_push_triggered():
 
 def test_workflow_push_allowlist_excludes_docs_prefix():
     """The retired 'docs/' prefix must NOT appear in the workflow push allowlist."""
-    # Arrange / Act
     actual = _parse_push_branches()
 
-    # Assert — 'docs/' is explicitly retired and must never be re-admitted.
+    # 'docs/' is explicitly retired and must never be re-admitted.
     # Anchor the match so legitimate prefixes that merely share the 'docs'
     # substring (e.g. 'documents/*') are not false-positives.
     assert not any(re.match(r'^docs(/|\*|$)', entry) for entry in actual), (
@@ -169,10 +166,9 @@ def test_workflow_push_allowlist_excludes_docs_prefix():
 
 def test_docs_prefix_absent_from_working_prefixes():
     """The retired 'docs/' prefix must NOT appear in project.working_prefixes."""
-    # Arrange / Act
     prefixes = _working_prefixes()
 
-    # Assert — 'docs/' is explicitly retired from the working-prefix set.
+    # 'docs/' is explicitly retired from the working-prefix set.
     assert 'docs/' not in prefixes, (
         "'docs/' is explicitly retired and must be absent from "
         f'project.working_prefixes; found: {prefixes}'

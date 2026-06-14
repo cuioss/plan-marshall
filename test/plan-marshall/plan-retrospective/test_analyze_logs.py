@@ -258,10 +258,10 @@ class TestRegression:
         missing_path = tmp_path / 'definitely-not-a-real-log.log'
         assert not missing_path.exists()
 
-        # Act: call read_log directly so we get clean stderr capture.
+        # call read_log directly so we get clean stderr capture.
         result = read_log(missing_path)
 
-        # Assert: empty list for missing file is still the contract, but
+        # empty list for missing file is still the contract, but
         # the stderr WARN line MUST be present so operators notice.
         assert result == []
         captured = capsys.readouterr()
@@ -590,13 +590,11 @@ def _write_folded_log(logs_dir: Path, name: str, lines: list[str]) -> None:
 
 class TestAnalyzeFoldedGlobalLogs:
     def test_no_logs_dir_yields_all_zero_signals(self, tmp_path):
-        # Arrange — logs_dir does not exist
+        # logs_dir does not exist
         logs_dir = tmp_path / 'logs'
 
-        # Act
         result = _analyze_logs.analyze_folded_global_logs(logs_dir)
 
-        # Assert
         assert result['logs_present'] is False
         assert result['folded_log_files'] == 0
         assert result['total_lines'] == 0
@@ -605,7 +603,7 @@ class TestAnalyzeFoldedGlobalLogs:
         assert result['fixture_leak_count'] == 0
 
     def test_only_canonical_logs_no_folded_globals_yields_no_signals(self, tmp_path):
-        # Arrange — canonical per-plan logs only; no date-stamped folded copies
+        # canonical per-plan logs only; no date-stamped folded copies
         logs_dir = tmp_path / 'logs'
         _write_folded_log(
             logs_dir,
@@ -613,16 +611,15 @@ class TestAnalyzeFoldedGlobalLogs:
             [_line('2026-06-01T10:00:00Z', 'ERROR', '[STATUS] (x) boom')],
         )
 
-        # Act
         result = _analyze_logs.analyze_folded_global_logs(logs_dir)
 
-        # Assert — work.log is NOT a folded ``work-*.log`` glob match
+        # work.log is NOT a folded ``work-*.log`` glob match
         assert result['logs_present'] is False
         assert result['folded_log_files'] == 0
         assert result['error_count'] == 0
 
     def test_well_formed_lines_counted_and_error_flagged(self, tmp_path):
-        # Arrange — one INFO + one ERROR line in a folded global log
+        # one INFO + one ERROR line in a folded global log
         logs_dir = tmp_path / 'logs'
         _write_folded_log(
             logs_dir,
@@ -633,17 +630,16 @@ class TestAnalyzeFoldedGlobalLogs:
             ],
         )
 
-        # Act
         result = _analyze_logs.analyze_folded_global_logs(logs_dir)
 
-        # Assert — both parsed; the ERROR line surfaces in error_count
+        # both parsed; the ERROR line surfaces in error_count
         assert result['logs_present'] is True
         assert result['folded_log_files'] == 1
         assert result['total_lines'] == 2
         assert result['error_count'] == 1
 
     def test_info_line_with_failure_marker_flagged(self, tmp_path):
-        # Arrange — INFO level but the body carries a fail marker (status: error)
+        # INFO level but the body carries a fail marker (status: error)
         logs_dir = tmp_path / 'logs'
         _write_folded_log(
             logs_dir,
@@ -651,14 +647,12 @@ class TestAnalyzeFoldedGlobalLogs:
             [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:x:x run -> status: error exit_code: 1')],
         )
 
-        # Act
         result = _analyze_logs.analyze_folded_global_logs(logs_dir)
 
-        # Assert
         assert result['error_count'] == 1
 
     def test_slow_call_flagged_at_ceiling(self, tmp_path):
-        # Arrange — a call at the slow ceiling (30.0s) and a fast call
+        # a call at the slow ceiling (30.0s) and a fast call
         logs_dir = tmp_path / 'logs'
         _write_folded_log(
             logs_dir,
@@ -669,14 +663,13 @@ class TestAnalyzeFoldedGlobalLogs:
             ],
         )
 
-        # Act
         result = _analyze_logs.analyze_folded_global_logs(logs_dir)
 
-        # Assert — only the >=ceiling call is slow
+        # only the >=ceiling call is slow
         assert result['slow_call_count'] == 1
 
     def test_fixture_leak_signature_flagged(self, tmp_path):
-        # Arrange — a synthetic test-fixture id leaked into the folded log
+        # a synthetic test-fixture id leaked into the folded log
         logs_dir = tmp_path / 'logs'
         _write_folded_log(
             logs_dir,
@@ -684,15 +677,13 @@ class TestAnalyzeFoldedGlobalLogs:
             [_line('2026-06-01T10:00:00Z', 'INFO', '(x) plan orphan-md-xyz123 resolved')],
         )
 
-        # Act
         result = _analyze_logs.analyze_folded_global_logs(logs_dir)
 
-        # Assert
         assert result['fixture_leak_count'] == 1
         assert 'orphan-md-xyz123' in result['fixture_leak_signatures']
 
     def test_malformed_lines_skipped(self, tmp_path):
-        # Arrange — only the first line matches the bracketed grammar
+        # only the first line matches the bracketed grammar
         logs_dir = tmp_path / 'logs'
         _write_folded_log(
             logs_dir,
@@ -703,14 +694,13 @@ class TestAnalyzeFoldedGlobalLogs:
             ],
         )
 
-        # Act
         result = _analyze_logs.analyze_folded_global_logs(logs_dir)
 
-        # Assert — only the well-formed line counted
+        # only the well-formed line counted
         assert result['total_lines'] == 1
 
     def test_cmd_run_surfaces_global_log_signals_and_fixture_leak_finding(self, tmp_path, monkeypatch):
-        # Arrange — a live plan whose folded-in global log carries a fixture leak
+        # a live plan whose folded-in global log carries a fixture leak
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-folded-leak')
         _write_folded_log(
             plan_dir / 'logs',
@@ -718,10 +708,9 @@ class TestAnalyzeFoldedGlobalLogs:
             [_line('2026-06-01T10:00:00Z', 'INFO', '[STATUS] fake-test-bundle leaked')],
         )
 
-        # Act
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
 
-        # Assert — the global_log_signals key is present and a leak finding fired
+        # the global_log_signals key is present and a leak finding fired
         assert result.success, result.stderr
         data = result.toon()
         assert 'global_log_signals' in data

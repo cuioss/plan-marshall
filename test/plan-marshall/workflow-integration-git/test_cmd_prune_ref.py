@@ -9,6 +9,7 @@ Tier 2 (direct import) tests covering:
                                   show-ref absent (graceful partial no-op),
                                   update-ref failure after show-ref confirms ref,
                                   success path (local + remote ref deleted)
+* _find_executor                — helper-based executor path resolution
 
 Tier 3 (subprocess CLI plumbing) tests:
 * --project-dir requires --head
@@ -19,11 +20,10 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
-import tempfile
-import unittest
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 from conftest import get_script_path, run_script
@@ -73,23 +73,17 @@ def _create_branch(path: Path, branch: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-class TestVerifyGitRepo(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmpdir = tempfile.mkdtemp()
-        self.path = Path(self._tmpdir)
+class TestVerifyGitRepo:
+    def test_valid_repo_returns_none(self, tmp_path: Path) -> None:
+        _init_repo(tmp_path)
 
-    def tearDown(self) -> None:
-        import shutil
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
+        assert _verify_git_repo(tmp_path) is None
 
-    def test_valid_repo_returns_none(self) -> None:
-        _init_repo(self.path)
-        self.assertIsNone(_verify_git_repo(self.path))
+    def test_non_git_path_returns_error_string(self, tmp_path: Path) -> None:
+        result = _verify_git_repo(tmp_path)
 
-    def test_non_git_path_returns_error_string(self) -> None:
-        result = _verify_git_repo(self.path)
-        self.assertIsNotNone(result)
-        self.assertIn('working tree', result or '')
+        assert result is not None
+        assert 'working tree' in result
 
 
 # ---------------------------------------------------------------------------
@@ -97,31 +91,35 @@ class TestVerifyGitRepo(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestResolveProjectDirAndHead(unittest.TestCase):
+class TestResolveProjectDirAndHead:
     def test_project_dir_and_head_resolves(self) -> None:
         args = Namespace(plan_id=None, project_dir='/some/path', head='feature/x')
+
         path, head, error = _resolve_project_dir_and_head(args)
-        self.assertIsNone(error)
-        self.assertEqual(path, Path('/some/path'))
-        self.assertEqual(head, 'feature/x')
+
+        assert error is None
+        assert path == Path('/some/path')
+        assert head == 'feature/x'
 
     def test_project_dir_without_head_returns_error(self) -> None:
         args = Namespace(plan_id=None, project_dir='/some/path', head=None)
+
         path, head, error = _resolve_project_dir_and_head(args)
-        self.assertIsNone(path)
-        self.assertIsNone(head)
-        self.assertIsNotNone(error)
+
+        assert path is None
+        assert head is None
         assert error is not None
-        self.assertEqual(error['error_type'], 'missing_required_arg')
+        assert error['error_type'] == 'missing_required_arg'
 
     def test_neither_plan_id_nor_project_dir_returns_error(self) -> None:
         args = Namespace(plan_id=None, project_dir=None, head=None)
+
         path, head, error = _resolve_project_dir_and_head(args)
-        self.assertIsNone(path)
-        self.assertIsNone(head)
-        self.assertIsNotNone(error)
+
+        assert path is None
+        assert head is None
         assert error is not None
-        self.assertEqual(error['error_type'], 'missing_required_arg')
+        assert error['error_type'] == 'missing_required_arg'
 
 
 # ---------------------------------------------------------------------------
@@ -129,69 +127,81 @@ class TestResolveProjectDirAndHead(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestCmdPruneRefEscapeHatch(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmpdir = tempfile.mkdtemp()
-        self.path = Path(self._tmpdir)
-        self._orig_run_git = _mod.run_git
+def _patch_run_git(monkeypatch: pytest.MonkeyPatch, fake_run_git) -> None:
+    """Replace _mod.run_git with ``fake_run_git`` for the duration of a test.
 
-    def tearDown(self) -> None:
-        import shutil
-        _mod.run_git = self._orig_run_git
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
+    The fake receives ``(args, **kwargs)`` and may call ``orig`` (captured via a
+    default arg) to fall through to the real git binary for un-intercepted calls.
+    """
+    monkeypatch.setattr(_mod, 'run_git', fake_run_git)
 
-    def test_non_git_project_dir_returns_error(self) -> None:
+
+class TestCmdPruneRefEscapeHatch:
+    def test_non_git_project_dir_returns_error(self, tmp_path: Path) -> None:
         """--project-dir not a git repo → project_dir_not_a_git_repo."""
-        args = Namespace(plan_id=None, project_dir=str(self.path), head='feature/x', mode='local_and_remote')
-        result = cmd_prune_ref(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'project_dir_not_a_git_repo')
-        self.assertEqual(result['operation'], 'prune-local-and-remote-ref')
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_and_remote')
 
-    def test_currently_checked_out_branch_guard(self) -> None:
+        result = cmd_prune_ref(args)
+
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'project_dir_not_a_git_repo'
+        assert result['operation'] == 'prune-local-and-remote-ref'
+
+    def test_currently_checked_out_branch_guard(self, tmp_path: Path) -> None:
         """Attempting to delete the currently checked-out branch → branch_delete_failed."""
-        _init_repo(self.path, branch='main')
+        _init_repo(tmp_path, branch='main')
         # HEAD is 'main', so head='main' should be rejected.
-        args = Namespace(plan_id=None, project_dir=str(self.path), head='main', mode='local_and_remote')
-        result = cmd_prune_ref(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'branch_delete_failed')
-        self.assertFalse(result['local_deleted'])
-        self.assertIn('currently checked-out', result['message'])
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='main', mode='local_and_remote')
 
-    def test_branch_delete_failure_returns_error(self) -> None:
+        result = cmd_prune_ref(args)
+
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'branch_delete_failed'
+        assert result['local_deleted'] is False
+        assert 'currently checked-out' in result['message']
+
+    def test_branch_delete_failure_returns_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """git branch -D failure → branch_delete_failed with local_deleted=False."""
-        _init_repo(self.path, branch='main')
+        _init_repo(tmp_path, branch='main')
+        orig = _mod.run_git
 
         def fake_run_git(args, **kwargs):
             if '--abbrev-ref' in args:
                 return (0, 'main', '')
             if '-D' in args:
                 return (1, '', 'error: branch not found')
-            return self._orig_run_git(args, **kwargs)
+            return orig(args, **kwargs)
 
-        _mod.run_git = fake_run_git
-        args = Namespace(plan_id=None, project_dir=str(self.path), head='feature/x', mode='local_and_remote')
+        _patch_run_git(monkeypatch, fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_and_remote')
+
         result = cmd_prune_ref(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'branch_delete_failed')
-        self.assertFalse(result['local_deleted'])
 
-    def test_local_only_mode_skips_remote_ref(self) -> None:
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'branch_delete_failed'
+        assert result['local_deleted'] is False
+
+    def test_local_only_mode_skips_remote_ref(self, tmp_path: Path) -> None:
         """local_only mode deletes branch and returns remote_ref_deleted=False."""
-        _init_repo(self.path, branch='main')
-        _create_branch(self.path, 'feature/x')
+        _init_repo(tmp_path, branch='main')
+        _create_branch(tmp_path, 'feature/x')
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_only')
 
-        args = Namespace(plan_id=None, project_dir=str(self.path), head='feature/x', mode='local_only')
         result = cmd_prune_ref(args)
-        self.assertEqual(result['status'], 'success')
-        self.assertTrue(result['local_deleted'])
-        self.assertFalse(result['remote_ref_deleted'])
-        self.assertEqual(result['mode'], 'local_only')
 
-    def test_show_ref_absent_returns_partial(self) -> None:
+        assert result['status'] == 'success'
+        assert result['local_deleted'] is True
+        assert result['remote_ref_deleted'] is False
+        assert result['mode'] == 'local_only'
+
+    def test_show_ref_absent_returns_partial(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Remote-tracking ref already absent → partial + remote_ref_deleted=False."""
-        _init_repo(self.path, branch='main')
+        _init_repo(tmp_path, branch='main')
+        orig = _mod.run_git
 
         def fake_run_git(args, **kwargs):
             if '--abbrev-ref' in args:
@@ -200,19 +210,24 @@ class TestCmdPruneRefEscapeHatch(unittest.TestCase):
                 return (0, '', '')
             if 'show-ref' in args:
                 return (1, '', '')  # ref absent
-            return self._orig_run_git(args, **kwargs)
+            return orig(args, **kwargs)
 
-        _mod.run_git = fake_run_git
-        args = Namespace(plan_id=None, project_dir=str(self.path), head='feature/x', mode='local_and_remote')
+        _patch_run_git(monkeypatch, fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_and_remote')
+
         result = cmd_prune_ref(args)
-        self.assertEqual(result['status'], 'partial')
-        self.assertTrue(result['local_deleted'])
-        self.assertFalse(result['remote_ref_deleted'])
-        self.assertIn('already absent', result['remote_ref_warning'])
 
-    def test_update_ref_failure_after_show_ref_returns_error(self) -> None:
+        assert result['status'] == 'partial'
+        assert result['local_deleted'] is True
+        assert result['remote_ref_deleted'] is False
+        assert 'already absent' in result['remote_ref_warning']
+
+    def test_update_ref_failure_after_show_ref_returns_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """update-ref -d failure after show-ref confirms ref exists → unexpected_ref_error."""
-        _init_repo(self.path, branch='main')
+        _init_repo(tmp_path, branch='main')
+        orig = _mod.run_git
 
         def fake_run_git(args, **kwargs):
             if '--abbrev-ref' in args:
@@ -223,19 +238,24 @@ class TestCmdPruneRefEscapeHatch(unittest.TestCase):
                 return (0, '', '')  # ref present
             if 'update-ref' in args:
                 return (1, '', 'error: could not delete ref')
-            return self._orig_run_git(args, **kwargs)
+            return orig(args, **kwargs)
 
-        _mod.run_git = fake_run_git
-        args = Namespace(plan_id=None, project_dir=str(self.path), head='feature/x', mode='local_and_remote')
+        _patch_run_git(monkeypatch, fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_and_remote')
+
         result = cmd_prune_ref(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'unexpected_ref_error')
-        self.assertTrue(result['local_deleted'])
-        self.assertFalse(result['remote_ref_deleted'])
 
-    def test_full_success_local_and_remote(self) -> None:
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'unexpected_ref_error'
+        assert result['local_deleted'] is True
+        assert result['remote_ref_deleted'] is False
+
+    def test_full_success_local_and_remote(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Both local branch and remote-tracking ref deleted → status=success."""
-        _init_repo(self.path, branch='main')
+        _init_repo(tmp_path, branch='main')
+        orig = _mod.run_git
 
         def fake_run_git(args, **kwargs):
             if '--abbrev-ref' in args:
@@ -246,29 +266,35 @@ class TestCmdPruneRefEscapeHatch(unittest.TestCase):
                 return (0, '', '')  # ref present
             if 'update-ref' in args:
                 return (0, '', '')
-            return self._orig_run_git(args, **kwargs)
+            return orig(args, **kwargs)
 
-        _mod.run_git = fake_run_git
-        args = Namespace(plan_id=None, project_dir=str(self.path), head='feature/x', mode='local_and_remote')
+        _patch_run_git(monkeypatch, fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_and_remote')
+
         result = cmd_prune_ref(args)
-        self.assertEqual(result['status'], 'success')
-        self.assertTrue(result['local_deleted'])
-        self.assertTrue(result['remote_ref_deleted'])
-        self.assertEqual(result['head_branch'], 'feature/x')
-        self.assertEqual(result['mode'], 'local_and_remote')
 
-    def test_envelope_includes_project_dir(self) -> None:
+        assert result['status'] == 'success'
+        assert result['local_deleted'] is True
+        assert result['remote_ref_deleted'] is True
+        assert result['head_branch'] == 'feature/x'
+        assert result['mode'] == 'local_and_remote'
+
+    def test_envelope_includes_project_dir(self, tmp_path: Path) -> None:
         """Response envelope echoes project_dir when --project-dir is used."""
-        args = Namespace(plan_id=None, project_dir=str(self.path), head='feature/x', mode='local_and_remote')
-        result = cmd_prune_ref(args)
-        self.assertIn('project_dir', result)
-        self.assertEqual(result['project_dir'], str(self.path))
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_and_remote')
 
-    def test_envelope_excludes_plan_id_when_project_dir_path(self) -> None:
-        """When --project-dir path is used, plan_id must not appear in response."""
-        args = Namespace(plan_id=None, project_dir=str(self.path), head='feature/x', mode='local_and_remote')
         result = cmd_prune_ref(args)
-        self.assertNotIn('plan_id', result)
+
+        assert 'project_dir' in result
+        assert result['project_dir'] == str(tmp_path)
+
+    def test_envelope_excludes_plan_id_when_project_dir_path(self, tmp_path: Path) -> None:
+        """When --project-dir path is used, plan_id must not appear in response."""
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_and_remote')
+
+        result = cmd_prune_ref(args)
+
+        assert 'plan_id' not in result
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +302,7 @@ class TestCmdPruneRefEscapeHatch(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestFindExecutor(unittest.TestCase):
+class TestFindExecutor:
     """Direct-import tests for _find_executor's helper-based resolution.
 
     _find_executor delegates to ``file_ops.get_executor_path()`` (worktree-safe
@@ -285,40 +311,47 @@ class TestFindExecutor(unittest.TestCase):
     missing executor file.
     """
 
-    def setUp(self) -> None:
-        import file_ops  # type: ignore[import-not-found]
-        self._file_ops = file_ops
-        self._orig_get_executor_path = file_ops.get_executor_path
-        self._tmpdir = tempfile.mkdtemp()
-        self.path = Path(self._tmpdir)
-
-    def tearDown(self) -> None:
-        import shutil
-        self._file_ops.get_executor_path = self._orig_get_executor_path
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
-
-    def test_returns_resolved_path_when_executor_exists(self) -> None:
+    def test_returns_resolved_path_when_executor_exists(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When get_executor_path resolves an existing file, return it."""
-        executor = self.path / 'execute-script.py'
+        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
+
+        executor = tmp_path / 'execute-script.py'
         executor.write_text('# executor\n')
-        self._file_ops.get_executor_path = lambda: executor
-        result = _find_executor()
-        self.assertEqual(result, executor)
+        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: executor)
 
-    def test_returns_none_when_executor_missing(self) -> None:
+        result = _find_executor()
+
+        assert result == executor
+
+    def test_returns_none_when_executor_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When the resolved path does not exist on disk, return None."""
-        missing = self.path / 'execute-script.py'  # never created
-        self._file_ops.get_executor_path = lambda: missing
-        result = _find_executor()
-        self.assertIsNone(result)
+        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
 
-    def test_returns_none_when_helper_raises_runtime_error(self) -> None:
+        missing = tmp_path / 'execute-script.py'  # never created
+        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: missing)
+
+        result = _find_executor()
+
+        assert result is None
+
+    def test_returns_none_when_helper_raises_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When get_executor_path raises RuntimeError (no git repo), return None."""
+        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
+
         def _raise() -> Path:
             raise RuntimeError('no git repository')
-        self._file_ops.get_executor_path = _raise
+
+        monkeypatch.setattr(file_ops, 'get_executor_path', _raise)
+
         result = _find_executor()
-        self.assertIsNone(result)
+
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -326,52 +359,49 @@ class TestFindExecutor(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestCmdPruneRefCli(unittest.TestCase):
+class TestCmdPruneRefCli:
     """Subprocess tests for prune-local-and-remote-ref CLI plumbing."""
 
-    def test_project_dir_without_head_returns_error(self) -> None:
+    def test_project_dir_without_head_returns_error(self, tmp_path: Path) -> None:
         """--project-dir without --head → missing_required_arg TOON error."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = run_script(
-                _SCRIPT_PATH, 'prune-local-and-remote-ref',
-                '--project-dir', tmpdir,
-            )
-            parsed = parse_toon(result.stdout)
-            self.assertEqual(parsed['status'], 'error')
-            self.assertEqual(parsed['error_type'], 'missing_required_arg')
+        result = run_script(
+            _SCRIPT_PATH, 'prune-local-and-remote-ref',
+            '--project-dir', str(tmp_path),
+        )
 
-    def test_non_git_project_dir_returns_toon_error(self) -> None:
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'error'
+        assert parsed['error_type'] == 'missing_required_arg'
+
+    def test_non_git_project_dir_returns_toon_error(self, tmp_path: Path) -> None:
         """Non-git --project-dir + --head → project_dir_not_a_git_repo."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = run_script(
-                _SCRIPT_PATH, 'prune-local-and-remote-ref',
-                '--project-dir', tmpdir,
-                '--head', 'feature/x',
-            )
-            parsed = parse_toon(result.stdout)
-            self.assertEqual(parsed['status'], 'error')
-            self.assertEqual(parsed['error_type'], 'project_dir_not_a_git_repo')
+        result = run_script(
+            _SCRIPT_PATH, 'prune-local-and-remote-ref',
+            '--project-dir', str(tmp_path),
+            '--head', 'feature/x',
+        )
 
-    def test_local_only_mode_accepted(self) -> None:
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'error'
+        assert parsed['error_type'] == 'project_dir_not_a_git_repo'
+
+    def test_local_only_mode_accepted(self, tmp_path: Path) -> None:
         """--mode local_only is accepted by argparse (no exit code 2)."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = run_script(
-                _SCRIPT_PATH, 'prune-local-and-remote-ref',
-                '--project-dir', tmpdir,
-                '--head', 'feature/x',
-                '--mode', 'local_only',
-            )
-            # Non-git dir → structured error, not argparse exit 2.
-            self.assertEqual(result.returncode, 0)
-            parsed = parse_toon(result.stdout)
-            self.assertEqual(parsed['status'], 'error')
+        result = run_script(
+            _SCRIPT_PATH, 'prune-local-and-remote-ref',
+            '--project-dir', str(tmp_path),
+            '--head', 'feature/x',
+            '--mode', 'local_only',
+        )
+
+        # Non-git dir → structured error, not argparse exit 2.
+        assert result.returncode == 0
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'error'
 
     def test_help_shows_prune_subcommand(self) -> None:
         """--help lists prune-local-and-remote-ref."""
         result = run_script(_SCRIPT_PATH, '--help')
-        self.assertEqual(result.returncode, 0)
-        self.assertIn('prune-local-and-remote-ref', result.stdout)
 
-
-if __name__ == '__main__':
-    unittest.main()
+        assert result.returncode == 0
+        assert 'prune-local-and-remote-ref' in result.stdout

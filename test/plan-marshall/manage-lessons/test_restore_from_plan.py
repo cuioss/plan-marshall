@@ -12,6 +12,7 @@ rejection on ``plan_id``.
 from argparse import Namespace
 from unittest.mock import patch
 
+import pytest
 from _lessons_helpers import cmd_convert_to_plan, cmd_restore_from_plan
 
 
@@ -130,10 +131,11 @@ Body content here.
         assert (lessons_dir / '2025-01-01-001.md').read_text() == 'pre-existing'
         assert (plan_dir / 'lesson-2025-01-01-001.md').read_text() == 'plan-local body'
 
-    def test_restore_from_plan_rejects_path_traversal(self, tmp_path):
+    @pytest.mark.parametrize('bad_plan', ('../escape', 'sub/dir', 'back\\slash'))
+    def test_restore_from_plan_rejects_path_traversal(self, tmp_path, bad_plan):
         """Should reject plan_id containing path separators or traversal sequences."""
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            for bad_plan in ('../escape', 'sub/dir', 'back\\slash'):
-                result = cmd_restore_from_plan(Namespace(plan_id=bad_plan))
-                assert result['status'] == 'error'
-                assert result['error'] == 'invalid_id'
+            result = cmd_restore_from_plan(Namespace(plan_id=bad_plan))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_id'

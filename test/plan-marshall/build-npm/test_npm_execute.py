@@ -19,10 +19,6 @@ _CONFIG = _npm_execute_mod._CONFIG
 NPX_COMMANDS = _npm_execute_mod.NPX_COMMANDS
 detect_command_type = _npm_execute_mod.detect_command_type
 
-# =============================================================================
-# Config Tests
-# =============================================================================
-
 
 def test_config_tool_name():
     """Config has correct tool name."""
@@ -54,11 +50,6 @@ def test_config_supports_working_dir():
 def test_config_parser_needs_command():
     """Config requires command arg for parser."""
     assert _CONFIG.parser_needs_command is True
-
-
-# =============================================================================
-# detect_command_type - npm vs npx routing
-# =============================================================================
 
 
 def test_detect_npm_for_run():
@@ -113,11 +104,6 @@ def test_all_npx_commands_detected():
         assert detect_command_type(f'{cmd} --help') == 'npx', f'{cmd} should use npx'
 
 
-# =============================================================================
-# Scope Function
-# =============================================================================
-
-
 def test_scope_fn_default():
     """Default scope for commands without workspace."""
     assert _CONFIG.scope_fn('run test') == 'default'
@@ -131,11 +117,6 @@ def test_scope_fn_workspace():
 def test_scope_fn_prefix():
     """Extracts scope from --prefix flag."""
     assert _CONFIG.scope_fn('run test --prefix packages/core') == 'packages/core'
-
-
-# =============================================================================
-# Command Key Function
-# =============================================================================
 
 
 def test_command_key_fn_run():
@@ -153,11 +134,6 @@ def test_command_key_fn_empty():
     assert _CONFIG.command_key_fn('') == 'default'
 
 
-# =============================================================================
-# Build Command Function
-# =============================================================================
-
-
 def test_build_command_fn_npm():
     """Routes to npm for 'run test'."""
     cmd_parts, cmd_str = _CONFIG.build_command_fn('npm', 'run test', '/tmp/log.log')
@@ -172,19 +148,9 @@ def test_build_command_fn_npx():
     assert cmd_str == 'npx eslint src/'
 
 
-# =============================================================================
-# Wrapper Resolution
-# =============================================================================
-
-
 def test_wrapper_resolve_fn_returns_npm():
     """npm wrapper resolver always returns 'npm'."""
     assert _CONFIG.wrapper_resolve_fn('.') == 'npm'
-
-
-# =============================================================================
-# Extra Result Function
-# =============================================================================
 
 
 def test_extra_result_fn_npm():

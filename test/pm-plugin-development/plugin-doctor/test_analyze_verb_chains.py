@@ -153,27 +153,21 @@ def _bash_fence(body: str) -> str:
 
 def test_build_subparser_tree_flat(tmp_path):
     """A flat verbs list yields a dict of empty-dict leaves."""
-    # Arrange
     script = tmp_path / 'flat.py'
     script.write_text(_flat_subparsers_script(['add', 'remove', 'get']))
 
-    # Act
     tree = build_subparser_tree(script)
 
-    # Assert
     assert tree == {'add': {}, 'remove': {}, 'get': {}}
 
 
 def test_build_subparser_tree_nested_three_levels(tmp_path):
     """Three-level nesting is enumerated in full."""
-    # Arrange
     script = tmp_path / 'deep.py'
     script.write_text(_deep_subparsers_script())
 
-    # Act
     tree = build_subparser_tree(script)
 
-    # Assert
     assert tree == {
         'alpha': {
             'beta': {
@@ -197,7 +191,6 @@ def test_build_subparser_tree_registers_bare_add_parser_calls(tmp_path):
     Fixture exercises both forms — assigned (``a``) and bare (``b``) —
     and asserts both verbs appear in the resulting tree.
     """
-    # Arrange
     script = tmp_path / 'mixed.py'
     script.write_text(
         'import argparse\n'
@@ -210,25 +203,20 @@ def test_build_subparser_tree_registers_bare_add_parser_calls(tmp_path):
         "subparsers.add_parser('b', allow_abbrev=False)\n",
     )
 
-    # Act
     tree = build_subparser_tree(script)
 
-    # Assert
     assert tree == {'a': {}, 'b': {}}
 
 
 def test_build_subparser_tree_no_subparsers(tmp_path):
     """A script with only a bare ArgumentParser yields an empty tree."""
-    # Arrange
     script = tmp_path / 'bare.py'
     script.write_text(
         "import argparse\nparser = argparse.ArgumentParser(allow_abbrev=False)\nparser.add_argument('--flag')\n",
     )
 
-    # Act
     tree = build_subparser_tree(script)
 
-    # Assert
     assert tree == {}
 
 
@@ -247,7 +235,7 @@ def test_build_subparser_tree_real_architecture_script_includes_bare_verbs():
     these specific verbs and accidentally make the regression test
     above pass for the wrong reason.
     """
-    # Arrange — locate the real script via the project layout. The test
+    # locate the real script via the project layout. The test
     # file lives at test/pm-plugin-development/plugin-doctor/, so four
     # ``parent`` hops reach the project root (mirroring ``PROJECT_ROOT``
     # at module top).
@@ -263,10 +251,9 @@ def test_build_subparser_tree_real_architecture_script_includes_bare_verbs():
     )
     assert script_path.is_file(), f'Expected real architecture.py at {script_path}; project layout may have changed.'
 
-    # Act
     tree = build_subparser_tree(script_path)
 
-    # Assert — both bare-form verbs are registered as top-level keys.
+    # both bare-form verbs are registered as top-level keys.
     assert 'derived' in tree, (
         f'Bare \'subparsers.add_parser("derived", ...)\' was not registered. Top-level verbs found: {sorted(tree)}'
     )
@@ -277,26 +264,20 @@ def test_build_subparser_tree_real_architecture_script_includes_bare_verbs():
 
 def test_build_subparser_tree_syntax_error_returns_empty(tmp_path):
     """Unparseable source must not raise — empty tree is the contract."""
-    # Arrange
     script = tmp_path / 'broken.py'
     script.write_text('def oops(\n')
 
-    # Act
     tree = build_subparser_tree(script)
 
-    # Assert
     assert tree == {}
 
 
 def test_build_subparser_tree_missing_file_returns_empty(tmp_path):
     """Reading a non-existent file is tolerated and returns an empty tree."""
-    # Arrange
     script = tmp_path / 'does_not_exist.py'
 
-    # Act
     tree = build_subparser_tree(script)
 
-    # Assert
     assert tree == {}
 
 
@@ -307,13 +288,10 @@ def test_build_subparser_tree_missing_file_returns_empty(tmp_path):
 
 def test_match_chain_happy_path():
     """A chain whose every segment is a registered verb matches fully."""
-    # Arrange
     tree = {'request': {'read': {}, 'mark-clarified': {}}}
 
-    # Act
     result = match_chain(tree, ['request', 'read'])
 
-    # Assert
     assert result.matched is True
     assert result.matched_depth == 2
     assert result.first_unknown_segment is None
@@ -321,13 +299,10 @@ def test_match_chain_happy_path():
 
 def test_match_chain_empty_chain_matches():
     """Empty chain is the trivial match regardless of tree contents."""
-    # Arrange
     tree = {'add': {}}
 
-    # Act
     result = match_chain(tree, [])
 
-    # Assert
     assert result.matched is True
     assert result.matched_depth == 0
     assert result.first_unknown_segment is None
@@ -335,13 +310,10 @@ def test_match_chain_empty_chain_matches():
 
 def test_match_chain_unknown_top_level():
     """First unknown segment is the top-level verb itself."""
-    # Arrange
     tree = {'read': {}, 'write': {}}
 
-    # Act
     result = match_chain(tree, ['bogusverb'])
 
-    # Assert
     assert result.matched is False
     assert result.matched_depth == 0
     assert result.first_unknown_segment == 'bogusverb'
@@ -349,13 +321,10 @@ def test_match_chain_unknown_top_level():
 
 def test_match_chain_unknown_nested():
     """Driving-lesson case: ``request clarify`` when only read/mark-clarified exist."""
-    # Arrange
     tree = {'request': {'read': {}, 'mark-clarified': {}}}
 
-    # Act
     result = match_chain(tree, ['request', 'clarify'])
 
-    # Assert
     assert result.matched is False
     assert result.matched_depth == 1
     assert result.first_unknown_segment == 'clarify'
@@ -363,13 +332,10 @@ def test_match_chain_unknown_nested():
 
 def test_match_chain_too_deep():
     """Chain longer than the tree reports the first out-of-tree segment."""
-    # Arrange
     tree = {'add': {}}
 
-    # Act
     result = match_chain(tree, ['add', 'extra'])
 
-    # Assert
     assert result.matched is False
     assert result.matched_depth == 1
     assert result.first_unknown_segment == 'extra'
@@ -377,13 +343,10 @@ def test_match_chain_too_deep():
 
 def test_match_chain_empty_tree_with_chain():
     """Empty tree cannot match any non-empty chain."""
-    # Arrange
     tree: dict = {}
 
-    # Act
     result = match_chain(tree, ['something'])
 
-    # Assert
     assert result.matched is False
     assert result.matched_depth == 0
     assert result.first_unknown_segment == 'something'
@@ -396,7 +359,6 @@ def test_match_chain_empty_tree_with_chain():
 
 def test_extract_invocations_basic(tmp_path):
     """A single invocation in a bash fence is extracted with verb chain."""
-    # Arrange
     md = tmp_path / 'SKILL.md'
     md.write_text(
         'Intro paragraph.\n\n'
@@ -407,10 +369,8 @@ def test_extract_invocations_basic(tmp_path):
         )
     )
 
-    # Act
     invocations = extract_invocations(md)
 
-    # Assert
     assert len(invocations) == 1
     inv = invocations[0]
     assert inv.bundle == 'plan-marshall'
@@ -422,98 +382,77 @@ def test_extract_invocations_basic(tmp_path):
 
 def test_extract_invocations_ignore_marker_suppresses(tmp_path):
     """The doctor-ignore marker on the preceding line suppresses the fence."""
-    # Arrange
     md = tmp_path / 'SKILL.md'
     md.write_text(
         'Doc text.\n'
         '<!-- doctor-ignore: verb-check -->\n' + _bash_fence('python3 .plan/execute-script.py a:b:c clarify --flag')
     )
 
-    # Act
     invocations = extract_invocations(md)
 
-    # Assert
     assert invocations == []
 
 
 def test_extract_invocations_ignore_marker_tolerates_blank_line(tmp_path):
     """Whitespace-only lines between marker and fence are permitted."""
-    # Arrange
     md = tmp_path / 'SKILL.md'
     md.write_text(
         '<!-- doctor-ignore: verb-check -->\n   \n\n' + _bash_fence('python3 .plan/execute-script.py a:b:c verb')
     )
 
-    # Act
     invocations = extract_invocations(md)
 
-    # Assert
     assert invocations == []
 
 
 def test_extract_invocations_skips_non_bash_fence(tmp_path):
     """Python-tagged fences are not scanned."""
-    # Arrange
     md = tmp_path / 'SKILL.md'
     md.write_text('```python\npython3 .plan/execute-script.py a:b:c verb\n```\n')
 
-    # Act
     invocations = extract_invocations(md)
 
-    # Assert
     assert invocations == []
 
 
 def test_extract_invocations_skips_non_invocation_bash(tmp_path):
     """Bash fences without the executor invocation are safely ignored."""
-    # Arrange
     md = tmp_path / 'SKILL.md'
     md.write_text(_bash_fence('ls -la\necho hello\n'))
 
-    # Act
     invocations = extract_invocations(md)
 
-    # Assert
     assert invocations == []
 
 
 def test_extract_invocations_multiline_continuation(tmp_path):
     """Backslash continuations join into a single logical invocation."""
-    # Arrange
     md = tmp_path / 'SKILL.md'
     md.write_text(_bash_fence('python3 .plan/execute-script.py a:b:c verb sub-verb \\\n  --plan-id foo \\\n  --flag'))
 
-    # Act
     invocations = extract_invocations(md)
 
-    # Assert
     assert len(invocations) == 1
     assert invocations[0].verb_chain == ('verb', 'sub-verb')
 
 
 def test_extract_invocations_stops_chain_at_flag(tmp_path):
     """A flag terminates verb-chain accumulation."""
-    # Arrange
     md = tmp_path / 'SKILL.md'
     md.write_text(_bash_fence('python3 .plan/execute-script.py a:b:c read --plan-id foo'))
 
-    # Act
     invocations = extract_invocations(md)
 
-    # Assert
     assert len(invocations) == 1
     assert invocations[0].verb_chain == ('read',)
 
 
 def test_extract_invocations_unreadable_file_returns_empty(tmp_path):
     """A missing markdown file is tolerated and yields no invocations."""
-    # Arrange
     missing = tmp_path / 'nope.md'
 
-    # Act
     invocations = extract_invocations(missing)
 
-    # Assert
     assert invocations == []
 
 
@@ -524,7 +463,6 @@ def test_extract_invocations_unreadable_file_returns_empty(tmp_path):
 
 def test_analyze_happy_path_no_findings(tmp_path):
     """Valid verb chain against a registered subparser tree yields nothing."""
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'plan-marshall', 'manage-plan-documents')
     _write_script(target_skill, 'manage-plan-documents', _request_clarify_script())
@@ -539,16 +477,13 @@ def test_analyze_happy_path_no_findings(tmp_path):
         )
     )
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert findings == []
 
 
 def test_analyze_unknown_top_level_verb(tmp_path):
     """An unregistered top-level verb is reported."""
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'plan-marshall', 'manage-status')
     _write_script(
@@ -562,10 +497,8 @@ def test_analyze_unknown_top_level_verb(tmp_path):
         _bash_fence('python3 .plan/execute-script.py plan-marshall:manage-status:manage-status bogusverb --flag')
     )
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert len(findings) == 1
     finding = findings[0]
     assert finding['rule_id'] == RULE_ID
@@ -582,7 +515,6 @@ def test_analyze_unknown_nested_verb_driving_lesson(tmp_path):
     ``request mark-clarified``; prose referencing ``request clarify``
     must be flagged with ``first_unknown_segment == 'clarify'``.
     """
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'plan-marshall', 'manage-plan-documents')
     _write_script(target_skill, 'manage-plan-documents', _request_clarify_script())
@@ -597,10 +529,8 @@ def test_analyze_unknown_nested_verb_driving_lesson(tmp_path):
         )
     )
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert len(findings) == 1
     finding = findings[0]
     assert finding['rule_id'] == RULE_ID
@@ -610,7 +540,6 @@ def test_analyze_unknown_nested_verb_driving_lesson(tmp_path):
 
 def test_analyze_honors_ignore_marker(tmp_path):
     """A drifted chain behind an ignore marker is suppressed."""
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'plan-marshall', 'manage-plan-documents')
     _write_script(target_skill, 'manage-plan-documents', _request_clarify_script())
@@ -623,16 +552,13 @@ def test_analyze_honors_ignore_marker(tmp_path):
         )
     )
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert findings == []
 
 
 def test_analyze_skips_non_bash_fence(tmp_path):
     """Non-bash fences are not scanned, even with a valid-looking invocation."""
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'plan-marshall', 'manage-plan-documents')
     _write_script(target_skill, 'manage-plan-documents', _request_clarify_script())
@@ -646,10 +572,8 @@ def test_analyze_skips_non_bash_fence(tmp_path):
         '```\n'
     )
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert findings == []
 
 
@@ -660,7 +584,6 @@ def test_analyze_multiline_invocation_notation_on_head_line(tmp_path):
     line; flags continue on subsequent lines) and proves the trailing
     verb tokens on continuation lines are consumed into the chain.
     """
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'plan-marshall', 'manage-plan-documents')
     _write_script(target_skill, 'manage-plan-documents', _request_clarify_script())
@@ -675,10 +598,8 @@ def test_analyze_multiline_invocation_notation_on_head_line(tmp_path):
         )
     )
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert len(findings) == 1
     finding = findings[0]
     assert finding['verb_chain'] == ['request', 'clarify']
@@ -687,7 +608,6 @@ def test_analyze_multiline_invocation_notation_on_head_line(tmp_path):
 
 def test_analyze_nested_three_levels_happy_path(tmp_path):
     """Three-level chain ``alpha beta gamma`` matches a deep subparser tree."""
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'pm', 'deep-skill')
     _write_script(target_skill, 'deep-script', _deep_subparsers_script())
@@ -697,16 +617,13 @@ def test_analyze_nested_three_levels_happy_path(tmp_path):
         _bash_fence('python3 .plan/execute-script.py pm:deep-skill:deep-script alpha beta gamma --flag')
     )
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert findings == []
 
 
 def test_analyze_nested_three_levels_unknown_leaf(tmp_path):
     """Unknown leaf segment in a 3-level chain is reported at the leaf."""
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'pm', 'deep-skill')
     _write_script(target_skill, 'deep-script', _deep_subparsers_script())
@@ -716,10 +633,8 @@ def test_analyze_nested_three_levels_unknown_leaf(tmp_path):
         _bash_fence('python3 .plan/execute-script.py pm:deep-skill:deep-script alpha beta stale')
     )
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert len(findings) == 1
     finding = findings[0]
     assert finding['verb_chain'] == ['alpha', 'beta', 'stale']
@@ -737,7 +652,6 @@ def test_analyze_scans_skill_md_and_standards_only(tmp_path):
       * standards/nested/deep.md — out of scope (only top-level
         standards/*.md, no recursion) → must be ignored
     """
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'pm', 'target-skill')
     _write_script(target_skill, 'target-script', _request_clarify_script())
@@ -764,10 +678,8 @@ def test_analyze_scans_skill_md_and_standards_only(tmp_path):
     templates_dir.mkdir()
     (templates_dir / 't.md').write_text(drifted_body)
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     flagged_files = {Path(f['file']).relative_to(caller_skill).as_posix() for f in findings}
     assert flagged_files == {'SKILL.md', 'standards/s1.md'}, (
         f'Expected only SKILL.md + standards/s1.md to be scanned, got {flagged_files}'
@@ -776,45 +688,36 @@ def test_analyze_scans_skill_md_and_standards_only(tmp_path):
 
 def test_analyze_skips_unresolvable_notation(tmp_path):
     """Invocations pointing to a non-existent script are silently skipped."""
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     caller_skill = _make_skill(bundles, 'pm', 'caller-skill')
     (caller_skill / 'SKILL.md').write_text(
         _bash_fence('python3 .plan/execute-script.py ghost-bundle:ghost-skill:ghost-script request clarify')
     )
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert findings == []
 
 
 def test_analyze_missing_marketplace_root_returns_empty(tmp_path):
     """A skill directory outside a marketplace/bundles/ ancestor yields []."""
-    # Arrange
     orphan_skill = tmp_path / 'orphan'
     orphan_skill.mkdir()
     (orphan_skill / 'SKILL.md').write_text(_bash_fence('python3 .plan/execute-script.py a:b:c verb'))
 
-    # Act
     findings = analyze_verb_chains(orphan_skill)
 
-    # Assert
     assert findings == []
 
 
 def test_analyze_no_markdown_targets(tmp_path):
     """A skill directory with no SKILL.md and no standards dir yields []."""
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     caller_skill = bundles / 'pm' / 'skills' / 'empty-skill'
     caller_skill.mkdir(parents=True)
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert findings == []
 
 
@@ -825,7 +728,6 @@ def test_analyze_no_markdown_targets(tmp_path):
 
 def test_finding_shape_contract(tmp_path):
     """Every finding must expose the documented keys and types."""
-    # Arrange
     bundles = _make_marketplace(tmp_path)
     target_skill = _make_skill(bundles, 'pm', 'target-skill')
     _write_script(target_skill, 'target-script', _request_clarify_script())
@@ -835,10 +737,8 @@ def test_finding_shape_contract(tmp_path):
         _bash_fence('python3 .plan/execute-script.py pm:target-skill:target-script request clarify')
     )
 
-    # Act
     findings = analyze_verb_chains(caller_skill)
 
-    # Assert
     assert len(findings) == 1
     finding = findings[0]
     expected_keys = {
@@ -867,8 +767,7 @@ def test_finding_shape_contract(tmp_path):
 
 def test_module_exposes_documented_api():
     """The module publishes the four symbols the scanner rule relies on."""
-    # Arrange / Act — names resolved at import time above.
-    # Assert
+    # names resolved at import time above.
     assert callable(analyze_verb_chains)
     assert callable(extract_invocations)
     assert callable(build_subparser_tree)
@@ -887,13 +786,11 @@ def test_module_exposes_documented_api():
     ],
 )
 def test_fixture_scripts_are_well_formed(tmp_path, source):
-    # Arrange
     path = tmp_path / 'probe.py'
     path.write_text(source)
 
-    # Act
     tree = build_subparser_tree(path)
 
-    # Assert — a non-empty tree proves the fixture registers at least
+    # a non-empty tree proves the fixture registers at least
     # one subparser. Specific shapes are asserted in dedicated tests.
     assert tree != {}

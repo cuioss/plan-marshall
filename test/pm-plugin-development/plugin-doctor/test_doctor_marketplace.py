@@ -959,16 +959,14 @@ def test_marketplace_root_flag_overrides_default(tmp_path, monkeypatch):
     override's bundles path rather than falling through to script-relative
     or cwd-based discovery.
     """
-    # Arrange: ensure no env var leaks into the override-arg path so we
+    # ensure no env var leaks into the override-arg path so we
     # exclusively exercise the function-arg branch.
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
     fake_marketplace = tmp_path / 'marketplace'
     (fake_marketplace / 'bundles').mkdir(parents=True)
 
-    # Act
     resolved = find_marketplace_root(marketplace_root_override=str(fake_marketplace))
 
-    # Assert
     assert resolved == fake_marketplace / 'bundles', f'Expected {fake_marketplace / "bundles"}, got {resolved}'
 
 
@@ -979,7 +977,7 @@ def test_marketplace_root_flag_takes_precedence_over_env_var(tmp_path, monkeypat
     passes the override arg pointing at the other, then asserts the arg
     wins (resolves to override's bundles, never the env var's).
     """
-    # Arrange: two valid marketplace roots, each with their own bundles/.
+    # two valid marketplace roots, each with their own bundles/.
     env_marketplace = tmp_path / 'env-marketplace'
     (env_marketplace / 'bundles').mkdir(parents=True)
     arg_marketplace = tmp_path / 'arg-marketplace'
@@ -987,10 +985,9 @@ def test_marketplace_root_flag_takes_precedence_over_env_var(tmp_path, monkeypat
 
     monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(env_marketplace))
 
-    # Act
     resolved = find_marketplace_root(marketplace_root_override=str(arg_marketplace))
 
-    # Assert: function-arg path wins, env var path is ignored.
+    # function-arg path wins, env var path is ignored.
     assert resolved == arg_marketplace / 'bundles', f'Function-arg override should win, got {resolved}'
     assert resolved != env_marketplace / 'bundles', 'Env var path must NOT win when function-arg override is provided'
 
@@ -1002,13 +999,12 @@ def test_marketplace_root_invalid_path_errors_clearly(tmp_path, monkeypatch):
     and asserts that ``find_marketplace_root`` raises ``ValueError`` whose
     message references the missing ``bundles/`` requirement.
     """
-    # Arrange: ensure env var is unset so the function-arg branch is the
+    # ensure env var is unset so the function-arg branch is the
     # one actually evaluated.
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
     # Sanity check: tmp_path must NOT contain a bundles/ subdir.
     assert not (tmp_path / 'bundles').exists(), 'Test precondition: tmp_path must lack bundles/'
 
-    # Act / Assert
     with pytest.raises(ValueError) as exc_info:
         find_marketplace_root(marketplace_root_override=str(tmp_path))
 
@@ -1277,7 +1273,7 @@ def test_scoped_manage_invocation_derives_per_referenced_notation(tmp_path, monk
     only derives notations referenced in the scoped markdown — and that no caller
     in the scoped path invokes `build_script_index`.
     """
-    # Arrange — a scoped skill citing exactly one doctor-marketplace invocation.
+    # a scoped skill citing exactly one doctor-marketplace invocation.
     skill = tmp_path / 'marketplace' / 'bundles' / 'qg-mi' / 'skills' / 'citing-skill'
     skill.mkdir(parents=True)
     (skill / 'SKILL.md').write_text(
@@ -1314,12 +1310,12 @@ def test_scoped_manage_invocation_derives_per_referenced_notation(tmp_path, monk
     if hasattr(_doctor_marketplace, 'build_script_index'):
         monkeypatch.setattr(_doctor_marketplace, 'build_script_index', _fail_build_index)
 
-    # Act — call the scoped helper directly. marketplace_root is the parent of
+    # call the scoped helper directly. marketplace_root is the parent of
     # bundles/ (the convention the manage-invocation helpers expect).
     marketplace_root = tmp_path / 'marketplace'
     _doctor_marketplace._scoped_manage_invocation(marketplace_root, [skill])
 
-    # Assert — exactly the one referenced notation was derived, nothing else.
+    # exactly the one referenced notation was derived, nothing else.
     assert derived == ['pm-plugin-development:plugin-doctor:doctor-marketplace'], (
         f'Scoped helper should derive only the referenced notation, got: {derived}'
     )
@@ -1634,37 +1630,29 @@ class _FakeMarketplaceArgs:
 
 def test_parse_rules_flag_none_returns_empty_set():
     """``_parse_rules_flag(None)`` returns an empty frozenset (no opt-in)."""
-    # Arrange + Act
     result = _doctor_marketplace._parse_rules_flag(None)
 
-    # Assert
     assert result == frozenset()
 
 
 def test_parse_rules_flag_empty_string_returns_empty_set():
     """An empty ``--rules`` value is treated the same as absence."""
-    # Arrange + Act
     result = _doctor_marketplace._parse_rules_flag('')
 
-    # Assert
     assert result == frozenset()
 
 
 def test_parse_rules_flag_single_name_activates_that_rule():
     """``--rules argument_naming`` activates the argument-naming cluster."""
-    # Arrange + Act
     result = _doctor_marketplace._parse_rules_flag('argument_naming')
 
-    # Assert
     assert result == frozenset({'argument_naming'})
 
 
 def test_parse_rules_flag_comma_separated_activates_multiple():
     """``--rules argument_naming,verb_chain`` activates both clusters."""
-    # Arrange + Act
     result = _doctor_marketplace._parse_rules_flag('argument_naming,verb_chain')
 
-    # Assert
     assert result == frozenset({'argument_naming', 'verb_chain'})
 
 
@@ -1675,10 +1663,8 @@ def test_parse_rules_flag_drops_unknown_names_but_keeps_valid(capsys):
     only the unknown tokens are rejected. See ``test_parse_rules_flag_warns_on_unknown_tokens``
     for the warning contract.
     """
-    # Arrange + Act
     result = _doctor_marketplace._parse_rules_flag('argument_naming,nonsense,verb_chain')
 
-    # Assert
     assert result == frozenset({'argument_naming', 'verb_chain'})
 
 
@@ -1687,10 +1673,9 @@ def test_parse_rules_flag_warns_on_unknown_tokens(capsys):
     token alongside the accepted registry — silent drops mask user typos in a
     diagnostic tool. See lesson 2026-05-08-19-003 (PR #362 review).
     """
-    # Arrange + Act
     _doctor_marketplace._parse_rules_flag('argument_naming,nonsense,verb_chain')
 
-    # Assert — warning emitted on stderr, naming both the rejected token and
+    # warning emitted on stderr, naming both the rejected token and
     # the accepted registry so users can correct the typo.
     captured = capsys.readouterr()
     assert 'WARNING' in captured.err, f'Expected warning on stderr, got: {captured.err!r}'
@@ -1701,68 +1686,53 @@ def test_parse_rules_flag_warns_on_unknown_tokens(capsys):
 
 def test_parse_rules_flag_no_warning_on_valid_tokens(capsys):
     """No warning is emitted when every ``--rules`` token is in the registry."""
-    # Arrange + Act
     _doctor_marketplace._parse_rules_flag('argument_naming,verb_chain')
 
-    # Assert — no warning on stderr when all tokens are accepted.
+    # no warning on stderr when all tokens are accepted.
     captured = capsys.readouterr()
     assert 'WARNING' not in captured.err, f'Should NOT warn on valid tokens, got: {captured.err!r}'
 
 
 def test_parse_rules_flag_trims_whitespace_around_names():
     """Names are stripped of surrounding whitespace before lookup."""
-    # Arrange + Act
     result = _doctor_marketplace._parse_rules_flag(' argument_naming ,  verb_chain ')
 
-    # Assert
     assert result == frozenset({'argument_naming', 'verb_chain'})
 
 
 def test_resolve_active_rules_no_flags_returns_empty():
     """No ``--rules``, no aliases → no rules active (default-off contract)."""
-    # Arrange
     args = _FakeArgs()
 
-    # Act
     result = _doctor_marketplace._resolve_active_rules(args)
 
-    # Assert
     assert result == frozenset()
 
 
 def test_resolve_active_rules_enable_argument_naming_alias_activates_rule():
     """``--enable-argument-naming`` desugars into ``argument_naming``."""
-    # Arrange
     args = _FakeArgs(enable_argument_naming=True)
 
-    # Act
     result = _doctor_marketplace._resolve_active_rules(args)
 
-    # Assert
     assert result == frozenset({'argument_naming'})
 
 
 def test_resolve_active_rules_enable_verb_chain_alias_activates_rule():
     """``--enable-verb-chain`` desugars into ``verb_chain``."""
-    # Arrange
     args = _FakeArgs(enable_verb_chain=True)
 
-    # Act
     result = _doctor_marketplace._resolve_active_rules(args)
 
-    # Assert
     assert result == frozenset({'verb_chain'})
 
 
 def test_resolve_active_rules_rules_and_alias_union():
     """``--rules`` and aliases combine — the active set is their union."""
-    # Arrange
     args = _FakeArgs(rules='argument_naming', enable_verb_chain=True)
 
-    # Act
     result = _doctor_marketplace._resolve_active_rules(args)
 
-    # Assert
     assert result == frozenset({'argument_naming', 'verb_chain'})
 
 
@@ -1794,7 +1764,7 @@ def test_analyze_component_skips_verb_chain_when_inactive(tmp_path, monkeypatch)
     opt-in via ``--rules verb_chain`` / ``--enable-verb-chain``; absence
     must keep the analyzer silent (no calls, no findings).
     """
-    # Arrange — fixture skill directory and spy.
+    # fixture skill directory and spy.
     skill_dir = tmp_path / 'gated-skill'
     skill_dir.mkdir()
     (skill_dir / 'SKILL.md').write_text('---\nname: gated-skill\ndescription: x\n---\n# Gated Skill\n')
@@ -1809,10 +1779,10 @@ def test_analyze_component_skips_verb_chain_when_inactive(tmp_path, monkeypatch)
 
     monkeypatch.setattr(doctor_analysis, 'analyze_verb_chains', _spy)
 
-    # Act — no active rules.
+    # no active rules.
     doctor_analysis.analyze_component(component)
 
-    # Assert — spy never called.
+    # spy never called.
     assert calls == [], f'verb_chain should not run without opt-in, but spy was called: {calls!r}'
 
 
@@ -1822,7 +1792,6 @@ def test_analyze_component_runs_verb_chain_when_active(tmp_path, monkeypatch):
     Pins the active-path of the TASK-13 contract: with ``verb_chain`` in the
     active rule set, the analyzer is invoked exactly once per skill.
     """
-    # Arrange
     skill_dir = tmp_path / 'opted-in-skill'
     skill_dir.mkdir()
     (skill_dir / 'SKILL.md').write_text('---\nname: opted-in-skill\ndescription: x\n---\n# Opted In Skill\n')
@@ -1837,10 +1806,9 @@ def test_analyze_component_runs_verb_chain_when_active(tmp_path, monkeypatch):
 
     monkeypatch.setattr(doctor_analysis, 'analyze_verb_chains', _spy)
 
-    # Act
     doctor_analysis.analyze_component(component, active_rules=frozenset({'verb_chain'}))
 
-    # Assert — spy called exactly once with the skill dir.
+    # spy called exactly once with the skill dir.
     assert len(calls) == 1, f'verb_chain should run exactly once when opted in, calls={calls!r}'
 
 
@@ -1855,10 +1823,8 @@ def test_analyze_help_documents_rules_flag():
     Pins the user-facing CLI surface — if the flag is renamed/removed, this
     test catches it before the change reaches users.
     """
-    # Arrange + Act
     result = run_script(SCRIPT_PATH, 'analyze', '--help')
 
-    # Assert
     assert result.returncode == 0, f'analyze --help failed: {result.stderr}'
     help_text = result.stdout
     assert '--rules' in help_text, f'--rules not documented in analyze --help: {help_text!r}'
@@ -1883,11 +1849,9 @@ def test_zero_hit_grep_pm_argument_naming_enabled_in_source():
     if not marketplace_available():
         pytest.skip('Real marketplace not available')
 
-    # Arrange
     marketplace_root = MARKETPLACE_ROOT
     legacy_token = 'PM_ARGUMENT' + '_NAMING_ENABLED'  # split to avoid self-hit
 
-    # Act
     hits = []
     for path in marketplace_root.rglob('*'):
         if not path.is_file():
@@ -1902,7 +1866,6 @@ def test_zero_hit_grep_pm_argument_naming_enabled_in_source():
         if legacy_token in content:
             hits.append(str(path.relative_to(marketplace_root)))
 
-    # Assert
     assert hits == [], (
         f'Found {len(hits)} residual reference(s) to {legacy_token} in marketplace tree: {hits}. '
         f'The breaking-refactor contract per lesson 2026-05-08-19-003 requires zero hits.'
@@ -1935,15 +1898,14 @@ def test_resolve_marketplace_root_invalid_override_returns_structured_error(tmp_
     ``{status: error, error: invalid_marketplace_root}`` carrying the
     underlying message verbatim — never let the raise escape.
     """
-    # Arrange — tmp_path has no bundles/ subdir, so the override is invalid.
+    # tmp_path has no bundles/ subdir, so the override is invalid.
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
     assert not (tmp_path / 'bundles').exists(), 'Test precondition: tmp_path must lack bundles/'
     args = _FakeMarketplaceArgs(marketplace_root=str(tmp_path))
 
-    # Act
     result = _doctor_marketplace._resolve_marketplace_root(args)
 
-    # Assert — structured error envelope, not a Path and not a raise.
+    # structured error envelope, not a Path and not a raise.
     assert isinstance(result, dict), f'Expected an error dict, got: {result!r}'
     assert result['status'] == 'error', f'Expected status: error, got: {result}'
     assert result['error'] == 'invalid_marketplace_root', f'Expected invalid_marketplace_root, got: {result}'
@@ -1954,16 +1916,15 @@ def test_resolve_marketplace_root_invalid_override_returns_structured_error(tmp_
 
 def test_resolve_marketplace_root_valid_override_returns_bundles_path(tmp_path, monkeypatch):
     """A valid override resolves to the ``{override}/bundles`` Path (success branch)."""
-    # Arrange — a fake marketplace with a bundles/ subdir.
+    # a fake marketplace with a bundles/ subdir.
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
     fake_marketplace = tmp_path / 'marketplace'
     (fake_marketplace / 'bundles').mkdir(parents=True)
     args = _FakeMarketplaceArgs(marketplace_root=str(fake_marketplace))
 
-    # Act
     result = _doctor_marketplace._resolve_marketplace_root(args)
 
-    # Assert — the Path to bundles/, not an error dict.
+    # the Path to bundles/, not an error dict.
     assert not isinstance(result, dict), f'Expected a Path on success, got an error dict: {result!r}'
     assert result == fake_marketplace / 'bundles', f'Expected {fake_marketplace / "bundles"}, got {result}'
 
@@ -1976,14 +1937,12 @@ def test_resolve_marketplace_root_not_found_returns_structured_error(monkeypatch
     structured ``{status: error, error: not_found}`` envelope rather than
     returning ``None`` for callers to mishandle.
     """
-    # Arrange — patch the module's find_marketplace_root to return None.
+    # patch the module's find_marketplace_root to return None.
     monkeypatch.setattr(_doctor_marketplace, 'find_marketplace_root', lambda _override: None)
     args = _FakeMarketplaceArgs(marketplace_root=None)
 
-    # Act
     result = _doctor_marketplace._resolve_marketplace_root(args)
 
-    # Assert
     assert isinstance(result, dict), f'Expected an error dict, got: {result!r}'
     assert result['status'] == 'error', f'Expected status: error, got: {result}'
     assert result['error'] == 'not_found', f'Expected not_found, got: {result}'
@@ -1997,16 +1956,16 @@ def test_invalid_marketplace_root_cli_no_traceback(tmp_path):
     ``invalid_marketplace_root`` TOON error and produce NO Python ``Traceback``
     on stderr — the crash this deliverable fixes.
     """
-    # Arrange — bad override: tmp_path has no bundles/ subdir.
+    # bad override: tmp_path has no bundles/ subdir.
     bad_root = tmp_path / 'no-bundles-here'
     bad_root.mkdir()
     assert not (bad_root / 'bundles').exists(), 'Test precondition: override must lack bundles/'
 
-    # Act — run the verb against the bad override. PM_MARKETPLACE_ROOT must be
+    # run the verb against the bad override. PM_MARKETPLACE_ROOT must be
     # unset so the --marketplace-root arg is the resolution input under test.
     result = run_script(SCRIPT_PATH, 'quality-gate', '--marketplace-root', str(bad_root))
 
-    # Assert — contained failure, not a crash.
+    # contained failure, not a crash.
     assert result.returncode == 1, f'Expected exit 1 on invalid --marketplace-root, got {result.returncode}'
     assert 'Traceback' not in result.stderr, f'Verb must not crash with a traceback, got stderr: {result.stderr!r}'
 
@@ -2042,12 +2001,12 @@ def test_bad_marketplace_root_env_var_structured_error_no_traceback(tmp_path):
     subprocess entrypoint must emit a parseable ``invalid_marketplace_root`` TOON
     on stdout, exit 1, and print NO Python ``Traceback`` on either stream.
     """
-    # Arrange — PM_MARKETPLACE_ROOT points at a dir lacking bundles/.
+    # PM_MARKETPLACE_ROOT points at a dir lacking bundles/.
     bad_root = tmp_path / 'no-bundles-marketplace'
     bad_root.mkdir()
     assert not (bad_root / 'bundles').exists(), 'Test precondition: env-var root must lack bundles/'
 
-    # Act — drive resolution via the env var (no --marketplace-root flag).
+    # drive resolution via the env var (no --marketplace-root flag).
     result = run_script(
         SCRIPT_PATH,
         'quality-gate',
@@ -2058,7 +2017,7 @@ def test_bad_marketplace_root_env_var_structured_error_no_traceback(tmp_path):
         },
     )
 
-    # Assert — contained failure: exit 1, structured TOON on stdout, no crash.
+    # contained failure: exit 1, structured TOON on stdout, no crash.
     assert result.returncode == 1, f'Expected exit 1 on bad PM_MARKETPLACE_ROOT, got {result.returncode}'
     assert 'Traceback' not in result.stderr, f'Verb must not crash with a traceback, got stderr: {result.stderr!r}'
 
@@ -2076,15 +2035,14 @@ def test_bad_marketplace_root_no_traceback_in_combined_streams(tmp_path):
     the COMBINED stdout+stderr for the bad-root invocation — proving ``main()``
     never lets an uncaught exception reach the process streams as a raw traceback.
     """
-    # Arrange — bad --marketplace-root flag (dir without bundles/).
+    # bad --marketplace-root flag (dir without bundles/).
     bad_root = tmp_path / 'no-bundles-flag-root'
     bad_root.mkdir()
     assert not (bad_root / 'bundles').exists(), 'Test precondition: override must lack bundles/'
 
-    # Act
     result = run_script(SCRIPT_PATH, 'quality-gate', '--marketplace-root', str(bad_root))
 
-    # Assert — the raw crash banner must not appear on EITHER stream.
+    # the raw crash banner must not appear on EITHER stream.
     combined = result.stdout + result.stderr
     assert 'Traceback (most recent call last)' not in combined, (
         f'Dispatcher guard must suppress the raw crash banner on both streams, got: {combined!r}'

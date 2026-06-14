@@ -13,10 +13,13 @@ surface contract (``triage`` and ``triage-batch`` subcommands MUST be gone).
 """
 
 import importlib.util
+import io
 import sys
-import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from conftest import get_script_path, run_script
 
@@ -43,21 +46,24 @@ cmd_comments_stage = github_pr.cmd_comments_stage
 # =============================================================================
 
 
-class TestIsObviousNoise(unittest.TestCase):
+class TestIsObviousNoise:
     """Pre-filter must drop obvious noise but keep substantive content."""
 
-    def test_empty_body_is_noise(self):
-        self.assertTrue(_is_obvious_noise(''))
-
-    def test_lgtm_is_noise(self):
-        self.assertTrue(_is_obvious_noise('lgtm'))
-
-    def test_lgtm_uppercase_is_noise(self):
-        self.assertTrue(_is_obvious_noise('LGTM'))
+    @pytest.mark.parametrize(
+        'body',
+        [
+            pytest.param('', id='empty-body'),
+            pytest.param('lgtm', id='lgtm'),
+            pytest.param('LGTM', id='lgtm-uppercase'),
+        ],
+    )
+    def test_obvious_noise_is_dropped(self, body):
+        assert _is_obvious_noise(body)
 
     def test_substantive_content_is_not_noise(self):
         body = 'This needs to be fixed because of a security issue with input validation.'
-        self.assertFalse(_is_obvious_noise(body))
+
+        assert not _is_obvious_noise(body)
 
 
 # =============================================================================
@@ -65,7 +71,7 @@ class TestIsObviousNoise(unittest.TestCase):
 # =============================================================================
 
 
-class TestFetchCommentsWrapper(unittest.TestCase):
+class TestFetchCommentsWrapper:
     """fetch_comments() forwards the provider envelope verbatim."""
 
     def test_fetch_comments_success(self):
@@ -88,15 +94,17 @@ class TestFetchCommentsWrapper(unittest.TestCase):
                 'unresolved': 1,
             }
             result = fetch_comments(123, unresolved_only=False)
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['pr_number'], 123)
-            self.assertEqual(result['comments'][0]['kind'], 'inline')
+
+        assert result['status'] == 'success'
+        assert result['pr_number'] == 123
+        assert result['comments'][0]['kind'] == 'inline'
 
     def test_fetch_comments_provider_error(self):
         with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
             mock_fetch.return_value = {'status': 'error', 'error': 'Auth failed'}
             result = fetch_comments(123)
-            self.assertEqual(result['status'], 'error')
+
+        assert result['status'] == 'error'
 
 
 # =============================================================================
@@ -239,6 +247,7 @@ class TestCommentsStage:
                 'unresolved': 0,
             }
             result = cmd_comments_stage(_stage_make_args(124, 'gh-pr-stage-empty'))
+
         assert result['count_fetched'] == 0
         assert result['count_stored'] == 0
         assert result['producer_mismatch_hash_id'] is None
@@ -248,6 +257,7 @@ class TestCommentsStage:
         with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
             mock_fetch.return_value = {'status': 'error', 'error': 'auth'}
             result = cmd_comments_stage(_stage_make_args(125, 'gh-pr-stage-err'))
+
         assert result['status'] == 'error'
 
     def test_stage_count_mismatch_produces_qgate_finding(self, plan_context):
@@ -459,32 +469,38 @@ class TestCommentsStage:
 # =============================================================================
 
 
-class TestPRMain(unittest.TestCase):
+class TestPRMain:
     """Test github_pr.py main entry point (CLI plumbing)."""
 
     def test_no_subcommand(self):
         result = run_script(SCRIPT_PATH)
-        self.assertNotEqual(result.returncode, 0)
+
+        assert result.returncode != 0
 
     def test_help_lists_only_supported_subcommands(self):
         result = run_script(SCRIPT_PATH, '--help')
-        self.assertEqual(result.returncode, 0)
-        self.assertIn('fetch-comments', result.stdout)
-        self.assertIn('comments-stage', result.stdout)
+
+        assert result.returncode == 0
+        assert 'fetch-comments' in result.stdout
+        assert 'comments-stage' in result.stdout
         # Retired surfaces MUST be absent from the CLI
-        self.assertNotIn('triage-batch', result.stdout)
-        self.assertNotIn('--comments ', result.stdout)
+        assert 'triage-batch' not in result.stdout
+        assert '--comments ' not in result.stdout
 
-    def test_retired_triage_subcommand_rejected(self):
-        result = run_script(SCRIPT_PATH, 'triage', '--comment', '{}')
-        self.assertNotEqual(result.returncode, 0)
+    @pytest.mark.parametrize(
+        'argv',
+        [
+            pytest.param(['triage', '--comment', '{}'], id='triage-rejected'),
+            pytest.param(['triage-batch', '--comments', '[]'], id='triage-batch-rejected'),
+        ],
+    )
+    def test_retired_subcommand_rejected(self, argv):
+        result = run_script(SCRIPT_PATH, *argv)
 
-    def test_retired_triage_batch_subcommand_rejected(self):
-        result = run_script(SCRIPT_PATH, 'triage-batch', '--comments', '[]')
-        self.assertNotEqual(result.returncode, 0)
+        assert result.returncode != 0
 
 
-class TestPRProjectDirPlumbing(unittest.TestCase):
+class TestPRProjectDirPlumbing:
     """Verify github_pr.main() strips --project-dir and forwards cwd."""
 
     def test_main_project_dir_sets_default_cwd(self):
@@ -511,14 +527,15 @@ class TestPRProjectDirPlumbing(unittest.TestCase):
                     'unresolved': 0,
                 }
                 github_pr.main()
-            self.assertEqual(ci_base.get_default_cwd(), '/tmp/worktree-pr')
-            self.assertNotIn('--project-dir', sys.argv)
+
+            assert ci_base.get_default_cwd() == '/tmp/worktree-pr'
+            assert '--project-dir' not in sys.argv
         finally:
             sys.argv = saved_argv
             ci_base.set_default_cwd(saved_cwd)
 
 
-class TestPRTwoStateRoutingContract(unittest.TestCase):
+class TestPRTwoStateRoutingContract:
     """Two-state ``--plan-id`` / ``--project-dir`` routing for github_pr.main().
 
     Mirrors the github_ops.main() contract: router-level --plan-id is
@@ -556,16 +573,14 @@ class TestPRTwoStateRoutingContract(unittest.TestCase):
                     'unresolved': 0,
                 }
                 github_pr.main()
-            self.assertEqual(ci_base.get_default_cwd(), '/tmp/wt-pr-resolved')
+
+            assert ci_base.get_default_cwd() == '/tmp/wt-pr-resolved'
         finally:
             sys.argv = saved_argv
             ci_base.set_default_cwd(saved_cwd)
 
     def test_main_emits_mutually_exclusive_error_on_both_flags(self):
         """Both router-level routing flags → mutually_exclusive_args + exit 2."""
-        import io
-        from contextlib import redirect_stdout
-
         saved_argv = sys.argv
         try:
             sys.argv = [
@@ -579,14 +594,11 @@ class TestPRTwoStateRoutingContract(unittest.TestCase):
                 '999',
             ]
             buf = io.StringIO()
-            with self.assertRaises(SystemExit) as ctx:
+            with pytest.raises(SystemExit) as exc_info:
                 with redirect_stdout(buf):
                     github_pr.main()
-            self.assertEqual(ctx.exception.code, 2)
-            self.assertIn('mutually_exclusive_args', buf.getvalue())
+
+            assert exc_info.value.code == 2
+            assert 'mutually_exclusive_args' in buf.getvalue()
         finally:
             sys.argv = saved_argv
-
-
-if __name__ == '__main__':
-    unittest.main()

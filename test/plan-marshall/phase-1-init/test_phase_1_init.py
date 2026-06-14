@@ -108,10 +108,8 @@ class TestPhase1InitBaseBranchSeeding:
 
     def test_skill_documents_manage_config_project_read(self):
         """SKILL.md MUST document the `manage-config project get --field default_base_branch` read."""
-        # Arrange / Act
         text = self._skill_md_text()
 
-        # Assert
         assert 'project get --field default_base_branch' in text, (
             'phase-1-init SKILL.md must document the `manage-config project get` '
             'read for default_base_branch — that is the seed source for '
@@ -120,10 +118,9 @@ class TestPhase1InitBaseBranchSeeding:
 
     def test_skill_documents_field_not_found_fallback(self):
         """SKILL.md MUST document the legacy-schema fallback path on field_not_found."""
-        # Arrange / Act
         text = self._skill_md_text()
 
-        # Assert — the fallback must mention field_not_found AND the legacy
+        # the fallback must mention field_not_found AND the legacy
         # current-branch behaviour so the workflow degrades gracefully against
         # marshal.json files predating the project.default_base_branch field.
         assert 'field_not_found' in text, (
@@ -133,10 +130,9 @@ class TestPhase1InitBaseBranchSeeding:
 
     def test_skill_writes_project_base_branch_to_references(self):
         """SKILL.md MUST write the resolved value to references.base_branch."""
-        # Arrange / Act
         text = self._skill_md_text()
 
-        # Assert — the orchestration writes through manage-references set
+        # the orchestration writes through manage-references set
         # with --field base_branch carrying the project-resolved value.
         assert '--field base_branch' in text
         assert 'project_base_branch' in text, (

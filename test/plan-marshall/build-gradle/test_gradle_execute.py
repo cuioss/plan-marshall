@@ -18,10 +18,6 @@ _gradle_execute_mod = load_script_module('plan-marshall', 'build-gradle', '_grad
 _CONFIG = _gradle_execute_mod._CONFIG
 execute_direct = _gradle_execute_mod.execute_direct
 
-# =============================================================================
-# Config Tests
-# =============================================================================
-
 
 def test_config_tool_name():
     """Config has correct tool name."""
@@ -47,11 +43,6 @@ def test_config_capture_strategy():
     assert _CONFIG.capture_strategy == CaptureStrategy.STDOUT_REDIRECT
 
 
-# =============================================================================
-# Command Key Function
-# =============================================================================
-
-
 def test_command_key_fn_build():
     """Extracts 'build' from args."""
     assert _CONFIG.command_key_fn('build') == 'build'
@@ -65,11 +56,6 @@ def test_command_key_fn_module_task():
 def test_command_key_fn_empty():
     """Returns 'default' for empty args."""
     assert _CONFIG.command_key_fn('') == 'default'
-
-
-# =============================================================================
-# Scope Function
-# =============================================================================
 
 
 def test_scope_fn_default():
@@ -87,11 +73,6 @@ def test_scope_fn_p_flag():
     assert _CONFIG.scope_fn('-p services/auth build') == 'auth'
 
 
-# =============================================================================
-# Build Command Function
-# =============================================================================
-
-
 def test_build_command_fn():
     """Builds command with --console=plain."""
     cmd_parts, cmd_str = _CONFIG.build_command_fn('./gradlew', 'build', '/tmp/log.log')
@@ -103,11 +84,6 @@ def test_build_command_fn_with_module():
     """Includes module task in command."""
     cmd_parts, cmd_str = _CONFIG.build_command_fn('./gradlew', ':core:build', '/tmp/log.log')
     assert cmd_parts == ['./gradlew', ':core:build', '--console=plain']
-
-
-# =============================================================================
-# Wrapper Resolution and Execution
-# =============================================================================
 
 
 def test_execute_direct_error_on_nonexistent_project(tmp_path, monkeypatch):

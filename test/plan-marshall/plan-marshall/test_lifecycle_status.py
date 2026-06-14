@@ -43,11 +43,8 @@ def test_get_routing_context(plan_context):
     assert result.success, f'Script failed: {result.stderr}'
     data = parse_toon(result.stdout)
     assert data['status'] == 'success'
-    # Should have current phase
     assert data['current_phase'] == '1-init'
-    # Should have skill routing
     assert data['skill'] == 'plan-init'
-    # Should have progress
     assert 'total_phases' in data
     assert 'completed_phases' in data
 
@@ -89,7 +86,6 @@ def test_list_with_plan(plan_context):
     assert result.success, f'Script failed: {result.stderr}'
     data = parse_toon(result.stdout)
     assert data['total'] >= 1
-    # Find our plan in the list
     plan_ids = [p['id'] for p in data['plans']]
     assert 'list-plan' in plan_ids
 
@@ -97,11 +93,9 @@ def test_list_with_plan(plan_context):
 def test_list_with_filter(plan_context):
     """Test listing with phase filter."""
     _create_plan('filter-plan', 'Filter Test', '1-init,2-refine,3-outline')
-    # Filter for 1-init phase
     result = run_script(LIFECYCLE_SCRIPT, 'list', '--filter', '1-init')
     assert result.success, f'Script failed: {result.stderr}'
     data = parse_toon(result.stdout)
-    # Should find the plan (it starts at 1-init)
     plan_ids = [p['id'] for p in data['plans']]
     assert 'filter-plan' in plan_ids
 
@@ -109,11 +103,9 @@ def test_list_with_filter(plan_context):
 def test_list_with_filter_no_match(plan_context):
     """Test listing with filter that doesn't match."""
     _create_plan('nomatch-plan', 'No Match Test', '1-init,2-refine')
-    # Filter for a phase the plan isn't at
     result = run_script(LIFECYCLE_SCRIPT, 'list', '--filter', '5-execute')
     assert result.success, f'Script failed: {result.stderr}'
     data = parse_toon(result.stdout)
-    # Should not find the plan
     plan_ids = [p['id'] for p in data['plans']]
     assert 'nomatch-plan' not in plan_ids
 

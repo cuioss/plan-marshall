@@ -186,7 +186,12 @@ def test_lesson_body_preferred_over_request_md(plan_context):
 
 
 def test_emit_writes_qgate_findings(plan_context):
-    """With emit=True the suggestions are also recorded as Q-Gate findings."""
+    """With emit=True the suggestions are also recorded as Q-Gate findings.
+
+    The documentation narrative is constructed to match at least one live
+    recipe (recipe-doc-verify), so the suggestion count is deterministically
+    non-zero and the findings file is always written — no conditional guard.
+    """
     pdir = plan_context.plan_dir_for('ls-emit')
     _write_request(
         pdir,
@@ -194,10 +199,10 @@ def test_emit_writes_qgate_findings(plan_context):
     )
     _write_status(pdir, {'domain': 'documentation', 'scope_estimate': 'broad'})
     result = cmd_auto_suggest(_ns('ls-emit', no_emit=False))
+    assert result['count'] >= 1
     assert result['findings_emitted'] == result['count']
-    if result['count'] > 0:
-        findings_path = pdir / 'artifacts' / 'findings' / 'tip.jsonl'
-        assert findings_path.exists()
+    findings_path = pdir / 'artifacts' / 'findings' / 'tip.jsonl'
+    assert findings_path.exists()
 
 
 def test_plan_dir_not_found_errors(plan_context):

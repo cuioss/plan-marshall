@@ -20,10 +20,6 @@ from pathlib import Path
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT
 
-# ============================================================================
-# PATHS
-# ============================================================================
-
 SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor'
 SCRIPTS_DIR = SKILL_DIR / 'scripts'
 TEMPLATES_DIR = SKILL_DIR / 'templates'
@@ -36,11 +32,6 @@ TEST_SCRIPT_SKILL = 'manage-references'
 TEST_SCRIPT_PATH = (
     MARKETPLACE_ROOT / TEST_SCRIPT_BUNDLE / 'skills' / TEST_SCRIPT_SKILL / 'scripts' / 'manage-references.py'
 )
-
-
-# ============================================================================
-# TEST FIXTURES
-# ============================================================================
 
 
 class ExecutorTestEnvironment:
@@ -219,11 +210,6 @@ def cleanup_test_env():
         _test_env = None
 
 
-# ============================================================================
-# TESTS: Executor Generation
-# ============================================================================
-
-
 def test_executor_generated_successfully():
     """Executor is generated and is valid Python."""
     env = get_test_env()
@@ -259,11 +245,6 @@ def test_executor_list_command():
     # Should list our test scripts
     output = result.stdout
     assert 'plan-marshall:manage-references' in output, f'Missing plan-marshall:manage-references in list: {output}'
-
-
-# ============================================================================
-# TESTS: Successful Execution
-# ============================================================================
 
 
 def test_execute_script_help():
@@ -327,11 +308,6 @@ def test_log_format_success_compact():
 
     # Should NOT contain ERROR marker for success
     assert '[ERROR]' not in entry, f'Success entry should not contain [ERROR]: {entry}'
-
-
-# ============================================================================
-# TESTS: Error Execution
-# ============================================================================
 
 
 def test_execute_nonexistent_script():
@@ -422,11 +398,6 @@ def test_log_format_error_multi_line():
     assert len(indented_lines) >= 1, f'Expected indented detail lines: {error_lines}'
 
 
-# ============================================================================
-# TESTS: Argument Forwarding
-# ============================================================================
-
-
 def test_arguments_forwarded_correctly():
     """Arguments are correctly forwarded to the script."""
     env = get_test_env()
@@ -467,11 +438,6 @@ def test_complex_arguments_forwarded():
     # Verify executor logged the invocation
     log_content = env.get_log_content()
     assert 'plan-marshall:manage-references' in log_content, f'Script notation not logged: {log_content}'
-
-
-# ============================================================================
-# TESTS: Edge Cases
-# ============================================================================
 
 
 def test_no_arguments_shows_usage():
@@ -528,11 +494,6 @@ def test_multiple_executions_append_to_log():
     assert count >= 3, f'Expected at least 3 log entries, found {count}'
 
 
-# ============================================================================
-# TESTS: Log Location (Plan-Scoped vs Global)
-# ============================================================================
-
-
 def test_global_log_used_without_plan_id():
     """Global log is used when no --plan-id provided."""
     env = get_test_env()
@@ -573,8 +534,3 @@ def test_plan_scoped_log_when_plan_exists():
     finally:
         # Cleanup
         shutil.rmtree(plan_dir, ignore_errors=True)
-
-
-# ============================================================================
-# TEST RUNNER
-# ============================================================================

@@ -142,8 +142,6 @@ def test_pr_prepare_body_with_router_project_dir_and_subcommand_plan_id_caught_b
     )
 
 
-
-
 # =============================================================================
 # Two-state routing contract — both --plan-id and --project-dir at router
 # =============================================================================
@@ -176,5 +174,3 @@ def test_router_level_plan_id_with_project_dir_yields_mutually_exclusive_error(t
     assert 'mutually_exclusive_args' in result.stdout, (
         f'Expected mutually_exclusive_args in TOON output, got: {result.stdout!r}'
     )
-
-

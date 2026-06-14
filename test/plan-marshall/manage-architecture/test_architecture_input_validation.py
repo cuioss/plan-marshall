@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: I001
 """6-axis identifier-validation rejection-path tests for ``architecture.py``.
 
 In-scope flags from TASK-1 (architecture-specific identifier vocabulary):
@@ -21,6 +22,7 @@ from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
 )
 
 from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
 
@@ -43,11 +45,8 @@ def test_module_subcommand_accepts_canonical_module():
     downstream, but never with ``invalid_module``)."""
     result = run_script(SCRIPT_PATH, 'module', '--module', HAPPY_VALUES['module'])
     assert result.returncode == 0
-    if result.stdout.strip():
-        from toon_parser import parse_toon  # type: ignore[import-not-found]
-
-        data = parse_toon(result.stdout)
-        assert data.get('error') != 'invalid_module'
+    data = parse_toon(result.stdout)
+    assert data.get('error') != 'invalid_module'
 
 
 # =============================================================================

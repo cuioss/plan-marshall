@@ -8,6 +8,7 @@ Public API tests should use maven.py CLI instead.
 # Direct imports - conftest sets up PYTHONPATH (cross-skill)
 from pathlib import Path
 
+import pytest
 from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 
 from conftest import load_script_module
@@ -156,14 +157,13 @@ def test_issue_to_dict():
     log_file = TEST_DATA_DIR / 'maven-failure-real.log'
     issues, test_summary, build_status = parse_log(log_file)
 
-    if issues:
-        issue = issues[0]
-        d = issue.to_dict()
+    assert issues, 'failure log must yield at least one issue'
+    d = issues[0].to_dict()
 
-        assert 'file' in d
-        assert 'line' in d
-        assert 'message' in d
-        assert 'severity' in d
+    assert 'file' in d
+    assert 'line' in d
+    assert 'message' in d
+    assert 'severity' in d
 
 
 def test_test_summary_to_dict():
@@ -186,28 +186,20 @@ def test_test_summary_to_dict():
 
 def test_parse_log_file_not_found():
     """Raises FileNotFoundError for missing log file."""
-    import pytest
-
     with pytest.raises(FileNotFoundError):
         parse_log('/nonexistent/path/to/log.log')
 
 
-def test_parse_log_no_tests():
+def test_parse_log_no_tests(tmp_path):
     """Handles log without test summary gracefully."""
-    # Create a minimal log without tests
-    import tempfile
-
     content = """[INFO] Scanning for projects...
 [INFO] BUILD SUCCESS
 [INFO] Total time: 1.234 s
 """
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
-        f.write(content)
-        f.flush()
+    log_file = tmp_path / 'no-tests.log'
+    log_file.write_text(content)
 
-        issues, test_summary, build_status = parse_log(f.name)
+    issues, test_summary, build_status = parse_log(str(log_file))
 
-        assert build_status == 'SUCCESS'
-        assert test_summary is None
-
-        Path(f.name).unlink()
+    assert build_status == 'SUCCESS'
+    assert test_summary is None

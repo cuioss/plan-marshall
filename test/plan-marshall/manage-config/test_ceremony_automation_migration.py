@@ -81,11 +81,11 @@ def _hash_marshal(fixture_dir):
 
 def test_each_knob_resolves_from_phase_6_finalize(plan_context):
     """Each migrated knob reads back through ``plan phase-6-finalize get`` with its default."""
-    # Arrange — fresh marshal.json (no overrides → default-merge path)
+    # fresh marshal.json (no overrides → default-merge path)
     _cmd_init.cmd_init(Namespace(force=False))
     before = _hash_marshal(plan_context.fixture_dir)
 
-    # Act / Assert — each knob resolves to its historical default, read-only
+    # each knob resolves to its historical default, read-only
     for knob, expected in _MIGRATED_KNOBS:
         result = _cmd_quality_phases.cmd_phase(
             Namespace(verb='get', field=knob), 'phase-6-finalize'
@@ -154,7 +154,7 @@ def test_live_override_survives_and_resolves(plan_context):
     one knob to a non-default value reads it back unchanged while the untouched
     siblings fall back to their defaults.
     """
-    # Arrange — override loop_back_without_asking to True, leave the others unset
+    # override loop_back_without_asking to True, leave the others unset
     _cmd_init.cmd_init(Namespace(force=False))
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
@@ -163,7 +163,6 @@ def test_live_override_survives_and_resolves(plan_context):
     ] = True
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
-    # Act
     overridden = _cmd_quality_phases.cmd_phase(
         Namespace(verb='get', field='loop_back_without_asking'), 'phase-6-finalize'
     )
@@ -171,6 +170,6 @@ def test_live_override_survives_and_resolves(plan_context):
         Namespace(verb='get', field='finalize_without_asking'), 'phase-6-finalize'
     )
 
-    # Assert — override wins; untouched sibling falls back to default
+    # override wins; untouched sibling falls back to default
     assert overridden['value'] is True
     assert sibling['value'] is True  # historical default preserved

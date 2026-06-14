@@ -43,19 +43,12 @@ def _load_npm_extension():
 Extension = _load_npm_extension()
 
 
-# =============================================================================
-# Test: Basic Module Discovery
-# =============================================================================
-
-
 def test_discover_modules_single_module():
     """Test discover_modules with single npm project."""
     with BuildContext() as ctx:
-        # Create a single-module npm project
         pkg = {'name': 'my-app', 'version': '1.0.0', 'description': 'My sample application', 'type': 'module'}
         (ctx.temp_dir / 'package.json').write_text(json.dumps(pkg))
 
-        # Create source directory
         src_dir = ctx.temp_dir / 'src'
         src_dir.mkdir()
         (src_dir / 'index.js').write_text('export default function() {}')
@@ -66,7 +59,6 @@ def test_discover_modules_single_module():
         assert len(modules) == 1
         module = modules[0]
 
-        # New structure assertions
         assert module['name'] == 'my-app'
         assert module['build_systems'] == ['npm']
         assert module['paths']['module'] == '.'
@@ -81,20 +73,16 @@ def test_discover_modules_with_workspaces():
     Root module is returned first (at "."), followed by workspace packages.
     """
     with BuildContext() as ctx:
-        # Create root package.json with workspaces
         root_pkg = {'name': 'monorepo', 'workspaces': ['packages/*']}
         (ctx.temp_dir / 'package.json').write_text(json.dumps(root_pkg))
 
-        # Create packages directory
         packages_dir = ctx.temp_dir / 'packages'
         packages_dir.mkdir()
 
-        # Create first workspace
         pkg_a_dir = packages_dir / 'pkg-a'
         pkg_a_dir.mkdir()
         (pkg_a_dir / 'package.json').write_text(json.dumps({'name': '@monorepo/pkg-a', 'version': '1.0.0'}))
 
-        # Create second workspace
         pkg_b_dir = packages_dir / 'pkg-b'
         pkg_b_dir.mkdir()
         (pkg_b_dir / 'package.json').write_text(json.dumps({'name': '@monorepo/pkg-b', 'version': '2.0.0'}))
@@ -128,11 +116,6 @@ def test_discover_modules_no_package_json():
         modules = ext.discover_modules(str(ctx.temp_dir))
 
         assert len(modules) == 0
-
-
-# =============================================================================
-# Test: Metadata Extraction
-# =============================================================================
 
 
 def test_metadata_extraction():
@@ -171,11 +154,6 @@ def test_metadata_extraction():
         assert 'packaging' not in metadata
 
 
-# =============================================================================
-# Test: Dependency Extraction
-# =============================================================================
-
-
 def test_extract_dependencies():
     """Test dependency extraction structure.
 
@@ -203,11 +181,6 @@ def test_extract_dependencies():
 
         # Without npm install, dependencies will be empty
         # Integration tests verify actual dependency extraction with real projects
-
-
-# =============================================================================
-# Test: Source Directory Discovery (via paths object)
-# =============================================================================
 
 
 def test_discover_sources_src():
@@ -258,24 +231,17 @@ def test_discover_sources_no_resources_in_paths():
         assert 'resources' not in paths
 
 
-# =============================================================================
-# Test: Stats
-# =============================================================================
-
-
 def test_stats_file_counts():
     """Test source and test file counting."""
     with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
 
-        # Create source files
         src_dir = ctx.temp_dir / 'src'
         src_dir.mkdir()
         (src_dir / 'index.js').write_text('export default {}')
         (src_dir / 'utils.ts').write_text('export const x = 1')
         (src_dir / 'component.tsx').write_text('export default () => null')
 
-        # Create test files
         test_dir = ctx.temp_dir / 'test'
         test_dir.mkdir()
         (test_dir / 'index.test.js').write_text('test("x", () => {})')
@@ -314,15 +280,9 @@ def test_no_readme_in_paths():
         assert modules[0]['paths'].get('readme') is None
 
 
-# =============================================================================
-# Test: build_systems field (array)
-# =============================================================================
-
-
 def test_build_systems_is_array():
     """Test that build_systems is an array, not a string."""
     with BuildContext() as ctx:
-        # Create npm project
         (ctx.temp_dir / 'package.json').write_text('{"name": "frontend", "version": "1.0.0"}')
 
         ext = Extension()
@@ -334,23 +294,15 @@ def test_build_systems_is_array():
         assert isinstance(modules[0]['build_systems'], list)
 
 
-# =============================================================================
-# Test: Workspaces with object format
-# =============================================================================
-
-
 def test_workspaces_object_format():
     """Test workspaces with object format (packages key)."""
     with BuildContext() as ctx:
-        # Create root package.json with object workspaces
         root_pkg = {'name': 'monorepo', 'workspaces': {'packages': ['packages/*']}}
         (ctx.temp_dir / 'package.json').write_text(json.dumps(root_pkg))
 
-        # Create packages directory
         packages_dir = ctx.temp_dir / 'packages'
         packages_dir.mkdir()
 
-        # Create workspace
         pkg_dir = packages_dir / 'my-pkg'
         pkg_dir.mkdir()
         (pkg_dir / 'package.json').write_text(json.dumps({'name': 'my-pkg', 'version': '1.0.0'}))
@@ -364,16 +316,11 @@ def test_workspaces_object_format():
         assert workspace_modules[0]['name'] == 'my-pkg'
 
 
-# =============================================================================
-# Test: Paths structure (replaces descriptors)
-# =============================================================================
-
-
 def test_paths_structure():
     """Test that paths has correct structure."""
     with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
-        (ctx.temp_dir / 'README.md').write_text('# Test')  # Create README
+        (ctx.temp_dir / 'README.md').write_text('# Test')
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
@@ -388,11 +335,6 @@ def test_paths_structure():
         # Values
         assert paths['descriptor'] == 'package.json'
         assert paths['module'] == '.'
-
-
-# =============================================================================
-# Test: Packages (object, not array)
-# =============================================================================
 
 
 def test_packages_is_object():
@@ -464,11 +406,6 @@ def test_packages_from_directories():
         assert any('hooks' in k for k in packages), f'Expected hooks in {list(packages.keys())}'
 
 
-# =============================================================================
-# Test: Commands
-# =============================================================================
-
-
 def test_commands_from_scripts():
     """Test command generation from package.json scripts."""
     with BuildContext() as ctx:
@@ -498,8 +435,3 @@ def test_commands_minimal():
         assert 'module-tests' in commands
         assert 'verify' in commands  # test-only verify
         assert 'compile' not in commands  # no build script
-
-
-# =============================================================================
-# Runner
-# =============================================================================

@@ -16,6 +16,7 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
 from file_ops import format_toon_value
 
 from conftest import load_script_module
@@ -135,11 +136,8 @@ def test_load_project_meta_success():
 def test_load_project_meta_missing_raises():
     """load_project_meta raises DataNotFoundError when file missing."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        try:
+        with pytest.raises(DataNotFoundError, match='(?i)discover'):
             load_project_meta(tmpdir)
-            assert False, 'Should have raised DataNotFoundError'
-        except DataNotFoundError as e:
-            assert 'discover' in str(e).lower()
 
 
 def test_save_project_meta_creates_dir_and_file():
@@ -172,11 +170,8 @@ def test_load_module_derived_success():
 def test_load_module_derived_missing_raises():
     """load_module_derived raises DataNotFoundError when file missing."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        try:
+        with pytest.raises(DataNotFoundError, match='(?i)discover'):
             load_module_derived('mod-a', tmpdir)
-            assert False, 'Should have raised DataNotFoundError'
-        except DataNotFoundError as e:
-            assert 'discover' in str(e).lower()
 
 
 def test_save_module_derived_writes_per_module_file():
@@ -207,11 +202,8 @@ def test_load_module_enriched_success():
 def test_load_module_enriched_missing_raises():
     """load_module_enriched raises DataNotFoundError when file missing."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        try:
+        with pytest.raises(DataNotFoundError, match='(?i)init'):
             load_module_enriched('mod-a', tmpdir)
-            assert False, 'Should have raised DataNotFoundError'
-        except DataNotFoundError as e:
-            assert 'init' in str(e).lower()
 
 
 def test_load_module_enriched_or_empty_returns_empty_when_missing():
@@ -545,11 +537,8 @@ def test_merge_module_data_missing_derived_raises():
     with tempfile.TemporaryDirectory() as tmpdir:
         # _project.json present but module's derived.json absent (lists 'gone').
         save_project_meta({'name': 'p', 'modules': {'gone': {}}, 'extensions_used': []}, tmpdir)
-        try:
+        with pytest.raises(DataNotFoundError):
             merge_module_data('gone', tmpdir)
-            assert False, 'Should have raised DataNotFoundError'
-        except DataNotFoundError:
-            pass
 
 
 # =============================================================================

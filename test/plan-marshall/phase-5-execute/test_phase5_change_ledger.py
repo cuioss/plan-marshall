@@ -143,7 +143,7 @@ def _commit_deliverable(repo: Path, *files: tuple[str, str]) -> str:
 
 
 def test_happy_path_appends_change_entry_with_git_sourced_values(env) -> None:
-    # Arrange — Step 10a sub-step 1: a per-deliverable commit lands two files.
+    # Step 10a sub-step 1: a per-deliverable commit lands two files.
     commit_sha = _commit_deliverable(
         env.repo,
         ('src/feature.py', 'value = 1\n'),
@@ -155,7 +155,7 @@ def test_happy_path_appends_change_entry_with_git_sourced_values(env) -> None:
     assert sourced_sha == commit_sha
     assert set(changed_paths) == {'src/feature.py', 'test/test_feature.py'}
 
-    # Act — Step 5: append the kind=change ledger entry with git-sourced values.
+    # Step 5: append the kind=change ledger entry with git-sourced values.
     result = env.run(
         'append',
         '--kind',
@@ -168,14 +168,13 @@ def test_happy_path_appends_change_entry_with_git_sourced_values(env) -> None:
         ','.join(changed_paths),
     )
 
-    # Assert — success TOON for a change entry.
     assert result.success, result.stderr
     data = result.toon()
     assert data['status'] == 'success'
     assert data['kind'] == 'change'
 
-    # Assert — exactly one kind=change entry carrying the git-sourced values
-    # stored verbatim (NOT self-computed from affected_files).
+    # Exactly one kind=change entry carrying the git-sourced values stored
+    # verbatim (NOT self-computed from affected_files).
     entries = _read_ledger(env.ledger_path)
     assert len(entries) == 1
     entry = entries[0]
@@ -188,11 +187,11 @@ def test_happy_path_appends_change_entry_with_git_sourced_values(env) -> None:
 
 
 def test_happy_path_task_id_alias_links_the_commit(env) -> None:
-    # Arrange — a single-file deliverable committed; flow uses --task-id alias.
+    # A single-file deliverable committed; flow uses the --task-id alias.
     commit_sha = _commit_deliverable(env.repo, ('src/only.py', 'x = 2\n'))
     changed_paths = _diff_tree_paths(env.repo, commit_sha)
 
-    # Act — Step 5 with the --task-id alias instead of --deliverable-id.
+    # Step 5 with the --task-id alias instead of --deliverable-id.
     result = env.run(
         'append',
         '--kind',
@@ -205,7 +204,7 @@ def test_happy_path_task_id_alias_links_the_commit(env) -> None:
         ','.join(changed_paths),
     )
 
-    # Assert — the alias populates deliverable_id and the commit is linked.
+    # The alias populates deliverable_id and the commit is linked.
     assert result.success, result.stderr
     entry = _read_ledger(env.ledger_path)[0]
     assert entry['deliverable_id'] == 'TASK-8'
@@ -219,7 +218,7 @@ def test_happy_path_task_id_alias_links_the_commit(env) -> None:
 
 
 def test_git_commit_error_writes_no_ledger_entry(env) -> None:
-    # Arrange — a commit attempt with nothing staged fails (no changes to commit).
+    # A commit attempt with nothing staged fails (no changes to commit).
     # The Step 10a flow git-sources commit_sha AFTER the commit succeeds, so a
     # failed commit short-circuits the flow before the append ever runs.
     proc = subprocess.run(
@@ -228,7 +227,7 @@ def test_git_commit_error_writes_no_ledger_entry(env) -> None:
         text=True,
     )
 
-    # Assert — the commit itself failed (nothing to commit) ...
+    # The commit itself failed (nothing to commit) ...
     assert proc.returncode != 0
 
     # ... and because the flow appends only after a successful commit, the
@@ -238,17 +237,17 @@ def test_git_commit_error_writes_no_ledger_entry(env) -> None:
 
 
 def test_git_commit_error_leaves_head_at_baseline(env) -> None:
-    # Arrange — capture the baseline HEAD before the failed commit attempt.
+    # Capture the baseline HEAD before the failed commit attempt.
     baseline_head = _rev_parse_head(env.repo)
 
-    # Act — an empty commit attempt fails and must not advance HEAD.
+    # An empty commit attempt fails and must not advance HEAD.
     proc = subprocess.run(
         ['git', '-C', str(env.repo), 'commit', '-q', '-m', 'empty'],
         capture_output=True,
         text=True,
     )
 
-    # Assert — HEAD is unchanged, so there is no commit to source from.
+    # HEAD is unchanged, so there is no commit to source from.
     assert proc.returncode != 0
     assert _rev_parse_head(env.repo) == baseline_head
     assert _read_ledger(env.ledger_path) == []
@@ -260,12 +259,12 @@ def test_git_commit_error_leaves_head_at_baseline(env) -> None:
 
 
 def test_ledger_append_error_does_not_undo_the_commit(env) -> None:
-    # Arrange — Step 10a sub-step 1: the per-deliverable commit lands first.
+    # Step 10a sub-step 1: the per-deliverable commit lands first.
     commit_sha = _commit_deliverable(env.repo, ('src/done.py', 'done = True\n'))
 
-    # Act — Step 5: the append fails because the required --commit-sha is
-    # omitted (a malformed append at the tail of the flow). The append is the
-    # LAST sub-step, so its failure cannot undo the already-made commit.
+    # Step 5: the append fails because the required --commit-sha is omitted
+    # (a malformed append at the tail of the flow). The append is the LAST
+    # sub-step, so its failure cannot undo the already-made commit.
     result = env.run(
         'append',
         '--kind',
@@ -274,7 +273,7 @@ def test_ledger_append_error_does_not_undo_the_commit(env) -> None:
         '5',
     )
 
-    # Assert — the append returned an error and wrote no ledger entry ...
+    # The append returned an error and wrote no ledger entry ...
     data = result.toon()
     assert data['status'] == 'error'
     assert _read_ledger(env.ledger_path) == []
@@ -287,14 +286,14 @@ def test_ledger_append_error_does_not_undo_the_commit(env) -> None:
 
 
 def test_ledger_append_error_keeps_committed_files_present(env) -> None:
-    # Arrange — commit a file, then drive a failing append (missing commit-sha).
+    # Commit a file, then drive a failing append (missing commit-sha).
     _commit_deliverable(env.repo, ('src/persisted.py', 'kept = 1\n'))
 
-    # Act — failing append at the flow tail.
+    # Failing append at the flow tail.
     result = env.run('append', '--kind', 'change', '--deliverable-id', '5')
 
-    # Assert — append failed, ledger empty, but the committed file survives on
-    # disk (the working tree is untouched by the append failure).
+    # Append failed, ledger empty, but the committed file survives on disk
+    # (the working tree is untouched by the append failure).
     assert result.toon()['status'] == 'error'
     assert _read_ledger(env.ledger_path) == []
     assert (env.repo / 'src/persisted.py').read_text() == 'kept = 1\n'

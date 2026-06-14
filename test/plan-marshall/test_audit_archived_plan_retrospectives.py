@@ -38,7 +38,6 @@ _AUDIT_SCRIPT = (
     / 'audit.py'
 )
 
-
 def _load_audit():
     spec = importlib.util.spec_from_file_location('audit_under_test', _AUDIT_SCRIPT)
     assert spec is not None, f'Failed to load module spec for {_AUDIT_SCRIPT}'
@@ -51,9 +50,7 @@ def _load_audit():
     spec.loader.exec_module(mod)
     return mod
 
-
 audit = _load_audit()
-
 
 def _inputs(phase_5: list[str]) -> Any:
     """Build a minimal PlanInputs carrying only the phase_5 manifest list."""
@@ -64,88 +61,75 @@ def _inputs(phase_5: list[str]) -> Any:
         manifest_phase_5=list(phase_5),
     )
 
-
 # =============================================================================
 # D1 — detect_name_drift role resolution
 # =============================================================================
 
-
 class TestNameDriftRoleResolution:
     def test_canonical_step_ids_not_flagged(self):
-        # Arrange
         inputs = _inputs(['quality_check', 'build_verify'])
         cache: dict[str, str | None] = {}
 
-        # Act
         drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
 
-        # Assert — quality_check → quality-gate, build_verify → module-tests
+        # quality_check → quality-gate, build_verify → module-tests
         assert drift is None
         assert cache['quality_check'] == 'quality-gate'
         assert cache['build_verify'] == 'module-tests'
 
     def test_namespaced_step_ids_resolve_to_roles_and_not_flagged(self):
-        # Arrange — the lesson-2026-05-29-13-001 sub-lesson 13-002 namespaced shape
+        # the lesson-2026-05-29-13-001 sub-lesson 13-002 namespaced shape
         inputs = _inputs(['default:quality_check', 'default:build_verify'])
         cache: dict[str, str | None] = {}
 
-        # Act
         drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
         resolved = {
             audit._resolve_step_role(PROJECT_ROOT, s, cache)
             for s in inputs.manifest_phase_5
         }
 
-        # Assert — the default: prefix is stripped and roles resolve correctly
+        # the default: prefix is stripped and roles resolve correctly
         assert drift is None
         assert resolved == {'quality-gate', 'module-tests'}
 
     def test_unresolvable_role_flagged_as_genuine_drift(self):
-        # Arrange — a step ID with no standards file / no role: frontmatter
+        # a step ID with no standards file / no role: frontmatter
         inputs = _inputs(['not_a_real_step'])
         cache: dict[str, str | None] = {}
 
-        # Act
         drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
 
-        # Assert
         assert drift is not None
         assert 'unresolvable role' in drift
 
     def test_empty_phase_5_returns_no_drift(self):
-        # Arrange
         inputs = _inputs([])
         cache: dict[str, str | None] = {}
 
-        # Act
         drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
 
-        # Assert
         assert drift is None
 
     def test_standards_dir_absent_degrades_to_unresolved(self, tmp_path: Path):
-        # Arrange — a repo_root with no phase-5-execute/standards directory
+        # a repo_root with no phase-5-execute/standards directory
         inputs = _inputs(['quality_check'])
         cache: dict[str, str | None] = {}
 
-        # Act — best-effort: unresolved rather than crash
+        # best-effort: unresolved rather than crash
         role = audit._resolve_step_role(tmp_path, 'quality_check', cache)
         drift = audit.detect_name_drift(inputs, tmp_path, cache)
 
-        # Assert
         assert role is None
         assert drift is not None
         assert 'unresolvable role' in drift
-
 
 # =============================================================================
 # D1 — precision / severity in the manifest block summary
 # =============================================================================
 
-
 class TestManifestSeverityPrecision:
     def test_genuine_signal_count_counts_only_genuine_rows(self):
-        # Arrange — one drift row, one populated name_drift, two informational
+        # one drift row, one populated name_drift, two informational
         rows = [
             {'verdict': 'drift', 'name_drift': None},
             {'verdict': 'ok', 'name_drift': 'unresolvable role: foo'},
@@ -169,15 +153,13 @@ class TestManifestSeverityPrecision:
             for i, r in enumerate(rows)
         ]
 
-        # Act
         block = audit.emit_manifest_block(full_rows)
 
-        # Assert — drift + populated name_drift = 2 genuine; informational excluded
+        # drift + populated name_drift = 2 genuine; informational excluded
         assert 'genuine_signal_count: 2' in block
         assert 'name_drift_count: 1' in block
 
     def test_severity_classifier_marks_informational_rows(self):
-        # Arrange / Act / Assert
         assert (
             audit._manifest_genuine({'verdict': 'drift', 'name_drift': None})
             is True
@@ -195,7 +177,6 @@ class TestManifestSeverityPrecision:
             is False
         )
 
-
 # =============================================================================
 # D2/D4 — dormate_plans batch dormation + path-traversal hardening
 # =============================================================================
@@ -208,7 +189,6 @@ class TestManifestSeverityPrecision:
 # success, ``--dormate-all`` via ``dormate_all_plans``, inert-without-confirmed,
 # all-or-nothing refuse-on-clash, and silent dedup.
 
-
 def _archived_plan_dir(repo_root: Path, plan_id: str) -> Path:
     """Create and return an archived-plan source dir with a marker file."""
     plan_dir = repo_root / '.plan' / 'local' / 'archived-plans' / plan_id
@@ -216,11 +196,9 @@ def _archived_plan_dir(repo_root: Path, plan_id: str) -> Path:
     (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
     return plan_dir
 
-
 def _dormated_plan_dir(repo_root: Path, plan_id: str) -> Path:
     """Path to the dormation destination for a single plan id."""
     return repo_root / '.plan' / 'temp' / 'dormated-plans' / plan_id
-
 
 class TestDormatePlanIdHardening:
     """The path-traversal guard fires identically under the batch function:
@@ -228,69 +206,60 @@ class TestDormatePlanIdHardening:
     """
 
     def test_parent_traversal_plan_id_refused(self, tmp_path: Path):
-        # Act
         result = audit.dormate_plans(tmp_path, ['../escape'], confirmed=True)
 
-        # Assert — refused on grammar before any move
+        # refused on grammar before any move
         assert result['status'] == 'refused'
         assert 'invalid plan_id' in result['reason']
         assert result['moved'] == []
 
     def test_absolute_path_plan_id_refused(self, tmp_path: Path):
-        # Act
         result = audit.dormate_plans(tmp_path, ['/etc/passwd'], confirmed=True)
 
-        # Assert
         assert result['status'] == 'refused'
         assert 'invalid plan_id' in result['reason']
         assert result['moved'] == []
 
     def test_embedded_separator_plan_id_refused(self, tmp_path: Path):
-        # Act
         result = audit.dormate_plans(tmp_path, ['a/b'], confirmed=True)
 
-        # Assert
         assert result['status'] == 'refused'
         assert 'invalid plan_id' in result['reason']
         assert result['moved'] == []
 
     def test_well_formed_plan_id_passes_grammar_then_source_not_found(self, tmp_path: Path):
-        # Arrange — a canonical kebab/date plan_id with no archived dir on disk
+        # a canonical kebab/date plan_id with no archived dir on disk
         plan_id = '2026-05-29-some-valid-plan'
 
-        # Act
         result = audit.dormate_plans(tmp_path, [plan_id], confirmed=True)
 
-        # Assert — passes grammar (NOT the grammar refusal); fails source-not-found
+        # passes grammar (NOT the grammar refusal); fails source-not-found
         assert result['status'] == 'error'
         assert 'source not found' in result['reason']
         assert 'invalid plan_id' not in result['reason']
         assert result['moved'] == []
 
     def test_inert_without_confirmed(self, tmp_path: Path):
-        # Act
         result = audit.dormate_plans(tmp_path, ['../escape'], confirmed=False)
 
-        # Assert — the inert path fires before grammar validation
+        # the inert path fires before grammar validation
         assert result['status'] == 'refused'
         assert 'requires --confirmed' in result['reason']
         assert result['moved'] == []
-
 
 class TestDormatePlans:
     """Batch-specific behaviours of ``dormate_plans`` / ``dormate_all_plans``."""
 
     def test_multi_id_success_relocates_every_plan(self, tmp_path: Path):
-        # Arrange — two valid archived plans on disk
+        # two valid archived plans on disk
         _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
         _archived_plan_dir(tmp_path, '2026-06-02-plan-b')
 
-        # Act
         result = audit.dormate_plans(
             tmp_path, ['2026-06-01-plan-a', '2026-06-02-plan-b'], confirmed=True
         )
 
-        # Assert — both moved, sources gone, destinations present
+        # both moved, sources gone, destinations present
         assert result['status'] == 'success'
         assert result['moved'] == ['2026-06-01-plan-a', '2026-06-02-plan-b']
         archived = tmp_path / '.plan' / 'local' / 'archived-plans'
@@ -300,15 +269,14 @@ class TestDormatePlans:
         assert _dormated_plan_dir(tmp_path, '2026-06-02-plan-b').is_dir()
 
     def test_dormate_all_relocates_every_archived_plan(self, tmp_path: Path):
-        # Arrange — three archived plans; dormate_all_plans enumerates them all
+        # three archived plans; dormate_all_plans enumerates them all
         _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
         _archived_plan_dir(tmp_path, '2026-06-02-plan-b')
         _archived_plan_dir(tmp_path, '2026-06-03-plan-c')
 
-        # Act
         result = audit.dormate_all_plans(tmp_path, confirmed=True)
 
-        # Assert — all three relocated (sorted) via the dormate_plans delegate
+        # all three relocated (sorted) via the dormate_plans delegate
         assert result['status'] == 'success'
         assert result['moved'] == [
             '2026-06-01-plan-a',
@@ -322,23 +290,22 @@ class TestDormatePlans:
         assert _dormated_plan_dir(tmp_path, '2026-06-03-plan-c').is_dir()
 
     def test_dormate_all_absent_archive_dir_is_noop_success(self, tmp_path: Path):
-        # Act — no archived-plans directory exists at all
+        # no archived-plans directory exists at all
         result = audit.dormate_all_plans(tmp_path, confirmed=True)
 
-        # Assert — empty no-op success
+        # empty no-op success
         assert result['status'] == 'success'
         assert result['moved'] == []
 
     def test_inert_without_confirmed_leaves_sources_untouched(self, tmp_path: Path):
-        # Arrange — a valid archived plan that must NOT move
+        # a valid archived plan that must NOT move
         _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
 
-        # Act
         result = audit.dormate_plans(
             tmp_path, ['2026-06-01-plan-a'], confirmed=False
         )
 
-        # Assert — refused, nothing moved, source still on disk
+        # refused, nothing moved, source still on disk
         assert result['status'] == 'refused'
         assert result['moved'] == []
         archived = tmp_path / '.plan' / 'local' / 'archived-plans'
@@ -346,7 +313,7 @@ class TestDormatePlans:
         assert not _dormated_plan_dir(tmp_path, '2026-06-01-plan-a').exists()
 
     def test_all_or_nothing_refuse_on_clash_moves_nothing(self, tmp_path: Path):
-        # Arrange — two valid sources, but a pre-existing destination for the
+        # two valid sources, but a pre-existing destination for the
         # SECOND plan. The all-or-nothing pre-check must refuse the WHOLE batch
         # before relocating the first (clean) plan.
         _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
@@ -354,12 +321,11 @@ class TestDormatePlans:
         clash = _dormated_plan_dir(tmp_path, '2026-06-02-plan-b')
         clash.mkdir(parents=True, exist_ok=True)
 
-        # Act
         result = audit.dormate_plans(
             tmp_path, ['2026-06-01-plan-a', '2026-06-02-plan-b'], confirmed=True
         )
 
-        # Assert — error, nothing moved, BOTH sources still present
+        # error, nothing moved, BOTH sources still present
         assert result['status'] == 'error'
         assert result['moved'] == []
         assert 'already exists' in result['reason']
@@ -370,26 +336,24 @@ class TestDormatePlans:
         assert not _dormated_plan_dir(tmp_path, '2026-06-01-plan-a').exists()
 
     def test_silent_dedup_collapses_duplicate_ids(self, tmp_path: Path):
-        # Arrange — one archived plan, supplied id listed three times
+        # one archived plan, supplied id listed three times
         _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
 
-        # Act — duplicates must collapse silently (no double-move error)
+        # duplicates must collapse silently (no double-move error)
         result = audit.dormate_plans(
             tmp_path,
             ['2026-06-01-plan-a', '2026-06-01-plan-a', '2026-06-01-plan-a'],
             confirmed=True,
         )
 
-        # Assert — moved exactly once, no error
+        # moved exactly once, no error
         assert result['status'] == 'success'
         assert result['moved'] == ['2026-06-01-plan-a']
         assert _dormated_plan_dir(tmp_path, '2026-06-01-plan-a').is_dir()
 
-
 # =============================================================================
 # D8 — retrospective-token exclusion in the three metrics-related checks
 # =============================================================================
-
 
 def _phase(
     name: str,
@@ -409,10 +373,9 @@ def _phase(
         idle_duration_ms=idle_duration_ms,
     )
 
-
 class TestRetrospectiveExclusionDisproportionate:
     def test_retrospective_does_not_trip_share_threshold(self, monkeypatch):
-        # Arrange — finalize raw total dominates (2000 of 2800 = 71%, which would
+        # finalize raw total dominates (2000 of 2800 = 71%, which would
         # trip the 45% threshold on raw tokens), but the bulk is retrospective.
         # The two implementation phases carry balanced effective shares so that no
         # phase trips the threshold once retrospective spend is excluded.
@@ -424,16 +387,15 @@ class TestRetrospectiveExclusionDisproportionate:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert — effective total 1000 (400 + 400 + 200); shares 40%/40%/20%,
+        # effective total 1000 (400 + 400 + 200); shares 40%/40%/20%,
         # none >= 45%, so nothing is flagged. Without exclusion, finalize's raw
         # 2000/2800 = 71% would have tripped the threshold.
         assert result['disproportionate_token'] == ''
 
     def test_negative_control_genuine_disproportionate_still_flagged(self, monkeypatch):
-        # Arrange — a genuine >=45% phase even after retrospective exclusion
+        # a genuine >=45% phase even after retrospective exclusion
         phases = [
             _phase('5-execute', total_tokens=300),
             _phase('3-outline', total_tokens=700),
@@ -442,16 +404,14 @@ class TestRetrospectiveExclusionDisproportionate:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert — effective total 1100, outline 700/1100 = 63% → flagged
+        # effective total 1100, outline 700/1100 = 63% → flagged
         assert '3-outline' in result['disproportionate_token']
-
 
 class TestRetrospectiveExclusionOptimization:
     def test_retrospective_only_outlier_not_flagged(self, monkeypatch):
-        # Arrange — three balanced phases plus a finalize whose only spend is
+        # three balanced phases plus a finalize whose only spend is
         # retrospective (effective 0 → excluded from the ratio set).
         phases = [
             _phase('2-refine', total_tokens=1000, duration_seconds=100.0),
@@ -467,17 +427,15 @@ class TestRetrospectiveExclusionOptimization:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert — the finalize phase (raw 900 tok/s outlier) is excluded
+        # the finalize phase (raw 900 tok/s outlier) is excluded
         assert '6-finalize' not in result['optimization_signal']
         assert result['optimization_signal'] == ''
 
-
 class TestRetrospectiveExclusionTrend:
     def test_total_and_divisor_exclude_retrospective(self, monkeypatch):
-        # Arrange — one plan whose finalize spend is entirely retrospective
+        # one plan whose finalize spend is entirely retrospective
         phases = [
             _phase('5-execute', total_tokens=500),
             _phase('6-finalize', total_tokens=400, retrospective_tokens=400),
@@ -485,19 +443,17 @@ class TestRetrospectiveExclusionTrend:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.cross_token_trend([inputs])
 
-        # Assert — effective total 500, only one implementation phase counted
+        # effective total 500, only one implementation phase counted
         row = result['rows'][0]
         assert row['total_tokens'] == 500
         assert row['phases'] == 1
         assert row['tokens_per_phase'] == 500
 
-
 class TestRetrospectiveExclusionDegrade:
     def test_absent_attribution_excludes_nothing(self, monkeypatch):
-        # Arrange — archived-plan shape: NO retrospective_tokens field anywhere
+        # archived-plan shape: NO retrospective_tokens field anywhere
         phases = [
             _phase('5-execute', total_tokens=1000, duration_seconds=100.0),
             _phase('6-finalize', total_tokens=2000, duration_seconds=50.0),
@@ -505,17 +461,16 @@ class TestRetrospectiveExclusionDegrade:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         metrics = audit.check_metrics(inputs)
         trend = audit.cross_token_trend([inputs])
 
-        # Assert — behaves exactly as pre-D8 (2000/3000 = 67% finalize flagged)
+        # behaves exactly as pre-D8 (2000/3000 = 67% finalize flagged)
         assert '6-finalize' in metrics['disproportionate_token']
         assert trend['rows'][0]['total_tokens'] == 3000
         assert trend['rows'][0]['phases'] == 2
 
     def test_only_retrospective_excluded_other_op_spend_counted(self, monkeypatch):
-        # Arrange — a finalize phase carrying q-gate-validation / other-op spend
+        # a finalize phase carrying q-gate-validation / other-op spend
         # (no retrospective_tokens) stays fully counted.
         phases = [
             _phase('5-execute', total_tokens=400),
@@ -524,46 +479,40 @@ class TestRetrospectiveExclusionDegrade:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert — effective total 1000, finalize 600/1000 = 60% → flagged
+        # effective total 1000, finalize 600/1000 = 60% → flagged
         assert '6-finalize' in result['disproportionate_token']
-
 
 # =============================================================================
 # D1 — THRESHOLDS centralization: single-source table + back-compat aliases
 # =============================================================================
-
 
 class TestThresholdsCentralization:
     """The ``THRESHOLDS`` table is the single source of truth and every
     back-compatible module-level alias resolves to the same value it owns."""
 
     def test_systemic_threshold_alias_matches_table(self):
-        # Arrange / Act / Assert — the request-mandated 3+ occurrences
+        # the request-mandated 3+ occurrences
         assert audit.SYSTEMIC_THRESHOLD == audit.THRESHOLDS['systemic_occurrences']
         assert audit.SYSTEMIC_THRESHOLD == 3
 
     def test_pr_slow_review_alias_matches_table(self):
-        # Arrange / Act / Assert
         assert audit.PR_SLOW_REVIEW_HOURS == audit.THRESHOLDS['pr_slow_review_hours']
 
     def test_phase_token_share_alias_matches_table(self):
-        # Arrange / Act / Assert
         assert (
             audit.PHASE_TOKEN_SHARE_THRESHOLD
             == audit.THRESHOLDS['phase_token_share']
         )
 
     def test_scope_file_bands_alias_matches_table(self):
-        # Arrange / Act / Assert — alias is the same mapping object the table owns
+        # alias is the same mapping object the table owns
         assert audit.SCOPE_FILE_BANDS == audit.THRESHOLDS['scope_file_bands']
         assert audit.SCOPE_FILE_BANDS['surgical'] == (1, 3)
         assert audit.SCOPE_FILE_BANDS['multi_module'] == (5, None)
 
     def test_tasks_per_deliverable_aliases_match_table(self):
-        # Arrange / Act / Assert
         assert (
             audit.TASKS_PER_DELIVERABLE_LOW
             == audit.THRESHOLDS['tasks_per_deliverable_low']
@@ -574,7 +523,7 @@ class TestThresholdsCentralization:
         )
 
     def test_thresholds_table_carries_every_documented_constant(self):
-        # Arrange — every magic number the checks consume must live in the table
+        # every magic number the checks consume must live in the table
         expected_keys = {
             'systemic_occurrences',
             'pr_slow_review_hours',
@@ -592,9 +541,8 @@ class TestThresholdsCentralization:
             'tasks_per_deliverable_high',
         }
 
-        # Act / Assert — table is a superset of the documented constants
+        # table is a superset of the documented constants
         assert expected_keys <= set(audit.THRESHOLDS)
-
 
 class TestCorpusRelativeHelpers:
     """``median`` / ``percentile`` are the corpus-relative threshold helpers a
@@ -602,43 +550,36 @@ class TestCorpusRelativeHelpers:
     exists."""
 
     def test_median_empty_returns_zero(self):
-        # Arrange / Act / Assert
         assert audit.median([]) == 0.0
 
     def test_median_odd_length_returns_middle(self):
-        # Arrange / Act / Assert — unsorted input is sorted internally
+        # unsorted input is sorted internally
         assert audit.median([3.0, 1.0, 2.0]) == 2.0
 
     def test_median_even_length_averages_two_middle(self):
-        # Arrange / Act / Assert
         assert audit.median([1.0, 2.0, 3.0, 4.0]) == 2.5
 
     def test_percentile_empty_returns_zero(self):
-        # Arrange / Act / Assert
         assert audit.percentile([], 50.0) == 0.0
 
     def test_percentile_nearest_rank_is_deterministic(self):
-        # Arrange — nearest-rank: rank = round(pct/100 * n), floored at 1
+        # nearest-rank: rank = round(pct/100 * n), floored at 1
         values = [10.0, 20.0, 30.0, 40.0]
 
-        # Act / Assert
         assert audit.percentile(values, 0.0) == 10.0
         assert audit.percentile(values, 100.0) == 40.0
         assert audit.percentile(values, 50.0) == 20.0
 
     def test_percentile_clamps_out_of_range_pct(self):
-        # Arrange
         values = [5.0, 15.0, 25.0]
 
-        # Act / Assert — pct outside [0,100] is clamped, never raises
+        # pct outside [0,100] is clamped, never raises
         assert audit.percentile(values, -10.0) == 5.0
         assert audit.percentile(values, 250.0) == 25.0
-
 
 # =============================================================================
 # D1 — uniform severity column + genuine_signal_count across emit_* blocks
 # =============================================================================
-
 
 class TestSeveritySummary:
     """``_severity_summary`` stamps a uniform ``severity`` cell on every row and
@@ -646,50 +587,41 @@ class TestSeveritySummary:
     severity pattern to every ``emit_*_block``."""
 
     def test_stamps_severity_and_counts_genuine(self):
-        # Arrange — predicate fires on rows whose ``flag`` is truthy
+        # predicate fires on rows whose ``flag`` is truthy
         rows = [{'flag': 'x'}, {'flag': ''}, {'flag': 'y'}]
 
-        # Act
         stamped, count = audit._severity_summary(rows, lambda r: bool(r['flag']))
 
-        # Assert
         assert count == 2
         assert stamped[0]['severity'] == 'genuine'
         assert stamped[1]['severity'] == 'informational'
         assert stamped[2]['severity'] == 'genuine'
 
     def test_all_informational_when_predicate_never_fires(self):
-        # Arrange
         rows = [{'v': 1}, {'v': 2}]
 
-        # Act
         stamped, count = audit._severity_summary(rows, lambda _r: False)
 
-        # Assert
         assert count == 0
         assert all(r['severity'] == 'informational' for r in stamped)
 
     def test_empty_rows_yields_zero_count(self):
-        # Arrange / Act
         stamped, count = audit._severity_summary([], lambda _r: True)
 
-        # Assert
         assert stamped == []
         assert count == 0
-
 
 class TestEmitTableBlockSeverity:
     """Every ``emit_table_block`` carries the uniform ``severity`` final column
     and the ``genuine_signal_count`` summary line."""
 
     def test_severity_column_appended_and_count_line_present(self):
-        # Arrange — two rows, one genuine (mismatch populated)
+        # two rows, one genuine (mismatch populated)
         rows = [
             {'plan_id': 'p1', 'mismatch': 'declared=surgical actual=99'},
             {'plan_id': 'p2', 'mismatch': ''},
         ]
 
-        # Act
         block = audit.emit_table_block(
             'scope-estimate-accuracy',
             ['plan_id', 'mismatch'],
@@ -697,20 +629,18 @@ class TestEmitTableBlockSeverity:
             lambda r: bool(r['mismatch']),
         )
 
-        # Assert — header carries the appended severity column + count line
+        # header carries the appended severity column + count line
         assert 'rows[2]{plan_id,mismatch,severity}:' in block
         assert 'genuine_signal_count: 1' in block
         assert 'check: scope-estimate-accuracy' in block
         assert 'plans_scanned: 2' in block
 
     def test_genuine_and_informational_rows_emit_correct_severity_cell(self):
-        # Arrange
         rows = [
             {'plan_id': 'g', 'outlier': 'over_decomposed (ratio=5.00)'},
             {'plan_id': 'i', 'outlier': ''},
         ]
 
-        # Act
         block = audit.emit_table_block(
             'task-count-efficiency',
             ['plan_id', 'outlier'],
@@ -719,19 +649,17 @@ class TestEmitTableBlockSeverity:
         )
         lines = [ln.strip() for ln in block.splitlines()]
 
-        # Assert — the row cells end in genuine / informational respectively
+        # the row cells end in genuine / informational respectively
         genuine_row = next(ln for ln in lines if ln.startswith('g,'))
         info_row = next(ln for ln in lines if ln.startswith('i,'))
         assert genuine_row.endswith(',genuine')
         assert info_row.endswith(',informational')
-
 
 class TestEmitRecurringBlockSeverity:
     """Every systemic recurring pattern cleared the N-occurrence threshold, so
     every row is by definition a genuine signal."""
 
     def test_all_systemic_rows_are_genuine(self):
-        # Arrange
         result = {
             'threshold': 3,
             'systemic_count': 2,
@@ -751,10 +679,9 @@ class TestEmitRecurringBlockSeverity:
             ],
         }
 
-        # Act
         block = audit.emit_recurring_block(result)
 
-        # Assert — both rows genuine; the count + threshold lines present
+        # both rows genuine; the count + threshold lines present
         assert 'genuine_signal_count: 2' in block
         assert 'threshold: 3' in block
         assert (
@@ -763,23 +690,19 @@ class TestEmitRecurringBlockSeverity:
         )
 
     def test_empty_systemic_rows_yields_zero_genuine(self):
-        # Arrange
         result = {'threshold': 3, 'systemic_count': 0, 'rows': []}
 
-        # Act
         block = audit.emit_recurring_block(result)
 
-        # Assert
         assert 'genuine_signal_count: 0' in block
         assert 'systemic_count: 0' in block
-
 
 class TestEmitTrendBlockSeverity:
     """A trend row is genuine only when a sustained regression fired for the
     whole series; without regression the per-plan rows are informational."""
 
     def test_regression_marks_all_rows_genuine(self):
-        # Arrange — a populated regression string flags the whole series
+        # a populated regression string flags the whole series
         result = {
             'plans_in_series': 2,
             'regression': 'tokens/phase rose 100 -> 200 (+100%)',
@@ -789,14 +712,13 @@ class TestEmitTrendBlockSeverity:
             ],
         }
 
-        # Act
         block = audit.emit_trend_block(result)
 
-        # Assert — both supporting rows genuine when regression fired
+        # both supporting rows genuine when regression fired
         assert 'genuine_signal_count: 2' in block
 
     def test_no_regression_marks_all_rows_informational(self):
-        # Arrange — empty regression string
+        # empty regression string
         result = {
             'plans_in_series': 2,
             'regression': '',
@@ -806,21 +728,17 @@ class TestEmitTrendBlockSeverity:
             ],
         }
 
-        # Act
         block = audit.emit_trend_block(result)
 
-        # Assert
         assert 'genuine_signal_count: 0' in block
         assert (
             'rows[2]{plan_id,phases,total_tokens,tokens_per_phase,severity}:'
             in block
         )
 
-
 # =============================================================================
 # D1 — persisted report sink: path-guarding + load / diff round-trip
 # =============================================================================
-
 
 class TestPersistedReportSink:
     """``write_persisted_report`` writes only under ``audit-reports/`` and the
@@ -828,14 +746,12 @@ class TestPersistedReportSink:
     persisted."""
 
     def test_write_creates_report_under_audit_reports(self, tmp_path: Path):
-        # Arrange
         blocks = ['check: metrics\nstatus: success\n']
         summary = {'plans_scanned': 2, 'metrics_genuine': 1}
 
-        # Act
         dest = audit.write_persisted_report(tmp_path, blocks, summary)
 
-        # Assert — landed under the guarded directory with the timestamp grammar
+        # landed under the guarded directory with the timestamp grammar
         assert dest is not None
         reports_dir = (tmp_path / audit.AUDIT_REPORTS_REL).resolve()
         assert dest.parent == reports_dir
@@ -843,15 +759,13 @@ class TestPersistedReportSink:
         assert dest.is_file()
 
     def test_written_report_carries_summary_metrics_header(self, tmp_path: Path):
-        # Arrange
         summary = {'plans_scanned': 3, 'foo': 'bar'}
 
-        # Act
         dest = audit.write_persisted_report(tmp_path, ['check: x\n'], summary)
         assert dest is not None
         text = dest.read_text(encoding='utf-8')
 
-        # Assert — header block + keys (sorted) + the run's block text
+        # header block + keys (sorted) + the run's block text
         assert 'report: audit' in text
         assert 'summary_metrics:' in text
         assert 'plans_scanned: 3' in text
@@ -859,41 +773,37 @@ class TestPersistedReportSink:
         assert 'check: x' in text
 
     def test_load_latest_prior_round_trips_summary_metrics(self, tmp_path: Path):
-        # Arrange — write a report, then read its summary back
+        # write a report, then read its summary back
         summary = {'plans_scanned': 5, 'metrics_genuine': 2, 'regression': True}
         audit.write_persisted_report(tmp_path, ['check: m\n'], summary)
 
-        # Act
         loaded = audit.load_latest_prior_report(tmp_path)
 
-        # Assert — int + bool coercion round-trips through _coerce_metric
+        # int + bool coercion round-trips through _coerce_metric
         assert loaded is not None
         assert loaded['plans_scanned'] == 5
         assert loaded['metrics_genuine'] == 2
         assert loaded['regression'] is True
 
     def test_load_latest_prior_returns_none_when_no_reports(self, tmp_path: Path):
-        # Arrange — no audit-reports directory at all
-        # Act
+        # no audit-reports directory at all
         loaded = audit.load_latest_prior_report(tmp_path)
 
-        # Assert
         assert loaded is None
 
     def test_load_latest_prior_ignores_non_timestamp_files(self, tmp_path: Path):
-        # Arrange — a stray non-grammar file must not be picked as "latest"
+        # a stray non-grammar file must not be picked as "latest"
         reports_dir = (tmp_path / audit.AUDIT_REPORTS_REL).resolve()
         reports_dir.mkdir(parents=True)
         (reports_dir / 'not-a-report.toon').write_text('garbage\n', encoding='utf-8')
 
-        # Act
         loaded = audit.load_latest_prior_report(tmp_path)
 
-        # Assert — no valid timestamp-stem report exists
+        # no valid timestamp-stem report exists
         assert loaded is None
 
     def test_latest_is_lexicographically_greatest_stem(self, tmp_path: Path):
-        # Arrange — two valid reports; the greater stem is "latest prior"
+        # two valid reports; the greater stem is "latest prior"
         reports_dir = (tmp_path / audit.AUDIT_REPORTS_REL).resolve()
         reports_dir.mkdir(parents=True)
         older = reports_dir / '20260101T000000Z.toon'
@@ -905,85 +815,71 @@ class TestPersistedReportSink:
             'report: audit\nsummary_metrics:\n  plans_scanned: 9\n', encoding='utf-8'
         )
 
-        # Act
         loaded = audit.load_latest_prior_report(tmp_path)
 
-        # Assert — the newer (greater stem) summary is returned
+        # the newer (greater stem) summary is returned
         assert loaded is not None
         assert loaded['plans_scanned'] == 9
-
 
 class TestDiffSummaryMetrics:
     """``diff_summary_metrics`` reports every changed metric, sorted, with empty
     strings filling a side where a key is absent."""
 
     def test_changed_keys_reported_sorted(self):
-        # Arrange
         prior = {'a': 1, 'b': 2, 'c': 3}
         current = {'a': 1, 'b': 99, 'c': 3}
 
-        # Act
         changes = audit.diff_summary_metrics(prior, current)
 
-        # Assert — only b changed
+        # only b changed
         assert changes == [('b', 2, 99)]
 
     def test_added_key_reports_empty_prior_side(self):
-        # Arrange — key only in current
+        # key only in current
         changes = audit.diff_summary_metrics({}, {'new_metric': 7})
 
-        # Assert
         assert changes == [('new_metric', '', 7)]
 
     def test_removed_key_reports_empty_current_side(self):
-        # Arrange — key only in prior
+        # key only in prior
         changes = audit.diff_summary_metrics({'gone': 4}, {})
 
-        # Assert
         assert changes == [('gone', 4, '')]
 
     def test_no_changes_yields_empty_list(self):
-        # Arrange / Act / Assert
         assert audit.diff_summary_metrics({'a': 1}, {'a': 1}) == []
 
     def test_full_round_trip_write_load_diff(self, tmp_path: Path):
-        # Arrange — write a prior report, then diff a current summary against it
+        # write a prior report, then diff a current summary against it
         prior_summary = {'plans_scanned': 4, 'metrics_genuine': 1}
         audit.write_persisted_report(tmp_path, ['check: p\n'], prior_summary)
         prior = audit.load_latest_prior_report(tmp_path)
         assert prior is not None
         current_summary = {'plans_scanned': 4, 'metrics_genuine': 3}
 
-        # Act
         changes = audit.diff_summary_metrics(prior, current_summary)
 
-        # Assert — only metrics_genuine moved 1 -> 3
+        # only metrics_genuine moved 1 -> 3
         assert changes == [('metrics_genuine', 1, 3)]
-
 
 class TestCoerceMetric:
     """``_coerce_metric`` reconstructs bool / int / str types when reading a
     persisted report's summary header back from text."""
 
     def test_bool_strings_coerce_to_bool(self):
-        # Arrange / Act / Assert
         assert audit._coerce_metric('True') is True
         assert audit._coerce_metric('False') is False
 
     def test_int_string_coerces_to_int(self):
-        # Arrange / Act / Assert
         assert audit._coerce_metric('42') == 42
         assert isinstance(audit._coerce_metric('42'), int)
 
     def test_non_numeric_string_stays_string(self):
-        # Arrange / Act / Assert
         assert audit._coerce_metric('plan-abc') == 'plan-abc'
-
 
 # =============================================================================
 # D1 — dedup pre-tagger: novel vs covered_by:{lesson_id}
 # =============================================================================
-
 
 class TestDedupPretag:
     """``_dedup_pretag`` is the Gate-1 PRE-filter: ``novel`` when no filed lesson
@@ -991,75 +887,63 @@ class TestDedupPretag:
     same substring containment match as the body's adjudication."""
 
     def test_empty_signature_is_novel(self):
-        # Arrange / Act / Assert
         assert audit._dedup_pretag('', ['lesson-x\tsome title']) == 'novel'
         assert audit._dedup_pretag('   ', ['lesson-x\tsome title']) == 'novel'
 
     def test_uncovered_signature_is_novel(self):
-        # Arrange — corpus title shares no containment with the signature
+        # corpus title shares no containment with the signature
         corpus = ['lesson-2026-06-01-12-001\tflaky network retry']
 
-        # Act / Assert
         assert audit._dedup_pretag('scope estimate drift', corpus) == 'novel'
 
     def test_covered_signature_names_the_lesson_id(self):
-        # Arrange — corpus entry is `lesson_id\ttitle`; substring containment fires
+        # corpus entry is `lesson_id\ttitle`; substring containment fires
         corpus = ['lesson-2026-06-01-12-001\tdisproportionate token usage in finalize']
 
-        # Act
         tag = audit._dedup_pretag('disproportionate token usage', corpus)
 
-        # Assert — names the covering lesson id parsed from the corpus filename stem
+        # names the covering lesson id parsed from the corpus filename stem
         assert tag == 'covered_by:lesson-2026-06-01-12-001'
 
     def test_existing_substring_of_signature_also_covers(self):
-        # Arrange — symmetric containment: corpus title is a substring of the sig
+        # symmetric containment: corpus title is a substring of the sig
         corpus = ['lesson-99\ttoken drift']
 
-        # Act
         tag = audit._dedup_pretag('recurring token drift signature', corpus)
 
-        # Assert
         assert tag == 'covered_by:lesson-99'
 
     def test_tab_prefixed_entry_with_empty_lesson_id_returns_bare_covered(self):
-        # Arrange — a leading-tab entry yields an empty lesson_id, so there is no
+        # a leading-tab entry yields an empty lesson_id, so there is no
         # id to qualify the tag with; the title still drives containment.
         corpus = ['\tdisproportionate token usage']
 
-        # Act
         tag = audit._dedup_pretag('disproportionate token usage in finalize', corpus)
 
-        # Assert — covered, but no id available to qualify it
+        # covered, but no id available to qualify it
         assert tag == 'covered'
 
     def test_bare_title_entry_uses_title_as_lesson_id(self):
-        # Arrange — a corpus entry with no tab → the whole string is the
+        # a corpus entry with no tab → the whole string is the
         # lesson_id (and also the containment title via the `title or lesson_id`
         # fallback), so the tag is qualified with that string.
         corpus = ['disproportionate token usage']
 
-        # Act
         tag = audit._dedup_pretag('disproportionate token usage in finalize', corpus)
 
-        # Assert
         assert tag == 'covered_by:disproportionate token usage'
 
     def test_case_insensitive_containment(self):
-        # Arrange — match must be case-insensitive
+        # match must be case-insensitive
         corpus = ['lesson-7\tTOKEN Drift Pattern']
 
-        # Act
         tag = audit._dedup_pretag('token drift pattern', corpus)
 
-        # Assert
         assert tag == 'covered_by:lesson-7'
-
 
 # =============================================================================
 # D2 — global-log-analysis cross-plan check
 # =============================================================================
-
 
 def _write_log(repo_root: Path, name: str, lines: list[str]) -> None:
     """Write a global log file under ``{repo_root}/.plan/local/logs/{name}``.
@@ -1072,7 +956,6 @@ def _write_log(repo_root: Path, name: str, lines: list[str]) -> None:
     logs_dir = repo_root / '.plan' / 'local' / 'logs'
     logs_dir.mkdir(parents=True, exist_ok=True)
     (logs_dir / name).write_text('\n'.join(lines) + '\n', encoding='utf-8')
-
 
 def _write_metrics_window(
     repo_root: Path,
@@ -1101,18 +984,16 @@ def _write_metrics_window(
     )
     (work / 'metrics.toon').write_text(body, encoding='utf-8')
 
-
 def _line(ts: str, level: str, rest: str, *, hash_: str = '3befe7') -> str:
     """Build a single log line in the shared ``_LOG_LINE_RE`` grammar."""
     return f'[{ts}] [{level}] [{hash_}] {rest}'
-
 
 class TestGlobalLogAnalysisLineGrammar:
     """The shared line grammar drives every downstream signal — a line that does
     not match ``_LOG_LINE_RE`` is silently skipped and never counted."""
 
     def test_well_formed_line_is_counted_by_level(self, tmp_path: Path):
-        # Arrange — two grammar-valid lines at distinct levels
+        # two grammar-valid lines at distinct levels
         _write_log(
             tmp_path,
             'work-2026-06-01.log',
@@ -1122,15 +1003,14 @@ class TestGlobalLogAnalysisLineGrammar:
             ],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — both lines parsed; level buckets reflect each LEVEL cell
+        # both lines parsed; level buckets reflect each LEVEL cell
         assert result['total_log_lines'] == 2
         assert result['level_counts'] == {'INFO': 1, 'WARNING': 1}
 
     def test_malformed_lines_are_skipped(self, tmp_path: Path):
-        # Arrange — only the first line matches the bracketed grammar
+        # only the first line matches the bracketed grammar
         _write_log(
             tmp_path,
             'work-2026-06-01.log',
@@ -1141,19 +1021,17 @@ class TestGlobalLogAnalysisLineGrammar:
             ],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — only the single well-formed line is counted
+        # only the single well-formed line is counted
         assert result['total_log_lines'] == 1
         assert result['level_counts'] == {'INFO': 1}
 
     def test_missing_logs_dir_yields_empty_all_zero_result(self, tmp_path: Path):
-        # Arrange — no .plan/local/logs directory at all
-        # Act — best-effort: empty result rather than raising
+        # no .plan/local/logs directory at all
+        # best-effort: empty result rather than raising
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert
         assert result['logs_present'] is False
         assert result['total_log_lines'] == 0
         assert result['error_count'] == 0
@@ -1161,13 +1039,12 @@ class TestGlobalLogAnalysisLineGrammar:
         assert result['high_frequency_count'] == 0
         assert result['fixture_leak_count'] == 0
 
-
 class TestGlobalLogAnalysisCallAggregation:
     """Script-execution lines aggregate per ``notation subcommand`` key, summing
     call counts and durations across the corpus."""
 
     def test_calls_aggregate_per_notation_and_subcommand(self, tmp_path: Path):
-        # Arrange — three calls: two share a key, one is a different subcommand
+        # three calls: two share a key, one is a different subcommand
         _write_log(
             tmp_path,
             'script-execution-2026-06-01.log',
@@ -1178,17 +1055,16 @@ class TestGlobalLogAnalysisCallAggregation:
             ],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — total wall-clock summed; per-key aggregation distinct by subcommand
+        # total wall-clock summed; per-key aggregation distinct by subcommand
         assert result['total_script_seconds'] == 0.6
         # no high-frequency / slow rows at these low counts/durations
         assert result['high_frequency_count'] == 0
         assert result['slow_call_count'] == 0
 
     def test_high_frequency_caller_flagged_at_ceiling(self, tmp_path: Path):
-        # Arrange — exactly high_frequency_calls (50) identical-key calls
+        # exactly high_frequency_calls (50) identical-key calls
         ceiling = audit.THRESHOLDS['high_frequency_calls']
         lines = [
             _line(
@@ -1200,17 +1076,16 @@ class TestGlobalLogAnalysisCallAggregation:
         ]
         _write_log(tmp_path, 'script-execution-2026-06-01.log', lines)
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — the >=ceiling key surfaces as a single high-frequency row
+        # the >=ceiling key surfaces as a single high-frequency row
         assert result['high_frequency_count'] == 1
         row = result['high_frequency'][0]
         assert row['count'] == ceiling
         assert row['key'] == 'pm:manage-logging:manage-logging work'
 
     def test_below_high_frequency_ceiling_not_flagged(self, tmp_path: Path):
-        # Arrange — one call below the (50) ceiling
+        # one call below the (50) ceiling
         ceiling = audit.THRESHOLDS['high_frequency_calls']
         lines = [
             _line('2026-06-01T10:00:00Z', 'INFO', 'pm:manage-files:manage-files exists --file f (0.01s)')
@@ -1218,19 +1093,17 @@ class TestGlobalLogAnalysisCallAggregation:
         ]
         _write_log(tmp_path, 'script-execution-2026-06-01.log', lines)
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — under threshold, no high-frequency row
+        # under threshold, no high-frequency row
         assert result['high_frequency_count'] == 0
-
 
 class TestGlobalLogAnalysisDurationBands:
     """Durations split into three bands: normal (< slow), slow
     (slow <= d < impossible), and impossible (>= impossible ceiling)."""
 
     def test_slow_call_flagged_at_slow_ceiling(self, tmp_path: Path):
-        # Arrange — a call exactly at slow_call_seconds (30.0)
+        # a call exactly at slow_call_seconds (30.0)
         slow = audit.THRESHOLDS['slow_call_seconds']
         _write_log(
             tmp_path,
@@ -1244,47 +1117,43 @@ class TestGlobalLogAnalysisDurationBands:
             ],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — lands in the slow band, not impossible
+        # lands in the slow band, not impossible
         assert result['slow_call_count'] == 1
         assert result['impossible_count'] == 0
         assert result['slow_calls'][0]['seconds'] == slow
 
     def test_fast_call_not_flagged_slow(self, tmp_path: Path):
-        # Arrange — just under the slow ceiling
+        # just under the slow ceiling
         _write_log(
             tmp_path,
             'script-execution-2026-06-01.log',
             [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:s:s run (29.9s)')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert
         assert result['slow_call_count'] == 0
         assert result['impossible_count'] == 0
 
     def test_impossible_duration_flagged_separately_from_slow(self, tmp_path: Path):
-        # Arrange — a hang-shaped duration at the impossible ceiling (600s)
+        # a hang-shaped duration at the impossible ceiling (600s)
         _write_log(
             tmp_path,
             'script-execution-2026-06-01.log',
             [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:s:s run (650.0s)')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — counted as impossible, NOT double-counted as slow
+        # counted as impossible, NOT double-counted as slow
         assert result['impossible_count'] == 1
         assert result['slow_call_count'] == 0
         assert result['impossible_calls'][0]['seconds'] == 650.0
 
     def test_slow_calls_sorted_descending_by_seconds(self, tmp_path: Path):
-        # Arrange — two slow calls of differing magnitude
+        # two slow calls of differing magnitude
         _write_log(
             tmp_path,
             'script-execution-2026-06-01.log',
@@ -1294,62 +1163,54 @@ class TestGlobalLogAnalysisDurationBands:
             ],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — slowest first
+        # slowest first
         seconds = [r['seconds'] for r in result['slow_calls']]
         assert seconds == [90.0, 35.0]
-
 
 class TestGlobalLogAnalysisErrorFlagging:
     """Non-INFO levels and INFO lines carrying a failure marker both surface as
     error lines."""
 
     def test_non_info_level_flagged(self, tmp_path: Path):
-        # Arrange — an ERROR-level line with no failure marker in the body
+        # an ERROR-level line with no failure marker in the body
         _write_log(
             tmp_path,
             'work-2026-06-01.log',
             [_line('2026-06-01T10:00:00Z', 'ERROR', '[STATUS] (x) something off')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert
         assert result['error_count'] == 1
         assert result['error_lines'][0]['level'] == 'ERROR'
 
     def test_info_line_with_failure_marker_flagged(self, tmp_path: Path):
-        # Arrange — INFO level but the body carries a fail marker (status: error)
+        # INFO level but the body carries a fail marker (status: error)
         _write_log(
             tmp_path,
             'script-execution-2026-06-01.log',
             [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:x:x run -> status: error exit_code: 1')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — an INFO line still counts when a fail marker fires
+        # an INFO line still counts when a fail marker fires
         assert result['error_count'] == 1
         assert result['error_lines'][0]['level'] == 'INFO'
 
     def test_clean_info_line_not_flagged(self, tmp_path: Path):
-        # Arrange — INFO with no failure markers
+        # INFO with no failure markers
         _write_log(
             tmp_path,
             'work-2026-06-01.log',
             [_line('2026-06-01T10:00:00Z', 'INFO', '[STATUS] (x) all good')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert
         assert result['error_count'] == 0
-
 
 class TestGlobalLogAnalysisPlanAttribution:
     """A flagged line is attributed to every archived/active plan whose execution
@@ -1357,7 +1218,7 @@ class TestGlobalLogAnalysisPlanAttribution:
     outside every window is ad-hoc."""
 
     def test_in_window_line_attributed_to_plan(self, tmp_path: Path):
-        # Arrange — a plan window enclosing the error line's timestamp
+        # a plan window enclosing the error line's timestamp
         _write_metrics_window(
             tmp_path, 'plan-alpha', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
         )
@@ -1367,15 +1228,14 @@ class TestGlobalLogAnalysisPlanAttribution:
             [_line('2026-06-01T10:30:00Z', 'ERROR', '[STATUS] (x) inside window')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — the error row names the enclosing plan
+        # the error row names the enclosing plan
         assert result['plan_windows_derived'] == 1
         assert result['error_lines'][0]['plans'] == ['plan-alpha']
 
     def test_outside_window_line_is_ad_hoc(self, tmp_path: Path):
-        # Arrange — the error timestamp falls OUTSIDE the plan window
+        # the error timestamp falls OUTSIDE the plan window
         _write_metrics_window(
             tmp_path, 'plan-alpha', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
         )
@@ -1385,14 +1245,13 @@ class TestGlobalLogAnalysisPlanAttribution:
             [_line('2026-06-01T23:00:00Z', 'ERROR', '[STATUS] (x) after window')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — no plan window contains it; attribution is empty (emitted ad-hoc)
+        # no plan window contains it; attribution is empty (emitted ad-hoc)
         assert result['error_lines'][0]['plans'] == []
 
     def test_active_plan_window_also_correlated(self, tmp_path: Path):
-        # Arrange — a window seeded under active plans/ (not archived-plans/)
+        # a window seeded under active plans/ (not archived-plans/)
         _write_metrics_window(
             tmp_path,
             'plan-active',
@@ -1406,15 +1265,14 @@ class TestGlobalLogAnalysisPlanAttribution:
             [_line('2026-06-01T09:15:00Z', 'WARNING', '[STATUS] (x) mid active run')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — active-plan windows are correlated alongside archived ones
+        # active-plan windows are correlated alongside archived ones
         assert result['plan_windows_derived'] == 1
         assert result['error_lines'][0]['plans'] == ['plan-active']
 
     def test_overlapping_windows_attribute_all_enclosing_plans(self, tmp_path: Path):
-        # Arrange — two plans whose windows both contain the timestamp
+        # two plans whose windows both contain the timestamp
         _write_metrics_window(
             tmp_path, 'plan-aaa', '2026-06-01T10:00:00Z', '2026-06-01T12:00:00Z'
         )
@@ -1427,34 +1285,31 @@ class TestGlobalLogAnalysisPlanAttribution:
             [_line('2026-06-01T11:30:00Z', 'ERROR', '[STATUS] (x) overlap zone')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — both enclosing plans named, sorted
+        # both enclosing plans named, sorted
         assert result['error_lines'][0]['plans'] == ['plan-aaa', 'plan-bbb']
-
 
 class TestGlobalLogAnalysisFixtureLeak:
     """Synthetic test-fixture bundle/plan ids must NEVER appear in the shared
     global log; their presence is a leak (a test wrote to the real logs)."""
 
     def test_fake_bundle_signature_flagged(self, tmp_path: Path):
-        # Arrange — a synthetic fixture bundle id leaked into the corpus
+        # a synthetic fixture bundle id leaked into the corpus
         _write_log(
             tmp_path,
             'script-execution-2026-06-01.log',
             [_line('2026-06-01T10:00:00Z', 'INFO', 'fake-test-bundle:skill:script run (0.01s)')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — leak detector fires and captures the signature
+        # leak detector fires and captures the signature
         assert result['fixture_leak_count'] == 1
         assert 'fake-test-bundle' in result['fixture_leaks'][0]['signature']
 
     def test_idem_and_raising_bundle_signatures_flagged(self, tmp_path: Path):
-        # Arrange — the other two synthetic-bundle signatures from the regex
+        # the other two synthetic-bundle signatures from the regex
         _write_log(
             tmp_path,
             'work-2026-06-01.log',
@@ -1464,41 +1319,35 @@ class TestGlobalLogAnalysisFixtureLeak:
             ],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert — both synthetic-bundle leaks captured
+        # both synthetic-bundle leaks captured
         assert result['fixture_leak_count'] == 2
 
     def test_orphan_md_signature_flagged(self, tmp_path: Path):
-        # Arrange — an orphan-md-* synthetic plan id
+        # an orphan-md-* synthetic plan id
         _write_log(
             tmp_path,
             'decision-2026-06-01.log',
             [_line('2026-06-01T10:00:00Z', 'INFO', '(x) plan orphan-md-xyz123 resolved')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert
         assert result['fixture_leak_count'] == 1
         assert 'orphan-md-xyz123' in result['fixture_leaks'][0]['signature']
 
     def test_clean_corpus_has_no_fixture_leaks(self, tmp_path: Path):
-        # Arrange — only real-looking notations, no synthetic signatures
+        # only real-looking notations, no synthetic signatures
         _write_log(
             tmp_path,
             'script-execution-2026-06-01.log',
             [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:manage-tasks:manage-tasks read (0.01s)')],
         )
 
-        # Act
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Assert
         assert result['fixture_leak_count'] == 0
-
 
 class TestEmitGlobalLogBlock:
     """``emit_global_log_block`` renders the result dict to a TOON block: every
@@ -1506,7 +1355,7 @@ class TestEmitGlobalLogBlock:
     the summary lines carry the level buckets and per-band counts."""
 
     def test_block_carries_summary_lines_and_genuine_count(self, tmp_path: Path):
-        # Arrange — one ERROR (in-window) + one slow call
+        # one ERROR (in-window) + one slow call
         _write_metrics_window(
             tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
         )
@@ -1520,10 +1369,9 @@ class TestEmitGlobalLogBlock:
         )
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Act
         block = audit.emit_global_log_block(result)
 
-        # Assert — header, counts, and a genuine-only signal total
+        # header, counts, and a genuine-only signal total
         assert 'check: global-log-analysis' in block
         assert 'status: success' in block
         # one error line + one slow call = 2 genuine signals
@@ -1533,19 +1381,18 @@ class TestEmitGlobalLogBlock:
         assert 'rows[2]{kind,detail,attributed_plans,severity}:' in block
 
     def test_empty_result_renders_zero_signal_block(self, tmp_path: Path):
-        # Arrange — no logs at all
+        # no logs at all
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Act
         block = audit.emit_global_log_block(result)
 
-        # Assert — well-formed block with zero rows and zero genuine signals
+        # well-formed block with zero rows and zero genuine signals
         assert 'genuine_signal_count: 0' in block
         assert 'logs_present: false' in block
         assert 'rows[0]{kind,detail,attributed_plans,severity}:' in block
 
     def test_ad_hoc_attribution_when_no_enclosing_window(self, tmp_path: Path):
-        # Arrange — an error line with no plan window covering it
+        # an error line with no plan window covering it
         _write_log(
             tmp_path,
             'work-2026-06-01.log',
@@ -1553,32 +1400,27 @@ class TestEmitGlobalLogBlock:
         )
         result = audit.cross_global_log_analysis(tmp_path)
 
-        # Act
         block = audit.emit_global_log_block(result)
 
-        # Assert — the empty attribution renders as the literal ad-hoc sentinel
+        # the empty attribution renders as the literal ad-hoc sentinel
         assert 'ad-hoc' in block
 
     def test_global_log_analysis_in_check_registry(self):
-        # Arrange / Act / Assert — the check is registered and cross-plan scoped
+        # the check is registered and cross-plan scoped
         assert 'global-log-analysis' in audit.CHECK_NAMES
         assert 'global-log-analysis' in audit.CROSS_PLAN_CHECKS
-
 
 # =============================================================================
 # D3 — dormate_global_logs confirmed-gated past-date move
 # =============================================================================
 
-
 def _logs_dir(repo_root: Path) -> Path:
     """Path to ``{repo_root}/.plan/local/logs`` (the dormation source dir)."""
     return repo_root / '.plan' / 'local' / 'logs'
 
-
 def _dormated_global_logs_dir(repo_root: Path) -> Path:
     """Path to the dormation destination ``dormated-plans/global-logs``."""
     return repo_root / '.plan' / 'temp' / 'dormated-plans' / 'global-logs'
-
 
 def _seed_log_file(repo_root: Path, name: str, body: str = 'line\n') -> Path:
     """Create a single global-log file under the dormation source dir."""
@@ -1588,16 +1430,13 @@ def _seed_log_file(repo_root: Path, name: str, body: str = 'line\n') -> Path:
     path.write_text(body, encoding='utf-8')
     return path
 
-
 def _past_date_stamp(days_back: int = 1) -> str:
     """A ``YYYY-MM-DD`` stamp strictly before today (default: yesterday)."""
     return (datetime.now().date() - timedelta(days=days_back)).strftime('%Y-%m-%d')
 
-
 def _today_stamp() -> str:
     """Today's ``YYYY-MM-DD`` stamp — the still-active log that must never move."""
     return datetime.now().date().strftime('%Y-%m-%d')
-
 
 class TestDormateGlobalLogs:
     """``dormate_global_logs`` mirrors ``dormate_plan``: inert without
@@ -1606,40 +1445,38 @@ class TestDormateGlobalLogs:
     overwrites) on a destination-name clash."""
 
     def test_inert_without_confirmed(self, tmp_path: Path):
-        # Arrange — a past-date log that WOULD be eligible if confirmed
+        # a past-date log that WOULD be eligible if confirmed
         _seed_log_file(tmp_path, f'work-{_past_date_stamp()}.log')
 
-        # Act — inert path fires before any scan/move
+        # inert path fires before any scan/move
         result = audit.dormate_global_logs(tmp_path, confirmed=False)
 
-        # Assert — refused, nothing moved, source file untouched
+        # refused, nothing moved, source file untouched
         assert result['status'] == 'refused'
         assert result['moved'] == []
         assert 'requires --confirmed' in result['reason']
         assert (_logs_dir(tmp_path) / f'work-{_past_date_stamp()}.log').exists()
 
     def test_missing_logs_dir_is_noop_success(self, tmp_path: Path):
-        # Arrange — no .plan/local/logs dir at all
+        # no .plan/local/logs dir at all
 
-        # Act
         result = audit.dormate_global_logs(tmp_path, confirmed=True)
 
-        # Assert — clean no-op, not an error
+        # clean no-op, not an error
         assert result['status'] == 'success'
         assert result['moved'] == []
 
     def test_past_date_logs_moved(self, tmp_path: Path):
-        # Arrange — three distinct-prefix past-date logs
+        # three distinct-prefix past-date logs
         yesterday = _past_date_stamp(1)
         older = _past_date_stamp(5)
         _seed_log_file(tmp_path, f'work-{yesterday}.log')
         _seed_log_file(tmp_path, f'decision-{older}.log')
         _seed_log_file(tmp_path, f'script-execution-{older}.log')
 
-        # Act
         result = audit.dormate_global_logs(tmp_path, confirmed=True)
 
-        # Assert — all three relocated, sorted, source emptied of them
+        # all three relocated, sorted, source emptied of them
         assert result['status'] == 'success'
         assert result['moved'] == sorted(
             [
@@ -1654,31 +1491,29 @@ class TestDormateGlobalLogs:
             assert not (_logs_dir(tmp_path) / name).exists()
 
     def test_today_active_log_not_moved(self, tmp_path: Path):
-        # Arrange — today's log (still active) plus one past-date log
+        # today's log (still active) plus one past-date log
         today_name = f'work-{_today_stamp()}.log'
         past_name = f'work-{_past_date_stamp()}.log'
         _seed_log_file(tmp_path, today_name)
         _seed_log_file(tmp_path, past_name)
 
-        # Act
         result = audit.dormate_global_logs(tmp_path, confirmed=True)
 
-        # Assert — only the past-date log moved; today's stays put
+        # only the past-date log moved; today's stays put
         assert result['status'] == 'success'
         assert result['moved'] == [past_name]
         assert (_logs_dir(tmp_path) / today_name).exists()
         assert not (_dormated_global_logs_dir(tmp_path) / today_name).exists()
 
     def test_non_dated_files_ignored(self, tmp_path: Path):
-        # Arrange — files that do NOT match the dated-log grammar
+        # files that do NOT match the dated-log grammar
         _seed_log_file(tmp_path, 'work.log')  # no date segment
         _seed_log_file(tmp_path, 'notes.txt')  # wrong extension
         _seed_log_file(tmp_path, 'work-2026-13-99.log')  # date-shaped but invalid
 
-        # Act
         result = audit.dormate_global_logs(tmp_path, confirmed=True)
 
-        # Assert — nothing eligible; all source files remain
+        # nothing eligible; all source files remain
         assert result['status'] == 'success'
         assert result['moved'] == []
         assert (_logs_dir(tmp_path) / 'work.log').exists()
@@ -1686,7 +1521,7 @@ class TestDormateGlobalLogs:
         assert (_logs_dir(tmp_path) / 'work-2026-13-99.log').exists()
 
     def test_refuse_on_existing_destination_never_overwrites(self, tmp_path: Path):
-        # Arrange — a past-date source AND a colliding file already at the dest
+        # a past-date source AND a colliding file already at the dest
         past_name = f'work-{_past_date_stamp()}.log'
         _seed_log_file(tmp_path, past_name, body='SOURCE CONTENT\n')
         dest_dir = _dormated_global_logs_dir(tmp_path)
@@ -1694,10 +1529,9 @@ class TestDormateGlobalLogs:
         clash = dest_dir / past_name
         clash.write_text('PRE-EXISTING\n', encoding='utf-8')
 
-        # Act
         result = audit.dormate_global_logs(tmp_path, confirmed=True)
 
-        # Assert — all-or-nothing refusal; neither side mutated
+        # all-or-nothing refusal; neither side mutated
         assert result['status'] == 'error'
         assert result['moved'] == []
         assert 'already exists' in result['reason']
@@ -1705,7 +1539,7 @@ class TestDormateGlobalLogs:
         assert (_logs_dir(tmp_path) / past_name).read_text(encoding='utf-8') == 'SOURCE CONTENT\n'
 
     def test_refuse_on_exists_is_all_or_nothing(self, tmp_path: Path):
-        # Arrange — two eligible past-date logs; one collides at the dest.
+        # two eligible past-date logs; one collides at the dest.
         # The refuse-on-exists pre-check must abort BEFORE moving the clean one.
         collide_name = f'work-{_past_date_stamp(1)}.log'
         clean_name = f'decision-{_past_date_stamp(2)}.log'
@@ -1715,17 +1549,16 @@ class TestDormateGlobalLogs:
         dest_dir.mkdir(parents=True, exist_ok=True)
         (dest_dir / collide_name).write_text('PRE-EXISTING\n', encoding='utf-8')
 
-        # Act
         result = audit.dormate_global_logs(tmp_path, confirmed=True)
 
-        # Assert — refused, and the non-colliding source was NOT partially moved
+        # refused, and the non-colliding source was NOT partially moved
         assert result['status'] == 'error'
         assert result['moved'] == []
         assert (_logs_dir(tmp_path) / clean_name).exists()
         assert not (dest_dir / clean_name).exists()
 
     def test_filename_grammar_excludes_path_separators(self):
-        # Arrange / Act / Assert — the dated-log regex never matches a name
+        # the dated-log regex never matches a name
         # carrying a path separator, complementing the is_relative_to guards so
         # a crafted entry cannot escape the source dir via the capture group.
         assert audit._GLOBAL_LOG_RE.match('work-2026-05-31.log') is not None
@@ -1733,11 +1566,9 @@ class TestDormateGlobalLogs:
         assert audit._GLOBAL_LOG_RE.match('a/b-2026-05-31.log') is None
         assert audit._GLOBAL_LOG_RE.match('/abs-2026-05-31.log') is None
 
-
 # =============================================================================
 # D4 — token-economics cross-plan check
 # =============================================================================
-
 
 def _write_token_plan(
     repo_root: Path,
@@ -1804,13 +1635,12 @@ def _write_token_plan(
 
     return audit.collect_inputs(plan_dir)
 
-
 class TestTokenEconomicsCollect:
     """``_collect_token_economics_rows`` joins per-plan metrics, the TASK count,
     and the references/status fields into one efficiency row per plan."""
 
     def test_per_plan_join_yields_tokens_per_file_and_task(self, tmp_path: Path):
-        # Arrange — 12,000 tokens, 4 files, 3 tasks → floor-divided ratios
+        # 12,000 tokens, 4 files, 3 tasks → floor-divided ratios
         inputs = _write_token_plan(
             tmp_path,
             'plan-join',
@@ -1819,10 +1649,9 @@ class TestTokenEconomicsCollect:
             phase_tokens={'5-execute': 12_000},
         )
 
-        # Act
         rows = audit._collect_token_economics_rows([inputs])
 
-        # Assert — single row, ratios floor-divided, fields joined from artefacts
+        # single row, ratios floor-divided, fields joined from artefacts
         assert len(rows) == 1
         row = rows[0]
         assert row.plan_id == 'plan-join'
@@ -1835,74 +1664,67 @@ class TestTokenEconomicsCollect:
         assert row.tokens_per_task == 4_000  # 12000 // 3
 
     def test_zero_files_and_tasks_yield_zero_ratios(self, tmp_path: Path):
-        # Arrange — empty footprint must not raise ZeroDivisionError
+        # empty footprint must not raise ZeroDivisionError
         inputs = _write_token_plan(
             tmp_path, 'plan-empty', files=0, task_count=0,
             phase_tokens={'5-execute': 5_000},
         )
 
-        # Act
         rows = audit._collect_token_economics_rows([inputs])
 
-        # Assert — guarded division returns 0, not an exception
+        # guarded division returns 0, not an exception
         assert rows[0].tokens_per_file == 0
         assert rows[0].tokens_per_task == 0
 
     def test_plan_without_metrics_is_excluded_from_corpus(self, tmp_path: Path):
-        # Arrange — a plan whose metrics.toon has no parseable phase block
+        # a plan whose metrics.toon has no parseable phase block
         good = _write_token_plan(tmp_path, 'plan-good', phase_tokens={'5-execute': 9_000})
         empty_dir = tmp_path / '.plan' / 'temp' / 'token-corpus' / 'plan-nometrics'
         (empty_dir / 'work').mkdir(parents=True, exist_ok=True)
         bad = audit.collect_inputs(empty_dir)
 
-        # Act
         rows = audit._collect_token_economics_rows([good, bad])
 
-        # Assert — only the plan carrying phase metrics survives
+        # only the plan carrying phase metrics survives
         assert {r.plan_id for r in rows} == {'plan-good'}
 
     def test_exec_metrics_blind_set_when_execute_phase_absent(self, tmp_path: Path):
-        # Arrange — planning-only metrics, no 5-execute token block
+        # planning-only metrics, no 5-execute token block
         inputs = _write_token_plan(
             tmp_path, 'plan-blind',
             phase_tokens={'2-refine': 4_000, '4-plan': 6_000},
         )
 
-        # Act
         rows = audit._collect_token_economics_rows([inputs])
 
-        # Assert — execute total == 0 → structural blindness flag
+        # execute total == 0 → structural blindness flag
         assert rows[0].exec_metrics_blind is True
 
     def test_session_message_count_read_from_top_level_scalar(self, tmp_path: Path):
-        # Arrange — the scalar lives above the first [phase] section
+        # the scalar lives above the first [phase] section
         inputs = _write_token_plan(
             tmp_path, 'plan-msgs', session_message_count=412,
             phase_tokens={'5-execute': 8_000},
         )
 
-        # Act
         rows = audit._collect_token_economics_rows([inputs])
 
-        # Assert
         assert rows[0].session_message_count == 412
-
 
 class TestTokenEconomicsThresholds:
     """``_derive_token_economics_thresholds`` measures every cut-point from the
     LIVE corpus distribution — none are hard-coded magic numbers."""
 
     def test_empty_corpus_yields_all_zero_thresholds(self):
-        # Arrange / Act
         thr = audit._derive_token_economics_thresholds([])
 
-        # Assert — an empty corpus can flag nothing
+        # an empty corpus can flag nothing
         assert all(v == 0.0 for v in thr.values())
         assert thr['floor_band'] == 0.0
         assert thr['median_total'] == 0.0
 
     def test_floor_band_is_corpus_tenth_percentile(self, tmp_path: Path):
-        # Arrange — ten plans with distinct totals so p10 is determinate
+        # ten plans with distinct totals so p10 is determinate
         rows = audit._collect_token_economics_rows(
             [
                 _write_token_plan(
@@ -1912,16 +1734,15 @@ class TestTokenEconomicsThresholds:
             ]
         )
 
-        # Act
         thr = audit._derive_token_economics_thresholds(rows)
 
-        # Assert — nearest-rank p10 of [1000..10000] equals the manual computation
+        # nearest-rank p10 of [1000..10000] equals the manual computation
         totals = sorted(float(r.total_tokens) for r in rows)
         assert thr['floor_band'] == audit.percentile(totals, 10)
         assert thr['median_total'] == audit.median(totals)
 
     def test_median_total_matches_manual_median(self, tmp_path: Path):
-        # Arrange — three plans, odd count → middle value is the median
+        # three plans, odd count → middle value is the median
         rows = audit._collect_token_economics_rows(
             [
                 _write_token_plan(tmp_path, 'lo', phase_tokens={'5-execute': 1_000}),
@@ -1930,14 +1751,12 @@ class TestTokenEconomicsThresholds:
             ]
         )
 
-        # Act
         thr = audit._derive_token_economics_thresholds(rows)
 
-        # Assert
         assert thr['median_total'] == 5_000.0
 
     def test_planning_exec_ratio_excludes_blind_plans(self, tmp_path: Path):
-        # Arrange — one measured plan (ratio 2.0) and one execute-blind plan that
+        # one measured plan (ratio 2.0) and one execute-blind plan that
         # must NOT contribute to the median ratio distribution.
         measured = _write_token_plan(
             tmp_path, 'measured',
@@ -1948,16 +1767,16 @@ class TestTokenEconomicsThresholds:
             phase_tokens={'2-refine': 9_000, '4-plan': 9_000},
         )
 
-        # Act — collect the per-plan rows first (the threshold deriver consumes
+        # collect the per-plan rows first (the threshold deriver consumes
         # _TokenEconomicsRow, not raw PlanInputs)
         rows = audit._collect_token_economics_rows([measured, blind])
         thr = audit._derive_token_economics_thresholds(rows)
 
-        # Assert — planning 4000 / execute 2000 = 2.0, blind plan excluded
+        # planning 4000 / execute 2000 = 2.0, blind plan excluded
         assert thr['median_planning_exec_ratio'] == 2.0
 
     def test_corpus_phase_shares_sum_over_grand_total(self, tmp_path: Path):
-        # Arrange — two plans, all spend in one phase each
+        # two plans, all spend in one phase each
         rows = audit._collect_token_economics_rows(
             [
                 _write_token_plan(tmp_path, 'a', phase_tokens={'3-outline': 4_000}),
@@ -1965,20 +1784,18 @@ class TestTokenEconomicsThresholds:
             ]
         )
 
-        # Act — grand total 10,000: outline 4000/10000, execute 6000/10000
+        # grand total 10,000: outline 4000/10000, execute 6000/10000
         thr = audit._derive_token_economics_thresholds(rows)
 
-        # Assert
         assert thr['corpus_outline_share'] == 0.4
         assert thr['corpus_execute_share'] == 0.6
-
 
 class TestTokenEconomicsFlags:
     """``_token_economics_flags`` derives each anti-pattern flag from the
     corpus-relative cut-points — no flag string carries a hard-coded comparand."""
 
     def test_fixed_overhead_floor_fires_on_cheapest_tiny_plan(self, tmp_path: Path):
-        # Arrange — a corpus where one plan sits in the bottom decile AND the
+        # a corpus where one plan sits in the bottom decile AND the
         # bottom file-count quartile (the non-amortizing 6-phase tax).
         corpus = [
             _write_token_plan(
@@ -1993,15 +1810,14 @@ class TestTokenEconomicsFlags:
         thr = audit._derive_token_economics_thresholds(rows)
         floor_row = next(r for r in rows if r.plan_id == 'floor')
 
-        # Act
         flags = audit._token_economics_flags(floor_row, thr)
 
-        # Assert — flag present and annotates the floating p10 / p25 cut-points
+        # flag present and annotates the floating p10 / p25 cut-points
         assert any(f.startswith('fixed_overhead_floor(') for f in flags)
         assert any('p10=' in f and 'p25=' in f for f in flags)
 
     def test_planning_gt_exec_fires_above_median_ratio(self, tmp_path: Path):
-        # Arrange — corpus median planning/exec ratio is low; one plan blows past it
+        # corpus median planning/exec ratio is low; one plan blows past it
         baseline = [
             _write_token_plan(
                 tmp_path, f'bal-{i}',
@@ -2017,14 +1833,13 @@ class TestTokenEconomicsFlags:
         thr = audit._derive_token_economics_thresholds(rows)
         heavy_row = next(r for r in rows if r.plan_id == 'planheavy')
 
-        # Act
         flags = audit._token_economics_flags(heavy_row, thr)
 
-        # Assert — ratio 8.0x exceeds the corpus median, annotated against it
+        # ratio 8.0x exceeds the corpus median, annotated against it
         assert any(f.startswith('planning_gt_exec(') and '>median=' in f for f in flags)
 
     def test_planning_gt_exec_suppressed_for_blind_plan(self, tmp_path: Path):
-        # Arrange — an execute-blind plan must never get planning_gt_exec even
+        # an execute-blind plan must never get planning_gt_exec even
         # though its planning spend is enormous (execute is unmeasured, not zero).
         rows = audit._collect_token_economics_rows(
             [
@@ -2041,15 +1856,14 @@ class TestTokenEconomicsFlags:
         thr = audit._derive_token_economics_thresholds(rows)
         blind_row = next(r for r in rows if r.plan_id == 'blind')
 
-        # Act
         flags = audit._token_economics_flags(blind_row, thr)
 
-        # Assert — no planning_gt_exec, but the exec_metrics_blind floor IS present
+        # no planning_gt_exec, but the exec_metrics_blind floor IS present
         assert not any(f.startswith('planning_gt_exec(') for f in flags)
         assert any(f.startswith('exec_metrics_blind(') for f in flags)
 
     def test_outline_refine_finalize_heavy_fire_at_phase_p75(self, tmp_path: Path):
-        # Arrange — the baseline plans carry a MODEST outline/refine/finalize share
+        # the baseline plans carry a MODEST outline/refine/finalize share
         # (1,000 of 10,000 each = 10%) so each phase-share distribution has genuine
         # spread and its p75 is a positive cut-point set by the corpus, not zero.
         # One plan is dominated by outline+refine+finalize (30% each) so its share
@@ -2081,16 +1895,15 @@ class TestTokenEconomicsFlags:
         thr = audit._derive_token_economics_thresholds(rows)
         heavy_row = next(r for r in rows if r.plan_id == 'phaseheavy')
 
-        # Act
         flags = audit._token_economics_flags(heavy_row, thr)
 
-        # Assert — all three phase-heavy flags fire, each annotated against >=p75
+        # all three phase-heavy flags fire, each annotated against >=p75
         labels = {f.split('(')[0] for f in flags}
         assert {'outline_heavy', 'refine_heavy', 'finalize_heavy'} <= labels
         assert all('>=p75=' in f for f in flags if f.split('(')[0].endswith('_heavy'))
 
     def test_big_spend_tiny_footprint_fires_on_inversion(self, tmp_path: Path):
-        # Arrange — a plan at/above the corpus median total but with a footprint
+        # a plan at/above the corpus median total but with a footprint
         # in the bottom file-count quartile (the tokens/file inversion).
         small_cheap = [
             _write_token_plan(
@@ -2111,10 +1924,8 @@ class TestTokenEconomicsFlags:
         thr = audit._derive_token_economics_thresholds(rows)
         inv_row = next(r for r in rows if r.plan_id == 'inversion')
 
-        # Act
         flags = audit._token_economics_flags(inv_row, thr)
 
-        # Assert
         assert any(
             f.startswith('big_spend_tiny_footprint(')
             and '>=median=' in f
@@ -2123,7 +1934,7 @@ class TestTokenEconomicsFlags:
         )
 
     def test_long_session_fires_at_message_p75(self, tmp_path: Path):
-        # Arrange — three short sessions, one long one at/above the corpus p75
+        # three short sessions, one long one at/above the corpus p75
         short = [
             _write_token_plan(
                 tmp_path, f'short-{i}', session_message_count=50,
@@ -2139,14 +1950,13 @@ class TestTokenEconomicsFlags:
         thr = audit._derive_token_economics_thresholds(rows)
         long_row = next(r for r in rows if r.plan_id == 'marathon')
 
-        # Act
         flags = audit._token_economics_flags(long_row, thr)
 
-        # Assert — annotated against the floating message-count p75
+        # annotated against the floating message-count p75
         assert any(f.startswith('long_session(') and '>=p75=' in f for f in flags)
 
     def test_exec_metrics_blind_floor_annotation_listed_first(self, tmp_path: Path):
-        # Arrange — an execute-blind plan; the blindness flag must lead the list
+        # an execute-blind plan; the blindness flag must lead the list
         # so the reader knows every downstream number is a floor.
         rows = audit._collect_token_economics_rows(
             [
@@ -2157,14 +1967,13 @@ class TestTokenEconomicsFlags:
         )
         thr = audit._derive_token_economics_thresholds(rows)
 
-        # Act
         flags = audit._token_economics_flags(rows[0], thr)
 
-        # Assert — the blindness annotation is the first flag and names the floors
+        # the blindness annotation is the first flag and names the floors
         assert flags[0].startswith('exec_metrics_blind(5-execute=0;floors:')
 
     def test_clean_plan_has_no_flags(self, tmp_path: Path):
-        # Arrange — a corpus of identical, unremarkable plans: nothing crosses any
+        # a corpus of identical, unremarkable plans: nothing crosses any
         # corpus-relative cut-point (every plan IS the corpus). Because the
         # distribution is uniform on every dimension, the corpus-relative outlier
         # flags must all suppress: the floor band collapses onto the median (no cheap
@@ -2182,34 +1991,30 @@ class TestTokenEconomicsFlags:
         )
         thr = audit._derive_token_economics_thresholds(rows)
 
-        # Act
         flags = audit._token_economics_flags(rows[0], thr)
 
-        # Assert — a representative corpus member trips none of the anti-patterns
+        # a representative corpus member trips none of the anti-patterns
         assert flags == []
-
 
 class TestTokenEconomicsCrossCheck:
     """``cross_token_economics`` assembles per-plan rows, by-dimension aggregates,
     and the derived thresholds; ``emit_token_economics_block`` renders them."""
 
     def test_rows_sorted_descending_by_total_tokens(self, tmp_path: Path):
-        # Arrange
         inputs = [
             _write_token_plan(tmp_path, 'small', phase_tokens={'5-execute': 1_000}),
             _write_token_plan(tmp_path, 'large', phase_tokens={'5-execute': 9_000}),
             _write_token_plan(tmp_path, 'medium', phase_tokens={'5-execute': 5_000}),
         ]
 
-        # Act
         result = audit.cross_token_economics(inputs)
 
-        # Assert — descending order, corpus count echoed
+        # descending order, corpus count echoed
         assert result['plans_in_corpus'] == 3
         assert [r['plan_id'] for r in result['rows']] == ['large', 'medium', 'small']
 
     def test_by_change_type_aggregate_amortizes_tokens_per_file(self, tmp_path: Path):
-        # Arrange — two feature plans, one chore plan
+        # two feature plans, one chore plan
         inputs = [
             _write_token_plan(
                 tmp_path, 'feat-a', change_type='feature', files=2,
@@ -2225,11 +2030,10 @@ class TestTokenEconomicsCrossCheck:
             ),
         ]
 
-        # Act
         result = audit.cross_token_economics(inputs)
         by_ct = {row['value']: row for row in result['by_change_type']}
 
-        # Assert — feature: 2 plans, (4000+6000)//(2+2) tokens/file
+        # feature: 2 plans, (4000+6000)//(2+2) tokens/file
         assert by_ct['feature']['n'] == 2
         assert by_ct['feature']['avg_tokens'] == 5_000  # (4000+6000)//2
         assert by_ct['feature']['tokens_per_file'] == 2_500  # 10000 // 4
@@ -2237,7 +2041,7 @@ class TestTokenEconomicsCrossCheck:
         assert by_ct['chore']['tokens_per_file'] == 1_000  # 5000 // 5
 
     def test_by_scope_aggregate_groups_on_scope_estimate(self, tmp_path: Path):
-        # Arrange — two scopes
+        # two scopes
         inputs = [
             _write_token_plan(
                 tmp_path, 'surg-a', scope_estimate='surgical',
@@ -2253,19 +2057,17 @@ class TestTokenEconomicsCrossCheck:
             ),
         ]
 
-        # Act
         result = audit.cross_token_economics(inputs)
         by_scope = {row['value']: row for row in result['by_scope']}
 
-        # Assert
         assert by_scope['surgical']['n'] == 2
         assert by_scope['multi_module']['n'] == 1
 
     def test_empty_corpus_yields_zero_aggregates_no_rows(self):
-        # Arrange / Act — no plans carrying metrics
+        # no plans carrying metrics
         result = audit.cross_token_economics([])
 
-        # Assert — best-effort empty result, never raises
+        # best-effort empty result, never raises
         assert result['plans_in_corpus'] == 0
         assert result['rows'] == []
         assert result['by_change_type'] == []
@@ -2274,7 +2076,7 @@ class TestTokenEconomicsCrossCheck:
     def test_emit_block_carries_derived_thresholds_and_genuine_count(
         self, tmp_path: Path
     ):
-        # Arrange — a corpus with exactly one clearly-flagged plan (long session).
+        # a corpus with exactly one clearly-flagged plan (long session).
         # The token/file footprint is deliberately UNIFORM across all four plans so
         # the corpus-relative floor/big-spend outlier flags correctly suppress (no
         # cheap tail, no plan outspending the median) — only the genuine session
@@ -2295,10 +2097,9 @@ class TestTokenEconomicsCrossCheck:
         )
         result = audit.cross_token_economics([*short, flagged])
 
-        # Act
         block = audit.emit_token_economics_block(result)
 
-        # Assert — header, derived (floating) thresholds, and the genuine count
+        # header, derived (floating) thresholds, and the genuine count
         assert 'check: token-economics' in block
         assert 'status: success' in block
         assert 'floor_band_p10_tokens:' in block
@@ -2311,7 +2112,6 @@ class TestTokenEconomicsCrossCheck:
     def test_emit_block_includes_by_change_type_and_by_scope_tables(
         self, tmp_path: Path
     ):
-        # Arrange
         inputs = [
             _write_token_plan(
                 tmp_path, 'a', change_type='feature', scope_estimate='surgical',
@@ -2324,16 +2124,15 @@ class TestTokenEconomicsCrossCheck:
         ]
         result = audit.cross_token_economics(inputs)
 
-        # Act
         block = audit.emit_token_economics_block(result)
 
-        # Assert — both aggregate tables are rendered with their column headers
+        # both aggregate tables are rendered with their column headers
         assert 'by_change_type[' in block
         assert 'by_scope[' in block
         assert 'tokens_per_file' in block
 
     def test_thresholds_are_corpus_derived_not_hard_coded(self, tmp_path: Path):
-        # Arrange — two corpora with disjoint scales must yield different floors,
+        # two corpora with disjoint scales must yield different floors,
         # proving the cut-points float with the live distribution (no magic number).
         small_rows = audit._collect_token_economics_rows(
             [
@@ -2352,19 +2151,16 @@ class TestTokenEconomicsCrossCheck:
             ]
         )
 
-        # Act
         small_thr = audit._derive_token_economics_thresholds(small_rows)
         big_thr = audit._derive_token_economics_thresholds(big_rows)
 
-        # Assert — the floor band scales with the corpus, it is not a constant
+        # the floor band scales with the corpus, it is not a constant
         assert small_thr['floor_band'] != big_thr['floor_band']
         assert big_thr['floor_band'] == small_thr['floor_band'] * 1_000
-
 
 # =============================================================================
 # D5 — quality-chain cross-plan check
 # =============================================================================
-
 
 def _write_findings_plan(
     repo_root: Path,
@@ -2387,7 +2183,6 @@ def _write_findings_plan(
         lines = '\n'.join(_json.dumps(r) for r in records) + '\n'
         (findings_dir / fname).write_text(lines, encoding='utf-8')
     return audit.collect_inputs(plan_dir)
-
 
 class TestQualityChainMechanism:
     """``_qc_mechanism`` classifies which quality gate surfaced a finding."""
@@ -2418,7 +2213,6 @@ class TestQualityChainMechanism:
 
     def test_unclassified_is_other(self):
         assert audit._qc_mechanism('mystery.jsonl', {}) == 'other'
-
 
 class TestQualityChainResolution:
     """``_qc_resolution`` buckets a finding's disposition via resolution +
@@ -2459,7 +2253,6 @@ class TestQualityChainResolution:
         assert audit._qc_resolution({'resolution': 'none'}) == 'pending'
         assert audit._qc_resolution({}) == 'pending'
 
-
 class TestQualityChainShiftLeftTier:
     """``_qc_shift_left_tier`` grades how deterministically the surfacer could
     have caught a finding."""
@@ -2479,12 +2272,11 @@ class TestQualityChainShiftLeftTier:
     def test_sparse_body_is_tier4(self):
         assert audit._qc_shift_left_tier({'title': 'see comment'}) == 4
 
-
 class TestQualityChainFlags:
     """``_quality_chain_flags`` computes the per-plan chain anti-pattern flags."""
 
     def test_auto_review_only_when_no_build_or_self_review(self, tmp_path: Path):
-        # Arrange — only a bot PR comment, no build/self-review surface
+        # only a bot PR comment, no build/self-review surface
         inputs = _write_findings_plan(
             tmp_path,
             'plan-auto-only',
@@ -2492,16 +2284,14 @@ class TestQualityChainFlags:
         )
         plan = audit._collect_quality_chain([inputs])[0]
 
-        # Act
         flags = audit._quality_chain_flags(plan)
 
-        # Assert
         assert any(f.startswith('auto_review_only') for f in flags)
         # no self-review surface → no_qgate6 also fires
         assert 'no_qgate6' in flags
 
     def test_build_pending_pile_fires_at_two_pending(self, tmp_path: Path):
-        # Arrange — two unresolved build failures
+        # two unresolved build failures
         inputs = _write_findings_plan(
             tmp_path,
             'plan-build-pile',
@@ -2514,14 +2304,12 @@ class TestQualityChainFlags:
         )
         plan = audit._collect_quality_chain([inputs])[0]
 
-        # Act
         flags = audit._quality_chain_flags(plan)
 
-        # Assert
         assert any(f.startswith('build_pending_pile') for f in flags)
 
     def test_review_body_duplicate_when_title_spans_self_and_auto(self, tmp_path: Path):
-        # Arrange — same title in both self-review and auto-review
+        # same title in both self-review and auto-review
         inputs = _write_findings_plan(
             tmp_path,
             'plan-dupe',
@@ -2534,12 +2322,9 @@ class TestQualityChainFlags:
         )
         plan = audit._collect_quality_chain([inputs])[0]
 
-        # Act
         flags = audit._quality_chain_flags(plan)
 
-        # Assert
         assert any(f.startswith('review_body_duplicate') for f in flags)
-
 
 class TestQualityChainCrossCheck:
     """``cross_quality_chain`` assembles the matrix, per-plan rows, per-finding
@@ -2547,7 +2332,7 @@ class TestQualityChainCrossCheck:
     with the D1 severity column."""
 
     def test_plans_without_findings_dir_excluded(self, tmp_path: Path):
-        # Arrange — one plan with findings, one bare plan dir
+        # one plan with findings, one bare plan dir
         good = _write_findings_plan(
             tmp_path, 'has-findings',
             {'test-failure.jsonl': [{'resolution': 'fixed', 'title': 't'}]},
@@ -2556,15 +2341,14 @@ class TestQualityChainCrossCheck:
         bare_dir.mkdir(parents=True, exist_ok=True)
         bare = audit.collect_inputs(bare_dir)
 
-        # Act
         result = audit.cross_quality_chain([good, bare])
 
-        # Assert — only the plan with a findings dir is in the corpus
+        # only the plan with a findings dir is in the corpus
         assert result['plans_in_corpus'] == 1
         assert result['rows'][0]['plan_id'] == 'has-findings'
 
     def test_corpus_matrix_sums_per_plan_matrices(self, tmp_path: Path):
-        # Arrange — two plans, each one direct-fix build finding
+        # two plans, each one direct-fix build finding
         inputs = [
             _write_findings_plan(
                 tmp_path, 'p1',
@@ -2576,23 +2360,21 @@ class TestQualityChainCrossCheck:
             ),
         ]
 
-        # Act
         result = audit.cross_quality_chain(inputs)
 
-        # Assert — corpus build/direct_fix cell == 2
+        # corpus build/direct_fix cell == 2
         assert result['corpus_matrix']['build']['direct_fix'] == 2
 
     def test_empty_corpus_yields_zero_aggregates(self):
-        # Act
         result = audit.cross_quality_chain([])
 
-        # Assert — best-effort empty, never raises
+        # best-effort empty, never raises
         assert result['plans_in_corpus'] == 0
         assert result['rows'] == []
         assert result['findings'] == []
 
     def test_emit_block_carries_severity_and_shift_left_summary(self, tmp_path: Path):
-        # Arrange — an auto-review-only plan with a Tier-1 regex finding
+        # an auto-review-only plan with a Tier-1 regex finding
         inputs = _write_findings_plan(
             tmp_path, 'plan-shift',
             {'pr-comment.jsonl': [
@@ -2601,10 +2383,9 @@ class TestQualityChainCrossCheck:
         )
         result = audit.cross_quality_chain([inputs])
 
-        # Act
         block = audit.emit_quality_chain_block(result)
 
-        # Assert — header, the matrix/plan/finding tables, severity + shift-left
+        # header, the matrix/plan/finding tables, severity + shift-left
         assert 'check: quality-chain' in block
         assert 'status: success' in block
         assert 'corpus_matrix[' in block
@@ -2616,7 +2397,7 @@ class TestQualityChainCrossCheck:
         assert 'genuine' in block
 
     def test_per_finding_rows_emitted_for_every_finding(self, tmp_path: Path):
-        # Arrange — three findings across two files
+        # three findings across two files
         inputs = _write_findings_plan(
             tmp_path, 'plan-rows',
             {
@@ -2629,16 +2410,15 @@ class TestQualityChainCrossCheck:
         )
         result = audit.cross_quality_chain([inputs])
 
-        # Assert — every finding produced a per-finding record (walk-every-finding)
+        # every finding produced a per-finding record (walk-every-finding)
         assert len(result['findings']) == 3
         titles = {f['title'] for f in result['findings']}
         assert titles == {'one', 'two', 'three'}
 
     def test_check_registered_in_registries(self):
-        # Assert — the check is dispatchable and marked cross-plan
+        # the check is dispatchable and marked cross-plan
         assert 'quality-chain' in audit.CHECK_NAMES
         assert 'quality-chain' in audit.CROSS_PLAN_CHECKS
-
 
 class TestQualityChainFindingSeverity:
     """``_qc_finding_genuine`` is the D1 severity predicate stamped onto every
@@ -2650,45 +2430,45 @@ class TestQualityChainFindingSeverity:
     pin the ``pending`` branch and the informational disposition directly."""
 
     def test_pending_build_finding_is_genuine(self):
-        # Arrange / Act / Assert — unresolved chain debt, even though build is the
+        # unresolved chain debt, even though build is the
         # cheapest mechanism, is a genuine signal.
         assert audit._qc_finding_genuine(
             {'mechanism': 'build', 'resolution': 'pending'}
         )
 
     def test_pending_self_review_finding_is_genuine(self):
-        # Arrange / Act / Assert — a self-review finding left pending is debt too
+        # a self-review finding left pending is debt too
         assert audit._qc_finding_genuine(
             {'mechanism': 'self-review', 'resolution': 'pending'}
         )
 
     def test_auto_review_finding_is_genuine_regardless_of_resolution(self):
-        # Arrange / Act / Assert — auto-review is the shift-left subject; a cleanly
+        # auto-review is the shift-left subject; a cleanly
         # direct-fixed auto-review row is STILL genuine (it shifted right).
         assert audit._qc_finding_genuine(
             {'mechanism': 'auto-review', 'resolution': 'direct_fix'}
         )
 
     def test_direct_fix_build_finding_is_informational(self):
-        # Arrange / Act / Assert — the expected disposition, not a signal
+        # the expected disposition, not a signal
         assert not audit._qc_finding_genuine(
             {'mechanism': 'build', 'resolution': 'direct_fix'}
         )
 
     def test_lesson_self_review_finding_is_informational(self):
-        # Arrange / Act / Assert — promoted-to-lesson self-review is informational
+        # promoted-to-lesson self-review is informational
         assert not audit._qc_finding_genuine(
             {'mechanism': 'self-review', 'resolution': 'lesson'}
         )
 
     def test_human_review_direct_fix_is_informational(self):
-        # Arrange / Act / Assert — a resolved human-review row is expected, not a signal
+        # a resolved human-review row is expected, not a signal
         assert not audit._qc_finding_genuine(
             {'mechanism': 'human-review', 'resolution': 'direct_fix'}
         )
 
     def test_emit_block_renders_pending_finding_row_as_genuine(self, tmp_path: Path):
-        # Arrange — a single self-review finding left pending (no auto-review row,
+        # a single self-review finding left pending (no auto-review row,
         # so the only `genuine` cell must come from the pending-branch predicate).
         inputs = _write_findings_plan(
             tmp_path,
@@ -2697,7 +2477,6 @@ class TestQualityChainFindingSeverity:
         )
         result = audit.cross_quality_chain([inputs])
 
-        # Act
         block = audit.emit_quality_chain_block(result)
         finding_line = next(
             ln.strip()
@@ -2705,7 +2484,7 @@ class TestQualityChainFindingSeverity:
             if ln.strip().startswith('plan-pending,self-review,pending,')
         )
 
-        # Assert — the pending self-review finding row ends on the genuine cell,
+        # the pending self-review finding row ends on the genuine cell,
         # and the finding-genuine summary count reflects it.
         assert finding_line.endswith(',genuine')
         assert 'finding_genuine_signal_count: 1' in block
@@ -2713,7 +2492,7 @@ class TestQualityChainFindingSeverity:
     def test_emit_block_renders_direct_fixed_build_finding_as_informational(
         self, tmp_path: Path
     ):
-        # Arrange — a single cleanly direct-fixed build finding: the expected
+        # a single cleanly direct-fixed build finding: the expected
         # disposition, so its per-finding row must stamp informational and the
         # finding-genuine count must be zero.
         inputs = _write_findings_plan(
@@ -2723,7 +2502,6 @@ class TestQualityChainFindingSeverity:
         )
         result = audit.cross_quality_chain([inputs])
 
-        # Act
         block = audit.emit_quality_chain_block(result)
         finding_line = next(
             ln.strip()
@@ -2731,15 +2509,12 @@ class TestQualityChainFindingSeverity:
             if ln.strip().startswith('plan-clean,build,direct_fix,')
         )
 
-        # Assert
         assert finding_line.endswith(',informational')
         assert 'finding_genuine_signal_count: 0' in block
-
 
 # =============================================================================
 # D6 — sequence-and-build-minimality cross-plan check
 # =============================================================================
-
 
 def _sbm_call(ts: str, notation: str, sub: str, dur: float | None = None) -> str:
     """Build one ``script-execution.log`` call line in the ``_SBM_CALL_RE`` grammar.
@@ -2752,7 +2527,6 @@ def _sbm_call(ts: str, notation: str, sub: str, dur: float | None = None) -> str
     head = f'[{ts}Z] [INFO] [3befe7] {notation} {sub}'
     return head if dur is None else f'{head} ({dur:.1f}s)'
 
-
 def _sbm_dispatch(ts: str, role: str) -> str:
     """Build one ``work.log`` ``[DISPATCH] ... role=phase-N...`` marker line.
 
@@ -2761,7 +2535,6 @@ def _sbm_dispatch(ts: str, role: str) -> str:
     ``role`` is a ``phase-N-name`` token (e.g. ``phase-5-execute``).
     """
     return f'[{ts}Z] [INFO] [3befe7] [DISPATCH] (orchestrator) role={role} dispatched'
-
 
 def _write_sbm_plan(
     repo_root: Path,
@@ -2807,45 +2580,42 @@ def _write_sbm_plan(
         )
     return audit.collect_inputs(plan_dir)
 
-
 _BUILD = 'pm:build-pyproject:pyproject_build'
 _ARCH = 'pm:manage-architecture:architecture'
-
 
 class TestSequenceBuildMinimalityClassify:
     """``_sbm_classify_build`` buckets a build's wall-clock duration against the
     centralized minimal/heavy bands (120s / 400s)."""
 
     def test_zero_duration_is_unknown(self):
-        # Arrange / Act / Assert — an unrecorded (0.0s) build is ``unknown``
+        # an unrecorded (0.0s) build is ``unknown``
         assert audit._sbm_classify_build(0.0) == 'unknown'
 
     def test_negative_duration_is_unknown(self):
-        # Arrange / Act / Assert — defensive: <= 0 collapses to ``unknown``
+        # defensive: <= 0 collapses to ``unknown``
         assert audit._sbm_classify_build(-5.0) == 'unknown'
 
     def test_below_minimal_band_is_minimal(self):
-        # Arrange / Act / Assert — strictly under build_minimal_seconds
+        # strictly under build_minimal_seconds
         assert audit._sbm_classify_build(119.9) == 'minimal'
 
     def test_at_minimal_ceiling_is_scoped(self):
-        # Arrange / Act / Assert — exactly build_minimal_seconds tips into scoped
+        # exactly build_minimal_seconds tips into scoped
         minimal = float(audit.THRESHOLDS['build_minimal_seconds'])
         assert audit._sbm_classify_build(minimal) == 'scoped'
 
     def test_between_bands_is_scoped(self):
-        # Arrange / Act / Assert — 120..400 is a scoped run
+        # 120..400 is a scoped run
         assert audit._sbm_classify_build(250.0) == 'scoped'
 
     def test_at_heavy_ceiling_is_heavy(self):
-        # Arrange / Act / Assert — exactly build_heavy_seconds is heavy (NOT scoped)
+        # exactly build_heavy_seconds is heavy (NOT scoped)
         heavy = float(audit.THRESHOLDS['build_heavy_seconds'])
         assert audit._sbm_classify_build(heavy) == 'heavy'
 
     def test_above_heavy_band_is_heavy(self):
-        # Arrange / Act / Assert — well over the heavy ceiling
+        # well over the heavy ceiling
         assert audit._sbm_classify_build(900.0) == 'heavy'
-
 
 class TestSequenceBuildMinimalityPhaseBucketing:
     """``_sequence_build_minimality_plan`` attributes each ``script-execution.log``
@@ -2853,56 +2623,52 @@ class TestSequenceBuildMinimalityPhaseBucketing:
     preceded it on the ``work.log`` timeline."""
 
     def test_calls_before_first_dispatch_bucket_to_one_init(self, tmp_path: Path):
-        # Arrange — a single call before any dispatch marker
+        # a single call before any dispatch marker
         inputs = _write_sbm_plan(
             tmp_path, 'phase-default',
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
             work_lines=[_sbm_dispatch('2026-06-01T11:00:00', 'phase-5-execute')],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — the call predates the dispatch, so it falls in the default
+        # the call predates the dispatch, so it falls in the default
         # ``1-init`` bucket (role normalized: ``phase-`` stripped).
         assert '1-init:1' in row['phase_graph']
 
     def test_call_after_dispatch_buckets_to_normalized_role(self, tmp_path: Path):
-        # Arrange — a build call after a phase-5-execute dispatch marker
+        # a build call after a phase-5-execute dispatch marker
         inputs = _write_sbm_plan(
             tmp_path, 'phase-exec',
             sel_lines=[_sbm_call('2026-06-01T12:00:00', _BUILD, 'run', 30.0)],
             work_lines=[_sbm_dispatch('2026-06-01T11:00:00', 'phase-5-execute')],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — the call is attributed to ``5-execute`` and tagged with one build
+        # the call is attributed to ``5-execute`` and tagged with one build
         assert '5-execute:1(b=1)' in row['phase_graph']
 
     def test_arch_call_annotates_phase_with_arch_count(self, tmp_path: Path):
-        # Arrange — an architecture call after a dispatch contributes the ``a=`` tag
+        # an architecture call after a dispatch contributes the ``a=`` tag
         inputs = _write_sbm_plan(
             tmp_path, 'phase-arch',
             sel_lines=[_sbm_call('2026-06-01T12:00:00', _ARCH, 'resolve', 0.5)],
             work_lines=[_sbm_dispatch('2026-06-01T11:00:00', 'phase-4-plan')],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — the architecture call lands in 4-plan with an ``a=1`` annotation
+        # the architecture call lands in 4-plan with an ``a=1`` annotation
         assert '4-plan:1(a=1)' in row['phase_graph']
         assert row['arch_calls'] == 1
-
 
 class TestSequenceBuildMinimalityBuildClass:
     """The per-plan row counts builds by duration band and reports the corpus
     build-second aggregates."""
 
     def test_three_bands_counted_independently(self, tmp_path: Path):
-        # Arrange — one minimal (<120), one scoped (120..400), one heavy (>400) build
+        # one minimal (<120), one scoped (120..400), one heavy (>400) build
         inputs = _write_sbm_plan(
             tmp_path, 'three-bands',
             sel_lines=[
@@ -2912,10 +2678,9 @@ class TestSequenceBuildMinimalityBuildClass:
             ],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — each band counted once; aggregates reflect the heaviest + total
+        # each band counted once; aggregates reflect the heaviest + total
         assert row['builds'] == 3
         assert row['build_minimal'] == 1
         assert row['build_scoped'] == 1
@@ -2924,7 +2689,7 @@ class TestSequenceBuildMinimalityBuildClass:
         assert row['total_build_seconds'] == 780
 
     def test_non_build_calls_are_not_classified_as_builds(self, tmp_path: Path):
-        # Arrange — an architecture call and a manage-* call, neither a build
+        # an architecture call and a manage-* call, neither a build
         inputs = _write_sbm_plan(
             tmp_path, 'no-builds',
             sel_lines=[
@@ -2933,21 +2698,19 @@ class TestSequenceBuildMinimalityBuildClass:
             ],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — two calls recorded, zero builds
+        # two calls recorded, zero builds
         assert row['calls'] == 2
         assert row['builds'] == 0
         assert row['build_minimal'] == 0
-
 
 class TestSequenceBuildMinimalityVerbMining:
     """Build-verb mining over ``work.log`` distinguishes scoped vs all-modules
     ``module-tests`` runs and counts the other build verbs."""
 
     def test_scoped_vs_all_module_tests(self, tmp_path: Path):
-        # Arrange — one scoped (known module) and one all-modules (no arg) run
+        # one scoped (known module) and one all-modules (no arg) run
         inputs = _write_sbm_plan(
             tmp_path, 'verb-mt',
             work_lines=[
@@ -2956,29 +2719,27 @@ class TestSequenceBuildMinimalityVerbMining:
             ],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — scoped counted once (smt), all-modules counted once (amt)
+        # scoped counted once (smt), all-modules counted once (amt)
         assert 'smt=1' in row['verbs']
         assert 'amt=1' in row['verbs']
 
     def test_unknown_module_arg_counts_as_all(self, tmp_path: Path):
-        # Arrange — a module-tests arg that is NOT a known buildable module
+        # a module-tests arg that is NOT a known buildable module
         inputs = _write_sbm_plan(
             tmp_path, 'verb-unknown',
             work_lines=['ran module-tests not-a-real-module here'],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — an unrecognised arg falls into the all-modules bucket
+        # an unrecognised arg falls into the all-modules bucket
         assert 'smt=0' in row['verbs']
         assert 'amt=1' in row['verbs']
 
     def test_other_build_verbs_counted(self, tmp_path: Path):
-        # Arrange — one each of quality-gate, verify, coverage, compile
+        # one each of quality-gate, verify, coverage, compile
         inputs = _write_sbm_plan(
             tmp_path, 'verb-others',
             work_lines=[
@@ -2989,22 +2750,20 @@ class TestSequenceBuildMinimalityVerbMining:
             ],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — each verb tallied in its own slot
+        # each verb tallied in its own slot
         assert 'qg=1' in row['verbs']
         assert 'vf=1' in row['verbs']
         assert 'cov=1' in row['verbs']
         assert 'cmp=1' in row['verbs']
-
 
 class TestSequenceBuildMinimalityFlags:
     """Each redundancy / anti-pattern flag fires on its own primitive and is
     absent on a clean plan."""
 
     def test_build_churn_flag_on_clustered_builds(self, tmp_path: Path):
-        # Arrange — two builds 5 minutes apart (< 10-minute clustering window)
+        # two builds 5 minutes apart (< 10-minute clustering window)
         inputs = _write_sbm_plan(
             tmp_path, 'flag-churn',
             sel_lines=[
@@ -3013,15 +2772,14 @@ class TestSequenceBuildMinimalityFlags:
             ],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — the second build clusters with the first
+        # the second build clusters with the first
         assert row['build_churn'] == 1
         assert any(f.startswith('build_churn(') for f in row['flags'])
 
     def test_no_churn_when_builds_spaced_beyond_window(self, tmp_path: Path):
-        # Arrange — two builds 20 minutes apart (> 10-minute window)
+        # two builds 20 minutes apart (> 10-minute window)
         inputs = _write_sbm_plan(
             tmp_path, 'flag-nochurn',
             sel_lines=[
@@ -3030,81 +2788,75 @@ class TestSequenceBuildMinimalityFlags:
             ],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — spaced builds do not cluster
+        # spaced builds do not cluster
         assert row['build_churn'] == 0
         assert not any(f.startswith('build_churn(') for f in row['flags'])
 
     def test_non_minimal_build_flag_on_heavy_build(self, tmp_path: Path):
-        # Arrange — a single heavy (> 400s) build
+        # a single heavy (> 400s) build
         inputs = _write_sbm_plan(
             tmp_path, 'flag-heavy',
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 600.0)],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — the heavy build raises non_minimal_build
+        # the heavy build raises non_minimal_build
         assert row['build_heavy'] == 1
         assert any(f.startswith('non_minimal_build(') for f in row['flags'])
 
     def test_docs_only_build_flag_when_no_py_touched(self, tmp_path: Path):
-        # Arrange — a build ran but only a markdown file was modified
+        # a build ran but only a markdown file was modified
         inputs = _write_sbm_plan(
             tmp_path, 'flag-docs',
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
             modified_files=['doc/guide.md'],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — docs_only footprint + a build => the docs_only_build flag
+        # docs_only footprint + a build => the docs_only_build flag
         assert row['docs_only'] is True
         assert any(f.startswith('docs_only_build(') for f in row['flags'])
 
     def test_no_docs_only_flag_when_py_touched(self, tmp_path: Path):
-        # Arrange — a build ran and a .py file was modified
+        # a build ran and a .py file was modified
         inputs = _write_sbm_plan(
             tmp_path, 'flag-py',
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
             modified_files=['scripts/audit.py'],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — a .py touch clears docs_only
+        # a .py touch clears docs_only
         assert row['docs_only'] is False
         assert not any(f.startswith('docs_only_build(') for f in row['flags'])
 
     def test_ci_rerun_flag_on_multiple_ci_run_dirs(self, tmp_path: Path):
-        # Arrange — two CI run directories under artifacts/ci-runs/
+        # two CI run directories under artifacts/ci-runs/
         inputs = _write_sbm_plan(tmp_path, 'flag-ci', ci_runs=2)
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — >1 CI run directory raises ci_rerun
+        # >1 CI run directory raises ci_rerun
         assert row['ci_runs'] == 2
         assert any(f.startswith('ci_rerun(') for f in row['flags'])
 
     def test_no_ci_rerun_flag_for_single_run(self, tmp_path: Path):
-        # Arrange — exactly one CI run directory (not a rerun)
+        # exactly one CI run directory (not a rerun)
         inputs = _write_sbm_plan(tmp_path, 'flag-ci-single', ci_runs=1)
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — a single CI run is not a rerun signal
+        # a single CI run is not a rerun signal
         assert row['ci_runs'] == 1
         assert not any(f.startswith('ci_rerun(') for f in row['flags'])
 
     def test_phase_reentry_flag_when_role_dispatched_twice(self, tmp_path: Path):
-        # Arrange — phase-5-execute dispatched twice on the work.log timeline
+        # phase-5-execute dispatched twice on the work.log timeline
         inputs = _write_sbm_plan(
             tmp_path, 'flag-reentry',
             work_lines=[
@@ -3113,31 +2865,29 @@ class TestSequenceBuildMinimalityFlags:
             ],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — the re-dispatched role surfaces in phase_reentry + the flag fires
+        # the re-dispatched role surfaces in phase_reentry + the flag fires
         assert row['phase_reentry'] == '5-execute'
         assert any(f.startswith('phase_reentry(') for f in row['flags'])
 
     def test_arch_over_resolution_flag_when_arch_dwarfs_builds(self, tmp_path: Path):
-        # Arrange — 5 architecture calls against a single build (>= 5x ratio)
+        # 5 architecture calls against a single build (>= 5x ratio)
         sel = [
             _sbm_call(f'2026-06-01T10:0{i}:00', _ARCH, 'resolve', 0.5) for i in range(5)
         ]
         sel.append(_sbm_call('2026-06-01T10:06:00', _BUILD, 'run', 30.0))
         inputs = _write_sbm_plan(tmp_path, 'flag-arch', sel_lines=sel)
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — arch (5) >= 5 * builds (1) raises arch_over_resolution
+        # arch (5) >= 5 * builds (1) raises arch_over_resolution
         assert row['arch_calls'] == 5
         assert row['builds'] == 1
         assert any(f.startswith('arch_over_resolution(') for f in row['flags'])
 
     def test_consecutive_dup_flag_on_back_to_back_identical_calls(self, tmp_path: Path):
-        # Arrange — two identical (notation, sub) calls back-to-back
+        # two identical (notation, sub) calls back-to-back
         inputs = _write_sbm_plan(
             tmp_path, 'flag-dup',
             sel_lines=[
@@ -3146,15 +2896,14 @@ class TestSequenceBuildMinimalityFlags:
             ],
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — the second identical call is a consecutive duplicate
+        # the second identical call is a consecutive duplicate
         assert row['consecutive_dup'] == 1
         assert any(f.startswith('consecutive_dup(') for f in row['flags'])
 
     def test_clean_minimal_plan_has_no_flags(self, tmp_path: Path):
-        # Arrange — one minimal build touching a .py file, single CI run, distinct calls
+        # one minimal build touching a .py file, single CI run, distinct calls
         inputs = _write_sbm_plan(
             tmp_path, 'flag-clean',
             sel_lines=[
@@ -3165,12 +2914,10 @@ class TestSequenceBuildMinimalityFlags:
             ci_runs=1,
         )
 
-        # Act
         row = audit._sequence_build_minimality_plan(inputs)
 
-        # Assert — the expected minimal shape carries no redundancy flag
+        # the expected minimal shape carries no redundancy flag
         assert row['flags'] == []
-
 
 class TestSequenceBuildMinimalityEmitBlock:
     """``emit_sequence_build_minimality_block`` renders the cross-plan block with
@@ -3178,18 +2925,18 @@ class TestSequenceBuildMinimalityEmitBlock:
     registries."""
 
     def test_check_registered_in_registries(self):
-        # Arrange / Act / Assert — dispatchable and cross-plan scoped
+        # dispatchable and cross-plan scoped
         assert 'sequence-and-build-minimality' in audit.CHECK_NAMES
         assert 'sequence-and-build-minimality' in audit.CROSS_PLAN_CHECKS
 
     def test_genuine_predicate_fires_only_with_flags(self):
-        # Arrange / Act / Assert — a row with >=1 flag is genuine, an empty-flag
+        # a row with >=1 flag is genuine, an empty-flag
         # row is informational (the D1 severity predicate).
         assert audit._sbm_genuine({'flags': ['build_churn(1<10m)']}) is True
         assert audit._sbm_genuine({'flags': []}) is False
 
     def test_block_carries_thresholds_and_corpus_totals(self, tmp_path: Path):
-        # Arrange — one plan with a single minimal build
+        # one plan with a single minimal build
         inputs = _write_sbm_plan(
             tmp_path, 'emit-thresholds',
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
@@ -3197,10 +2944,9 @@ class TestSequenceBuildMinimalityEmitBlock:
         )
         result = audit.cross_sequence_build_minimality([inputs])
 
-        # Act
         block = audit.emit_sequence_build_minimality_block(result)
 
-        # Assert — header, the duration-band thresholds, and corpus aggregates
+        # header, the duration-band thresholds, and corpus aggregates
         assert 'check: sequence-and-build-minimality' in block
         assert 'status: success' in block
         assert 'build_minimal_seconds: 120' in block
@@ -3210,7 +2956,7 @@ class TestSequenceBuildMinimalityEmitBlock:
         assert 'corpus_build_minimal: 1' in block
 
     def test_flagged_row_renders_genuine_severity_cell(self, tmp_path: Path):
-        # Arrange — a heavy build raises non_minimal_build, the only flag, so the
+        # a heavy build raises non_minimal_build, the only flag, so the
         # per-plan row must stamp the genuine severity cell.
         inputs = _write_sbm_plan(
             tmp_path, 'emit-genuine',
@@ -3219,7 +2965,6 @@ class TestSequenceBuildMinimalityEmitBlock:
         )
         result = audit.cross_sequence_build_minimality([inputs])
 
-        # Act
         block = audit.emit_sequence_build_minimality_block(result)
         row_line = next(
             ln.strip()
@@ -3227,12 +2972,12 @@ class TestSequenceBuildMinimalityEmitBlock:
             if ln.strip().startswith('emit-genuine,')
         )
 
-        # Assert — the flagged row ends on the genuine cell, and the count reflects it
+        # the flagged row ends on the genuine cell, and the count reflects it
         assert row_line.endswith(',genuine')
         assert 'genuine_signal_count: 1' in block
 
     def test_clean_row_renders_informational_severity_cell(self, tmp_path: Path):
-        # Arrange — a minimal-only plan with no redundancy primitive: informational
+        # a minimal-only plan with no redundancy primitive: informational
         inputs = _write_sbm_plan(
             tmp_path, 'emit-clean',
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
@@ -3240,7 +2985,6 @@ class TestSequenceBuildMinimalityEmitBlock:
         )
         result = audit.cross_sequence_build_minimality([inputs])
 
-        # Act
         block = audit.emit_sequence_build_minimality_block(result)
         row_line = next(
             ln.strip()
@@ -3248,12 +2992,12 @@ class TestSequenceBuildMinimalityEmitBlock:
             if ln.strip().startswith('emit-clean,')
         )
 
-        # Assert — the clean row stamps informational and the genuine count is zero
+        # the clean row stamps informational and the genuine count is zero
         assert row_line.endswith(',informational')
         assert 'genuine_signal_count: 0' in block
 
     def test_rows_sorted_descending_by_total_build_seconds(self, tmp_path: Path):
-        # Arrange — two plans; the heavier total must sort first
+        # two plans; the heavier total must sort first
         light = _write_sbm_plan(
             tmp_path, 'sort-light',
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
@@ -3266,26 +3010,24 @@ class TestSequenceBuildMinimalityEmitBlock:
         )
         result = audit.cross_sequence_build_minimality([light, heavy])
 
-        # Assert — rows ordered by descending total_build_seconds
+        # rows ordered by descending total_build_seconds
         assert [r['plan_id'] for r in result['rows']] == ['sort-heavy', 'sort-light']
 
     def test_empty_corpus_yields_zero_aggregates_no_rows(self):
-        # Arrange / Act — no plans in the corpus
+        # no plans in the corpus
         result = audit.cross_sequence_build_minimality([])
         block = audit.emit_sequence_build_minimality_block(result)
 
-        # Assert — all-zero aggregates, no rows, zero genuine signals
+        # all-zero aggregates, no rows, zero genuine signals
         assert result['plans_in_corpus'] == 0
         assert result['rows'] == []
         assert 'plans_in_corpus: 0' in block
         assert 'genuine_signal_count: 0' in block
 
-
 # =============================================================================
 # D7 — input-integrity meta-check (per-plan presence/health + corpus
 # data_confidence summary + D1 severity emission)
 # =============================================================================
-
 
 def _write_ii_plan(
     repo_root: Path,
@@ -3370,19 +3112,17 @@ def _write_ii_plan(
 
     return audit.PlanInputs(plan_id=plan_id, plan_dir=plan_dir)
 
-
 class TestInputIntegrityPresenceDetection:
     """``check_input_integrity`` reports a presence/health boolean (as a
     lowercase string) for every canonical input the plan dir carries."""
 
     def test_all_inputs_present_reports_true(self, tmp_path: Path):
-        # Arrange — a fully-populated plan dir
+        # a fully-populated plan dir
         inputs = _write_ii_plan(tmp_path, 'all-present')
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — each presence flag is the string 'true'
+        # each presence flag is the string 'true'
         assert row['has_execution'] == 'true'
         assert row['has_metrics'] == 'true'
         assert row['has_references'] == 'true'
@@ -3391,67 +3131,56 @@ class TestInputIntegrityPresenceDetection:
         assert row['has_script_log'] == 'true'
 
     def test_missing_execution_manifest_reports_false(self, tmp_path: Path):
-        # Arrange — execution.toon omitted
+        # execution.toon omitted
         inputs = _write_ii_plan(tmp_path, 'no-exec', has_execution=False)
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — only has_execution flips, the rest stay present
+        # only has_execution flips, the rest stay present
         assert row['has_execution'] == 'false'
         assert row['has_metrics'] == 'true'
         assert row['has_references'] == 'true'
 
     def test_missing_metrics_reports_false(self, tmp_path: Path):
-        # Arrange — work/metrics.toon omitted
+        # work/metrics.toon omitted
         inputs = _write_ii_plan(tmp_path, 'no-metrics', has_metrics=False)
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert
         assert row['has_metrics'] == 'false'
 
     def test_missing_references_reports_false(self, tmp_path: Path):
-        # Arrange — references.json omitted
+        # references.json omitted
         inputs = _write_ii_plan(tmp_path, 'no-refs', has_references=False)
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert
         assert row['has_references'] == 'false'
 
     def test_empty_tasks_dir_reports_false(self, tmp_path: Path):
-        # Arrange — no TASK-*.json files
+        # no TASK-*.json files
         inputs = _write_ii_plan(tmp_path, 'no-tasks', has_tasks=False)
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — an absent (or empty) tasks dir reads as has_tasks=false
+        # an absent (or empty) tasks dir reads as has_tasks=false
         assert row['has_tasks'] == 'false'
 
     def test_empty_findings_dir_reports_false(self, tmp_path: Path):
-        # Arrange — no *.jsonl findings files
+        # no *.jsonl findings files
         inputs = _write_ii_plan(tmp_path, 'no-findings', has_findings=False)
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert
         assert row['has_findings'] == 'false'
 
     def test_missing_script_log_reports_false(self, tmp_path: Path):
-        # Arrange — no plan-scoped script-execution.log
+        # no plan-scoped script-execution.log
         inputs = _write_ii_plan(tmp_path, 'no-log', has_script_log=False)
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert
         assert row['has_script_log'] == 'false'
-
 
 class TestInputIntegrityFlags:
     """The three input-health flags — ``metrics_blind``, ``incomplete_lifecycle``,
@@ -3459,103 +3188,94 @@ class TestInputIntegrityFlags:
     fully-recorded plan."""
 
     def test_clean_plan_fires_no_flags(self, tmp_path: Path):
-        # Arrange — every input present, non-zero data-bearing phases, dispatch
+        # every input present, non-zero data-bearing phases, dispatch
         inputs = _write_ii_plan(tmp_path, 'clean')
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — all three flag cells are empty
+        # all three flag cells are empty
         assert row['metrics_blind'] == ''
         assert row['incomplete_lifecycle'] == ''
         assert row['missing_dispatch_markers'] == ''
 
     def test_zero_token_execute_sets_metrics_blind(self, tmp_path: Path):
-        # Arrange — a recorded 5-execute with zero tokens (the load-bearing case)
+        # a recorded 5-execute with zero tokens (the load-bearing case)
         inputs = _write_ii_plan(
             tmp_path, 'exec-blind',
             phase_tokens={'5-execute': 0, '6-finalize': 5_000},
         )
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — 5-execute is named in metrics_blind
+        # 5-execute is named in metrics_blind
         assert '5-execute' in row['metrics_blind']
 
     def test_zero_token_nonexecute_phase_sets_metrics_blind(self, tmp_path: Path):
-        # Arrange — a zero-token 6-finalize (data-bearing, but not the escalator)
+        # a zero-token 6-finalize (data-bearing, but not the escalator)
         inputs = _write_ii_plan(
             tmp_path, 'finalize-blind',
             phase_tokens={'5-execute': 10_000, '6-finalize': 0},
         )
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — 6-finalize is flagged blind; 5-execute (non-zero) is not
+        # 6-finalize is flagged blind; 5-execute (non-zero) is not
         assert '6-finalize' in row['metrics_blind']
         assert '5-execute' not in row['metrics_blind']
 
     def test_recorded_nonzero_phase_not_metrics_blind(self, tmp_path: Path):
-        # Arrange — both data-bearing phases carry tokens
+        # both data-bearing phases carry tokens
         inputs = _write_ii_plan(
             tmp_path, 'no-blind',
             phase_tokens={'5-execute': 1, '6-finalize': 1},
         )
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — no phase is blind
+        # no phase is blind
         assert row['metrics_blind'] == ''
 
     def test_missing_execute_phase_sets_incomplete_lifecycle(self, tmp_path: Path):
-        # Arrange — 5-execute section never recorded (only 6-finalize)
+        # 5-execute section never recorded (only 6-finalize)
         inputs = _write_ii_plan(
             tmp_path, 'no-execute-phase',
             phase_tokens={'6-finalize': 5_000},
         )
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — incomplete_lifecycle names the missing 5-execute
+        # incomplete_lifecycle names the missing 5-execute
         assert '5-execute' in row['incomplete_lifecycle']
 
     def test_missing_finalize_phase_sets_incomplete_lifecycle(self, tmp_path: Path):
-        # Arrange — 6-finalize section never recorded (only 5-execute)
+        # 6-finalize section never recorded (only 5-execute)
         inputs = _write_ii_plan(
             tmp_path, 'no-finalize-phase',
             phase_tokens={'5-execute': 10_000},
         )
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — incomplete_lifecycle names the missing 6-finalize
+        # incomplete_lifecycle names the missing 6-finalize
         assert '6-finalize' in row['incomplete_lifecycle']
 
     def test_missing_dispatch_markers_flag_when_absent(self, tmp_path: Path):
-        # Arrange — work.log carries no [DISPATCH] role=phase-N line
+        # work.log carries no [DISPATCH] role=phase-N line
         inputs = _write_ii_plan(tmp_path, 'no-dispatch', dispatch_marker=False)
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — the marker-absence flag is the string 'true'
+        # the marker-absence flag is the string 'true'
         assert row['missing_dispatch_markers'] == 'true'
 
     def test_dispatch_markers_present_clears_flag(self, tmp_path: Path):
-        # Arrange — work.log carries a [DISPATCH] role=phase-N marker
+        # work.log carries a [DISPATCH] role=phase-N marker
         inputs = _write_ii_plan(tmp_path, 'has-dispatch', dispatch_marker=True)
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — the flag is empty
+        # the flag is empty
         assert row['missing_dispatch_markers'] == ''
-
 
 class TestInputIntegrityDataConfidence:
     """The per-plan ``data_confidence`` bucket: ``blind`` iff the 5-execute phase
@@ -3563,71 +3283,64 @@ class TestInputIntegrityDataConfidence:
     ``fully-recorded``."""
 
     def test_fully_recorded_when_no_gap_or_defect(self, tmp_path: Path):
-        # Arrange — every input present, every flag clear
+        # every input present, every flag clear
         inputs = _write_ii_plan(tmp_path, 'fr')
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert
         assert row['data_confidence'] == 'fully-recorded'
 
     def test_zero_token_execute_is_blind(self, tmp_path: Path):
-        # Arrange — the load-bearing zero-token 5-execute
+        # the load-bearing zero-token 5-execute
         inputs = _write_ii_plan(
             tmp_path, 'blind',
             phase_tokens={'5-execute': 0, '6-finalize': 5_000},
         )
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — a blind 5-execute floors every downstream number
+        # a blind 5-execute floors every downstream number
         assert row['data_confidence'] == 'blind'
 
     def test_missing_input_is_partial_not_blind(self, tmp_path: Path):
-        # Arrange — a missing input with a healthy (non-zero) 5-execute
+        # a missing input with a healthy (non-zero) 5-execute
         inputs = _write_ii_plan(tmp_path, 'partial-input', has_references=False)
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — partial: a gap, but the load-bearing phase is not blind
+        # partial: a gap, but the load-bearing phase is not blind
         assert row['data_confidence'] == 'partial'
 
     def test_defect_without_blind_execute_is_partial(self, tmp_path: Path):
-        # Arrange — incomplete lifecycle (no 6-finalize) but 5-execute recorded
+        # incomplete lifecycle (no 6-finalize) but 5-execute recorded
         inputs = _write_ii_plan(
             tmp_path, 'partial-defect',
             phase_tokens={'5-execute': 10_000},
         )
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — partial, not blind: 5-execute carries tokens
+        # partial, not blind: 5-execute carries tokens
         assert row['data_confidence'] == 'partial'
 
     def test_missing_optional_findings_alone_stays_fully_recorded(
         self, tmp_path: Path
     ):
-        # Arrange — only the OPTIONAL findings artefact absent, no flag fired
+        # only the OPTIONAL findings artefact absent, no flag fired
         inputs = _write_ii_plan(tmp_path, 'opt-findings', has_findings=False)
 
-        # Act
         row = audit.check_input_integrity(inputs)
 
-        # Assert — findings is not part of the any_input_missing set, so the plan
+        # findings is not part of the any_input_missing set, so the plan
         # remains fully-recorded
         assert row['data_confidence'] == 'fully-recorded'
-
 
 class TestInputIntegrityGenuinePredicate:
     """``_input_integrity_genuine`` is the D1 severity predicate: genuine iff a
     real input-health defect fired (any of the three flags)."""
 
     def test_any_flag_is_genuine(self):
-        # Arrange / Act / Assert — each flag alone makes the row genuine
+        # each flag alone makes the row genuine
         assert audit._input_integrity_genuine(
             {'metrics_blind': '5-execute',
              'incomplete_lifecycle': '',
@@ -3645,13 +3358,12 @@ class TestInputIntegrityGenuinePredicate:
         ) is True
 
     def test_no_flag_is_informational(self):
-        # Arrange / Act / Assert — all flags empty => not genuine
+        # all flags empty => not genuine
         assert audit._input_integrity_genuine(
             {'metrics_blind': '',
              'incomplete_lifecycle': '',
              'missing_dispatch_markers': ''}
         ) is False
-
 
 class TestInputIntegrityEmitBlock:
     """``emit_input_integrity_block`` renders the corpus ``data_confidence``
@@ -3659,12 +3371,12 @@ class TestInputIntegrityEmitBlock:
     check is wired into the registries (in ``CHECK_NAMES``, NOT ``CROSS_PLAN``)."""
 
     def test_check_registered_in_check_names_only(self):
-        # Arrange / Act / Assert — dispatchable but deliberately per-plan
+        # dispatchable but deliberately per-plan
         assert 'input-integrity' in audit.CHECK_NAMES
         assert 'input-integrity' not in audit.CROSS_PLAN_CHECKS
 
     def test_block_header_and_corpus_confidence_summary(self, tmp_path: Path):
-        # Arrange — three plans: fully-recorded, partial, blind
+        # three plans: fully-recorded, partial, blind
         rows = [
             audit.check_input_integrity(_write_ii_plan(tmp_path, 'p-fr')),
             audit.check_input_integrity(
@@ -3678,10 +3390,9 @@ class TestInputIntegrityEmitBlock:
             ),
         ]
 
-        # Act
         block = audit.emit_input_integrity_block(rows)
 
-        # Assert — header + the three-bucket data_confidence tally
+        # header + the three-bucket data_confidence tally
         assert 'check: input-integrity' in block
         assert 'status: success' in block
         assert 'plans_scanned: 3' in block
@@ -3690,7 +3401,7 @@ class TestInputIntegrityEmitBlock:
         assert 'data_confidence_blind: 1' in block
 
     def test_block_lists_blind_plan_ids(self, tmp_path: Path):
-        # Arrange — two blind plans (zero-token 5-execute) + one healthy
+        # two blind plans (zero-token 5-execute) + one healthy
         rows = [
             audit.check_input_integrity(_write_ii_plan(tmp_path, 'healthy')),
             audit.check_input_integrity(
@@ -3707,20 +3418,18 @@ class TestInputIntegrityEmitBlock:
             ),
         ]
 
-        # Act
         block = audit.emit_input_integrity_block(rows)
 
-        # Assert — blind plan ids are sorted, semicolon-joined, healthy excluded
+        # blind plan ids are sorted, semicolon-joined, healthy excluded
         assert 'blind_plan_ids: blind-a;blind-b' in block
 
     def test_block_header_declares_severity_column(self, tmp_path: Path):
-        # Arrange — one plan
+        # one plan
         rows = [audit.check_input_integrity(_write_ii_plan(tmp_path, 'one'))]
 
-        # Act
         block = audit.emit_input_integrity_block(rows)
 
-        # Assert — the rows[] header carries the full column set ending in severity
+        # the rows[] header carries the full column set ending in severity
         assert (
             'rows[1]{plan_id,has_execution,has_metrics,has_references,'
             'has_tasks,has_findings,has_script_log,metrics_blind,'
@@ -3729,7 +3438,7 @@ class TestInputIntegrityEmitBlock:
         ) in block
 
     def test_genuine_row_renders_genuine_severity_cell(self, tmp_path: Path):
-        # Arrange — a blind plan (zero-token 5-execute) is a genuine defect
+        # a blind plan (zero-token 5-execute) is a genuine defect
         rows = [
             audit.check_input_integrity(
                 _write_ii_plan(
@@ -3739,7 +3448,6 @@ class TestInputIntegrityEmitBlock:
             )
         ]
 
-        # Act
         block = audit.emit_input_integrity_block(rows)
         row_line = next(
             ln.strip()
@@ -3747,15 +3455,14 @@ class TestInputIntegrityEmitBlock:
             if ln.strip().startswith('g,')
         )
 
-        # Assert — the flagged row ends on the genuine cell + count reflects it
+        # the flagged row ends on the genuine cell + count reflects it
         assert row_line.endswith(',genuine')
         assert 'genuine_signal_count: 1' in block
 
     def test_clean_row_renders_informational_severity_cell(self, tmp_path: Path):
-        # Arrange — a fully-recorded plan has no flag => informational
+        # a fully-recorded plan has no flag => informational
         rows = [audit.check_input_integrity(_write_ii_plan(tmp_path, 'i'))]
 
-        # Act
         block = audit.emit_input_integrity_block(rows)
         row_line = next(
             ln.strip()
@@ -3763,21 +3470,20 @@ class TestInputIntegrityEmitBlock:
             if ln.strip().startswith('i,')
         )
 
-        # Assert — clean row stamps informational, genuine count is zero
+        # clean row stamps informational, genuine count is zero
         assert row_line.endswith(',informational')
         assert 'genuine_signal_count: 0' in block
 
     def test_empty_corpus_yields_zero_counts(self):
-        # Arrange / Act — no plans scanned
+        # no plans scanned
         block = audit.emit_input_integrity_block([])
 
-        # Assert — all-zero buckets, empty blind list, zero genuine
+        # all-zero buckets, empty blind list, zero genuine
         assert 'plans_scanned: 0' in block
         assert 'data_confidence_fully_recorded: 0' in block
         assert 'data_confidence_partial: 0' in block
         assert 'data_confidence_blind: 0' in block
         assert 'genuine_signal_count: 0' in block
-
 
 # =============================================================================
 # D8 — cross-check-synthesis facet-completeness critic
@@ -3799,23 +3505,20 @@ class TestInputIntegrityEmitBlock:
 #   scope-estimate-accuracy       -> [{plan_id, mismatch}]
 #   task-count-efficiency         -> [{plan_id, outlier}]
 
-
 def _flag_result(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Wrap per-plan ``{plan_id, flags}`` rows in the cross-plan result shape."""
     return {'rows': rows}
 
-
 def _coupling_row(result: dict[str, Any], name: str) -> dict[str, Any]:
     """Return the single coupling row matching ``name`` from a synthesis result."""
     return next(r for r in result['rows'] if r['coupling'] == name)
-
 
 class TestCrossCheckSynthesisFlaggedPlansHelper:
     """``_syn_flagged_plans`` collects plan ids whose flags match a predicate;
     ``_syn_metrics_disproportionate_plans`` collects disproportionate-token ids."""
 
     def test_matching_flag_collected(self):
-        # Arrange — two plans, only one carries a build_churn flag
+        # two plans, only one carries a build_churn flag
         result = _flag_result(
             [
                 {'plan_id': 'p-churn', 'flags': ['build_churn:3']},
@@ -3823,49 +3526,44 @@ class TestCrossCheckSynthesisFlaggedPlansHelper:
             ]
         )
 
-        # Act
         matched = audit._syn_flagged_plans(
             result, lambda f: f.startswith('build_churn')
         )
 
-        # Assert — only the churning plan is collected
+        # only the churning plan is collected
         assert matched == {'p-churn'}
 
     def test_malformed_result_yields_empty_set(self):
-        # Arrange — a non-dict result is best-effort tolerated
-        # Act
+        # a non-dict result is best-effort tolerated
         matched = audit._syn_flagged_plans(None, lambda f: True)
 
-        # Assert — empty set, no raise
+        # empty set, no raise
         assert matched == set()
 
     def test_disproportionate_token_plans_collected(self):
-        # Arrange — one disproportionate metrics row, one normal
+        # one disproportionate metrics row, one normal
         metrics_rows = [
             {'plan_id': 'p-dispro', 'disproportionate_token': True},
             {'plan_id': 'p-normal', 'disproportionate_token': False},
         ]
 
-        # Act
         plans = audit._syn_metrics_disproportionate_plans(metrics_rows)
 
-        # Assert — only the disproportionate plan
+        # only the disproportionate plan
         assert plans == {'p-dispro'}
 
     def test_disproportionate_non_list_yields_empty_set(self):
-        # Arrange / Act — best-effort on a non-list input
+        # best-effort on a non-list input
         plans = audit._syn_metrics_disproportionate_plans(None)
 
-        # Assert
         assert plans == set()
-
 
 class TestCrossCheckSynthesisCouplingA:
     """Coupling (a) trend_empty_untrustworthy: empty token-trend regression
     co-occurring with at least one blind-execute plan (input-integrity)."""
 
     def test_fires_on_empty_trend_with_blind_plan(self):
-        # Arrange — regression empty AND a blind input-integrity plan
+        # regression empty AND a blind input-integrity plan
         all_results = {
             'token-efficiency-trend': {'regression': ''},
             'input-integrity': [
@@ -3873,16 +3571,15 @@ class TestCrossCheckSynthesisCouplingA:
             ],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'trend_empty_untrustworthy')
 
-        # Assert — fired, detail names the blind plan
+        # fired, detail names the blind plan
         assert row['fired'] is True
         assert 'p-blind' in row['detail']
 
     def test_does_not_fire_when_regression_present(self):
-        # Arrange — a non-empty regression means the trend IS trustworthy
+        # a non-empty regression means the trend IS trustworthy
         all_results = {
             'token-efficiency-trend': {'regression': '12% rise'},
             'input-integrity': [
@@ -3890,15 +3587,14 @@ class TestCrossCheckSynthesisCouplingA:
             ],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'trend_empty_untrustworthy')
 
-        # Assert — not fired
+        # not fired
         assert row['fired'] is False
 
     def test_does_not_fire_without_blind_plan(self):
-        # Arrange — empty regression but no blind-execute plan
+        # empty regression but no blind-execute plan
         all_results = {
             'token-efficiency-trend': {'regression': ''},
             'input-integrity': [
@@ -3906,13 +3602,11 @@ class TestCrossCheckSynthesisCouplingA:
             ],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'trend_empty_untrustworthy')
 
-        # Assert — not fired
+        # not fired
         assert row['fired'] is False
-
 
 class TestCrossCheckSynthesisCouplingB:
     """Coupling (b) churn_explains_cost: a plan flagged non_minimal_build /
@@ -3920,7 +3614,7 @@ class TestCrossCheckSynthesisCouplingB:
     disproportionate-token metrics signal)."""
 
     def test_fires_on_churn_plus_econ_cost(self):
-        # Arrange — same plan flagged for build churn AND finalize_heavy
+        # same plan flagged for build churn AND finalize_heavy
         all_results = {
             'sequence-and-build-minimality': _flag_result(
                 [{'plan_id': 'p-x', 'flags': ['non_minimal_build:2']}]
@@ -3931,16 +3625,15 @@ class TestCrossCheckSynthesisCouplingB:
             'metrics': [],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'churn_explains_cost')
 
-        # Assert — fired, names the plan
+        # fired, names the plan
         assert row['fired'] is True
         assert 'p-x' in row['detail']
 
     def test_fires_on_churn_plus_disproportionate_metrics(self):
-        # Arrange — churn flag intersects with a disproportionate metrics row
+        # churn flag intersects with a disproportionate metrics row
         all_results = {
             'sequence-and-build-minimality': _flag_result(
                 [{'plan_id': 'p-y', 'flags': ['build_churn:4']}]
@@ -3949,16 +3642,15 @@ class TestCrossCheckSynthesisCouplingB:
             'metrics': [{'plan_id': 'p-y', 'disproportionate_token': True}],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'churn_explains_cost')
 
-        # Assert — fired via the metrics arm of the OR
+        # fired via the metrics arm of the OR
         assert row['fired'] is True
         assert 'p-y' in row['detail']
 
     def test_does_not_fire_when_churn_and_cost_disjoint(self):
-        # Arrange — churn on one plan, cost on a DIFFERENT plan (no intersection)
+        # churn on one plan, cost on a DIFFERENT plan (no intersection)
         all_results = {
             'sequence-and-build-minimality': _flag_result(
                 [{'plan_id': 'p-churn', 'flags': ['non_minimal_build:2']}]
@@ -3969,20 +3661,18 @@ class TestCrossCheckSynthesisCouplingB:
             'metrics': [],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'churn_explains_cost')
 
-        # Assert — disjoint sets => not fired
+        # disjoint sets => not fired
         assert row['fired'] is False
-
 
 class TestCrossCheckSynthesisCouplingC:
     """Coupling (c) qgate_gap_chain: a plan flagged no_qgate6 / auto_review_only
     (quality-chain) AND (ci_rerun (sequence) OR finalize_heavy (economics))."""
 
     def test_fires_on_qgate_gap_plus_ci_rerun(self):
-        # Arrange — qgate gap intersects with a ci_rerun flag
+        # qgate gap intersects with a ci_rerun flag
         all_results = {
             'quality-chain': _flag_result(
                 [{'plan_id': 'p-z', 'flags': ['no_qgate6']}]
@@ -3993,16 +3683,15 @@ class TestCrossCheckSynthesisCouplingC:
             'token-economics': _flag_result([]),
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'qgate_gap_chain')
 
-        # Assert — fired via the ci_rerun arm
+        # fired via the ci_rerun arm
         assert row['fired'] is True
         assert 'p-z' in row['detail']
 
     def test_fires_on_qgate_gap_plus_finalize_heavy(self):
-        # Arrange — auto_review_only intersects with finalize_heavy
+        # auto_review_only intersects with finalize_heavy
         all_results = {
             'quality-chain': _flag_result(
                 [{'plan_id': 'p-w', 'flags': ['auto_review_only']}]
@@ -4013,16 +3702,15 @@ class TestCrossCheckSynthesisCouplingC:
             ),
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'qgate_gap_chain')
 
-        # Assert — fired via the finalize_heavy arm
+        # fired via the finalize_heavy arm
         assert row['fired'] is True
         assert 'p-w' in row['detail']
 
     def test_does_not_fire_without_downstream_signal(self):
-        # Arrange — qgate gap present but no ci_rerun / finalize_heavy anywhere
+        # qgate gap present but no ci_rerun / finalize_heavy anywhere
         all_results = {
             'quality-chain': _flag_result(
                 [{'plan_id': 'p-q', 'flags': ['no_qgate6']}]
@@ -4031,13 +3719,11 @@ class TestCrossCheckSynthesisCouplingC:
             'token-economics': _flag_result([]),
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'qgate_gap_chain')
 
-        # Assert — no downstream cost signal => not fired
+        # no downstream cost signal => not fired
         assert row['fired'] is False
-
 
 class TestCrossCheckSynthesisCouplingD:
     """Coupling (d) argparse_signature_cluster: argparse-shaped recurring
@@ -4045,7 +3731,7 @@ class TestCrossCheckSynthesisCouplingD:
     signatures — collapse-to-ONE source-keyed candidate."""
 
     def test_fires_when_all_three_facets_present(self):
-        # Arrange — an argparse signature, a global-log error, an unfiled lesson
+        # an argparse signature, a global-log error, an unfiled lesson
         all_results = {
             'recurring-pattern-detector': {
                 'rows': [{'signature': 'argparse: invalid choice foo'}]
@@ -4054,16 +3740,15 @@ class TestCrossCheckSynthesisCouplingD:
             'quality-verification-report': [{'unfiled_lessons': 1}],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'argparse_signature_cluster')
 
-        # Assert — fired, caveat names the single-source collapse
+        # fired, caveat names the single-source collapse
         assert row['fired'] is True
         assert 'collapse to ONE' in row['detail']
 
     def test_does_not_fire_without_global_errors(self):
-        # Arrange — argparse signature + unfiled lesson but ZERO global errors
+        # argparse signature + unfiled lesson but ZERO global errors
         all_results = {
             'recurring-pattern-detector': {
                 'rows': [{'signature': 'argparse: unrecognized argument'}]
@@ -4072,15 +3757,14 @@ class TestCrossCheckSynthesisCouplingD:
             'quality-verification-report': [{'unfiled_lessons': 2}],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'argparse_signature_cluster')
 
-        # Assert — missing one of the three facets => not fired
+        # missing one of the three facets => not fired
         assert row['fired'] is False
 
     def test_does_not_fire_when_signature_not_argparse_shaped(self):
-        # Arrange — a non-argparse signature does not match _SYN_ARGPARSE_SIG_RE
+        # a non-argparse signature does not match _SYN_ARGPARSE_SIG_RE
         all_results = {
             'recurring-pattern-detector': {
                 'rows': [{'signature': 'flaky network timeout'}]
@@ -4089,20 +3773,18 @@ class TestCrossCheckSynthesisCouplingD:
             'quality-verification-report': [{'unfiled_lessons': 1}],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'argparse_signature_cluster')
 
-        # Assert — no argparse-shaped signature => not fired
+        # no argparse-shaped signature => not fired
         assert row['fired'] is False
-
 
 class TestCrossCheckSynthesisCouplingE:
     """Coupling (e) scope_underestimate_cost: a scope-estimate mismatch AND
     (high tokens/file >= corpus median OR a task-count outlier)."""
 
     def test_fires_on_scope_mismatch_plus_high_tpf(self):
-        # Arrange — p-hi mismatches scope AND sits at/above the tpf median
+        # p-hi mismatches scope AND sits at/above the tpf median
         all_results = {
             'scope-estimate-accuracy': [
                 {'plan_id': 'p-hi', 'mismatch': True},
@@ -4116,16 +3798,15 @@ class TestCrossCheckSynthesisCouplingE:
             'task-count-efficiency': [],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'scope_underestimate_cost')
 
-        # Assert — fired via the high-tokens/file arm
+        # fired via the high-tokens/file arm
         assert row['fired'] is True
         assert 'p-hi' in row['detail']
 
     def test_fires_on_scope_mismatch_plus_task_outlier(self):
-        # Arrange — mismatch intersects with a task-count outlier
+        # mismatch intersects with a task-count outlier
         all_results = {
             'scope-estimate-accuracy': [
                 {'plan_id': 'p-out', 'mismatch': True},
@@ -4136,16 +3817,15 @@ class TestCrossCheckSynthesisCouplingE:
             ],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'scope_underestimate_cost')
 
-        # Assert — fired via the task-outlier arm
+        # fired via the task-outlier arm
         assert row['fired'] is True
         assert 'p-out' in row['detail']
 
     def test_does_not_fire_without_cost_signal(self):
-        # Arrange — scope mismatch but median guard suppresses tpf, no outlier
+        # scope mismatch but median guard suppresses tpf, no outlier
         all_results = {
             'scope-estimate-accuracy': [
                 {'plan_id': 'p-m', 'mismatch': True},
@@ -4154,25 +3834,22 @@ class TestCrossCheckSynthesisCouplingE:
             'task-count-efficiency': [],
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'scope_underestimate_cost')
 
-        # Assert — no cost signal => not fired
+        # no cost signal => not fired
         assert row['fired'] is False
-
 
 class TestCrossCheckSynthesisGenuinePredicate:
     """``_syn_genuine`` maps a fired coupling to a genuine (actionable) signal."""
 
     def test_fired_row_is_genuine(self):
-        # Arrange / Act / Assert — fired => genuine
+        # fired => genuine
         assert audit._syn_genuine({'fired': True}) is True
 
     def test_unfired_row_is_informational(self):
-        # Arrange / Act / Assert — not fired => informational
+        # not fired => informational
         assert audit._syn_genuine({'fired': False}) is False
-
 
 class TestCrossCheckSynthesisEmitBlock:
     """``emit_cross_check_synthesis_block`` renders the header counts, the D1
@@ -4180,17 +3857,17 @@ class TestCrossCheckSynthesisEmitBlock:
     registries (runs LAST)."""
 
     def test_check_registered_as_cross_plan(self):
-        # Arrange / Act / Assert — dispatchable AND cross-plan
+        # dispatchable AND cross-plan
         assert 'cross-check-synthesis' in audit.CHECK_NAMES
         assert 'cross-check-synthesis' in audit.CROSS_PLAN_CHECKS
 
     def test_synthesis_runs_last_in_check_names(self):
-        # Arrange / Act / Assert — synthesis must be the final dispatch entry so
+        # synthesis must be the final dispatch entry so
         # every upstream result is retained before it reads them
         assert audit.CHECK_NAMES[-1] == 'cross-check-synthesis'
 
     def test_block_header_and_severity_column(self):
-        # Arrange — one fired coupling (a) over an otherwise-empty corpus
+        # one fired coupling (a) over an otherwise-empty corpus
         all_results = {
             'token-efficiency-trend': {'regression': ''},
             'input-integrity': [
@@ -4199,10 +3876,9 @@ class TestCrossCheckSynthesisEmitBlock:
         }
         result = audit.cross_check_synthesis(all_results)
 
-        # Act
         block = audit.emit_cross_check_synthesis_block(result)
 
-        # Assert — header counts + the rows[] column set ends in severity
+        # header counts + the rows[] column set ends in severity
         assert 'check: cross-check-synthesis' in block
         assert 'status: success' in block
         assert 'couplings_evaluated: 6' in block
@@ -4211,7 +3887,7 @@ class TestCrossCheckSynthesisEmitBlock:
         assert 'rows[6]{coupling,fired,caveat,detail,severity}:' in block
 
     def test_fired_coupling_renders_genuine_cell(self):
-        # Arrange — coupling (a) fires
+        # coupling (a) fires
         all_results = {
             'token-efficiency-trend': {'regression': ''},
             'input-integrity': [
@@ -4220,7 +3896,6 @@ class TestCrossCheckSynthesisEmitBlock:
         }
         result = audit.cross_check_synthesis(all_results)
 
-        # Act
         block = audit.emit_cross_check_synthesis_block(result)
         row_line = next(
             ln.strip()
@@ -4228,15 +3903,14 @@ class TestCrossCheckSynthesisEmitBlock:
             if ln.strip().startswith('trend_empty_untrustworthy,')
         )
 
-        # Assert — fired row carries true + a trailing genuine severity cell
+        # fired row carries true + a trailing genuine severity cell
         assert row_line.startswith('trend_empty_untrustworthy,true,')
         assert row_line.endswith(',genuine')
 
     def test_unfired_coupling_renders_informational_cell(self):
-        # Arrange — empty corpus: no coupling fires
+        # empty corpus: no coupling fires
         result = audit.cross_check_synthesis({})
 
-        # Act
         block = audit.emit_cross_check_synthesis_block(result)
         row_line = next(
             ln.strip()
@@ -4244,22 +3918,21 @@ class TestCrossCheckSynthesisEmitBlock:
             if ln.strip().startswith('trend_empty_untrustworthy,')
         )
 
-        # Assert — unfired row carries false + a trailing informational cell
+        # unfired row carries false + a trailing informational cell
         assert row_line.startswith('trend_empty_untrustworthy,false,')
         assert row_line.endswith(',informational')
         assert 'couplings_fired: 0' in block
         assert 'genuine_signal_count: 0' in block
 
     def test_empty_results_evaluate_all_couplings(self):
-        # Arrange / Act — no upstream results at all (best-effort degradation)
+        # no upstream results at all (best-effort degradation)
         result = audit.cross_check_synthesis({})
         block = audit.emit_cross_check_synthesis_block(result)
 
-        # Assert — every coupling still evaluated, none fired
+        # every coupling still evaluated, none fired
         assert result['couplings_evaluated'] == 6
         assert result['couplings_fired'] == 0
         assert 'couplings_evaluated: 6' in block
-
 
 # =============================================================================
 # D9 — existing-check backfill (current-baseline coverage gap)
@@ -4273,7 +3946,6 @@ class TestCrossCheckSynthesisEmitBlock:
 # read straight from scripts/audit.py — never the emit-time severity column,
 # which the TestEmit*Severity classes above already own.
 # =============================================================================
-
 
 def _scope_inputs(
     *,
@@ -4295,100 +3967,89 @@ def _scope_inputs(
         affected_files_count=affected,
     )
 
-
 class TestCheckScopeEstimate:
     """``check_scope_estimate`` flags a declared scope band the actual touched
     file count falls outside, prefers modified over affected counts, and tolerates
     an unbanded / absent declaration."""
 
     def test_in_band_surgical_not_flagged(self):
-        # Arrange — surgical band is [1, 3]; actual 2 sits inside.
+        # surgical band is [1, 3]; actual 2 sits inside.
         inputs = _scope_inputs(scope_estimate='surgical', modified=2)
 
-        # Act
         result = audit.check_scope_estimate(inputs)
 
-        # Assert
         assert result['mismatch'] == ''
         assert result['declared_scope'] == 'surgical'
         assert result['actual_file_count'] == 2
 
     def test_surgical_overshoot_flagged(self):
-        # Arrange — actual 9 exceeds the surgical [1, 3] upper bound.
+        # actual 9 exceeds the surgical [1, 3] upper bound.
         inputs = _scope_inputs(scope_estimate='surgical', modified=9)
 
-        # Act
         result = audit.check_scope_estimate(inputs)
 
-        # Assert — the mismatch names the band and the actual count
+        # the mismatch names the band and the actual count
         assert 'declared=surgical' in result['mismatch']
         assert 'actual=9' in result['mismatch']
 
     def test_below_band_low_bound_flagged(self):
-        # Arrange — single_module band is [1, 15]; actual 0 sits below the low bound.
+        # single_module band is [1, 15]; actual 0 sits below the low bound.
         inputs = _scope_inputs(scope_estimate='single_module', modified=0, affected=0)
 
-        # Act
         result = audit.check_scope_estimate(inputs)
 
-        # Assert — actual 0 < low 1 → flagged
+        # actual 0 < low 1 → flagged
         assert 'declared=single_module' in result['mismatch']
         assert 'actual=0' in result['mismatch']
 
     def test_unbounded_upper_band_never_overshoots(self):
-        # Arrange — multi_module band is [5, None]; a large actual cannot overshoot.
+        # multi_module band is [5, None]; a large actual cannot overshoot.
         inputs = _scope_inputs(scope_estimate='multi_module', modified=500)
 
-        # Act
         result = audit.check_scope_estimate(inputs)
 
-        # Assert — no upper bound, actual >= low → not flagged
+        # no upper bound, actual >= low → not flagged
         assert result['mismatch'] == ''
 
     def test_modified_count_preferred_over_affected(self):
-        # Arrange — modified (post-execution truth) 2 wins over affected 99.
+        # modified (post-execution truth) 2 wins over affected 99.
         inputs = _scope_inputs(scope_estimate='surgical', modified=2, affected=99)
 
-        # Act
         result = audit.check_scope_estimate(inputs)
 
-        # Assert — the in-band modified count is used, not the out-of-band affected
+        # the in-band modified count is used, not the out-of-band affected
         assert result['actual_file_count'] == 2
         assert result['mismatch'] == ''
 
     def test_affected_used_when_modified_zero(self):
-        # Arrange — modified 0 falls back to affected 7 (overshoots surgical [1, 3]).
+        # modified 0 falls back to affected 7 (overshoots surgical [1, 3]).
         inputs = _scope_inputs(scope_estimate='surgical', modified=0, affected=7)
 
-        # Act
         result = audit.check_scope_estimate(inputs)
 
-        # Assert — fallback count is used and flags the overshoot
+        # fallback count is used and flags the overshoot
         assert result['actual_file_count'] == 7
         assert 'actual=7' in result['mismatch']
 
     def test_unmapped_scope_string_flagged(self):
-        # Arrange — a declared scope with no band mapping in SCOPE_FILE_BANDS.
+        # a declared scope with no band mapping in SCOPE_FILE_BANDS.
         inputs = _scope_inputs(scope_estimate='gigantic', modified=4)
 
-        # Act
         result = audit.check_scope_estimate(inputs)
 
-        # Assert — the no-band-mapping branch fires
+        # the no-band-mapping branch fires
         assert 'no band mapping' in result['mismatch']
         assert result['declared_scope'] == 'gigantic'
 
     def test_absent_scope_never_flagged(self):
-        # Arrange — no declared scope at all.
+        # no declared scope at all.
         inputs = _scope_inputs(scope_estimate=None, modified=42)
 
-        # Act
         result = audit.check_scope_estimate(inputs)
 
-        # Assert — empty declared scope short-circuits both branches
+        # empty declared scope short-circuits both branches
         assert result['declared_scope'] == ''
         assert result['mismatch'] == ''
-
 
 def _write_task_count_plan(
     repo_root: Path,
@@ -4423,28 +4084,25 @@ def _write_task_count_plan(
     (plan_dir / 'references.json').write_text(_json.dumps(refs), encoding='utf-8')
     return audit.collect_inputs(plan_dir)
 
-
 class TestCheckTaskCount:
     """``check_task_count`` flags under- and over-decomposition relative to the
     deliverable count, derives deliverables from references or the task fallback,
     and stays silent when no deliverables exist."""
 
     def test_balanced_ratio_not_flagged(self, tmp_path: Path):
-        # Arrange — 4 tasks over 2 deliverables → ratio 2.0, inside [0.5, 4.0].
+        # 4 tasks over 2 deliverables → ratio 2.0, inside [0.5, 4.0].
         inputs = _write_task_count_plan(
             tmp_path, 'balanced', task_count=4, deliverables=['d1', 'd2']
         )
 
-        # Act
         result = audit.check_task_count(inputs)
 
-        # Assert
         assert result['task_count'] == 4
         assert result['deliverable_count'] == 2
         assert result['outlier'] == ''
 
     def test_under_decomposition_flagged(self, tmp_path: Path):
-        # Arrange — 2 tasks over 8 deliverables → ratio 0.25 < 0.5.
+        # 2 tasks over 8 deliverables → ratio 0.25 < 0.5.
         inputs = _write_task_count_plan(
             tmp_path,
             'under',
@@ -4452,30 +4110,26 @@ class TestCheckTaskCount:
             deliverables=[f'd{i}' for i in range(8)],
         )
 
-        # Act
         result = audit.check_task_count(inputs)
 
-        # Assert
         assert 'under_decomposed' in result['outlier']
         assert 'ratio=0.25' in result['outlier']
 
     def test_over_decomposition_flagged(self, tmp_path: Path):
-        # Arrange — 10 tasks over 2 deliverables → ratio 5.0 > 4.0.
+        # 10 tasks over 2 deliverables → ratio 5.0 > 4.0.
         inputs = _write_task_count_plan(
             tmp_path, 'over', task_count=10, deliverables=['d1', 'd2']
         )
 
-        # Act
         result = audit.check_task_count(inputs)
 
-        # Assert
         assert 'over_decomposed' in result['outlier']
         assert 'ratio=5.00' in result['outlier']
 
     def test_deliverables_derived_from_tasks_when_absent_in_references(
         self, tmp_path: Path
     ):
-        # Arrange — references.json has no deliverables list; the per-task
+        # references.json has no deliverables list; the per-task
         # ``deliverable`` ids supply the distinct-count fallback (2 distinct ids).
         inputs = _write_task_count_plan(
             tmp_path,
@@ -4485,15 +4139,14 @@ class TestCheckTaskCount:
             task_deliverable_ids=[7, 9],
         )
 
-        # Act
         result = audit.check_task_count(inputs)
 
-        # Assert — distinct ids {7, 9} → 2 deliverables, ratio 1.0, not flagged
+        # distinct ids {7, 9} → 2 deliverables, ratio 1.0, not flagged
         assert result['deliverable_count'] == 2
         assert result['outlier'] == ''
 
     def test_zero_deliverables_short_circuits_no_flag(self, tmp_path: Path):
-        # Arrange — tasks present but no deliverables list and no task ids.
+        # tasks present but no deliverables list and no task ids.
         inputs = _write_task_count_plan(
             tmp_path,
             'no-deliverables',
@@ -4502,15 +4155,14 @@ class TestCheckTaskCount:
             task_deliverable_ids=None,
         )
 
-        # Act
         result = audit.check_task_count(inputs)
 
-        # Assert — deliverable_count 0 → ratio guard skipped, never flagged
+        # deliverable_count 0 → ratio guard skipped, never flagged
         assert result['deliverable_count'] == 0
         assert result['outlier'] == ''
 
     def test_no_tasks_dir_reports_zero(self, tmp_path: Path):
-        # Arrange — a plan dir with references.json but no tasks/ directory.
+        # a plan dir with references.json but no tasks/ directory.
         import json as _json
 
         plan_dir = tmp_path / '.plan' / 'temp' / 'tc-corpus' / 'no-tasks'
@@ -4520,13 +4172,11 @@ class TestCheckTaskCount:
         )
         inputs = audit.collect_inputs(plan_dir)
 
-        # Act
         result = audit.check_task_count(inputs)
 
-        # Assert — missing tasks/ → 0 tasks; ratio 0.0 < 0.5 → under_decomposed
+        # missing tasks/ → 0 tasks; ratio 0.0 < 0.5 → under_decomposed
         assert result['task_count'] == 0
         assert 'under_decomposed' in result['outlier']
-
 
 def _write_velocity_plan(
     repo_root: Path,
@@ -4555,27 +4205,25 @@ def _write_velocity_plan(
         )
     return audit.collect_inputs(plan_dir)
 
-
 class TestCheckPrMergeVelocity:
     """``check_pr_merge_velocity`` computes open-to-merge elapsed hours from the
     ci-runs manifests and flags review cycles over the 24h threshold."""
 
     def test_no_ci_runs_marks_inapplicable(self, tmp_path: Path):
-        # Arrange — a plan dir with no artifacts/ci-runs at all.
+        # a plan dir with no artifacts/ci-runs at all.
         plan_dir = tmp_path / '.plan' / 'temp' / 'velocity-corpus' / 'no-runs'
         plan_dir.mkdir(parents=True, exist_ok=True)
         inputs = audit.collect_inputs(plan_dir)
 
-        # Act
         result = audit.check_pr_merge_velocity(inputs)
 
-        # Assert — no manifests → inapplicable, never flagged
+        # no manifests → inapplicable, never flagged
         assert result['applicable'] == 'false'
         assert result['flagged'] == ''
         assert result['elapsed_hours'] == ''
 
     def test_fast_review_cycle_not_flagged(self, tmp_path: Path):
-        # Arrange — open 10:00, merge 12:00 same day → 2.0h, under the 24h ceiling.
+        # open 10:00, merge 12:00 same day → 2.0h, under the 24h ceiling.
         inputs = _write_velocity_plan(
             tmp_path,
             'fast',
@@ -4585,17 +4233,15 @@ class TestCheckPrMergeVelocity:
             ],
         )
 
-        # Act
         result = audit.check_pr_merge_velocity(inputs)
 
-        # Assert
         assert result['applicable'] == 'true'
         assert result['pr_number'] == '101'
         assert result['elapsed_hours'] == '2.0'
         assert result['flagged'] == ''
 
     def test_slow_review_cycle_flagged(self, tmp_path: Path):
-        # Arrange — open 09:00 on the 28th, merge 09:00 on the 30th → 48.0h > 24h.
+        # open 09:00 on the 28th, merge 09:00 on the 30th → 48.0h > 24h.
         inputs = _write_velocity_plan(
             tmp_path,
             'slow',
@@ -4605,15 +4251,14 @@ class TestCheckPrMergeVelocity:
             ],
         )
 
-        # Act
         result = audit.check_pr_merge_velocity(inputs)
 
-        # Assert — 48h exceeds the 24h ceiling
+        # 48h exceeds the 24h ceiling
         assert result['elapsed_hours'] == '48.0'
         assert result['flagged'] == 'true'
 
     def test_boundary_exactly_at_threshold_not_flagged(self, tmp_path: Path):
-        # Arrange — exactly 24.0h elapsed; the flag is a strict ``>`` comparison.
+        # exactly 24.0h elapsed; the flag is a strict ``>`` comparison.
         inputs = _write_velocity_plan(
             tmp_path,
             'boundary',
@@ -4623,15 +4268,14 @@ class TestCheckPrMergeVelocity:
             ],
         )
 
-        # Act
         result = audit.check_pr_merge_velocity(inputs)
 
-        # Assert — 24.0h is NOT > 24.0 → not flagged
+        # 24.0h is NOT > 24.0 → not flagged
         assert result['elapsed_hours'] == '24.0'
         assert result['flagged'] == ''
 
     def test_missing_pr_number_marks_inapplicable(self, tmp_path: Path):
-        # Arrange — manifests carry timestamps but no pr_number scalar.
+        # manifests carry timestamps but no pr_number scalar.
         inputs = _write_velocity_plan(
             tmp_path,
             'no-pr',
@@ -4641,15 +4285,14 @@ class TestCheckPrMergeVelocity:
             ],
         )
 
-        # Act
         result = audit.check_pr_merge_velocity(inputs)
 
-        # Assert — without a pr_number the check is inapplicable
+        # without a pr_number the check is inapplicable
         assert result['applicable'] == 'false'
         assert result['pr_number'] == ''
 
     def test_min_and_max_span_across_three_manifests(self, tmp_path: Path):
-        # Arrange — three runs; open is the earliest, merge the latest fetched_at.
+        # three runs; open is the earliest, merge the latest fetched_at.
         inputs = _write_velocity_plan(
             tmp_path,
             'span',
@@ -4660,13 +4303,11 @@ class TestCheckPrMergeVelocity:
             ],
         )
 
-        # Act
         result = audit.check_pr_merge_velocity(inputs)
 
-        # Assert — 08:00 → 20:00 = 12.0h, under the ceiling
+        # 08:00 → 20:00 = 12.0h, under the ceiling
         assert result['elapsed_hours'] == '12.0'
         assert result['flagged'] == ''
-
 
 def _write_qv_plan(
     repo_root: Path,
@@ -4699,14 +4340,13 @@ def _write_qv_plan(
             (findings_dir / fname).write_text(lines, encoding='utf-8')
     return audit.collect_inputs(plan_dir)
 
-
 class TestCheckQualityVerification:
     """``check_quality_verification`` mines the report's JSON blocks for findings
     and proposed lessons, sums JSONL findings, and cross-checks proposed lessons
     against the supplied lessons-corpus signatures to surface the unfiled set."""
 
     def test_unfiled_lesson_surfaced(self, tmp_path: Path):
-        # Arrange — one proposed lesson whose title is absent from the corpus.
+        # one proposed lesson whose title is absent from the corpus.
         report = (
             '# Quality Verification\n\n'
             '```json\n'
@@ -4716,17 +4356,16 @@ class TestCheckQualityVerification:
         )
         inputs = _write_qv_plan(tmp_path, 'unfiled', report_md=report)
 
-        # Act — empty corpus → the proposed lesson is unfiled
+        # empty corpus → the proposed lesson is unfiled
         result = audit.check_quality_verification(inputs, [])
 
-        # Assert
         assert result['findings_present'] == 1
         assert result['proposed_lessons'] == 1
         assert result['unfiled_lessons'] == 1
         assert result['unfiled_signatures'] == ['Brand New Signature']
 
     def test_filed_lesson_excluded_from_unfiled(self, tmp_path: Path):
-        # Arrange — the proposed lesson title matches a corpus signature
+        # the proposed lesson title matches a corpus signature
         # (substring match is enough per ``_signature_filed``).
         report = (
             '```json\n'
@@ -4735,18 +4374,18 @@ class TestCheckQualityVerification:
         )
         inputs = _write_qv_plan(tmp_path, 'filed', report_md=report)
 
-        # Act — corpus already carries a covering signature
+        # corpus already carries a covering signature
         result = audit.check_quality_verification(
             inputs, ['argparse rejection drift across phase skills']
         )
 
-        # Assert — proposed but filed → zero unfiled
+        # proposed but filed → zero unfiled
         assert result['proposed_lessons'] == 1
         assert result['unfiled_lessons'] == 0
         assert result['unfiled_signatures'] == []
 
     def test_jsonl_findings_rolled_into_count(self, tmp_path: Path):
-        # Arrange — no report; two JSONL findings files contribute to the count.
+        # no report; two JSONL findings files contribute to the count.
         inputs = _write_qv_plan(
             tmp_path,
             'jsonl',
@@ -4756,16 +4395,15 @@ class TestCheckQualityVerification:
             },
         )
 
-        # Act
         result = audit.check_quality_verification(inputs, [])
 
-        # Assert — 2 + 1 JSONL findings, no proposed lessons
+        # 2 + 1 JSONL findings, no proposed lessons
         assert result['findings_present'] == 3
         assert result['proposed_lessons'] == 0
         assert result['unfiled_lessons'] == 0
 
     def test_report_and_jsonl_findings_combine(self, tmp_path: Path):
-        # Arrange — report findings AND a JSONL findings file both count.
+        # report findings AND a JSONL findings file both count.
         report = '```json\n{"findings": [{"id": 1}, {"id": 2}]}\n```\n'
         inputs = _write_qv_plan(
             tmp_path,
@@ -4774,14 +4412,13 @@ class TestCheckQualityVerification:
             findings_by_file={'build-error.jsonl': [{'id': 9}]},
         )
 
-        # Act
         result = audit.check_quality_verification(inputs, [])
 
-        # Assert — 2 report + 1 JSONL = 3
+        # 2 report + 1 JSONL = 3
         assert result['findings_present'] == 3
 
     def test_lessons_key_alias_and_bare_string_lessons(self, tmp_path: Path):
-        # Arrange — the alternate ``lessons`` key plus a bare-string lesson entry
+        # the alternate ``lessons`` key plus a bare-string lesson entry
         # (both supported by the proposed-lesson extraction).
         report = (
             '```json\n'
@@ -4790,40 +4427,36 @@ class TestCheckQualityVerification:
         )
         inputs = _write_qv_plan(tmp_path, 'alias', report_md=report)
 
-        # Act
         result = audit.check_quality_verification(inputs, [])
 
-        # Assert — both forms captured as proposed lessons
+        # both forms captured as proposed lessons
         assert result['proposed_lessons'] == 2
         assert set(result['unfiled_signatures']) == {'Bare String Lesson', 'Dict Lesson'}
 
     def test_missing_report_yields_empty_counts(self, tmp_path: Path):
-        # Arrange — a plan dir with neither report nor findings.
+        # a plan dir with neither report nor findings.
         plan_dir = tmp_path / '.plan' / 'temp' / 'qv-corpus' / 'empty'
         plan_dir.mkdir(parents=True, exist_ok=True)
         inputs = audit.collect_inputs(plan_dir)
 
-        # Act
         result = audit.check_quality_verification(inputs, [])
 
-        # Assert — no inputs → all-zero, nothing unfiled
+        # no inputs → all-zero, nothing unfiled
         assert result['findings_present'] == 0
         assert result['proposed_lessons'] == 0
         assert result['unfiled_lessons'] == 0
         assert result['unfiled_signatures'] == []
 
     def test_malformed_json_block_ignored(self, tmp_path: Path):
-        # Arrange — a non-JSON fenced block must not raise; it is skipped.
+        # a non-JSON fenced block must not raise; it is skipped.
         report = '```json\nthis is not valid json\n```\n'
         inputs = _write_qv_plan(tmp_path, 'malformed', report_md=report)
 
-        # Act
         result = audit.check_quality_verification(inputs, [])
 
-        # Assert — best-effort skip leaves all counts at zero
+        # best-effort skip leaves all counts at zero
         assert result['findings_present'] == 0
         assert result['proposed_lessons'] == 0
-
 
 def _write_recurring_plan(
     repo_root: Path,
@@ -4846,22 +4479,20 @@ def _write_recurring_plan(
     (findings_dir / 'findings.jsonl').write_text(lines, encoding='utf-8')
     return audit.collect_inputs(plan_dir)
 
-
 class TestCrossRecurringPattern:
     """``cross_recurring_pattern`` aggregates finding signatures across plans and
     surfaces any appearing in N>=3 distinct plans as a systemic signal."""
 
     def test_signature_in_three_plans_is_systemic(self, tmp_path: Path):
-        # Arrange — the same signature appears in exactly 3 plans (threshold).
+        # the same signature appears in exactly 3 plans (threshold).
         all_inputs = [
             _write_recurring_plan(tmp_path, f'plan-{i}', ['Argparse rejection: phase-5'])
             for i in range(3)
         ]
 
-        # Act
         result = audit.cross_recurring_pattern(all_inputs)
 
-        # Assert — colon suffix stripped, signature lowercased, count 3
+        # colon suffix stripped, signature lowercased, count 3
         assert result['threshold'] == 3
         assert result['systemic_count'] == 1
         row = result['rows'][0]
@@ -4870,21 +4501,20 @@ class TestCrossRecurringPattern:
         assert row['plan_ids'] == ['plan-0', 'plan-1', 'plan-2']
 
     def test_signature_below_threshold_not_systemic(self, tmp_path: Path):
-        # Arrange — a signature in only 2 plans stays below the N>=3 threshold.
+        # a signature in only 2 plans stays below the N>=3 threshold.
         all_inputs = [
             _write_recurring_plan(tmp_path, 'plan-a', ['Worktree leak']),
             _write_recurring_plan(tmp_path, 'plan-b', ['Worktree leak']),
         ]
 
-        # Act
         result = audit.cross_recurring_pattern(all_inputs)
 
-        # Assert — 2 < 3 → nothing systemic
+        # 2 < 3 → nothing systemic
         assert result['systemic_count'] == 0
         assert result['rows'] == []
 
     def test_duplicate_signature_within_plan_counts_once(self, tmp_path: Path):
-        # Arrange — one plan repeats a signature; two other plans carry it once.
+        # one plan repeats a signature; two other plans carry it once.
         all_inputs = [
             _write_recurring_plan(
                 tmp_path, 'dup', ['Flaky test: foo', 'Flaky test: bar']
@@ -4893,17 +4523,16 @@ class TestCrossRecurringPattern:
             _write_recurring_plan(tmp_path, 'p3', ['Flaky test: qux']),
         ]
 
-        # Act
         result = audit.cross_recurring_pattern(all_inputs)
 
-        # Assert — per-plan dedup → 3 distinct plans, not 4 raw occurrences
+        # per-plan dedup → 3 distinct plans, not 4 raw occurrences
         row = result['rows'][0]
         assert row['signature'] == 'flaky test'
         assert row['occurrence_count'] == 3
         assert sorted(row['plan_ids']) == ['dup', 'p2', 'p3']
 
     def test_rows_sorted_by_descending_occurrence(self, tmp_path: Path):
-        # Arrange — signature A in 4 plans, signature B in 3 plans.
+        # signature A in 4 plans, signature B in 3 plans.
         all_inputs = []
         for i in range(4):
             all_inputs.append(
@@ -4914,17 +4543,16 @@ class TestCrossRecurringPattern:
                 _write_recurring_plan(tmp_path, f'b-{i}', ['Beta sig'])
             )
 
-        # Act
         result = audit.cross_recurring_pattern(all_inputs)
 
-        # Assert — both systemic; higher occurrence first
+        # both systemic; higher occurrence first
         assert result['systemic_count'] == 2
         assert result['rows'][0]['signature'] == 'alpha sig'
         assert result['rows'][0]['occurrence_count'] == 4
         assert result['rows'][1]['signature'] == 'beta sig'
 
     def test_type_field_used_when_title_absent(self, tmp_path: Path):
-        # Arrange — findings carry ``type`` instead of ``title``.
+        # findings carry ``type`` instead of ``title``.
         import json as _json
 
         all_inputs = []
@@ -4937,28 +4565,25 @@ class TestCrossRecurringPattern:
             )
             all_inputs.append(audit.collect_inputs(plan_dir))
 
-        # Act
         result = audit.cross_recurring_pattern(all_inputs)
 
-        # Assert — ``type`` supplies the signature when ``title`` is missing
+        # ``type`` supplies the signature when ``title`` is missing
         assert result['systemic_count'] == 1
         assert result['rows'][0]['signature'] == 'lint-issue'
 
     def test_no_findings_dir_yields_no_systemic(self, tmp_path: Path):
-        # Arrange — plans with no artifacts/findings directory at all.
+        # plans with no artifacts/findings directory at all.
         all_inputs = []
         for i in range(3):
             plan_dir = tmp_path / '.plan' / 'temp' / 'rp-corpus' / f'bare-{i}'
             plan_dir.mkdir(parents=True, exist_ok=True)
             all_inputs.append(audit.collect_inputs(plan_dir))
 
-        # Act
         result = audit.cross_recurring_pattern(all_inputs)
 
-        # Assert — nothing to aggregate
+        # nothing to aggregate
         assert result['systemic_count'] == 0
         assert result['rows'] == []
-
 
 # =============================================================================
 # D9 — check_metrics / cross_token_trend POSITIVE-PATH backfill
@@ -4969,26 +4594,24 @@ class TestCrossRecurringPattern:
 # retrospective_tokens field.
 # =============================================================================
 
-
 class TestMetricsCoreFlags:
     """``check_metrics`` flags disproportionate token share, incomplete (zero-token)
     phase recordings, impossible durations, and token-rate optimization outliers."""
 
     def test_no_metrics_reports_incomplete(self, monkeypatch):
-        # Arrange — no phases parsed at all.
+        # no phases parsed at all.
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: [])
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert — the empty-metrics sentinel row
+        # the empty-metrics sentinel row
         assert result['phases_recorded'] == 0
         assert result['incomplete_recording'] == 'true'
         assert result['anomalies'] == ['no metrics.toon recorded']
 
     def test_disproportionate_share_flagged(self, monkeypatch):
-        # Arrange — outline consumes 600/1000 = 60% (>= 45% threshold).
+        # outline consumes 600/1000 = 60% (>= 45% threshold).
         phases = [
             _phase('3-outline', total_tokens=600),
             _phase('5-execute', total_tokens=400),
@@ -4996,15 +4619,13 @@ class TestMetricsCoreFlags:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert
         assert result['disproportionate_token'] == '3-outline=60%'
         assert any('3-outline' in a for a in result['anomalies'])
 
     def test_zero_token_phase_flagged_incomplete(self, monkeypatch):
-        # Arrange — a recorded phase carrying zero tokens.
+        # a recorded phase carrying zero tokens.
         phases = [
             _phase('5-execute', total_tokens=500),
             _phase('6-finalize', total_tokens=0),
@@ -5012,14 +4633,13 @@ class TestMetricsCoreFlags:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert — the zero-token phase name lands in incomplete_recording
+        # the zero-token phase name lands in incomplete_recording
         assert result['incomplete_recording'] == '6-finalize'
 
     def test_worked_exceeding_wall_is_impossible(self, monkeypatch):
-        # Arrange — agent worked 200s but wall-clock is only 100s.
+        # agent worked 200s but wall-clock is only 100s.
         phases = [
             _phase(
                 '5-execute',
@@ -5031,28 +4651,25 @@ class TestMetricsCoreFlags:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert — worked > wall flagged as impossible
+        # worked > wall flagged as impossible
         assert result['impossible_value'] == '5-execute:worked>100s'
 
     def test_negative_idle_is_impossible(self, monkeypatch):
-        # Arrange — a phase with a negative idle duration.
+        # a phase with a negative idle duration.
         phases = [
             _phase('5-execute', total_tokens=500, idle_duration_ms=-5.0),
         ]
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert
         assert result['impossible_value'] == '5-execute:negative_idle'
 
     def test_token_rate_outlier_flagged(self, monkeypatch):
-        # Arrange — three baseline phases at ~10 tok/s plus one outlier at 100
+        # three baseline phases at ~10 tok/s plus one outlier at 100
         # tok/s (>= 3x the median non-zero ratio).
         phases = [
             _phase('2-refine', total_tokens=1000, duration_seconds=100.0),
@@ -5063,14 +4680,13 @@ class TestMetricsCoreFlags:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert — 5-execute (100 tok/s) is the >= 3x median outlier
+        # 5-execute (100 tok/s) is the >= 3x median outlier
         assert result['optimization_signal'].startswith('5-execute:')
 
     def test_balanced_phases_flag_nothing(self, monkeypatch):
-        # Arrange — three balanced phases, all non-zero, similar rates.
+        # three balanced phases, all non-zero, similar rates.
         phases = [
             _phase('3-outline', total_tokens=300, duration_seconds=30.0),
             _phase('4-plan', total_tokens=350, duration_seconds=35.0),
@@ -5079,23 +4695,21 @@ class TestMetricsCoreFlags:
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
         inputs = _inputs([])
 
-        # Act
         result = audit.check_metrics(inputs)
 
-        # Assert — no anomaly fields populated
+        # no anomaly fields populated
         assert result['disproportionate_token'] == ''
         assert result['incomplete_recording'] == ''
         assert result['impossible_value'] == ''
         assert result['optimization_signal'] == ''
         assert result['anomalies'] == []
 
-
 class TestTokenTrendCore:
     """``cross_token_trend`` orders plans chronologically and flags a sustained
     upward trend in tokens-per-phase across the corpus."""
 
     def test_upward_trend_flags_regression(self, tmp_path: Path):
-        # Arrange — six plans (date-prefixed for chronological ordering) whose
+        # six plans (date-prefixed for chronological ordering) whose
         # tokens-per-phase climb steeply from first third to last third.
         import json as _json
 
@@ -5114,16 +4728,15 @@ class TestTokenTrendCore:
             )
             all_inputs.append(audit.collect_inputs(plan_dir))
 
-        # Act
         result = audit.cross_token_trend(all_inputs)
 
-        # Assert — first-third mean ~1000, last-third mean ~5000 → regression flagged
+        # first-third mean ~1000, last-third mean ~5000 → regression flagged
         assert result['plans_in_series'] == 6
         assert result['regression'] != ''
         assert 'rose' in result['regression']
 
     def test_flat_trend_no_regression(self, tmp_path: Path):
-        # Arrange — six plans all at the same tokens-per-phase.
+        # six plans all at the same tokens-per-phase.
         import json as _json
 
         all_inputs = []
@@ -5140,15 +4753,14 @@ class TestTokenTrendCore:
             )
             all_inputs.append(audit.collect_inputs(plan_dir))
 
-        # Act
         result = audit.cross_token_trend(all_inputs)
 
-        # Assert — no rise → empty regression
+        # no rise → empty regression
         assert result['plans_in_series'] == 6
         assert result['regression'] == ''
 
     def test_fewer_than_three_plans_no_regression(self, tmp_path: Path):
-        # Arrange — only two plans; the regression rule needs >= 3.
+        # only two plans; the regression rule needs >= 3.
         import json as _json
 
         all_inputs = []
@@ -5165,15 +4777,14 @@ class TestTokenTrendCore:
             )
             all_inputs.append(audit.collect_inputs(plan_dir))
 
-        # Act
         result = audit.cross_token_trend(all_inputs)
 
-        # Assert — under the 3-plan floor, regression stays empty
+        # under the 3-plan floor, regression stays empty
         assert result['plans_in_series'] == 2
         assert result['regression'] == ''
 
     def test_plan_without_metrics_excluded_from_series(self, tmp_path: Path):
-        # Arrange — one plan has no metrics.toon and must be skipped.
+        # one plan has no metrics.toon and must be skipped.
         import json as _json
 
         all_inputs = []
@@ -5196,13 +4807,11 @@ class TestTokenTrendCore:
         (bare_dir / 'references.json').write_text(_json.dumps({}), encoding='utf-8')
         all_inputs.append(audit.collect_inputs(bare_dir))
 
-        # Act
         result = audit.cross_token_trend(all_inputs)
 
-        # Assert — only the two metric-bearing plans land in the series
+        # only the two metric-bearing plans land in the series
         assert result['plans_in_series'] == 2
         assert all(r['plan_id'].endswith('-has') for r in result['rows'])
-
 
 # =============================================================================
 # D3/D5 — task-graph-redundancy check
@@ -5213,7 +4822,6 @@ class TestTokenTrendCore:
 # flags five redundancy signals. ``_finalize_deliverable_fanout`` stamps the
 # per-run ``deliverable_fanout`` cell from the corpus median (max(3, median*2)).
 
-
 _HEAVY_BUILD_CMD = (
     'python3 .plan/execute-script.py '
     'plan-marshall:build-pyproject:pyproject_build run '
@@ -5223,7 +4831,6 @@ _LIGHT_CMD = (
     'python3 .plan/execute-script.py '
     'plan-marshall:manage-tasks:manage-tasks list --plan-id p'
 )
-
 
 def _write_task_graph_plan(
     repo_root: Path,
@@ -5250,10 +4857,8 @@ def _write_task_graph_plan(
         )
     return audit.PlanInputs(plan_id=plan_id, plan_dir=plan_dir)
 
-
 def _step(target: str, intent: str = 'write-replace') -> dict[str, Any]:
     return {'target': target, 'intent': intent}
-
 
 def _task(
     number: int,
@@ -5275,12 +4880,11 @@ def _task(
         'verification': {'commands': commands or []},
     }
 
-
 class TestTaskGraphRedundancy:
     """The five redundancy signals over a reconstructed task graph."""
 
     def test_duplicate_task_and_in_task_build_both_genuine(self, tmp_path: Path):
-        # Arrange — two tasks edit the SAME file (multi_task_file) and one bakes a
+        # two tasks edit the SAME file (multi_task_file) and one bakes a
         # HEAVY build into its verification (in_task_build).
         inputs = _write_task_graph_plan(
             tmp_path,
@@ -5295,16 +4899,15 @@ class TestTaskGraphRedundancy:
             ],
         )
 
-        # Act
         row = audit.check_task_graph_redundancy(inputs)
 
-        # Assert — both signals populated, and the row is genuine
+        # both signals populated, and the row is genuine
         assert row['multi_task_file'] == 'src/foo.py'
         assert 'T2:module-tests plan-marshall' in row['in_task_build']
         assert audit._task_graph_redundancy_genuine(row) is True
 
     def test_clean_plan_flags_none_and_is_informational(self, tmp_path: Path):
-        # Arrange — distinct targets, a single light verification, balanced fanout
+        # distinct targets, a single light verification, balanced fanout
         inputs = _write_task_graph_plan(
             tmp_path,
             'p-clean',
@@ -5314,13 +4917,12 @@ class TestTaskGraphRedundancy:
             ],
         )
 
-        # Act
         rows = [audit.check_task_graph_redundancy(inputs)]
         # deliverable_fanout needs the corpus median stamped
         audit._finalize_deliverable_fanout(rows)
         row = rows[0]
 
-        # Assert — every signal empty; informational
+        # every signal empty; informational
         assert row['multi_task_file'] == ''
         assert row['dup_substep'] == ''
         assert row['in_task_build'] == ''
@@ -5329,7 +4931,7 @@ class TestTaskGraphRedundancy:
         assert audit._task_graph_redundancy_genuine(row) is False
 
     def test_dup_substep_same_target_intent_in_two_tasks(self, tmp_path: Path):
-        # Arrange — the SAME (target, intent) baked into two tasks
+        # the SAME (target, intent) baked into two tasks
         inputs = _write_task_graph_plan(
             tmp_path,
             'p-dupstep',
@@ -5339,15 +4941,14 @@ class TestTaskGraphRedundancy:
             ],
         )
 
-        # Act
         row = audit.check_task_graph_redundancy(inputs)
 
-        # Assert — the (target, intent) pair is surfaced
+        # the (target, intent) pair is surfaced
         assert 'src/x.py [refactor]' in row['dup_substep']
         assert audit._task_graph_redundancy_genuine(row) is True
 
     def test_verif_task_fanout_more_than_one_test_task(self, tmp_path: Path):
-        # Arrange — two test/verification tasks (a collapse candidate)
+        # two test/verification tasks (a collapse candidate)
         inputs = _write_task_graph_plan(
             tmp_path,
             'p-fanout',
@@ -5358,15 +4959,14 @@ class TestTaskGraphRedundancy:
             ],
         )
 
-        # Act
         row = audit.check_task_graph_redundancy(inputs)
 
-        # Assert — both test/verification task numbers listed
+        # both test/verification task numbers listed
         assert row['verif_task_fanout'] == '2;3'
         assert audit._task_graph_redundancy_genuine(row) is True
 
     def test_deliverable_fanout_against_per_run_median(self, tmp_path: Path):
-        # Arrange — a corpus where one plan's per-deliverable task count is a high
+        # a corpus where one plan's per-deliverable task count is a high
         # outlier relative to the per-run median. The lean plans set a low median
         # (1 task/deliverable) so the threshold is max(3, 1*2)=3; the busy plan's
         # single deliverable carries 4 tasks (>=3 → flagged).
@@ -5394,10 +4994,9 @@ class TestTaskGraphRedundancy:
         )
         rows = [lean_a, lean_b, busy]
 
-        # Act
         threshold = audit._finalize_deliverable_fanout(rows)
 
-        # Assert — threshold is the corpus floor; only the busy plan is flagged
+        # threshold is the corpus floor; only the busy plan is flagged
         assert threshold == 3
         assert lean_a['deliverable_fanout'] == ''
         assert lean_b['deliverable_fanout'] == ''
@@ -5420,7 +5019,7 @@ class TestTaskGraphRedundancy:
         assert 'task-graph-redundancy' not in audit.CROSS_PLAN_CHECKS
 
     def test_emit_block_shape_and_severity_column(self, tmp_path: Path):
-        # Arrange — one genuine plan (multi_task_file) + one clean plan
+        # one genuine plan (multi_task_file) + one clean plan
         genuine = audit.check_task_graph_redundancy(
             _write_task_graph_plan(
                 tmp_path,
@@ -5439,10 +5038,9 @@ class TestTaskGraphRedundancy:
         rows = [genuine, clean]
         threshold = audit._finalize_deliverable_fanout(rows)
 
-        # Act
         block = audit.emit_task_graph_redundancy_block(rows, threshold)
 
-        # Assert — header, corpus totals, column header, and severity cells
+        # header, corpus totals, column header, and severity cells
         assert 'check: task-graph-redundancy' in block
         assert 'status: success' in block
         assert 'plans_scanned: 2' in block
@@ -5457,13 +5055,12 @@ class TestTaskGraphRedundancy:
         assert ',genuine' in block
         assert ',informational' in block
 
-
 class TestCrossCheckSynthesisCouplingF:
     """Coupling (f) redundant_build_churn: a plan whose task graph carries an
     in_task_build AND whose sequence was flagged build_churn / phase_reentry."""
 
     def test_fires_on_in_task_build_plus_build_churn(self):
-        # Arrange — same plan flagged in_task_build AND build_churn
+        # same plan flagged in_task_build AND build_churn
         all_results = {
             'task-graph-redundancy': [
                 {'plan_id': 'p-x', 'in_task_build': 'T2:module-tests'},
@@ -5473,16 +5070,15 @@ class TestCrossCheckSynthesisCouplingF:
             ),
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'redundant_build_churn')
 
-        # Assert — fired, naming the plan
+        # fired, naming the plan
         assert row['fired'] is True
         assert 'p-x' in row['detail']
 
     def test_fires_on_in_task_build_plus_phase_reentry(self):
-        # Arrange — in_task_build AND phase_reentry on the same plan
+        # in_task_build AND phase_reentry on the same plan
         all_results = {
             'task-graph-redundancy': [
                 {'plan_id': 'p-y', 'in_task_build': 'T1:quality-gate'},
@@ -5492,15 +5088,14 @@ class TestCrossCheckSynthesisCouplingF:
             ),
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'redundant_build_churn')
 
-        # Assert — fired
+        # fired
         assert row['fired'] is True
 
     def test_does_not_fire_when_signals_disjoint(self):
-        # Arrange — in_task_build on one plan, churn on a DIFFERENT plan
+        # in_task_build on one plan, churn on a DIFFERENT plan
         all_results = {
             'task-graph-redundancy': [
                 {'plan_id': 'p-a', 'in_task_build': 'T2:module-tests'},
@@ -5510,15 +5105,14 @@ class TestCrossCheckSynthesisCouplingF:
             ),
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'redundant_build_churn')
 
-        # Assert — not fired (no plan carries both)
+        # not fired (no plan carries both)
         assert row['fired'] is False
 
     def test_does_not_fire_without_in_task_build(self):
-        # Arrange — churn present but no in_task_build anywhere
+        # churn present but no in_task_build anywhere
         all_results = {
             'task-graph-redundancy': [
                 {'plan_id': 'p-c', 'in_task_build': ''},
@@ -5528,9 +5122,8 @@ class TestCrossCheckSynthesisCouplingF:
             ),
         }
 
-        # Act
         result = audit.cross_check_synthesis(all_results)
         row = _coupling_row(result, 'redundant_build_churn')
 
-        # Assert — not fired
+        # not fired
         assert row['fired'] is False

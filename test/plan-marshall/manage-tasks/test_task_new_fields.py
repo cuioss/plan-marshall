@@ -397,7 +397,6 @@ def test_update_domain(plan_context):
     assert result['status'] == 'success'
     assert result['task']['domain'] == 'javascript'
 
-    # Verify with get
     get_result = cmd_read(_read_ns(plan_id='nf-upd-dom', number=1))
     assert get_result['task']['domain'] == 'javascript'
 
@@ -410,7 +409,6 @@ def test_update_profile(plan_context):
     assert result['status'] == 'success'
     assert result['task']['profile'] == 'testing'
 
-    # Verify with get
     get_result = cmd_read(_read_ns(plan_id='nf-upd-prof', number=1))
     assert get_result['task']['profile'] == 'testing'
 
@@ -428,7 +426,6 @@ def test_update_skills(plan_context):
 
     assert result['status'] == 'success'
 
-    # Verify with get
     get_result = cmd_read(_read_ns(plan_id='nf-upd-skills', number=1))
     assert 'pm-dev-java:java-cdi' in get_result['task']['skills']
     assert 'pm-dev-java:java-lombok' in get_result['task']['skills']
@@ -441,7 +438,6 @@ def test_update_deliverable(plan_context):
 
     assert result['status'] == 'success'
 
-    # Verify with get
     get_result = cmd_read(_read_ns(plan_id='nf-upd-del', number=1))
     assert get_result['task']['deliverable'] == 2
 
@@ -455,7 +451,6 @@ def test_update_with_arbitrary_profile(plan_context):
     assert result['status'] == 'success'
     assert result['task']['profile'] == 'architecture'
 
-    # Verify persisted
     get_result = cmd_read(_read_ns(plan_id='nf-upd-arb-prof', number=1))
     assert get_result['task']['profile'] == 'architecture'
 

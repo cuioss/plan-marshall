@@ -92,80 +92,64 @@ class TestExtractDeletedIdentifiers:
     """The removed-line identifier extractor that seeds the survivor sweep."""
 
     def test_collects_symbol_from_removed_line(self):
-        # Arrange
         diff = '-    result = compute_widget_total(items)\n'
 
-        # Act
         identifiers = gate.extract_deleted_identifiers(diff)
 
-        # Assert
         assert 'compute_widget_total' in identifiers
 
     def test_ignores_old_file_header_lines(self):
-        # Arrange — the unified-diff '---' header is not a content removal.
+        # The unified-diff '---' header is not a content removal.
         diff = '--- a/marketplace/some_renamed_helper.py\n'
 
-        # Act
         identifiers = gate.extract_deleted_identifiers(diff)
 
-        # Assert
         assert 'some_renamed_helper' not in identifiers
 
     def test_ignores_added_and_context_lines(self):
-        # Arrange
         diff = (
             '+    surviving_added_symbol = 1\n'
             '     context_only_symbol = 2\n'
         )
 
-        # Act
         identifiers = gate.extract_deleted_identifiers(diff)
 
-        # Assert
         assert identifiers == []
 
     def test_drops_short_identifiers(self):
-        # Arrange — 'os' / 'id' are below the minimum identifier length.
+        # 'os' / 'id' are below the minimum identifier length.
         diff = '-import os as id\n'
 
-        # Act
         identifiers = gate.extract_deleted_identifiers(diff)
 
-        # Assert
         assert 'os' not in identifiers
         assert 'id' not in identifiers
 
     def test_drops_stopwords(self):
-        # Arrange — 'return', 'self', 'class' are language-keyword stopwords.
+        # 'return', 'self', 'class' are language-keyword stopwords.
         diff = '-        return self.value  # class scope\n'
 
-        # Act
         identifiers = gate.extract_deleted_identifiers(diff)
 
-        # Assert
         assert 'return' not in identifiers
         assert 'self' not in identifiers
         assert 'class' not in identifiers
 
     def test_result_is_sorted_and_deduplicated(self):
-        # Arrange — zebra_handler appears twice, alpha_handler once.
+        # zebra_handler appears twice, alpha_handler once.
         diff = (
             '-    zebra_handler()\n'
             '-    alpha_handler()\n'
             '-    zebra_handler()\n'
         )
 
-        # Act
         identifiers = gate.extract_deleted_identifiers(diff)
 
-        # Assert
         assert identifiers == ['alpha_handler', 'zebra_handler']
 
     def test_empty_diff_yields_empty_list(self):
-        # Arrange / Act
         identifiers = gate.extract_deleted_identifiers('')
 
-        # Assert
         assert identifiers == []
 
     def test_token_on_both_removed_and_added_line_is_dropped(self):
@@ -247,7 +231,7 @@ class TestSweepSurvivors:
     """Whole-tree grep for surviving references to deleted identifiers."""
 
     def test_flags_planted_surviving_reference(self, tmp_path):
-        # Arrange — a deleted identifier still referenced in a marketplace file.
+        # A deleted identifier still referenced in a marketplace file.
         root = _make_marketplace_tree(
             tmp_path,
             {
@@ -256,10 +240,9 @@ class TestSweepSurvivors:
             },
         )
 
-        # Act
         survivors = gate.sweep_survivors(root, ['deleted_widget_helper'])
 
-        # Assert — the planted reference is surfaced with file/line/identifier.
+        # The planted reference is surfaced with file/line/identifier.
         assert len(survivors) == 1
         row = survivors[0]
         assert row['identifier'] == 'deleted_widget_helper'
@@ -267,20 +250,18 @@ class TestSweepSurvivors:
         assert row['file'] == 'marketplace/bundles/plan-marshall/skills/foo/SKILL.md'
 
     def test_word_boundary_anchored(self, tmp_path):
-        # Arrange — 'foo_bar' deleted; 'foo_barbaz' must NOT match it.
+        # 'foo_bar' deleted; 'foo_barbaz' must NOT match it.
         root = _make_marketplace_tree(
             tmp_path,
             {'bundles/b/skills/s/scripts/x.py': 'value = foo_barbaz()\n'},
         )
 
-        # Act
         survivors = gate.sweep_survivors(root, ['foo_bar'])
 
-        # Assert
         assert survivors == []
 
     def test_excludes_plan_and_pycache_dirs(self, tmp_path):
-        # Arrange — survivors inside excluded dirs must not be reported.
+        # Survivors inside excluded dirs must not be reported.
         root = tmp_path
         (root / 'marketplace' / '.plan' / 'archived-plans').mkdir(parents=True)
         (root / 'marketplace' / '.plan' / 'archived-plans' / 'old.md').write_text(
@@ -291,49 +272,39 @@ class TestSweepSurvivors:
             'lingering_symbol = 1\n', encoding='utf-8'
         )
 
-        # Act
         survivors = gate.sweep_survivors(root, ['lingering_symbol'])
 
-        # Assert
         assert survivors == []
 
     def test_excludes_non_text_suffixes(self, tmp_path):
-        # Arrange — a .png is outside the sweep suffix allow-list.
+        # A .png is outside the sweep suffix allow-list.
         root = _make_marketplace_tree(
             tmp_path,
             {'bundles/b/skills/s/diagram.png': 'binary_lookalike_symbol\n'},
         )
 
-        # Act
         survivors = gate.sweep_survivors(root, ['binary_lookalike_symbol'])
 
-        # Assert
         assert survivors == []
 
     def test_empty_identifier_list_short_circuits(self, tmp_path):
-        # Arrange
         root = _make_marketplace_tree(
             tmp_path,
             {'bundles/b/skills/s/x.py': 'anything = 1\n'},
         )
 
-        # Act
         survivors = gate.sweep_survivors(root, [])
 
-        # Assert
         assert survivors == []
 
     def test_missing_marketplace_subdir_yields_no_survivors(self, tmp_path):
-        # Arrange — no marketplace/ subtree at all.
-
-        # Act
+        # No marketplace/ subtree at all.
         survivors = gate.sweep_survivors(tmp_path, ['some_symbol'])
 
-        # Assert
         assert survivors == []
 
     def test_rows_sorted_by_file_line_identifier(self, tmp_path):
-        # Arrange — two identifiers across two files in non-sorted plant order.
+        # Two identifiers across two files in non-sorted plant order.
         root = _make_marketplace_tree(
             tmp_path,
             {
@@ -343,10 +314,9 @@ class TestSweepSurvivors:
             },
         )
 
-        # Act
         survivors = gate.sweep_survivors(root, ['alpha_symbol', 'beta_symbol'])
 
-        # Assert — sorted by (file, line, identifier).
+        # Sorted by (file, line, identifier).
         keys = [(r['file'], r['line'], r['identifier']) for r in survivors]
         assert keys == sorted(keys)
         assert keys[0][0].endswith('a_bundle/skills/s/early.py')
@@ -413,51 +383,43 @@ class TestExtractMandateItems:
     """Intent-vs-diff scope check — request-named paths absent from the diff."""
 
     def test_flags_unrepresented_mandate_item(self):
-        # Arrange — request names a file the diff never touched.
+        # Request names a file the diff never touched.
         request = 'The plan MUST delete marketplace/old/_legacy_parser.py entirely.\n'
         changed = ['marketplace/new/_modern_parser.py']
 
-        # Act
         gaps = gate.extract_mandate_items(request, changed)
 
-        # Assert
         assert 'marketplace/old/_legacy_parser.py' in gaps
 
     def test_represented_mandate_item_not_flagged(self):
-        # Arrange — request names a path the diff carries verbatim.
+        # Request names a path the diff carries verbatim.
         request = 'Edit marketplace/skills/foo/SKILL.md to add the gate.\n'
         changed = ['marketplace/skills/foo/SKILL.md']
 
-        # Act
         gaps = gate.extract_mandate_items(request, changed)
 
-        # Assert
         assert gaps == []
 
     def test_basename_in_request_matched_by_full_path_in_diff(self):
-        # Arrange — request names a basename; diff carries the full repo-rel path.
+        # Request names a basename; diff carries the full repo-rel path.
         request = 'Remove the _plan_parsing.py helper.\n'
         changed = ['marketplace/bundles/plan-marshall/skills/x/scripts/_plan_parsing.py']
 
-        # Act
         gaps = gate.extract_mandate_items(request, changed)
 
-        # Assert
         assert gaps == []
 
     def test_no_named_paths_yields_no_gaps(self):
-        # Arrange — prose with no path-shaped tokens.
+        # Prose with no path-shaped tokens.
         request = 'Generally tidy up the codebase and improve clarity.\n'
         changed = ['marketplace/x.py']
 
-        # Act
         gaps = gate.extract_mandate_items(request, changed)
 
-        # Assert
         assert gaps == []
 
     def test_gaps_sorted_and_deduplicated(self):
-        # Arrange — same unrepresented path named twice plus another.
+        # Same unrepresented path named twice plus another.
         request = (
             'Delete marketplace/z_late.py.\n'
             'Also delete marketplace/a_early.py.\n'
@@ -465,10 +427,8 @@ class TestExtractMandateItems:
         )
         changed: list[str] = []
 
-        # Act
         gaps = gate.extract_mandate_items(request, changed)
 
-        # Assert
         assert gaps == ['marketplace/a_early.py', 'marketplace/z_late.py']
 
 
@@ -507,7 +467,7 @@ class TestScan:
     """The ``scan`` entry point wiring sweep + mandate via test seams."""
 
     def test_surfaces_survivor_and_mandate_gap_together(self, tmp_path):
-        # Arrange — a deleted identifier that survives in the tree, AND a
+        # A deleted identifier that survives in the tree, AND a
         # request-named mandate file the diff never touches.
         root = _make_marketplace_tree(
             tmp_path,
@@ -520,7 +480,6 @@ class TestScan:
         with PlanContext(plan_id='wtg-scan-both') as ctx:
             (ctx.plan_dir / 'request.md').write_text(request, encoding='utf-8')
 
-            # Act
             result = gate.scan(
                 'wtg-scan-both',
                 worktree_path=str(root),
@@ -529,7 +488,7 @@ class TestScan:
                 diff_names_runner=lambda _wt, _ref: changed_files,
             )
 
-        # Assert — both candidate lists are populated.
+        # Both candidate lists are populated.
         assert result['status'] == 'success'
         assert result['survivor_count'] == 1
         assert result['survivors'][0]['identifier'] == 'orphaned_helper'
@@ -537,7 +496,7 @@ class TestScan:
         assert result['mandate_gaps'][0]['mandate_item'] == 'marketplace/old/_unrepresented.py'
 
     def test_clean_plan_surfaces_nothing(self, tmp_path):
-        # Arrange — deleted identifier has no survivors; mandate file IS touched.
+        # Deleted identifier has no survivors; mandate file IS touched.
         root = _make_marketplace_tree(
             tmp_path,
             {'bundles/b/skills/s/SKILL.md': 'no stale references here at all\n'},
@@ -549,7 +508,6 @@ class TestScan:
         with PlanContext(plan_id='wtg-scan-clean') as ctx:
             (ctx.plan_dir / 'request.md').write_text(request, encoding='utf-8')
 
-            # Act
             result = gate.scan(
                 'wtg-scan-clean',
                 worktree_path=str(root),
@@ -558,14 +516,13 @@ class TestScan:
                 diff_names_runner=lambda _wt, _ref: changed_files,
             )
 
-        # Assert
         assert result['status'] == 'success'
         assert result['survivor_count'] == 0
         assert result['mandate_gap_count'] == 0
         assert result['deleted_identifier_count'] == 1
 
     def test_base_ref_override_passed_through_to_seams(self, tmp_path):
-        # Arrange — capture the base_ref the seams receive.
+        # Capture the base_ref the seams receive.
         root = _make_marketplace_tree(tmp_path, {'bundles/b/skills/s/x.py': '\n'})
         seen: dict[str, str] = {}
 
@@ -580,7 +537,6 @@ class TestScan:
         with PlanContext(plan_id='wtg-scan-ref') as ctx:
             (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
 
-            # Act
             gate.scan(
                 'wtg-scan-ref',
                 worktree_path=str(root),
@@ -589,7 +545,6 @@ class TestScan:
                 diff_names_runner=_names,
             )
 
-        # Assert
         assert seen['diff'] == 'develop'
         assert seen['names'] == 'develop'
 
@@ -629,11 +584,11 @@ class TestScan:
         assert result['survivor_count'] == 0
 
     def test_missing_request_yields_no_mandate_gaps(self, tmp_path):
-        # Arrange — no request.md written; the resolver returns empty text.
+        # No request.md written; the resolver returns empty text.
         root = _make_marketplace_tree(tmp_path, {'bundles/b/skills/s/x.py': '\n'})
 
         with PlanContext(plan_id='wtg-scan-noreq'):
-            # Act — deliberately do NOT write request.md.
+            # Deliberately do NOT write request.md.
             result = gate.scan(
                 'wtg-scan-noreq',
                 worktree_path=str(root),
@@ -642,7 +597,6 @@ class TestScan:
                 diff_names_runner=lambda _wt, _ref: [],
             )
 
-        # Assert
         assert result['status'] == 'success'
         assert result['mandate_gap_count'] == 0
 
@@ -681,7 +635,7 @@ class TestRunFacetsDoctor:
     """F1 — marketplace-wide static-analysis sweep, gated on the doctor trigger."""
 
     def test_doctor_analyzer_in_changed_set_runs_doctor_facet(self, tmp_path):
-        # Arrange — a changed plugin-doctor analyzer; record the worktree root
+        # A changed plugin-doctor analyzer; record the worktree root
         # the seam receives so we can assert it is the FULL marketplace root.
         seen: dict[str, Path] = {}
 
@@ -689,7 +643,6 @@ class TestRunFacetsDoctor:
             seen['root'] = wt
             return {'passed': True, 'finding_count': 0, 'summary': 'ran'}
 
-        # Act
         facets = gate.run_facets(
             tmp_path,
             [_DOCTOR_TRIGGER_PATH],
@@ -697,7 +650,7 @@ class TestRunFacetsDoctor:
             sweep_runner=_passing_sweep,
         )
 
-        # Assert — the doctor facet fired and the seam saw the worktree root
+        # The doctor facet fired and the seam saw the worktree root
         # (the full marketplace/ scan root, NOT a build-map-scoped subset).
         assert facets['doctor']['triggered'] is True
         assert facets['doctor']['ran'] is True
@@ -706,10 +659,9 @@ class TestRunFacetsDoctor:
         assert seen['root'] == tmp_path
 
     def test_plan_doctor_path_also_triggers_doctor_facet(self, tmp_path):
-        # Arrange — the plan-doctor trigger glob is the second doctor category.
+        # The plan-doctor trigger glob is the second doctor category.
         calls: list[Path] = []
 
-        # Act
         facets = gate.run_facets(
             tmp_path,
             [_PLAN_DOCTOR_TRIGGER_PATH],
@@ -717,13 +669,12 @@ class TestRunFacetsDoctor:
             sweep_runner=_passing_sweep,
         )
 
-        # Assert
         assert facets['doctor']['triggered'] is True
         assert facets['doctor']['ran'] is True
         assert calls == [tmp_path]
 
     def test_doctor_seam_failure_is_surfaced_not_raised(self, tmp_path):
-        # Arrange — the doctor seam reports findings (passed: False). This is a
+        # The doctor seam reports findings (passed: False). This is a
         # SURFACED finding, not an error — the facet still ran.
         def _failing_doctor(_wt):
             return {
@@ -732,7 +683,6 @@ class TestRunFacetsDoctor:
                 'summary': 'three rule violations',
             }
 
-        # Act
         facets = gate.run_facets(
             tmp_path,
             [_DOCTOR_TRIGGER_PATH],
@@ -740,19 +690,18 @@ class TestRunFacetsDoctor:
             sweep_runner=_passing_sweep,
         )
 
-        # Assert — the surfacer makes no verdict; passed: False is just surfaced.
+        # The surfacer makes no verdict; passed: False is just surfaced.
         assert facets['doctor']['triggered'] is True
         assert facets['doctor']['ran'] is True
         assert facets['doctor']['passed'] is False
         assert facets['doctor']['finding_count'] == 3
 
     def test_doctor_seam_runtime_error_marks_ran_false(self, tmp_path):
-        # Arrange — an infrastructure failure inside the seam must NOT be
+        # An infrastructure failure inside the seam must NOT be
         # silently treated as clean: ran: False, passed: False, error captured.
         def _exploding_doctor(_wt):
             raise RuntimeError('plugin-doctor could not be invoked')
 
-        # Act
         facets = gate.run_facets(
             tmp_path,
             [_DOCTOR_TRIGGER_PATH],
@@ -760,7 +709,6 @@ class TestRunFacetsDoctor:
             sweep_runner=_passing_sweep,
         )
 
-        # Assert
         assert facets['doctor']['triggered'] is True
         assert facets['doctor']['ran'] is False
         assert facets['doctor']['passed'] is False
@@ -771,7 +719,7 @@ class TestRunFacetsSweepTest:
     """F2 — whole-tree grep-sweep guard re-run, gated on the sweep-test trigger."""
 
     def test_sweep_guard_test_in_changed_set_runs_sweep_facet(self, tmp_path):
-        # Arrange — a changed whole-tree grep-sweep guard test; capture the
+        # A changed whole-tree grep-sweep guard test; capture the
         # worktree root the seam receives (the full scan root).
         seen: dict[str, Path] = {}
 
@@ -779,7 +727,6 @@ class TestRunFacetsSweepTest:
             seen['root'] = wt
             return {'passed': True, 'summary': 'guard tests passed'}
 
-        # Act
         facets = gate.run_facets(
             tmp_path,
             [_SWEEP_TEST_TRIGGER_PATH],
@@ -787,18 +734,17 @@ class TestRunFacetsSweepTest:
             sweep_runner=_sweep,
         )
 
-        # Assert — the sweep-test facet fired with the full tree as scan root.
+        # The sweep-test facet fired with the full tree as scan root.
         assert facets['sweep_test']['triggered'] is True
         assert facets['sweep_test']['ran'] is True
         assert facets['sweep_test']['passed'] is True
         assert seen['root'] == tmp_path
 
     def test_sweep_seam_failure_is_surfaced(self, tmp_path):
-        # Arrange — the marked guard tests fail (passed: False) — surfaced.
+        # The marked guard tests fail (passed: False) — surfaced.
         def _failing_sweep(_wt):
             return {'passed': False, 'summary': 'a guard test failed'}
 
-        # Act
         facets = gate.run_facets(
             tmp_path,
             [_SWEEP_TEST_TRIGGER_PATH],
@@ -806,17 +752,14 @@ class TestRunFacetsSweepTest:
             sweep_runner=_failing_sweep,
         )
 
-        # Assert
         assert facets['sweep_test']['triggered'] is True
         assert facets['sweep_test']['ran'] is True
         assert facets['sweep_test']['passed'] is False
 
     def test_sweep_seam_runtime_error_marks_ran_false(self, tmp_path):
-        # Arrange
         def _exploding_sweep(_wt):
             raise RuntimeError('pytest -m whole_tree_sweep could not be invoked')
 
-        # Act
         facets = gate.run_facets(
             tmp_path,
             [_SWEEP_TEST_TRIGGER_PATH],
@@ -824,7 +767,6 @@ class TestRunFacetsSweepTest:
             sweep_runner=_exploding_sweep,
         )
 
-        # Assert
         assert facets['sweep_test']['triggered'] is True
         assert facets['sweep_test']['ran'] is False
         assert facets['sweep_test']['passed'] is False
@@ -835,7 +777,7 @@ class TestRunFacetsNoTrigger:
     """Negative coverage — no facet fires, no seam runs, all vacuously clean."""
 
     def test_no_trigger_leaves_all_facets_untriggered_and_clean(self, tmp_path):
-        # Arrange — a changed set that hits no facet trigger glob, plus failing
+        # A changed set that hits no facet trigger glob, plus failing
         # seams that MUST NOT be invoked (their failure would prove a leak).
         def _must_not_run_doctor(_wt):
             raise AssertionError('doctor seam invoked without a doctor trigger')
@@ -843,7 +785,6 @@ class TestRunFacetsNoTrigger:
         def _must_not_run_sweep(_wt):
             raise AssertionError('sweep seam invoked without a sweep-test trigger')
 
-        # Act
         facets = gate.run_facets(
             tmp_path,
             [_NO_TRIGGER_PATH],
@@ -851,7 +792,7 @@ class TestRunFacetsNoTrigger:
             sweep_runner=_must_not_run_sweep,
         )
 
-        # Assert — every facet is untriggered, un-run, and vacuously clean. No
+        # Every facet is untriggered, un-run, and vacuously clean. No
         # seam raised, proving none was invoked.
         for name in ('doctor', 'sweep_test'):
             assert facets[name]['triggered'] is False, name
@@ -859,7 +800,7 @@ class TestRunFacetsNoTrigger:
             assert facets[name]['passed'] is True, name
 
     def test_empty_changed_set_fires_no_facet(self, tmp_path):
-        # Arrange / Act — an empty changed set (pre-diff shape) fires nothing.
+        # An empty changed set (pre-diff shape) fires nothing.
         facets = gate.run_facets(
             tmp_path,
             [],
@@ -867,17 +808,15 @@ class TestRunFacetsNoTrigger:
             sweep_runner=lambda _wt: pytest.fail('sweep must not run'),
         )
 
-        # Assert
         assert facets['doctor']['triggered'] is False
         assert facets['sweep_test']['triggered'] is False
 
     def test_one_facet_fires_others_stay_untriggered(self, tmp_path):
-        # Arrange — only the sweep-test trigger is in the changed set; the
+        # Only the sweep-test trigger is in the changed set; the
         # doctor seam MUST NOT run.
         def _must_not_run(_wt):
             raise AssertionError('unrelated facet seam invoked')
 
-        # Act
         facets = gate.run_facets(
             tmp_path,
             [_SWEEP_TEST_TRIGGER_PATH],
@@ -885,7 +824,7 @@ class TestRunFacetsNoTrigger:
             sweep_runner=_passing_sweep,
         )
 
-        # Assert — exactly one facet fired.
+        # Exactly one facet fired.
         assert facets['sweep_test']['triggered'] is True
         assert facets['sweep_test']['ran'] is True
         assert facets['doctor']['triggered'] is False
@@ -902,7 +841,7 @@ class TestScanWithFacets:
     into the return TOON, and the always-run survivor sweep is unchanged by it."""
 
     def test_full_gate_covers_both_facets(self, tmp_path):
-        # Arrange — a changed set that hits BOTH facet triggers at once,
+        # A changed set that hits BOTH facet triggers at once,
         # with a planted survivor proving the sweep half still runs alongside.
         root = _make_marketplace_tree(
             tmp_path,
@@ -917,7 +856,6 @@ class TestScanWithFacets:
         with PlanContext(plan_id='wtg-scan-facets-all') as ctx:
             (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
 
-            # Act
             result = gate.scan(
                 'wtg-scan-facets-all',
                 worktree_path=str(root),
@@ -928,7 +866,7 @@ class TestScanWithFacets:
                 sweep_runner=_passing_sweep,
             )
 
-        # Assert — both facets ran AND the survivor sweep is unchanged.
+        # Both facets ran AND the survivor sweep is unchanged.
         assert result['status'] == 'success'
         facets = result['facets']
         assert facets['doctor']['ran'] is True
@@ -938,7 +876,7 @@ class TestScanWithFacets:
         assert result['survivors'][0]['identifier'] == 'orphaned_helper'
 
     def test_no_facet_trigger_leaves_survivor_sweep_unchanged(self, tmp_path):
-        # Arrange — a changed set hitting NO facet trigger; the survivor sweep
+        # A changed set hitting NO facet trigger; the survivor sweep
         # half must behave exactly as in the facet-free TestScan cases.
         root = _make_marketplace_tree(
             tmp_path,
@@ -950,7 +888,6 @@ class TestScanWithFacets:
         with PlanContext(plan_id='wtg-scan-facets-none') as ctx:
             (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
 
-            # Act
             result = gate.scan(
                 'wtg-scan-facets-none',
                 worktree_path=str(root),
@@ -961,7 +898,7 @@ class TestScanWithFacets:
                 sweep_runner=lambda _wt: pytest.fail('sweep must not run'),
             )
 
-        # Assert — no facet fired, yet the survivor sweep is identical.
+        # No facet fired, yet the survivor sweep is identical.
         assert result['status'] == 'success'
         assert result['facets']['doctor']['triggered'] is False
         assert result['facets']['sweep_test']['triggered'] is False
@@ -969,14 +906,14 @@ class TestScanWithFacets:
         assert result['survivors'][0]['identifier'] == 'orphaned_helper'
 
     def test_scan_default_facet_seams_resolve_without_override(self, tmp_path):
-        # Arrange — when no facet runners are passed AND no trigger fires, scan
+        # When no facet runners are passed AND no trigger fires, scan
         # must not invoke the real (live) facet seams at all.
         root = _make_marketplace_tree(tmp_path, {'bundles/b/skills/s/x.py': '\n'})
 
         with PlanContext(plan_id='wtg-scan-facets-default') as ctx:
             (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
 
-            # Act — no facet trigger in the changed set, so the real seams are
+            # No facet trigger in the changed set, so the real seams are
             # never reached even though no override was supplied.
             result = gate.scan(
                 'wtg-scan-facets-default',
@@ -986,7 +923,7 @@ class TestScanWithFacets:
                 diff_names_runner=lambda _wt, _ref: [_NO_TRIGGER_PATH],
             )
 
-        # Assert — every facet is untriggered/clean with the real defaults wired.
+        # Every facet is untriggered/clean with the real defaults wired.
         assert result['status'] == 'success'
         for name in ('doctor', 'sweep_test'):
             assert result['facets'][name]['triggered'] is False
@@ -1002,7 +939,7 @@ class TestCmdScan:
     """The CLI wrapper translating a git-seam RuntimeError to an error TOON."""
 
     def test_git_failure_surfaces_error_toon(self, tmp_path, capsys, monkeypatch):
-        # Arrange — force the real diff runner to raise, simulating a git failure.
+        # Force the real diff runner to raise, simulating a git failure.
         def _boom(_wt, _ref):
             raise RuntimeError('git diff main...HEAD failed: fatal: bad revision')
 
@@ -1015,17 +952,15 @@ class TestCmdScan:
                 base_ref='main',
             )
 
-            # Act
             rc = gate.cmd_scan(args)
 
-        # Assert
         out = capsys.readouterr().out
         assert rc == 1
         assert 'status: error' in out
         assert 'bad revision' in out
 
     def test_success_emits_status_success_and_returns_zero(self, tmp_path, capsys, monkeypatch):
-        # Arrange — both seams succeed with no survivors / no gaps.
+        # Both seams succeed with no survivors / no gaps.
         root = _make_marketplace_tree(tmp_path, {'bundles/b/skills/s/x.py': '\n'})
         monkeypatch.setattr(gate, '_run_git_diff', lambda _wt, _ref: '')
         monkeypatch.setattr(gate, '_run_git_diff_names', lambda _wt, _ref: [])
@@ -1038,10 +973,8 @@ class TestCmdScan:
                 base_ref='main',
             )
 
-            # Act
             rc = gate.cmd_scan(args)
 
-        # Assert
         out = capsys.readouterr().out
         assert rc == 0
         assert 'status: success' in out

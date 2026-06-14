@@ -44,15 +44,12 @@ LINUX_LAUNCHER_PRIORITY = _mod.LINUX_LAUNCHER_PRIORITY
     list(MACOS_JETBRAINS_BUNDLE_IDS.items()),
 )
 def test_cmd_detect_ide_macos_jetbrains_bundle(bundle_id, expected_app):
-    # Arrange
     with (
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
         mock.patch.dict(_mod.os.environ, {'__CFBundleIdentifier': bundle_id}, clear=True),
     ):
-        # Act
         result = cmd_detect_ide(Namespace())
 
-    # Assert
     assert result['status'] == 'success'
     assert result['detected'] is True
     assert result['name'] == expected_app
@@ -62,15 +59,12 @@ def test_cmd_detect_ide_macos_jetbrains_bundle(bundle_id, expected_app):
 
 
 def test_cmd_detect_ide_macos_vscode():
-    # Arrange
     with (
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
         mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
     ):
-        # Act
         result = cmd_detect_ide(Namespace())
 
-    # Assert
     assert result['status'] == 'success'
     assert result['detected'] is True
     assert result['name'] == 'Visual Studio Code'
@@ -80,15 +74,12 @@ def test_cmd_detect_ide_macos_vscode():
 
 
 def test_cmd_detect_ide_macos_cursor():
-    # Arrange
     with (
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
         mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'cursor'}, clear=True),
     ):
-        # Act
         result = cmd_detect_ide(Namespace())
 
-    # Assert
     assert result['status'] == 'success'
     assert result['detected'] is True
     assert result['name'] == 'Cursor'
@@ -98,15 +89,12 @@ def test_cmd_detect_ide_macos_cursor():
 
 
 def test_cmd_detect_ide_macos_no_signal_returns_undetected():
-    # Arrange
     with (
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
         mock.patch.dict(_mod.os.environ, {}, clear=True),
     ):
-        # Act
         result = cmd_detect_ide(Namespace())
 
-    # Assert
     assert result['status'] == 'success'
     assert result['detected'] is False
     assert result['platform'] == 'darwin'
@@ -121,7 +109,6 @@ def test_cmd_detect_ide_macos_no_signal_returns_undetected():
 
 
 def test_cmd_detect_ide_linux_vscode_with_code_on_path():
-    # Arrange
     def which_side_effect(name):
         return '/usr/bin/code' if name == 'code' else None
 
@@ -130,10 +117,8 @@ def test_cmd_detect_ide_linux_vscode_with_code_on_path():
         mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
         mock.patch.object(_mod.shutil, 'which', side_effect=which_side_effect),
     ):
-        # Act
         result = cmd_detect_ide(Namespace())
 
-    # Assert
     assert result['status'] == 'success'
     assert result['detected'] is True
     assert result['name'] == 'Visual Studio Code'
@@ -144,7 +129,7 @@ def test_cmd_detect_ide_linux_vscode_with_code_on_path():
 
 @pytest.mark.parametrize('launcher', list(LINUX_LAUNCHER_PRIORITY))
 def test_cmd_detect_ide_linux_jetbrains_path_probe(launcher):
-    # Arrange — only `launcher` resolves on PATH; TERM_PROGRAM not set
+    # only `launcher` resolves on PATH; TERM_PROGRAM not set
     def which_side_effect(name, want=launcher):
         return f'/usr/bin/{name}' if name == want else None
 
@@ -153,10 +138,8 @@ def test_cmd_detect_ide_linux_jetbrains_path_probe(launcher):
         mock.patch.dict(_mod.os.environ, {}, clear=True),
         mock.patch.object(_mod.shutil, 'which', side_effect=which_side_effect),
     ):
-        # Act
         result = cmd_detect_ide(Namespace())
 
-    # Assert
     assert result['status'] == 'success'
     assert result['detected'] is True
     assert result['name'] == launcher
@@ -166,16 +149,13 @@ def test_cmd_detect_ide_linux_jetbrains_path_probe(launcher):
 
 
 def test_cmd_detect_ide_linux_no_launchers_returns_undetected():
-    # Arrange
     with (
         mock.patch.object(_mod.sys, 'platform', 'linux'),
         mock.patch.dict(_mod.os.environ, {}, clear=True),
         mock.patch.object(_mod.shutil, 'which', return_value=None),
     ):
-        # Act
         result = cmd_detect_ide(Namespace())
 
-    # Assert
     assert result['status'] == 'success'
     assert result['detected'] is False
     assert result['platform'] == 'linux'
@@ -190,15 +170,12 @@ def test_cmd_detect_ide_linux_no_launchers_returns_undetected():
 
 
 def test_cmd_detect_ide_unknown_platform_returns_undetected():
-    # Arrange
     with (
         mock.patch.object(_mod.sys, 'platform', 'win32'),
         mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
     ):
-        # Act
         result = cmd_detect_ide(Namespace())
 
-    # Assert
     assert result['status'] == 'success'
     assert result['detected'] is False
     assert result['platform'] == 'win32'
@@ -215,9 +192,8 @@ def test_cmd_detect_ide_unknown_platform_returns_undetected():
 def test_detect_ide_subparser_registered():
     """The main() parser must expose `detect-ide` as a subcommand with
     `cmd_detect_ide` bound as its `func` default."""
-    # Arrange / Act: rebuild argparse the same way main() does by parsing the
-    # source for the subparser registration. The simplest deterministic check
-    # is invoking the parser on a `detect-ide` argv (no flags) and confirming
+    # Rebuild argparse the same way main() does; the deterministic check is
+    # invoking the parser on a `detect-ide` argv (no flags) and confirming
     # argparse routes to the right handler.
     import argparse
 
@@ -228,6 +204,5 @@ def test_detect_ide_subparser_registered():
 
     args = parser.parse_args(['detect-ide'])
 
-    # Assert
     assert args.command == 'detect-ide'
     assert args.func is cmd_detect_ide

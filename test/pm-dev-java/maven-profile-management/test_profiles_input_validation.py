@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """6-axis identifier-validation rejection-path tests for ``profiles.py``.
 
-In-scope flags from TASK-5: ``--module`` (the ``list`` subcommand). The
-``--profile-id`` flag is OUT OF SCOPE per TASK-5 notes — it is not yet
-backed by a canonical validator from ``input_validation.py``.
+Covers the ``--module`` flag on the ``list`` subcommand — the only
+identifier flag backed by a canonical validator from ``input_validation.py``.
 
-The 6 axes mirror the canonical fixture set established by TASK-2:
+The 6 axes mirror the canonical fixture set:
 
     * empty, path-separator, glob-meta, traversal, overlong (rejection)
     * happy-path (passes validator)

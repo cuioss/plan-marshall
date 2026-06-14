@@ -65,13 +65,10 @@ BUCKET_A_NOTATIONS = [
 @pytest.mark.parametrize('notation', BUCKET_B_NOTATIONS)
 def test_injects_plan_id_for_each_bucket_b_notation(notation):
     """Bucket B notation without --plan-id gets the flag injected after run."""
-    # Arrange
     command = f'python3 .plan/execute-script.py {notation} run --command-args "verify"'
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is True
     # --plan-id must appear immediately after `run` and before other args
     assert f'{notation} run --plan-id {PLAN_ID} --command-args verify' in rewritten
@@ -86,32 +83,28 @@ def test_injects_plan_id_for_each_bucket_b_notation(notation):
 
 def test_no_double_injection_when_plan_id_already_present():
     """A command that already carries --plan-id is returned unchanged."""
-    # Arrange
     command = (
         'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         f'run --plan-id {PLAN_ID} --command-args "module-tests"'
     )
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is False
     assert rewritten == command
 
 
 def test_no_double_injection_with_different_plan_id_value():
     """An existing --plan-id is preserved, even if it differs from the offered id."""
-    # Arrange — existing flag points at a different plan id
+    # existing flag points at a different plan id
     command = (
         'python3 .plan/execute-script.py plan-marshall:build-maven:maven '
         'run --plan-id some-other-plan --command-args "verify"'
     )
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert — helper must not override or duplicate the existing flag
+    # helper must not override or duplicate the existing flag
     assert injected is False
     assert rewritten == command
     # Sanity: the plan id we offered is NOT inserted
@@ -138,10 +131,8 @@ def test_legacy_project_dir_override_passes_through(command):
     exclusive on the target Bucket B script). Both the space-separated form
     (--project-dir /path) and the equals form (--project-dir=/path) are tested.
     """
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is False
     assert rewritten == command
     # The offered plan id must NOT be inserted alongside the explicit override.
@@ -157,13 +148,11 @@ def test_legacy_project_dir_override_passes_through(command):
 @pytest.mark.parametrize('notation', BUCKET_A_NOTATIONS)
 def test_bucket_a_manage_commands_pass_through(notation):
     """Bucket A manage-* notations MUST NOT receive --plan-id injection."""
-    # Arrange — distinct existing flag value so injection would be observable
+    # distinct existing flag value so injection would be observable
     command = f'python3 .plan/execute-script.py {notation} list --plan-id existing-plan'
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is False
     assert rewritten == command
     # The offered plan id must not have been injected.
@@ -177,26 +166,20 @@ def test_bucket_a_manage_commands_pass_through(notation):
 
 def test_unknown_notation_passes_through():
     """A notation not in the Bucket B whitelist is returned unchanged."""
-    # Arrange
     command = 'python3 .plan/execute-script.py plan-marshall:some-future-script:thing run --command-args "foo"'
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is False
     assert rewritten == command
 
 
 def test_unknown_bundle_notation_passes_through():
     """A non-plan-marshall notation is returned unchanged."""
-    # Arrange
     command = 'python3 .plan/execute-script.py pm-dev-java:java-core:compile run --command-args "compile"'
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is False
     assert rewritten == command
 
@@ -219,10 +202,8 @@ def test_unknown_bundle_notation_passes_through():
 )
 def test_non_executor_commands_pass_through(command):
     """Raw build tools, git, and other non-executor commands pass through."""
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is False
     assert rewritten == command
 
@@ -234,16 +215,14 @@ def test_non_executor_commands_pass_through(command):
 
 def test_command_args_payload_preserved_on_injection():
     """The payload after --command-args must survive injection untouched."""
-    # Arrange — multi-token payload with spaces
+    # multi-token payload with spaces
     command = (
         'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         'run --command-args "module-tests plan-marshall"'
     )
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is True
     # The payload value should appear as a single quoted token after shlex.join
     assert "'module-tests plan-marshall'" in rewritten or 'module-tests plan-marshall' in rewritten
@@ -256,13 +235,11 @@ def test_command_args_payload_preserved_on_injection():
 
 def test_command_args_passthrough_preserved_verbatim():
     """On pass-through (Bucket A), the command string is byte-identical."""
-    # Arrange
     command = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id foo --task 3'
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert — exact string equality on pass-through
+    # exact string equality on pass-through
     assert injected is False
     assert rewritten == command
 
@@ -274,59 +251,51 @@ def test_command_args_passthrough_preserved_verbatim():
 
 def test_empty_command_returns_false():
     """Empty command string returns (command, False) without raising."""
-    # Act
     rewritten, injected = inject_project_dir('', PLAN_ID)
 
-    # Assert
     assert injected is False
     assert rewritten == ''
 
 
 def test_whitespace_only_command_returns_false():
     """Whitespace-only command returns (command, False) without raising."""
-    # Act
     rewritten, injected = inject_project_dir('   ', PLAN_ID)
 
-    # Assert
     assert injected is False
     assert rewritten == '   '
 
 
 def test_malformed_quoting_returns_false():
     """A command with unbalanced quotes passes through without raising."""
-    # Arrange — unbalanced single quote trips shlex.split
+    # unbalanced single quote trips shlex.split
     command = "python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args 'module-tests"
 
-    # Act — must NOT raise
+    # must NOT raise
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is False
     assert rewritten == command
 
 
 def test_executor_without_notation_returns_false():
     """Executor invoked without a notation token passes through."""
-    # Arrange — `.plan/execute-script.py` is the last token (no notation)
+    # `.plan/execute-script.py` is the last token (no notation)
     command = 'python3 .plan/execute-script.py'
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is False
     assert rewritten == command
 
 
 def test_executor_with_notation_but_no_run_subcommand_passes_through():
     """Bucket B notation without `run` subcommand is not rewritten."""
-    # Arrange — `help` instead of `run`
+    # `help` instead of `run`
     command = 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build help'
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert — out of scope for injection
+    # out of scope for injection
     assert injected is False
     assert rewritten == command
 
@@ -349,14 +318,13 @@ def _parse_toon_output(stdout: str) -> dict:
 
 def test_cli_entrypoint_emits_toon_on_injection(tmp_path):
     """CLI emits TOON with injected=true and the rewritten command on injection."""
-    # Arrange
     command = (
         'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"'
     )
     expected_rewritten, injected = inject_project_dir(command, PLAN_ID)
     assert injected is True  # sanity — the scenario should trigger injection
 
-    # Act — invoke the script as a subprocess (tmp_path used as isolated cwd)
+    # invoke the script as a subprocess (tmp_path used as isolated cwd)
     result = run_script(
         SCRIPT_PATH,
         'run',
@@ -367,7 +335,7 @@ def test_cli_entrypoint_emits_toon_on_injection(tmp_path):
         cwd=tmp_path,
     )
 
-    # Assert — structured TOON contract
+    # structured TOON contract
     assert result.success, f'CLI failed: {result.stderr}'
     parsed = _parse_toon_output(result.stdout)
     assert parsed['status'] == 'success'
@@ -377,12 +345,10 @@ def test_cli_entrypoint_emits_toon_on_injection(tmp_path):
 
 def test_cli_entrypoint_emits_toon_on_passthrough(tmp_path):
     """CLI pass-through (Bucket A) emits injected=false with original command."""
-    # Arrange
     command = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id my-plan --task 1'
     expected_rewritten, injected = inject_project_dir(command, PLAN_ID)
     assert injected is False  # sanity — Bucket A must not trigger injection
 
-    # Act
     result = run_script(
         SCRIPT_PATH,
         'run',
@@ -393,7 +359,6 @@ def test_cli_entrypoint_emits_toon_on_passthrough(tmp_path):
         cwd=tmp_path,
     )
 
-    # Assert
     assert result.success, f'CLI failed: {result.stderr}'
     parsed = _parse_toon_output(result.stdout)
     assert parsed['status'] == 'success'
@@ -403,12 +368,10 @@ def test_cli_entrypoint_emits_toon_on_passthrough(tmp_path):
 
 def test_cli_entrypoint_emits_toon_on_non_executor(tmp_path):
     """CLI pass-through for non-executor commands emits injected=false."""
-    # Arrange
     command = 'git status'
     expected_rewritten, injected = inject_project_dir(command, PLAN_ID)
     assert injected is False
 
-    # Act
     result = run_script(
         SCRIPT_PATH,
         'run',
@@ -419,7 +382,6 @@ def test_cli_entrypoint_emits_toon_on_non_executor(tmp_path):
         cwd=tmp_path,
     )
 
-    # Assert
     assert result.success, f'CLI failed: {result.stderr}'
     parsed = _parse_toon_output(result.stdout)
     assert parsed['status'] == 'success'
@@ -441,13 +403,12 @@ def test_cli_entrypoint_emits_toon_on_non_executor(tmp_path):
 @pytest.mark.parametrize('notation', BUCKET_B_NOTATIONS)
 def test_skips_injection_when_plan_id_already_present(notation):
     """A Bucket B command carrying --plan-id must not get a second --plan-id."""
-    # Arrange — router-level --plan-id is supplied by the caller.
+    # router-level --plan-id is supplied by the caller.
     command = f'python3 .plan/execute-script.py {notation} run --plan-id task-routing-canonical --command-args "verify"'
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert — the helper recognises --plan-id and leaves the command alone.
+    # the helper recognises --plan-id and leaves the command alone.
     assert injected is False, (
         f'inject_project_dir must NOT inject when --plan-id is already present; '
         f'got rewritten={rewritten!r}'
@@ -460,16 +421,15 @@ def test_skips_injection_when_plan_id_already_present(notation):
 
 def test_skips_injection_with_plan_id_equals_form():
     """``--plan-id=ID`` (equals form) must also be detected as routing intent."""
-    # Arrange — equals-form router-level --plan-id.
+    # equals-form router-level --plan-id.
     command = (
         'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         'run --plan-id=task-routing-canonical --command-args "verify"'
     )
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert — both detection forms must trigger the skip.
+    # both detection forms must trigger the skip.
     assert injected is False
     assert '--plan-id=task-routing-canonical' in rewritten
     assert PLAN_ID not in rewritten
@@ -477,23 +437,20 @@ def test_skips_injection_with_plan_id_equals_form():
 
 def test_injects_when_neither_plan_id_nor_project_dir_present():
     """Sanity: the only path that triggers injection is "neither flag present"."""
-    # Arrange — Bucket B command without either routing flag.
+    # Bucket B command without either routing flag.
     command = (
         'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         'run --command-args "module-tests"'
     )
 
-    # Act
     rewritten, injected = inject_project_dir(command, PLAN_ID)
 
-    # Assert
     assert injected is True
     assert f'--plan-id {PLAN_ID}' in rewritten
 
 
 def test_cli_entrypoint_emits_toon_on_plan_id_present_passthrough(tmp_path):
     """CLI surfaces injected=false + original command when --plan-id is present."""
-    # Arrange
     command = (
         'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         'run --plan-id task-routing-canonical --command-args "module-tests"'
@@ -501,7 +458,6 @@ def test_cli_entrypoint_emits_toon_on_plan_id_present_passthrough(tmp_path):
     expected_rewritten, injected = inject_project_dir(command, PLAN_ID)
     assert injected is False  # sanity — --plan-id triggers the skip
 
-    # Act
     result = run_script(
         SCRIPT_PATH,
         'run',
@@ -512,7 +468,6 @@ def test_cli_entrypoint_emits_toon_on_plan_id_present_passthrough(tmp_path):
         cwd=tmp_path,
     )
 
-    # Assert
     assert result.success, f'CLI failed: {result.stderr}'
     parsed = _parse_toon_output(result.stdout)
     assert parsed['status'] == 'success'

@@ -13,6 +13,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -267,11 +269,8 @@ def test_api_get_derived_assembles_legacy_shape():
 def test_api_get_derived_missing_meta_raises():
     """api_get_derived raises DataNotFoundError when ``_project.json`` is missing."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        try:
+        with pytest.raises(DataNotFoundError):
             api_get_derived(tmpdir)
-            assert False, 'Should have raised DataNotFoundError'
-        except DataNotFoundError:
-            pass
 
 
 def test_api_get_derived_module_missing_derived_returns_empty_modules():
@@ -318,11 +317,8 @@ def test_api_get_derived_module_unknown_module_raises():
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project(tmpdir, shape='metadata_rich')
 
-        try:
+        with pytest.raises(ModuleNotFoundInProjectError):
             api_get_derived_module('nonexistent', tmpdir)
-            assert False, 'Should have raised ModuleNotFoundInProjectError'
-        except ModuleNotFoundInProjectError:
-            pass
 
 
 def test_api_get_derived_module_missing_from_crawl_raises_module_not_found():
@@ -339,11 +335,8 @@ def test_api_get_derived_module_missing_from_crawl_raises_module_not_found():
             tmpdir,
         )
 
-        try:
+        with pytest.raises(ModuleNotFoundInProjectError):
             api_get_derived_module('gone', tmpdir)
-            assert False, 'Should have raised ModuleNotFoundInProjectError'
-        except ModuleNotFoundInProjectError:
-            pass
 
 
 # =============================================================================

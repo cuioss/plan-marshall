@@ -149,13 +149,10 @@ def test_get_module_context_returns_per_module_entries(tmp_path):
     ``_project.json`` index, and ``modules`` carries one entry per module with
     the documented shape.
     """
-    # Arrange
     _seed_two_module_project(tmp_path)
 
-    # Act
     result = cmd_get_module_context(_ns(str(tmp_path)))
 
-    # Assert
     assert result['status'] == 'success'
     assert result['module_count'] == 2
     modules = result['modules']
@@ -173,19 +170,17 @@ def test_get_module_context_pins_optional_field_shape(tmp_path):
     while ``tips``, ``insights`` and ``skills_by_profile`` flow through
     untouched.
     """
-    # Arrange
     _seed_two_module_project(tmp_path)
 
-    # Act
     result = cmd_get_module_context(_ns(str(tmp_path)))
 
-    # Assert — required fields
+    # required fields
     core = next(m for m in result['modules'] if m['name'] == 'core')
     assert core['path'] == 'core'
     assert core['purpose'] == 'Domain layer'
     assert core['responsibility'] == 'Encapsulates business rules and entities'
 
-    # Assert — optional fields are present and carry the documented shape
+    # optional fields are present and carry the documented shape
     assert core['key_packages'] == ['de.cuioss.core.domain', 'de.cuioss.core.value']
     assert core['tips'] == ['Keep entities free of framework annotations']
     assert core['insights'] == ['Repository abstractions live in service layer']
@@ -202,13 +197,10 @@ def test_get_module_context_omits_optionals_when_enrichment_lacks_them(tmp_path)
     requires the optional keys to be absent (rather than defaulted to empty
     values) so callers can branch on presence.
     """
-    # Arrange
     _seed_two_module_project(tmp_path)
 
-    # Act
     result = cmd_get_module_context(_ns(str(tmp_path)))
 
-    # Assert
     web = next(m for m in result['modules'] if m['name'] == 'web')
     assert web['name'] == 'web'
     assert web['path'] == 'web'
@@ -224,7 +216,6 @@ def test_get_module_context_uses_default_path_when_module_lacks_paths(tmp_path):
     The reader documents this fallback explicitly so callers always see a
     non-empty ``path`` field even when discovery wrote a sparse derived shape.
     """
-    # Arrange
     save_project_meta(
         {
             'name': 'sparse-project',
@@ -243,10 +234,8 @@ def test_get_module_context_uses_default_path_when_module_lacks_paths(tmp_path):
         str(tmp_path),
     )
 
-    # Act
     result = cmd_get_module_context(_ns(str(tmp_path)))
 
-    # Assert
     assert result['status'] == 'success'
     root = result['modules'][0]
     assert root['path'] == '.'
@@ -260,7 +249,7 @@ def test_get_module_context_omits_modules_absent_from_live_crawl(tmp_path):
     filesystem presence nor an on-disk derived.json fallback simply does
     not appear in the response — there is no half-written shape to surface.
     """
-    # Arrange — index lists 'orphan' but no derived.json is written for it,
+    # index lists 'orphan' but no derived.json is written for it,
     # and no real module exists at that path.
     save_project_meta(
         {
@@ -278,10 +267,9 @@ def test_get_module_context_omits_modules_absent_from_live_crawl(tmp_path):
         str(tmp_path),
     )
 
-    # Act
     result = cmd_get_module_context(_ns(str(tmp_path)))
 
-    # Assert — 'orphan' is absent because the live crawl doesn't see it.
+    # 'orphan' is absent because the live crawl doesn't see it.
     assert result['status'] == 'success'
     assert result['module_count'] == 0
 
@@ -299,12 +287,10 @@ def test_get_module_context_returns_not_found_when_project_meta_absent(tmp_path)
     The response includes a discover suggestion so callers know how to
     remediate.
     """
-    # Arrange — tmp_path has no .plan/project-architecture/ at all.
+    # tmp_path has no .plan/project-architecture/ at all.
 
-    # Act
     result = cmd_get_module_context(_ns(str(tmp_path)))
 
-    # Assert
     assert result['status'] == 'not_found'
     assert 'message' in result
     assert 'suggestion' in result
@@ -326,13 +312,11 @@ def test_get_module_context_not_found_message_references_data_dir(tmp_path, proj
     project-architecture directory the reader looked in, so callers can
     surface the exact path that needs ``architecture discover``.
     """
-    # Arrange — point at a subdirectory that does not exist on disk.
+    # point at a subdirectory that does not exist on disk.
     missing = tmp_path / project_dir_arg
 
-    # Act
     result = cmd_get_module_context(_ns(str(missing)))
 
-    # Assert
     assert result['status'] == 'not_found'
     # The reader returns the parent of _project.json (i.e., the data dir).
     assert 'project-architecture' in result['file']

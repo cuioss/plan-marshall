@@ -20,10 +20,6 @@ _pyproject_cmd_parse_mod = load_script_module('plan-marshall', 'build-pyproject'
 
 parse_log = _pyproject_cmd_parse_mod.parse_log
 
-# =============================================================================
-# mypy error parsing
-# =============================================================================
-
 
 def test_parse_mypy_errors():
     """Extracts mypy type errors with file and line."""
@@ -57,11 +53,6 @@ def test_parse_mypy_no_errors():
     assert len(issues) == 0
 
 
-# =============================================================================
-# ruff error parsing
-# =============================================================================
-
-
 def test_parse_ruff_errors():
     """Extracts ruff lint errors with file, line, and rule code."""
     content = """src/main.py:15:1: E501 Line too long (120 > 88)
@@ -80,11 +71,6 @@ src/utils.py:30:5: F401 'os' imported but unused
     assert 'E501' in issues[0].message
 
 
-# =============================================================================
-# pytest failure parsing
-# =============================================================================
-
-
 def test_parse_pytest_failures():
     """Extracts pytest test failures with file and message."""
     content = """FAILED test/test_main.py::test_addition - AssertionError: assert 1 == 2
@@ -101,11 +87,6 @@ FAILED test/test_utils.py::test_helper
     assert issues[0].category == 'test_failure'
     assert 'AssertionError' in issues[0].message
     assert issues[1].message == 'Test test_helper failed'
-
-
-# =============================================================================
-# pytest summary parsing
-# =============================================================================
 
 
 def test_parse_pytest_summary():
@@ -149,11 +130,6 @@ def test_parse_no_test_summary():
         Path(f.name).unlink()
 
     assert test_summary is None
-
-
-# =============================================================================
-# Edge cases
-# =============================================================================
 
 
 def test_parse_missing_file():

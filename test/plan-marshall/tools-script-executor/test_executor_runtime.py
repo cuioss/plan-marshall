@@ -42,10 +42,6 @@ import pytest
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT
 
-# ============================================================================
-# PATHS
-# ============================================================================
-
 SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor'
 TEMPLATES_DIR = SKILL_DIR / 'templates'
 EXECUTOR_TEMPLATE = TEMPLATES_DIR / 'execute-script.py.template'
@@ -67,11 +63,6 @@ import sys
 print('SENTINEL:{tree_id}')
 sys.exit(0)
 """
-
-
-# ============================================================================
-# FAKE MARKETPLACE TREE BUILDER
-# ============================================================================
 
 
 def _build_fake_marketplace(root: Path, tree_id: str) -> Path:
@@ -157,11 +148,6 @@ def _run_executor(
     )
 
 
-# ============================================================================
-# FIXTURES
-# ============================================================================
-
-
 @pytest.fixture
 def two_marketplace_trees(tmp_path):
     """
@@ -196,11 +182,6 @@ def two_marketplace_trees(tmp_path):
         'executor': executor_path,
         'plan_dir': plan_dir,
     }
-
-
-# ============================================================================
-# TESTS
-# ============================================================================
 
 
 def test_pm_marketplace_root_unset_uses_embedded_tree(two_marketplace_trees, monkeypatch):
@@ -281,14 +262,11 @@ def test_pm_marketplace_root_matching_embedded_root_is_noop(two_marketplace_tree
     )
 
 
-# ============================================================================
-# POST-REMOVAL: argparse-native rejection of invented subcommands
-# ============================================================================
-# Lesson 2026-04-29-23-002 originally drove a runtime pre-flight validator
-# (SUBCOMMANDS dict + structured TOON rejection). That validator was removed
-# in plan fix-generate-executor-ast-subcommands — drift is now detected at
-# dev-time via plugin-doctor and post-hoc via plan-retrospective. The
-# executor itself stays dumb and delegates to the target script's argparse,
+# Post-removal contract: lesson 2026-04-29-23-002 originally drove a runtime
+# pre-flight validator (SUBCOMMANDS dict + structured TOON rejection). That
+# validator was removed in plan fix-generate-executor-ast-subcommands — drift is
+# now detected at dev-time via plugin-doctor and post-hoc via plan-retrospective.
+# The executor itself stays dumb and delegates to the target script's argparse,
 # which produces its own well-formed `invalid choice` error on stderr with
 # exit code 2.
 
@@ -441,14 +419,12 @@ def test_help_flag_reaches_script_help(post_removal_executor, monkeypatch):
     assert 'invented_subcommand' not in result.stdout
 
 
-# ============================================================================
-# SELF-HEALING: stale embedded path falls through to dynamic resolution
-# ============================================================================
-# resolve_notation existence-checks the embedded SCRIPTS path. A stale/relocated
-# embedded path is NOT returned blindly — resolution self-heals via the
-# target-aware resolver (stubbed to None here) and the cwd/executor-file upward
-# walk to a live ``marketplace/bundles`` tree. PM_MARKETPLACE_ROOT stays UNSET
-# for these tests to prove the env override is no longer REQUIRED.
+# Self-healing contract: resolve_notation existence-checks the embedded SCRIPTS
+# path. A stale/relocated embedded path is NOT returned blindly — resolution
+# self-heals via the target-aware resolver (stubbed to None here) and the
+# cwd/executor-file upward walk to a live ``marketplace/bundles`` tree.
+# PM_MARKETPLACE_ROOT stays UNSET for these tests to prove the env override is no
+# longer REQUIRED.
 
 # The cwd-walk fallback resolves a full three-part notation against
 # ``marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``.

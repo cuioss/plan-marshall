@@ -7,10 +7,6 @@ from unittest.mock import patch
 
 from _build_execute import IS_WINDOWS, detect_wrapper, has_wrapper
 
-# =============================================================================
-# Test: detect_wrapper()
-# =============================================================================
-
 
 def test_detect_wrapper_finds_unix_on_unix():
     """On Unix, detect_wrapper finds Unix wrapper."""
@@ -99,11 +95,6 @@ def test_detect_wrapper_gradlew_bat():
             assert 'gradlew.bat' in result
 
 
-# =============================================================================
-# Test: has_wrapper()
-# =============================================================================
-
-
 def test_has_wrapper_finds_unix_on_unix():
     """has_wrapper returns True for Unix wrapper on Unix."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -137,18 +128,11 @@ def test_has_wrapper_ignores_wrong_platform():
         root = Path(tmp)
         (root / 'pw').write_text('#!/bin/bash')
 
-        # Unix wrapper exists but we're on Windows - should return False
         with patch('_build_execute.IS_WINDOWS', True):
             assert has_wrapper(root, 'pw', 'pw.bat') is False
 
-        # Now check with Unix - should return True
         with patch('_build_execute.IS_WINDOWS', False):
             assert has_wrapper(root, 'pw', 'pw.bat') is True
-
-
-# =============================================================================
-# Test: IS_WINDOWS constant
-# =============================================================================
 
 
 def test_is_windows_is_bool():

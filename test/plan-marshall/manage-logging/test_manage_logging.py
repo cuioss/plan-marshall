@@ -334,16 +334,16 @@ def test_write_without_plan_id_targets_global_decision_log(plan_context):
     Exercises the first-class global/no-plan path: handle_write with plan_id=None
     must route to .plan/logs/decision-{date}.log rather than any plan-scoped log.
     """
-    # Arrange — capture the global decision log content before the write
+    # capture the global decision log content before the write
     before = _read_global_log('decision')
     steward_msg = '[STEWARD] (plan-marshall:marshall-steward) Selected balanced effort preset'
 
-    # Act — plan-less decision write under the STEWARD namespace
+    # plan-less decision write under the STEWARD namespace
     result = handle_write(
         Namespace(log_type='decision', plan_id=None, level='INFO', message=steward_msg)
     )
 
-    # Assert — fire-and-forget (None) and the entry landed in the global log
+    # fire-and-forget (None) and the entry landed in the global log
     assert result is None
     after = _read_global_log('decision')
     assert steward_msg in after
@@ -352,16 +352,14 @@ def test_write_without_plan_id_targets_global_decision_log(plan_context):
 
 def test_write_without_plan_id_targets_global_work_log(plan_context):
     """A work write with plan_id=None lands in the dated global work log."""
-    # Arrange
     before = _read_global_log('work')
     steward_msg = '[STEWARD] (plan-marshall:marshall-steward) Generated executor with 47 mappings'
 
-    # Act — plan-less work write
+    # plan-less work write
     result = handle_write(
         Namespace(log_type='work', plan_id=None, level='INFO', message=steward_msg)
     )
 
-    # Assert
     assert result is None
     after = _read_global_log('work')
     assert steward_msg in after
@@ -370,7 +368,7 @@ def test_write_without_plan_id_targets_global_work_log(plan_context):
 
 def test_cli_write_without_plan_id_succeeds(plan_context):
     """CLI: a plan-less decision write under the STEWARD namespace exits cleanly."""
-    # Act — no --plan-id supplied (the first-class global path)
+    # no --plan-id supplied (the first-class global path)
     result = run_script(
         SCRIPT_PATH,
         'decision',
@@ -380,7 +378,7 @@ def test_cli_write_without_plan_id_succeeds(plan_context):
         '[STEWARD] (plan-marshall:marshall-steward) provider auto-selected',
     )
 
-    # Assert — the plan-less global call is accepted (not an argparse rejection)
+    # the plan-less global call is accepted (not an argparse rejection)
     assert result.success, 'plan-less global write must succeed'
 
 
@@ -395,7 +393,7 @@ def test_cli_write_with_invalid_plan_id_still_rejected(plan_context):
     surface argparse's exit-code-2 contract). See ``assert_invalid_field`` in
     ``test/plan-marshall/_pm_input_validation_fixtures.py``.
     """
-    # Act — a malformed plan-id value (uppercase + space) is supplied explicitly
+    # a malformed plan-id value (uppercase + space) is supplied explicitly
     result = run_script(
         SCRIPT_PATH,
         'decision',
@@ -407,7 +405,7 @@ def test_cli_write_with_invalid_plan_id_still_rejected(plan_context):
         '[STEWARD] (plan-marshall:marshall-steward) should be rejected',
     )
 
-    # Assert — graceful rejection via the canonical TOON error on stdout (exit 0),
+    # graceful rejection via the canonical TOON error on stdout (exit 0),
     # NOT a silent success. The malformed value is rejected even though --plan-id
     # is now optional, because validation still fires whenever the flag IS present.
     assert result.returncode == 0, (

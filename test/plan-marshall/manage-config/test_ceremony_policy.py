@@ -129,13 +129,13 @@ def test_distributed_gate_in_default_config(phase, gate):
 @pytest.mark.parametrize('phase,gate', _DISTRIBUTED_GATES)
 def test_distributed_gate_reads_via_phase_get(phase, gate, plan_context):
     """Each gate resolves through the standard ``plan phase-<N> get --field <gate>`` path."""
-    # Arrange — initialize a fresh marshal.json (no gate overrides → default merge)
+    # initialize a fresh marshal.json (no gate overrides → default merge)
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # Act — exercise the actual cmd_phase get path the runtime uses
+    # exercise the actual cmd_phase get path the runtime uses
     result = _cmd_quality_phases_mod.cmd_phase(Namespace(verb='get', field=gate), phase)
 
-    # Assert — the default merge surfaces 'auto'
+    # the default merge surfaces 'auto'
     assert result['status'] == 'success'
     assert result['value'] == 'auto'
 

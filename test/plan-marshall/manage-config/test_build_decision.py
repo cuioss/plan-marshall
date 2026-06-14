@@ -64,14 +64,12 @@ import extension_base  # type: ignore[import-not-found]  # noqa: E402
 
 def test_empty_build_map_is_not_necessary(monkeypatch):
     """No registered build globs -> not_necessary with a populated reason."""
-    # Arrange — build_map registers nothing.
+    # build_map registers nothing.
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: [])
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py'])
 
-    # Act
     verdict = extension_base.should_execute_build('quality-gate', 'my-plan')
 
-    # Assert
     assert verdict['decision'] == 'not_necessary'
     assert verdict['reason']
     assert verdict['canonical_command'] == 'quality-gate'
@@ -79,14 +77,12 @@ def test_empty_build_map_is_not_necessary(monkeypatch):
 
 def test_empty_footprint_is_not_necessary(monkeypatch):
     """A non-empty build_map but an empty footprint -> not_necessary, reason populated."""
-    # Arrange — globs exist, but nothing changed.
+    # globs exist, but nothing changed.
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: [])
 
-    # Act
     verdict = extension_base.should_execute_build('verify', 'my-plan')
 
-    # Assert
     assert verdict['decision'] == 'not_necessary'
     assert verdict['reason']
     assert verdict['canonical_command'] == 'verify'
@@ -99,14 +95,12 @@ def test_footprint_matching_no_glob_is_not_necessary(monkeypatch):
     ``uv.lock`` / ``target/`` change that no build_map glob covers must not trigger
     a build.
     """
-    # Arrange — globs cover only scripts/*.py, footprint is a lockfile.
+    # globs cover only scripts/*.py, footprint is a lockfile.
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['uv.lock'])
 
-    # Act
     verdict = extension_base.should_execute_build('quality-gate', 'my-plan')
 
-    # Assert
     assert verdict['decision'] == 'not_necessary'
     assert verdict['reason']
     assert verdict['canonical_command'] == 'quality-gate'
@@ -114,16 +108,14 @@ def test_footprint_matching_no_glob_is_not_necessary(monkeypatch):
 
 def test_footprint_intersecting_a_glob_is_build(monkeypatch):
     """A footprint touching a registered build glob -> build, echoing the command."""
-    # Arrange — a changed production .py matches the registered glob.
+    # a changed production .py matches the registered glob.
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
     monkeypatch.setattr(
         extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py']
     )
 
-    # Act
     verdict = extension_base.should_execute_build('quality-gate', 'my-plan')
 
-    # Assert
     assert verdict['decision'] == 'build'
     assert verdict['canonical_command'] == 'quality-gate'
     # The build verdict carries no reason (only not_necessary does).
@@ -184,18 +176,15 @@ def test_path_bearing_glob_does_not_match_on_basename_alone(monkeypatch):
 
 def test_handler_returns_build_verdict(monkeypatch):
     """The handler wraps a build verdict as a status: success dict."""
-    # Arrange
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
     monkeypatch.setattr(
         extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py']
     )
 
-    # Act
     result = _cmd_build_map_mod.cmd_build_decision(
         Namespace(command='quality-gate', plan_id='my-plan', audit_plan_id=None)
     )
 
-    # Assert
     assert result['status'] == 'success'
     assert result['decision'] == 'build'
     assert result['canonical_command'] == 'quality-gate'
@@ -203,16 +192,14 @@ def test_handler_returns_build_verdict(monkeypatch):
 
 def test_handler_returns_not_necessary_with_reason(monkeypatch):
     """The handler surfaces the not_necessary verdict and its reason."""
-    # Arrange — empty footprint forces not_necessary.
+    # empty footprint forces not_necessary.
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: [])
 
-    # Act
     result = _cmd_build_map_mod.cmd_build_decision(
         Namespace(command='verify', plan_id='my-plan', audit_plan_id=None)
     )
 
-    # Assert
     assert result['status'] == 'success'
     assert result['decision'] == 'not_necessary'
     assert result['reason']
@@ -220,29 +207,25 @@ def test_handler_returns_not_necessary_with_reason(monkeypatch):
 
 def test_handler_accepts_audit_plan_id_alias(monkeypatch):
     """--audit-plan-id is honoured as an alias when --plan-id is absent."""
-    # Arrange
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
     monkeypatch.setattr(
         extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py']
     )
 
-    # Act — only audit_plan_id is set.
+    # only audit_plan_id is set.
     result = _cmd_build_map_mod.cmd_build_decision(
         Namespace(command='quality-gate', plan_id=None, audit_plan_id='my-plan')
     )
 
-    # Assert
     assert result['status'] == 'success'
     assert result['decision'] == 'build'
 
 
 def test_handler_errors_when_plan_id_missing():
     """A missing plan identifier surfaces a structured error, not a crash."""
-    # Act
     result = _cmd_build_map_mod.cmd_build_decision(
         Namespace(command='quality-gate', plan_id=None, audit_plan_id=None)
     )
 
-    # Assert
     assert result['status'] == 'error'
     assert 'plan-id' in result['error']
