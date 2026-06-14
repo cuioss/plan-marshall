@@ -108,6 +108,7 @@ _ascd = _load('_analyze_script_call_drift.py', '_ascd_fixtures')
 _accf = _load('_cmd_cross_file.py', '_accf_fixtures')
 verify_findings = _accf.verify_findings
 _abfic = _load('_analyze_bash_fence_inline_code_exemption.py', '_abfic_fixtures')
+_amlbf = _load('_analyze_markdown_link_bare_filename.py', '_amlbf_fixtures')
 
 # ---------------------------------------------------------------------------
 # Registered-rule-ID extraction (relocated verbatim from the deleted
@@ -913,6 +914,23 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 '| Script | Operation | Canonical form |\n'
                 '| --- | --- | --- |\n'
                 '| `ghost` | read | `ghost-unresolvable read --plan-id {id}` |\n'
+            ),
+        },
+    )
+
+    # MARKDOWN_LINK_BARE_FILENAME — odd-one-out plain-text cross-reference in a
+    # list block. The analyzer walks {root}/{bundle}/{skills,agents,commands}/
+    # **/*.md; the fixture lives under a bundle's skills tree. The list block
+    # carries one navigable ``.md`` link item plus one bare ``sibling.md``
+    # plain-text item — the second item is the odd-one-out the rule flags.
+    corpus['MARKDOWN_LINK_BARE_FILENAME'] = FixtureSpec(
+        analyzer=_amlbf.analyze_markdown_link_bare_filename,
+        files={
+            'b/skills/s/standards/x.md': (
+                '# F\n\n'
+                'See also:\n\n'
+                '- [first](../first.md)\n'
+                '- sibling.md\n'
             ),
         },
     )
