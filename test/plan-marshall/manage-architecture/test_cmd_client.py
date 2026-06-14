@@ -1213,3 +1213,137 @@ def test_resolve_bundle_path_falls_back_to_non_versioned_marketplace_layout(tmp_
     resolved = resolve_bundle_path(tmp_path, 'plan-marshall', subpath)
 
     assert resolved == tmp_path / 'plan-marshall' / subpath
+
+
+# =============================================================================
+# Tests for symmetric virtual-sibling internal_dependencies cross-linking
+# =============================================================================
+#
+# Every maven↔npm virtual-sibling pair must end up cross-linked in BOTH
+# directions after derivation, regardless of whether the per-module resolution
+# came from enriched, derived, or computed data. The fixture below models two
+# sibling pairs:
+#
+#   - ``web-maven`` ↔ ``web-npm``: the enriched ``internal_dependencies`` of
+#     BOTH members already lists the sibling (the e-2-e-playwright shape that
+#     happened to be cross-linked in the drifted output).
+#   - ``nifi-maven`` ↔ ``nifi-npm``: the enriched ``internal_dependencies`` of
+#     BOTH members OMITS the sibling (the nifi-cuioss-ui shape that drifted —
+#     one direction missing). The deterministic augmentation must repair this.
+#
+# ``derived_by_name``/``enriched_by_name`` are injected so the test exercises
+# the augmentation step directly without a fixture-on-disk round-trip.
+
+
+def _virtual_sibling_fixture() -> tuple[dict, dict]:
+    """Two maven↔npm virtual-sibling pairs: one enriched-cross-linked, one drifted.
+
+    Returns ``(derived_by_name, enriched_by_name)``.
+    """
+    derived_by_name = {
+        'web-maven': {
+            'metadata': {'group_id': 'g', 'artifact_id': 'web-maven', 'packaging': 'jar'},
+            'dependencies': [],
+            'virtual_module': {
+                'physical_path': 'web',
+                'technology': 'maven',
+                'sibling_modules': ['web-npm'],
+            },
+        },
+        'web-npm': {
+            'metadata': {'group_id': 'g', 'artifact_id': 'web-npm', 'packaging': 'jar'},
+            'dependencies': [],
+            'virtual_module': {
+                'physical_path': 'web',
+                'technology': 'npm',
+                'sibling_modules': ['web-maven'],
+            },
+        },
+        'nifi-maven': {
+            'metadata': {'group_id': 'g', 'artifact_id': 'nifi-maven', 'packaging': 'jar'},
+            'dependencies': [],
+            'virtual_module': {
+                'physical_path': 'nifi',
+                'technology': 'maven',
+                'sibling_modules': ['nifi-npm'],
+            },
+        },
+        'nifi-npm': {
+            'metadata': {'group_id': 'g', 'artifact_id': 'nifi-npm', 'packaging': 'jar'},
+            'dependencies': [],
+            'virtual_module': {
+                'physical_path': 'nifi',
+                'technology': 'npm',
+                'sibling_modules': ['nifi-maven'],
+            },
+        },
+    }
+    enriched_by_name = {
+        # web pair: enriched lists already cross-linked in both directions.
+        'web-maven': {'internal_dependencies': ['web-npm']},
+        'web-npm': {'internal_dependencies': ['web-maven']},
+        # nifi pair: drifted — enriched lists OMIT the sibling entirely.
+        'nifi-maven': {'internal_dependencies': []},
+        'nifi-npm': {'internal_dependencies': []},
+    }
+    return derived_by_name, enriched_by_name
+
+
+def test_build_internal_deps_map_cross_links_all_sibling_pairs_symmetrically():
+    """``_build_internal_deps_map`` seeds symmetric virtual-sibling edges for
+    EVERY pair — both the already-cross-linked ``web`` pair and the drifted
+    ``nifi`` pair (sibling omitted from enriched data) end up with edges in
+    both directions.
+    """
+    # Arrange
+    derived_by_name, enriched_by_name = _virtual_sibling_fixture()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project_with_deps(tmpdir)
+
+        # Act
+        deps_map, module_names = _build_internal_deps_map(
+            tmpdir,
+            derived_by_name=derived_by_name,
+            enriched_by_name=enriched_by_name,
+        )
+
+    # Assert — already-cross-linked pair stays symmetric (no duplication).
+    assert deps_map['web-maven'] == ['web-npm']
+    assert deps_map['web-npm'] == ['web-maven']
+    # Assert — drifted pair is repaired symmetrically by the augmentation.
+    assert deps_map['nifi-maven'] == ['nifi-npm']
+    assert deps_map['nifi-npm'] == ['nifi-maven']
+    assert set(module_names) == {'web-maven', 'web-npm', 'nifi-maven', 'nifi-npm'}
+
+
+def test_get_module_graph_cross_links_all_sibling_pairs_symmetrically():
+    """``get_module_graph`` applies the identical symmetric virtual-sibling
+    augmentation as ``_build_internal_deps_map`` — both sibling pairs are
+    cross-linked in both directions in the resulting graph edges.
+    """
+    # Arrange
+    derived_by_name, enriched_by_name = _virtual_sibling_fixture()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project_with_deps(tmpdir)
+
+        # Act
+        result = get_module_graph(
+            tmpdir,
+            derived_by_name=derived_by_name,
+            enriched_by_name=enriched_by_name,
+        )
+
+    # Edges are {'from': dep, 'to': dependent}; reconstruct the
+    # dependent→dependency relation to assert symmetry per pair.
+    deps_of: dict[str, set[str]] = {}
+    for edge in result['edges']:
+        deps_of.setdefault(edge['to'], set()).add(edge['from'])
+
+    # Assert — already-cross-linked pair is symmetric.
+    assert 'web-npm' in deps_of.get('web-maven', set())
+    assert 'web-maven' in deps_of.get('web-npm', set())
+    # Assert — drifted pair is repaired symmetrically by the augmentation.
+    assert 'nifi-npm' in deps_of.get('nifi-maven', set())
+    assert 'nifi-maven' in deps_of.get('nifi-npm', set())
