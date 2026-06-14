@@ -67,6 +67,144 @@ GITIGNORE_MARSHAL_EXCEPTION = '!.plan/marshal.json'
 GITIGNORE_ARCHITECTURE_EXCEPTION = '!.plan/project-architecture/'
 GITIGNORE_PLAN_LOCAL_WORKTREES = '.plan/local/worktrees/'
 
+# Lines that belong to the managed block: the two header comments plus every
+# recognized managed rule (including the older accepted variants). Any line
+# whose stripped form is in this set is part of the managed block and is
+# subject to consolidation; everything else is user-authored content that is
+# preserved verbatim.
+_MANAGED_COMMENT_LINES = frozenset({GITIGNORE_COMMENT, GITIGNORE_LOCAL_COMMENT})
+_MANAGED_RULE_LINES = frozenset({
+    GITIGNORE_PLAN_DIR,
+    '.plan/',
+    '.plan',
+    GITIGNORE_MARSHAL_EXCEPTION,
+    GITIGNORE_ARCHITECTURE_EXCEPTION,
+    GITIGNORE_PLAN_LOCAL_WORKTREES,
+    '.plan/local/worktrees',
+})
+
+
+def consolidate_managed_blocks(content: str) -> str:
+    """
+    Merge every managed ``.gitignore`` block into a single managed block.
+
+    A managed line is one whose stripped form is either a managed header
+    comment (``_MANAGED_COMMENT_LINES``) or a recognized managed rule
+    (``_MANAGED_RULE_LINES``). Pre-PR#666 projects accumulated several
+    ``GITIGNORE_COMMENT`` headers (one per re-run); this pass collects the
+    union of managed rules across all blocks, de-duplicated and order-stable,
+    and re-emits a single managed block at the position of the first managed
+    line. User-authored content outside the managed lines is preserved
+    verbatim in its original relative order.
+
+    An already-single-block file is left byte-stable: the rebuilt content is
+    identical to the input, so callers can compare for the ``unchanged``
+    status contract.
+
+    Args:
+        content: Current ``.gitignore`` text.
+
+    Returns:
+        The consolidated ``.gitignore`` text.
+    """
+    if not content:
+        return content
+
+    trailing_newline = content.endswith('\n')
+    lines = content.splitlines()
+
+    seen_rules: set[str] = set()
+    ordered_rules: list[str] = []
+    first_managed_index: int | None = None
+    user_lines: list[tuple[int, str]] = []
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped in _MANAGED_COMMENT_LINES:
+            if first_managed_index is None:
+                first_managed_index = index
+            continue
+        if stripped in _MANAGED_RULE_LINES:
+            if first_managed_index is None:
+                first_managed_index = index
+            if stripped not in seen_rules:
+                seen_rules.add(stripped)
+                ordered_rules.append(stripped)
+            continue
+        user_lines.append((index, line))
+
+    # No managed lines at all — nothing to consolidate.
+    if first_managed_index is None:
+        return content
+
+    # Canonical managed block: both header comments, then the managed rules in
+    # the canonical order they were first encountered across all blocks.
+    managed_block = [GITIGNORE_COMMENT, GITIGNORE_LOCAL_COMMENT, *ordered_rules]
+
+    # Splice: emit user lines that appeared before the first managed line,
+    # then the single consolidated managed block, then the remaining user
+    # lines — preserving the user content's relative order.
+    before = [line for idx, line in user_lines if idx < first_managed_index]
+    after = [line for idx, line in user_lines if idx > first_managed_index]
+
+    rebuilt_lines = [*before, *managed_block, *after]
+    rebuilt = '\n'.join(rebuilt_lines)
+    if trailing_newline and rebuilt:
+        rebuilt += '\n'
+    return rebuilt
+
+
+def check_gitignore_status_from_content(content: str, exists: bool = True) -> dict:
+    """
+    Classify managed-entry presence from already-loaded ``.gitignore`` text.
+
+    Shared parser behind :func:`check_gitignore_status` and the
+    post-consolidation re-check in :func:`setup_gitignore`. Operating on a
+    string lets the consolidation pass re-derive presence flags without a
+    second filesystem read.
+
+    Args:
+        content: ``.gitignore`` text (empty string when the file is absent).
+        exists: Whether the source file exists on disk.
+
+    Returns:
+        Dict with the same presence flags as :func:`check_gitignore_status`.
+    """
+    has_plan_dir = False
+    has_marshal_exception = False
+    has_architecture_exception = False
+    has_plan_local_worktrees = False
+    has_managed_comment = False
+    has_local_comment = False
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        # Accept .plan/* (preferred) and .plan/ or .plan (older format)
+        if stripped in ('.plan/*', '.plan/', '.plan'):
+            has_plan_dir = True
+        if stripped == GITIGNORE_MARSHAL_EXCEPTION:
+            has_marshal_exception = True
+        if stripped == GITIGNORE_ARCHITECTURE_EXCEPTION:
+            has_architecture_exception = True
+        # Accept .plan/local/worktrees/ (preferred) and .plan/local/worktrees (no trailing slash)
+        if stripped in ('.plan/local/worktrees/', '.plan/local/worktrees'):
+            has_plan_local_worktrees = True
+        if stripped == GITIGNORE_COMMENT:
+            has_managed_comment = True
+        if stripped == GITIGNORE_LOCAL_COMMENT:
+            has_local_comment = True
+
+    return {
+        'exists': exists,
+        'has_plan_dir': has_plan_dir,
+        'has_marshal_exception': has_marshal_exception,
+        'has_architecture_exception': has_architecture_exception,
+        'has_plan_local_worktrees': has_plan_local_worktrees,
+        'has_managed_comment': has_managed_comment,
+        'has_local_comment': has_local_comment,
+        'content': content,
+    }
+
 
 def check_gitignore_status(gitignore_path: Path) -> dict:
     """
@@ -84,45 +222,8 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
         - content: str (if exists)
     """
     exists = gitignore_path.exists()
-    has_plan_dir = False
-    has_marshal_exception = False
-    has_architecture_exception = False
-    has_plan_local_worktrees = False
-    has_managed_comment = False
-    has_local_comment = False
-    content = ''
-
-    if exists:
-        content = gitignore_path.read_text()
-        lines = content.splitlines()
-
-        for line in lines:
-            stripped = line.strip()
-            # Accept .plan/* (preferred) and .plan/ or .plan (older format)
-            if stripped in ('.plan/*', '.plan/', '.plan'):
-                has_plan_dir = True
-            if stripped == GITIGNORE_MARSHAL_EXCEPTION:
-                has_marshal_exception = True
-            if stripped == GITIGNORE_ARCHITECTURE_EXCEPTION:
-                has_architecture_exception = True
-            # Accept .plan/local/worktrees/ (preferred) and .plan/local/worktrees (no trailing slash)
-            if stripped in ('.plan/local/worktrees/', '.plan/local/worktrees'):
-                has_plan_local_worktrees = True
-            if stripped == GITIGNORE_COMMENT:
-                has_managed_comment = True
-            if stripped == GITIGNORE_LOCAL_COMMENT:
-                has_local_comment = True
-
-    return {
-        'exists': exists,
-        'has_plan_dir': has_plan_dir,
-        'has_marshal_exception': has_marshal_exception,
-        'has_architecture_exception': has_architecture_exception,
-        'has_plan_local_worktrees': has_plan_local_worktrees,
-        'has_managed_comment': has_managed_comment,
-        'has_local_comment': has_local_comment,
-        'content': content,
-    }
+    content = gitignore_path.read_text() if exists else ''
+    return check_gitignore_status_from_content(content, exists=exists)
 
 
 def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
@@ -139,33 +240,13 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
     gitignore_path = project_root / '.gitignore'
     status = check_gitignore_status(gitignore_path)
 
-    entries_to_add = []
-
-    if not status['has_plan_dir']:
-        entries_to_add.append(GITIGNORE_PLAN_DIR)
-    if not status['has_marshal_exception']:
-        entries_to_add.append(GITIGNORE_MARSHAL_EXCEPTION)
-    if not status['has_architecture_exception']:
-        entries_to_add.append(GITIGNORE_ARCHITECTURE_EXCEPTION)
-    if not status['has_plan_local_worktrees']:
-        entries_to_add.append(GITIGNORE_PLAN_LOCAL_WORKTREES)
-
-    needs_managed_comment = not status['has_managed_comment']
-    needs_local_comment = not status['has_local_comment']
-
     result = {
         'gitignore_path': str(gitignore_path.absolute()),
-        'entries_added': len(entries_to_add),
         'dry_run': dry_run,
     }
 
-    if not entries_to_add and not needs_managed_comment and not needs_local_comment:
-        result['status'] = 'unchanged'
-        return result
-
     if not status['exists']:
-        # Create new .gitignore
-        result['status'] = 'created'
+        # Create new .gitignore — a fresh file is a single managed block.
         new_content = (
             f'{GITIGNORE_COMMENT}\n'
             f'{GITIGNORE_LOCAL_COMMENT}\n'
@@ -174,11 +255,40 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
             f'{GITIGNORE_ARCHITECTURE_EXCEPTION}\n'
             f'{GITIGNORE_PLAN_LOCAL_WORKTREES}\n'
         )
-    else:
-        # Update existing .gitignore
-        result['status'] = 'updated'
-        content = status['content']
+        result['status'] = 'created'
+        result['entries_added'] = 4
+        if not dry_run:
+            gitignore_path.write_text(new_content)
+        return result
 
+    original_content = status['content']
+
+    # Consolidation pass (unconditional): merge any duplicate managed blocks
+    # into one before adding missing entries. An already-single-block file is
+    # left byte-stable by this pass.
+    consolidated = consolidate_managed_blocks(original_content)
+
+    # Re-derive managed-rule presence against the consolidated content so the
+    # missing-entry computation reflects the post-consolidation state (a rule
+    # present in any of the duplicate blocks survives consolidation).
+    consolidated_status = check_gitignore_status_from_content(consolidated)
+
+    entries_to_add = []
+    if not consolidated_status['has_plan_dir']:
+        entries_to_add.append(GITIGNORE_PLAN_DIR)
+    if not consolidated_status['has_marshal_exception']:
+        entries_to_add.append(GITIGNORE_MARSHAL_EXCEPTION)
+    if not consolidated_status['has_architecture_exception']:
+        entries_to_add.append(GITIGNORE_ARCHITECTURE_EXCEPTION)
+    if not consolidated_status['has_plan_local_worktrees']:
+        entries_to_add.append(GITIGNORE_PLAN_LOCAL_WORKTREES)
+
+    needs_managed_comment = not consolidated_status['has_managed_comment']
+    needs_local_comment = not consolidated_status['has_local_comment']
+
+    content = consolidated
+
+    if entries_to_add or needs_managed_comment or needs_local_comment:
         # Ensure content ends with newline
         if content and not content.endswith('\n'):
             content += '\n'
@@ -197,10 +307,16 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
         for entry in entries_to_add:
             content += f'{entry}\n'
 
-        new_content = content
+    result['entries_added'] = len(entries_to_add)
 
+    if content == original_content:
+        # No consolidation drift and no missing entries — byte-stable.
+        result['status'] = 'unchanged'
+        return result
+
+    result['status'] = 'updated'
     if not dry_run:
-        gitignore_path.write_text(new_content)
+        gitignore_path.write_text(content)
 
     return result
 

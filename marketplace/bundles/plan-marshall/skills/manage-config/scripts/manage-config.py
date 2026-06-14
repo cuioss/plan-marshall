@@ -45,6 +45,7 @@ from _cmd_skill_resolution import (
 )
 from _cmd_sync_defaults import cmd_sync_defaults
 from _cmd_system_plan import cmd_plan, cmd_project, cmd_system
+from _config_core import normalize_keys
 
 # Direct imports - PYTHONPATH set by executor
 from effort_presets import EffortPresets  # type: ignore[import-not-found]
@@ -285,6 +286,11 @@ def main() -> int:
         help='Return the effective build map from build.map',
         allow_abbrev=False,
     )
+    bm_sub.add_parser(
+        'drift',
+        help='Diff the persisted build.map against the live derivation (read-only; in_sync + added/removed globs)',
+        allow_abbrev=False,
+    )
 
     # --- build-decision ---
     p_bd = subparsers.add_parser(
@@ -312,6 +318,13 @@ def main() -> int:
     # --- init ---
     p_init = subparsers.add_parser('init', help='Initialize marshal.json', allow_abbrev=False)
     p_init.add_argument('--force', action='store_true', help='Overwrite existing')
+
+    # --- normalize-keys ---
+    subparsers.add_parser(
+        'normalize-keys',
+        help='Re-write marshal.json with the canonical top-level key order (silent, idempotent)',
+        allow_abbrev=False,
+    )
 
     # --- sync-defaults ---
     p_sync = subparsers.add_parser(
@@ -670,6 +683,12 @@ def main() -> int:
         result = cmd_build_decision(args)
     elif args.noun == 'init':
         result = cmd_init(args)
+    elif args.noun == 'normalize-keys':
+        try:
+            outcome = normalize_keys()
+            result = {'status': 'success', **outcome}
+        except Exception as e:
+            result = {'status': 'error', 'error': str(e)}
     elif args.noun == 'sync-defaults':
         result = cmd_sync_defaults(args)
     elif args.noun == 'effort':

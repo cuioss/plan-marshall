@@ -1007,3 +1007,218 @@ def test_e2e_multi_module_subdir_only_config_seeds_and_builds(plan_context, monk
         f'subdir-only config change did not trigger a build; verdict={verdict}'
     )
     assert verdict['canonical_command'] == 'verify'
+
+
+# =============================================================================
+# build-map drift — read-only diff of persisted build.map vs live derivation
+# =============================================================================
+#
+# `build-map drift` (cmd_build_map_drift → compute_build_map_drift) diffs the
+# live derived map (aggregate_build_map) against the persisted build.map block
+# (get_build_map) on the per-domain `glob` surface, returning `in_sync` plus a
+# `drift: {domain: {added_globs, removed_globs}}` block. It is read-only: it
+# never calls save_config, so marshal.json is byte-identical after a drift call.
+#
+# These tests drive the handler against the same deterministic monkeypatch
+# scaffold the seed tests use (patching aggregate_build_map on _config_core), so
+# the derived side is controlled while the persisted side comes from the seeded
+# marshal.json the plan_context fixture redirects MARSHAL_PATH to.
+
+
+# A second deterministic aggregation that ADDS a domain glob relative to
+# _FAKE_AGGREGATED (gains `scripts/extra.py`) — used to surface added_globs.
+_FAKE_AGGREGATED_WITH_ADDED = {
+    'python': [
+        {'glob': 'scripts/*.py', 'role': 'production', 'build_class': 'compile'},
+        {'glob': 'scripts/extra.py', 'role': 'production', 'build_class': 'compile'},
+        {'glob': 'test/**/*.py', 'role': 'test', 'build_class': 'module-tests'},
+    ],
+}
+
+# A third deterministic aggregation that REMOVES a glob relative to
+# _FAKE_AGGREGATED (drops the test route) — used to surface removed_globs.
+_FAKE_AGGREGATED_WITH_REMOVED = {
+    'python': [
+        {'glob': 'scripts/*.py', 'role': 'production', 'build_class': 'compile'},
+    ],
+}
+
+
+def _seed_with(monkeypatch, aggregation):
+    """Init + seed marshal.json with a specific deterministic aggregation.
+
+    Patches aggregate_build_map on the _config_core module the seed handler
+    resolves against, then drives cmd_build_map_seed so the persisted build.map
+    reflects `aggregation`.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    monkeypatch.setattr(_config_core_mod, 'aggregate_build_map', lambda: aggregation)
+    seed = _cmd_build_map_mod.cmd_build_map_seed(Namespace(verb='seed', force=False))
+    assert seed['action'] == 'seeded'
+
+
+def test_drift_in_sync_when_persisted_equals_derived(plan_context, monkeypatch):
+    """drift returns in_sync: true when the persisted map equals the derivation.
+
+    Seed with a deterministic aggregation, then run drift against the SAME
+    aggregation — the derived and persisted glob sets are identical, so the
+    diff is empty and in_sync is True with no drift entries.
+    """
+    # Arrange — seed with the fake map, leaving aggregate_build_map patched to
+    # return that same map so the derived side matches the persisted side.
+    _seed_with(monkeypatch, _FAKE_AGGREGATED)
+
+    # Act — drift against the identical derivation.
+    result = _cmd_build_map_mod.cmd_build_map_drift(Namespace(verb='drift'))
+
+    # Assert — in sync, no drift.
+    assert result['status'] == 'success'
+    assert result['in_sync'] is True
+    assert result['drift'] == {}
+
+
+def test_drift_surfaces_added_globs(plan_context, monkeypatch):
+    """drift surfaces added_globs for a glob in the derivation but absent from persisted.
+
+    Seed with the baseline map, then point the derivation at a richer aggregation
+    that gained `scripts/extra.py`. The drift must report that glob under
+    added_globs (a route the project gained since the map was last seeded) and
+    nothing under removed_globs.
+    """
+    # Arrange — persist the baseline map.
+    _seed_with(monkeypatch, _FAKE_AGGREGATED)
+
+    # Re-point the derivation at the richer aggregation (one extra production glob).
+    monkeypatch.setattr(
+        _config_core_mod, 'aggregate_build_map', lambda: _FAKE_AGGREGATED_WITH_ADDED
+    )
+
+    # Act
+    result = _cmd_build_map_mod.cmd_build_map_drift(Namespace(verb='drift'))
+
+    # Assert — the new glob is reported as added, nothing removed.
+    assert result['status'] == 'success'
+    assert result['in_sync'] is False
+    assert result['drift']['python']['added_globs'] == ['scripts/extra.py']
+    assert result['drift']['python']['removed_globs'] == []
+
+
+def test_drift_surfaces_removed_globs(plan_context, monkeypatch):
+    """drift surfaces removed_globs for a glob in persisted but absent from derivation.
+
+    The reverse of the added case: seed with the baseline map (which carries the
+    test route), then point the derivation at a thinner aggregation that dropped
+    the test route. The drift must report the dropped glob under removed_globs and
+    nothing under added_globs.
+    """
+    # Arrange — persist the baseline map (carries scripts/*.py and test/**/*.py).
+    _seed_with(monkeypatch, _FAKE_AGGREGATED)
+
+    # Re-point the derivation at the thinner aggregation (test route dropped).
+    monkeypatch.setattr(
+        _config_core_mod, 'aggregate_build_map', lambda: _FAKE_AGGREGATED_WITH_REMOVED
+    )
+
+    # Act
+    result = _cmd_build_map_mod.cmd_build_map_drift(Namespace(verb='drift'))
+
+    # Assert — the dropped glob is reported as removed, nothing added.
+    assert result['status'] == 'success'
+    assert result['in_sync'] is False
+    assert result['drift']['python']['removed_globs'] == ['test/**/*.py']
+    assert result['drift']['python']['added_globs'] == []
+
+
+def test_drift_is_read_only_marshal_json_byte_identical(plan_context, monkeypatch):
+    """drift never mutates marshal.json — the file is byte-identical after the call.
+
+    Seed, snapshot the persisted marshal.json bytes, then run drift against a
+    DIVERGENT derivation (so drift is non-empty). The on-disk bytes must be
+    unchanged: drift is a pure read-only diff that never calls save_config.
+    """
+    # Arrange — persist the baseline map, then capture the exact on-disk bytes.
+    _seed_with(monkeypatch, _FAKE_AGGREGATED)
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    before = marshal_path.read_bytes()
+
+    # Re-point the derivation at a divergent aggregation so drift is non-empty
+    # (proving the byte-identity holds even when there IS drift to report).
+    monkeypatch.setattr(
+        _config_core_mod, 'aggregate_build_map', lambda: _FAKE_AGGREGATED_WITH_ADDED
+    )
+
+    # Act
+    result = _cmd_build_map_mod.cmd_build_map_drift(Namespace(verb='drift'))
+
+    # Assert — drift reported a diff, yet the file bytes are unchanged.
+    assert result['status'] == 'success'
+    assert result['in_sync'] is False
+    after = marshal_path.read_bytes()
+    assert after == before, 'drift mutated marshal.json — it must be read-only'
+
+
+# =============================================================================
+# normalize-keys — rewrite marshal.json to the canonical top-level key order
+# =============================================================================
+#
+# `manage-config normalize-keys` (normalize_keys) loads the persisted config and
+# re-saves it via save_config, whose key_order is the single source of truth for
+# the canonical order (extension_defaults, plan, build, project, ...). A config
+# written build-before-plan is rewritten so `plan` precedes `build`; the verb is
+# idempotent — an already-canonical file is rewritten to the same bytes.
+
+
+def test_normalize_keys_rewrites_build_before_plan_to_canonical_order(plan_context):
+    """normalize-keys rewrites a build-before-plan config to the canonical order.
+
+    Write a marshal.json whose top-level keys are deliberately out of canonical
+    order (build before plan), then run normalize_keys. The re-saved file must
+    list `plan` before `build` (the save_config key_order), proving the verb
+    canonicalizes the persisted top-level order.
+    """
+    # Arrange — init, then overwrite marshal.json with build BEFORE plan.
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    out_of_order = {
+        'build': {'map': {}},
+        'plan': {'phase-2-refine': {'compatibility': 'breaking'}},
+        'system': {'version': 1},
+    }
+    marshal_path.write_text(json.dumps(out_of_order, indent=2), encoding='utf-8')
+
+    # Act
+    result = _config_core_mod.normalize_keys()
+
+    # Assert — handler reports normalized, and `plan` now precedes `build`.
+    assert result['action'] == 'normalized'
+    persisted_keys = list(json.loads(marshal_path.read_text(encoding='utf-8')).keys())
+    assert persisted_keys.index('plan') < persisted_keys.index('build'), (
+        f'normalize-keys did not canonicalize the top-level order; keys={persisted_keys}'
+    )
+
+
+def test_normalize_keys_is_idempotent(plan_context):
+    """normalize-keys is idempotent — a second run rewrites the same bytes.
+
+    Run normalize_keys once to canonicalize, snapshot the bytes, then run it
+    again: an already-canonical file must be rewritten to byte-identical content.
+    """
+    # Arrange — init, write an out-of-order config, normalize once.
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    out_of_order = {
+        'build': {'map': {}},
+        'plan': {'phase-2-refine': {'compatibility': 'breaking'}},
+        'system': {'version': 1},
+    }
+    marshal_path.write_text(json.dumps(out_of_order, indent=2), encoding='utf-8')
+    _config_core_mod.normalize_keys()
+    after_first = marshal_path.read_bytes()
+
+    # Act — second normalization over the already-canonical file.
+    second = _config_core_mod.normalize_keys()
+
+    # Assert — idempotent: byte-identical to the first normalization.
+    assert second['action'] == 'normalized'
+    after_second = marshal_path.read_bytes()
+    assert after_second == after_first, 'normalize-keys is not idempotent'

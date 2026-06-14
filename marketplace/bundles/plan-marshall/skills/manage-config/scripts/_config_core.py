@@ -596,3 +596,77 @@ def merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
             'build.map is corrupt. Run `manage-config build-map seed` '
             'or re-run /marshall-steward to seed it.'
         ) from exc
+
+
+def _glob_set(entries: list[dict[str, str]]) -> set[str]:
+    """Return the set of ``glob`` strings from a list of build-map entries.
+
+    Tolerates non-dict / glob-less entries by skipping them, so a partially
+    corrupt persisted block degrades to a glob diff over the entries it can read
+    rather than raising.
+    """
+    globs: set[str] = set()
+    for entry in entries:
+        if isinstance(entry, dict):
+            glob = entry.get('glob')
+            if isinstance(glob, str):
+                globs.add(glob)
+    return globs
+
+
+def compute_build_map_drift(config: dict) -> dict:
+    """Diff the persisted ``build.map`` against the live derivation.
+
+    Read-only comparison of the current derived map (via
+    :func:`aggregate_build_map`) against the persisted ``build.map`` block (via
+    :func:`get_build_map`). The diff is per-domain on the ``glob`` surface:
+
+    - ``added_globs``: globs present in the derivation but absent from the
+      persisted block (a route the project gained since the map was last seeded).
+    - ``removed_globs``: globs present in the persisted block but absent from the
+      derivation (a route the project lost, or a deliberate hand-edit).
+
+    A domain that appears in only one of the two maps contributes its globs
+    entirely to ``added_globs`` (derivation-only) or ``removed_globs``
+    (persisted-only).
+
+    Never mutates ``config``.
+
+    Args:
+        config: The loaded marshal.json config dict (read-only).
+
+    Returns:
+        A dict with ``in_sync: bool`` and ``drift: {domain: {added_globs,
+        removed_globs}}``. ``drift`` carries only domains with a non-empty diff;
+        ``in_sync`` is ``True`` exactly when ``drift`` is empty.
+    """
+    derived = aggregate_build_map()
+    persisted = get_build_map(config)
+
+    drift: dict[str, dict[str, list[str]]] = {}
+    for domain in sorted(set(derived) | set(persisted)):
+        derived_globs = _glob_set(derived.get(domain, []))
+        persisted_globs = _glob_set(persisted.get(domain, []))
+        added = sorted(derived_globs - persisted_globs)
+        removed = sorted(persisted_globs - derived_globs)
+        if added or removed:
+            drift[domain] = {'added_globs': added, 'removed_globs': removed}
+
+    return {'in_sync': not drift, 'drift': drift}
+
+
+def normalize_keys() -> dict:
+    """Re-write marshal.json with the canonical top-level key order.
+
+    Loads the persisted config and re-saves it via :func:`save_config`, whose
+    ``key_order`` is the single source of truth for the canonical order. No
+    ordering logic is duplicated here. Idempotent: an already-canonical file is
+    rewritten to the same bytes.
+
+    Returns:
+        A result dict with ``action: 'normalized'``.
+    """
+    require_initialized()
+    config = load_config()
+    save_config(config)
+    return {'action': 'normalized'}

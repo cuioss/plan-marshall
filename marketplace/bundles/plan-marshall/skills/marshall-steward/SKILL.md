@@ -351,6 +351,88 @@ detail	drift
 missing_keys	working_prefixes
 ```
 
+## Re-Run Remediation Pass
+
+When the steward runs in **menu mode** (both the executor and `marshal.json`
+already exist — an already-initialized project re-run/upgrade), it performs a
+three-step remediation pass at **menu-mode entry, before the Main Menu** — a
+sibling entry-time surface to "Branch-Naming Surfacing" and the missing-default
+finalize-step detection above. The pass repairs config drift that accumulated in
+projects initialized before the relevant fixes landed. No version stamp is
+written or read; the pass runs unconditionally on every menu-mode entry and is
+idempotent (an already-clean project is left byte-stable).
+
+Steps (a) and (b) are deterministic silent script calls — they run
+unconditionally, surface nothing to the user, and leave an already-normalized
+project unchanged. Step (c) is an LLM-driven Y/N `AskUserQuestion` gate that
+consumes a deterministic diff, mirroring the existing entry-time
+`check-working-prefixes` / missing-default surfacing.
+
+**(a) Normalize `marshal.json` top-level key order** (silent, unconditional).
+Re-write `marshal.json` with the canonical `save_config` key order. Pre-fix
+projects accumulated a non-canonical top-level key order; this re-orders them
+without touching values:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config normalize-keys
+```
+
+See the `manage-config` Canonical invocations (`normalize-keys`) for the verb
+shape. The call is idempotent — an already-canonical file is left byte-stable.
+
+**(b) Consolidate duplicate managed `.gitignore` blocks** (silent,
+unconditional). Run the `.gitignore` setup script via the executor/bootstrap.
+Pre-fix projects accumulated multiple `# Planning system (managed by
+/marshall-steward)` managed-block headers (one per re-run); the consolidation
+pass merges them into a single managed block preserving the union of rules, and
+leaves an already-single-block file unchanged (`status: unchanged`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup
+```
+
+See the `gitignore_setup` Canonical invocations entry for the verb shape. The
+consolidation runs on every invocation; a clean file is byte-stable.
+
+**(c) `build.map` drift gate** (read-only diff + interactive Y/N gate). Compute
+the drift between the persisted `build.map` and the live-tree derivation, then
+gate any re-seed behind an `AskUserQuestion` so deliberate hand-edits are never
+clobbered:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map drift
+```
+
+See the `manage-config` Canonical invocations (`build-map drift`) for the verb
+shape. The verb is read-only — it never mutates `marshal.json`. It returns
+`in_sync` plus the per-domain `added_globs` / `removed_globs` diff.
+
+- **`in_sync: true`** → no drift; continue to the Main Menu silently (no prompt).
+- **`in_sync: false`** → display the added/removed-glob diff to the user, then
+  prompt:
+
+  ```
+  AskUserQuestion:
+    question: "The persisted build.map differs from the live-tree derivation. Re-seed it?"
+    header: "build.map drift"
+    options:
+      - label: "Yes, re-seed"
+        description: "Overwrite build.map with the live derivation"
+      - label: "No, leave as-is"
+        description: "Keep the persisted build.map (preserves deliberate hand-edits)"
+    multiSelect: false
+  ```
+
+  - **Yes** → re-seed via the force path:
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed --force
+    ```
+
+  - **No** → leave the persisted `build.map` untouched.
+
+After the three steps settle, proceed to the Main Menu.
+
 ## Session Restart Required After Executor / Agent Changes
 
 > **CRITICAL — Restart Claude Code session before dispatching against
