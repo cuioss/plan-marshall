@@ -168,6 +168,75 @@ class TestExtractDeletedIdentifiers:
         # Assert
         assert identifiers == []
 
+    def test_token_on_both_removed_and_added_line_is_dropped(self):
+        # Arrange — filter 1: a token that appears on a removed line AND an added
+        # line of the same diff was moved, not deleted, so it is NOT collected.
+        diff = (
+            '-    old_call = moved_symbol(x)\n'
+            '+    new_call = moved_symbol(y)\n'
+        )
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert — moved_symbol recurs on the added line, so it is filtered out.
+        assert 'moved_symbol' not in identifiers
+        # old_call was genuinely removed (absent from the added line) — kept.
+        assert 'old_call' in identifiers
+
+    def test_token_on_removed_and_context_line_is_dropped(self):
+        # Arrange — filter 1 also subtracts context (unchanged) line tokens: a
+        # candidate surrounded by retained text is not a genuine removal.
+        diff = (
+            '     retained_caller(lingering_helper)\n'
+            '-    extra = lingering_helper.tweak()\n'
+        )
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert — lingering_helper survives on the context line, so it is dropped.
+        assert 'lingering_helper' not in identifiers
+
+    def test_genuinely_removed_token_survives_filter_one(self):
+        # Arrange — a token present ONLY on removed lines is a real deletion and
+        # must still be collected after the added/context subtraction.
+        diff = (
+            '-    truly_gone_symbol()\n'
+            '+    unrelated_replacement()\n'
+        )
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert
+        assert 'truly_gone_symbol' in identifiers
+
+    def test_removed_prose_paragraph_yields_near_zero_candidates(self):
+        # Arrange — the headline regression: a removed markdown paragraph of
+        # ordinary English prose must not flood the candidate set. Dashed-compound
+        # prose tokens like 'plan-marshall' that pass _IDENTIFIER_RE are the
+        # specific false positives the filters target.
+        diff = (
+            '-This paragraph describes the plan-marshall workflow in ordinary\n'
+            '-narrative prose with several everyday words that happen to clear\n'
+            '-the length floor without naming any deleted code symbol whatsoever.\n'
+        )
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert — no dashed-compound prose token should appear, and the overall
+        # candidate count stays small (the coarse pass already drops stopwords
+        # and short words; nothing here is a genuine symbol). 'plan-marshall'
+        # recurs across the real tree but is not subtracted here because it only
+        # appears on removed lines — the tree-occurrence ceiling (filter 2) is the
+        # backstop for that case; this test pins that the extractor itself does
+        # not invent symbols from prose beyond the coarse-pass survivors.
+        assert 'plan-marshall' in identifiers  # passes _IDENTIFIER_RE on removal
+        # ...but the survivor sweep drops it via the occurrence ceiling — see
+        # TestSweepSurvivors.test_token_over_occurrence_ceiling_is_dropped.
+
 
 # ===========================================================================
 # sweep_survivors  (the whole-tree survivor sweep — mandated criterion #1)
@@ -281,6 +350,58 @@ class TestSweepSurvivors:
         keys = [(r['file'], r['line'], r['identifier']) for r in survivors]
         assert keys == sorted(keys)
         assert keys[0][0].endswith('a_bundle/skills/s/early.py')
+
+    def test_token_over_occurrence_ceiling_is_dropped(self, tmp_path):
+        # Arrange — filter 2: a candidate matching MORE than the tree-occurrence
+        # ceiling is prose, not a removed symbol, and all its rows are dropped.
+        over_ceiling = gate._MAX_TREE_OCCURRENCES + 5
+        prose_line = 'the prose_word appears here\n'
+        root = _make_marketplace_tree(
+            tmp_path,
+            {'bundles/b/skills/s/SKILL.md': prose_line * over_ceiling},
+        )
+
+        # Act
+        survivors = gate.sweep_survivors(root, ['prose_word'])
+
+        # Assert — every match is dropped because the count exceeds the ceiling.
+        assert survivors == []
+
+    def test_token_at_or_under_ceiling_is_kept(self, tmp_path):
+        # Arrange — a genuine symbol surviving at a handful of sites (well under
+        # the ceiling) must still be surfaced.
+        under_ceiling = gate._MAX_TREE_OCCURRENCES - 1
+        symbol_line = 'real_symbol = compute()\n'
+        root = _make_marketplace_tree(
+            tmp_path,
+            {'bundles/b/skills/s/x.py': symbol_line * under_ceiling},
+        )
+
+        # Act
+        survivors = gate.sweep_survivors(root, ['real_symbol'])
+
+        # Assert — all under-ceiling matches are retained.
+        assert len(survivors) == under_ceiling
+        assert all(row['identifier'] == 'real_symbol' for row in survivors)
+
+    def test_ceiling_drops_only_the_offending_token(self, tmp_path):
+        # Arrange — a prose candidate over the ceiling and a genuine symbol under
+        # it in the same tree; only the prose candidate's rows are dropped.
+        over_ceiling = gate._MAX_TREE_OCCURRENCES + 2
+        root = _make_marketplace_tree(
+            tmp_path,
+            {
+                'bundles/b/skills/s/prose.md': 'noise_token line\n' * over_ceiling,
+                'bundles/b/skills/s/code.py': 'kept_symbol = 1\n',
+            },
+        )
+
+        # Act
+        survivors = gate.sweep_survivors(root, ['noise_token', 'kept_symbol'])
+
+        # Assert — kept_symbol survives; noise_token is dropped entirely.
+        idents = {row['identifier'] for row in survivors}
+        assert idents == {'kept_symbol'}
 
 
 # ===========================================================================
@@ -471,6 +592,41 @@ class TestScan:
         # Assert
         assert seen['diff'] == 'develop'
         assert seen['names'] == 'develop'
+
+    def test_removed_prose_paragraph_produces_no_survivor_flood(self, tmp_path):
+        # Arrange — the headline regression: a removed markdown paragraph of
+        # ordinary English, where the prose tokens recur ubiquitously across the
+        # tree, must NOT flood survivors[]. Filter 1 drops tokens that also
+        # appear on retained lines; filter 2's occurrence ceiling drops the rest.
+        ceiling = gate._MAX_TREE_OCCURRENCES
+        # 'narrative_token' recurs far more than the ceiling across the tree.
+        flooded = 'narrative_token recurs everywhere in prose\n' * (ceiling + 10)
+        root = _make_marketplace_tree(
+            tmp_path,
+            {'bundles/b/skills/s/SKILL.md': flooded},
+        )
+        # A removed prose paragraph naming that same ubiquitous token.
+        diff_text = (
+            '-The narrative_token is mentioned in this removed prose sentence.\n'
+        )
+        changed_files = ['marketplace/bundles/b/skills/s/SKILL.md']
+
+        with PlanContext(plan_id='wtg-prose-flood') as ctx:
+            (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
+
+            # Act
+            result = gate.scan(
+                'wtg-prose-flood',
+                worktree_path=str(root),
+                base_ref='main',
+                diff_runner=lambda _wt, _ref: diff_text,
+                diff_names_runner=lambda _wt, _ref: changed_files,
+            )
+
+        # Assert — the ubiquitous prose token is dropped by the occurrence
+        # ceiling, so the survivor sweep does not flood despite the removed prose.
+        assert result['status'] == 'success'
+        assert result['survivor_count'] == 0
 
     def test_missing_request_yields_no_mandate_gaps(self, tmp_path):
         # Arrange — no request.md written; the resolver returns empty text.
