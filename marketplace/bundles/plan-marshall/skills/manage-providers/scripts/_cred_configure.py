@@ -7,6 +7,8 @@ No interactive input, no secrets through the LLM.
 """
 
 import argparse
+import xml.etree.ElementTree as ET
+from pathlib import Path
 
 from _list_providers import find_provider_with_details  # type: ignore[import-not-found]
 from _providers_core import (
@@ -19,7 +21,88 @@ from _providers_core import (
     save_credential,
     write_provider_config,
 )
-from file_ops import output_toon  # type: ignore[import-not-found]
+from file_ops import get_tracked_config_dir, output_toon  # type: ignore[import-not-found]
+
+# Skill name of the Sonar provider — pom.xml auto-derivation is gated behind this
+# provider so non-Sonar configure flows are byte-for-byte unchanged.
+_SONAR_SKILL_NAME = 'plan-marshall:workflow-integration-sonar'
+
+# pom.xml property names carrying the Sonar coordinates.
+_POM_SONAR_PROPERTIES = {
+    'organization': 'sonar.organization',
+    'project_key': 'sonar.projectKey',
+}
+
+
+def _strip_ns(tag: object) -> str:
+    """Return the local tag name, dropping any ``{namespace}`` prefix.
+
+    Maven POMs declare the ``http://maven.apache.org/POM/4.0.0`` namespace, so
+    ``ElementTree`` reports tags as ``{http://...}sonar.organization``. Matching
+    on the local name handles both namespaced and namespace-less POMs.
+
+    XML comments and processing instructions have callable (non-string) tags in
+    ElementTree.  The type guard skips them cleanly instead of raising
+    ``AttributeError``.
+    """
+    if not isinstance(tag, str):
+        return ''
+    return tag.rsplit('}', 1)[-1]
+
+
+def _find_child(element: ET.Element, local_name: str) -> ET.Element | None:
+    """Return the first direct child of ``element`` whose local tag matches."""
+    for child in element:
+        if _strip_ns(child.tag) == local_name:
+            return child
+    return None
+
+
+def _find_project_pom() -> Path | None:
+    """Locate the project-root ``pom.xml``, or ``None`` when absent.
+
+    The project root is the parent of the tracked ``.plan`` config directory.
+    Returns ``None`` (non-Maven project) when no ``pom.xml`` is present there.
+    """
+    project_root = get_tracked_config_dir().parent
+    pom_path = project_root / 'pom.xml'
+    return pom_path if pom_path.is_file() else None
+
+
+def _parse_pom_sonar_properties(pom_path: Path) -> dict[str, str]:
+    """Parse Sonar coordinates from a ``pom.xml``'s ``<properties>`` block.
+
+    Reads ``<sonar.organization>`` and ``<sonar.projectKey>`` from
+    ``/project/properties`` using stdlib ``xml.etree`` — no Maven subprocess.
+    Mirrors the namespace-tolerant parsing in
+    ``build-maven/scripts/_maven_cmd_discover.py::_parse_pom_xml``.
+
+    Args:
+        pom_path: Path to the ``pom.xml`` file.
+
+    Returns:
+        Dict with ``organization`` and/or ``project_key`` keys for any Sonar
+        property present and non-empty. A malformed/unreadable POM, or one
+        without the Sonar properties, yields an empty dict so derivation
+        degrades gracefully.
+    """
+    try:
+        root = ET.parse(pom_path).getroot()
+    except (ET.ParseError, OSError):
+        return {}
+
+    properties_el = _find_child(root, 'properties')
+    if properties_el is None:
+        return {}
+
+    derived: dict[str, str] = {}
+    for config_key, pom_property in _POM_SONAR_PROPERTIES.items():
+        prop_el = _find_child(properties_el, pom_property)
+        if prop_el is not None and prop_el.text is not None:
+            value = prop_el.text.strip()
+            if value:
+                derived[config_key] = value
+    return derived
 
 
 def run_configure(args: argparse.Namespace) -> int:
@@ -126,14 +209,39 @@ def run_configure(args: argparse.Namespace) -> int:
     # Write non-secret config to marshal.json
     provider_config: dict[str, str] = {'url': url}
     extra_fields = getattr(args, 'extra', None) or []
+    supplied_keys: set[str] = set()
     for pair in extra_fields:
         if '=' in pair:
             key, value = pair.split('=', 1)
             provider_config[key] = value
+            supplied_keys.add(key)
+
+    # Sonar provider + Maven-detected: auto-derive organization/project_key from
+    # pom.xml, and warn (non-fatally) when a user-supplied value disagrees.
+    mismatch_warnings: list[dict[str, str]] = []
+    if skill_name == _SONAR_SKILL_NAME:
+        pom_path = _find_project_pom()
+        if pom_path is not None:
+            pom_values = _parse_pom_sonar_properties(pom_path)
+            for config_key, pom_value in pom_values.items():
+                if config_key in supplied_keys:
+                    # User explicitly supplied this value — compare, never overwrite.
+                    if provider_config[config_key] != pom_value:
+                        mismatch_warnings.append(
+                            {
+                                'field': config_key,
+                                'supplied': provider_config[config_key],
+                                'pom_value': pom_value,
+                            }
+                        )
+                else:
+                    # Not supplied by the user — auto-derive from pom.xml.
+                    provider_config[config_key] = pom_value
+
     write_provider_config(skill_name, provider_config)
 
     completeness = check_credential_completeness(skill_name, scope, project_name)
-    result = {
+    result: dict = {
         'status': 'created',
         'skill': skill_name,
         'scope': scope,
@@ -144,6 +252,14 @@ def run_configure(args: argparse.Namespace) -> int:
     }
     if not completeness['complete']:
         result['placeholders'] = completeness['placeholders']
+    if mismatch_warnings:
+        result['warnings'] = [
+            f"Supplied {w['field']}='{w['supplied']}' disagrees with pom.xml "
+            f"<sonar.{'organization' if w['field'] == 'organization' else 'projectKey'}>"
+            f"='{w['pom_value']}' — keeping the supplied value"
+            for w in mismatch_warnings
+        ]
+        result['mismatches'] = mismatch_warnings
 
     output_toon(result)
     return 0
