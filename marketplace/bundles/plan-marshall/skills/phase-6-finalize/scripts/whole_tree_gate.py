@@ -116,6 +116,17 @@ _SWEEP_SUFFIXES: frozenset[str] = frozenset(
 #: (every ``id``, ``os``, ``re`` would explode the survivor list with noise).
 _MIN_IDENTIFIER_LEN: int = 4
 
+#: Per-token tree-wide occurrence ceiling for the survivor sweep. A genuine
+#: deleted symbol surviving somewhere in the tree resolves at a handful of call
+#: sites; a candidate that matches more locations than this is overwhelmingly an
+#: ordinary prose word (e.g. a dashed compound like ``plan-marshall`` that passes
+#: ``_IDENTIFIER_RE`` yet recurs in narrative throughout the tree), not a removed
+#: identifier. Such candidates are dropped from ``survivors[]`` entirely — the
+#: surfacer's no-verdict contract is preserved: a dropped candidate simply does
+#: not appear, it is never converted into a finding. The ceiling is deliberately
+#: generous so a legitimate widely-referenced symbol is not silently discarded.
+_MAX_TREE_OCCURRENCES: int = 50
+
 #: Generic single-word tokens that are never meaningful deletion targets even
 #: when they pass the length filter — language keywords and ubiquitous names.
 _IDENTIFIER_STOPWORDS: frozenset[str] = frozenset(
@@ -430,34 +441,68 @@ def _read_request_text(plan_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _line_identifiers(line: str) -> set[str]:
+    """Return the code-symbol identifiers on a single diff line.
+
+    Applies the coarse first pass — ``_IDENTIFIER_RE`` shape, the
+    ``_MIN_IDENTIFIER_LEN`` length floor, and the ``_IDENTIFIER_STOPWORDS`` set —
+    so a token that survives this filter on a removed line is comparable against
+    the same filter on an added/context line.
+    """
+    tokens: set[str] = set()
+    for match in _IDENTIFIER_RE.finditer(line):
+        token = match.group(1)
+        if len(token) < _MIN_IDENTIFIER_LEN:
+            continue
+        if token in _IDENTIFIER_STOPWORDS:
+            continue
+        tokens.add(token)
+    return tokens
+
+
 def extract_deleted_identifiers(diff_text: str) -> list[str]:
-    """Extract the symbol-like identifiers removed by the diff.
+    """Extract the symbol-like identifiers genuinely removed by the diff.
 
     Scans removed lines (unified-diff lines beginning with a single ``-`` that
     are NOT the ``---`` file header) and collects code-symbol identifiers of
-    meaningful length, dropping language keywords and ubiquitous stopwords. The
-    result is sorted and de-duplicated so the sweep is deterministic.
+    meaningful length, dropping language keywords and ubiquitous stopwords (the
+    coarse first pass: ``_IDENTIFIER_RE`` + ``_MIN_IDENTIFIER_LEN`` +
+    ``_IDENTIFIER_STOPWORDS``). The result is sorted and de-duplicated so the
+    sweep is deterministic.
 
-    A removed line that also appears as an added line (a pure move/rename) still
-    contributes its identifiers — the survivor sweep will simply find the moved
-    reference and the cognitive pass classifies it as a legitimate retention.
+    On top of the coarse pass, a token that also appears on an added (``+``) or
+    context (unchanged) line of the same diff is dropped — it was not actually
+    deleted, only moved or surrounded by retained text. This drop reverses the
+    older keep-moved-tokens behaviour: keeping them flooded the survivor sweep
+    with dashed-compound prose tokens (e.g. ``plan-marshall``) that pass
+    ``_IDENTIFIER_RE`` yet recur unchanged throughout the tree. Subtracting the
+    added/context token set is the cheap in-diff signal that a candidate is not
+    a genuine removal.
     """
-    identifiers: set[str] = set()
+    removed_tokens: set[str] = set()
+    retained_tokens: set[str] = set()
     for raw in diff_text.splitlines():
-        if not raw.startswith('-'):
+        if raw.startswith('---') or raw.startswith('+++'):
+            # Unified-diff file headers, not content lines.
             continue
-        if raw.startswith('---'):
-            # Unified-diff old-file header, not a content removal.
+        if raw.startswith('@@') or raw.startswith('diff '):
+            # Hunk header / diff-command line — carries no content tokens.
             continue
-        removed = raw[1:]
-        for match in _IDENTIFIER_RE.finditer(removed):
-            token = match.group(1)
-            if len(token) < _MIN_IDENTIFIER_LEN:
-                continue
-            if token in _IDENTIFIER_STOPWORDS:
-                continue
-            identifiers.add(token)
-    return sorted(identifiers)
+        if raw.startswith('-'):
+            removed_tokens |= _line_identifiers(raw[1:])
+        elif raw.startswith('+'):
+            retained_tokens |= _line_identifiers(raw[1:])
+        elif raw.startswith(' '):
+            # Context (unchanged) line: the leading space is stripped; the
+            # surrounding retained content is treated as a retained token source.
+            retained_tokens |= _line_identifiers(raw[1:])
+        else:
+            # git metadata lines (index, old/new/deleted/new-file mode,
+            # rename/copy from/to, similarity index, "Binary files", the
+            # "\ No newline at end of file" marker, etc.) carry no content
+            # tokens — skip so they never pollute retained_tokens.
+            continue
+    return sorted(removed_tokens - retained_tokens)
 
 
 def extract_mandate_items(request_text: str, changed_files: list[str]) -> list[str]:
@@ -537,6 +582,12 @@ def sweep_survivors(
     1-based line number. Word-boundary anchored per identifier so a deleted
     ``foo`` does not match ``foobar``. Rows are sorted by (file, line,
     identifier) for deterministic output.
+
+    A per-token tree-occurrence ceiling (:data:`_MAX_TREE_OCCURRENCES`) drops any
+    candidate whose tree-wide match count exceeds the ceiling: a "deleted
+    identifier" matching dozens of locations is overwhelmingly an ordinary prose
+    word, not a removed symbol. Dropped candidates simply do not appear in the
+    returned rows — the surfacer's no-verdict contract is preserved.
     """
     if not deleted_identifiers:
         return []
@@ -549,7 +600,7 @@ def sweep_survivors(
     }
 
     sweep_root = worktree_root / _SWEEP_SUBDIR
-    survivors: list[dict] = []
+    rows_by_ident: dict[str, list[dict]] = {ident: [] for ident in deleted_identifiers}
     for path in _iter_sweep_files(sweep_root):
         try:
             text = path.read_text(encoding='utf-8')
@@ -559,9 +610,17 @@ def sweep_survivors(
         for line_no, line in enumerate(text.splitlines(), start=1):
             for ident, pattern in patterns.items():
                 if pattern.search(line):
-                    survivors.append(
+                    rows_by_ident[ident].append(
                         {'file': rel, 'line': line_no, 'identifier': ident}
                     )
+
+    # Per-token occurrence ceiling: a candidate matching more than the ceiling is
+    # prose, not a removed symbol — drop all its rows.
+    survivors: list[dict] = []
+    for ident_rows in rows_by_ident.values():
+        if len(ident_rows) > _MAX_TREE_OCCURRENCES:
+            continue
+        survivors.extend(ident_rows)
     survivors.sort(key=lambda row: (row['file'], row['line'], row['identifier']))
     return survivors
 
