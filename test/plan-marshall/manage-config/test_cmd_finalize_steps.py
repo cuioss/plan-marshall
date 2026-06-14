@@ -246,3 +246,50 @@ def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context
     assert persisted.index('plan-marshall:plan-retrospective') < persisted.index(
         'default:archive-plan'
     )
+
+
+# =============================================================================
+# (7) Malformed (non-dict) plan block returns a structured error, not a crash
+# =============================================================================
+#
+# `config['plan']` is sourced from a hand-editable marshal.json. The preset
+# writer treats it as a dict (`setdefault(_PHASE_SECTION, {})`). A non-dict
+# `plan` block must produce a structured `status: error` rather than crashing
+# with an AttributeError — the Pattern B2 isinstance-guard contract.
+
+
+def _marshal_with_plan_block(plan_value) -> dict:
+    """Return a minimal valid marshal.json config with `plan` set to `plan_value`."""
+    return {
+        'skill_domains': {},
+        'system': {'retention': {'logs_days': 1}},
+        'plan': plan_value,
+        'providers': [],
+    }
+
+
+def test_apply_preset_non_dict_plan_block_returns_structured_error(plan_context):
+    """A list-valued `config['plan']` yields status: error, not an AttributeError."""
+    create_marshal_json(
+        plan_context.fixture_dir,
+        config=_marshal_with_plan_block(['not', 'a', 'dict']),
+    )
+
+    result = cmd_finalize_steps_apply_preset(Namespace(preset='local'))
+
+    assert result['status'] == 'error'
+    assert 'plan block' in result['error']
+    assert 'not a dict' in result['error']
+
+
+def test_apply_preset_string_plan_block_returns_structured_error(plan_context):
+    """A string-valued `config['plan']` is also caught by the isinstance guard."""
+    create_marshal_json(
+        plan_context.fixture_dir,
+        config=_marshal_with_plan_block('totally-wrong'),
+    )
+
+    result = cmd_finalize_steps_apply_preset(Namespace(preset='standard'))
+
+    assert result['status'] == 'error'
+    assert 'plan block' in result['error']

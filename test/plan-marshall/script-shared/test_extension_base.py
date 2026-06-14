@@ -13,7 +13,9 @@ from extension_base import (  # type: ignore[import-not-found]
     ROLE_TEST,
     BuildExtensionBase,
     ExtensionBase,
+    _pattern_matches_any,
     _route_matches,
+    _tracked_basenames,
     derive_globs_from_tree,
 )
 
@@ -635,6 +637,136 @@ def test_derive_globs_retains_bare_basename_subdir_only_config(tmp_path):
     _git_init_and_track(tmp_path, ['nifi-cuioss-ui/package.json'])
     derived = derive_globs_from_tree(str(tmp_path), [_SubdirConfigExtension()])
     assert derived['frontend'] == [('package.json', 'config')]
+
+
+# =============================================================================
+# _pattern_matches_any() — batch-filter route-presence predicate
+# =============================================================================
+#
+# The batch counterpart to the removed per-element ``any(_route_matches(p, pattern)
+# for p in tracked)`` truthiness loop. derive_globs_from_tree now prunes routes
+# via ``_pattern_matches_any`` (one fnmatch.filter pass) instead of the per-element
+# loop. The contract is exact equivalence: for every (pattern, corpus) pair the
+# batch helper must return the same boolean the per-element loop produced, under
+# BOTH glob regimes (bare-basename and path-bearing). These tests pin that
+# equivalence directly so no assertion relies on the removed loop shape while the
+# post-fix batch behaviour stays locked.
+
+
+def _loop_matches_any(pattern: str, tracked: list[str]) -> bool:
+    """Reference oracle — the removed per-element loop the batch helper replaced."""
+    return any(_route_matches(p, pattern) for p in tracked)
+
+
+def test_pattern_matches_any_bare_basename_at_repo_root():
+    """Bare-basename pattern matches a tracked file at repo root."""
+    assert _pattern_matches_any('package.json', ['package.json', 'src/app.py']) is True
+
+
+def test_pattern_matches_any_bare_basename_in_subdirectory():
+    """Bare-basename pattern matches a tracked file in a subdirectory (basename-anchored).
+
+    Mirrors the bare-basename regime of the seed-prune fix: ``package.json`` (no
+    ``/``) matches ``nifi-cuioss-ui/package.json`` because the helper filters the
+    corpus by basename.
+    """
+    assert _pattern_matches_any('package.json', ['nifi-cuioss-ui/package.json']) is True
+
+
+def test_pattern_matches_any_bare_basename_glob_in_subdirectory():
+    """Bare-basename GLOB matches by basename anywhere in the tree."""
+    assert _pattern_matches_any('*.tsx', ['src/components/App.tsx']) is True
+
+
+def test_pattern_matches_any_bare_basename_no_false_positive():
+    """Bare-basename pattern does not match a different basename in a subdirectory."""
+    assert _pattern_matches_any('package.json', ['nifi-cuioss-ui/package-lock.json']) is False
+
+
+def test_pattern_matches_any_path_bearing_matches_full_path():
+    """Path-bearing pattern matches against the whole repo-relative path."""
+    assert _pattern_matches_any('scripts/*.py', ['scripts/foo.py', 'test/bar.py']) is True
+
+
+def test_pattern_matches_any_path_bearing_no_false_positive_on_unrelated_dir():
+    """Path-bearing pattern stays anchored to its directory (no cross-dir basename match)."""
+    assert _pattern_matches_any('scripts/*.py', ['vendor/foo.py']) is False
+
+
+def test_pattern_matches_any_path_bearing_single_star_spans_slash():
+    """A single ``*`` in a path-bearing pattern spans ``/`` (fnmatch semantics)."""
+    assert _pattern_matches_any('marketplace/*.py', ['marketplace/targets/generate.py']) is True
+
+
+def test_pattern_matches_any_empty_corpus_returns_false():
+    """An empty tracked corpus never matches — the dead-route prune case."""
+    assert _pattern_matches_any('scripts/*.py', []) is False
+    assert _pattern_matches_any('package.json', []) is False
+
+
+def test_pattern_matches_any_equivalent_to_per_element_loop():
+    """The batch helper is bit-for-bit equivalent to the removed per-element loop.
+
+    The single load-bearing contract of the refactor: across BOTH regimes, for a
+    corpus mixing matching and non-matching paths, ``_pattern_matches_any`` returns
+    exactly what ``any(_route_matches(p, pattern) for p in tracked)`` produced.
+    """
+    corpus = [
+        'package.json',
+        'nifi-cuioss-ui/package.json',
+        'nifi-cuioss-ui/package-lock.json',
+        'scripts/foo.py',
+        'vendor/foo.py',
+        'marketplace/targets/generate.py',
+        'README.md',
+    ]
+    patterns = [
+        'package.json',            # bare-basename, matches root + subdir
+        '*.tsx',                   # bare-basename glob, matches nothing
+        'scripts/*.py',            # path-bearing, anchored
+        'marketplace/*.py',        # path-bearing, single-star spans /
+        'vendor/*.py',             # path-bearing, matches vendor only
+        'nonexistent.toml',        # bare-basename, dead route
+    ]
+    for pattern in patterns:
+        assert _pattern_matches_any(pattern, corpus) == _loop_matches_any(pattern, corpus), (
+            f'batch/loop mismatch for pattern {pattern!r}'
+        )
+
+
+# =============================================================================
+# _tracked_basenames() — lru_cache-backed basename helper
+# =============================================================================
+
+
+def test_tracked_basenames_extracts_basenames():
+    """_tracked_basenames returns the basename of each path in the tuple."""
+    result = _tracked_basenames(('src/app.py', 'nifi-cuioss-ui/package.json', 'build.py'))
+    assert result == ['app.py', 'package.json', 'build.py']
+
+
+def test_tracked_basenames_empty_tuple():
+    """An empty tuple returns an empty list."""
+    assert _tracked_basenames(()) == []
+
+
+def test_tracked_basenames_repo_root_paths():
+    """Paths at repo root (no directory separator) return the path itself."""
+    result = _tracked_basenames(('README.md', 'pyproject.toml'))
+    assert result == ['README.md', 'pyproject.toml']
+
+
+def test_tracked_basenames_cache_identity():
+    """The lru_cache returns the same list object for the same tuple input.
+
+    Calling ``_tracked_basenames`` twice with the same tuple must return the
+    identical list object (cache hit) — this confirms the cache is active and
+    avoids recomputation on repeated bare-basename pattern evaluation.
+    """
+    tracked = ('a/b.py', 'c/d.py')
+    first = _tracked_basenames(tracked)
+    second = _tracked_basenames(tracked)
+    assert first is second, 'expected lru_cache hit to return the same object'
 
 
 if __name__ == '__main__':
