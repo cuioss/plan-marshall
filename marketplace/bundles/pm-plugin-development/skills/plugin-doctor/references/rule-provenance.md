@@ -232,12 +232,6 @@ registered_rule_ids(real_tree) − fired_in_suite − EXEMPT_RULE_IDS == ∅
 
 enforced by `test_zero_match_suite_coverage.py` (`registered_rule_ids` and the `fired_in_suite` derivation live in the plugin-doctor tests' `_fixtures.py`; `EXEMPT_RULE_IDS` lives in `test_zero_match_suite_coverage.py`). A registered rule that neither fires against a positive fixture nor appears in the per-entry-justified `EXEMPT_RULE_IDS` is a real coverage gap — the failing assertion names it, and the fix is a genuine positive unit test for that rule (or, only when the rule structurally cannot fire on a static positive fixture, a justified `EXEMPT_RULE_IDS` entry). Coverage is proven from the test suite itself, over the full registered population minus the exempt set — never from a parallel hand-curated corpus that duplicates the positive tests.
 
-### Markdown link cross-reference rules
-
-| Rule ID | Class | Emitter | Source |
-|---------|-------|---------|--------|
-| `MARKDOWN_LINK_BARE_FILENAME` | content | `_analyze_markdown_link_bare_filename.py` | Plan `new-standards-docs-must-cross-reference-siblings-a` — standards docs must cross-reference sibling documents as navigable relative markdown links (`[text](../path.md)`). Narrowed to two high-precision patterns (the original blanket "any bare `.md` token in prose" matcher was dropped for false positives): (1) a **broken parent-relative link** — a `[text](target.md)` link whose no-separator target is verified on disk to resolve in the parent directory but NOT the file's own directory (the `../` escape prefix is missing); (2) an **odd-one-out plain-text cross-reference** — a bare `name.md` token on a list item where another item in the same contiguous list block is a navigable `.md` link. Pattern 1 is filesystem-verified (≈zero false positives); a target existing in neither dir is out of scope. Detection scope: all-bundle skill, agent, and command markdown. Exempt contexts: fenced code blocks, inline-code spans, HTML comments. Descriptive bare-`.md` prose mentions are not flagged. See [rule-catalog.md](rule-catalog.md) for the full detection logic. |
-
 ## Provenance contract for new rules
 
 Before adding a new rule, the author MUST complete a corpus-feasibility check and record its result:

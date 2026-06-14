@@ -470,7 +470,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enri
 
 ## Standards
 
-- [data-format.md](standards/data-format.md) — Storage format for `metrics.toon` and `metrics.md`
+- [data-format.md](standards/data-format.md) — Storage format for metrics.toon and metrics.md
 
 ## Related
 
