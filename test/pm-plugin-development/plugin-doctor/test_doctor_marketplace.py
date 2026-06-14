@@ -2054,5 +2054,311 @@ def test_bad_marketplace_root_no_traceback_in_combined_streams(tmp_path):
 
 
 # =============================================================================
+# Granularity-2: project config support + driver suppression integration (D3)
+# =============================================================================
+#
+# TASK-4 wired the optional project-level suppression config
+# (``.plan/plugin-doctor.yml``, Granularity-2) and the per-file frontmatter
+# disable list (``plugin-doctor-disable``, Granularity-3) through to the driver's
+# consolidated output in BOTH cmd_analyze and cmd_quality_gate via
+# ``_load_suppression_configs`` + ``filter_suppressed_findings``. These tests pin
+# the receiver-side behaviour end-to-end through the script's true entrypoint:
+#
+#   - When NO project config is present, the driver behaves identically to the
+#     pre-config baseline — a suppressible finding still surfaces.
+#   - When a project config lists the rule for the finding's path prefix, that
+#     finding is dropped from the consolidated output.
+#   - The same suppression applies to the build-failing quality-gate verdict, so
+#     a project-level exemption can turn a gate failure into a pass.
+#   - A per-file ``plugin-doctor-disable`` frontmatter key (Granularity-3) drops
+#     the named rule's finding for that file alone.
+#
+# The driver loads the project config from ``marketplace_root.parent.parent /
+# .plan / plugin-doctor.yml``. With ``PM_MARKETPLACE_ROOT={temp}/marketplace``,
+# ``find_marketplace_root`` resolves to ``{temp}/marketplace/bundles``, so the
+# project config path is ``{temp}/.plan/plugin-doctor.yml``.
+#
+# The suppressible finding driven through the subprocess is
+# ``no-historical-prose-in-skills`` (in ``_SUPPRESSIBLE_RULE_IDS``): a SKILL.md
+# body line ``Driving lesson: ...`` outside frontmatter/fences fires the rule on
+# any non-default-exempt bundle path. The fixture bundle/skill path is chosen so
+# it never collides with a shipped default-suppression.yml exemption (those are
+# all under plan-marshall/** or plugin-doctor/references|standards).
+
+_SUPPRESSION_RULE_ID = 'no-historical-prose-in-skills'
+_SUPPRESSION_FINDING_TYPE = 'historical_prose_in_skills'
+# Bundles-relative path prefix to the violating skill (used as the project-config
+# value and asserted against the default-exemption non-collision).
+_SUPPRESSION_SKILL_PREFIX = 'sup-bundle/skills/hist-skill/'
+
+
+def _build_historical_prose_fixture(temp_root: Path, *, disable_frontmatter: bool = False) -> Path:
+    """Build a fixture marketplace with one historical-prose-violating skill.
+
+    The skill's SKILL.md carries a ``Driving lesson:`` body line (outside
+    frontmatter and any fence) that fires the ``no-historical-prose-in-skills``
+    rule. The bundle/skill path (``sup-bundle/skills/hist-skill/``) is outside
+    every shipped default-suppression.yml exemption, so the finding fires unless
+    a project config or per-file frontmatter key suppresses it.
+
+    When ``disable_frontmatter`` is True, the SKILL.md frontmatter includes a
+    ``plugin-doctor-disable: [no-historical-prose-in-skills]`` key (Granularity-3)
+    so the per-file layer suppresses the finding.
+    """
+    bundles_dir = temp_root / 'marketplace' / 'bundles'
+    bundle = bundles_dir / 'sup-bundle'
+    bundle.mkdir(parents=True)
+
+    plugin_dir = bundle / '.claude-plugin'
+    plugin_dir.mkdir()
+    (plugin_dir / 'plugin.json').write_text(json.dumps({'name': 'sup-bundle', 'version': '1.0.0'}))
+
+    skill_dir = bundle / 'skills' / 'hist-skill'
+    skill_dir.mkdir(parents=True)
+
+    disable_line = (
+        'plugin-doctor-disable: [no-historical-prose-in-skills]\n' if disable_frontmatter else ''
+    )
+    (skill_dir / 'SKILL.md').write_text(
+        '---\n'
+        'name: hist-skill\n'
+        'description: A skill carrying historical-prose narrative\n'
+        'user-invocable: false\n'
+        'mode: knowledge\n'
+        f'{disable_line}'
+        '---\n'
+        '\n'
+        '# Hist Skill\n'
+        '\n'
+        'Driving lesson: this rule exists because of a past incident.\n'
+    )
+    return temp_root
+
+
+def _write_project_suppression_config(temp_root: Path, content: str) -> Path:
+    """Write a project-level ``.plan/plugin-doctor.yml`` under the invocation root.
+
+    The driver resolves the project config relative to ``marketplace_root.parent.parent``
+    (the repo/invocation root), which is ``temp_root`` when
+    ``PM_MARKETPLACE_ROOT={temp_root}/marketplace``.
+    """
+    plan_dir = temp_root / '.plan'
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    config_path = plan_dir / 'plugin-doctor.yml'
+    config_path.write_text(content)
+    return config_path
+
+
+def _suppression_env(temp_root: Path) -> dict:
+    return {
+        'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
+        'PLAN_BASE_DIR': str(temp_root / '.plan'),
+        'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
+    }
+
+
+def _historical_prose_findings(data) -> list[dict]:
+    """Collect the consolidated historical-prose findings from analyze output.
+
+    cmd_analyze appends marketplace-wide findings (including the historical-prose
+    scanner) directly into the top-level categorized buckets, so the finding
+    lands in ``categorized_unfixable`` (the rule is ``fixable: False``). Collect
+    across all three buckets to be robust to categorization changes.
+    """
+    found: list[dict] = []
+    for bucket in ('categorized_safe', 'categorized_risky', 'categorized_unfixable'):
+        for issue in data.get(bucket, []):
+            if isinstance(issue, str):
+                issue = json.loads(issue)
+            if issue.get('rule_id') == _SUPPRESSION_RULE_ID or issue.get('type') == _SUPPRESSION_FINDING_TYPE:
+                found.append(issue)
+    return found
+
+
+def test_suppression_fixture_prefix_outside_default_exemptions():
+    """Guard: the fixture skill path must NOT be a shipped default exemption.
+
+    If a future default-suppression.yml edit added ``sup-bundle/**`` (or a
+    broader prefix that swallowed it) to the historical-prose rule, the baseline
+    test would silently stop fixing the finding and the suppression tests would
+    pass vacuously. This guard fails loudly in that case.
+    """
+    # Arrange — load the shipped default config via the shared loader.
+    shared = load_script_module(
+        'pm-plugin-development', 'plugin-doctor', '_analyze_shared.py', '_analyze_shared_suppression_guard'
+    )
+
+    # Act
+    default_cfg = shared.load_default_suppression_config()
+    suppressed = shared._config_layer_suppresses(
+        _SUPPRESSION_RULE_ID, _SUPPRESSION_SKILL_PREFIX, default_cfg
+    )
+
+    # Assert — the fixture path is NOT exempt by default.
+    assert suppressed is False, (
+        f'Fixture path {_SUPPRESSION_SKILL_PREFIX} unexpectedly matches a default exemption — '
+        f'the baseline finding would be masked. default_cfg[{_SUPPRESSION_RULE_ID!r}]='
+        f'{default_cfg.get(_SUPPRESSION_RULE_ID)}'
+    )
+
+
+def test_analyze_no_project_config_surfaces_finding(tmp_path):
+    """Baseline: with NO project config, analyze surfaces the historical-prose finding.
+
+    Pins the "behaves identically to baseline when no project config is present"
+    half of the deliverable — the suppressible finding must reach the driver's
+    consolidated output unchanged.
+    """
+    # Arrange — fixture only; no .plan/plugin-doctor.yml written.
+    temp_root = _build_historical_prose_fixture(tmp_path)
+    assert not (temp_root / '.plan' / 'plugin-doctor.yml').exists(), (
+        'Test precondition: no project config must be present for the baseline'
+    )
+
+    # Act
+    result = run_script(SCRIPT_PATH, 'analyze', env_overrides=_suppression_env(temp_root))
+    assert result.returncode == 0, f'analyze failed: {result.stderr}'
+
+    # Assert — the historical-prose finding is present in the consolidated output.
+    data = parse_output(result)
+    findings = _historical_prose_findings(data)
+    assert len(findings) >= 1, (
+        f'Baseline (no project config) must surface the {_SUPPRESSION_RULE_ID} finding, '
+        f'total_issues={data.get("total_issues")}'
+    )
+
+
+def test_analyze_project_config_suppresses_finding(tmp_path):
+    """analyze drops the finding when the project config disables the rule for its path.
+
+    The Granularity-2 receiver-side behaviour: a ``.plan/plugin-doctor.yml`` that
+    maps the rule-id to the skill's bundles-relative path prefix removes the
+    finding from the driver's consolidated output.
+    """
+    # Arrange — fixture + project config exempting the rule for the skill path.
+    temp_root = _build_historical_prose_fixture(tmp_path)
+    _write_project_suppression_config(
+        temp_root,
+        f'{_SUPPRESSION_RULE_ID}:\n  - {_SUPPRESSION_SKILL_PREFIX}\n',
+    )
+
+    # Act
+    result = run_script(SCRIPT_PATH, 'analyze', env_overrides=_suppression_env(temp_root))
+    assert result.returncode == 0, f'analyze failed: {result.stderr}'
+
+    # Assert — the historical-prose finding is suppressed (absent).
+    data = parse_output(result)
+    findings = _historical_prose_findings(data)
+    assert findings == [], (
+        f'Project config must suppress the {_SUPPRESSION_RULE_ID} finding, but it surfaced: {findings}'
+    )
+
+
+def test_analyze_project_config_other_rule_does_not_suppress(tmp_path):
+    """A project config disabling a DIFFERENT rule leaves the finding intact.
+
+    Pins that suppression is rule-id scoped — listing an unrelated rule-id in the
+    project config must NOT drop the historical-prose finding.
+    """
+    # Arrange — fixture + project config exempting a different (also suppressible) rule.
+    temp_root = _build_historical_prose_fixture(tmp_path)
+    _write_project_suppression_config(
+        temp_root,
+        f'no-lesson-id-in-skill-prose:\n  - {_SUPPRESSION_SKILL_PREFIX}\n',
+    )
+
+    # Act
+    result = run_script(SCRIPT_PATH, 'analyze', env_overrides=_suppression_env(temp_root))
+    assert result.returncode == 0, f'analyze failed: {result.stderr}'
+
+    # Assert — the historical-prose finding is still present (different rule disabled).
+    data = parse_output(result)
+    findings = _historical_prose_findings(data)
+    assert len(findings) >= 1, (
+        f'Disabling an unrelated rule must NOT suppress {_SUPPRESSION_RULE_ID}, '
+        f'total_issues={data.get("total_issues")}'
+    )
+
+
+def test_analyze_frontmatter_disable_suppresses_finding(tmp_path):
+    """analyze drops the finding via the per-file ``plugin-doctor-disable`` key.
+
+    Granularity-3: a file-scoped frontmatter disable list suppresses the named
+    rule for that file even with NO project config present.
+    """
+    # Arrange — fixture whose SKILL.md frontmatter disables the rule; no project config.
+    temp_root = _build_historical_prose_fixture(tmp_path, disable_frontmatter=True)
+    assert not (temp_root / '.plan' / 'plugin-doctor.yml').exists(), (
+        'Test precondition: frontmatter layer must work without a project config'
+    )
+
+    # Act
+    result = run_script(SCRIPT_PATH, 'analyze', env_overrides=_suppression_env(temp_root))
+    assert result.returncode == 0, f'analyze failed: {result.stderr}'
+
+    # Assert — the frontmatter disable list suppresses the finding.
+    data = parse_output(result)
+    findings = _historical_prose_findings(data)
+    assert findings == [], (
+        f'Per-file plugin-doctor-disable must suppress the {_SUPPRESSION_RULE_ID} finding, '
+        f'but it surfaced: {findings}'
+    )
+
+
+def test_quality_gate_no_project_config_reports_finding(tmp_path):
+    """Baseline: quality-gate surfaces the historical-prose finding with no project config.
+
+    Pins the gate's pre-suppression behaviour so the suppression test below
+    proves a real before/after delta rather than passing vacuously.
+    """
+    # Arrange — fixture only; no project config.
+    temp_root = _build_historical_prose_fixture(tmp_path)
+
+    # Act
+    result = run_script(SCRIPT_PATH, 'quality-gate', env_overrides=_suppression_env(temp_root))
+
+    # Assert — the gate fails and the historical-prose rule reports a finding.
+    data = parse_output(result)
+    summaries = {entry['rule']: entry['findings'] for entry in data['rules_run']}
+    assert summaries.get('analyze_historical_prose_in_skills', 0) >= 1, (
+        f'Baseline gate must report the historical-prose finding, rules_run={data["rules_run"]}'
+    )
+    assert data['status'] == 'fail', f'Baseline gate over the violating fixture should fail, got: {data}'
+    assert result.returncode == 1, f'Baseline gate should exit 1 on the finding, got {result.returncode}'
+
+
+def test_quality_gate_project_config_suppresses_finding(tmp_path):
+    """quality-gate drops the finding (and turns fail→pass) when the project config exempts it.
+
+    The Granularity-2 receiver-side behaviour applied to the build-failing gate:
+    a project-level exemption removes the historical-prose finding from the gate
+    verdict, so the gate passes (exit 0) where the baseline failed.
+    """
+    # Arrange — fixture + project config exempting the rule for the skill path.
+    temp_root = _build_historical_prose_fixture(tmp_path)
+    _write_project_suppression_config(
+        temp_root,
+        f'{_SUPPRESSION_RULE_ID}:\n  - {_SUPPRESSION_SKILL_PREFIX}\n',
+    )
+
+    # Act
+    result = run_script(SCRIPT_PATH, 'quality-gate', env_overrides=_suppression_env(temp_root))
+
+    # Assert — the historical-prose finding is suppressed from the gate verdict.
+    data = parse_output(result)
+    summaries = {entry['rule']: entry['findings'] for entry in data['rules_run']}
+    assert summaries.get('analyze_historical_prose_in_skills', 0) == 0, (
+        f'Project config must suppress the historical-prose finding from the gate, rules_run={data["rules_run"]}'
+    )
+    hist_issues = [
+        i for i in data['issues']
+        if i.get('rule_id') == _SUPPRESSION_RULE_ID or i.get('type') == _SUPPRESSION_FINDING_TYPE
+    ]
+    assert hist_issues == [], f'Suppressed finding leaked into gate issues: {hist_issues}'
+    assert data['status'] == 'pass', f'Gate should pass once the finding is suppressed, got: {data}'
+    assert result.returncode == 0, f'Suppressed gate should exit 0, got {result.returncode}: {result.stderr}'
+
+
+# =============================================================================
 # Main
 # =============================================================================

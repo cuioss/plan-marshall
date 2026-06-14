@@ -21,7 +21,7 @@ Options:
 Output (TOON format):
     status	created
     gitignore_path	/path/to/.gitignore
-    entries_added	4
+    entries_added	5
 
     status	updated
     gitignore_path	/path/to/.gitignore
@@ -65,6 +65,7 @@ GITIGNORE_LOCAL_COMMENT = (
 GITIGNORE_PLAN_DIR = '.plan/*'
 GITIGNORE_MARSHAL_EXCEPTION = '!.plan/marshal.json'
 GITIGNORE_ARCHITECTURE_EXCEPTION = '!.plan/project-architecture/'
+GITIGNORE_PLUGIN_DOCTOR_EXCEPTION = '!.plan/plugin-doctor.yml'
 GITIGNORE_PLAN_LOCAL_WORKTREES = '.plan/local/worktrees/'
 
 # Lines that belong to the managed block: the two header comments plus every
@@ -79,6 +80,7 @@ _MANAGED_RULE_LINES = frozenset({
     '.plan',
     GITIGNORE_MARSHAL_EXCEPTION,
     GITIGNORE_ARCHITECTURE_EXCEPTION,
+    GITIGNORE_PLUGIN_DOCTOR_EXCEPTION,
     GITIGNORE_PLAN_LOCAL_WORKTREES,
     '.plan/local/worktrees',
 })
@@ -173,6 +175,7 @@ def check_gitignore_status_from_content(content: str, exists: bool = True) -> di
     has_plan_dir = False
     has_marshal_exception = False
     has_architecture_exception = False
+    has_plugin_doctor_exception = False
     has_plan_local_worktrees = False
     has_managed_comment = False
     has_local_comment = False
@@ -186,6 +189,8 @@ def check_gitignore_status_from_content(content: str, exists: bool = True) -> di
             has_marshal_exception = True
         if stripped == GITIGNORE_ARCHITECTURE_EXCEPTION:
             has_architecture_exception = True
+        if stripped == GITIGNORE_PLUGIN_DOCTOR_EXCEPTION:
+            has_plugin_doctor_exception = True
         # Accept .plan/local/worktrees/ (preferred) and .plan/local/worktrees (no trailing slash)
         if stripped in ('.plan/local/worktrees/', '.plan/local/worktrees'):
             has_plan_local_worktrees = True
@@ -199,6 +204,7 @@ def check_gitignore_status_from_content(content: str, exists: bool = True) -> di
         'has_plan_dir': has_plan_dir,
         'has_marshal_exception': has_marshal_exception,
         'has_architecture_exception': has_architecture_exception,
+        'has_plugin_doctor_exception': has_plugin_doctor_exception,
         'has_plan_local_worktrees': has_plan_local_worktrees,
         'has_managed_comment': has_managed_comment,
         'has_local_comment': has_local_comment,
@@ -219,6 +225,7 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
         - has_plan_dir: bool
         - has_marshal_exception: bool
         - has_architecture_exception: bool
+        - has_plugin_doctor_exception: bool
         - content: str (if exists)
     """
     exists = gitignore_path.exists()
@@ -253,10 +260,11 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
             f'{GITIGNORE_PLAN_DIR}\n'
             f'{GITIGNORE_MARSHAL_EXCEPTION}\n'
             f'{GITIGNORE_ARCHITECTURE_EXCEPTION}\n'
+            f'{GITIGNORE_PLUGIN_DOCTOR_EXCEPTION}\n'
             f'{GITIGNORE_PLAN_LOCAL_WORKTREES}\n'
         )
         result['status'] = 'created'
-        result['entries_added'] = 4
+        result['entries_added'] = 5
         if not dry_run:
             gitignore_path.write_text(new_content)
         return result
@@ -280,6 +288,8 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
         entries_to_add.append(GITIGNORE_MARSHAL_EXCEPTION)
     if not consolidated_status['has_architecture_exception']:
         entries_to_add.append(GITIGNORE_ARCHITECTURE_EXCEPTION)
+    if not consolidated_status['has_plugin_doctor_exception']:
+        entries_to_add.append(GITIGNORE_PLUGIN_DOCTOR_EXCEPTION)
     if not consolidated_status['has_plan_local_worktrees']:
         entries_to_add.append(GITIGNORE_PLAN_LOCAL_WORKTREES)
 
@@ -306,6 +316,15 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
             content += f'{GITIGNORE_LOCAL_COMMENT}\n'
         for entry in entries_to_add:
             content += f'{entry}\n'
+
+        # Re-consolidate so freshly-appended managed entries are pulled into the
+        # single canonical managed block in THIS run. Without this, a newly-added
+        # managed rule lands after a blank-line separator and the NEXT run's
+        # consolidation pass would relocate it into the block — making the add
+        # non-idempotent (the second run reports 'updated'). Re-consolidating here
+        # makes the first run's output already-canonical and every later run
+        # byte-stable.
+        content = consolidate_managed_blocks(content)
 
     result['entries_added'] = len(entries_to_add)
 

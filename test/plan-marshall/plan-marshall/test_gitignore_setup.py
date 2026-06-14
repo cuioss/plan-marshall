@@ -54,8 +54,9 @@ class TestGitignoreSetupCreate:
         """Should create new .gitignore with planning entries."""
         result = setup_gitignore(tmp_path)
         assert result['status'] == 'created'
-        # .plan/*, !marshal.json, !project-architecture/, .plan/local/worktrees/
-        assert result['entries_added'] == 4
+        # .plan/*, !marshal.json, !project-architecture/, !plugin-doctor.yml,
+        # .plan/local/worktrees/
+        assert result['entries_added'] == 5
 
         # Verify file was created
         gitignore_path = tmp_path / '.gitignore'
@@ -65,9 +66,15 @@ class TestGitignoreSetupCreate:
         assert '.plan/' in content
         assert '!.plan/marshal.json' in content
         assert '!.plan/project-architecture/' in content
+        assert '!.plan/plugin-doctor.yml' in content
         assert '.plan/local/worktrees/' in content
         assert '.claude/worktrees/' not in content
         assert '# Planning system' in content
+
+        # The plugin-doctor negation must follow the .plan/* exclusion so it
+        # overrides the directory ignore.
+        lines = content.splitlines()
+        assert lines.index('.plan/*') < lines.index('!.plan/plugin-doctor.yml')
 
 
 class TestGitignoreSetupUpdate:
@@ -80,7 +87,7 @@ class TestGitignoreSetupUpdate:
 
         result = setup_gitignore(tmp_path)
         assert result['status'] == 'updated'
-        assert result['entries_added'] == 4
+        assert result['entries_added'] == 5
 
         # Verify existing content preserved and new content added
         content = gitignore_path.read_text()
@@ -89,6 +96,7 @@ class TestGitignoreSetupUpdate:
         assert '.plan/' in content
         assert '!.plan/marshal.json' in content
         assert '!.plan/project-architecture/' in content
+        assert '!.plan/plugin-doctor.yml' in content
         assert '.plan/local/worktrees/' in content
         assert '.claude/worktrees/' not in content
 
@@ -99,12 +107,14 @@ class TestGitignoreSetupUpdate:
 
         result = setup_gitignore(tmp_path)
         assert result['status'] == 'updated'
-        # !marshal.json + !project-architecture/ + .plan/local/worktrees/
-        assert result['entries_added'] == 3
+        # !marshal.json + !project-architecture/ + !plugin-doctor.yml
+        # + .plan/local/worktrees/
+        assert result['entries_added'] == 4
 
         content = gitignore_path.read_text()
         assert '!.plan/marshal.json' in content
         assert '!.plan/project-architecture/' in content
+        assert '!.plan/plugin-doctor.yml' in content
         assert '.plan/local/worktrees/' in content
         assert '.claude/worktrees/' not in content
 
@@ -125,7 +135,8 @@ class TestGitignoreSetupUnchanged:
             '# Planning system (managed by /marshall-steward)\n'
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
-            '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.plan/local/worktrees/\n'
+            '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n'
+            '!.plan/plugin-doctor.yml\n.plan/local/worktrees/\n'
         )
 
         result = setup_gitignore(tmp_path)
@@ -138,7 +149,8 @@ class TestGitignoreSetupUnchanged:
         gitignore_path.write_text(
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
-            '.plan\n!.plan/marshal.json\n!.plan/project-architecture/\n.plan/local/worktrees/\n'
+            '.plan\n!.plan/marshal.json\n!.plan/project-architecture/\n'
+            '!.plan/plugin-doctor.yml\n.plan/local/worktrees/\n'
         )
 
         result = setup_gitignore(tmp_path)
@@ -151,7 +163,8 @@ class TestGitignoreSetupUnchanged:
         gitignore_path.write_text(
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
-            '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.plan/local/worktrees\n'
+            '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n'
+            '!.plan/plugin-doctor.yml\n.plan/local/worktrees\n'
         )
 
         result = setup_gitignore(tmp_path)
@@ -160,7 +173,9 @@ class TestGitignoreSetupUnchanged:
     def test_adds_plan_local_worktrees_when_missing(self, tmp_path):
         """Should add .plan/local/worktrees/ entry when only planning entries exist."""
         gitignore_path = tmp_path / '.gitignore'
-        gitignore_path.write_text('.plan/*\n!.plan/marshal.json\n!.plan/project-architecture/\n')
+        gitignore_path.write_text(
+            '.plan/*\n!.plan/marshal.json\n!.plan/project-architecture/\n!.plan/plugin-doctor.yml\n'
+        )
 
         result = setup_gitignore(tmp_path)
         assert result['status'] == 'updated'
@@ -209,7 +224,7 @@ class TestGitignoreSetupIdempotency:
             '# Planning system (managed by /marshall-steward)\n'
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
-            '.plan/*\n!.plan/marshal.json\n!.plan/project-architecture/\n'
+            '.plan/*\n!.plan/marshal.json\n!.plan/project-architecture/\n!.plan/plugin-doctor.yml\n'
         )
 
         # Act — adds the missing .plan/local/worktrees/ entry.
@@ -225,6 +240,17 @@ class TestGitignoreSetupIdempotency:
             '— managed by plan-marshall)'
         ) == 1
         assert '.plan/local/worktrees/' in content
+
+    def test_plugin_doctor_exception_not_duplicated_on_second_run(self, tmp_path):
+        """Re-running setup must not add a second !.plan/plugin-doctor.yml entry."""
+        # Arrange / Act — first run creates the file, second run is a no-op.
+        setup_gitignore(tmp_path)
+        second = setup_gitignore(tmp_path)
+
+        # Assert — second run is unchanged; the negation appears exactly once.
+        assert second['status'] == 'unchanged'
+        content = (tmp_path / '.gitignore').read_text()
+        assert content.count('!.plan/plugin-doctor.yml') == 1
 
 
 class TestGitignoreSetupDryRun:
@@ -279,7 +305,16 @@ class TestGitignoreSetupEdgeCases:
         assert status['has_plan_dir']
         assert status['has_marshal_exception']
         assert not status['has_architecture_exception']
+        assert not status['has_plugin_doctor_exception']
         assert not status['has_plan_local_worktrees']
+
+    def test_check_gitignore_status_detects_plugin_doctor_exception(self, tmp_path):
+        """check_gitignore_status flags the plugin-doctor negation when present."""
+        gitignore_path = tmp_path / '.gitignore'
+        gitignore_path.write_text('.plan/*\n!.plan/plugin-doctor.yml\n')
+
+        status = check_gitignore_status(gitignore_path)
+        assert status['has_plugin_doctor_exception']
 
 
 class TestGitignoreConsolidation:
@@ -336,6 +371,7 @@ class TestGitignoreConsolidation:
             '.plan/*\n'
             '!.plan/marshal.json\n'
             '!.plan/project-architecture/\n'
+            '!.plan/plugin-doctor.yml\n'
             '.plan/local/worktrees/\n'
         )
         gitignore_path.write_text(original)

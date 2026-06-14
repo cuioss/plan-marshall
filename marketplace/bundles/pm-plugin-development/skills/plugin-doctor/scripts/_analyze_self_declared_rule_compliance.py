@@ -68,9 +68,10 @@ Exemptions
 - **Fenced code block** — lines inside ``` ``` ``` fences are exempt: a
   heading-shaped line inside an example block is not a live heading, and a
   declaration phrase inside an example block is not an authored rule.
-- **Suppression marker** — an inline ``<!-- doctor-ignore: self-declared-rule -->``
-  on the same line as a violating heading, or on the immediately preceding
-  line, suppresses the finding on the marked line only.
+- **Per-file frontmatter disable** — a
+  ``plugin-doctor-disable: [skill-self-declared-rule-violation]`` frontmatter
+  key suppresses every finding in that file (file-scoped, via the shared
+  substrate).
 
 Findings have the shape::
 
@@ -98,6 +99,8 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+
+from _analyze_shared import read_frontmatter_disable_list
 
 RULE_ID = 'skill-self-declared-rule-violation'
 RULE_NAME = 'analyze_self_declared_rule_compliance'
@@ -133,9 +136,6 @@ _SUBNUMBERED_HEADING_RE = re.compile(
 # Fenced-block boundaries.
 _FENCE_OPEN_RE = re.compile(r'^\s*```\s*([A-Za-z0-9_+-]*)\s*$')
 _FENCE_CLOSE_RE = re.compile(r'^\s*```\s*$')
-
-# Inline suppression marker.
-_SUPPRESS_MARKER = '<!-- doctor-ignore: self-declared-rule -->'
 
 
 # ---------------------------------------------------------------------------
@@ -175,10 +175,6 @@ def _build_fence_set(lines: list[str]) -> set[int]:
             else:
                 inside.add(idx)
     return inside
-
-
-def _line_has_suppress_marker(line: str) -> bool:
-    return _SUPPRESS_MARKER in line
 
 
 def _declares_numbering_rule(
@@ -221,6 +217,11 @@ def _scan_file(path: Path) -> list[dict]:
             }
         ]
 
+    # Granularity-3 (per-file frontmatter): skip the whole file when its
+    # ``plugin-doctor-disable`` list names this rule.
+    if RULE_ID in read_frontmatter_disable_list(text):
+        return []
+
     lines = text.splitlines()
     frontmatter = _build_frontmatter_set(lines)
     fences = _build_fence_set(lines)
@@ -236,16 +237,6 @@ def _scan_file(path: Path) -> list[dict]:
         if idx in frontmatter or idx in fences:
             continue
         if not _SUBNUMBERED_HEADING_RE.match(line):
-            continue
-
-        # Suppression: same line, or a standalone marker on the preceding line.
-        suppressed = _line_has_suppress_marker(line)
-        if not suppressed and idx > 0:
-            prev = lines[idx - 1]
-            prev_is_heading = bool(_SUBNUMBERED_HEADING_RE.match(prev))
-            if _line_has_suppress_marker(prev) and not prev_is_heading:
-                suppressed = True
-        if suppressed:
             continue
 
         heading_text = line.strip()

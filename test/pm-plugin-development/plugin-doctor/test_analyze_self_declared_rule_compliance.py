@@ -15,8 +15,11 @@ The check is self-referential, NOT a global numbering ban:
 
 Only ``SKILL.md`` is scanned — the numbering rule is a property of a skill's
 workflow document. Heading-shaped lines inside YAML frontmatter and fenced
-code blocks are exempt, and an inline
-``<!-- doctor-ignore: self-declared-rule -->`` marker suppresses a finding.
+code blocks are exempt, and a per-file
+``plugin-doctor-disable: [skill-self-declared-rule-violation]`` frontmatter key
+suppresses every finding in that file (Granularity-3). The retired
+``<!-- doctor-ignore: self-declared-rule -->`` inline marker is no longer
+honored.
 
 Scope:
 
@@ -27,16 +30,19 @@ Scope:
 Test layers:
   * (a) Positive cases — declared rule + sub-numbered heading triggers a finding.
   * (b) No-violation cases — declares-and-obeys; no declaration; flat headings.
-  * (c) Exemption cases — frontmatter, fenced code blocks, suppression marker.
+  * (c) Exemption cases — frontmatter, fenced code blocks, per-file disable.
   * (d) Detection-shape cases — heading forms and declaration-phrase variants.
   * (e) Scope cases — agents/commands dirs, non-SKILL.md, out-of-scope paths.
   * (f) Project-local ``.claude/skills/**`` cases.
   * (g) Finding-shape case.
+  * (h) Inline-marker removal guard — the analyzer source references none of
+        the retired ``_SUPPRESS_MARKER`` / ``_IGNORE_MARKER`` / ``doctor-ignore``
+        markers.
 """
 
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module
 
 
 def _load_module(name: str, filename: str):
@@ -119,6 +125,19 @@ def _doc(body: str, declaration: str = _DECLARATION) -> str:
     empty string to build a document that declares no numbering rule.
     """
     return f'---\nname: test-skill\n---\n{declaration}{body}'
+
+
+def _doc_disable(body: str, disable: str, declaration: str = _DECLARATION) -> str:
+    """Compose a SKILL.md carrying a ``plugin-doctor-disable`` frontmatter key.
+
+    ``disable`` is the raw value placed after ``plugin-doctor-disable:`` (inline
+    list form, e.g. ``[skill-self-declared-rule-violation]``).
+    """
+    return (
+        f'---\nname: test-skill\n'
+        f'plugin-doctor-disable: {disable}\n'
+        f'---\n{declaration}{body}'
+    )
 
 
 # ===========================================================================
@@ -222,7 +241,7 @@ class TestNoViolation:
 
 
 class TestExemptions:
-    """Frontmatter, fenced blocks, and the suppression marker exempt matches."""
+    """Frontmatter, fenced blocks, and per-file frontmatter disable exempt matches."""
 
     def test_violating_heading_inside_fenced_block_is_exempt(
         self, tmp_path: Path
@@ -250,34 +269,52 @@ class TestExemptions:
         findings = analyze_self_declared_rule_compliance(marketplace_root)
         assert findings == []
 
-    def test_same_line_suppression_marker(self, tmp_path: Path) -> None:
-        """The marker on the same line suppresses the finding."""
+    def test_frontmatter_disable_suppresses_whole_file(self, tmp_path: Path) -> None:
+        """A ``plugin-doctor-disable`` naming the rule suppresses every violation."""
+        content = _doc_disable(
+            '### Step 1a First\n\nbody\n\n### Step 5a Second\n',
+            '[skill-self-declared-rule-violation]',
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_self_declared_rule_compliance(marketplace_root)
+        assert findings == []
+
+    def test_frontmatter_disable_block_list_form(self, tmp_path: Path) -> None:
+        """The YAML block-list ``plugin-doctor-disable`` form is honored."""
+        content = (
+            '---\n'
+            'name: test-skill\n'
+            'plugin-doctor-disable:\n'
+            '  - skill-self-declared-rule-violation\n'
+            '---\n'
+            f'{_DECLARATION}### Step 1a Initialize\n'
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_self_declared_rule_compliance(marketplace_root)
+        assert findings == []
+
+    def test_frontmatter_disable_for_other_rule_does_not_suppress(
+        self, tmp_path: Path
+    ) -> None:
+        """A disable list naming a DIFFERENT rule leaves the violation flagged."""
+        content = _doc_disable(
+            '### Step 1a Initialize\n',
+            '[some-other-rule]',
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_self_declared_rule_compliance(marketplace_root)
+        assert len(findings) == 1
+        assert 'Step 1a' in findings[0]['snippet']
+
+    def test_retired_inline_marker_no_longer_suppresses(self, tmp_path: Path) -> None:
+        """The retired ``<!-- doctor-ignore: self-declared-rule -->`` marker is ignored."""
         content = _doc(
             '### Step 1a Initialize <!-- doctor-ignore: self-declared-rule -->\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
-
-    def test_preceding_line_suppression_marker(self, tmp_path: Path) -> None:
-        """A standalone marker on the preceding line suppresses the finding."""
-        content = _doc(
-            '<!-- doctor-ignore: self-declared-rule -->\n### Step 1a Initialize\n'
-        )
-        marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
-
-    def test_marker_suppresses_only_the_marked_line(self, tmp_path: Path) -> None:
-        """The marker is per-line — an adjacent unmarked heading still fires."""
-        content = _doc(
-            '### Step 1a First <!-- doctor-ignore: self-declared-rule -->\n'
-            '\nbody\n\n### Step 2a Second\n'
-        )
-        marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
         assert len(findings) == 1
-        assert 'Step 2a' in findings[0]['snippet']
+        assert 'Step 1a' in findings[0]['snippet']
 
 
 # ===========================================================================
@@ -425,3 +462,27 @@ def test_finding_shape(tmp_path: Path) -> None:
     assert f['fixable'] is False
     assert 'Step 1a' in f['snippet']
     assert 'description' in f and f['description']
+
+
+# ===========================================================================
+# (h) Inline-marker removal guard
+# ===========================================================================
+
+
+def test_analyzer_source_has_no_inline_marker_references() -> None:
+    """The analyzer source references none of the retired inline markers.
+
+    The inline-marker suppression mechanism (``_SUPPRESS_MARKER`` /
+    ``_IGNORE_MARKER`` / ``doctor-ignore``) was removed in favor of the
+    config-based declarative-suppression substrate. This guard reads the live
+    analyzer source and asserts none of the retired tokens survive.
+    """
+    source = get_script_path(
+        'pm-plugin-development',
+        'plugin-doctor',
+        '_analyze_self_declared_rule_compliance.py',
+    ).read_text(encoding='utf-8')
+    for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
+        assert marker not in source, (
+            f'Retired inline marker {marker!r} still present in analyzer source'
+        )

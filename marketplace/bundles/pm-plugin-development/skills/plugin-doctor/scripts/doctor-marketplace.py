@@ -59,6 +59,11 @@ from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
 from _analyze_self_declared_rule_compliance import analyze_self_declared_rule_compliance
+from _analyze_shared import (
+    is_rule_suppressed,
+    load_default_suppression_config,
+    load_project_suppression_config,
+)
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
 from _analyze_simplicity import scan_simplicity
 from _analyze_skill_mode import analyze_skill_mode
@@ -253,6 +258,113 @@ def collect_filtered_components(
             c['_bundle_name'] = bundle_dir.name
         result.extend(component_list)
     return result
+
+
+# =============================================================================
+# Declarative suppression (Granularity-2 driver integration)
+# =============================================================================
+#
+# The six marketplace-wide content scanners each carry a ``rule_id`` field on
+# their findings. The driver consults the three-layer suppression substrate
+# (default config < project config < per-file frontmatter, see
+# ``_analyze_shared.is_rule_suppressed``) before extending ``all_issues`` so a
+# project-level ``.plan/plugin-doctor.yml`` exemption — or a per-file
+# ``plugin-doctor-disable`` frontmatter key — drops the named rule's findings.
+#
+# The default-config layer is already applied inside each analyzer (it absorbed
+# the formerly-hardcoded ``_is_allowlisted()`` tables), so re-checking it here is
+# idempotent; the new behavior this layer adds is the project-config and
+# frontmatter granularities.
+
+_SUPPRESSIBLE_RULE_IDS = frozenset(
+    {
+        'no-historical-prose-in-skills',
+        'no-lesson-id-in-skill-prose',
+        'prose-verb-chain-consistency',
+        'allowed-tools-body-drift',
+        'skill-self-declared-rule-violation',
+        'resolver-matrix-coverage',
+    }
+)
+
+
+def _rel_to_bundles(abs_file: str, marketplace_root: Path) -> str | None:
+    """Return the finding file's path relative to ``marketplace_root`` (bundles/).
+
+    Returns ``None`` when the file resolves outside the bundles tree (e.g. a
+    project-local ``.claude/skills/**`` file) — such files have no bundles-
+    relative prefix, so the path-prefix config layers cannot match them and only
+    the file-scoped frontmatter layer applies.
+    """
+    try:
+        return str(Path(abs_file).resolve().relative_to(marketplace_root.resolve()))
+    except (OSError, ValueError):
+        return None
+
+
+def filter_suppressed_findings(
+    findings: list[dict],
+    marketplace_root: Path,
+    default_cfg: dict[str, list[str]],
+    project_cfg: dict[str, list[str]],
+) -> list[dict]:
+    """Drop findings suppressed by the three-layer suppression substrate.
+
+    Only findings whose ``rule_id`` is in ``_SUPPRESSIBLE_RULE_IDS`` are subject
+    to suppression; every other finding passes through unchanged. A finding
+    without a ``file`` is never suppressed (no path to anchor a layer against).
+    The per-file frontmatter layer reads each file's content once, cached by
+    absolute path to avoid re-reading shared files across findings.
+    """
+    if not findings:
+        return findings
+
+    content_cache: dict[str, str] = {}
+
+    def _content_for(abs_file: str) -> str:
+        cached = content_cache.get(abs_file)
+        if cached is not None:
+            return cached
+        try:
+            text = Path(abs_file).read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            text = ''
+        content_cache[abs_file] = text
+        return text
+
+    kept: list[dict] = []
+    for finding in findings:
+        rule_id = finding.get('rule_id')
+        abs_file = finding.get('file')
+        if rule_id not in _SUPPRESSIBLE_RULE_IDS or not abs_file:
+            kept.append(finding)
+            continue
+        rel = _rel_to_bundles(abs_file, marketplace_root)
+        if is_rule_suppressed(
+            rule_id,
+            abs_file,
+            rel if rel is not None else '',
+            _content_for(abs_file),
+            default_cfg,
+            project_cfg,
+        ):
+            continue
+        kept.append(finding)
+    return kept
+
+
+def _load_suppression_configs(marketplace_root: Path) -> tuple[dict, dict]:
+    """Load the default + project suppression configs for a driver invocation.
+
+    The project config (``.plan/plugin-doctor.yml``) is resolved relative to the
+    invocation root, which is the repo root (parent of ``marketplace/``):
+    ``marketplace_root`` is ``<repo>/marketplace/bundles``, so the invocation
+    root is two levels up.
+    """
+    default_cfg = load_default_suppression_config()
+    invocation_root = marketplace_root.parent.parent
+    project_cfg = load_project_suppression_config(invocation_root)
+    return default_cfg, project_cfg
 
 
 # =============================================================================
@@ -563,6 +675,14 @@ def cmd_analyze(args) -> dict:
         all_issues.extend(argument_naming_issues)
         total_issues += len(argument_naming_issues)
 
+    # Granularity-2 driver integration: drop findings from the six content
+    # scanners that the project config (`.plan/plugin-doctor.yml`) or a per-file
+    # `plugin-doctor-disable` frontmatter key suppresses. The filter is rule-id
+    # scoped (`_SUPPRESSIBLE_RULE_IDS`), so every other finding is untouched.
+    default_cfg, project_cfg = _load_suppression_configs(marketplace_root)
+    all_issues = filter_suppressed_findings(all_issues, marketplace_root, default_cfg, project_cfg)
+    total_issues = len(all_issues)
+
     categorized = categorize_all_issues(all_issues)
 
     return {
@@ -833,6 +953,17 @@ def cmd_quality_gate(args) -> dict:
             return findings
         return [f for f in findings if _finding_in_scope(f, scope_dirs)]
 
+    # Granularity-2 driver integration: load the suppression configs once, then
+    # drop suppressed findings from the suppressible content scanners. `_scoped`
+    # narrows to the --paths subset; `_suppressed` then removes any finding the
+    # project config / per-file frontmatter exempts. The default-config layer is
+    # already applied inside each analyzer, so re-checking it here is idempotent —
+    # the project-config and frontmatter granularities are what this adds.
+    default_cfg, project_cfg = _load_suppression_configs(marketplace_root)
+
+    def _suppressed(findings: list[dict]) -> list[dict]:
+        return filter_suppressed_findings(_scoped(findings), marketplace_root, default_cfg, project_cfg)
+
     argparse_findings = _scoped(scan_argparse_safety(marketplace_root))
     all_issues.extend(argparse_findings)
     rule_summaries.append({'rule': 'scan_argparse_safety', 'findings': len(argparse_findings)})
@@ -891,7 +1022,7 @@ def cmd_quality_gate(args) -> dict:
     # PLUS the project-local .claude/skills/** tree (derived internally from
     # marketplace_root). Findings carry absolute file paths, so _scoped's
     # path filter applies uniformly to both trees under --paths.
-    lesson_id_findings = _scoped(analyze_lesson_id_in_skill_prose(marketplace_root))
+    lesson_id_findings = _suppressed(analyze_lesson_id_in_skill_prose(marketplace_root))
     all_issues.extend(lesson_id_findings)
     rule_summaries.append(
         {'rule': 'analyze_lesson_id_in_skill_prose', 'findings': len(lesson_id_findings)}
@@ -902,7 +1033,7 @@ def cmd_quality_gate(args) -> dict:
     # each bundle's {skills,agents,commands} tree PLUS the project-local
     # .claude/skills/** tree (derived internally). Findings carry absolute file
     # paths, so _scoped's path filter applies uniformly under --paths.
-    allowed_tools_drift_findings = _scoped(analyze_allowed_tools_drift(marketplace_root))
+    allowed_tools_drift_findings = _suppressed(analyze_allowed_tools_drift(marketplace_root))
     all_issues.extend(allowed_tools_drift_findings)
     rule_summaries.append(
         {'rule': 'analyze_allowed_tools_drift', 'findings': len(allowed_tools_drift_findings)}
@@ -915,7 +1046,7 @@ def cmd_quality_gate(args) -> dict:
     # SKILL.md under each bundle's {skills,agents,commands} tree PLUS the
     # project-local .claude/skills/** tree (derived internally). Findings carry
     # absolute file paths, so _scoped's path filter applies uniformly under --paths.
-    self_declared_rule_findings = _scoped(analyze_self_declared_rule_compliance(marketplace_root))
+    self_declared_rule_findings = _suppressed(analyze_self_declared_rule_compliance(marketplace_root))
     all_issues.extend(self_declared_rule_findings)
     rule_summaries.append(
         {
@@ -924,7 +1055,7 @@ def cmd_quality_gate(args) -> dict:
         }
     )
 
-    historical_prose_findings = _scoped(analyze_historical_prose_in_skills(marketplace_root))
+    historical_prose_findings = _suppressed(analyze_historical_prose_in_skills(marketplace_root))
     all_issues.extend(historical_prose_findings)
     rule_summaries.append(
         {'rule': 'analyze_historical_prose_in_skills', 'findings': len(historical_prose_findings)}

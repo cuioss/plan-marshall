@@ -65,9 +65,9 @@ Exemptions
 - **Fenced code block** — body lines inside ``` ``` ``` fences (any
   info-string) are exempt: a tool name inside an example command block is
   not a live invocation.
-- **Suppression marker** — an inline ``<!-- doctor-ignore: allowed-tools-drift -->``
-  on the same line as a match, or on the immediately preceding line,
-  suppresses the finding on the marked line only.
+- **Per-file frontmatter disable** — a
+  ``plugin-doctor-disable: [allowed-tools-body-drift]`` frontmatter key
+  suppresses every finding in that file (file-scoped, via the shared substrate).
 
 Findings have the shape::
 
@@ -97,7 +97,7 @@ import re
 from pathlib import Path
 
 from _analyze_coverage import parse_declared_tools
-from _analyze_shared import extract_frontmatter
+from _analyze_shared import extract_frontmatter, read_frontmatter_disable_list
 
 RULE_ID = 'allowed-tools-body-drift'
 RULE_NAME = 'analyze_allowed_tools_drift'
@@ -145,9 +145,6 @@ _TOOL_PREFIXED_RE = re.compile(
 _FENCE_OPEN_RE = re.compile(r'^\s*```\s*([A-Za-z0-9_+-]*)\s*$')
 _FENCE_CLOSE_RE = re.compile(r'^\s*```\s*$')
 
-# Inline suppression marker.
-_SUPPRESS_MARKER = '<!-- doctor-ignore: allowed-tools-drift -->'
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -192,10 +189,6 @@ def _build_fence_set(lines: list[str]) -> set[int]:
     return inside
 
 
-def _line_has_suppress_marker(line: str) -> bool:
-    return _SUPPRESS_MARKER in line
-
-
 def _invoked_tool(line: str) -> str | None:
     """Return the tool name invoked on ``line``, or ``None``.
 
@@ -236,6 +229,11 @@ def _scan_file(path: Path) -> list[dict]:
             }
         ]
 
+    # Granularity-3 (per-file frontmatter): skip the whole file when its
+    # ``plugin-doctor-disable`` list names this rule.
+    if RULE_ID in read_frontmatter_disable_list(text):
+        return []
+
     frontmatter_present, frontmatter = extract_frontmatter(text)
     if not frontmatter_present:
         # No frontmatter → no declared tool list → nothing to drift against.
@@ -265,16 +263,6 @@ def _scan_file(path: Path) -> list[dict]:
             continue
 
         abs_line = body_start + body_idx  # 0-based absolute index
-
-        # Suppression: same line, or a standalone marker on the preceding line.
-        suppressed = _line_has_suppress_marker(line)
-        if not suppressed and body_idx > 0:
-            prev = body_lines[body_idx - 1]
-            prev_has_invocation = _invoked_tool(prev) is not None
-            if _line_has_suppress_marker(prev) and not prev_has_invocation:
-                suppressed = True
-        if suppressed:
-            continue
 
         findings.append(
             {

@@ -6,6 +6,30 @@ Rules that plugin-doctor validates in other components. See the Enforcement bloc
 >
 > **Provenance**: For the source-of-truth classification and lesson / contract citation behind every rule below, see [rule-provenance.md](rule-provenance.md). Adding a rule without a corresponding provenance entry is inadmissible — the rule will be removed by the next provenance audit.
 
+## Declarative Suppression Substrate
+
+Real-file finding suppression is consolidated into one declarative substrate consulted before any finding is emitted, replacing the scattered per-analyzer inline markers and hardcoded allowlists. A finding for rule `R` against file `F` is suppressed when **any** of three composing granularities matches. The matching, precedence ordering, and config-parsing logic are owned by [`scripts/_analyze_shared.py`](../scripts/_analyze_shared.py) (`is_rule_suppressed` and its helpers) — that module is the enforcement-critical source of truth and the authority for the constrained flat-YAML config subset (stdlib-parseable, no PyYAML). This section describes the model; it does not restate the parser or the precedence resolution.
+
+| Granularity | Source | Scope | Rule-id maps to |
+|-------------|--------|-------|-----------------|
+| **Granularity-1** (shipped default) | `config/default-suppression.yml` (bundle-resident) | path-prefix, relative to `marketplace/bundles/` | a list of path prefixes |
+| **Granularity-2** (project config) | `.plan/plugin-doctor.yml` (git-controlled, project root) | path-prefix, relative to the invocation root | a list of path prefixes |
+| **Granularity-3** (per-file frontmatter) | the file's own YAML frontmatter `plugin-doctor-disable` key | the single file | a flat list of rule-ids |
+
+The three granularities are **additive**: each adds reach the others do not. Granularity-1 ships the marketplace's baseline exemptions (the path-prefix tables formerly hardcoded in each analyzer's `_is_allowlisted()` predicate). Granularity-2 lets a consuming project register its own path-prefix exemptions under git control without touching the bundle. Granularity-3 lets an individual file opt out of named rules in place, via a frontmatter list of rule-ids:
+
+```yaml
+---
+plugin-doctor-disable: [no-historical-prose-in-skills, prose-verb-chain-consistency]
+---
+```
+
+Both the inline-list form above and the YAML block-list form are accepted. The disable list names **canonical rule-ids** (e.g. `prose-verb-chain-consistency`, `skill-resolver-gap`, `no-historical-prose-in-skills`, `no-lesson-id-in-skill-prose`, `allowed-tools-body-drift`, `skill-self-declared-rule-violation`) — the same IDs used in this catalog and in [rule-provenance.md](rule-provenance.md).
+
+**Relationship to the zero-match detector.** This receiver-side suppression substrate (the layer that exempts findings on real files) is distinct from the `zero-match-rule` detector's `EXEMPT_RULE_IDS` (see [Rule Pack: Zero-match rule detector](#rule-pack-zero-match-rule-detector)), which governs which registered rules are excused from the positive-fixture self-test. The two share no state.
+
+The legacy inline `<!-- doctor-ignore: {token} -->` markers are removed — no analyzer accepts them, and the per-analyzer `_SUPPRESS_MARKER` / `_IGNORE_MARKER` mechanisms are deleted. The declarative substrate above is the only suppression channel for the rules that previously used inline markers.
+
 ## Agent Rules
 
 **agent-task-tool-prohibited**: Agents cannot declare the Task tool (unavailable at runtime).
@@ -36,7 +60,7 @@ Rules that plugin-doctor validates in other components. See the Enforcement bloc
 - **Rationale**: Prose drift lets workflow instructions reference verb chains the script never exposed. Concrete drift incident driving this rule: `phase-2-refine/SKILL.md` prose referenced `manage-plan-documents request clarify` when the script only registered `request read` and `request mark-clarified` — a human-reader would copy the command and hit an argparse error at runtime, with no structural check catching the mismatch.
 - **Discovery approach**: AST-based, mirroring `argparse_safety`. The rule walks each script's argparse tree (`add_subparsers` → `add_parser` calls) recursively to enumerate the set of registered verb chains, then greps prose for `{notation} {tokens...}` occurrences and reports any token sequence that is not a valid prefix path in the registered tree. No subprocess execution, no imports of the target script — pure static analysis.
 - **Fix**: Update the prose to use a registered verb chain. If the intended verb chain does not yet exist in the script, either add it to the argparse tree or choose the nearest registered command.
-- **Exemptions**: Place `<!-- doctor-ignore: verb-check -->` on the line immediately preceding a bash fence to suppress verb-chain validation for that specific block (use sparingly — only when prose deliberately documents a command the script does not expose, e.g., illustrative or aspirational examples).
+- **Exemptions**: Suppress via the declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via the per-file frontmatter key `plugin-doctor-disable: [prose-verb-chain-consistency]` (Granularity-3), or path-scoped via project / shipped-default config (Granularity-2 / Granularity-1). Use sparingly — only when prose deliberately documents a command the script does not expose (illustrative or aspirational examples).
 
 ## Command Rules
 
@@ -70,7 +94,7 @@ Four detection modes:
 - **Rationale**: Skills that direct an LLM to perform discovery via `Glob`/`Grep` when a canonical resolver script already exists for that domain re-introduce the resolver-gap anti-pattern: the LLM hand-rolls discovery logic that should live in a deterministic script, and successive runs drift in coverage and ordering. Concrete drift incident: prose like "Use Glob: marketplace/bundles/*/skills/*/SKILL.md" appearing without a follow-up `execute-script.py` call to a resolver — a human-reader copies the suggestion and produces non-deterministic results compared to the resolver's output.
 - **Discovery approach**: Line-by-line regex scan over markdown content. For each match of an LLM-Glob trigger phrase, the analyzer inspects the next ≤5 lines for `python3 .plan/execute-script.py`. If absent, a `skill-resolver-gap` finding is emitted with the line of the prose match. Pure static analysis — no script execution, no imports.
 - **Fix**: Replace the LLM-Glob prose with a `python3 .plan/execute-script.py {bundle}:{skill}:{script}` invocation that delegates discovery to a canonical resolver. If no resolver exists yet, add one before relying on Glob from prose.
-- **Exemptions**: Place `<!-- doctor-ignore: resolver-gap -->` on the line immediately preceding the prose block to suppress the finding for that occurrence (use sparingly — only when prose deliberately documents an LLM-driven discovery for which no resolver is appropriate, e.g., debugging instructions or single-shot diagnostics).
+- **Exemptions**: Suppress via the declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via the per-file frontmatter key `plugin-doctor-disable: [skill-resolver-gap]` (Granularity-3), or path-scoped via project / shipped-default config (Granularity-2 / Granularity-1). Use sparingly — only when prose deliberately documents an LLM-driven discovery for which no resolver is appropriate (debugging instructions or single-shot diagnostics).
 
 **skill-missing-mode** (severity: error, fixable: false): Flags any skill `SKILL.md` whose YAML frontmatter omits the `mode:` archetype field, or declares a `mode:` value outside the closed enum `{knowledge, workflow, script-executor, manifest}`. The `mode:` field is the sole source of truth for the skill's execution archetype — it replaces the prose `**REFERENCE MODE**` line and the Enforcement-block `**Execution mode**:` line skills previously carried. Scope: `marketplace/bundles/*/skills/*/SKILL.md` plus the project-local `.claude/skills/*/SKILL.md` tree. Findings carry `details.reason` (`mode_missing` or `mode_invalid`), `details.valid_modes` (the enum), and — for the invalid case — `details.declared_mode` (the offending value).
 
@@ -413,8 +437,8 @@ Seven forward-looking lint rules.
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
-| `no-lesson-id-in-skill-prose` | Forbid narrative lesson-ID citations in skill prose — strip the ID and trivia, keep the rule content. Scans `*.md` AND `*.py` (comments, docstrings, string literals) | Allowlisted skill paths apply to both file classes. For markdown only: YAML frontmatter, fenced code blocks, `Source:` provenance lines, and bare inline-code spans (without a prose "lesson" prefix). For Python these markdown-only exemptions do NOT apply | Inline marker `<!-- doctor-ignore: lesson-id-prose -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
-| `no-historical-prose-in-skills` | Forbid historical/transitional narrative in skill prose — driving-lesson prefixes, back-references, earlier-proposal descriptions, seed-failure citations, plan-authorship annotations, guard-introduction prose | Seven allowlisted file paths; YAML frontmatter, fenced code blocks, `Source:` provenance lines, and inline-code spans are exempt per-line | Inline marker `<!-- doctor-ignore: historical-prose -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
+| `no-lesson-id-in-skill-prose` | Forbid narrative lesson-ID citations in skill prose — strip the ID and trivia, keep the rule content. Scans `*.md` AND `*.py` (comments, docstrings, string literals) | Allowlisted skill paths apply to both file classes. For markdown only: YAML frontmatter, fenced code blocks, `Source:` provenance lines, and bare inline-code spans (without a prose "lesson" prefix). For Python these markdown-only exemptions do NOT apply | Declarative suppression substrate — `plugin-doctor-disable: [no-lesson-id-in-skill-prose]` frontmatter (Granularity-3) or path-scoped config (Granularity-2 / Granularity-1) |
+| `no-historical-prose-in-skills` | Forbid historical/transitional narrative in skill prose — driving-lesson prefixes, back-references, earlier-proposal descriptions, seed-failure citations, plan-authorship annotations, guard-introduction prose | Seven allowlisted file paths; YAML frontmatter, fenced code blocks, `Source:` provenance lines, and inline-code spans are exempt per-line | Declarative suppression substrate — `plugin-doctor-disable: [no-historical-prose-in-skills]` frontmatter (Granularity-3) or path-scoped config (Granularity-2 / Granularity-1) |
 
 ### no-lesson-id-in-skill-prose
 
@@ -452,7 +476,7 @@ The allowlist is unchanged by the widened scope — the same exempt prefixes app
 3. **`Source:` line** — provenance citation marker (e.g., `Source: lesson-XXX`).
 4. **Bare inline-code span** — a lesson-ID inside backticks WITHOUT a prose `lesson` prefix immediately before the span. Token references in code spans are not narrative prose. The `` lesson `YYYY-...` `` form is NOT exempt: "lesson" is prose context and signals a narrative citation.
 
-**Suppression mechanism**: Place `<!-- doctor-ignore: lesson-id-prose -->` on the same line as the match, or on the immediately preceding line, to suppress the finding on the marked line only. Use sparingly — the marker is for genuinely structural citations whose context the analyzer cannot detect (extremely rare; nearly every legitimate citation already qualifies as `Source:` or inline-code).
+**Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [no-lesson-id-in-skill-prose]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config. Use sparingly — most legitimate citations already qualify as `Source:` or inline-code and need no exemption at all.
 
 **Recommended fix**: Locate the line cited by the finding. If the lesson-ID + trivia is parenthetical or sits in its own sentence whose only payload is the citation, remove the entire sentence/parenthetical. Otherwise, strip the lesson-ID, the bracketed citation form (`(lesson XXX)`, `lesson-XXX`, `see lesson XXX`), and the recurrence-trivia phrases while preserving the surrounding rule/decision content. The rule remains; the citation goes.
 
@@ -462,7 +486,7 @@ The allowlist is unchanged by the widened scope — the same exempt prefixes app
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
-| `allowed-tools-body-drift` | Flag a component whose body invokes a tool absent from its declared, non-empty `allowed-tools`/`tools` frontmatter list — a consistency check, NOT a schema prohibition | Components that omit `allowed-tools`/`tools` entirely are NOT flagged (the "inherit all tools" default; the retired `unsupported-skill-tools-field` rule stays deleted). Only directive-shaped invocations (`Read:`, `- Skill:`, `Tool: Bash`) count; fenced code blocks are exempt; declared-but-unused tools are NOT flagged | Inline marker `<!-- doctor-ignore: allowed-tools-drift -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
+| `allowed-tools-body-drift` | Flag a component whose body invokes a tool absent from its declared, non-empty `allowed-tools`/`tools` frontmatter list — a consistency check, NOT a schema prohibition | Components that omit `allowed-tools`/`tools` entirely are NOT flagged (the "inherit all tools" default; the retired `unsupported-skill-tools-field` rule stays deleted). Only directive-shaped invocations (`Read:`, `- Skill:`, `Tool: Bash`) count; fenced code blocks are exempt; declared-but-unused tools are NOT flagged | Declarative suppression substrate — `plugin-doctor-disable: [allowed-tools-body-drift]` frontmatter (Granularity-3) or path-scoped config (Granularity-2 / Granularity-1) |
 
 ### allowed-tools-body-drift
 
@@ -484,7 +508,7 @@ The allowlist is unchanged by the widened scope — the same exempt prefixes app
 1. **Fenced code block** — body lines inside ``` ``` ``` fences (any info-string) are exempt: a tool name inside an example command block is not a live invocation.
 2. **No-frontmatter / empty declaration** — a component without an `allowed-tools`/`tools` declaration, or with an empty one, is exempt entirely (the "inherit all tools" default).
 
-**Suppression mechanism**: Place `<!-- doctor-ignore: allowed-tools-drift -->` on the same line as the match, or on the immediately preceding line, to suppress the finding on the marked line only.
+**Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [allowed-tools-body-drift]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config.
 
 **Recommended fix**: Reconcile the declaration with usage — either add the invoked tool to the `allowed-tools`/`tools` frontmatter list, or remove the body invocation if the tool genuinely should not be used. The rule never prescribes which direction; it flags the inconsistency.
 
@@ -494,7 +518,7 @@ The allowlist is unchanged by the widened scope — the same exempt prefixes app
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
-| `skill-self-declared-rule-violation` | Flag a `SKILL.md` that declares a flat-numbering / no-sub-numbering rule in its own body yet uses sub-numbered (`1a`/`3a`/`5a`-style) step headings in that same body — a self-consistency check, NOT a global numbering ban | Self-referential: a `SKILL.md` that uses sub-numbering WITHOUT declaring such a rule is NOT flagged. Only `SKILL.md` is scanned. Heading-shaped lines inside YAML frontmatter and fenced code blocks are exempt. Scoped narrowly to the one self-rule class that is regex-checkable (numbering discipline); non-regex-checkable self-rule classes are out of scope by design | Inline marker `<!-- doctor-ignore: self-declared-rule -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
+| `skill-self-declared-rule-violation` | Flag a `SKILL.md` that declares a flat-numbering / no-sub-numbering rule in its own body yet uses sub-numbered (`1a`/`3a`/`5a`-style) step headings in that same body — a self-consistency check, NOT a global numbering ban | Self-referential: a `SKILL.md` that uses sub-numbering WITHOUT declaring such a rule is NOT flagged. Only `SKILL.md` is scanned. Heading-shaped lines inside YAML frontmatter and fenced code blocks are exempt. Scoped narrowly to the one self-rule class that is regex-checkable (numbering discipline); non-regex-checkable self-rule classes are out of scope by design | Declarative suppression substrate — `plugin-doctor-disable: [skill-self-declared-rule-violation]` frontmatter (Granularity-3) or path-scoped config (Granularity-2 / Granularity-1) |
 
 ### skill-self-declared-rule-violation
 
@@ -518,7 +542,7 @@ Only `SKILL.md` is scanned — the numbering-discipline rule is a property of a 
 1. **YAML frontmatter** — heading-shaped lines inside the leading `---` fences are not body content and are skipped for both declaration and violation detection.
 2. **Fenced code block** — lines inside ``` ``` ``` fences are exempt: a heading-shaped line inside an example block is not a live heading, and a declaration phrase inside an example block is not an authored rule.
 
-**Suppression mechanism**: Place `<!-- doctor-ignore: self-declared-rule -->` on the same line as the violating heading, or on the immediately preceding line, to suppress the finding on the marked line only.
+**Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [skill-self-declared-rule-violation]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config.
 
 **Recommended fix**: Renumber the offending headings to a flat sequence so the document obeys the numbering rule it declares — or, if the declared rule no longer reflects intent, revise the declaration. The rule flags the inconsistency between the authored rule and the document's own headings.
 
@@ -554,7 +578,7 @@ Only `SKILL.md` is scanned — the numbering-discipline rule is a property of a 
 
 **Per-line structural exemptions**: YAML frontmatter, fenced code blocks, `Source:` provenance lines, inline-code spans.
 
-**Suppression mechanism**: Place `<!-- doctor-ignore: historical-prose -->` on the same line as the match, or on the immediately preceding line.
+**Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [no-historical-prose-in-skills]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config.
 
 **Recommended fix**: Rewrite the sentence as a present-tense rule without the historical context. If the entire sentence's value is "this is why the rule exists", remove it — the rule statement itself is the durable artifact. If a brief rationale is genuinely needed, state the principle rather than citing the incident: replace "Driving lesson: `2026-04-30-23-001` (TASK-9 scope expanded silently)" with "Check sibling directories when scope changes touch a shared symbol."
 

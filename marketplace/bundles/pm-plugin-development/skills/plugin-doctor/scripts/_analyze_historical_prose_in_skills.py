@@ -99,6 +99,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _analyze_shared import (
+    _config_layer_suppresses,
+    load_default_suppression_config,
+    read_frontmatter_disable_list,
+)
+
 RULE_ID = 'no-historical-prose-in-skills'
 RULE_NAME = 'analyze_historical_prose_in_skills'
 FINDING_TYPE = 'historical_prose_in_skills'
@@ -178,42 +184,23 @@ _FENCE_CLOSE_RE = re.compile(r'^\s*```\s*$')
 # Source: line — structured provenance citation marker.
 _SOURCE_LINE_RE = re.compile(r'^\s*(?:[-*]\s*)?\*{0,2}Source:\*{0,2}', re.IGNORECASE)
 
-# Inline suppression marker.
-_SUPPRESS_MARKER = '<!-- doctor-ignore: historical-prose -->'
-
 
 # ---------------------------------------------------------------------------
 # Allowlist
 # ---------------------------------------------------------------------------
 
 
-def _is_allowlisted(rel_to_bundles: str) -> bool:
-    """Return True if the file path is in the historical-context allowlist."""
-    # Lesson-handling skills operate ON lessons — historical context is part
-    # of their domain content.
-    if rel_to_bundles.startswith('plan-marshall/skills/manage-lessons/'):
-        return True
-    if rel_to_bundles.startswith('plan-marshall/skills/phase-6-finalize/workflow/lessons-'):
-        return True
-    if rel_to_bundles.startswith('plan-marshall/skills/phase-6-finalize/standards/lessons-'):
-        return True
-    # Plan-retrospective analyses historical log data — historical context is
-    # intrinsic to its purpose.
-    if rel_to_bundles.startswith('plan-marshall/skills/plan-retrospective/'):
-        return True
-    # Rule-provenance catalog is the canonical citation home for plugin-doctor
-    # rules — lessons and plan references are the provenance, not prose drift.
-    if rel_to_bundles == 'pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md':
-        return True
-    # Rule-catalog.md describes rules and their rationale; lesson/plan
-    # citations in the Rationale fields are structural provenance, not prose.
-    if rel_to_bundles == 'pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md':
-        return True
-    # plan-doctor standards describe check rules that reference lessons as
-    # first-class content (checking that lesson IDs are valid references).
-    if rel_to_bundles.startswith('plan-marshall/skills/plan-doctor/standards/'):
-        return True
-    return False
+def _is_allowlisted(rel_to_bundles: str, default_cfg: dict[str, list[str]]) -> bool:
+    """Return True if the file path is exempt from this rule (Granularity-1).
+
+    The historical-context exemption table is no longer hardcoded here: it is
+    carried by the shipped default suppression config under the ``RULE_ID``
+    key (see ``config/default-suppression.yml``). The check delegates to the
+    shared layer-1 predicate, which applies the same path-prefix semantics the
+    former hardcoded table used (``rel_to_bundles.startswith(prefix)``;
+    exact-file entries match because a path is a prefix of itself).
+    """
+    return _config_layer_suppresses(RULE_ID, rel_to_bundles, default_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -264,18 +251,14 @@ def _offset_in_inline_code(offset: int, spans: list[tuple[int, int]]) -> bool:
     return any(start <= offset < end for start, end in spans)
 
 
-def _line_has_suppress_marker(line: str) -> bool:
-    return _SUPPRESS_MARKER in line
-
-
 # ---------------------------------------------------------------------------
 # File-level scanner
 # ---------------------------------------------------------------------------
 
 
-def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
+def _scan_file(path: Path, rel_to_bundles: str, default_cfg: dict[str, list[str]]) -> list[dict]:
     """Scan a single markdown file and return all findings."""
-    if _is_allowlisted(rel_to_bundles):
+    if _is_allowlisted(rel_to_bundles, default_cfg):
         return []
 
     try:
@@ -296,6 +279,11 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
             }
         ]
 
+    # Granularity-3 (per-file frontmatter): skip the whole file when its
+    # ``plugin-doctor-disable`` list names this rule.
+    if RULE_ID in read_frontmatter_disable_list(text):
+        return []
+
     lines = text.splitlines()
     fence_map = _build_fence_map(lines)
     frontmatter = _build_frontmatter_set(lines)
@@ -315,16 +303,6 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
         # Quick pre-check: does any pattern fire on this line?
         any_pattern_match = any(pat.search(line) for _, pat in _PATTERNS)
         if not any_pattern_match:
-            continue
-
-        # Suppression marker check.
-        suppressed = _line_has_suppress_marker(line)
-        if not suppressed and idx > 0:
-            prev = lines[idx - 1]
-            prev_has_pattern = any(pat.search(prev) for _, pat in _PATTERNS)
-            if _line_has_suppress_marker(prev) and not prev_has_pattern:
-                suppressed = True
-        if suppressed:
             continue
 
         spans = _inline_code_spans(line)
@@ -395,8 +373,8 @@ def analyze_historical_prose_in_skills(marketplace_root: Path) -> list[dict]:
     Walks ``marketplace_root/*/{skills,agents,commands}/**/*.md`` and reports
     every historical-prose occurrence outside the documented exempt contexts
     (allowlisted skill path, YAML frontmatter, fenced code block,
-    ``Source:`` provenance line, inline-code span, or
-    ``<!-- doctor-ignore: historical-prose -->`` suppression marker).
+    ``Source:`` provenance line, inline-code span, or a per-file
+    ``plugin-doctor-disable: [no-historical-prose-in-skills]`` frontmatter key).
 
     Parameters
     ----------
@@ -409,7 +387,8 @@ def analyze_historical_prose_in_skills(marketplace_root: Path) -> list[dict]:
     list[dict]
         List of finding dicts (empty for a clean tree).
     """
+    default_cfg = load_default_suppression_config()
     findings: list[dict] = []
     for md_path, rel in _skill_markdown_targets(marketplace_root):
-        findings.extend(_scan_file(md_path, rel))
+        findings.extend(_scan_file(md_path, rel, default_cfg))
     return findings

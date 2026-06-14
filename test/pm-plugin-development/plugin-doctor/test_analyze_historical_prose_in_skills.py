@@ -24,14 +24,26 @@ Test layers:
   * (b) Allowlist cases — files inside allowlisted paths produce zero findings.
   * (c) Skip-context cases — patterns inside fenced blocks, frontmatter, etc.
         produce no findings.
-  * (d) Suppression marker cases.
+  * (d) Per-file frontmatter disable (Granularity-3) — a
+        ``plugin-doctor-disable: [no-historical-prose-in-skills]`` frontmatter
+        key suppresses every finding in that file; a file whose disable list
+        names a different rule (or that is not in the list at all) is still
+        flagged. The retired ``<!-- doctor-ignore: ... -->`` inline-marker
+        mechanism is no longer honored.
   * (e) Boundary/negative cases — non-matching prose produces no findings.
   * (f) ``test_real_marketplace_has_zero_findings`` invariant.
+  * (i) Suppression-aware cases — the allowlist delegates to the shipped
+        default suppression config (Granularity-1) via the shared
+        ``_config_layer_suppresses`` predicate. Paths registered in the config
+        remain suppressed; paths not registered are still flagged.
+  * (j) Inline-marker removal guard — the analyzer source references none of
+        the retired ``_SUPPRESS_MARKER`` / ``_IGNORE_MARKER`` / ``doctor-ignore``
+        markers.
 """
 
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module
 
 
 def _load_module(name: str, filename: str):
@@ -45,6 +57,8 @@ _ahps = _load_module(
 
 analyze_historical_prose_in_skills = _ahps.analyze_historical_prose_in_skills
 RULE_ID = _ahps.RULE_ID
+_is_allowlisted = _ahps._is_allowlisted
+load_default_suppression_config = _ahps.load_default_suppression_config
 
 
 def _make_skill_md(
@@ -264,37 +278,107 @@ class TestSkipContextExemption:
 
 
 # ===========================================================================
-# (d) Suppression marker cases
+# (d) Per-file frontmatter disable (Granularity-3)
 # ===========================================================================
 
 
-class TestSuppressionMarker:
-    """The ``<!-- doctor-ignore: historical-prose -->`` marker suppresses findings."""
+class TestFrontmatterDisable:
+    """A ``plugin-doctor-disable: [no-historical-prose-in-skills]`` frontmatter
+    key suppresses every finding in that file; a file not naming this rule in
+    its disable list is still flagged.
 
-    def test_same_line_suppression(self, tmp_path: Path) -> None:
-        content = 'Driving lesson: context. <!-- doctor-ignore: historical-prose -->\n'
-        marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert findings == []
+    Granularity-3 (per-file frontmatter) is the highest-precedence suppression
+    layer and supersedes the retired ``<!-- doctor-ignore: ... -->`` inline
+    marker, which is no longer honored.
+    """
 
-    def test_preceding_line_suppression(self, tmp_path: Path) -> None:
+    def test_inline_list_disable_suppresses_whole_file(self, tmp_path: Path) -> None:
+        """An inline-list ``plugin-doctor-disable`` naming the rule suppresses all findings."""
         content = (
-            '<!-- doctor-ignore: historical-prose -->\n'
-            'Driving lesson: this should be suppressed.\n'
+            '---\n'
+            'name: test-skill\n'
+            'plugin-doctor-disable: [no-historical-prose-in-skills]\n'
+            '---\n'
+            'Driving lesson: context.\n'
+            'An earlier proposal was rejected.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_historical_prose_in_skills(marketplace_root)
         assert findings == []
 
-    def test_marker_only_suppresses_marked_line(self, tmp_path: Path) -> None:
+    def test_block_list_disable_suppresses_whole_file(self, tmp_path: Path) -> None:
+        """A YAML block-list ``plugin-doctor-disable`` form is also honored."""
         content = (
-            'Driving lesson: suppressed. <!-- doctor-ignore: historical-prose -->\n'
-            'An earlier proposal was not suppressed.\n'
+            '---\n'
+            'name: test-skill\n'
+            'plugin-doctor-disable:\n'
+            '  - no-historical-prose-in-skills\n'
+            '---\n'
+            'Driving lesson: context here is disabled per-file.\n'
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_historical_prose_in_skills(marketplace_root)
+        assert findings == []
+
+    def test_disable_list_for_other_rule_does_not_suppress(self, tmp_path: Path) -> None:
+        """A disable list naming a DIFFERENT rule leaves this rule's findings flagged."""
+        content = (
+            '---\n'
+            'name: test-skill\n'
+            'plugin-doctor-disable: [some-other-rule]\n'
+            '---\n'
+            'Driving lesson: this rule is NOT in the disable list.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_historical_prose_in_skills(marketplace_root)
         assert len(findings) == 1
-        assert findings[0]['line'] == 2
+        assert findings[0]['rule_id'] == RULE_ID
+
+    def test_no_disable_key_is_still_flagged(self, tmp_path: Path) -> None:
+        """Frontmatter without ``plugin-doctor-disable`` leaves findings flagged."""
+        content = (
+            '---\n'
+            'name: test-skill\n'
+            '---\n'
+            'Driving lesson: no disable key present.\n'
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_historical_prose_in_skills(marketplace_root)
+        assert len(findings) == 1
+
+    def test_disable_does_not_bleed_across_files(self, tmp_path: Path) -> None:
+        """A per-file disable in one file has no effect on a sibling file."""
+        # File 1: disabled via frontmatter.
+        skill_a = tmp_path / 'bundle-a' / 'skills' / 'skill-a'
+        skill_a.mkdir(parents=True)
+        (skill_a / 'SKILL.md').write_text(
+            '---\n'
+            'plugin-doctor-disable: [no-historical-prose-in-skills]\n'
+            '---\n'
+            'Driving lesson: suppressed in file A.\n',
+            encoding='utf-8',
+        )
+        # File 2: no disable key — must still be flagged.
+        skill_b = tmp_path / 'bundle-b' / 'skills' / 'skill-b'
+        skill_b.mkdir(parents=True)
+        (skill_b / 'SKILL.md').write_text(
+            'Driving lesson: flagged in file B.\n', encoding='utf-8'
+        )
+        findings = analyze_historical_prose_in_skills(tmp_path)
+        assert len(findings) == 1
+        assert findings[0]['file'].endswith('bundle-b/skills/skill-b/SKILL.md')
+
+    def test_retired_inline_marker_no_longer_suppresses(self, tmp_path: Path) -> None:
+        """The retired ``<!-- doctor-ignore: historical-prose -->`` marker is ignored.
+
+        The inline-marker mechanism was removed in favor of the config-based
+        substrate; a line carrying the old marker is now flagged like any other.
+        """
+        content = 'Driving lesson: context. <!-- doctor-ignore: historical-prose -->\n'
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_historical_prose_in_skills(marketplace_root)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
 
 
 # ===========================================================================
@@ -329,3 +413,123 @@ class TestBoundaryCases:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_historical_prose_in_skills(marketplace_root)
         assert findings == []
+
+
+# ===========================================================================
+# (i) Suppression-aware cases — config-driven Granularity-1 delegation
+# ===========================================================================
+
+
+class TestSuppressionAwareAllowlist:
+    """The allowlist is no longer a hardcoded table — it delegates to the
+    shipped default suppression config (Granularity-1) through the shared
+    ``_config_layer_suppresses`` predicate.
+
+    These cases pin the contract that the TASK-2 refactor preserves:
+
+    * Every path the former hardcoded table exempted is still exempt, now
+      because it is registered under ``RULE_ID`` in
+      ``config/default-suppression.yml`` (the analyzer loads the *real*
+      shipped config — resolved relative to the module, not ``tmp_path`` —
+      so these assertions exercise the live config).
+    * A path that resembles an allowlisted directory but is NOT a registered
+      prefix is still flagged.
+    * The ``_is_allowlisted`` delegation path returns True/False purely from
+      the config, with no private list left in the analyzer.
+    """
+
+    def test_default_config_carries_rule_prefixes(self) -> None:
+        """The shipped default config registers prefixes under ``RULE_ID``.
+
+        Confirms the exemption table moved into the config rather than being
+        dropped: the analyzer's rule-id key must exist with a non-empty
+        prefix list.
+        """
+        config = load_default_suppression_config()
+        assert RULE_ID in config
+        assert config[RULE_ID], 'default config must carry exemption prefixes'
+
+    def test_is_allowlisted_true_for_each_config_prefix(self) -> None:
+        """``_is_allowlisted`` returns True for every prefix in the config.
+
+        Drives the ``_is_allowlisted`` → ``_config_layer_suppresses``
+        delegation directly: each registered prefix must match itself
+        (``startswith`` is reflexive), proving suppression flows from the
+        config and not a private list.
+        """
+        config = load_default_suppression_config()
+        for prefix in config[RULE_ID]:
+            assert _is_allowlisted(prefix, config) is True
+
+    def test_is_allowlisted_false_for_unregistered_path(self) -> None:
+        """A path not registered under ``RULE_ID`` is NOT exempt."""
+        config = load_default_suppression_config()
+        unregistered = 'some-bundle/skills/some-other-skill/SKILL.md'
+        assert _is_allowlisted(unregistered, config) is False
+
+    def test_previously_exempt_path_remains_suppressed(
+        self, tmp_path: Path
+    ) -> None:
+        """A historical-prose file under an exempt prefix yields zero findings.
+
+        Builds a file at ``manage-lessons/`` — a prefix the former hardcoded
+        table exempted and the shipped config still registers — and asserts
+        the analyzer suppresses the finding via the loaded default config.
+        """
+        config = load_default_suppression_config()
+        # Pick the first registered prefix that names a skill directory so the
+        # constructed path lands inside the scanned {skills} sub-tree.
+        prefix = next(
+            p for p in config[RULE_ID] if '/skills/' in p and p.endswith('/')
+        )
+        target = tmp_path / prefix / 'SKILL.md'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            'Driving lesson: historical context lives here legitimately.\n',
+            encoding='utf-8',
+        )
+        findings = analyze_historical_prose_in_skills(tmp_path)
+        assert findings == []
+
+    def test_path_not_in_config_is_still_flagged(self, tmp_path: Path) -> None:
+        """A historical-prose file outside every exempt prefix is flagged.
+
+        Guards against an over-broad suppression: a sibling skill that merely
+        shares a bundle with an exempt skill but is NOT registered must still
+        produce a finding.
+        """
+        # 'plan-marshall/skills/manage-lessons/' is exempt, but a sibling
+        # skill 'manage-tasks' under the same bundle is not.
+        skill_dir = tmp_path / 'plan-marshall' / 'skills' / 'manage-tasks'
+        skill_dir.mkdir(parents=True)
+        (skill_dir / 'SKILL.md').write_text(
+            'Driving lesson: this sibling skill is NOT exempt.\n',
+            encoding='utf-8',
+        )
+        findings = analyze_historical_prose_in_skills(tmp_path)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
+
+
+# ===========================================================================
+# (j) Inline-marker removal guard
+# ===========================================================================
+
+
+def test_analyzer_source_has_no_inline_marker_references() -> None:
+    """The analyzer source references none of the retired inline markers.
+
+    The inline-marker suppression mechanism (``_SUPPRESS_MARKER`` /
+    ``_IGNORE_MARKER`` / ``doctor-ignore``) was removed in favor of the
+    config-based declarative-suppression substrate. This guard reads the live
+    analyzer source and asserts none of the retired tokens survive.
+    """
+    source = get_script_path(
+        'pm-plugin-development',
+        'plugin-doctor',
+        '_analyze_historical_prose_in_skills.py',
+    ).read_text(encoding='utf-8')
+    for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
+        assert marker not in source, (
+            f'Retired inline marker {marker!r} still present in analyzer source'
+        )

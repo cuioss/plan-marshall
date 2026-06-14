@@ -9,7 +9,10 @@ Two rules guard against the resolver-gap anti-pattern from driving lesson
   (``Use Glob:``, ``Glob pattern:``, ``Discover ... using Glob``,
   ``find ... using Glob patterns``) without an adjacent
   ``python3 .plan/execute-script.py`` invocation within the next 5 lines.
-  Honors ``<!-- doctor-ignore: resolver-gap -->`` exemption marker.
+  Honors a per-file ``plugin-doctor-disable: [skill-resolver-gap]``
+  frontmatter key (Granularity-3), which suppresses every finding in the file.
+  The retired ``<!-- doctor-ignore: resolver-gap -->`` inline marker is no
+  longer honored.
 
 - ``agent-glob-resolver-workaround`` (error): flags ``agents/*.md`` whose
   YAML frontmatter ``tools:`` field includes ``Glob`` unless the same
@@ -20,7 +23,7 @@ Two rules guard against the resolver-gap anti-pattern from driving lesson
 Tests exercise both scanners via direct import (Tier 2 — fast, isolated).
 """
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module
 
 
 def _load_module(name: str, filename: str):
@@ -87,10 +90,12 @@ def test_resolver_gap_find_using_glob_patterns_flagged():
     assert len(findings) == 1
 
 
-def test_resolver_gap_exemption_marker_suppresses_finding():
-    """`<!-- doctor-ignore: resolver-gap -->` on prior line suppresses the finding."""
+def test_resolver_gap_frontmatter_disable_suppresses_whole_file():
+    """A ``plugin-doctor-disable: [skill-resolver-gap]`` frontmatter key suppresses findings."""
     content = (
-        '<!-- doctor-ignore: resolver-gap -->\n'
+        '---\n'
+        'plugin-doctor-disable: [skill-resolver-gap]\n'
+        '---\n'
         'Use Glob: marketplace/bundles/*/skills/*/SKILL.md\n'
         'Manual diagnostic only.\n'
     )
@@ -98,9 +103,38 @@ def test_resolver_gap_exemption_marker_suppresses_finding():
     assert findings == []
 
 
-def test_resolver_gap_exemption_must_be_immediately_preceding():
-    """Exemption two lines above does NOT suppress the finding."""
-    content = '<!-- doctor-ignore: resolver-gap -->\n\nUse Glob: marketplace/bundles/*/skills/*/SKILL.md\n'
+def test_resolver_gap_frontmatter_disable_block_list_form():
+    """The YAML block-list ``plugin-doctor-disable`` form is honored."""
+    content = (
+        '---\n'
+        'plugin-doctor-disable:\n'
+        '  - skill-resolver-gap\n'
+        '---\n'
+        'Use Glob: marketplace/bundles/*/skills/*/SKILL.md\n'
+    )
+    findings = check_resolver_gap(content, '/path/SKILL.md')
+    assert findings == []
+
+
+def test_resolver_gap_frontmatter_disable_for_other_rule_does_not_suppress():
+    """A disable list naming a DIFFERENT rule leaves the finding flagged."""
+    content = (
+        '---\n'
+        'plugin-doctor-disable: [some-other-rule]\n'
+        '---\n'
+        'Use Glob: marketplace/bundles/*/skills/*/SKILL.md\n'
+    )
+    findings = check_resolver_gap(content, '/path/SKILL.md')
+    assert len(findings) == 1
+
+
+def test_resolver_gap_retired_inline_marker_no_longer_suppresses():
+    """The retired ``<!-- doctor-ignore: resolver-gap -->`` marker is ignored."""
+    content = (
+        '<!-- doctor-ignore: resolver-gap -->\n'
+        'Use Glob: marketplace/bundles/*/skills/*/SKILL.md\n'
+        'Manual diagnostic only.\n'
+    )
     findings = check_resolver_gap(content, '/path/SKILL.md')
     assert len(findings) == 1
 
@@ -365,3 +399,28 @@ def test_frontmatter_declares_forwards_tool_capabilities_quoted_rejected():
     """Helper rejects quoted `"true"` — only the lowercase YAML boolean is canonical."""
     fm = 'name: x\ntools: Read, Glob\nforwards_tool_capabilities: "true"'
     assert _frontmatter_declares_forwards_tool_capabilities(fm) is False
+
+
+# =============================================================================
+# Inline-marker removal guard
+# =============================================================================
+
+
+def test_resolver_gap_analyzer_source_has_no_inline_marker_references():
+    """The resolver-gap analyzer source references none of the retired markers.
+
+    The inline-marker suppression mechanism (``_SUPPRESS_MARKER`` /
+    ``_IGNORE_MARKER`` / ``doctor-ignore``) was removed in favor of the
+    config-based declarative-suppression substrate. ``check_resolver_gap`` lives
+    in ``_analyze_markdown.py``; this guard reads the live source and asserts
+    none of the retired tokens survive.
+    """
+    source = get_script_path(
+        'pm-plugin-development',
+        'plugin-doctor',
+        '_analyze_markdown.py',
+    ).read_text(encoding='utf-8')
+    for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
+        assert marker not in source, (
+            f'Retired inline marker {marker!r} still present in _analyze_markdown.py'
+        )

@@ -4,7 +4,12 @@
 import re
 from pathlib import Path
 
-from _analyze_shared import check_yaml_validity, detect_component_type, extract_frontmatter
+from _analyze_shared import (
+    check_yaml_validity,
+    detect_component_type,
+    extract_frontmatter,
+    read_frontmatter_disable_list,
+)
 
 
 def check_frontmatter_fields(frontmatter: str) -> dict:
@@ -458,13 +463,18 @@ def check_resolver_gap(content: str, file_path: str) -> list:
     files); this function inspects content unconditionally so it can be unit
     tested in isolation.
 
-    Honors the ``<!-- doctor-ignore: resolver-gap -->`` exemption marker when
-    placed on the line directly preceding the prose match.
+    Honors a per-file ``plugin-doctor-disable: [skill-resolver-gap]``
+    frontmatter key, which suppresses every finding in that file.
 
     Returns a list of finding dicts: ``{line, message}``. The caller wraps these
     into the standard issue schema.
     """
     findings: list = []
+
+    # Granularity-3 (per-file frontmatter): skip the whole file when its
+    # ``plugin-doctor-disable`` list names this rule.
+    if 'skill-resolver-gap' in read_frontmatter_disable_list(content):
+        return findings
 
     # Trigger phrases — case-insensitive. These mirror the prose forms most
     # commonly used to direct an LLM to hand-roll discovery via Glob.
@@ -475,8 +485,6 @@ def check_resolver_gap(content: str, file_path: str) -> list:
         re.compile(r'\bfind\b.*\busing\s+Glob\s+patterns?\b', re.IGNORECASE),
     ]
 
-    exemption_marker = '<!-- doctor-ignore: resolver-gap -->'
-
     lines = content.split('\n')
     for idx, line in enumerate(lines):
         # Skip if any trigger fires
@@ -486,10 +494,6 @@ def check_resolver_gap(content: str, file_path: str) -> list:
                 matched_pattern = pattern.pattern
                 break
         if matched_pattern is None:
-            continue
-
-        # Exemption: previous line contains the marker
-        if idx > 0 and exemption_marker in lines[idx - 1]:
             continue
 
         # Look ahead up to 5 lines (inclusive of current line) for a resolver call

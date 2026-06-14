@@ -339,6 +339,16 @@ total_issues: {N}
 
 ---
 
+## Suppression Model
+
+Real-file finding suppression flows through one declarative substrate with three composing granularities; a finding is suppressed when any granularity matches. The substrate replaces the scattered per-analyzer inline `doctor-ignore` markers and hardcoded allowlists.
+
+- **Granularity-1** (shipped default) — `config/default-suppression.yml`, bundle-resident, maps each rule-id to a list of `marketplace/bundles/`-relative path prefixes.
+- **Granularity-2** (project config) — `.plan/plugin-doctor.yml`, git-controlled at the project root, same path-prefix shape; lets a consuming project register exemptions without touching the bundle.
+- **Granularity-3** (per-file frontmatter) — the file's own `plugin-doctor-disable: [rule-id, ...]` YAML key, scoped to that single file.
+
+The matching, precedence ordering, and config-parsing logic are owned by [`scripts/_analyze_shared.py`](scripts/_analyze_shared.py) (`is_rule_suppressed`) — the enforcement-critical source of truth, also authoritative for the constrained stdlib-parseable flat-YAML config subset. The full model, the canonical rule-id list, and the per-rule suppression notes are documented in [references/rule-catalog.md](references/rule-catalog.md) § Declarative Suppression Substrate. This substrate is distinct from the `zero-match-rule` detector's `EXEMPT_RULE_IDS`.
+
 ## Rule Definitions
 
 See [references/rule-catalog.md](references/rule-catalog.md) for the complete catalog of rules that plugin-doctor validates (agent, workflow, command, skill, script, content, and PM-workflow rules).

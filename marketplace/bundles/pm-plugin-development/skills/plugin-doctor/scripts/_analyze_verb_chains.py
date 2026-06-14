@@ -29,9 +29,8 @@ Detection flow
 5. Walk each observed verb chain against the tree; the first token that
    does not match a registered subparser path is reported as the first
    unknown segment.
-6. Honor ``<!-- doctor-ignore: verb-check -->`` markers placed on any line
-   preceding a fenced block, provided only whitespace-only lines appear
-   between the marker and the opening fence.
+6. Honor a per-file ``plugin-doctor-disable: [prose-verb-chain-consistency]``
+   frontmatter key, which suppresses every verb-check finding in that file.
 
 Findings have the shape::
 
@@ -59,12 +58,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-RULE_ID = 'prose-verb-chain-consistency'
+from _analyze_shared import read_frontmatter_disable_list
 
-# Marker that suppresses the verb-check for the immediately following
-# fenced bash block. Comparison is literal (whitespace around the
-# HTML comment is allowed, but the inner text must match exactly).
-_IGNORE_MARKER = '<!-- doctor-ignore: verb-check -->'
+RULE_ID = 'prose-verb-chain-consistency'
 
 # Fences recognised for bash blocks. ``sh`` and bare ```` ``` ```` are
 # intentionally excluded — skill authors use ``bash`` consistently for
@@ -182,28 +178,10 @@ def _extract_verb_chain(rest: str) -> tuple[str, ...]:
     return tuple(chain)
 
 
-def _find_ignore_marker_before(lines: list[str], fence_idx: int) -> bool:
-    """Return ``True`` if an ignore marker precedes the fence at ``fence_idx``.
-
-    The marker must appear on a line before the fence with only
-    whitespace-only lines (if any) between it and the opening fence.
-    """
-    idx = fence_idx - 1
-    while idx >= 0:
-        stripped = lines[idx].strip()
-        if not stripped:
-            idx -= 1
-            continue
-        return stripped == _IGNORE_MARKER
-    return False
-
-
 def extract_invocations(markdown_path: Path) -> list[Invocation]:
     """Parse fenced bash blocks in ``markdown_path`` and extract invocations.
 
-    Non-bash fences are ignored entirely. Blocks preceded by a
-    ``<!-- doctor-ignore: verb-check -->`` marker (on a line preceding the
-    opening fence, with only whitespace-only lines between) are skipped.
+    Non-bash fences are ignored entirely.
 
     Returns an empty list for unreadable files.
     """
@@ -226,10 +204,6 @@ def extract_invocations(markdown_path: Path) -> list[Invocation]:
         close_idx = fence_idx + 1
         while close_idx < len(lines) and not _FENCE_CLOSE.match(lines[close_idx]):
             close_idx += 1
-
-        if _find_ignore_marker_before(lines, fence_idx):
-            idx = close_idx + 1
-            continue
 
         # Walk the fenced content, honoring backslash line continuations.
         block_lines = lines[fence_idx + 1 : close_idx]
@@ -645,6 +619,15 @@ def analyze_verb_chains(skill_dir: Path) -> list[dict]:
     tree_cache: dict[Path, dict] = {}
 
     for md_path in _markdown_targets(skill_dir):
+        # Granularity-3 (per-file frontmatter): skip the whole file when its
+        # ``plugin-doctor-disable`` list names this rule.
+        try:
+            md_text = md_path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            md_text = ''
+        if RULE_ID in read_frontmatter_disable_list(md_text):
+            continue
+
         for inv in extract_invocations(md_path):
             script_path = _resolve_notation(inv.bundle, inv.skill, inv.script, marketplace_root)
             if script_path is None:
