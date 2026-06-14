@@ -1166,3 +1166,18 @@ def test_cmd_issue_prepare_comment_allocates_path(monkeypatch, tmp_path):
     assert result['status'] == 'success', result
     assert result['kind'] == 'issue-comment'
     assert result['path'].endswith('issue-comment-default.md')
+
+
+def test_cmd_issue_comment_normalizes_full_url(monkeypatch, tmp_path):
+    """A full issue URL in --issue is normalized to the bare number for gh and the return."""
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    plan_id = _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Outline ready')
+    ns = argparse.Namespace(issue='https://github.com/o/r/issues/42', plan_id=plan_id, slot=None)
+    result = github_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'success', result
+    assert result['issue_number'] == '42'
+    assert captured[-1] == ['issue', 'comment', '42', '--body', 'Outline ready']

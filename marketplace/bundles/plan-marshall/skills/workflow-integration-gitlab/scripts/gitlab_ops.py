@@ -87,6 +87,7 @@ from ci_base import (  # type: ignore[import-not-found]
     make_error,
     make_pr_number_handler,
     make_simple_handler,
+    normalize_issue_ref,
     parse_args_with_toon_errors,
     poll_until,
     prepare_body,
@@ -1259,16 +1260,17 @@ def cmd_issue_comment(args: argparse.Namespace) -> dict:
     if err_dict or body is None:
         return make_error('issue_comment', (err_dict or {}).get('message', 'body not prepared'))
 
-    glab_args = ['issue', 'note', str(args.issue), '--message', body]
+    issue_id = normalize_issue_ref(args.issue)
+    glab_args = ['issue', 'note', issue_id, '--message', body]
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
-        return make_error('issue_comment', f'Failed to comment on issue {args.issue}', stderr.strip())
+        return make_error('issue_comment', f'Failed to comment on issue {issue_id}', stderr.strip())
 
     delete_consumed_body(args.plan_id, BODY_KIND_ISSUE_COMMENT, getattr(args, 'slot', None))
     return {
         'status': 'success',
         'operation': 'issue_comment',
-        'issue_number': args.issue,
+        'issue_number': issue_id,
         'output': stdout.strip(),
     }
 
@@ -1281,9 +1283,10 @@ def cmd_issue_view(args: argparse.Namespace) -> dict:
         return make_error('issue_view', err)
 
     # Get issue details
-    returncode, stdout, stderr = run_glab(['issue', 'view', str(args.issue), '--output', 'json'])
+    issue_id = normalize_issue_ref(args.issue)
+    returncode, stdout, stderr = run_glab(['issue', 'view', issue_id, '--output', 'json'])
     if returncode != 0:
-        return make_error('issue_view', f'Failed to view issue {args.issue}', stderr.strip())
+        return make_error('issue_view', f'Failed to view issue {issue_id}', stderr.strip())
 
     # Parse JSON
     try:
@@ -1559,10 +1562,10 @@ def _cmd_issue_prepare_comment(args: argparse.Namespace) -> dict:
 
 cmd_issue_close = make_simple_handler(
     'issue_close',
-    lambda args: ['issue', 'close', str(args.issue)],
+    lambda args: ['issue', 'close', normalize_issue_ref(args.issue)],
     run_glab,
     check_auth,
-    result_extras=lambda args: {'issue_number': args.issue},
+    result_extras=lambda args: {'issue_number': normalize_issue_ref(args.issue)},
 )
 
 

@@ -105,6 +105,28 @@ def _resolve_body_slot(slot: str | None) -> str:
     return slot
 
 
+def normalize_issue_ref(issue: str) -> str:
+    """Normalize a GitHub/GitLab issue reference to its bare number/IID.
+
+    Accepts either a bare number (returned unchanged) or a full issue URL
+    (e.g. ``https://github.com/o/r/issues/42`` or
+    ``https://gitlab.com/o/r/-/issues/42``) and extracts the trailing
+    identifier. The ``--issue`` argument advertises "Issue number or URL", but
+    ``glab issue note`` does not accept a full URL and the return-dict
+    ``issue_number`` field must carry a normalized number per the
+    ``issue-operations.md`` contract; normalizing here honors both. Preserves a
+    silent-fail contract: an unparseable value is returned unchanged rather than
+    raising.
+    """
+    ref = str(issue)
+    if '/issues/' in ref:
+        try:
+            ref = ref.split('/issues/')[1].split('/')[0].split('?')[0].split('#')[0]
+        except (IndexError, ValueError):
+            return str(issue)
+    return ref
+
+
 def get_body_path(plan_id: str, kind: str, slot: str | None = None) -> Path:
     """Return the script-owned scratch path for a body of the given kind.
 

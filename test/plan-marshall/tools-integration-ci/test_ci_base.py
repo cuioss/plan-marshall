@@ -35,6 +35,7 @@ from ci_base import (
     get_body_path,
     get_default_cwd,
     get_known_subcommands,
+    normalize_issue_ref,
     poll_until,
     prepare_body,
     read_and_consume_body,
@@ -564,6 +565,32 @@ def test_issue_prepare_comment_requires_plan_id():
     parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(['issue', 'prepare-comment'])
+
+
+def test_normalize_issue_ref_bare_number_unchanged():
+    """A bare issue number is returned unchanged."""
+    assert normalize_issue_ref('42') == '42'
+
+
+def test_normalize_issue_ref_github_url():
+    """A GitHub issue URL is normalized to the bare number."""
+    assert normalize_issue_ref('https://github.com/o/r/issues/42') == '42'
+
+
+def test_normalize_issue_ref_gitlab_url():
+    """A GitLab issue URL (with the /-/ segment) is normalized to the IID."""
+    assert normalize_issue_ref('https://gitlab.com/o/r/-/issues/42') == '42'
+
+
+def test_normalize_issue_ref_url_with_query_and_fragment():
+    """Trailing query/fragment segments are stripped from the extracted id."""
+    assert normalize_issue_ref('https://github.com/o/r/issues/42?foo=bar') == '42'
+    assert normalize_issue_ref('https://github.com/o/r/issues/42#note_1') == '42'
+
+
+def test_normalize_issue_ref_unparseable_returned_unchanged():
+    """A value with no extractable id is returned unchanged (silent-fail contract)."""
+    assert normalize_issue_ref('not-a-url') == 'not-a-url'
 
 
 # =============================================================================

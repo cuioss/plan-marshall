@@ -689,3 +689,23 @@ def test_cmd_issue_prepare_comment_allocates_path(monkeypatch, tmp_path):
     assert result['status'] == 'success', result
     assert result['kind'] == 'issue-comment'
     assert result['path'].endswith('issue-comment-default.md')
+
+
+def test_cmd_issue_comment_normalizes_full_url(monkeypatch, tmp_path):
+    """A full GitLab issue URL in --issue is normalized to the IID for `glab issue note` and the return."""
+    captured: list[list[str]] = []
+
+    def run_glab_stub(args):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    plan_id = _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Outline ready')
+    ns = argparse.Namespace(issue='https://gitlab.com/o/r/-/issues/42', plan_id=plan_id, slot=None)
+    result = gitlab_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'success', result
+    assert result['issue_number'] == '42'
+    assert captured[-1] == ['issue', 'note', '42', '--message', 'Outline ready']
