@@ -28,6 +28,12 @@ _is_suppressable = sonar_mod._is_suppressable
 _map_severity = sonar_mod._map_severity
 cmd_fetch_and_store = sonar_mod.cmd_fetch_and_store
 
+# Importing sonar.py (above) runs its module-level ``register_subcommands({'fetch-and-store'})``
+# call, which extends the shared ci_base subcommand registry. ``extract_routing_args`` is the
+# router-level pre-parser that the bug stripped ``--plan-id`` through; the regression test below
+# exercises it directly.
+from ci_base import extract_routing_args  # type: ignore[import-not-found]  # noqa: E402
+
 
 # =============================================================================
 # Helpers
@@ -226,3 +232,55 @@ class TestSonarMain:
         result = run_script(SCRIPT_PATH, *argv)
 
         assert result.returncode != 0
+
+
+# =============================================================================
+# Regression: subcommand routing must not strip --plan-id
+# =============================================================================
+
+
+class TestFetchAndStoreRouting:
+    """Regression for the fetch-and-store routing defect.
+
+    sonar.py registers ``fetch-and-store`` as a top-level subcommand token (via
+    the module-level ``register_subcommands({'fetch-and-store'})`` call) so that
+    ``extract_routing_args`` locates the subcommand boundary correctly. Without
+    that registration, ``fetch-and-store`` is not in the known-subcommand
+    registry, ``_split_at_subcommand`` treats the whole argv as router-level
+    prefix, and the subcommand-level ``--plan-id`` is consumed (stripped) at the
+    router layer before reaching the subcommand parser — the original bug. These
+    tests assert the post-fix behaviour: the subcommand-level ``--plan-id`` and
+    every other subcommand argument survive in ``remaining_argv`` so the
+    ``fetch-and-store`` subparser can consume them.
+
+    Red/green contract: green against the fixed sonar.py (token registered at
+    import); red against the unfixed version (token absent, ``--plan-id``
+    stripped, so the assertions below fail).
+    """
+
+    def test_plan_id_immediately_after_subcommand_preserves_pairing(self):
+        # The --plan-id flag and its value must remain adjacent so the subparser
+        # binds the value to the flag (a stray strip of only the value would
+        # leave a dangling --plan-id with no argument).
+        _resolved, remaining = extract_routing_args(
+            ['fetch-and-store', '--plan-id', 'P-123', '--project', 'com.example:proj']
+        )
+
+        idx = remaining.index('--plan-id')
+        assert remaining[idx + 1] == 'P-123'
+
+    def test_all_subcommand_args_survive_routing(self):
+        # Every fetch-and-store argument (including optional --pr / --severities)
+        # must reach the subparser intact, not just --plan-id.
+        argv = [
+            'fetch-and-store',
+            '--plan-id', 'P-456',
+            '--project', 'com.example:proj',
+            '--pr', '99',
+            '--severities', 'BLOCKER,CRITICAL',
+        ]
+        _resolved, remaining = extract_routing_args(argv)
+
+        for token in argv:
+            assert token in remaining
+        assert _resolved is None
