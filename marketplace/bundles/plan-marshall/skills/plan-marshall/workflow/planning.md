@@ -584,10 +584,11 @@ For each orphan entry:
     --message "(plan-marshall:plan-marshall:cleanup) Removing empty orphan directory {id} ({path})"
   ```
 
-  Then remove the directory:
+  Then remove the directory through the managed API:
 
   ```bash
-  rm -rf {path}
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
+    --plan-id {id}
   ```
 
 - **Non-empty**: Defer the deletion decision to the user. Collect all non-empty orphans, then present a single multi-select `AskUserQuestion` so the user can pick which directories to delete in one pass:
@@ -603,7 +604,7 @@ For each orphan entry:
     multiSelect: true
   ```
 
-  For each confirmed orphan, log the decision and remove the directory:
+  For each confirmed orphan, log the decision and remove the directory through the managed API:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -612,7 +613,8 @@ For each orphan entry:
   ```
 
   ```bash
-  rm -rf {path}
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
+    --plan-id {id}
   ```
 
   For each non-empty orphan the user declined, log the decline:
