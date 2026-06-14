@@ -331,5 +331,82 @@ def test_registered_rule_ids_empty_for_missing_scripts_dir(tmp_path):
     assert registered == set()
 
 
+# ---------------------------------------------------------------------------
+# Sibling-cross-reference corpus entries (deliverable D3)
+# ---------------------------------------------------------------------------
+#
+# The two new sibling-cross-reference rules (MARKDOWN_LINK_BARE_FILENAME and
+# MANAGE_STATUS_PROSE_CONFLATION) must each carry a positive fixture in
+# FIXTURE_CORPUS that actually fires. The real-tree invariant
+# (test_real_marketplace_produces_zero_zero_match_findings) covers this
+# implicitly; these tests pin it deterministically per-rule so a regression
+# names exactly which new rule stopped firing.
+
+
+@pytest.mark.parametrize(
+    'rule_id',
+    ['MARKDOWN_LINK_BARE_FILENAME', 'MANAGE_STATUS_PROSE_CONFLATION'],
+)
+def test_new_sibling_rule_present_in_corpus(rule_id):
+    """Each new sibling-cross-reference rule has a FIXTURE_CORPUS entry."""
+    # Arrange / Act
+    corpus = _zmr._build_fixture_corpus()
+
+    # Assert — the rule ID is a claimed corpus key with a positive fixture.
+    assert rule_id in corpus, (
+        f'{rule_id} must be registered in FIXTURE_CORPUS, got keys: {sorted(corpus)}'
+    )
+    spec = corpus[rule_id]
+    assert spec.files, f'{rule_id} corpus entry must carry a non-empty positive fixture'
+
+
+@pytest.mark.parametrize(
+    'rule_id',
+    ['MARKDOWN_LINK_BARE_FILENAME', 'MANAGE_STATUS_PROSE_CONFLATION'],
+)
+def test_new_sibling_rule_fires_on_positive_fixture(rule_id):
+    """Each new sibling-cross-reference rule fires on its positive fixture.
+
+    Drives the corpus self-test (_fired_rule_ids materializes each spec's
+    fixture under an isolated scratch tree and runs its analyzer); asserts the
+    rule ID is in the fired set, proving its positive fixture produces findings.
+    """
+    # Arrange / Act — the union of rule IDs that fired across the live corpus.
+    fired = _zmr._fired_rule_ids()
+
+    # Assert — the new rule's matcher tripped on its known-defect fixture.
+    assert rule_id in fired, (
+        f'{rule_id} must fire on its positive fixture; fired set: {sorted(fired)}'
+    )
+
+
+def test_both_new_sibling_rules_in_candidate_intersection():
+    """Both new rules are claimed-and-registered (in the detector's candidate set).
+
+    The detector's scope is ``corpus_rules ∩ registered_rules``; a claimed rule
+    that is not registered is silently skipped, hiding a dead matcher. Pinning
+    both new rules in the intersection guarantees the zero-match self-test
+    actually evaluates them against the real tree.
+    """
+    # Arrange
+    claimed = set(_zmr._build_fixture_corpus().keys())
+    registered = registered_rule_ids(MARKETPLACE_ROOT)
+
+    # Act
+    candidates = claimed & registered
+
+    # Assert
+    assert 'MARKDOWN_LINK_BARE_FILENAME' in candidates, (
+        'MARKDOWN_LINK_BARE_FILENAME must be both claimed and registered '
+        f'(claimed={"MARKDOWN_LINK_BARE_FILENAME" in claimed}, '
+        f'registered={"MARKDOWN_LINK_BARE_FILENAME" in registered})'
+    )
+    assert 'MANAGE_STATUS_PROSE_CONFLATION' in candidates, (
+        'MANAGE_STATUS_PROSE_CONFLATION must be both claimed and registered '
+        f'(claimed={"MANAGE_STATUS_PROSE_CONFLATION" in claimed}, '
+        f'registered={"MANAGE_STATUS_PROSE_CONFLATION" in registered})'
+    )
+
+
 if __name__ == '__main__':
     raise SystemExit(pytest.main([__file__, '-v']))

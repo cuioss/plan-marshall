@@ -54,6 +54,7 @@ from _analyze_manage_invocation import (
     derive_script_tree,
     scan_manage_invocation,
 )
+from _analyze_markdown_link_bare_filename import analyze_markdown_link_bare_filename
 from _analyze_plugin_json import analyze_plugin_json_orphans
 from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
@@ -68,6 +69,7 @@ from _analyze_test_conventions import (
     analyze_validator_regex_vs_corpus,
 )
 from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
+from _analyze_toon_prose_status_conflation import analyze_toon_prose_status_conflation
 from _analyze_workflow_doc_toon_error_field import analyze_workflow_doc_toon_error_field
 from _analyze_zero_match_rule import analyze_zero_match_rule
 from _cmd_apply import apply_single_fix, load_templates
@@ -427,6 +429,28 @@ def cmd_analyze(args) -> dict:
     workflow_toon_error_field_issues = analyze_workflow_doc_toon_error_field(marketplace_root)
     all_issues.extend(workflow_toon_error_field_issues)
     total_issues += len(workflow_toon_error_field_issues)
+
+    # Marketplace-wide MARKDOWN_LINK_BARE_FILENAME rule. Unconditionally active —
+    # flags bare ``.md`` filename tokens in skill/agent/command prose (sibling
+    # standards docs must be navigable relative markdown links, never an
+    # unclickable ``name.md`` token) plus parent-path-missing relative links in
+    # ``standards/`` files. Scans *.md under each bundle's
+    # {skills,agents,commands} tree. Non-fixable guard with no suppression
+    # mechanism. Also wired into quality-gate below.
+    markdown_link_bare_filename_issues = analyze_markdown_link_bare_filename(marketplace_root)
+    all_issues.extend(markdown_link_bare_filename_issues)
+    total_issues += len(markdown_link_bare_filename_issues)
+
+    # Marketplace-wide MANAGE_STATUS_PROSE_CONFLATION rule. Unconditionally
+    # active — flags inline-code ``status: {code}`` prose that conflates the
+    # two-tier TOON error envelope (on failure ``status`` is ALWAYS ``error``;
+    # the specific code lives in the ``error`` field). Scans *.md under the
+    # plan-marshall bundle's {skills,agents,commands} tree only — TOON contracts
+    # are plan-marshall-owned prose. Non-fixable guard with no suppression
+    # mechanism. Also wired into quality-gate below.
+    toon_prose_status_conflation_issues = analyze_toon_prose_status_conflation(marketplace_root)
+    all_issues.extend(toon_prose_status_conflation_issues)
+    total_issues += len(toon_prose_status_conflation_issues)
 
     # Marketplace-wide bash-fence-inline-code-exemption rule. Unconditionally
     # active — reintroduction guard that flags any analyzer module scanning
@@ -890,6 +914,38 @@ def cmd_quality_gate(args) -> dict:
         {
             'rule': 'analyze_workflow_doc_toon_error_field',
             'findings': len(workflow_toon_error_field_findings),
+        }
+    )
+
+    # MARKDOWN_LINK_BARE_FILENAME — flags bare ``.md`` filename tokens in
+    # skill/agent/command prose plus parent-path-missing relative links in
+    # ``standards/`` files. Quality-gate-active: runs unconditionally as a build
+    # gate. Findings carry absolute file paths, so _scoped's path filter applies
+    # under --paths.
+    markdown_link_bare_filename_findings = _scoped(
+        analyze_markdown_link_bare_filename(marketplace_root)
+    )
+    all_issues.extend(markdown_link_bare_filename_findings)
+    rule_summaries.append(
+        {
+            'rule': 'analyze_markdown_link_bare_filename',
+            'findings': len(markdown_link_bare_filename_findings),
+        }
+    )
+
+    # MANAGE_STATUS_PROSE_CONFLATION — flags inline-code ``status: {code}`` prose
+    # that conflates the two-tier TOON error envelope. Scans the plan-marshall
+    # bundle only. Quality-gate-active: runs unconditionally as a build gate.
+    # Findings carry absolute file paths, so _scoped's path filter applies under
+    # --paths.
+    toon_prose_status_conflation_findings = _scoped(
+        analyze_toon_prose_status_conflation(marketplace_root)
+    )
+    all_issues.extend(toon_prose_status_conflation_findings)
+    rule_summaries.append(
+        {
+            'rule': 'analyze_toon_prose_status_conflation',
+            'findings': len(toon_prose_status_conflation_findings),
         }
     )
 

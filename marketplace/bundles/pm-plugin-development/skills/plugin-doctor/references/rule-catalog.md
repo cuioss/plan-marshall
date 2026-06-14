@@ -848,6 +848,62 @@ Five rules that catch gaps between what the marketplace *declares* and what is *
 
 ---
 
+## Rule Pack: TOON prose status-conflation invariant
+
+**Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode AND included in `quality-gate`. The marketplace tree carries no residual findings on day one (the rule targets prose that misdescribes the TOON failure envelope; existing prose has been normalized).
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `MANAGE_STATUS_PROSE_CONFLATION` | Detect inline-code prose of the form `` `status: {specific_code}` `` where `{code}` is neither `error` nor `success` — a misdescription of the two-tier TOON failure contract | Detection scope: inline-code spans in plan-marshall bundle markdown only; fenced code blocks and plain prose are deliberately exempt. The rule intentionally accepts some residual false positives (inline-code ``status: {code}`` that legitimately documents a non-error discriminator value, e.g. `` `status: loop_back` ``) in exchange for catching the two-tier conflation | None — rewrite the prose to name both tiers: ``status: error`` + ``error: {code}`` |
+
+### MANAGE_STATUS_PROSE_CONFLATION
+
+**Rule ID**: `MANAGE_STATUS_PROSE_CONFLATION`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_toon_prose_status_conflation.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/{skills,agents,commands}/`.
+
+**Intent**: Enforce the canonical two-tier TOON error contract defined in `pm-plugin-development:plugin-script-architecture/standards/output-contract.md` § "Operation Failure (exit 0, status: error)". The canonical failure envelope shapes a failure as `status: error` + `error: {specific_code}`; the `status` field is ALWAYS the literal `error`. Prose that writes `` `status: plan_not_found` `` (or any `` `status: {code}` `` where `{code}` is neither `error` nor `success`) collapses the two tiers into one field, misdescribing the contract. A reader who copies such a prose snippet will write code that branches on the wrong key, or will author a new skill that shapes failure envelopes incorrectly. This rule surfaces the misdescription at edit time so it does not ship.
+
+**Detection logic**: Scans every line of every in-scope markdown file. For each line, enumerates inline-code spans (backtick-delimited). Within each span, checks for the `status: {token}` shape where `{token}` is a bare identifier. When `{token}` is NEITHER `error` NOR `success`, emits a finding. Three structural exemptions apply: (1) `status: error` / `status: success` inside inline-code spans (the two correct top-level discriminator values); (2) `status: {code}` in plain prose outside any inline-code span (narrative text is not a contract misdescription); (3) `status: {code}` inside a fenced code block of any info-string (a fenced block illustrates a literal payload, not prose guidance).
+
+**Recommended fix**: Rewrite the offending inline-code prose to name both tiers. Replace `` `status: plan_not_found` `` with `` `status: error` `` + `` `error: plan_not_found` `` (two inline-code spans, or a prose sentence that names both fields). For a two-field description, the canonical pattern is: "returns `status: error` with `error: plan_not_found`."
+
+**Suppression mechanism**: None — rewrite the prose to the canonical two-tier form. If the occurrence is genuinely documentary (a standards doc naming the incorrect pattern), wrap the example in a fenced block so the structural exemption applies.
+
+---
+
+## Rule Pack: Markdown link cross-reference invariant
+
+**Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode AND included in `quality-gate`. The rule enforces — at high precision — that genuine cross-reference links resolve correctly and that a cross-reference list links every sibling it names, while leaving descriptive prose mentions of filenames untouched.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `MARKDOWN_LINK_BARE_FILENAME` | Detect (1) a **broken parent-relative link** — a `[text](target.md)` link whose no-separator target resolves on disk in the parent directory but NOT the file's own directory (the `../` escape prefix is missing), and (2) an **odd-one-out plain-text cross-reference** — a bare `name.md` token on a list item, when another item in the same list block is a navigable `.md` link | Pattern 1 is filesystem-verified (it fires only when the same-dir target is absent AND the parent-dir target exists), yielding effectively zero false positives; a target that exists in neither dir is out of scope. Pattern 2 fires only inside a list block that already contains a `.md` link. Three structural exemptions: fenced code blocks (any info-string), inline-code spans, HTML comments. Descriptive bare-`.md` prose mentions are NOT flagged | None — add the `../` prefix to a broken parent-relative link, or wrap the odd-one-out filename in a navigable markdown link |
+
+### MARKDOWN_LINK_BARE_FILENAME
+
+**Rule ID**: `MARKDOWN_LINK_BARE_FILENAME`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_markdown_link_bare_filename.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/*/{skills,agents,commands}/` for ALL bundles.
+
+**Intent**: Catch only two high-precision cross-reference defects, without flagging legitimate descriptive prose that merely names a `.md` file. The earlier blanket "any bare `.md` token in prose" matcher produced a flood of false positives and has been dropped. Two narrowed patterns are detected:
+
+1. **Broken parent-relative link (filesystem-verified)** — a `[text](TARGET)` link where `TARGET` ends in `.md` and contains no path separator. Resolved relative to the referencing file's own directory: if `{dir}/{TARGET}` does NOT exist on disk but `{parentdir}/{TARGET}` DOES exist, the link is flagged — the author meant the sibling-of-parent doc but omitted the `../` escape prefix. If the same-dir target exists (a correct same-dir link), or the target exists in neither directory (external / renamed / not-yet-created), nothing is flagged. Because the verdict is checked against the filesystem, false positives are effectively zero.
+
+2. **Odd-one-out plain-text cross-reference in a link list** — a bare `name.md` token (outside any markdown link, inline-code span, fenced block, or HTML comment) appearing on a markdown list-item line, WHERE at least one other item in the same contiguous list block is a markdown link whose target ends in `.md`. This catches the "one plain-text sibling among a list of navigable links" defect without touching prose mentions elsewhere. A contiguous list block is the run of consecutive list-item lines, allowing blank lines and nested continuation lines between items.
+
+**Detection logic**: HTML comments are neutralised first (whitespace-blanked, preserving line numbers), then fenced code blocks are mapped out. Pattern 1 iterates each non-fenced line, masks inline-code spans, extracts every `[text](target.md)` link with a no-separator target, and performs the two `Path.exists()` checks (same-dir vs parent-dir) to decide. Pattern 2 groups non-fenced lines into contiguous list blocks; for each block that contains at least one navigable `.md` link, it flags every list-item line carrying a bare `.md` token once links and inline-code are masked out.
+
+**Recommended fix**: For a broken parent-relative link, add the `../` prefix (or the full relative path from the file's directory): `[text](../sibling.md)`. For an odd-one-out list item, wrap the bare filename in a navigable markdown link so the cross-reference list is uniform: `- [sibling](../sibling.md)`.
+
+**Suppression mechanism**: None — fix the link target's path prefix, or wrap the odd-one-out filename in a navigable link. If a list item genuinely names a file by convention rather than cross-referencing it, wrap it in an inline-code span so the structural exemption applies.
+
+---
+
 ## Rule Pack: Zero-match rule detector
 
 **Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode AND included in `quality-gate`. The detector is a positive-fixture self-test: it stays silent for registered rules that make no positive-fixture claim, so a healthy tree carries zero residual findings and the rule can enforce at quality-gate level.

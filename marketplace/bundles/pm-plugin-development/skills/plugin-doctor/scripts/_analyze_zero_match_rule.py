@@ -238,10 +238,16 @@ def _build_fixture_corpus() -> dict[str, FixtureSpec]:
     from _analyze_bash_chain_shapes_in_skills import (
         analyze_bash_chain_shapes_in_skills,
     )
+    from _analyze_markdown_link_bare_filename import (
+        analyze_markdown_link_bare_filename,
+    )
     from _analyze_shell_substitution_in_skills import (
         analyze_shell_substitution_in_skills,
     )
     from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
+    from _analyze_toon_prose_status_conflation import (
+        analyze_toon_prose_status_conflation,
+    )
     from _analyze_workflow_doc_toon_error_field import (
         analyze_workflow_doc_toon_error_field,
     )
@@ -279,6 +285,28 @@ def _build_fixture_corpus() -> dict[str, FixtureSpec]:
                 pm_skill: (
                     '# Fixture\n\n```toon\nstatus: error\n'
                     'error_type: some_category\n```\n'
+                ),
+            },
+        ),
+        'MARKDOWN_LINK_BARE_FILENAME': FixtureSpec(
+            analyzer=analyze_markdown_link_bare_filename,
+            files={
+                # Odd-one-out plain-text cross-reference in a link list: the
+                # first item is a navigable ``.md`` link, the second is a bare
+                # plain-text ``config.md`` token — pattern 2 flags the bare one.
+                pm_skill: (
+                    '# Fixture\n\nSee also:\n\n'
+                    '- [Setup](../setup.md)\n'
+                    '- config.md\n'
+                ),
+            },
+        ),
+        'MANAGE_STATUS_PROSE_CONFLATION': FixtureSpec(
+            analyzer=analyze_toon_prose_status_conflation,
+            files={
+                pm_skill: (
+                    '# Fixture\n\nThe verb returns `status: blocked` on a guard '
+                    'failure.\n'
                 ),
             },
         ),
