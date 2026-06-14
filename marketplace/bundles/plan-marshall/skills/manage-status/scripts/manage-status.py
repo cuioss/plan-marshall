@@ -111,8 +111,8 @@ def main() -> int:
     )
     create_parser.set_defaults(func=cmd_create)
 
-    # read
-    read_parser = subparsers.add_parser('read', help='Read plan status', allow_abbrev=False)
+    # read (get is an accepted alias for the same operation)
+    read_parser = subparsers.add_parser('read', aliases=['get'], help='Read plan status', allow_abbrev=False)
     add_plan_id_arg(read_parser)
     read_parser.set_defaults(func=cmd_read)
 

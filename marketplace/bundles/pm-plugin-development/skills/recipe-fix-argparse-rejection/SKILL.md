@@ -43,6 +43,8 @@ Identify the failing call from its output. The diagnostic signature is a `python
 
 The `choose from (...)` list — or the `required` / `unrecognized` flag name — is the **diagnosis signal**: it enumerates the subcommands or flags argparse *does* accept, against which the rejected token is the drift. Match the rejected token to one of the four recurrence signatures catalogued in `dev-agent-behavior-rules` § "Never invent script subcommands" to confirm the defect class and narrow the likely correction (verb-paraphrase, mis-scoped flag, doubled prefix, or missing/`--status`-confused flag).
 
+**Accepted read-verb aliases — not a rejection.** Three single-record read verbs accept the sibling spelling as an argparse alias, so both forms are valid CLI and neither is in scope for this recipe: `manage-lessons read` (alias of canonical `get`), `manage-tasks get` (alias of canonical `read`), and `manage-status get` (alias of canonical `read`). These resolve to the same handler as their canonical verb and do NOT produce `exit_code: 2` — see [`plan-marshall:dev-agent-behavior-rules/standards/argument-naming.md` § "Rule 2 — Read-verb canonicalization"](../../../plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md) for the accepted-secondary-spellings contract. Do not "remediate" a call that already uses one of these accepted aliases. The recipe still governs genuinely-invented verbs — a paraphrased verb that argparse actually rejects remains in scope.
+
 Proceed to Step 2 with the `{notation}`, the rejected `{subcommand}`/`{flag}`, and the captured `choices` list.
 
 ## Step 2: Locate — Find the Owning Skill's Authoritative Call Shape

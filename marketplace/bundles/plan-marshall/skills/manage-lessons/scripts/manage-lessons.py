@@ -1710,8 +1710,8 @@ def main() -> int:
     update_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Update category')
     update_parser.set_defaults(func=cmd_update)
 
-    # get
-    get_parser = subparsers.add_parser('get', help='Get single lesson', allow_abbrev=False)
+    # get (read is an accepted alias for the same operation)
+    get_parser = subparsers.add_parser('get', aliases=['read'], help='Get single lesson', allow_abbrev=False)
     add_lesson_id_arg(get_parser)
     get_parser.set_defaults(func=cmd_get)
 
