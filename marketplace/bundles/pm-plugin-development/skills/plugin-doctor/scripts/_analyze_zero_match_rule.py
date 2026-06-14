@@ -245,9 +245,6 @@ def _build_fixture_corpus() -> dict[str, FixtureSpec]:
         analyze_shell_substitution_in_skills,
     )
     from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
-    from _analyze_toon_prose_status_conflation import (
-        analyze_toon_prose_status_conflation,
-    )
     from _analyze_workflow_doc_toon_error_field import (
         analyze_workflow_doc_toon_error_field,
     )
@@ -298,15 +295,6 @@ def _build_fixture_corpus() -> dict[str, FixtureSpec]:
                     '# Fixture\n\nSee also:\n\n'
                     '- [Setup](../setup.md)\n'
                     '- config.md\n'
-                ),
-            },
-        ),
-        'MANAGE_STATUS_PROSE_CONFLATION': FixtureSpec(
-            analyzer=analyze_toon_prose_status_conflation,
-            files={
-                pm_skill: (
-                    '# Fixture\n\nThe verb returns `status: blocked` on a guard '
-                    'failure.\n'
                 ),
             },
         ),

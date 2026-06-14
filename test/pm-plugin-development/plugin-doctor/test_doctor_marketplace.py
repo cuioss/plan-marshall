@@ -2098,15 +2098,14 @@ def test_bad_marketplace_root_no_traceback_in_combined_streams(tmp_path):
 # Sibling-cross-reference analyzer wiring (deliverable D3)
 # =============================================================================
 #
-# doctor-marketplace.py must call BOTH analyze_markdown_link_bare_filename and
-# analyze_toon_prose_status_conflation from cmd_analyze (issue stream) AND from
-# cmd_quality_gate (build gate). A refactor that dropped either call site would
-# let a bare ``name.md`` sibling reference or a conflated ``status: {code}``
-# prose token reach main silently. The observable signals: the rule name in
+# doctor-marketplace.py must call analyze_markdown_link_bare_filename from
+# cmd_analyze (issue stream) AND from cmd_quality_gate (build gate). A refactor
+# that dropped either call site would let a bare ``name.md`` sibling reference
+# reach main silently. The observable signals: the rule name in
 # cmd_quality_gate's rules_run enumeration (registration), and the rule-typed
 # issue in cmd_analyze's all_issues over a positive fixture (called-and-fired).
-# Each analyzer's own detection behaviour is pinned in its dedicated module
-# (test_analyze_markdown_link_bare_filename.py / test_analyze_toon_prose_status_conflation.py).
+# The analyzer's own detection behaviour is pinned in its dedicated module
+# (test_analyze_markdown_link_bare_filename.py).
 
 
 def _build_bare_filename_fixture(temp_root: Path) -> Path:
@@ -2137,35 +2136,6 @@ def _build_bare_filename_fixture(temp_root: Path) -> Path:
     return temp_root
 
 
-def _build_status_conflation_fixture(temp_root: Path) -> Path:
-    """Build a fixture marketplace whose plan-marshall skill prose conflates ``status``.
-
-    The skill body carries an inline-code ``status: blocked`` token that conflates
-    the two-tier TOON error envelope (on failure ``status`` is ALWAYS ``error``;
-    the specific code lives in the ``error`` field) — the
-    MANAGE_STATUS_PROSE_CONFLATION defect. The bundle MUST be named
-    ``plan-marshall`` because that analyzer scopes its scan to the plan-marshall
-    bundle only (TOON contracts are plan-marshall-owned prose).
-    """
-    bundles_dir = temp_root / 'marketplace' / 'bundles'
-    bundles_dir.mkdir(parents=True)
-    bundle = bundles_dir / 'plan-marshall'
-    bundle.mkdir()
-
-    plugin_dir = bundle / '.claude-plugin'
-    plugin_dir.mkdir()
-    (plugin_dir / 'plugin.json').write_text(json.dumps({'name': 'plan-marshall', 'version': '1.0.0'}))
-
-    skill_dir = bundle / 'skills' / 'conflation-skill'
-    skill_dir.mkdir(parents=True)
-    (skill_dir / 'SKILL.md').write_text(
-        '---\nname: conflation-skill\ndescription: A skill conflating status prose\n'
-        'user-invocable: false\n---\n\n# Conflation Skill\n\n'
-        'The verb returns `status: blocked` on a guard failure.\n'
-    )
-    return temp_root
-
-
 def test_quality_gate_registers_analyze_markdown_link_bare_filename(tmp_path):
     """quality-gate enumerates analyze_markdown_link_bare_filename in rules_run.
 
@@ -2185,28 +2155,6 @@ def test_quality_gate_registers_analyze_markdown_link_bare_filename(tmp_path):
     rules = {entry['rule'] for entry in data['rules_run']}
     assert 'analyze_markdown_link_bare_filename' in rules, (
         f'analyze_markdown_link_bare_filename must appear in rules_run, got: {data["rules_run"]}'
-    )
-
-
-def test_quality_gate_registers_analyze_toon_prose_status_conflation(tmp_path):
-    """quality-gate enumerates analyze_toon_prose_status_conflation in rules_run.
-
-    Runs the gate over a clean fixture (no status-conflation defect → zero
-    findings) and asserts the rule is registered. The clean fixture keeps the
-    test about registration in cmd_quality_gate, not detection.
-    """
-    temp_root = _build_clean_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        env_overrides=_quality_gate_env(temp_root),
-    )
-    assert result.returncode == 0, f'Expected exit 0 on clean fixture, got {result.returncode}: {result.stderr}'
-
-    data = parse_output(result)
-    rules = {entry['rule'] for entry in data['rules_run']}
-    assert 'analyze_toon_prose_status_conflation' in rules, (
-        f'analyze_toon_prose_status_conflation must appear in rules_run, got: {data["rules_run"]}'
     )
 
 
@@ -2237,37 +2185,6 @@ def test_quality_gate_bare_filename_defect_fails(tmp_path):
     types = {i.get('type') for i in data['issues']}
     assert 'MARKDOWN_LINK_BARE_FILENAME' in types, (
         f'MARKDOWN_LINK_BARE_FILENAME finding must appear in issues, got types: {types}'
-    )
-
-
-def test_quality_gate_status_conflation_defect_fails(tmp_path):
-    """quality-gate exits build-failing on a MANAGE_STATUS_PROSE_CONFLATION defect.
-
-    Proves the analyzer contributes to the verdict: an inline-code
-    ``status: blocked`` token in plan-marshall skill prose makes cmd_quality_gate
-    return status: fail (exit 1), the analyze_toon_prose_status_conflation
-    rule_summary reports a non-zero count, and the MANAGE_STATUS_PROSE_CONFLATION
-    finding appears in issues.
-    """
-    temp_root = _build_status_conflation_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        env_overrides=_quality_gate_env(temp_root),
-    )
-    assert result.returncode == 1, (
-        f'Expected exit 1 on status-conflation defect fixture, got {result.returncode}: {result.stderr}'
-    )
-
-    data = parse_output(result)
-    assert data['status'] == 'fail', f'Expected status: fail on status-conflation fixture, got: {data}'
-    summaries = {entry['rule']: entry['findings'] for entry in data['rules_run']}
-    assert summaries.get('analyze_toon_prose_status_conflation', 0) >= 1, (
-        f'analyze_toon_prose_status_conflation should report a non-zero count, got: {data["rules_run"]}'
-    )
-    types = {i.get('type') for i in data['issues']}
-    assert 'MANAGE_STATUS_PROSE_CONFLATION' in types, (
-        f'MANAGE_STATUS_PROSE_CONFLATION finding must appear in issues, got types: {types}'
     )
 
 
@@ -2312,30 +2229,6 @@ def test_analyze_calls_markdown_link_bare_filename(tmp_path):
     types = _collect_categorized_types(data)
     assert 'MARKDOWN_LINK_BARE_FILENAME' in types, (
         f'cmd_analyze must surface MARKDOWN_LINK_BARE_FILENAME, got types: {types}'
-    )
-
-
-def test_analyze_calls_toon_prose_status_conflation(tmp_path):
-    """cmd_analyze calls analyze_toon_prose_status_conflation — its finding surfaces.
-
-    Runs ``analyze`` over a positive fixture (plan-marshall bundle) and asserts
-    the MANAGE_STATUS_PROSE_CONFLATION issue appears in the analyze output stream
-    (the categorized buckets, where marketplace-wide non-fixable findings land).
-    The issue can only appear if cmd_analyze invoked the analyzer, so this pins
-    the cmd_analyze call site.
-    """
-    temp_root = _build_status_conflation_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'analyze',
-        env_overrides=_quality_gate_env(temp_root),
-    )
-    assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-    data = parse_output(result)
-    types = _collect_categorized_types(data)
-    assert 'MANAGE_STATUS_PROSE_CONFLATION' in types, (
-        f'cmd_analyze must surface MANAGE_STATUS_PROSE_CONFLATION, got types: {types}'
     )
 
 

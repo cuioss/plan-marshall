@@ -16,7 +16,7 @@ The documentation standards are organized into focused documents covering specif
 
 **When to Use Which Document:**
 
-* **Creating/editing any documentation** → Start with this document (documentation-core.md)
+* **Creating/editing any documentation** → Start with this document ([documentation-core.md](documentation-core.md))
 * **Reviewing tone and language** → Use [tone-and-style.md](tone-and-style.md)
 * **Organizing/restructuring documents** → Use [organization-standards.md](organization-standards.md)
 * **Formatting AsciiDoc files** → Use [asciidoc-formatting.md](asciidoc-formatting.md)

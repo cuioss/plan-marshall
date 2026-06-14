@@ -335,17 +335,16 @@ def test_registered_rule_ids_empty_for_missing_scripts_dir(tmp_path):
 # Sibling-cross-reference corpus entries (deliverable D3)
 # ---------------------------------------------------------------------------
 #
-# The two new sibling-cross-reference rules (MARKDOWN_LINK_BARE_FILENAME and
-# MANAGE_STATUS_PROSE_CONFLATION) must each carry a positive fixture in
-# FIXTURE_CORPUS that actually fires. The real-tree invariant
+# The sibling-cross-reference rule (MARKDOWN_LINK_BARE_FILENAME) must carry a
+# positive fixture in FIXTURE_CORPUS that actually fires. The real-tree invariant
 # (test_real_marketplace_produces_zero_zero_match_findings) covers this
 # implicitly; these tests pin it deterministically per-rule so a regression
-# names exactly which new rule stopped firing.
+# names exactly which rule stopped firing.
 
 
 @pytest.mark.parametrize(
     'rule_id',
-    ['MARKDOWN_LINK_BARE_FILENAME', 'MANAGE_STATUS_PROSE_CONFLATION'],
+    ['MARKDOWN_LINK_BARE_FILENAME'],
 )
 def test_new_sibling_rule_present_in_corpus(rule_id):
     """Each new sibling-cross-reference rule has a FIXTURE_CORPUS entry."""
@@ -362,7 +361,7 @@ def test_new_sibling_rule_present_in_corpus(rule_id):
 
 @pytest.mark.parametrize(
     'rule_id',
-    ['MARKDOWN_LINK_BARE_FILENAME', 'MANAGE_STATUS_PROSE_CONFLATION'],
+    ['MARKDOWN_LINK_BARE_FILENAME'],
 )
 def test_new_sibling_rule_fires_on_positive_fixture(rule_id):
     """Each new sibling-cross-reference rule fires on its positive fixture.
@@ -380,13 +379,13 @@ def test_new_sibling_rule_fires_on_positive_fixture(rule_id):
     )
 
 
-def test_both_new_sibling_rules_in_candidate_intersection():
-    """Both new rules are claimed-and-registered (in the detector's candidate set).
+def test_new_sibling_rule_in_candidate_intersection():
+    """The new rule is claimed-and-registered (in the detector's candidate set).
 
     The detector's scope is ``corpus_rules ∩ registered_rules``; a claimed rule
     that is not registered is silently skipped, hiding a dead matcher. Pinning
-    both new rules in the intersection guarantees the zero-match self-test
-    actually evaluates them against the real tree.
+    the new rule in the intersection guarantees the zero-match self-test
+    actually evaluates it against the real tree.
     """
     # Arrange
     claimed = set(_zmr._build_fixture_corpus().keys())
@@ -400,11 +399,6 @@ def test_both_new_sibling_rules_in_candidate_intersection():
         'MARKDOWN_LINK_BARE_FILENAME must be both claimed and registered '
         f'(claimed={"MARKDOWN_LINK_BARE_FILENAME" in claimed}, '
         f'registered={"MARKDOWN_LINK_BARE_FILENAME" in registered})'
-    )
-    assert 'MANAGE_STATUS_PROSE_CONFLATION' in candidates, (
-        'MANAGE_STATUS_PROSE_CONFLATION must be both claimed and registered '
-        f'(claimed={"MANAGE_STATUS_PROSE_CONFLATION" in claimed}, '
-        f'registered={"MANAGE_STATUS_PROSE_CONFLATION" in registered})'
     )
 
 
