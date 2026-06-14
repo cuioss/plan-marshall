@@ -1032,16 +1032,13 @@ def _run_spec(spec: FixtureSpec) -> set[str]:
     with tempfile.TemporaryDirectory(prefix='zm_fixture_') as tmp:
         scratch_root = Path(tmp)
         _materialize(scratch_root, spec.files)
-        try:
-            if spec.analyzer is not None:
-                findings = spec.analyzer(scratch_root)
-            elif spec.component is not None:
-                component = spec.component(scratch_root)
-                result = analyze_component(component)
-                findings = result.get('issues', [])
-            else:  # pragma: no cover — defensive
-                findings = []
-        except Exception:  # noqa: BLE001 — a crashing analyzer counts as not-fired
+        if spec.analyzer is not None:
+            findings = spec.analyzer(scratch_root)
+        elif spec.component is not None:
+            component = spec.component(scratch_root)
+            result = analyze_component(component)
+            findings = result.get('issues', [])
+        else:  # pragma: no cover — defensive
             findings = []
     return _finding_rule_ids(findings)
 
