@@ -97,12 +97,18 @@ assert _spec.loader is not None
 _spec.loader.exec_module(gate)
 
 # Bug 2 surface: the manifest composer carrying the trigger-glob constant.
+# Also the Bug-1 ordering surface (cmd_compose / read_manifest) used by
+# TestSimplifyComposesAfterCommitPush below.
 _manifest = load_script_module(
     'plan-marshall',
     'manage-execution-manifest',
     'manage-execution-manifest.py',
     '_regr_manifest_compose',
 )
+
+# Quiet the best-effort decision-log subprocess so the compose-driven ordering
+# tests don't depend on a running executor (handler is already try/except wrapped).
+_manifest._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +227,87 @@ class TestSimplifyConvergesWithoutLoopBack:
         # Persistence unchanged — the refused outcome was never written.
         persisted = read_status(plan_id)
         assert 'phase_steps' not in persisted.get('metadata', {})
+
+
+# ===========================================================================
+# Bug 1 (ordering) — finalize-step-simplify composes AFTER commit-push
+# ===========================================================================
+
+
+class TestSimplifyComposesAfterCommitPush:
+    """The composed manifest orders ``finalize-step-simplify`` after ``commit-push``.
+
+    The convergence fix has two co-operating halves: the per-step commit
+    (covered by ``TestSimplifyConvergesWithoutLoopBack`` above) AND the
+    manifest-ordering reorder that places the may-mutate ``finalize-step-simplify``
+    step *after* ``commit-push`` so its edits run against a tree the commit
+    already flushed clean. This class locks the ordering half from the
+    regression angle: reverting the reorder (simplify back ahead of
+    commit-push) re-introduces the dirty-worktree loop-back thrash and fails the
+    assertion here.
+    """
+
+    @staticmethod
+    def _compose_default_feature(plan_id: str) -> dict:
+        # A default code-shaped feature compose: change_type=feature with files
+        # present keeps both ``commit-push`` and ``finalize-step-simplify`` (the
+        # simplify_inactive gate passes), so the composed ordering is exercised.
+        return _manifest.cmd_compose(
+            Namespace(
+                plan_id=plan_id,
+                change_type='feature',
+                track='complex',
+                scope_estimate='multi_module',
+                recipe_key=None,
+                affected_files_count=5,
+                phase_5_steps='quality-gate,module-tests',
+                phase_6_steps=','.join(_manifest.DEFAULT_PHASE_6_STEPS),
+                commit_and_push=None,
+            )
+        )
+
+    def test_composed_manifest_orders_simplify_after_commit_push(self, plan_context):
+        plan_id = 'regr-simplify-order-after-commit'
+        result = self._compose_default_feature(plan_id)
+
+        assert result['status'] == 'success', f'compose failed: {result!r}'
+        manifest = _manifest.read_manifest(plan_id)
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+
+        # Both steps survive the default feature compose.
+        assert 'commit-push' in steps
+        assert 'finalize-step-simplify' in steps
+        # The reorder invariant — fails if Deliverable 1 is reverted.
+        assert steps.index('finalize-step-simplify') > steps.index('commit-push')
+
+    def test_compose_rejects_simplify_ahead_of_commit_push(self, plan_context):
+        # Defense-in-depth: even if a candidate set re-orders simplify ahead of
+        # commit-push (the reverted-reorder shape), the compose-time
+        # may-mutate placement validator rejects the manifest rather than
+        # emitting an order that would loop-back at finalize.
+        plan_id = 'regr-simplify-ahead-rejected'
+        result = _manifest.cmd_compose(
+            Namespace(
+                plan_id=plan_id,
+                change_type='feature',
+                track='complex',
+                scope_estimate='multi_module',
+                recipe_key=None,
+                affected_files_count=5,
+                phase_5_steps='quality-gate,module-tests',
+                phase_6_steps=','.join(
+                    ['finalize-step-simplify', 'commit-push', 'create-pr', 'lessons-capture']
+                ),
+                commit_and_push=None,
+            )
+        )
+
+        assert result['status'] == 'error', f'expected rejection, got {result!r}'
+        assert result['error'] == 'may_mutate_placement_violation'
+        assert 'finalize-step-simplify' in result['message']
+        assert 'commit-push' in result['message']
+        assert _manifest.read_manifest(plan_id) is None
 
 
 # ===========================================================================

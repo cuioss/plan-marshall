@@ -414,6 +414,10 @@ After the seven-row matrix produces the final `phase_6.steps` (and after `execut
 
 The composer emits one `decision.log` line per forced change (canonical prefix `(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection`) and surfaces `ceremony_finalize_gates`, `ceremony_finalize_forced_in`, and `ceremony_finalize_forced_out` in the `compose` result for observability. The full rule (gate→step map, `automated-review` carve-out, post-matrix-transform rationale) is documented in [standards/decision-rules.md](standards/decision-rules.md) § "plan.phase-6-finalize Selection". The gate schema itself (run-at-all enum, defaults) is owned by [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) § phase-6-finalize.
 
+### MAY_MUTATE-after-commit-push placement invariant
+
+After the seven-row matrix, the `ceremony_finalize_selection` and `execution_tier` transforms, and the bot-enforcement guards have produced the final `phase_6.steps` ordering, the composer runs a defense-in-depth placement validator that rejects the manifest when any `MAY_MUTATE_WORKTREE_STEPS` member (`automated-review`, `sonar-roundtrip`, `finalize-step-simplify`) sits at an index earlier than `commit-push`. On violation it emits a `may_mutate_placement violation` decision-log line and returns a `may_mutate_placement_violation` error TOON instead of writing the manifest. The set is imported from its single owner (`manage-status/scripts/_cmd_mark_step.py`) so the compose-time check can never drift from the script-layer dirty-worktree refusal. The ordering rule, its rationale, the carve-outs, and the decision-log shape are documented in [standards/decision-rules.md](standards/decision-rules.md) § "MAY_MUTATE-after-commit-push Placement Invariant" — see that section; the rule body is not restated here.
+
 ---
 
 ## Integration
