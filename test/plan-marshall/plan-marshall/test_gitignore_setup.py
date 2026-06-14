@@ -23,7 +23,16 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward'
 from gitignore_setup import (  # type: ignore[import-not-found]  # noqa: E402, I001
     GITIGNORE_PLAN_LOCAL_WORKTREES,
     check_gitignore_status,
+    consolidate_managed_blocks,
     setup_gitignore,
+)
+
+# Managed-block header comments — pinned here so the consolidation tests assert
+# against the exact strings the script emits.
+_MANAGED_COMMENT = '# Planning system (managed by /marshall-steward)'
+_LOCAL_COMMENT = (
+    '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+    '— managed by plan-marshall)'
 )
 
 
@@ -271,6 +280,131 @@ class TestGitignoreSetupEdgeCases:
         assert status['has_marshal_exception']
         assert not status['has_architecture_exception']
         assert not status['has_plan_local_worktrees']
+
+
+class TestGitignoreConsolidation:
+    """Test consolidation of duplicate managed blocks into a single block.
+
+    Pre-PR#666 projects accumulated several ``# Planning system`` managed-block
+    headers (one per re-run). ``consolidate_managed_blocks`` merges every
+    managed block into one, preserving the union of managed rules
+    (de-duplicated, order-stable), and ``setup_gitignore`` runs the pass
+    unconditionally on every invocation.
+    """
+
+    def _two_block_content(self) -> str:
+        """A .gitignore with two duplicate managed blocks, split across rules."""
+        return (
+            'node_modules/\n'
+            f'{_MANAGED_COMMENT}\n'
+            f'{_LOCAL_COMMENT}\n'
+            '.plan/*\n'
+            '!.plan/marshal.json\n'
+            '*.log\n'
+            f'{_MANAGED_COMMENT}\n'
+            f'{_LOCAL_COMMENT}\n'
+            '!.plan/project-architecture/\n'
+            '.plan/local/worktrees/\n'
+        )
+
+    def test_two_duplicate_blocks_consolidated_to_one(self, tmp_path):
+        """Two managed blocks merge into one; the union of rules is preserved."""
+        # Arrange — file with two managed-block headers.
+        gitignore_path = tmp_path / '.gitignore'
+        gitignore_path.write_text(self._two_block_content())
+
+        # Act — consolidation runs unconditionally inside setup_gitignore.
+        result = setup_gitignore(tmp_path)
+
+        # Assert — exactly one managed-block header survives, no rule lost.
+        content = gitignore_path.read_text()
+        assert result['status'] == 'updated'
+        assert content.count(_MANAGED_COMMENT) == 1
+        assert content.count(_LOCAL_COMMENT) == 1
+        assert '.plan/*' in content
+        assert '!.plan/marshal.json' in content
+        assert '!.plan/project-architecture/' in content
+        assert '.plan/local/worktrees/' in content
+
+    def test_single_block_file_is_unchanged(self, tmp_path):
+        """A file that is already a single managed block is left byte-stable."""
+        # Arrange — canonical single-block file.
+        gitignore_path = tmp_path / '.gitignore'
+        original = (
+            f'{_MANAGED_COMMENT}\n'
+            f'{_LOCAL_COMMENT}\n'
+            '.plan/*\n'
+            '!.plan/marshal.json\n'
+            '!.plan/project-architecture/\n'
+            '.plan/local/worktrees/\n'
+        )
+        gitignore_path.write_text(original)
+
+        # Act
+        result = setup_gitignore(tmp_path)
+
+        # Assert — unchanged status and byte-identical content.
+        assert result['status'] == 'unchanged'
+        assert result['entries_added'] == 0
+        assert gitignore_path.read_text() == original
+
+    def test_consolidation_is_idempotent(self, tmp_path):
+        """A second run over a consolidated file is unchanged and byte-stable."""
+        # Arrange — consolidate the two-block file once.
+        gitignore_path = tmp_path / '.gitignore'
+        gitignore_path.write_text(self._two_block_content())
+        setup_gitignore(tmp_path)
+        after_first = gitignore_path.read_text()
+
+        # Act — run again.
+        second = setup_gitignore(tmp_path)
+
+        # Assert — second run is a no-op; content unchanged.
+        assert second['status'] == 'unchanged'
+        assert second['entries_added'] == 0
+        assert gitignore_path.read_text() == after_first
+        assert after_first.count(_MANAGED_COMMENT) == 1
+
+    def test_user_content_above_and_below_preserved(self, tmp_path):
+        """Non-managed user content above/below the managed block is preserved."""
+        # Arrange — user lines bracket a duplicated managed block.
+        gitignore_path = tmp_path / '.gitignore'
+        gitignore_path.write_text(
+            '# user header\n'
+            'build/\n'
+            f'{_MANAGED_COMMENT}\n'
+            f'{_LOCAL_COMMENT}\n'
+            '.plan/*\n'
+            '!.plan/marshal.json\n'
+            f'{_MANAGED_COMMENT}\n'
+            '!.plan/project-architecture/\n'
+            '.plan/local/worktrees/\n'
+            '# user footer\n'
+            'dist/\n'
+        )
+
+        # Act
+        setup_gitignore(tmp_path)
+
+        # Assert — user content verbatim, single managed block.
+        content = gitignore_path.read_text()
+        assert '# user header' in content
+        assert 'build/' in content
+        assert '# user footer' in content
+        assert 'dist/' in content
+        assert content.count(_MANAGED_COMMENT) == 1
+        # User content order preserved: header before managed block, footer after.
+        assert content.index('build/') < content.index(_MANAGED_COMMENT)
+        assert content.index('dist/') > content.index('.plan/local/worktrees/')
+
+    def test_helper_no_managed_lines_is_noop(self):
+        """consolidate_managed_blocks leaves a file with no managed lines as-is."""
+        content = '# just user content\nnode_modules/\n*.log\n'
+        assert consolidate_managed_blocks(content) == content
+
+    def test_helper_empty_content_is_noop(self):
+        """consolidate_managed_blocks returns empty input unchanged."""
+        assert consolidate_managed_blocks('') == ''
 
 
 # =============================================================================

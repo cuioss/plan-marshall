@@ -302,6 +302,8 @@ The `build.map` block in `marshal.json` is the file-to-build contract: a domain-
 
 **Seed point.** The build map is **not** populated at `init` or by `sync-defaults` — `get_default_config()` does not include a `build_map` block, so neither the `init` write nor the `sync-defaults` deep-merge seeds it. The wizard's Step 8b (`build-map seed`, run after architecture discovery) is the **sole authoritative seed point**; the write-once guard makes that first explicit seed authoritative. Re-run `build-map seed` whenever a domain extension is added or updated.
 
+**Drift detection.** Because the seed is write-once, a persisted `build.map` can grow stale relative to the live-tree derivation as extensions add or change `classify_globs()` routes. The read-only `build-map drift` verb surfaces that staleness: it diffs the persisted block against the current derivation and returns `in_sync` plus per-domain `added_globs` / `removed_globs`, never mutating `marshal.json`. The steward consumes this verb at menu-mode entry to gate an interactive re-seed (Y/N → `build-map seed --force` on yes / leave untouched on no), so the `--force` path is no longer the only way a stale map gets surfaced — see [`marshall-steward/SKILL.md`](../marshall-steward/SKILL.md) § "Re-Run Remediation Pass".
+
 ### Seed the Build Map
 
 Re-seeds `build.map` from every *applicable* registered extension's `classify_globs()` + `classify_build_class()` predicates. The aggregator collects each applicable extension's explicit `(pattern, role)` routes verbatim; `classify_build_class()` then stamps each route with its canonical-named `build_class` (the `build_class` value IS the canonical command — there is no indirection map). Write-once: an existing `build_map` block is never clobbered — only a missing block is populated. Run `build-map seed` at wizard Step 8b (after architecture discovery) and again whenever a domain extension is added or updated.
@@ -331,6 +333,27 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-
 ```
 
 When `--force` clears and rewrites an existing block, `action` is `re-derived` (versus `seeded` for a first-time write into a missing block).
+
+#### Detect drift against the live derivation
+
+`build-map drift` is a **read-only** diff: it derives the current map from the applicable extensions (the same derivation `seed` uses) and compares it against the persisted `build.map`, returning `in_sync` plus the per-domain added/removed-glob diff. It never mutates `marshal.json`. The steward's menu-mode entry consumes this verb to gate an interactive re-seed without clobbering deliberate hand-edits.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map drift
+```
+
+**Output** (TOON):
+
+```toon
+status: success
+in_sync: false
+drift:
+  python:
+    added_globs: [...]
+    removed_globs: [...]
+```
+
+`in_sync` is `true` when the persisted map matches the derivation (the `drift` block is empty); `false` when any domain has `added_globs` (present in the derivation, absent from the persisted block) or `removed_globs` (the reverse).
 
 ### Read the Effective Build Map
 
@@ -428,9 +451,10 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `plan` | `{phase} get/set` (incl. run-at-all gates + finalize automation knobs), set-steps, add-step, remove-step, set-max-iterations |
 | `effort` | `read` (role/phase/`--default` resolver), `resolve-target` (`execution-context-{level}` variant name), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan --level` (surgical per-scope writer) |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
-| `build-map` | `seed` (re-seed `build.map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `build.map`, fail-closed when absent) |
+| `build-map` | `seed` (re-seed `build.map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `build.map`, fail-closed when absent), `drift` (read-only diff of persisted vs derived map: `in_sync` + per-domain added/removed globs) |
 | `build-decision` | `--command --plan-id` (centralized build-necessity verdict: `build` / `not_necessary`; `not_necessary` carries a log-friendly `reason`) |
 | `init` | Initialize marshal.json (with optional `--force`) |
+| `normalize-keys` | Re-write `marshal.json` with the canonical top-level key order (silent, idempotent; reuses the `save_config` key-order writer) |
 | `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
 
 ---
@@ -1012,6 +1036,22 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map read
 ```
+
+### build-map drift
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map drift
+```
+
+Read-only diff of the persisted `build.map` against the live derivation. Returns `in_sync` plus per-domain `added_globs` / `removed_globs`; never mutates `marshal.json`.
+
+### normalize-keys
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config normalize-keys
+```
+
+Re-writes `marshal.json` with the canonical top-level key order (reuses the `save_config` writer). Silent and idempotent — an already-canonical file is left byte-stable.
 
 ### build-decision
 
