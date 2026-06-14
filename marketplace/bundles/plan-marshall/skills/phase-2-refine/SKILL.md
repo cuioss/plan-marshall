@@ -224,7 +224,7 @@ Formulate clarification questions from issues found in Steps 8-9. Use AskUserQue
 
 ### Step 12: Update Request
 
-Record clarifications via the three-step path-allocate flow: (1) call `manage-plan-documents request path` to get the canonical artifact path, (2) use Edit/Write to update the `## Clarifications` and `## Clarified Request` sections directly in that file, (3) call `manage-plan-documents request mark-clarified` to record the transition. Synthesize an updated request if significant clarifications were made. Loop back to Step 8. See `standards/refine-workflow-detail.md` Step 12 for the full procedure.
+Record clarifications via the three-step path-allocate flow — **mandatory after every AskUserQuestion round** (Step 11), never optional and never deferred: (1) call `manage-plan-documents request path` to get the canonical artifact path, (2) use Edit/Write to update the `## Clarifications` and `## Clarified Request` sections directly in that file, (3) call `manage-plan-documents request mark-clarified` to record the transition. A `not_clarified` return is a hard error that blocks loop continuation — re-run sub-steps (2) and (3) until `mark-clarified` succeeds. When confidence reaches threshold on the first pass with no clarification round, Step 13 still writes a `## Clarified Request` section so `request.md` always carries a clarified narrative. Loop back to Step 8. See `standards/refine-workflow-detail.md` Step 12 for the full procedure.
 
 ### Step 13: Persist and Return Results
 

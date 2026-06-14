@@ -1052,3 +1052,132 @@ def test_cmd_ci_logs_returns_error_context_window_not_head(monkeypatch):
     assert 'IndexError: list index out of range' in content
     # Pure runner-setup noise that is far from any error marker is dropped.
     assert 'runner setup line 10' not in content
+
+
+# =============================================================================
+# issue comment
+# =============================================================================
+
+
+def _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Milestone reached', plan_id='p'):
+    """Seed PLAN_BASE_DIR with a prepared issue-comment body scratch file."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+
+    path = get_body_path(plan_id, BODY_KIND_ISSUE_COMMENT)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body_text, encoding='utf-8')
+    return plan_id
+
+
+def test_cmd_issue_comment_posts_prepared_body(monkeypatch, tmp_path):
+    """cmd_issue_comment posts the prepared body via `gh issue comment {n} --body`."""
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    plan_id = _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Outline ready')
+    ns = argparse.Namespace(issue='42', plan_id=plan_id, slot=None)
+    result = github_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'success', result
+    assert result['operation'] == 'issue_comment'
+    assert result['issue_number'] == '42'
+    assert captured[-1] == ['issue', 'comment', '42', '--body', 'Outline ready']
+
+
+def test_cmd_issue_comment_deletes_body_on_success(monkeypatch, tmp_path):
+    """The prepared scratch body is removed only after a successful post."""
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+
+    run_gh_stub, _ = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    plan_id = _prepare_issue_comment_body(tmp_path, monkeypatch)
+    body_path = get_body_path(plan_id, BODY_KIND_ISSUE_COMMENT)
+    assert body_path.exists()
+
+    ns = argparse.Namespace(issue='42', plan_id=plan_id, slot=None)
+    result = github_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'success', result
+    assert not body_path.exists()
+
+
+def test_cmd_issue_comment_body_not_prepared(monkeypatch, tmp_path):
+    """A missing prepared body yields a body_not_prepared error, no gh call."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(issue='42', plan_id='p', slot=None)
+    result = github_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'issue_comment'
+    assert captured == []
+
+
+def test_cmd_issue_comment_api_failure_keeps_body(monkeypatch, tmp_path):
+    """A non-zero gh exit returns an error and leaves the scratch body in place."""
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+
+    def failing_run_gh(args, capture_json=False, timeout=60):
+        return 1, '', 'gh: not found'
+
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', failing_run_gh)
+
+    plan_id = _prepare_issue_comment_body(tmp_path, monkeypatch)
+    body_path = get_body_path(plan_id, BODY_KIND_ISSUE_COMMENT)
+
+    ns = argparse.Namespace(issue='42', plan_id=plan_id, slot=None)
+    result = github_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'error', result
+    assert body_path.exists()
+
+
+def test_cmd_issue_comment_auth_failure(monkeypatch, tmp_path):
+    """An auth failure short-circuits before any gh call."""
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (False, 'not logged in'))
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(issue='42', plan_id='p', slot=None)
+    result = github_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'error', result
+    assert captured == []
+
+
+def test_cmd_issue_prepare_comment_allocates_path(monkeypatch, tmp_path):
+    """_cmd_issue_prepare_comment allocates an issue-comment scratch path."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = tmp_path / 'plans' / 'p'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+
+    ns = argparse.Namespace(plan_id='p', slot=None)
+    result = github_ops._cmd_issue_prepare_comment(ns)
+
+    assert result['status'] == 'success', result
+    assert result['kind'] == 'issue-comment'
+    assert result['path'].endswith('issue-comment-default.md')
+
+
+def test_cmd_issue_comment_normalizes_full_url(monkeypatch, tmp_path):
+    """A full issue URL in --issue is normalized to the bare number for gh and the return."""
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    plan_id = _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Outline ready')
+    ns = argparse.Namespace(issue='https://github.com/o/r/issues/42', plan_id=plan_id, slot=None)
+    result = github_ops.cmd_issue_comment(ns)
+
+    assert result['status'] == 'success', result
+    assert result['issue_number'] == '42'
+    assert captured[-1] == ['issue', 'comment', '42', '--body', 'Outline ready']

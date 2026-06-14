@@ -80,6 +80,7 @@ BODY_KIND_PR_EDIT = 'pr-edit'
 BODY_KIND_PR_REPLY = 'pr-reply'
 BODY_KIND_PR_THREAD_REPLY = 'pr-thread-reply'
 BODY_KIND_ISSUE_CREATE = 'issue-create'
+BODY_KIND_ISSUE_COMMENT = 'issue-comment'
 
 VALID_BODY_KINDS = frozenset(
     {
@@ -88,6 +89,7 @@ VALID_BODY_KINDS = frozenset(
         BODY_KIND_PR_REPLY,
         BODY_KIND_PR_THREAD_REPLY,
         BODY_KIND_ISSUE_CREATE,
+        BODY_KIND_ISSUE_COMMENT,
     }
 )
 
@@ -101,6 +103,28 @@ def _resolve_body_slot(slot: str | None) -> str:
     if not _BODY_SLOT_RE.match(slot):
         raise ValueError(f"Invalid slot '{slot}': must match [a-z0-9][a-z0-9-]{{0,63}}")
     return slot
+
+
+def normalize_issue_ref(issue: str) -> str:
+    """Normalize a GitHub/GitLab issue reference to its bare number/IID.
+
+    Accepts either a bare number (returned unchanged) or a full issue URL
+    (e.g. ``https://github.com/o/r/issues/42`` or
+    ``https://gitlab.com/o/r/-/issues/42``) and extracts the trailing
+    identifier. The ``--issue`` argument advertises "Issue number or URL", but
+    ``glab issue note`` does not accept a full URL and the return-dict
+    ``issue_number`` field must carry a normalized number per the
+    ``issue-operations.md`` contract; normalizing here honors both. Preserves a
+    silent-fail contract: an unparseable value is returned unchanged rather than
+    raising.
+    """
+    ref = str(issue)
+    if '/issues/' in ref:
+        try:
+            ref = ref.split('/issues/')[1].split('/')[0].split('?')[0].split('#')[0]
+        except (IndexError, ValueError):
+            return str(issue)
+    return ref
 
 
 def get_body_path(plan_id: str, kind: str, slot: str | None = None) -> Path:
@@ -232,7 +256,7 @@ def add_body_consumer_args(subparser: argparse.ArgumentParser) -> None:
 
     Used on subcommands that now consume a prepared scratch body instead of a
     raw CLI argument (`pr create`, `pr edit`, `pr reply`, `pr thread-reply`,
-    `issue create`).
+    `issue create`, `issue comment`).
     """
     subparser.add_argument(
         '--plan-id',
@@ -856,6 +880,26 @@ def build_parser(
     )
     add_plan_id_arg(issue_prepare)
     issue_prepare.add_argument('--slot', default=None, help='Optional slot identifier (default: "default")')
+
+    # issue comment — body supplied via prepare-comment path-allocate pattern
+    issue_comment = issue_sub.add_parser(
+        'comment',
+        help='Post a comment on an existing issue',
+        allow_abbrev=False,
+    )
+    issue_comment.add_argument('--issue', required=True, help='Issue number or URL')
+    add_body_consumer_args(issue_comment)
+
+    # issue prepare-comment — allocate scratch path for the comment body
+    issue_prepare_comment = issue_sub.add_parser(
+        'prepare-comment',
+        help='Allocate a scratch path for an issue comment (path-allocate pattern)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(issue_prepare_comment)
+    issue_prepare_comment.add_argument(
+        '--slot', default=None, help='Optional slot identifier (default: "default")'
+    )
 
     # pr prepare-body — allocate scratch path for PR create description
     pr_prepare_body = pr_sub.add_parser(

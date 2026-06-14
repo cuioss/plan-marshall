@@ -22,6 +22,7 @@ Subcommands:
     ci rerun        Rerun a workflow run
     ci logs         Get failed run logs
     issue create    Create an issue
+    issue comment   Post a comment on an existing issue
     issue view      View issue details
     issue close     Close an issue
 
@@ -29,6 +30,7 @@ Usage (bodies supplied via path-allocate pattern: prepare-body â†’ write file â†
     python3 github.py pr prepare-body --plan-id EXAMPLE-PLAN [--for create|edit] [--slot name]
     python3 github.py pr prepare-comment --plan-id EXAMPLE-PLAN [--for reply|thread-reply] [--slot name]
     python3 github.py issue prepare-body --plan-id EXAMPLE-PLAN [--slot name]
+    python3 github.py issue prepare-comment --plan-id EXAMPLE-PLAN [--slot name]
     python3 github.py pr create --title "Title" --plan-id EXAMPLE-PLAN [--base main] [--draft]
     python3 github.py pr view
     python3 github.py pr list [--head feature/branch] [--state open|closed|all]
@@ -49,6 +51,7 @@ Usage (bodies supplied via path-allocate pattern: prepare-body â†’ write file â†
     python3 github.py ci rerun --run-id 12345
     python3 github.py ci logs --run-id 12345
     python3 github.py issue create --title "Title" --plan-id EXAMPLE-PLAN [--labels "bug,priority:high"]
+    python3 github.py issue comment --issue 123 --plan-id EXAMPLE-PLAN [--slot name]
     python3 github.py issue view --issue 123
     python3 github.py issue close --issue 123
 
@@ -63,6 +66,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ci_base import (  # type: ignore[import-not-found]
+    BODY_KIND_ISSUE_COMMENT,
     BODY_KIND_ISSUE_CREATE,
     BODY_KIND_PR_CREATE,
     BODY_KIND_PR_EDIT,
@@ -81,6 +85,7 @@ from ci_base import (  # type: ignore[import-not-found]
     make_error,
     make_pr_number_handler,
     make_simple_handler,
+    normalize_issue_ref,
     parse_args_with_toon_errors,
     poll_until,
     prepare_body,
@@ -1707,6 +1712,31 @@ def cmd_issue_create(args: argparse.Namespace) -> dict:
     }
 
 
+def cmd_issue_comment(args: argparse.Namespace) -> dict:
+    """Handle 'issue comment' subcommand - post a comment on an existing issue."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('issue_comment', err)
+
+    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_ISSUE_COMMENT, getattr(args, 'slot', None))
+    if err_dict or body is None:
+        return make_error('issue_comment', (err_dict or {}).get('message', 'body not prepared'))
+
+    issue_id = normalize_issue_ref(args.issue)
+    gh_args = ['issue', 'comment', issue_id, '--body', body]
+    returncode, stdout, stderr = run_gh(gh_args)
+    if returncode != 0:
+        return make_error('issue_comment', f'Failed to comment on issue {issue_id}', stderr.strip())
+
+    delete_consumed_body(args.plan_id, BODY_KIND_ISSUE_COMMENT, getattr(args, 'slot', None))
+    return {
+        'status': 'success',
+        'operation': 'issue_comment',
+        'issue_number': issue_id,
+        'output': stdout.strip(),
+    }
+
+
 def cmd_issue_view(args: argparse.Namespace) -> dict:
     """Handle 'issue view' subcommand."""
     # Check auth
@@ -1715,17 +1745,18 @@ def cmd_issue_view(args: argparse.Namespace) -> dict:
         return make_error('issue_view', err)
 
     # Get issue details - request all relevant fields
+    issue_id = normalize_issue_ref(args.issue)
     gh_args = [
         'issue',
         'view',
-        str(args.issue),
+        issue_id,
         '--json',
         'number,url,title,body,author,state,createdAt,updatedAt,labels,assignees,milestone',
     ]
 
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
-        return make_error('issue_view', f'Failed to view issue {args.issue}', stderr.strip())
+        return make_error('issue_view', f'Failed to view issue {issue_id}', stderr.strip())
 
     # Parse JSON
     try:
@@ -1767,10 +1798,10 @@ def cmd_issue_view(args: argparse.Namespace) -> dict:
 
 cmd_issue_close = make_simple_handler(
     'issue_close',
-    lambda args: ['issue', 'close', str(args.issue)],
+    lambda args: ['issue', 'close', normalize_issue_ref(args.issue)],
     run_gh,
     check_auth,
-    result_extras=lambda args: {'issue_number': args.issue},
+    result_extras=lambda args: {'issue_number': normalize_issue_ref(args.issue)},
 )
 
 
@@ -1930,6 +1961,11 @@ def _cmd_issue_prepare_body(args: argparse.Namespace) -> dict:
     return prepare_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
 
 
+def _cmd_issue_prepare_comment(args: argparse.Namespace) -> dict:
+    """Allocate a scratch path for an issue comment."""
+    return prepare_body(args.plan_id, BODY_KIND_ISSUE_COMMENT, getattr(args, 'slot', None))
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1972,6 +2008,7 @@ def main() -> int:
         ('pr', 'prepare-body'): _cmd_pr_prepare_body,
         ('pr', 'prepare-comment'): _cmd_pr_prepare_comment,
         ('issue', 'prepare-body'): _cmd_issue_prepare_body,
+        ('issue', 'prepare-comment'): _cmd_issue_prepare_comment,
         ('pr', 'create'): cmd_pr_create,
         ('pr', 'view'): cmd_pr_view,
         ('pr', 'list'): cmd_pr_list,
@@ -1994,6 +2031,7 @@ def main() -> int:
         ('checks', 'rerun'): cmd_ci_rerun,
         ('checks', 'logs'): cmd_ci_logs,
         ('issue', 'create'): cmd_issue_create,
+        ('issue', 'comment'): cmd_issue_comment,
         ('issue', 'view'): cmd_issue_view,
         ('issue', 'close'): cmd_issue_close,
         ('issue', 'wait-for-close'): cmd_issue_wait_for_close,
