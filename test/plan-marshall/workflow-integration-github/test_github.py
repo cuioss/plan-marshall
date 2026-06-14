@@ -306,13 +306,13 @@ def test_pr_thread_reply_uses_thread_reply_mutation(monkeypatch, tmp_path):
     result = github_ops.cmd_pr_thread_reply(ns)
 
     assert result['status'] == 'success', f'Expected success, got: {result}'
-    # Assert mutation and variables
+    # mutation and variables
     reply_call = next((q, v) for q, v in graphql_calls if 'addPullRequestReviewThreadReply' in q)
     assert 'addPullRequestReviewThreadReply' in reply_call[0]
     assert set(reply_call[1].keys()) == {'threadId', 'body'}, f'Unexpected variables: {reply_call[1].keys()}'
     assert 'prId' not in reply_call[1]
     assert 'inReplyTo' not in reply_call[1]
-    # Assert NO gh pr view call
+    # NO gh pr view call
     assert not any(c[:2] == ['pr', 'view'] for c in gh_calls), f'Unexpected gh pr view call: {gh_calls}'
 
 

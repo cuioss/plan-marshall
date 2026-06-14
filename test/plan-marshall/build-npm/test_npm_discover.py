@@ -26,10 +26,6 @@ _npm_cmd_discover_mod = load_script_module('plan-marshall', 'build-npm', '_npm_c
 discover_npm_modules = _npm_cmd_discover_mod.discover_npm_modules
 discover_standalone_npm_module = _npm_cmd_discover_mod.discover_standalone_npm_module
 
-# =============================================================================
-# Test: Single Package Discovery
-# =============================================================================
-
 
 def test_discover_single_package():
     """Test discovery of a single npm package."""
@@ -62,11 +58,6 @@ def test_discover_single_package_default_name():
 
         assert len(modules) == 1
         assert modules[0]['name'] == 'default'
-
-
-# =============================================================================
-# Test: Workspace Discovery
-# =============================================================================
 
 
 def test_discover_workspaces_array():
@@ -116,11 +107,6 @@ def test_discover_workspaces_object_format():
         ws_module = next(m for m in modules if m['name'] == 'my-pkg')
         assert_valid_module(ws_module, build_system='npm', expected_name='my-pkg')
         assert_module_paths(ws_module, expected_module_path='packages/my-pkg')
-
-
-# =============================================================================
-# Test: Command Generation
-# =============================================================================
 
 
 def test_commands_from_scripts():
@@ -189,11 +175,6 @@ def test_commands_workspace_scoping():
         assert '--workspace=my-pkg' in ws_module['commands']['module-tests']
 
 
-# =============================================================================
-# Test: Dependencies
-# =============================================================================
-
-
 def test_dependencies_extraction():
     """Test dependency extraction from package.json."""
     with BuildContext() as ctx:
@@ -211,11 +192,6 @@ def test_dependencies_extraction():
         assert 'express:runtime' in deps
         assert 'lodash:runtime' in deps
         assert 'jest:dev' in deps
-
-
-# =============================================================================
-# Test: README Detection
-# =============================================================================
 
 
 def test_readme_detection():
@@ -237,11 +213,6 @@ def test_no_readme():
         modules = discover_npm_modules(str(ctx.temp_dir))
 
         assert modules[0]['paths']['readme'] is None
-
-
-# =============================================================================
-# Test: Standalone Module Discovery
-# =============================================================================
 
 
 def test_discover_standalone_npm_module():

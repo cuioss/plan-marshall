@@ -53,10 +53,7 @@ class TestNoOrphanGetPlanDir:
     """
 
     def test_get_plan_dir_is_not_a_module_attribute(self):
-        # Arrange / Act: introspect the imported shared module.
-        has_attr = hasattr(marketplace_paths, 'get_plan_dir')
-        # Assert: the orphan must not exist on marketplace_paths.
-        assert not has_attr
+        assert not hasattr(marketplace_paths, 'get_plan_dir')
 
 
 class TestFindPlanRootFromCwd:
@@ -75,8 +72,8 @@ class TestFindPlanRootFromCwd:
         assert _find_plan_root_from_cwd() == tmp_path.resolve()
 
     def test_cwd_pinned_in_worktree_resolves_worktree_resident(self, tmp_path, monkeypatch):
-        # A moved-in worktree has its own .plan/local; cwd pinned inside it
-        # resolves to the worktree, not the main checkout above it.
+        # A moved-in worktree has its own .plan/local; cwd pinned inside it must
+        # resolve to the worktree, not the main checkout above it.
         main = tmp_path / 'main'
         (main / '.plan' / 'local').mkdir(parents=True)
         worktree = main / '.plan' / 'local' / 'worktrees' / 'plan-x'
@@ -486,8 +483,8 @@ class TestResolveMainAnchoredPath:
     def test_resolve_main_anchored_path_honours_plan_base_dir_override(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: PLAN_BASE_DIR set to a main-checkout stand-in; cwd pinned into
-        # an unrelated worktree-like dir so we prove the override wins over cwd.
+        # PLAN_BASE_DIR is set to a main-checkout stand-in; cwd is pinned into an
+        # unrelated worktree-like dir so the override is proven to win over cwd.
         main_base = tmp_path / 'main' / '.plan' / 'local'
         main_base.mkdir(parents=True)
         monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
@@ -495,17 +492,15 @@ class TestResolveMainAnchoredPath:
         (worktree / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        # Act: resolve a subpath under the override.
         resolved = resolve_main_anchored_path('merge.lock')
 
-        # Assert: lands under the override base, NOT the worktree-relative path.
         assert resolved == main_base / 'merge.lock'
         assert resolved != worktree / '.plan' / 'local' / 'merge.lock'
 
     def test_resolve_main_anchored_path_resolves_build_queue_fourth_corpus(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: the build queue is the FOURTH ADR-002 bounded-exception corpus
+        # The build queue is the FOURTH ADR-002 bounded-exception corpus
         # (merge.lock, run-configuration.json, lessons-learned, build-queue.json).
         # It must resolve main-anchored through the single sanctioned utility,
         # regardless of caller cwd — same contract as merge.lock.
@@ -516,19 +511,17 @@ class TestResolveMainAnchoredPath:
         (worktree / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        # Act: resolve the build-queue corpus under the override.
         resolved = resolve_main_anchored_path('build-queue.json')
 
-        # Assert: lands under the override base, NOT the worktree-relative path.
         assert resolved == main_base / 'build-queue.json'
         assert resolved != worktree / '.plan' / 'local' / 'build-queue.json'
 
     def test_resolve_main_anchored_path_resolves_to_main_from_worktree_cwd(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: a REAL git repo with a REAL linked worktree; no override set,
-        # so the production git-common-dir branch is exercised. cwd is pinned
-        # into the worktree.
+        # A REAL git repo with a REAL linked worktree; no override set, so the
+        # production git-common-dir branch is exercised with cwd pinned into the
+        # worktree.
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
         import file_ops  # type: ignore[import-not-found]
 
@@ -543,10 +536,9 @@ class TestResolveMainAnchoredPath:
         )
         monkeypatch.chdir(worktree)
 
-        # Act: resolve from inside the worktree cwd.
         resolved = resolve_main_anchored_path('merge.lock')
 
-        # Assert: anchored under MAIN's .plan/local, NOT the worktree's.
+        # The path must anchor under MAIN's .plan/local, not the worktree's.
         expected = main_repo.resolve() / PLAN_DIR_NAME / 'local' / 'merge.lock'
         assert resolved.resolve() == expected
         assert resolved.resolve() != (worktree.resolve() / PLAN_DIR_NAME / 'local' / 'merge.lock')
@@ -554,9 +546,9 @@ class TestResolveMainAnchoredPath:
     def test_resolve_main_anchored_path_resolves_from_main_checkout_cwd(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: a REAL git repo, no override, cwd pinned at the main checkout
-        # itself (not a linked worktree) — the production branch must anchor at
-        # the same main root.
+        # A REAL git repo, no override, cwd pinned at the main checkout itself
+        # (not a linked worktree) — the production branch must anchor at the same
+        # main root.
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
         import file_ops  # type: ignore[import-not-found]
 
@@ -566,31 +558,27 @@ class TestResolveMainAnchoredPath:
         _init_repo(main_repo)
         monkeypatch.chdir(main_repo)
 
-        # Act: resolve from the main checkout cwd.
         resolved = resolve_main_anchored_path('run-configuration.json')
 
-        # Assert: anchored under the main checkout's .plan/local.
         expected = main_repo.resolve() / PLAN_DIR_NAME / 'local' / 'run-configuration.json'
         assert resolved.resolve() == expected
 
     def test_resolve_main_anchored_path_lazy_file_ops_import_no_cycle(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: force the override branch so the in-function ``import
-        # file_ops`` executes; a circular import would surface as an ImportError
-        # the moment resolve_main_anchored_path runs. The function returning a
-        # path proves the lazy import resolved cleanly.
+        # Force the override branch so the in-function ``import file_ops``
+        # executes; a circular import would surface as an ImportError the moment
+        # resolve_main_anchored_path runs. The function returning a path proves
+        # the lazy import resolved cleanly.
         main_base = tmp_path / 'main' / '.plan' / 'local'
         main_base.mkdir(parents=True)
         monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
 
-        # Act: invoke the override branch (exercises the deferred file_ops import).
         resolved = resolve_main_anchored_path('lessons-learned')
 
-        # Assert: no ImportError raised; the path resolved under the override.
         assert resolved == main_base / 'lessons-learned'
-        # Guard: marketplace_paths carries NO module-top file_ops import (the
-        # import must stay in-function to avoid the import cycle).
+        # marketplace_paths must carry NO module-top file_ops import — the import
+        # stays in-function to avoid the import cycle.
         import inspect
 
         src = inspect.getsource(marketplace_paths)
@@ -600,8 +588,8 @@ class TestResolveMainAnchoredPath:
     def test_resolve_main_anchored_path_raises_when_not_a_repo(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: outside any git repo, no override — the production branch must
-        # raise RuntimeError (identical contract to merge_lock).
+        # Outside any git repo, no override — the production branch must raise
+        # RuntimeError (identical contract to merge_lock).
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
         import file_ops  # type: ignore[import-not-found]
 
@@ -610,6 +598,5 @@ class TestResolveMainAnchoredPath:
         bare.mkdir()
         monkeypatch.chdir(bare)
 
-        # Act / Assert: not a repo → RuntimeError.
         with pytest.raises(RuntimeError):
             resolve_main_anchored_path('merge.lock')

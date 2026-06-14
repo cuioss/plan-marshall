@@ -6,6 +6,7 @@ Tier 2 (direct import) tests covering:
 * cmd_switch_and_pull  — remote branch not found, merge_conflict on checkout,
                          pull failure, success path with commits_pulled, and
                          success path with zero commits_pulled
+* _find_executor       — helper-based executor path resolution
 
 Tier 3 (subprocess CLI plumbing) tests:
 * Missing --base arg is rejected
@@ -16,11 +17,10 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
-import tempfile
-import unittest
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 from conftest import get_script_path, run_script
@@ -70,26 +70,21 @@ def _init_repo(path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-class TestVerifyGitRepo(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmpdir = tempfile.mkdtemp()
-        self.path = Path(self._tmpdir)
-
-    def tearDown(self) -> None:
-        import shutil
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
-
-    def test_returns_none_for_valid_git_repo(self) -> None:
+class TestVerifyGitRepo:
+    def test_returns_none_for_valid_git_repo(self, tmp_path: Path) -> None:
         """Returns None when path is a valid git working tree."""
-        _init_repo(self.path)
-        result = _verify_git_repo(self.path)
-        self.assertIsNone(result)
+        _init_repo(tmp_path)
 
-    def test_returns_error_string_for_non_git_path(self) -> None:
+        result = _verify_git_repo(tmp_path)
+
+        assert result is None
+
+    def test_returns_error_string_for_non_git_path(self, tmp_path: Path) -> None:
         """Returns an error string when path is not a git repo."""
-        result = _verify_git_repo(self.path)
-        self.assertIsNotNone(result)
-        self.assertIn('working tree', result or '')
+        result = _verify_git_repo(tmp_path)
+
+        assert result is not None
+        assert 'working tree' in result
 
 
 # ---------------------------------------------------------------------------
@@ -97,22 +92,25 @@ class TestVerifyGitRepo(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestResolveProjectDir(unittest.TestCase):
+class TestResolveProjectDir:
     def test_project_dir_returns_path(self) -> None:
         """--project-dir escape-hatch resolves to a Path object."""
         args = Namespace(plan_id=None, project_dir='/some/path')
+
         path, error = _resolve_project_dir(args)
-        self.assertIsNone(error)
-        self.assertEqual(path, Path('/some/path'))
+
+        assert error is None
+        assert path == Path('/some/path')
 
     def test_missing_both_args_returns_error(self) -> None:
         """Neither --plan-id nor --project-dir → missing_required_arg."""
         args = Namespace(plan_id=None, project_dir=None)
+
         path, error = _resolve_project_dir(args)
-        self.assertIsNone(path)
-        self.assertIsNotNone(error)
+
+        assert path is None
         assert error is not None
-        self.assertEqual(error['error_type'], 'missing_required_arg')
+        assert error['error_type'] == 'missing_required_arg'
 
 
 # ---------------------------------------------------------------------------
@@ -120,107 +118,106 @@ class TestResolveProjectDir(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestCmdSwitchAndPullEscapeHatch(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmpdir = tempfile.mkdtemp()
-        self.path = Path(self._tmpdir)
-        self._orig_run_git = _mod.run_git
-
-    def tearDown(self) -> None:
-        import shutil
-        _mod.run_git = self._orig_run_git
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
-
-    def test_non_git_project_dir_returns_error(self) -> None:
+class TestCmdSwitchAndPullEscapeHatch:
+    def test_non_git_project_dir_returns_error(self, tmp_path: Path) -> None:
         """--project-dir that is not a git repo → project_dir_not_a_git_repo."""
-        args = Namespace(plan_id=None, project_dir=str(self.path), base='main')
-        result = cmd_switch_and_pull(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'project_dir_not_a_git_repo')
-        self.assertEqual(result['operation'], 'switch-and-pull')
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), base='main')
 
-    def test_remote_branch_not_found_returns_error(self) -> None:
+        result = cmd_switch_and_pull(args)
+
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'project_dir_not_a_git_repo'
+        assert result['operation'] == 'switch-and-pull'
+
+    def test_remote_branch_not_found_returns_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When ls-remote returns empty output, error_type is branch_not_found."""
-        _init_repo(self.path)
+        _init_repo(tmp_path)
+        orig = _mod.run_git
 
         def fake_run_git(args, **kwargs):
             if 'ls-remote' in args:
                 return (0, '', '')  # empty: branch not found on remote
-            return self._orig_run_git(args, **kwargs)
+            return orig(args, **kwargs)
 
-        _mod.run_git = fake_run_git
-        args = Namespace(plan_id=None, project_dir=str(self.path), base='main')
+        monkeypatch.setattr(_mod, 'run_git', fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), base='main')
+
         result = cmd_switch_and_pull(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'branch_not_found')
-        self.assertIn('origin/main', result['message'])
 
-    def test_ls_remote_failure_returns_branch_not_found(self) -> None:
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'branch_not_found'
+        assert 'origin/main' in result['message']
+
+    def test_ls_remote_failure_returns_branch_not_found(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When ls-remote exits non-zero, error_type is branch_not_found."""
-        _init_repo(self.path)
+        _init_repo(tmp_path)
+        orig = _mod.run_git
 
         def fake_run_git(args, **kwargs):
             if 'ls-remote' in args:
                 return (1, '', 'connection refused')
-            return self._orig_run_git(args, **kwargs)
+            return orig(args, **kwargs)
 
-        _mod.run_git = fake_run_git
-        args = Namespace(plan_id=None, project_dir=str(self.path), base='main')
+        monkeypatch.setattr(_mod, 'run_git', fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), base='main')
+
         result = cmd_switch_and_pull(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'branch_not_found')
 
-    def test_checkout_conflict_keywords_classification(self) -> None:
-        """Checkout failure keywords are classified correctly.
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'branch_not_found'
 
-        This test patches run_git to intercept ALL git calls after git-repo
-        verification, so the checkout error type classification can be tested
-        without relying on the real git binary for the checkout step.
-        """
-        _init_repo(self.path)
-        # After the patch, ALL run_git calls are intercepted (not just some).
-        # We must cover: rev-parse --show-toplevel, ls-remote, rev-parse HEAD, checkout.
-
-        for keyword, expected_type in [
+    @pytest.mark.parametrize(
+        'keyword,expected_type',
+        [
             ('conflict', 'merge_conflict'),
             ('overwrite', 'merge_conflict'),
             ('uncommitted', 'merge_conflict'),
             ('unrelated error here', 'pull_failed'),
-        ]:
-            with self.subTest(keyword=keyword, expected=expected_type):
-                # Re-save orig in case a previous subtest left the patch.
-                orig = self._orig_run_git
+        ],
+    )
+    def test_checkout_failure_keyword_classification(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, keyword: str, expected_type: str
+    ) -> None:
+        """Checkout-failure keywords map to the right error_type.
 
-                def make_fake(kw: str, _orig=orig):
-                    def fake_run_git(git_args, **kwargs):
-                        a = list(git_args)
-                        if 'rev-parse' in a and '--show-toplevel' in a:
-                            # _verify_git_repo — must succeed for real.
-                            return _orig(git_args, **kwargs)
-                        if 'ls-remote' in a:
-                            return (0, 'abc123\trefs/heads/main\n', '')
-                        if 'rev-parse' in a:
-                            # pre_sha capture.
-                            return (0, 'deadbeef', '')
-                        if 'checkout' in a:
-                            return (1, '', f'error: {kw}')
-                        return (0, '', '')
-                    return fake_run_git
+        Patches run_git to intercept ALL git calls after git-repo verification so
+        the checkout-error classification is tested without the real checkout step.
+        """
+        _init_repo(tmp_path)
+        orig = _mod.run_git
 
-                _mod.run_git = make_fake(keyword)
-                args = Namespace(plan_id=None, project_dir=str(self.path), base='main')
-                result = cmd_switch_and_pull(args)
-                _mod.run_git = orig  # restore after each sub-iteration
+        def fake_run_git(git_args, **kwargs):
+            a = list(git_args)
+            if 'rev-parse' in a and '--show-toplevel' in a:
+                # _verify_git_repo — must succeed for real.
+                return orig(git_args, **kwargs)
+            if 'ls-remote' in a:
+                return (0, 'abc123\trefs/heads/main\n', '')
+            if 'rev-parse' in a:
+                # pre_sha capture.
+                return (0, 'deadbeef', '')
+            if 'checkout' in a:
+                return (1, '', f'error: {keyword}')
+            return (0, '', '')
 
-                self.assertEqual(result['status'], 'error', f'keyword={keyword!r}')
-                self.assertEqual(
-                    result['error_type'], expected_type,
-                    f'keyword={keyword!r}: expected {expected_type!r}, got {result["error_type"]!r}',
-                )
+        monkeypatch.setattr(_mod, 'run_git', fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), base='main')
 
-    def test_pull_failure_returns_pull_failed(self) -> None:
+        result = cmd_switch_and_pull(args)
+
+        assert result['status'] == 'error'
+        assert result['error_type'] == expected_type
+
+    def test_pull_failure_returns_pull_failed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """git pull non-zero exit → pull_failed."""
-        _init_repo(self.path)
+        _init_repo(tmp_path)
+        orig = _mod.run_git
 
         def fake_run_git(args, **kwargs):
             if 'ls-remote' in args:
@@ -231,18 +228,23 @@ class TestCmdSwitchAndPullEscapeHatch(unittest.TestCase):
                 return (0, '', '')
             if 'pull' in args:
                 return (1, '', 'error: network unreachable')
-            return self._orig_run_git(args, **kwargs)
+            return orig(args, **kwargs)
 
-        _mod.run_git = fake_run_git
-        args = Namespace(plan_id=None, project_dir=str(self.path), base='main')
+        monkeypatch.setattr(_mod, 'run_git', fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), base='main')
+
         result = cmd_switch_and_pull(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'pull_failed')
-        self.assertIn('pre_sha', result)
 
-    def test_success_path_returns_required_fields(self) -> None:
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'pull_failed'
+        assert 'pre_sha' in result
+
+    def test_success_path_returns_required_fields(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Successful switch-and-pull returns status, pre_sha, post_sha, commits_pulled."""
-        _init_repo(self.path)
+        _init_repo(tmp_path)
+        orig = _mod.run_git
         pre_sha = 'aaa111'
         post_sha = 'bbb222'
 
@@ -259,22 +261,26 @@ class TestCmdSwitchAndPullEscapeHatch(unittest.TestCase):
                 return (0, '2', '')
             if 'rev-parse' in args:
                 return (0, post_sha, '')
-            return self._orig_run_git(args, **kwargs)
+            return orig(args, **kwargs)
 
-        _mod.run_git = fake_run_git
-        args = Namespace(plan_id=None, project_dir=str(self.path), base='main')
+        monkeypatch.setattr(_mod, 'run_git', fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), base='main')
+
         result = cmd_switch_and_pull(args)
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(result['operation'], 'switch-and-pull')
-        self.assertEqual(result['base_branch'], 'main')
-        self.assertIn('pre_sha', result)
-        self.assertIn('post_sha', result)
-        self.assertIn('commits_pulled', result)
-        self.assertEqual(result['commits_pulled'], 2)
 
-    def test_success_zero_commits_pulled(self) -> None:
+        assert result['status'] == 'success'
+        assert result['operation'] == 'switch-and-pull'
+        assert result['base_branch'] == 'main'
+        assert 'pre_sha' in result
+        assert 'post_sha' in result
+        assert result['commits_pulled'] == 2
+
+    def test_success_zero_commits_pulled(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Already-up-to-date pull returns commits_pulled = 0."""
-        _init_repo(self.path)
+        _init_repo(tmp_path)
+        orig = _mod.run_git
         sha = 'aaa111'
 
         def fake_run_git(args, **kwargs):
@@ -290,28 +296,35 @@ class TestCmdSwitchAndPullEscapeHatch(unittest.TestCase):
                 return (0, '0', '')
             if 'rev-parse' in args:
                 return (0, sha, '')
-            return self._orig_run_git(args, **kwargs)
+            return orig(args, **kwargs)
 
-        _mod.run_git = fake_run_git
-        args = Namespace(plan_id=None, project_dir=str(self.path), base='main')
+        monkeypatch.setattr(_mod, 'run_git', fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), base='main')
+
         result = cmd_switch_and_pull(args)
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(result['commits_pulled'], 0)
 
-    def test_envelope_echoes_base_branch(self) -> None:
+        assert result['status'] == 'success'
+        assert result['commits_pulled'] == 0
+
+    def test_envelope_echoes_base_branch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Response envelope always includes operation and base_branch."""
-        _init_repo(self.path)
+        _init_repo(tmp_path)
+        orig = _mod.run_git
 
         def fake_run_git(args, **kwargs):
             if 'ls-remote' in args:
                 return (0, '', '')  # trigger branch_not_found early
-            return self._orig_run_git(args, **kwargs)
+            return orig(args, **kwargs)
 
-        _mod.run_git = fake_run_git
-        args = Namespace(plan_id=None, project_dir=str(self.path), base='develop')
+        monkeypatch.setattr(_mod, 'run_git', fake_run_git)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), base='develop')
+
         result = cmd_switch_and_pull(args)
-        self.assertEqual(result['operation'], 'switch-and-pull')
-        self.assertEqual(result['base_branch'], 'develop')
+
+        assert result['operation'] == 'switch-and-pull'
+        assert result['base_branch'] == 'develop'
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +332,7 @@ class TestCmdSwitchAndPullEscapeHatch(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestFindExecutor(unittest.TestCase):
+class TestFindExecutor:
     """Direct-import tests for _find_executor's helper-based resolution.
 
     _find_executor delegates to ``file_ops.get_executor_path()`` (worktree-safe
@@ -328,40 +341,47 @@ class TestFindExecutor(unittest.TestCase):
     missing executor file.
     """
 
-    def setUp(self) -> None:
-        import file_ops  # type: ignore[import-not-found]
-        self._file_ops = file_ops
-        self._orig_get_executor_path = file_ops.get_executor_path
-        self._tmpdir = tempfile.mkdtemp()
-        self.path = Path(self._tmpdir)
-
-    def tearDown(self) -> None:
-        import shutil
-        self._file_ops.get_executor_path = self._orig_get_executor_path
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
-
-    def test_returns_resolved_path_when_executor_exists(self) -> None:
+    def test_returns_resolved_path_when_executor_exists(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When get_executor_path resolves an existing file, return it."""
-        executor = self.path / 'execute-script.py'
+        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
+
+        executor = tmp_path / 'execute-script.py'
         executor.write_text('# executor\n')
-        self._file_ops.get_executor_path = lambda: executor
-        result = _find_executor()
-        self.assertEqual(result, executor)
+        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: executor)
 
-    def test_returns_none_when_executor_missing(self) -> None:
+        result = _find_executor()
+
+        assert result == executor
+
+    def test_returns_none_when_executor_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When the resolved path does not exist on disk, return None."""
-        missing = self.path / 'execute-script.py'  # never created
-        self._file_ops.get_executor_path = lambda: missing
-        result = _find_executor()
-        self.assertIsNone(result)
+        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
 
-    def test_returns_none_when_helper_raises_runtime_error(self) -> None:
+        missing = tmp_path / 'execute-script.py'  # never created
+        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: missing)
+
+        result = _find_executor()
+
+        assert result is None
+
+    def test_returns_none_when_helper_raises_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When get_executor_path raises RuntimeError (no git repo), return None."""
+        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
+
         def _raise() -> Path:
             raise RuntimeError('no git repository')
-        self._file_ops.get_executor_path = _raise
+
+        monkeypatch.setattr(file_ops, 'get_executor_path', _raise)
+
         result = _find_executor()
-        self.assertIsNone(result)
+
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -369,36 +389,33 @@ class TestFindExecutor(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestCmdSwitchAndPullCli(unittest.TestCase):
+class TestCmdSwitchAndPullCli:
     """Subprocess tests for switch-and-pull CLI plumbing."""
 
-    def test_missing_base_arg_exits_nonzero(self) -> None:
+    def test_missing_base_arg_exits_nonzero(self, tmp_path: Path) -> None:
         """--base is required; omitting it produces argparse error (exit != 0)."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = run_script(
-                _SCRIPT_PATH, 'switch-and-pull',
-                '--project-dir', tmpdir,
-            )
-            self.assertNotEqual(result.returncode, 0)
+        result = run_script(
+            _SCRIPT_PATH, 'switch-and-pull',
+            '--project-dir', str(tmp_path),
+        )
 
-    def test_non_git_project_dir_returns_toon_error(self) -> None:
+        assert result.returncode != 0
+
+    def test_non_git_project_dir_returns_toon_error(self, tmp_path: Path) -> None:
         """Non-git --project-dir + --base produces structured TOON error."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = run_script(
-                _SCRIPT_PATH, 'switch-and-pull',
-                '--project-dir', tmpdir,
-                '--base', 'main',
-            )
-            parsed = parse_toon(result.stdout)
-            self.assertEqual(parsed['status'], 'error')
-            self.assertEqual(parsed['error_type'], 'project_dir_not_a_git_repo')
+        result = run_script(
+            _SCRIPT_PATH, 'switch-and-pull',
+            '--project-dir', str(tmp_path),
+            '--base', 'main',
+        )
+
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'error'
+        assert parsed['error_type'] == 'project_dir_not_a_git_repo'
 
     def test_help_shows_switch_and_pull(self) -> None:
         """--help lists switch-and-pull subcommand."""
         result = run_script(_SCRIPT_PATH, '--help')
-        self.assertEqual(result.returncode, 0)
-        self.assertIn('switch-and-pull', result.stdout)
 
-
-if __name__ == '__main__':
-    unittest.main()
+        assert result.returncode == 0
+        assert 'switch-and-pull' in result.stdout

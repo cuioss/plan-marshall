@@ -21,11 +21,6 @@ FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 MOCKS_DIR = Path(__file__).parent / 'mocks'
 
 
-# =============================================================================
-# Parse Subcommand Tests
-# =============================================================================
-
-
 def test_parse_successful_build():
     """Test parsing successful Gradle build output."""
     result = run_script(
@@ -70,11 +65,6 @@ def test_parse_missing_file():
     assert data['status'] == 'error', 'Should return error status for missing file'
 
 
-# =============================================================================
-# Find-Project Subcommand Tests
-# =============================================================================
-
-
 def test_find_project_by_name():
     """Test finding project by name (TOON output)."""
     with tempfile.TemporaryDirectory() as td:
@@ -100,11 +90,6 @@ def test_find_project_not_found():
         assert data['status'] == 'error', 'Should return error for non-existent project'
 
 
-# =============================================================================
-# Search-Markers Subcommand Tests
-# =============================================================================
-
-
 def test_search_markers_no_markers():
     """Test searching when no markers exist."""
     with tempfile.TemporaryDirectory() as td:
@@ -119,11 +104,6 @@ def test_search_markers_no_markers():
 
         assert data['status'] == 'success', 'Should succeed with no markers'
         assert data['data']['total_markers'] == 0, 'Should find no markers'
-
-
-# =============================================================================
-# Check-Warnings Subcommand Tests
-# =============================================================================
 
 
 def test_check_warnings_empty():
@@ -175,11 +155,6 @@ def test_search_markers_with_content():
     assert data['data']['total_markers'] > 0, 'Should find markers in fixture files'
 
 
-# =============================================================================
-# Help Tests
-# =============================================================================
-
-
 def test_help_main():
     """Test main --help output."""
     result = run_script(SCRIPT_PATH, '--help')
@@ -188,15 +163,9 @@ def test_help_main():
     assert 'find-project' in result.stdout, 'Should show find-project subcommand'
 
 
-# =============================================================================
-# Two-state ``--plan-id`` / ``--project-dir`` routing contract
-# =============================================================================
-#
-# gradle.py uses the shared ``build_main()`` from ``_build_cli.py``. The
-# resolver semantics are pinned in
-# ``test/plan-marshall/script-shared/test_build_cli.py``.
-
-
+# gradle.py routes the two-state --plan-id / --project-dir contract through the
+# shared build_main() from _build_cli.py; the resolver semantics are pinned in
+# test/plan-marshall/script-shared/test_build_cli.py.
 def test_run_subcommand_accepts_plan_id_flag():
     """gradle.py's `run` subcommand MUST accept --plan-id (auto-routing flag)."""
     result = run_script(SCRIPT_PATH, 'run', '--help')
@@ -221,8 +190,3 @@ def test_run_rejects_both_plan_id_and_project_dir():
     data = result.toon_or_error()
     assert data.get('status') == 'error'
     assert data.get('error') == 'mutually_exclusive_args'
-
-
-# =============================================================================
-# Main
-# =============================================================================

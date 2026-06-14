@@ -445,10 +445,8 @@ _BRACKETED_TASK_TOON = (
 )
 def test_parse_stdin_task_accepts_both_steps_forms(toon, label):
     """Both bare-block and bracketed ``steps`` forms parse to the same step list."""
-    # Arrange + Act
     parsed = parse_stdin_task(toon)
 
-    # Assert
     assert parsed['steps'] == [
         {'target': 'test/plan-marshall/manage-tasks/test_a.py', 'intent': 'write-replace'},
         {'target': 'test/plan-marshall/manage-tasks/test_b.py', 'intent': 'write-replace'},
@@ -464,10 +462,8 @@ def test_parse_stdin_task_accepts_both_steps_forms(toon, label):
 )
 def test_parse_stdin_task_accepts_both_skills_forms(toon, label):
     """Both bare-block and bracketed ``skills`` forms parse to the same skill list."""
-    # Arrange + Act
     parsed = parse_stdin_task(toon)
 
-    # Assert
     assert parsed['skills'] == ['pm-plugin-development:plugin-architecture'], (
         f'{label} form did not normalise to canonical skills list'
     )
@@ -482,10 +478,8 @@ def test_parse_stdin_task_accepts_both_skills_forms(toon, label):
 )
 def test_parse_stdin_task_accepts_both_verification_commands_forms(toon, label):
     """Both bare-block and bracketed ``verification.commands`` parse identically."""
-    # Arrange + Act
     parsed = parse_stdin_task(toon)
 
-    # Assert
     expected_cmd = 'python3 .plan/execute-script.py x:y:z run --command-args "module-tests"'
     assert parsed['verification']['commands'] == [expected_cmd], (
         f'{label} verification.commands did not normalise to canonical list'
@@ -498,14 +492,14 @@ def test_parse_stdin_task_bracketed_and_bare_block_parse_to_identical_output():
     The two TOON renderings differ only in length declarations; the
     parser's job is to erase that difference. Anything that diverges
     here is a per-shape branch the contract forbids.
+
+    Every field except ``title`` and ``description`` must match — those two
+    are intentionally different per-fixture to keep error messages
+    unambiguous about which fixture is failing.
     """
-    # Arrange + Act
     bare = parse_stdin_task(_BARE_BLOCK_TASK_TOON)
     bracketed = parse_stdin_task(_BRACKETED_TASK_TOON)
 
-    # Assert — every field except ``title`` and ``description`` must match
-    # (those two are intentionally different per-fixture to keep error
-    # messages unambiguous about which fixture is failing).
     for field in ('deliverable', 'domain', 'profile', 'skills', 'origin', 'steps', 'depends_on', 'verification'):
         assert bare[field] == bracketed[field], f'field {field!r} diverged between shapes'
 
@@ -517,7 +511,6 @@ def test_parse_stdin_task_bracketed_steps_zero_count_raises_missing_steps():
     empty — the parser must surface the canonical ``Missing required field:
     steps`` message rather than silently accepting an empty list.
     """
-    # Arrange
     toon = (
         'title: Empty steps\n'
         'deliverable: 1\n'
@@ -527,7 +520,6 @@ def test_parse_stdin_task_bracketed_steps_zero_count_raises_missing_steps():
         'depends_on: none\n'
     )
 
-    # Act / Assert
     with pytest.raises(ValueError) as excinfo:
         parse_stdin_task(toon)
     assert 'steps' in str(excinfo.value)
@@ -540,7 +532,6 @@ def test_parse_stdin_task_bracketed_steps_outer_quotes_still_rejected():
     contract — the same ValueError fires whether the steps header is
     ``steps:`` or ``steps[N]:``.
     """
-    # Arrange
     offending = '"src/main/java/Foo.java"'
     toon = (
         'title: Outer quotes negative bracketed\n'
@@ -552,7 +543,6 @@ def test_parse_stdin_task_bracketed_steps_outer_quotes_still_rejected():
         'depends_on: none\n'
     )
 
-    # Act / Assert
     with pytest.raises(ValueError) as excinfo:
         parse_stdin_task(toon)
     message = str(excinfo.value)
@@ -566,8 +556,9 @@ def test_parse_stdin_task_bracketed_form_length_declaration_is_advisory():
     The parser normalises by walking the body until indentation breaks; the
     declared count is informational only. This mirrors the documented TOON
     specification (see ``ref-toon-format``).
+
+    Fixture declares count 5 with only 2 actual rows.
     """
-    # Arrange — declared count 5, actual rows 2.
     toon = (
         'title: Count mismatch\n'
         'deliverable: 1\n'
@@ -579,10 +570,8 @@ def test_parse_stdin_task_bracketed_form_length_declaration_is_advisory():
         'depends_on: none\n'
     )
 
-    # Act
     parsed = parse_stdin_task(toon)
 
-    # Assert
     assert parsed['steps'] == [
         {'target': 'test/plan-marshall/manage-tasks/test_a.py', 'intent': 'write-replace'},
         {'target': 'test/plan-marshall/manage-tasks/test_b.py', 'intent': 'write-replace'},

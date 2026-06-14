@@ -57,34 +57,30 @@ class TestExpand:
     """``CoveragePresets.expand`` returns the composed instruction block."""
 
     def test_t3_component_emits_breadth_and_depth(self):
-        # Arrange / Act
         instruction = CoveragePresets.expand('T3', 'component')
 
-        # Assert — both the scope-breadth and thoroughness-depth halves appear.
+        # both the scope-breadth and thoroughness-depth halves appear.
         assert 'Breadth (component):' in instruction
         assert 'Depth (T3):' in instruction
         assert 'cohesive unit' in instruction  # component breadth text
         assert 'one hop out' in instruction  # T3 depth text
 
     def test_inherit_inherit_is_behavior_preserving(self):
-        # Arrange / Act
         instruction = CoveragePresets.expand('inherit', 'inherit')
 
-        # Assert
         assert instruction == _coverage_presets_mod._BEHAVIOR_PRESERVING
         assert 'behave exactly as the component does today' in instruction.lower()
 
     def test_inherit_on_either_axis_collapses_to_behavior_preserving(self):
-        # Arrange / Act — a concrete dial paired with inherit still collapses.
+        # a concrete dial paired with inherit still collapses.
         a = CoveragePresets.expand('T2', 'inherit')
         b = CoveragePresets.expand('inherit', 'overall')
 
-        # Assert
         assert a == _coverage_presets_mod._BEHAVIOR_PRESERVING
         assert b == _coverage_presets_mod._BEHAVIOR_PRESERVING
 
     def test_t4_change_set_rejected_with_coupling_violation(self):
-        # Arrange / Act / Assert — the incoherent cell raises at the API.
+        # the incoherent cell raises at the API.
         with pytest.raises(ValueError, match='coupling'):
             CoveragePresets.expand('T4', 'change-set')
 

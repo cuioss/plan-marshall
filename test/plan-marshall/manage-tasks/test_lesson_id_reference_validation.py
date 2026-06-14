@@ -252,7 +252,7 @@ def test_commit_add_no_lesson_id_tokens_succeeds(plan_context, patch_inventory):
 
         result = cmd_commit_add(_commit_ns('lesson-ref-no-tokens'))
 
-        # Arrange-Act-Assert: result is success and TASK-001.json exists.
+        # result is success and TASK-001.json exists.
         assert result['status'] == 'success'
         assert result['file'] == 'TASK-001.json'
         assert (plan_dir / 'tasks' / 'TASK-001.json').is_file()

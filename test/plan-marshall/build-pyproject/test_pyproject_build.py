@@ -72,10 +72,6 @@ _pyproject_execute_mod = load_script_module('plan-marshall', 'build-pyproject', 
 parse_log = _pyproject_cmd_parse_mod.parse_log
 execute_direct = _pyproject_execute_mod.execute_direct
 
-# =============================================================================
-# Test: Wrapper resolution (via _pyproject_execute)
-# =============================================================================
-
 
 def test_wrapper_resolution_finds_local_pw():
     """Wrapper resolution finds ./pw when pw exists in project root."""
@@ -108,11 +104,6 @@ def test_wrapper_resolution_raises_when_no_wrapper():
         with patch('shutil.which', return_value=None):
             with pytest.raises(FileNotFoundError, match='No pyprojectx wrapper found'):
                 _python_wrapper_resolve_fn(str(ctx.temp_dir))
-
-
-# =============================================================================
-# Test: parse_log() - Error Parsing
-# =============================================================================
 
 
 def test_parse_log_parses_mypy_errors():
@@ -210,11 +201,6 @@ def test_parse_log_handles_empty_file():
         assert test_summary is None
 
 
-# =============================================================================
-# Test: execute_direct() - Mocked Execution
-# =============================================================================
-
-
 def test_execute_direct_returns_error_when_no_wrapper():
     """execute_direct() returns error when no wrapper is found."""
     with BuildContext() as ctx:
@@ -305,11 +291,6 @@ def test_execute_direct_returns_timeout_on_timeout():
             assert 'timed out' in result['error']
 
 
-# =============================================================================
-# Test: Constants
-# =============================================================================
-
-
 def test_default_timeout_is_reasonable():
     """Default timeout in execute config is set to a reasonable value."""
     from _pyproject_execute import _CONFIG
@@ -322,11 +303,6 @@ def test_min_timeout_is_enforced():
     from _build_execute import MIN_TIMEOUT
 
     assert MIN_TIMEOUT == 60  # 1 minute minimum, enforced for all build systems
-
-
-# =============================================================================
-# Test: Root build.py cmd_quality_gate plugin-doctor integration
-# =============================================================================
 
 
 def _load_root_build():
@@ -408,9 +384,7 @@ def test_quality_gate_module_scoped_skips_plugin_doctor():
     )
 
 
-# =============================================================================
-# Test: Two-state ``--plan-id`` / ``--project-dir`` routing contract
-# =============================================================================
+# Two-state ``--plan-id`` / ``--project-dir`` routing contract.
 #
 # pyproject_build.py uses the shared ``build_main()`` from ``_build_cli.py``,
 # which delegates to ``resolve_project_dir`` for the four-state contract.

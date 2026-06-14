@@ -8,6 +8,7 @@ Tests the unified run command that combines execute + parse on failure:
 - Help text
 """
 
+import json
 import os
 import tempfile
 from contextlib import contextmanager
@@ -15,7 +16,6 @@ from pathlib import Path
 
 from conftest import get_script_path, run_script
 
-# Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-npm', 'npm.py')
 
 
@@ -29,9 +29,7 @@ def mock_npm_project():
     """
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
-        # Create .plan directory for log files
         (temp_dir / '.plan' / 'temp' / 'build-output' / 'default').mkdir(parents=True)
-        # Create package.json
         (temp_dir / 'package.json').write_text('{"name": "test", "version": "1.0.0"}')
         previous = os.environ.get('PLAN_BASE_DIR')
         os.environ['PLAN_BASE_DIR'] = str(temp_dir / '.plan')
@@ -42,11 +40,6 @@ def mock_npm_project():
                 os.environ.pop('PLAN_BASE_DIR', None)
             else:
                 os.environ['PLAN_BASE_DIR'] = previous
-
-
-# =============================================================================
-# Run Success Tests
-# =============================================================================
 
 
 def test_run_success_output_format():
@@ -88,24 +81,13 @@ def test_run_includes_duration():
         assert 'duration_seconds' in result.stdout, 'Should include duration_seconds'
 
 
-# =============================================================================
-# Run Failure Tests
-# =============================================================================
-
-
 def test_run_failure_returns_exit_1():
     """Test run command failure returns exit code 1."""
     with mock_npm_project() as temp_dir:
-        # 'run nonexistent-script' should fail
         result = run_script(SCRIPT_PATH, 'run', '--command-args', 'run nonexistent-script-xyz', cwd=temp_dir)
 
         assert result.returncode == 0, 'Failed run should exit with 0 — status modeled in TOON output'
         assert 'status: error' in result.stdout, 'Should have error status'
-
-
-# =============================================================================
-# Mode Parameter Tests
-# =============================================================================
 
 
 def test_run_mode_actionable():
@@ -130,25 +112,14 @@ def test_run_mode_structured():
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
 
 
-# =============================================================================
-# Format Parameter Tests
-# =============================================================================
-
-
 def test_run_format_json():
     """Test run with --format json produces valid JSON."""
     with mock_npm_project() as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', '--format', 'json', cwd=temp_dir)
         assert result.returncode == 0
-        import json
 
         data = json.loads(result.stdout)
         assert data['status'] == 'success'
-
-
-# =============================================================================
-# Help Tests
-# =============================================================================
 
 
 def test_run_help():
@@ -158,11 +129,6 @@ def test_run_help():
     assert '--mode' in result.stdout, 'Should show --mode option'
     assert '--working-dir' in result.stdout, 'Should show --working-dir option'
     assert '--env' in result.stdout, 'Should show --env option'
-
-
-# =============================================================================
-# safe_main Tests
-# =============================================================================
 
 
 def test_safe_main_wraps_errors():

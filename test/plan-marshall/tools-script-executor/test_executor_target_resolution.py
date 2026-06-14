@@ -21,10 +21,6 @@ import pytest
 
 from conftest import MARKETPLACE_ROOT, _MARKETPLACE_SCRIPT_DIRS
 
-# ---------------------------------------------------------------------------
-# Module under test
-# ---------------------------------------------------------------------------
-
 SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
     / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts'
@@ -41,11 +37,6 @@ def _load_generate_executor() -> types.ModuleType:
     return module
 
 
-# ---------------------------------------------------------------------------
-# Helpers: inline-execute the resolver code in an isolated namespace
-# ---------------------------------------------------------------------------
-
-
 def _exec_resolver(resolver_code: str) -> types.ModuleType:
     """Execute resolver_code inside a minimal module namespace.
 
@@ -58,11 +49,6 @@ def _exec_resolver(resolver_code: str) -> types.ModuleType:
     ns.__dict__['os'] = os
     exec(compile(resolver_code, '<resolver>', 'exec'), ns.__dict__)
     return ns
-
-
-# =============================================================================
-# Tests: read_marshal_target
-# =============================================================================
 
 
 class TestReadMarshalTarget:
@@ -149,11 +135,6 @@ class TestReadMarshalTarget:
         assert result == 'claude'
 
 
-# =============================================================================
-# Tests: generate_target_aware_resolver_code
-# =============================================================================
-
-
 class TestGenerateTargetAwareResolverCode:
     """Tests for the resolver code generator."""
 
@@ -230,11 +211,6 @@ class TestGenerateTargetAwareResolverCode:
         assert "f'{bundle}-{skill}'" in code or "bundle-skill" in code or "dir_name" in code, (
             'OpenCode resolver must construct dash-namespaced directory name'
         )
-
-
-# =============================================================================
-# Tests: Claude resolver (_resolve_notation_by_target)
-# =============================================================================
 
 
 class TestClaudeResolver:
@@ -319,11 +295,6 @@ class TestClaudeResolver:
         assert ns._resolve_notation_by_target('two:parts') is None
         assert ns._resolve_notation_by_target('too:many:parts:here') is None
         assert ns._resolve_notation_by_target('') is None
-
-
-# =============================================================================
-# Tests: OpenCode resolver (_resolve_notation_by_target)
-# =============================================================================
 
 
 class TestOpenCodeResolver:
@@ -485,11 +456,6 @@ class TestOpenCodeResolver:
         assert ns._resolve_notation_by_target('') is None
 
 
-# =============================================================================
-# Tests: generate_executor injects resolver placeholders
-# =============================================================================
-
-
 class TestGenerateExecutorInjectsResolver:
     """Verify that the generator correctly replaces {{TARGET_AWARE_RESOLVER}} and {{EXECUTOR_TARGET}}."""
 
@@ -563,15 +529,6 @@ class TestGenerateExecutorInjectsResolver:
             'resolve_notation must delegate to _resolve_notation_by_target'
         )
 
-
-# =============================================================================
-# Tests: cmd_generate --target flag
-# =============================================================================
-
-
-# =============================================================================
-# Tests: cwd-walk fallback (_resolve_notation_by_cwd_walk in the template)
-# =============================================================================
 
 EXECUTOR_TEMPLATE = (
     MARKETPLACE_ROOT

@@ -90,11 +90,8 @@ def test_enrich_project_without_reasoning_preserves_existing():
 def test_enrich_project_missing_meta_raises():
     """enrich_project raises DataNotFoundError when ``_project.json`` is missing."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        try:
+        with pytest.raises(DataNotFoundError):
             enrich_project('desc', tmpdir)
-            assert False, 'Should have raised DataNotFoundError'
-        except DataNotFoundError:
-            pass
 
 
 # =============================================================================
@@ -135,11 +132,8 @@ def test_enrich_module_unknown_module_raises():
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        try:
+        with pytest.raises(ModuleNotFoundInProjectError):
             enrich_module('nonexistent', 'desc', None, tmpdir)
-            assert False, 'Should have raised ModuleNotFoundInProjectError'
-        except ModuleNotFoundInProjectError:
-            pass
 
 
 def test_enrich_module_with_shared_reasoning_applied_to_both():
@@ -313,11 +307,8 @@ def test_enrich_skills_by_profile_unknown_module_raises():
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        try:
+        with pytest.raises(ModuleNotFoundInProjectError):
             enrich_skills_by_profile('nonexistent', {'implementation': []}, tmpdir)
-            assert False, 'Should have raised ModuleNotFoundInProjectError'
-        except ModuleNotFoundInProjectError:
-            pass
 
 
 def test_enrich_skills_by_profile_overwrites():

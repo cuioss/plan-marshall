@@ -119,3 +119,50 @@ def test_exists_rejects_non_integer_task_argument():
     data = result.toon()
     assert data.get('status') == 'error'
     assert data.get('error') == 'invalid_task_number'
+
+
+# =============================================================================
+# Tests: get alias for read (subprocess / CLI plumbing)
+# =============================================================================
+
+
+class TestCliGetAlias:
+    """Subprocess test pinning ``get`` as an alias for the ``read`` subcommand."""
+
+    def test_cli_get_alias_succeeds(self, plan_context):
+        """``manage-tasks get`` succeeds via the CLI for an existing task."""
+        toon = build_task_toon(
+            title='Aliased task',
+            deliverable=1,
+            domain='java',
+            description='Task read via the get alias',
+            steps=['src/main/java/Aliased.java'],
+        )
+        cmd_add(_add_ns(plan_id='get-alias', content=toon.replace('\n', '\\n')))
+
+        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'get-alias', '--task-number', '1')
+
+        assert result.returncode == 0, f'Script failed: {result.stderr}'
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data['task']['number'] == 1
+        assert data['task']['title'] == 'Aliased task'
+
+    def test_cli_get_alias_matches_read(self, plan_context):
+        """``get`` and ``read`` produce identical payloads for the same task."""
+        toon = build_task_toon(
+            title='Aliased task',
+            deliverable=1,
+            domain='java',
+            description='Task read via both verbs',
+            steps=['src/main/java/Aliased.java'],
+        )
+        cmd_add(_add_ns(plan_id='get-alias-match', content=toon.replace('\n', '\\n')))
+
+        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'get-alias-match', '--task-number', '1')
+        read_result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'get-alias-match', '--task-number', '1')
+
+        assert get_result.returncode == 0
+        assert read_result.returncode == 0
+        assert get_result.returncode == read_result.returncode
+        assert get_result.stdout == read_result.stdout

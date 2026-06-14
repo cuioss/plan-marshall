@@ -12,6 +12,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -193,8 +195,5 @@ def test_suggest_domains_module_not_found():
     """Unknown module raises ModuleNotFoundInProjectError."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
-        try:
+        with pytest.raises(ModuleNotFoundInProjectError):
             suggest_domains('nonexistent', tmpdir)
-            assert False, 'Should have raised ModuleNotFoundInProjectError'
-        except ModuleNotFoundInProjectError:
-            pass

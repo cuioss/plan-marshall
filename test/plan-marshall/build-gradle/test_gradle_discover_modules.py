@@ -53,11 +53,6 @@ def _assert_valid_module_structure(module: dict) -> None:
     assert_valid_module(module, build_system='gradle')
 
 
-# =============================================================================
-# Test: Basic Gradle Module Discovery
-# =============================================================================
-
-
 def test_discover_gradle_single_module():
     """Test discover_modules with single-module Gradle project.
 
@@ -167,11 +162,6 @@ description = "Kotlin DSL project"
         _assert_valid_module_structure(modules[0])
 
 
-# =============================================================================
-# Test: Source Directory Discovery
-# =============================================================================
-
-
 def test_gradle_discover_sources():
     """Test source directory discovery for Gradle.
 
@@ -190,11 +180,6 @@ def test_gradle_discover_sources():
 
         assert len(modules) == 1
         _assert_valid_module_structure(modules[0])
-
-
-# =============================================================================
-# Test: Stats
-# =============================================================================
 
 
 def test_gradle_stats_file_counts():
@@ -343,11 +328,6 @@ def test_gradle_stats_readme_in_paths():
         _assert_valid_module_structure(modules[0])
 
 
-# =============================================================================
-# Test: Commands
-# =============================================================================
-
-
 def test_gradle_module_has_commands():
     """Test Gradle module commands.
 
@@ -368,11 +348,6 @@ def test_gradle_module_has_commands():
         modules = ext.discover_modules(str(ctx.temp_dir))
 
         _assert_valid_module_structure(modules[0])
-
-
-# =============================================================================
-# Test: No Duplicate Modules
-# =============================================================================
 
 
 def test_no_duplicate_modules_with_both_build_files():
@@ -411,8 +386,3 @@ def test_no_duplicate_modules_with_both_build_files():
         assert len(modules) >= 1
         for m in modules:
             assert m['build_systems'] in [['maven'], ['gradle']]
-
-
-# =============================================================================
-# Runner
-# =============================================================================

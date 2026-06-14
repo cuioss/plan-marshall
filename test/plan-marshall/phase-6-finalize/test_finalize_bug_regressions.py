@@ -167,14 +167,14 @@ class TestSimplifyConvergesWithoutLoopBack:
         assert 'finalize-step-simplify' in _mark_step.MAY_MUTATE_WORKTREE_STEPS
 
     def test_clean_tree_done_succeeds_and_emits_no_loop_back(self, plan_context, monkeypatch):
-        # Arrange — simplify has committed its edits, so the tree is CLEAN at
+        # Simplify has committed its edits, so the tree is CLEAN at
         # mark-step-done. Stub the porcelain probe to report clean (the fixture
         # worktree is otherwise always dirty under test).
         plan_id = 'regr-simplify-clean-done'
         _make_plan(plan_id)
         monkeypatch.setattr(_mark_step, '_worktree_is_dirty', lambda _path: False)
 
-        # Act — mark the step done exactly as the fixed Step 4 does.
+        # Mark the step done exactly as the fixed Step 4 does.
         result = cmd_mark_step_done(
             _mark_args(
                 plan_id,
@@ -186,7 +186,7 @@ class TestSimplifyConvergesWithoutLoopBack:
             )
         )
 
-        # Assert — convergence: the step is done, NOT refused, NOT looped back.
+        # Convergence: the step is done, NOT refused, NOT looped back.
         assert result['status'] == 'success'
         assert result['outcome'] == 'done'
         assert result['error'] != 'dirty_worktree_done_refused' if 'error' in result else True
@@ -199,7 +199,7 @@ class TestSimplifyConvergesWithoutLoopBack:
         assert 'loop_back_target' not in entry
 
     def test_uncommitted_edits_would_have_forced_loop_back(self, plan_context, monkeypatch):
-        # Arrange — the PRE-FIX state: simplify left edits uncommitted, so the
+        # The PRE-FIX state: simplify left edits uncommitted, so the
         # tree is dirty at mark-step-done. This test documents the symptom the
         # fix removed: with a dirty tree, the guard refuses ``done`` and steers
         # the caller to re-issue as ``loop_back`` (the re-fire/prompt thrash).
@@ -207,12 +207,11 @@ class TestSimplifyConvergesWithoutLoopBack:
         _make_plan(plan_id)
         monkeypatch.setattr(_mark_step, '_worktree_is_dirty', lambda _path: True)
 
-        # Act
         result = cmd_mark_step_done(
             _mark_args(plan_id, '6-finalize', 'finalize-step-simplify', 'done')
         )
 
-        # Assert — the guard fires and the message names the loop_back escape, so
+        # The guard fires and the message names the loop_back escape, so
         # leaving edits uncommitted is exactly what re-introduces the thrash. The
         # fix avoids reaching this path by committing first (covered above).
         assert result['status'] == 'error'
@@ -248,14 +247,13 @@ class TestContentDriftFacetRemoved:
     """
 
     def test_scan_surfaces_exactly_two_facets(self, tmp_path):
-        # Arrange — a minimal tree; the changed set hits no facet trigger so the
+        # A minimal tree; the changed set hits no facet trigger so the
         # facet block is computed but every facet is vacuously clean.
         root = _make_marketplace_tree(tmp_path, {'bundles/b/skills/s/x.py': '\n'})
 
         with PlanContext(plan_id='regr-drift-two-facets') as ctx:
             (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
 
-            # Act
             result = gate.scan(
                 'regr-drift-two-facets',
                 worktree_path=str(root),
@@ -264,17 +262,17 @@ class TestContentDriftFacetRemoved:
                 diff_names_runner=lambda _wt, _ref: [],
             )
 
-        # Assert — exactly the two surviving facets, no content_drift/generator.
+        # Exactly the two surviving facets, no content_drift/generator.
         assert result['status'] == 'success'
         assert set(result['facets'].keys()) == {'doctor', 'sweep_test'}
         for removed in ('content_drift', 'generator', 'drift', 'generator_drift'):
             assert removed not in result['facets']
 
     def test_trigger_glob_constant_drops_the_drift_category(self):
-        # Arrange / Act — read the composer's single source-of-truth constant.
+        # Read the composer's single source-of-truth constant.
         globs = _manifest._WHOLE_TREE_INVARIANT_TRIGGER_GLOBS
 
-        # Assert — neither drift glob survives. The doctor / sweep-test globs DO
+        # Neither drift glob survives. The doctor / sweep-test globs DO
         # survive (proving the constant was trimmed, not emptied).
         assert 'marketplace/targets/**' not in globs
         assert 'marketplace/bundles/**' not in globs
@@ -282,7 +280,7 @@ class TestContentDriftFacetRemoved:
         assert any('sweep' in g for g in globs)
 
     def test_bundle_source_change_no_longer_triggers_a_facet(self, tmp_path):
-        # Arrange — a changed set touching ONLY a bundle SKILL.md. Pre-fix this
+        # A changed set touching ONLY a bundle SKILL.md. Pre-fix this
         # path matched the ``marketplace/bundles/**`` drift glob and fired the
         # content-drift facet; post-fix it must fire NO facet, and scan must
         # converge with status success (no import-fail).
@@ -304,7 +302,7 @@ class TestContentDriftFacetRemoved:
                 sweep_runner=lambda _wt: pytest.fail('sweep facet must not fire for a bundle change'),
             )
 
-        # Assert — convergence: success, both surviving facets untriggered/clean.
+        # Convergence: success, both surviving facets untriggered/clean.
         assert result['status'] == 'success'
         assert result['facets']['doctor']['triggered'] is False
         assert result['facets']['sweep_test']['triggered'] is False
@@ -312,7 +310,7 @@ class TestContentDriftFacetRemoved:
         assert result['facets']['sweep_test']['passed'] is True
 
     def test_gitignored_target_claude_path_does_not_trigger_a_facet(self, tmp_path):
-        # Arrange — a path under the gitignored generated target tree. Pre-fix the
+        # A path under the gitignored generated target tree. Pre-fix the
         # bare ``marketplace/**`` / ``marketplace/bundles/**`` drift glob shape
         # made generated-tree churn fire the facet; post-fix nothing fires.
         root = _make_marketplace_tree(tmp_path, {'bundles/b/skills/s/x.py': '\n'})
@@ -331,7 +329,7 @@ class TestContentDriftFacetRemoved:
                 sweep_runner=lambda _wt: pytest.fail('sweep facet must not fire for target/claude churn'),
             )
 
-        # Assert — convergence with no facet fired.
+        # Convergence with no facet fired.
         assert result['status'] == 'success'
         assert result['facets']['doctor']['triggered'] is False
         assert result['facets']['sweep_test']['triggered'] is False

@@ -181,12 +181,10 @@ class TestScanForProvidersCacheOnly:
         plugin cache. ``_scan_for_providers`` must resolve the base path to the
         cache and surface the declaration.
         """
-        # Arrange: bare cwd (no marketplace ancestor) + unset explicit anchor.
         bare = tmp_path / 'bare'
         bare.mkdir()
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(bare)
-        # Arrange: a real provider in the versioned plugin cache under a fake home.
         self._write_cache_provider(
             tmp_path,
             'def get_provider_declarations():\n'
@@ -194,10 +192,8 @@ class TestScanForProvidersCacheOnly:
         )
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
 
-        # Act: run the real, unmocked discovery chain.
         result = _scan_for_providers()
 
-        # Assert: the provider declared in the cache was discovered.
         assert len(result) == 1
         assert result[0]['skill_name'] == 'plan-marshall:workflow-integration-git'
         assert result[0]['category'] == 'version-control'
@@ -209,7 +205,6 @@ class TestScanForProvidersCacheOnly:
         raising) but contains no ``*_provider.py`` files, so discovery yields an
         empty list rather than an error.
         """
-        # Arrange: bare cwd + unset explicit anchor + empty-but-present cache.
         bare = tmp_path / 'bare'
         bare.mkdir()
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
@@ -218,10 +213,8 @@ class TestScanForProvidersCacheOnly:
         cache.mkdir(parents=True)
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
 
-        # Act: run the real discovery chain against an empty cache.
         result = _scan_for_providers()
 
-        # Assert: no providers found, but the call completed without raising.
         assert result == []
 
 

@@ -24,38 +24,21 @@ Coverage:
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PROJECT_ROOT
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
+_gate = load_script_module(
+    'plan-marshall', 'manage-status', '_cmd_classification_validate.py', '_cmd_classification_validate_under_test'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_gate = _load_module('_cmd_classification_validate_under_test', '_cmd_classification_validate.py')
 run_classification_validation = _gate.run_classification_validation
 cmd_classification_validate = _gate.cmd_classification_validate
 
-_lane = _load_module('_cmd_planning_lane_for_classification_test', '_cmd_planning_lane.py')
+_lane = load_script_module(
+    'plan-marshall', 'manage-status', '_cmd_planning_lane.py', '_cmd_planning_lane_for_classification_test'
+)
 cmd_planning_lane_route = _lane.cmd_planning_lane_route
 
 
@@ -132,16 +115,14 @@ def _ns_route(plan_id: str):
 
 def test_no_mismatch_on_valid_bug_fix(plan_context):
     """A bug_fix stamp over a bug-shaped request with a scope estimate yields no finding."""
-    # Arrange — bug_fix, bug-shaped narrative, scope set, no affected_files gap.
+    # bug_fix, bug-shaped narrative, scope set, no affected_files gap.
     plan_dir = plan_context.plan_dir_for('cv-valid-bugfix')
     _write_request(plan_dir, _BUGFIX_BODY)
     _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
     _write_references(plan_dir, scope_estimate='surgical')
 
-    # Act
     result = run_classification_validation('cv-valid-bugfix')
 
-    # Assert
     assert result['status'] == 'success'
     assert result['mismatch_count'] == 0
     assert result['findings_emitted'] == 0
@@ -150,32 +131,27 @@ def test_no_mismatch_on_valid_bug_fix(plan_context):
 
 def test_no_mismatch_when_scope_set_with_affected_files(plan_context):
     """A non-empty affected_files WITH a scope estimate does not trip mismatch class 2."""
-    # Arrange
     plan_dir = plan_context.plan_dir_for('cv-valid-scope')
     _write_request(plan_dir, _BUGFIX_BODY)
     _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
     _write_references(plan_dir, scope_estimate='single_module', affected_files=['a/b.py'])
 
-    # Act
     result = run_classification_validation('cv-valid-scope')
 
-    # Assert
     assert result['mismatch_count'] == 0
     assert result['findings_emitted'] == 0
 
 
 def test_no_mismatch_when_no_metadata(plan_context):
     """A plan with no change_type and no affected_files produces no finding."""
-    # Arrange — minimal plan, nothing to cross-check.
+    # Minimal plan, nothing to cross-check.
     plan_dir = plan_context.plan_dir_for('cv-empty')
     _write_request(plan_dir, _BUGFIX_BODY)
     _write_status(plan_dir, metadata={})
     _write_references(plan_dir, scope_estimate=None)
 
-    # Act
     result = run_classification_validation('cv-empty')
 
-    # Assert
     assert result['mismatch_count'] == 0
     assert result['blocked'] is False
 
@@ -187,16 +163,13 @@ def test_no_mismatch_when_no_metadata(plan_context):
 
 def test_feature_as_bug_fix_fires(plan_context):
     """change_type=bug_fix over a feature-shaped narrative flags one finding."""
-    # Arrange
     plan_dir = plan_context.plan_dir_for('cv-feat-bug')
     _write_request(plan_dir, _FEATURE_BODY)
     _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
     _write_references(plan_dir, scope_estimate='surgical')
 
-    # Act
     result = run_classification_validation('cv-feat-bug')
 
-    # Assert
     assert result['mismatch_count'] == 1
     assert result['mismatches'][0]['mismatch'] == 'feature_as_bug_fix'
     assert result['findings_emitted'] == 1
@@ -205,16 +178,14 @@ def test_feature_as_bug_fix_fires(plan_context):
 
 def test_feature_as_bug_fix_does_not_fire_for_feature_change_type(plan_context):
     """A feature-shaped narrative correctly stamped change_type=feature is not flagged."""
-    # Arrange
     plan_dir = plan_context.plan_dir_for('cv-feat-ok')
     _write_request(plan_dir, _FEATURE_BODY)
     _write_status(plan_dir, metadata={'change_type': 'feature'})
     _write_references(plan_dir, scope_estimate='multi_module')
 
-    # Act
     result = run_classification_validation('cv-feat-ok')
 
-    # Assert — no feature-as-bug_fix flag (change_type already matches).
+    # No feature-as-bug_fix flag (change_type already matches).
     classes = {m['mismatch'] for m in result['mismatches']}
     assert 'feature_as_bug_fix' not in classes
 
@@ -226,16 +197,14 @@ def test_feature_as_bug_fix_does_not_fire_for_feature_change_type(plan_context):
 
 def test_affected_files_without_scope_fires(plan_context):
     """Non-empty affected_files with a null scope_estimate flags one finding."""
-    # Arrange — affected_files set, scope_estimate absent.
+    # affected_files set, scope_estimate absent.
     plan_dir = plan_context.plan_dir_for('cv-files-noscope')
     _write_request(plan_dir, _BUGFIX_BODY)
     _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
     _write_references(plan_dir, scope_estimate=None, affected_files=['x/y.py', 'x/z.py'])
 
-    # Act
     result = run_classification_validation('cv-files-noscope')
 
-    # Assert
     classes = {m['mismatch'] for m in result['mismatches']}
     assert classes == {'non_empty_affected_files_with_null_scope'}
     assert result['findings_emitted'] == 1
@@ -244,16 +213,13 @@ def test_affected_files_without_scope_fires(plan_context):
 
 def test_affected_files_with_none_scope_string_fires(plan_context):
     """The literal scope_estimate 'none' counts as null for mismatch class 2."""
-    # Arrange
     plan_dir = plan_context.plan_dir_for('cv-files-nonescope')
     _write_request(plan_dir, _BUGFIX_BODY)
     _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
     _write_references(plan_dir, scope_estimate='none', affected_files=['x/y.py'])
 
-    # Act
     result = run_classification_validation('cv-files-nonescope')
 
-    # Assert
     classes = {m['mismatch'] for m in result['mismatches']}
     assert 'non_empty_affected_files_with_null_scope' in classes
 
@@ -265,16 +231,14 @@ def test_affected_files_with_none_scope_string_fires(plan_context):
 
 def test_both_mismatches_fire_two_findings(plan_context):
     """A plan tripping both classes records two distinct findings without blocking."""
-    # Arrange — bug_fix over a feature narrative AND affected_files without scope.
+    # bug_fix over a feature narrative AND affected_files without scope.
     plan_dir = plan_context.plan_dir_for('cv-both')
     _write_request(plan_dir, _FEATURE_BODY)
     _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
     _write_references(plan_dir, scope_estimate=None, affected_files=['a/b.py'])
 
-    # Act
     result = run_classification_validation('cv-both')
 
-    # Assert
     classes = {m['mismatch'] for m in result['mismatches']}
     assert classes == {'feature_as_bug_fix', 'non_empty_affected_files_with_null_scope'}
     assert result['mismatch_count'] == 2
@@ -289,17 +253,16 @@ def test_both_mismatches_fire_two_findings(plan_context):
 
 def test_rerun_dedups_findings(plan_context):
     """Re-running the gate does not record duplicate findings (title dedup)."""
-    # Arrange
     plan_dir = plan_context.plan_dir_for('cv-dedup')
     _write_request(plan_dir, _FEATURE_BODY)
     _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
     _write_references(plan_dir, scope_estimate='surgical')
 
-    # Act — run twice.
+    # Run twice.
     first = run_classification_validation('cv-dedup')
     second = run_classification_validation('cv-dedup')
 
-    # Assert — first records the finding; the second dedups (0 new emitted).
+    # First records the finding; the second dedups (0 new emitted).
     assert first['findings_emitted'] == 1
     assert second['mismatch_count'] == 1
     assert second['findings_emitted'] == 0
@@ -313,10 +276,9 @@ def test_rerun_dedups_findings(plan_context):
 
 def test_cmd_returns_error_for_missing_plan(plan_context):
     """The subcommand returns a structured error when the plan dir is absent."""
-    # Act — no plan dir created.
+    # No plan dir created.
     result = cmd_classification_validate(_ns('cv-nonexistent'))
 
-    # Assert
     assert result['status'] == 'error'
     assert result['error'] == 'plan_dir_not_found'
 
@@ -328,17 +290,16 @@ def test_cmd_returns_error_for_missing_plan(plan_context):
 
 def test_route_surfaces_classification_without_blocking(plan_context):
     """planning-lane route runs the gate as a pre-route pass and still resolves a lane."""
-    # Arrange — a plan that trips a mismatch (affected_files without scope).
+    # A plan that trips a mismatch (affected_files without scope).
     plan_dir = plan_context.plan_dir_for('cv-route')
     _write_request(plan_dir, _BUGFIX_BODY)
     _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
     _write_references(plan_dir, scope_estimate=None, affected_files=['a/b.py'])
     _write_marshal(plan_context.fixture_dir)
 
-    # Act
     result = cmd_planning_lane_route(_ns_route('cv-route'))
 
-    # Assert — routing succeeded and resolved a lane; the gate result rides along.
+    # Routing succeeded and resolved a lane; the gate result rides along.
     assert result['status'] == 'success'
     assert result['planning_lane'] in ('light', 'deep')
     cv = result['classification_validation']

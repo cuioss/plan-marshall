@@ -325,19 +325,15 @@ def test_finding_promote_to_lessons(plan_context):
 
 def test_finding_query_promoted(plan_context):
     """Test filtering by promoted status."""
-    # Add and promote one
     add_result = cmd_add(_add_ns(type='tip', title='Promoted tip', detail='d'))
     hash_id = str(add_result['hash_id'])
     cmd_promote(_promote_ns(hash_id=hash_id, promoted_to='architecture'))
 
-    # Add one not promoted
     cmd_add(_add_ns(type='tip', title='Not promoted', detail='d'))
 
-    # Query promoted
     result = cmd_query(_query_ns(promoted='true'))
     assert result['filtered_count'] == 1
 
-    # Query not promoted
     result = cmd_query(_query_ns(promoted='false'))
     assert result['filtered_count'] == 1
 
@@ -455,7 +451,6 @@ def test_qgate_query_empty(plan_context):
 
 def test_qgate_query_by_resolution(plan_context):
     """Test filtering Q-Gate findings by resolution."""
-    # Add two findings
     cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-query-res',
@@ -478,7 +473,6 @@ def test_qgate_query_by_resolution(plan_context):
     )
     hash_id = str(add_result['hash_id'])
 
-    # Resolve one
     cmd_qgate_resolve(
         _qgate_resolve_ns(
             plan_id='qgate-query-res',
@@ -489,7 +483,6 @@ def test_qgate_query_by_resolution(plan_context):
         )
     )
 
-    # Query pending
     result = cmd_qgate_query(
         _qgate_query_ns(
             plan_id='qgate-query-res',
@@ -499,7 +492,6 @@ def test_qgate_query_by_resolution(plan_context):
     )
     assert result['filtered_count'] == 1
 
-    # Query taken_into_account
     result = cmd_qgate_query(
         _qgate_query_ns(
             plan_id='qgate-query-res',
@@ -546,7 +538,6 @@ def test_qgate_query_by_source(plan_context):
 
 def test_qgate_per_phase_isolation(plan_context):
     """Test that Q-Gate findings are isolated per phase."""
-    # Add to phase 3
     cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-phase-iso',
@@ -557,7 +548,6 @@ def test_qgate_per_phase_isolation(plan_context):
             detail='d',
         )
     )
-    # Add to phase 4
     cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-phase-iso',
@@ -569,12 +559,10 @@ def test_qgate_per_phase_isolation(plan_context):
         )
     )
 
-    # Query phase 3 only
     result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-phase-iso', phase='3-outline'))
     assert result['total_count'] == 1
     assert result['phase'] == '3-outline'
 
-    # Query phase 4 only
     result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-phase-iso', phase='4-plan'))
     assert result['total_count'] == 1
     assert result['phase'] == '4-plan'
@@ -672,7 +660,6 @@ def test_qgate_clear(plan_context):
     assert result['status'] == 'success'
     assert result['cleared'] == 2
 
-    # Verify empty
     query_result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-clear', phase='3-outline'))
     assert query_result['total_count'] == 0
 
@@ -686,7 +673,6 @@ def test_qgate_clear_empty(plan_context):
 
 def test_qgate_user_review_source(plan_context):
     """Test that user_review findings work end-to-end."""
-    # Add user review finding
     add_result = cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-user-review',
@@ -700,7 +686,6 @@ def test_qgate_user_review_source(plan_context):
     assert add_result['status'] == 'success'
     hash_id = str(add_result['hash_id'])
 
-    # Query user_review findings
     query_result = cmd_qgate_query(
         _qgate_query_ns(
             plan_id='qgate-user-review',
@@ -710,7 +695,6 @@ def test_qgate_user_review_source(plan_context):
     )
     assert query_result['filtered_count'] == 1
 
-    # Resolve as taken_into_account
     resolve_result = cmd_qgate_resolve(
         _qgate_resolve_ns(
             plan_id='qgate-user-review',
@@ -722,7 +706,6 @@ def test_qgate_user_review_source(plan_context):
     )
     assert resolve_result['status'] == 'success'
 
-    # Verify resolved
     verify_result = cmd_qgate_query(
         _qgate_query_ns(
             plan_id='qgate-user-review',
@@ -753,7 +736,6 @@ def test_qgate_add_dedup_pending(plan_context):
     assert result1['status'] == 'success'
     original_hash = str(result1['hash_id'])
 
-    # Add same title again
     result2 = cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-dedup-pend',
@@ -767,7 +749,6 @@ def test_qgate_add_dedup_pending(plan_context):
     assert result2['status'] == 'deduplicated'
     assert str(result2['hash_id']) == original_hash
 
-    # Verify only 1 record exists
     query_result = cmd_qgate_query(
         _qgate_query_ns(
             plan_id='qgate-dedup-pend',
@@ -779,7 +760,6 @@ def test_qgate_add_dedup_pending(plan_context):
 
 def test_qgate_add_reopen_resolved(plan_context):
     """Test that re-adding a resolved finding reopens it."""
-    # Add finding
     add_result = cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-dedup-reopen',
@@ -793,7 +773,6 @@ def test_qgate_add_reopen_resolved(plan_context):
     assert add_result['status'] == 'success'
     hash_id = str(add_result['hash_id'])
 
-    # Resolve it
     cmd_qgate_resolve(
         _qgate_resolve_ns(
             plan_id='qgate-dedup-reopen',
@@ -804,7 +783,6 @@ def test_qgate_add_reopen_resolved(plan_context):
         )
     )
 
-    # Re-add same title
     reopen_result = cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-dedup-reopen',
@@ -818,7 +796,6 @@ def test_qgate_add_reopen_resolved(plan_context):
     assert reopen_result['status'] == 'reopened'
     assert str(reopen_result['hash_id']) == hash_id
 
-    # Verify it's pending again
     query_result = cmd_qgate_query(
         _qgate_query_ns(
             plan_id='qgate-dedup-reopen',
@@ -901,12 +878,10 @@ def test_unified_query_merges_plan_and_qgate(plan_context):
         )
     )
 
-    # Default (no --include-qgate) sees only the plan finding.
     plain = cmd_query(_query_ns(plan_id=pid))
     assert plain['filtered_count'] == 1
     assert 'qgate_included' not in plain
 
-    # Unified read merges the pending q-gate finding alongside the plan finding.
     unified = cmd_query(_query_ns(plan_id=pid, include_qgate=True))
     assert unified['status'] == 'success'
     assert unified['qgate_included'] is True

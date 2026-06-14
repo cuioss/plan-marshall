@@ -36,10 +36,6 @@ _CONFIG = _pyproject_execute_mod._CONFIG
 execute_direct = _pyproject_execute_mod.execute_direct
 cmd_run = _pyproject_execute_mod.cmd_run
 
-# =============================================================================
-# Config Tests
-# =============================================================================
-
 
 def test_config_tool_name():
     """Config has correct tool name."""
@@ -65,11 +61,6 @@ def test_config_capture_strategy():
     assert _CONFIG.capture_strategy == CaptureStrategy.STDOUT_REDIRECT
 
 
-# =============================================================================
-# Command Key Function
-# =============================================================================
-
-
 def test_command_key_fn_verify():
     """Extracts 'verify' from args."""
     assert _CONFIG.command_key_fn('verify') == 'verify'
@@ -86,11 +77,6 @@ def test_command_key_fn_empty():
     assert _CONFIG.command_key_fn('') == 'default'
 
 
-# =============================================================================
-# Scope Function
-# =============================================================================
-
-
 def test_scope_fn_default_for_single_arg():
     """Python scope is 'default' for single-arg commands."""
     assert _CONFIG.scope_fn('verify') == 'default'
@@ -100,11 +86,6 @@ def test_scope_fn_extracts_module():
     """Python scope extracts module name from second arg."""
     assert _CONFIG.scope_fn('module-tests core') == 'core'
     assert _CONFIG.scope_fn('verify plan-marshall') == 'plan-marshall'
-
-
-# =============================================================================
-# Build Command Function
-# =============================================================================
 
 
 def test_build_command_fn():
@@ -118,11 +99,6 @@ def test_build_command_fn_with_module():
     """Includes module argument in command."""
     cmd_parts, cmd_str = _CONFIG.build_command_fn('./pw', 'module-tests core', '/tmp/log.log')
     assert cmd_parts == ['./pw', 'module-tests', 'core']
-
-
-# =============================================================================
-# Wrapper Resolution
-# =============================================================================
 
 
 def test_wrapper_resolve_raises_when_missing(tmp_path):
@@ -142,11 +118,6 @@ def test_execute_direct_error_on_missing_wrapper(tmp_path):
         )
         assert result['status'] == 'error'
         assert result['exit_code'] == -1
-
-
-# =============================================================================
-# Self-Heal Retry
-# =============================================================================
 
 
 def _make_log(tmp_path: Path, text: str) -> str:
@@ -241,9 +212,7 @@ def test_self_heal_passthrough_on_success(tmp_path):
     assert not (tmp_path / '.pyprojectx.broken').exists()
 
 
-# =============================================================================
-# D6: Build-queue integration at the pyproject cmd_run wrap site
-# =============================================================================
+# D6: Build-queue integration at the pyproject cmd_run wrap site.
 #
 # These tests drive the pyproject ``cmd_run`` end-to-end through the REAL
 # ``build_queue_slot`` context manager. The queue acquire/release seam

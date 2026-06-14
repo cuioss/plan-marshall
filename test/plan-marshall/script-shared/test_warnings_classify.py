@@ -20,19 +20,9 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 _wc = importlib.import_module('_warnings_classify')
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _warn(message: str, wtype: str = 'other', severity: str = 'WARNING') -> dict:
     """Build a minimal warning dict."""
     return {'type': wtype, 'message': message, 'severity': severity}
-
-
-# ---------------------------------------------------------------------------
-# flatten_patterns
-# ---------------------------------------------------------------------------
 
 
 class TestFlattenPatterns:
@@ -71,11 +61,6 @@ class TestFlattenPatterns:
         assert result == []
 
 
-# ---------------------------------------------------------------------------
-# ALWAYS_FIXABLE_TYPES detection
-# ---------------------------------------------------------------------------
-
-
 class TestAlwaysFixableTypes:
     """Warnings typed as ALWAYS_FIXABLE_TYPES go to fixable regardless of patterns."""
 
@@ -102,11 +87,6 @@ class TestAlwaysFixableTypes:
             [_warn('cannot find symbol', wtype='compilation_error')],
         )
         assert len(result['fixable']) == 1
-
-
-# ---------------------------------------------------------------------------
-# Substring matcher (Maven style)
-# ---------------------------------------------------------------------------
 
 
 class TestSubstringMatcher:
@@ -153,13 +133,7 @@ class TestSubstringMatcher:
             patterns=['[invalid regex'],
             matcher='substring',
         )
-        # No crash; warning routes based on type
         assert len(result['fixable']) + len(result['unknown']) + len(result['acceptable']) == 1
-
-
-# ---------------------------------------------------------------------------
-# Wildcard matcher (Gradle style)
-# ---------------------------------------------------------------------------
 
 
 class TestWildcardMatcher:
@@ -222,11 +196,6 @@ class TestWildcardMatcher:
         assert result['acceptable'] == []
 
 
-# ---------------------------------------------------------------------------
-# Regex matcher
-# ---------------------------------------------------------------------------
-
-
 class TestRegexMatcher:
     """categorize_warnings with matcher='regex'."""
 
@@ -252,7 +221,6 @@ class TestRegexMatcher:
             patterns=['[invalid'],
             matcher='regex',
         )
-        # Invalid regex returns False, does not match — no crash
         assert result['acceptable'] == []
 
     def test_no_match(self):
@@ -262,11 +230,6 @@ class TestRegexMatcher:
             matcher='regex',
         )
         assert result['acceptable'] == []
-
-
-# ---------------------------------------------------------------------------
-# Flat pattern list input
-# ---------------------------------------------------------------------------
 
 
 class TestFlatPatternInput:
@@ -279,7 +242,7 @@ class TestFlatPatternInput:
             matcher='substring',
         )
         assert len(result['acceptable']) == 1
-        # Flat list match does not add 'reason' key
+        # A flat-list match carries no 'reason' key (only categorized-dict matches do).
         assert 'reason' not in result['acceptable'][0]
 
     def test_flat_list_multiple_patterns(self):
@@ -295,11 +258,6 @@ class TestFlatPatternInput:
         )
         assert len(result['acceptable']) == 2
         assert len(result['fixable']) + len(result['unknown']) == 1
-
-
-# ---------------------------------------------------------------------------
-# Categorized dict input
-# ---------------------------------------------------------------------------
 
 
 class TestCategorizedDictInput:
@@ -337,11 +295,6 @@ class TestCategorizedDictInput:
         )
         assert len(result['unknown']) == 1
         assert result['unknown'][0].get('requires_classification') is True
-
-
-# ---------------------------------------------------------------------------
-# Mixed acceptable and fixable warnings
-# ---------------------------------------------------------------------------
 
 
 class TestMixedWarnings:
@@ -387,11 +340,6 @@ class TestMixedWarnings:
             assert result['unknown'][0].get('requires_classification') is True
 
 
-# ---------------------------------------------------------------------------
-# Empty inputs
-# ---------------------------------------------------------------------------
-
-
 class TestEmptyInputs:
     """Edge cases with empty warnings or patterns."""
 
@@ -416,11 +364,6 @@ class TestEmptyInputs:
     def test_both_empty(self):
         result = _wc.categorize_warnings([], patterns=[])
         assert result == {'acceptable': [], 'fixable': [], 'unknown': []}
-
-
-# ---------------------------------------------------------------------------
-# filter_severity parameter
-# ---------------------------------------------------------------------------
 
 
 class TestFilterSeverity:
@@ -448,11 +391,6 @@ class TestFilterSeverity:
         assert result == {'acceptable': [], 'fixable': [], 'unknown': []}
 
 
-# ---------------------------------------------------------------------------
-# Default matcher fallback
-# ---------------------------------------------------------------------------
-
-
 class TestDefaultMatcher:
     """categorize_warnings with unknown matcher falls back to substring."""
 
@@ -463,11 +401,6 @@ class TestDefaultMatcher:
             matcher='nonexistent_matcher',
         )
         assert len(result['acceptable']) == 1
-
-
-# ---------------------------------------------------------------------------
-# Unrecognized type routing
-# ---------------------------------------------------------------------------
 
 
 class TestUnrecognizedType:

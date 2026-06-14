@@ -9,15 +9,14 @@ Tests both subcommands:
 - check-docs: Check if project docs need required documentation content
 """
 
+import copy
+import json
 from argparse import Namespace
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, run_script
 
-# Script path to determine_mode.py
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'determine_mode.py'
 
-# Tier 2 direct imports — conftest sets up PYTHONPATH for cross-skill imports
 from _config_defaults import DEFAULT_PROJECT  # type: ignore[import-not-found]  # noqa: E402
 from determine_mode import (  # type: ignore[import-not-found]  # noqa: E402
     check_docs,
@@ -29,6 +28,8 @@ from determine_mode import (  # type: ignore[import-not-found]  # noqa: E402
     determine_mode,
     fix_docs,
 )
+
+_DEFAULT_WORKING_PREFIXES = DEFAULT_PROJECT['working_prefixes']
 
 
 class TestModeSubcommand:
@@ -319,12 +320,6 @@ class TestSubcommandRequired:
 # =============================================================================
 
 
-import copy  # noqa: E402, I001
-import json  # noqa: E402, I001
-
-_DEFAULT_WORKING_PREFIXES = DEFAULT_PROJECT['working_prefixes']
-
-
 def _write_marshal(plan_dir, config: dict) -> None:
     """Write a marshal.json fixture under ``plan_dir`` (created on demand)."""
     plan_dir.mkdir(parents=True, exist_ok=True)
@@ -336,92 +331,71 @@ class TestCheckWorkingPrefixesSubcommand:
 
     def test_present_and_current_not_flagged(self, tmp_path):
         """A marshal.json whose project.working_prefixes equals the default returns ok."""
-        # Arrange
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {'working_prefixes': copy.deepcopy(_DEFAULT_WORKING_PREFIXES)}})
 
-        # Act
         result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
 
-        # Assert
         assert result == {'status': 'ok'}
 
     def test_absent_key_flagged(self, tmp_path):
         """A project block lacking working_prefixes returns missing/absent."""
-        # Arrange — project present but no working_prefixes key
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {'default_base_branch': 'main'}})
 
-        # Act
         result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
 
-        # Assert
         assert result['status'] == 'missing'
         assert result['detail'] == 'absent'
         assert result['missing_keys'] == 'working_prefixes'
 
     def test_customized_superset_not_clobbered(self, tmp_path):
         """An operator superset (added prefixes) is honoured — never flagged."""
-        # Arrange — working_prefixes is a strict superset of the default
         superset = [*copy.deepcopy(_DEFAULT_WORKING_PREFIXES), 'spike/']
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {'working_prefixes': superset}})
 
-        # Act
         result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
 
-        # Assert — additions are honoured (non-clobbering)
         assert result == {'status': 'ok'}
 
     def test_drift_missing_default_entry_flagged(self, tmp_path):
         """A working_prefixes missing a default entry returns missing/drift."""
-        # Arrange — drop 'chore/' from working_prefixes
         drifted = [e for e in copy.deepcopy(_DEFAULT_WORKING_PREFIXES) if e != 'chore/']
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {'working_prefixes': drifted}})
 
-        # Act
         result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
 
-        # Assert — working_prefixes drifted
         assert result['status'] == 'missing'
         assert result['detail'] == 'drift'
         assert result['missing_keys'] == 'working_prefixes'
 
     def test_missing_marshal_not_flagged(self, tmp_path):
         """No marshal.json present returns ok (graceful degrade)."""
-        # Arrange — empty plan dir, no marshal.json
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir(parents=True)
 
-        # Act
         result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
 
-        # Assert
         assert result == {'status': 'ok'}
 
     def test_detect_returns_structured_outcome_for_absent(self, tmp_path):
         """detect_working_prefixes_drift returns the absent outcome with working_prefixes key."""
-        # Arrange
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {}})
 
-        # Act
         result = detect_working_prefixes_drift(plan_dir)
 
-        # Assert
         assert result == {'outcome': 'absent', 'missing_keys': ['working_prefixes']}
 
     def test_cli_plumbing_emits_toon(self, tmp_path):
         """check-working-prefixes via subprocess emits valid TOON for the absent case."""
-        # Arrange
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {}})
 
-        # Act
         result = run_script(SCRIPT_PATH, 'check-working-prefixes', '--plan-dir', str(plan_dir))
 
-        # Assert — exit 0 and TOON colon-space key-value lines
         assert result.success, f'Script failed: {result.stderr}'
         parsed = result.toon()
         assert parsed['status'] == 'missing'

@@ -29,7 +29,6 @@ behaviour here avoids 4× duplication.
 from __future__ import annotations
 
 import argparse
-from unittest.mock import patch
 
 import pytest
 
@@ -50,10 +49,6 @@ from _resolve_project_dir_fixtures import (  # type: ignore[import-not-found]
     patch_main_checkout_root,
     patch_query_worktree_path,
 )
-
-# =============================================================================
-# add_project_dir_arg — registers --project-dir AND --plan-id
-# =============================================================================
 
 
 def test_add_project_dir_arg_registers_both_flags():
@@ -106,11 +101,6 @@ def test_add_project_dir_arg_accepts_both_at_argparse_level():
     assert args.plan_id == CANONICAL_PLAN_ID
 
 
-# =============================================================================
-# Subparser helpers — every Bucket B subcommand inherits the flag pair
-# =============================================================================
-
-
 @pytest.mark.parametrize(
     'register_fn,subcommand,extra_args',
     [
@@ -161,11 +151,6 @@ def test_parse_subparser_does_not_declare_routing_flags():
     # Both flags are declared (default values).
     assert hasattr(args, 'project_dir')
     assert hasattr(args, 'plan_id')
-
-
-# =============================================================================
-# resolve_project_dir — four-state contract
-# =============================================================================
 
 
 def test_resolve_plan_id_only_use_worktree_true_returns_worktree():
@@ -239,11 +224,6 @@ def test_resolve_plan_id_with_use_worktree_true_but_empty_worktree_path_raises()
     with patch_query_worktree_path(use_worktree=True, worktree_path=''):
         with pytest.raises(WorktreeResolutionError):
             resolve_project_dir(CANONICAL_PLAN_ID, '.', default='.')
-
-
-# =============================================================================
-# build_main — emits TOON error payloads via the resolver
-# =============================================================================
 
 
 def _register_noop_run(subparsers):
@@ -382,11 +362,6 @@ def test_build_main_preserves_explicit_project_dir(monkeypatch):
     assert captured[0].endswith(CANONICAL_PROJECT_DIR.lstrip('/'))
 
 
-# =============================================================================
-# register_standard_subparsers — declarative wiring still propagates the contract
-# =============================================================================
-
-
 def test_register_standard_subparsers_propagates_routing_flags():
     """The declarative builder MUST propagate the routing pair to every subcommand."""
     fns = register_standard_subparsers(
@@ -408,7 +383,3 @@ def test_register_standard_subparsers_propagates_routing_flags():
 
     args = parser.parse_args(['check-warnings', '--project-dir', CANONICAL_PROJECT_DIR])
     assert args.project_dir == CANONICAL_PROJECT_DIR
-
-
-# Silence unused-import warning.
-_ = patch

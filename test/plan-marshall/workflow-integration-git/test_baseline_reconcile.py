@@ -11,6 +11,7 @@ iterate-to-confidence loop addresses the drift.
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import subprocess
@@ -426,8 +427,6 @@ def test_default_base_branch_is_main(plan_context):
 
 def test_baseline_reconcile_registered_in_git_workflow_cli():
     """argparse subparser routes 'baseline-reconcile' to cmd_baseline_reconcile."""
-    import argparse  # noqa: PLC0415
-
     git_workflow = _load_module('_git_workflow_dispatch_check', 'git-workflow.py')
     assert git_workflow.cmd_baseline_reconcile is cmd_baseline_reconcile or callable(
         git_workflow.cmd_baseline_reconcile

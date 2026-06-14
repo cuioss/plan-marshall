@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Tests for build_result.py module."""
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
-import sys
+import importlib.util
 import tempfile
 from pathlib import Path
 
@@ -300,54 +298,3 @@ def test_validate_result_extra_fields_ok():
     valid, missing = validate_result(result)
     assert valid
     assert missing == []
-
-
-if __name__ == '__main__':
-    import traceback
-
-    tests = [
-        test_log_base_dir,
-        test_timestamp_format,
-        test_status_constants,
-        test_error_constants,
-        test_required_fields,
-        test_create_log_file_creates,
-        test_create_log_file_creates_directories,
-        test_create_log_file_path_pattern,
-        test_create_log_file_different_build_systems,
-        test_create_log_file_different_scopes,
-        test_create_log_file_returns_absolute,
-        test_success_result_basic,
-        test_success_result_extra_fields,
-        test_success_result_validates,
-        test_error_result_basic,
-        test_error_result_wrapper_not_found,
-        test_error_result_extra_fields,
-        test_error_result_validates,
-        test_timeout_result_basic,
-        test_timeout_result_extra_fields,
-        test_timeout_result_validates,
-        test_validate_result_valid,
-        test_validate_result_missing_one,
-        test_validate_result_missing_multiple,
-        test_validate_result_empty,
-        test_validate_result_non_dict,
-        test_validate_result_missing_sorted,
-        test_validate_result_extra_fields_ok,
-    ]
-
-    passed = 0
-    failed = 0
-
-    for test in tests:
-        try:
-            test()
-            passed += 1
-        except Exception:
-            failed += 1
-            print(f'FAILED: {test.__name__}')
-            traceback.print_exc()
-            print()
-
-    print(f'\nResults: {passed} passed, {failed} failed')
-    sys.exit(0 if failed == 0 else 1)

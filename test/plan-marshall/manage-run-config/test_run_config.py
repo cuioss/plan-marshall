@@ -39,14 +39,12 @@ def test_init_create_new_config(plan_context):
     assert data.get('status') == 'success', 'Should succeed'
     assert data.get('action') == 'created', "Action should be 'created'"
 
-    # Verify file exists in base directory
     config_file = plan_context.fixture_dir / 'run-configuration.json'
     assert config_file.exists(), 'Config file should be created'
 
 
 def test_init_skip_existing(plan_context):
     """Test init skips if file already exists."""
-    # Create existing file
     plan_dir = plan_context.fixture_dir
     plan_dir.mkdir(parents=True, exist_ok=True)
     (plan_dir / 'run-configuration.json').write_text('{"version": 1, "commands": {}}')
@@ -60,7 +58,6 @@ def test_init_skip_existing(plan_context):
 
 def test_init_force_overwrite(plan_context):
     """Test init with --force overwrites existing file."""
-    # Create existing file with old content
     plan_dir = plan_context.fixture_dir
     plan_dir.mkdir(parents=True, exist_ok=True)
     (plan_dir / 'run-configuration.json').write_text('{"version": 1, "commands": {"old": {}}}')
@@ -70,7 +67,6 @@ def test_init_force_overwrite(plan_context):
 
     assert data.get('status') == 'success', 'Should succeed'
 
-    # Verify old command entry is gone
     content = json.loads((plan_dir / 'run-configuration.json').read_text())
     assert 'old' not in content.get('commands', {}), 'Old command should be removed'
 
@@ -82,13 +78,10 @@ def test_init_correct_structure(plan_context):
     config_file = plan_context.fixture_dir / 'run-configuration.json'
     content = json.loads(config_file.read_text())
 
-    # Check version
     assert content.get('version') == 1, 'Version should be 1'
 
-    # Check commands is empty object
     assert content.get('commands') == {}, 'Commands should be empty object'
 
-    # Check maven section with acceptable_warnings
     maven = content.get('maven', {})
     aw = maven.get('acceptable_warnings', {})
     assert 'transitive_dependency' in aw, 'Should have transitive_dependency category'
@@ -98,7 +91,6 @@ def test_init_correct_structure(plan_context):
 
 def test_init_creates_config_in_base_dir(plan_context):
     """Test init creates run-configuration.json in base directory."""
-    # Ensure config does not exist yet
     config_file = plan_context.fixture_dir / 'run-configuration.json'
     if config_file.exists():
         config_file.unlink()
@@ -272,7 +264,6 @@ def test_validate_format_is_run_config(plan_context):
 
 def test_timeout_get_default_when_no_persisted(plan_context):
     """Test timeout get returns default when no persisted value."""
-    # Create .plan directory
     (plan_context.fixture_dir).mkdir(parents=True, exist_ok=True)
 
     result = run_script(SCRIPT_PATH, 'timeout', 'get', '--command', 'ci:pr_checks', '--default', '300')
@@ -287,7 +278,6 @@ def test_timeout_get_with_safety_margin(plan_context):
     plan_dir = plan_context.fixture_dir
     plan_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create config with persisted timeout
     config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 240}}}
     (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
@@ -304,12 +294,12 @@ def test_timeout_get_enforces_minimum_on_persisted(plan_context):
     plan_dir = plan_context.fixture_dir
     plan_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create config with very low persisted timeout (e.g., from warm JVM run)
+    # A very low persisted timeout, e.g. from a warm JVM run.
     config = {
         'version': 1,
         'commands': {
             'maven:discover': {
-                'timeout_seconds': 15  # Very short from warm run
+                'timeout_seconds': 15
             }
         },
     }
@@ -325,12 +315,11 @@ def test_timeout_get_enforces_minimum_on_persisted(plan_context):
 
 def test_timeout_get_enforces_minimum_on_default(plan_context):
     """Test timeout get enforces minimum bound when default is too low."""
-    # Create .plan directory
     (plan_context.fixture_dir).mkdir(parents=True, exist_ok=True)
 
     result = run_script(
         SCRIPT_PATH, 'timeout', 'get', '--command', 'quick:command', '--default', '30'
-    )  # Very low default
+    )
 
     assert result.success, f'Should succeed: {result.stderr}'
     data = result.toon()
@@ -351,7 +340,6 @@ def test_timeout_set_initial_value(plan_context):
     assert data.get('timeout_seconds') == 180
     assert data.get('source') == 'initial'
 
-    # Verify file was written
     config = json.loads((plan_dir / 'run-configuration.json').read_text())
     assert config['commands']['ci:pr_checks']['timeout_seconds'] == 180
 
@@ -361,7 +349,6 @@ def test_timeout_set_weighted_update(plan_context):
     plan_dir = plan_context.fixture_dir
     plan_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create config with existing timeout
     config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 240}}}
     (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
@@ -381,11 +368,9 @@ def test_timeout_set_weighted_favors_higher(plan_context):
     plan_dir = plan_context.fixture_dir
     plan_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create config with lower existing timeout
     config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 180}}}
     (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-    # Set higher duration
     result = run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '240')
 
     assert result.success, f'Should succeed: {result.stderr}'
@@ -444,7 +429,6 @@ def test_warning_add_pattern(plan_context):
     plan_dir = plan_context.fixture_dir
     plan_dir.mkdir(parents=True, exist_ok=True)
 
-    # Initialize config
     run_script(SCRIPT_PATH, 'init')
 
     result = run_script(
@@ -461,7 +445,6 @@ def test_warning_add_pattern(plan_context):
     assert data.get('status') == 'success'
     assert data.get('action') == 'added'
 
-    # Verify file was updated
     config = json.loads((plan_dir / 'run-configuration.json').read_text())
     patterns = config['maven']['acceptable_warnings']['transitive_dependency']
     assert 'uses transitive dependency' in patterns
@@ -472,7 +455,6 @@ def test_warning_add_duplicate_skips(plan_context):
     plan_dir = plan_context.fixture_dir
     plan_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create config with existing pattern
     config = {
         'version': 1,
         'commands': {},
@@ -501,7 +483,6 @@ def test_warning_add_invalid_category(plan_context):
 
     result = run_script(SCRIPT_PATH, 'warning', 'add', '--category', 'invalid_category', '--pattern', 'test')
 
-    # argparse will fail with invalid choice
     assert result.returncode != 0
 
 
@@ -510,7 +491,6 @@ def test_warning_list_all_categories(plan_context):
     plan_dir = plan_context.fixture_dir
     plan_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create config with patterns
     config = {
         'version': 1,
         'commands': {},
@@ -585,7 +565,6 @@ def test_warning_remove_pattern(plan_context):
     assert data.get('status') == 'success'
     assert data.get('action') == 'removed'
 
-    # Verify file was updated
     config = json.loads((plan_dir / 'run-configuration.json').read_text())
     patterns = config['maven']['acceptable_warnings']['transitive_dependency']
     assert 'pattern1' not in patterns
@@ -645,7 +624,6 @@ def test_warning_list_empty_config(plan_context):
 
     data = result.toon()
     assert data.get('status') == 'success'
-    # All categories should be empty
     categories = data.get('categories', {})
     for cat in categories.values():
         assert cat == []
@@ -680,7 +658,6 @@ def test_cleanup_temp_via_unified(plan_context):
     assert 'status: success' in result.stdout
     assert 'temp_files: 2' in result.stdout
 
-    # Verify files were deleted
     remaining = list(temp_dir.iterdir())
     assert len(remaining) == 0, f'Files remain: {remaining}'
 
@@ -698,7 +675,6 @@ def test_cleanup_dry_run_via_unified(plan_context):
     assert result.success, f'Script failed: {result.stderr}'
     assert 'status: dry_run' in result.stdout
 
-    # File should NOT be deleted
     assert test_file.exists(), 'File should not be deleted in dry-run mode'
 
 
@@ -727,7 +703,6 @@ def test_cleanup_logs_via_unified(plan_context):
 
 def test_cleanup_status_via_unified(plan_context):
     """Cleanup-status subcommand shows directory statistics."""
-    # Clean any leftover dirs
     for subdir in ['temp', 'logs', 'archived-plans', 'memory']:
         path = plan_context.fixture_dir / subdir
         if path.exists():
@@ -799,7 +774,7 @@ class TestRunConfigMainAnchoring:
     def test_run_config_resolves_to_main_even_when_cwd_is_a_worktree(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: PLAN_BASE_DIR as the main-checkout stand-in; cwd pinned into a
+        # PLAN_BASE_DIR is the main-checkout stand-in; cwd is pinned into a
         # worktree dir with its own .plan/local — the override must win over cwd.
         main_base = tmp_path / 'main' / '.plan' / 'local'
         main_base.mkdir(parents=True)
@@ -811,18 +786,17 @@ class TestRunConfigMainAnchoring:
         (worktree / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        # Act
         resolved = run_config.get_run_config_path()
 
-        # Assert: lands under MAIN's base, NOT the worktree-relative path.
+        # Lands under MAIN's base, NOT the worktree-relative path.
         assert resolved == main_base / 'run-configuration.json'
         assert resolved != worktree / '.plan' / 'local' / 'run-configuration.json'
 
     def test_run_config_resolves_to_main_via_git_common_dir_from_worktree_cwd(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: REAL git repo + REAL linked worktree, no override — exercises
-        # the production git-common-dir branch of the shared utility.
+        # REAL git repo + REAL linked worktree, no override — exercises the
+        # production git-common-dir branch of the shared utility.
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
         import file_ops  # type: ignore[import-not-found]
 
@@ -837,17 +811,16 @@ class TestRunConfigMainAnchoring:
         )
         monkeypatch.chdir(worktree)
 
-        # Act
         resolved = run_config.get_run_config_path()
 
-        # Assert: anchored under MAIN's .plan/local, NOT the worktree's.
+        # Anchored under MAIN's .plan/local, NOT the worktree's.
         expected = main_repo.resolve() / '.plan' / 'local' / 'run-configuration.json'
         assert resolved.resolve() == expected
 
     def test_timeout_set_writes_to_main_base_from_worktree_cwd(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: PLAN_BASE_DIR main stand-in; cwd in a worktree with its own
+        # PLAN_BASE_DIR is the main stand-in; cwd is in a worktree with its own
         # .plan/local. timeout_set must land the write on main, not the worktree.
         main_base = tmp_path / 'main' / '.plan' / 'local'
         main_base.mkdir(parents=True)
@@ -859,10 +832,9 @@ class TestRunConfigMainAnchoring:
         (worktree / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        # Act
         run_config.timeout_set('build:verify', 300)
 
-        # Assert: the write landed under MAIN's base, NOT the worktree.
+        # The write landed under MAIN's base, NOT the worktree.
         assert (main_base / 'run-configuration.json').is_file()
         assert not (worktree / '.plan' / 'local' / 'run-configuration.json').exists()
 
@@ -886,7 +858,7 @@ class TestBuildQueueLimitMainAnchoring:
     def test_build_queue_limit_round_trips_main_anchored_from_worktree_cwd(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: PLAN_BASE_DIR main stand-in; cwd pinned into a worktree dir
+        # PLAN_BASE_DIR is the main stand-in; cwd is pinned into a worktree dir
         # with its own .plan/local — the main-anchored resolver must win over cwd.
         main_base = tmp_path / 'main' / '.plan' / 'local'
         main_base.mkdir(parents=True)
@@ -898,11 +870,11 @@ class TestBuildQueueLimitMainAnchoring:
         (worktree / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        # Act: write the limit from the worktree cwd, then read it back.
+        # Write the limit from the worktree cwd, then read it back.
         run_config._write_build_queue_upper_limit(1800)
         read_back = run_config._read_build_queue_upper_limit()
 
-        # Assert: the write landed on MAIN's run-configuration.json (NOT the
+        # The write landed on MAIN's run-configuration.json (NOT the
         # worktree-relative copy) and the read resolves the same main-anchored file.
         assert read_back == 1800
         main_config = main_base / 'run-configuration.json'
@@ -913,7 +885,7 @@ class TestBuildQueueLimitMainAnchoring:
     def test_build_queue_limit_write_clamps_then_round_trips_main_anchored(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Arrange: same worktree-cwd / main-anchored setup as above.
+        # Same worktree-cwd / main-anchored setup as above.
         main_base = tmp_path / 'main' / '.plan' / 'local'
         main_base.mkdir(parents=True)
         monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
@@ -924,11 +896,11 @@ class TestBuildQueueLimitMainAnchoring:
         (worktree / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        # Act: write an above-ceiling value — the clamp pins it to 3600 on main.
+        # Write an above-ceiling value — the clamp pins it to 3600 on main.
         run_config._write_build_queue_upper_limit(99999)
 
-        # Assert: the persisted (and read-back) value is the 3600 s ceiling,
-        # stored on MAIN, never higher.
+        # The persisted (and read-back) value is the 3600 s ceiling, stored on
+        # MAIN, never higher.
         assert run_config._read_build_queue_upper_limit() == 3600
         main_config = main_base / 'run-configuration.json'
         assert json.loads(main_config.read_text())['build']['queue']['upper_limit_seconds'] == 3600

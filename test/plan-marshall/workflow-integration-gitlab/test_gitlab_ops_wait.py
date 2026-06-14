@@ -530,14 +530,11 @@ def _gl_status_args(*, pr_number=88, plan_id, error_style='generic'):
 def test_ci_status_failure_enriches_each_failing_job_with_real_filtered_log(monkeypatch, plan_context):
     """cmd_ci_status failure TOON: each failing_checks[] entry gains its own
     log_file / filtered_log_file, fed from the REAL gitlab/fail.log fixture."""
-    # Arrange
     jobs = _two_failing_jobs()
     fixture, fetch_calls = _wire_gitlab_failure(monkeypatch, jobs=jobs)
 
-    # Act
     result = gitlab_ops.cmd_ci_status(_gl_status_args(plan_id=plan_context.plan_id))
 
-    # Assert
     assert result['status'] == 'success'
     assert result['overall_status'] == 'failure'
     assert 'failing_checks' in result
@@ -549,16 +546,13 @@ def test_ci_status_failure_enriches_each_failing_job_with_real_filtered_log(monk
 def test_ci_status_success_path_has_no_failing_checks_key(monkeypatch, plan_context):
     """A green pipeline leaves the success TOON unchanged — no failing_checks,
     and the raw-trace fetcher is never invoked."""
-    # Arrange — both jobs succeed.
     jobs = _two_failing_jobs()
     for job in jobs:
         job['status'] = 'success'
     _, fetch_calls = _wire_gitlab_failure(monkeypatch, jobs=jobs)
 
-    # Act
     result = gitlab_ops.cmd_ci_status(_gl_status_args(plan_id=plan_context.plan_id))
 
-    # Assert — unchanged success envelope; enrichment never ran.
     assert result['status'] == 'success'
     assert result['overall_status'] == 'success'
     assert 'failing_checks' not in result
@@ -579,15 +573,13 @@ def _gl_wait_args(*, pr_number=88, plan_id, error_style='generic', timeout=5, in
 def test_ci_wait_failure_enriches_each_failing_job_with_real_filtered_log(monkeypatch, plan_context):
     """cmd_ci_wait natural-termination failure: each failing_checks[] entry
     gains its own log_file / filtered_log_file from the REAL fixture."""
-    # Arrange
     jobs = _two_failing_jobs()
     fixture, fetch_calls = _wire_gitlab_failure(monkeypatch, jobs=jobs)
     _noop_sleep(monkeypatch)
 
-    # Act — the wait loop terminates immediately (no wait-state jobs).
+    # The wait loop terminates immediately (no wait-state jobs).
     result = gitlab_ops.cmd_ci_wait(_gl_wait_args(plan_id=plan_context.plan_id))
 
-    # Assert
     assert result['status'] == 'success'
     assert result['final_status'] == 'failure'
     assert 'failing_checks' in result
@@ -598,17 +590,14 @@ def test_ci_wait_failure_enriches_each_failing_job_with_real_filtered_log(monkey
 def test_ci_wait_success_path_failing_checks_empty(monkeypatch, plan_context):
     """A green wait result carries an empty failing_checks list and never
     invokes the raw-trace fetcher."""
-    # Arrange — both jobs succeed.
     jobs = _two_failing_jobs()
     for job in jobs:
         job['status'] = 'success'
     _, fetch_calls = _wire_gitlab_failure(monkeypatch, jobs=jobs)
     _noop_sleep(monkeypatch)
 
-    # Act
     result = gitlab_ops.cmd_ci_wait(_gl_wait_args(plan_id=plan_context.plan_id))
 
-    # Assert
     assert result['status'] == 'success'
     assert result['final_status'] == 'success'
     assert result['failing_checks'] == []

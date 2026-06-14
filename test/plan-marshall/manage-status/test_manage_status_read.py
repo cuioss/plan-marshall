@@ -483,6 +483,41 @@ def test_cli_get_routing_context_not_found_exits_zero(plan_context):
     assert 'file_not_found' in result.stdout
 
 
+# =============================================================================
+# Tests: get alias for read (subprocess / CLI plumbing)
+# =============================================================================
+
+
+class TestCliGetAlias:
+    """Subprocess test pinning ``get`` as an alias for the ``read`` subcommand."""
+
+    def test_cli_get_alias_succeeds(self, plan_context):
+        """``manage-status get`` succeeds via the CLI for an existing plan."""
+        cmd_create(
+            Namespace(plan_id='get-alias', title='Get Alias', phases='1-init,2-refine', force=False)
+        )
+
+        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'get-alias')
+
+        assert result.success, f'Script failed: {result.stderr}'
+        assert 'status: success' in result.stdout
+        assert 'title: Get Alias' in result.stdout
+
+    def test_cli_get_alias_matches_read(self, plan_context):
+        """``get`` and ``read`` produce identical payloads for the same plan."""
+        cmd_create(
+            Namespace(plan_id='get-alias-match', title='Get Alias Match', phases='1-init,2-refine', force=False)
+        )
+
+        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'get-alias-match')
+        read_result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'get-alias-match')
+
+        assert get_result.returncode == 0
+        assert read_result.returncode == 0
+        assert get_result.returncode == read_result.returncode
+        assert get_result.stdout == read_result.stdout
+
+
 def test_script_source_uses_canonical_local_plans_path():
     """The script source references .plan/local/plans, not the legacy form.
 

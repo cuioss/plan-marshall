@@ -6,8 +6,10 @@ Public API tests should use gradle.py CLI instead.
 """
 
 # Direct imports - conftest sets up PYTHONPATH (cross-skill)
+import tempfile
 from pathlib import Path
 
+import pytest
 from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 
 from conftest import load_script_module
@@ -18,11 +20,6 @@ parse_log = _gradle_cmd_parse_mod.parse_log
 
 # Test data location (fixtures in test directory)
 TEST_DATA_DIR = Path(__file__).parent / 'fixtures' / 'log-test-data'
-
-
-# =============================================================================
-# Success Log Tests
-# =============================================================================
 
 
 def test_parse_log_success_returns_tuple():
@@ -58,11 +55,6 @@ def test_parse_log_success_issues_are_issue_objects():
 
     for issue in issues:
         assert isinstance(issue, Issue)
-
-
-# =============================================================================
-# Failure Log Tests (Compilation)
-# =============================================================================
 
 
 def test_parse_log_failure_build_status():
@@ -121,11 +113,6 @@ def test_parse_log_failure_warning_category():
     assert len(deprecation) >= 1
 
 
-# =============================================================================
-# Test Failure Log Tests
-# =============================================================================
-
-
 def test_parse_log_test_failure_build_status():
     """Test failure build returns FAILURE status."""
     log_file = TEST_DATA_DIR / 'gradle-test-failure-real.log'
@@ -144,11 +131,6 @@ def test_parse_log_test_failure_test_summary():
     assert test_summary.failed == 2
     assert test_summary.passed == 3  # 5 - 2 - 0
     assert test_summary.skipped == 0
-
-
-# =============================================================================
-# Issue Object Tests
-# =============================================================================
 
 
 def test_issue_to_dict():
@@ -180,23 +162,14 @@ def test_test_summary_to_dict():
     assert d['total'] == 5
 
 
-# =============================================================================
-# Edge Cases
-# =============================================================================
-
-
 def test_parse_log_file_not_found():
     """Raises FileNotFoundError for missing log file."""
-    import pytest
-
     with pytest.raises(FileNotFoundError):
         parse_log('/nonexistent/path/to/log.log')
 
 
 def test_parse_log_no_tests():
     """Handles log without test summary gracefully."""
-    import tempfile
-
     content = """> Task :compileJava
 BUILD SUCCESSFUL in 5s
 3 actionable tasks: 3 executed
@@ -215,8 +188,6 @@ BUILD SUCCESSFUL in 5s
 
 def test_parse_log_deduplicates_issues():
     """Issues are deduplicated."""
-    import tempfile
-
     # Same error appearing multiple times
     content = """/path/to/File.java:10: error: cannot find symbol
 /path/to/File.java:10: error: cannot find symbol

@@ -11,13 +11,7 @@ from pathlib import Path
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path, run_script
 
-# Path to the script
 SCRIPT_PATH = get_script_path('plan-marshall', 'tools-script-executor', 'await_until.py')
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
 
 
 def run_with_pythonpath(args, cwd=None, env=None, timeout=30):
@@ -53,11 +47,6 @@ def parse_toon_result(stdout: str) -> dict:
     return result
 
 
-# =============================================================================
-# TESTS: Help output
-# =============================================================================
-
-
 def test_help_output():
     """Script shows help with all options."""
     result = run_script(SCRIPT_PATH, '--help')
@@ -65,11 +54,6 @@ def test_help_output():
     assert '--check-cmd' in result.stdout, 'Help should mention --check-cmd'
     assert '--success-field' in result.stdout, 'Help should mention --success-field'
     assert '--command-key' in result.stdout, 'Help should mention --command-key'
-
-
-# =============================================================================
-# TESTS: Immediate success
-# =============================================================================
 
 
 def test_immediate_success():
@@ -131,11 +115,6 @@ def test_success_with_different_field():
         assert parsed.get('status') == 'success'
 
 
-# =============================================================================
-# TESTS: Failure detection
-# =============================================================================
-
-
 def test_failure_detection():
     """Poll returns failure when failure condition matches."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -165,11 +144,6 @@ def test_failure_detection():
         parsed = parse_toon_result(result.stdout)
         assert parsed.get('status') == 'error', f'Expected status=error, got {parsed.get("status")}'
         assert parsed.get('polls') == '1', 'Should detect failure on first poll'
-
-
-# =============================================================================
-# TESTS: Multiple polls
-# =============================================================================
 
 
 def test_multiple_polls_before_success():
@@ -230,11 +204,6 @@ else:
         os.unlink(temp_script)
         if os.path.exists(state_file):
             os.unlink(state_file)
-
-
-# =============================================================================
-# TESTS: Adaptive timeout with run-config
-# =============================================================================
 
 
 def test_adaptive_timeout_from_run_config():
@@ -342,21 +311,11 @@ def test_execution_history_updated():
         assert 'timeout_seconds' in cmd_entry, 'timeout_seconds should be recorded'
 
 
-# =============================================================================
-# TESTS: Error handling
-# =============================================================================
-
-
 def test_missing_required_args():
     """Missing required arguments cause error."""
     result = run_script(SCRIPT_PATH, '--check-cmd', 'echo test')
     assert not result.success, 'Should fail without --success-field and --command-key'
     assert 'required' in result.stderr.lower()
-
-
-# =============================================================================
-# TESTS: Case insensitive matching
-# =============================================================================
 
 
 def test_case_insensitive_matching():
@@ -382,8 +341,3 @@ def test_case_insensitive_matching():
             cwd=tmpdir,
         )
         assert result.returncode == 0, f'Should match SUCCESS to success: {result.stderr}'
-
-
-# =============================================================================
-# Main
-# =============================================================================

@@ -9,16 +9,15 @@ Tier 3 (subprocess) tests retained for CLI plumbing and persist (marshal.json I/
 
 import json
 from argparse import Namespace
-
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from unittest.mock import patch
 
+# conftest.py sets up PYTHONPATH so tools-integration-ci scripts are importable.
 from conftest import get_script_path, run_script
 
-# Script path for remaining subprocess (CLI plumbing) tests
+# Script path for the Tier 3 subprocess (CLI plumbing) tests.
 SCRIPT_PATH = get_script_path('plan-marshall', 'tools-integration-ci', 'ci_health.py')
 
-# Tier 2 direct imports
+# Tier 2 direct imports — resolved after conftest bootstraps PYTHONPATH above.
 from ci_health import (  # type: ignore[import-not-found]  # noqa: E402
     _match_directory,
     _match_url,

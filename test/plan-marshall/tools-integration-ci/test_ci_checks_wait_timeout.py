@@ -50,128 +50,98 @@ def fresh_marshal(tmp_path, monkeypatch):
 
 def test_resolver_returns_fallback_when_marshal_absent(fresh_marshal):
     """marshal.json is absent -> resolver returns the 600s fallback."""
-    # Arrange — fixture already ensures marshal.json does not exist
     assert not fresh_marshal.exists()
 
-    # Act
     timeout = ci_base._resolve_ci_timeout()
 
-    # Assert
     assert timeout == 600
 
 
 def test_resolver_returns_fallback_when_key_unset(fresh_marshal):
     """marshal.json present without the finalize timeout key -> resolver returns 600."""
-    # Arrange
     fresh_marshal.write_text(json.dumps({'plan': {}, 'skill_domains': {}}), encoding='utf-8')
 
-    # Act
     timeout = ci_base._resolve_ci_timeout()
 
-    # Assert
     assert timeout == 600
 
 
 def test_resolver_returns_marshal_value_when_key_set(fresh_marshal):
     """``plan.phase-6-finalize.checks_wait_timeout_seconds: 900`` -> resolver returns 900."""
-    # Arrange
     fresh_marshal.write_text(
         json.dumps({'plan': {'phase-6-finalize': {'checks_wait_timeout_seconds': 900}}}),
         encoding='utf-8',
     )
 
-    # Act
     timeout = ci_base._resolve_ci_timeout()
 
-    # Assert
     assert timeout == 900
 
 
 def test_resolver_returns_fallback_when_value_non_positive(fresh_marshal):
     """Non-positive integer guards against accidental zero/negative configs."""
-    # Arrange
     fresh_marshal.write_text(
         json.dumps({'plan': {'phase-6-finalize': {'checks_wait_timeout_seconds': 0}}}),
         encoding='utf-8',
     )
 
-    # Act
     timeout = ci_base._resolve_ci_timeout()
 
-    # Assert
     assert timeout == 600
 
 
 def test_resolver_returns_fallback_when_value_not_int(fresh_marshal):
     """A string value is rejected and the resolver falls back to 600."""
-    # Arrange
     fresh_marshal.write_text(
         json.dumps({'plan': {'phase-6-finalize': {'checks_wait_timeout_seconds': 'not-an-int'}}}),
         encoding='utf-8',
     )
 
-    # Act
     timeout = ci_base._resolve_ci_timeout()
 
-    # Assert
     assert timeout == 600
 
 
 def test_resolver_returns_fallback_on_malformed_json(fresh_marshal):
     """A corrupted marshal.json must not raise — resolver falls back to 600."""
-    # Arrange
     fresh_marshal.write_text('{not valid json', encoding='utf-8')
 
-    # Act
     timeout = ci_base._resolve_ci_timeout()
 
-    # Assert
     assert timeout == 600
 
 
 def test_checks_wait_argparse_default_uses_resolver():
     """``checks wait --pr-number 1`` defaults --timeout to DEFAULT_CI_TIMEOUT."""
-    # Arrange
     parser, _, _, _, _ = ci_base.build_parser('test')
 
-    # Act
     args = parser.parse_args(['checks', 'wait', '--pr-number', '1'])
 
-    # Assert — the module-level DEFAULT_CI_TIMEOUT is the resolved value
     assert args.timeout == ci_base.DEFAULT_CI_TIMEOUT
 
 
 def test_pr_wait_for_comments_argparse_default_uses_resolver():
     """``pr wait-for-comments --pr-number 1`` shares the same default."""
-    # Arrange
     parser, _, _, _, _ = ci_base.build_parser('test')
 
-    # Act
     args = parser.parse_args(['pr', 'wait-for-comments', '--pr-number', '1'])
 
-    # Assert — both subparsers route through the same resolver-derived constant
     assert args.timeout == ci_base.DEFAULT_CI_TIMEOUT
 
 
 def test_checks_wait_explicit_timeout_flag_overrides_default():
     """Explicit ``--timeout`` wins over the resolver-derived default."""
-    # Arrange
     parser, _, _, _, _ = ci_base.build_parser('test')
 
-    # Act
     args = parser.parse_args(['checks', 'wait', '--pr-number', '1', '--timeout', '1200'])
 
-    # Assert
     assert args.timeout == 1200
 
 
 def test_pr_wait_for_comments_explicit_timeout_flag_overrides_default():
     """Explicit ``--timeout`` also wins on the pr wait-for-comments subparser."""
-    # Arrange
     parser, _, _, _, _ = ci_base.build_parser('test')
 
-    # Act
     args = parser.parse_args(['pr', 'wait-for-comments', '--pr-number', '1', '--timeout', '1200'])
 
-    # Assert
     assert args.timeout == 1200

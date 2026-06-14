@@ -492,13 +492,13 @@ def test_phase_boundary_clamps_worked_to_wall_for_1init_bootstrap(plan_context):
     """1-init bootstrap ordering: a forwarded worked window longer than the
     created→end wall span is clamped so worked <= wall (the worked>wall row from
     lesson 2026-05-29-17-001 can no longer be persisted)."""
-    # Arrange — seed status.json.created at "now" so the backfilled wall span is
-    # near-zero; forward a deliberately huge worked window.
+    # status.json.created at "now" makes the backfilled wall span near-zero;
+    # the forwarded worked window is deliberately huge.
     created_ts = manage_metrics.now_utc_iso()
     plan_dir = plan_context.plan_dir_for('clamp-1init')
     _seed_status_created(plan_dir, created_ts)
 
-    # Act — no prior start-phase; backfill from status.json.created.
+    # No prior start-phase; backfill from status.json.created.
     result = cmd_phase_boundary(
         _ns_boundary(
             'clamp-1init',
@@ -508,7 +508,6 @@ def test_phase_boundary_clamps_worked_to_wall_for_1init_bootstrap(plan_context):
         )
     )
 
-    # Assert — the persisted worked value is bounded to the wall span.
     assert result['status'] == 'success'
     content = (plan_dir / 'work' / 'metrics.toon').read_text()
     block = _phase_block(content, '1-init')
@@ -522,15 +521,13 @@ def test_phase_boundary_clamps_worked_to_wall_for_1init_bootstrap(plan_context):
 
 def test_end_phase_clamps_worked_to_wall(plan_context):
     """cmd_end_phase write site: the symmetric clamp bounds worked to wall."""
-    # Arrange — start then immediately end (wall span ~0); forward huge worked.
+    # Start then immediately end (wall span ~0); forward a huge worked window.
     cmd_start_phase(_ns_start_phase('clamp-end', '3-outline'))
 
-    # Act
     result = cmd_end_phase(
         _ns_end_phase('clamp-end', phase='3-outline', duration_ms=888_888_888)
     )
 
-    # Assert
     assert result['status'] == 'success'
     content = (plan_context.plan_dir_for('clamp-end') / 'work' / 'metrics.toon').read_text()
     block = _phase_block(content, '3-outline')
@@ -542,13 +539,13 @@ def test_end_phase_clamps_worked_to_wall(plan_context):
 
 def test_clamp_does_not_inflate_when_worked_below_wall(plan_context):
     """Negative control: a worked window SMALLER than wall is left unchanged."""
-    # Arrange — seed a created timestamp far enough in the past that the wall
-    # span comfortably exceeds the small forwarded worked window.
+    # A created timestamp far in the past makes the wall span comfortably
+    # exceed the small forwarded worked window.
     created_ts = '2026-01-01T00:00:00+00:00'
     plan_dir = plan_context.plan_dir_for('clamp-below')
     _seed_status_created(plan_dir, created_ts)
 
-    # Act — small worked window (2 s) vs a multi-month wall span.
+    # Small worked window (2 s) vs a multi-month wall span.
     cmd_phase_boundary(
         _ns_boundary(
             'clamp-below',
@@ -558,7 +555,7 @@ def test_clamp_does_not_inflate_when_worked_below_wall(plan_context):
         )
     )
 
-    # Assert — the clamp only bounds, never inflates: worked stays 2 s.
+    # The clamp only bounds, never inflates: worked stays 2 s.
     content = (plan_dir / 'work' / 'metrics.toon').read_text()
     block = _phase_block(content, '1-init')
     assert int(_field(block, 'agent_duration_ms')) == 2000
@@ -572,10 +569,8 @@ def test_clamp_does_not_inflate_when_worked_below_wall(plan_context):
 
 def test_retrospective_tokens_recorded_on_finalize_when_forwarded(plan_context):
     """--retrospective-tokens forwarded → recorded as a [6-finalize] sub-field."""
-    # Arrange
     cmd_start_phase(_ns_start_phase('retro-attr', '6-finalize'))
 
-    # Act
     result = cmd_end_phase(
         _ns_end_phase(
             'retro-attr',
@@ -585,7 +580,6 @@ def test_retrospective_tokens_recorded_on_finalize_when_forwarded(plan_context):
         )
     )
 
-    # Assert
     assert result['status'] == 'success'
     assert result['retrospective_tokens'] == 4000
     content = (plan_context.plan_dir_for('retro-attr') / 'work' / 'metrics.toon').read_text()
@@ -595,15 +589,14 @@ def test_retrospective_tokens_recorded_on_finalize_when_forwarded(plan_context):
 
 def test_retrospective_tokens_absent_when_not_forwarded(plan_context):
     """No --retrospective-tokens → the field is absent (no schema migration)."""
-    # Arrange
     cmd_start_phase(_ns_start_phase('retro-absent', '6-finalize'))
 
-    # Act — total_tokens only, no retrospective attribution.
+    # total_tokens only, no retrospective attribution.
     result = cmd_end_phase(
         _ns_end_phase('retro-absent', phase='6-finalize', total_tokens=10000)
     )
 
-    # Assert — default-absent: the field never appears.
+    # default-absent: the field never appears.
     assert result['status'] == 'success'
     assert 'retrospective_tokens' not in result
     content = (plan_context.plan_dir_for('retro-absent') / 'work' / 'metrics.toon').read_text()

@@ -18,10 +18,6 @@ from triage_helpers import (
     safe_main,
 )
 
-# =============================================================================
-# Test: make_error
-# =============================================================================
-
 
 def test_make_error_basic():
     """Test basic error creation."""
@@ -45,11 +41,6 @@ def test_make_error_with_extra_fields():
     assert result['error_code'] == 'PARSE_ERROR'
 
 
-# =============================================================================
-# Test: print_toon
-# =============================================================================
-
-
 def test_print_toon_success(capsys):
     """Test print_toon returns 0 for success."""
     rc = print_toon({'status': 'success', 'data': 'hello'})
@@ -71,11 +62,6 @@ def test_print_toon_missing_status(capsys):
     assert rc == 0
 
 
-# =============================================================================
-# Test: print_error
-# =============================================================================
-
-
 def test_print_error(capsys):
     """Test print_error always returns 0 (exit code reserved for uncaught exceptions)."""
     rc = print_error('oops', code=ErrorCode.INVALID_INPUT)
@@ -84,11 +70,6 @@ def test_print_error(capsys):
     result = parse_toon(captured.out)
     assert result['error'] == 'oops'
     assert result['error_code'] == 'INVALID_INPUT'
-
-
-# =============================================================================
-# Test: safe_main
-# =============================================================================
 
 
 def test_safe_main_success():
@@ -114,13 +95,7 @@ def test_safe_main_exception(capsys):
     captured = capsys.readouterr()
     result = parse_toon(captured.out)
     assert 'test explosion' in result['error']
-    # A9: traceback should be included
     assert 'traceback' in captured.out.lower() or 'ValueError' in captured.out
-
-
-# =============================================================================
-# Test: parse_json_arg
-# =============================================================================
 
 
 def test_parse_json_arg_success():
@@ -143,11 +118,6 @@ def test_parse_json_arg_array():
     val, err = parse_json_arg('[1, 2, 3]', '--items')
     assert err is None
     assert val == [1, 2, 3]
-
-
-# =============================================================================
-# Test: load_config_file
-# =============================================================================
 
 
 def test_load_config_file_missing(tmp_path):
@@ -173,15 +143,10 @@ def test_load_config_file_invalid_json(tmp_path):
     assert result == {}
 
 
-# =============================================================================
-# Test: load_skill_config
-# =============================================================================
-
-
 def test_load_skill_config_resolves_path(tmp_path):
     """Test load_skill_config computes correct path from script location."""
-    # Create: tmp_path/skill-name/scripts/script.py
-    #         tmp_path/skill-name/standards/config.json
+    # Fixture layout: tmp_path/skill-name/scripts/script.py alongside
+    # tmp_path/skill-name/standards/config.json.
     scripts_dir = tmp_path / 'skill-name' / 'scripts'
     scripts_dir.mkdir(parents=True)
     standards_dir = tmp_path / 'skill-name' / 'standards'
@@ -193,11 +158,6 @@ def test_load_skill_config_resolves_path(tmp_path):
     script_file = str(scripts_dir / 'my_script.py')
     result = load_skill_config(script_file, 'my-config.json')
     assert result == config
-
-
-# =============================================================================
-# Test: calculate_priority
-# =============================================================================
 
 
 def test_calculate_priority_no_boost():
@@ -223,11 +183,6 @@ def test_calculate_priority_clamps():
     """Test priority clamping at boundaries."""
     assert calculate_priority('critical', 5) == 'critical'
     assert calculate_priority('low', -5) == 'low'
-
-
-# =============================================================================
-# Test: is_test_file
-# =============================================================================
 
 
 def test_is_test_file_java():
@@ -257,11 +212,6 @@ def test_is_test_file_go():
     """Test Go test file detection."""
     assert is_test_file('handler_test.go')
     assert not is_test_file('handler.go')
-
-
-# =============================================================================
-# Test: create_workflow_cli
-# =============================================================================
 
 
 def test_create_workflow_cli_basic():
@@ -307,12 +257,7 @@ def test_create_workflow_cli_multiple_subcommands():
     assert args2.func(args2) == 1
 
 
-# =============================================================================
-# Test: ErrorCode constants
-# =============================================================================
-
-
 def test_error_code_fetch_failure_exists():
-    """A3: Verify FETCH_FAILURE error code was added."""
+    """Verify the FETCH_FAILURE error code is defined."""
     assert hasattr(ErrorCode, 'FETCH_FAILURE')
     assert ErrorCode.FETCH_FAILURE == 'FETCH_FAILURE'

@@ -124,10 +124,8 @@ def _compose(plan_id: str) -> None:
 
 def test_record_executed_appends_row_with_token_attribution(plan_context):
     """An executed record appends one row carrying its token-attribution triple."""
-    # Arrange
     _compose('rec-exec')
 
-    # Act
     result = cmd_record_step(
         _record_ns(
             plan_id='rec-exec',
@@ -140,7 +138,6 @@ def test_record_executed_appends_row_with_token_attribution(plan_context):
         )
     )
 
-    # Assert
     assert result is not None
     assert result['status'] == 'success'
     assert result['recorded'] is True
@@ -156,10 +153,8 @@ def test_record_executed_appends_row_with_token_attribution(plan_context):
 
 def test_record_executed_persists_row_to_manifest(plan_context):
     """The appended row is persisted into the manifest's execution_log section."""
-    # Arrange
     _compose('rec-persist')
 
-    # Act
     cmd_record_step(
         _record_ns(
             plan_id='rec-persist',
@@ -170,7 +165,6 @@ def test_record_executed_persists_row_to_manifest(plan_context):
         )
     )
 
-    # Assert
     manifest = read_manifest('rec-persist')
     assert manifest is not None
     log = manifest[EXECUTION_LOG_KEY]
@@ -187,15 +181,12 @@ def test_record_executed_persists_row_to_manifest(plan_context):
 
 def test_record_skipped_appends_row(plan_context):
     """A skipped step records a row with the skipped outcome."""
-    # Arrange
     _compose('rec-skip')
 
-    # Act
     result = cmd_record_step(
         _record_ns(plan_id='rec-skip', step_id='coverage', outcome='skipped')
     )
 
-    # Assert
     assert result is not None and result['status'] == 'success'
     assert result['outcome'] == 'skipped'
     manifest = read_manifest('rec-skip')
@@ -205,15 +196,12 @@ def test_record_skipped_appends_row(plan_context):
 
 def test_record_error_outcome_appends_row(plan_context):
     """An error step records a row with the error outcome."""
-    # Arrange
     _compose('rec-error')
 
-    # Act
     result = cmd_record_step(
         _record_ns(plan_id='rec-error', step_id='ci-verify', phase='6-finalize', outcome='error')
     )
 
-    # Assert
     assert result is not None and result['status'] == 'success'
     assert result['outcome'] == 'error'
     assert result['phase'] == '6-finalize'
@@ -221,13 +209,10 @@ def test_record_error_outcome_appends_row(plan_context):
 
 def test_record_token_attribution_defaults_to_zero(plan_context):
     """Omitting the token-attribution flags records zeros, not missing columns."""
-    # Arrange
     _compose('rec-zero')
 
-    # Act
     result = cmd_record_step(_record_ns(plan_id='rec-zero', step_id='quality_check', outcome='skipped'))
 
-    # Assert
     assert result is not None
     assert result['total_tokens'] == 0
     assert result['tool_uses'] == 0
@@ -240,10 +225,8 @@ def test_record_token_attribution_defaults_to_zero(plan_context):
 
 def test_record_negative_token_values_clamped_to_zero(plan_context):
     """Negative attribution inputs are clamped to zero (max(0, ...))."""
-    # Arrange
     _compose('rec-neg')
 
-    # Act
     result = cmd_record_step(
         _record_ns(
             plan_id='rec-neg',
@@ -254,7 +237,6 @@ def test_record_negative_token_values_clamped_to_zero(plan_context):
         )
     )
 
-    # Assert
     assert result is not None
     assert result['total_tokens'] == 0
     assert result['tool_uses'] == 0
@@ -268,20 +250,18 @@ def test_record_negative_token_values_clamped_to_zero(plan_context):
 
 def test_record_appends_in_order_and_count_increments(plan_context):
     """Repeated records append rows deterministically; reading back reflects order."""
-    # Arrange
     _compose('rec-order')
 
-    # Act
     r1 = cmd_record_step(_record_ns(plan_id='rec-order', step_id='quality_check', outcome='executed'))
     r2 = cmd_record_step(_record_ns(plan_id='rec-order', step_id='build_verify', outcome='executed'))
     r3 = cmd_record_step(_record_ns(plan_id='rec-order', step_id='coverage', outcome='skipped'))
 
-    # Assert — running count tracks the append log
+    # running count tracks the append log
     assert r1['execution_log_count'] == 1
     assert r2['execution_log_count'] == 2
     assert r3['execution_log_count'] == 3
 
-    # Assert — read-back preserves the recorded sequence
+    # read-back preserves the recorded sequence
     log = read_manifest('rec-order')[EXECUTION_LOG_KEY]
     assert [e['step_id'] for e in log] == ['quality_check', 'build_verify', 'coverage']
     assert [e['outcome'] for e in log] == ['executed', 'executed', 'skipped']
@@ -289,14 +269,11 @@ def test_record_appends_in_order_and_count_increments(plan_context):
 
 def test_record_same_step_twice_appends_two_rows(plan_context):
     """The log is an ordered append log, not a keyed map — repeats append."""
-    # Arrange
     _compose('rec-dup')
 
-    # Act
     cmd_record_step(_record_ns(plan_id='rec-dup', step_id='quality_check', outcome='error'))
     result = cmd_record_step(_record_ns(plan_id='rec-dup', step_id='quality_check', outcome='executed'))
 
-    # Assert
     assert result['execution_log_count'] == 2
     log = read_manifest('rec-dup')[EXECUTION_LOG_KEY]
     assert len(log) == 2
@@ -311,11 +288,9 @@ def test_record_same_step_twice_appends_two_rows(plan_context):
 
 def test_record_missing_manifest_returns_none_with_toon_error(plan_context, capsys):
     """record-step against a plan with no manifest emits file_not_found via TOON."""
-    # Arrange — no compose for this plan id.
-    # Act
+    # no compose for this plan id.
     result = cmd_record_step(_record_ns(plan_id='rec-no-manifest'))
 
-    # Assert
     assert result is None
     captured = capsys.readouterr()
     assert 'file_not_found' in captured.out
@@ -323,13 +298,10 @@ def test_record_missing_manifest_returns_none_with_toon_error(plan_context, caps
 
 def test_record_invalid_phase_returns_error(plan_context):
     """An unknown phase is rejected with an invalid_phase error dict."""
-    # Arrange
     _compose('rec-bad-phase')
 
-    # Act
     result = cmd_record_step(_record_ns(plan_id='rec-bad-phase', phase='7-deploy'))
 
-    # Assert
     assert result is not None
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_phase'
@@ -339,13 +311,10 @@ def test_record_invalid_phase_returns_error(plan_context):
 
 def test_record_invalid_outcome_returns_error(plan_context):
     """An unknown outcome is rejected with an invalid_outcome error dict."""
-    # Arrange
     _compose('rec-bad-outcome')
 
-    # Act
     result = cmd_record_step(_record_ns(plan_id='rec-bad-outcome', outcome='maybe'))
 
-    # Assert
     assert result is not None
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_outcome'
@@ -354,11 +323,9 @@ def test_record_invalid_outcome_returns_error(plan_context):
 
 def test_record_phase_validated_before_manifest_read(plan_context):
     """Phase validation fires even when no manifest exists (pure input guard)."""
-    # Arrange — no compose.
-    # Act
+    # no compose.
     result = cmd_record_step(_record_ns(plan_id='rec-guard', phase='nope'))
 
-    # Assert
     assert result is not None
     assert result['error'] == 'invalid_phase'
 
@@ -376,7 +343,7 @@ def test_valid_record_enums_are_the_documented_sets(plan_context):
 
 def test_cli_record_step_roundtrip(plan_context):
     """record-step over the CLI appends a row and echoes the success TOON."""
-    # Arrange — compose a manifest via the CLI so the subprocess sees it.
+    # compose a manifest via the CLI so the subprocess sees it.
     compose = run_script(
         SCRIPT_PATH,
         'compose',
@@ -393,7 +360,6 @@ def test_cli_record_step_roundtrip(plan_context):
     )
     assert compose.returncode == 0
 
-    # Act
     result = run_script(
         SCRIPT_PATH,
         'record-step',
@@ -413,7 +379,6 @@ def test_cli_record_step_roundtrip(plan_context):
         '2200',
     )
 
-    # Assert
     assert result.returncode == 0
     data = result.toon()
     assert data['status'] == 'success'
@@ -428,7 +393,6 @@ def test_cli_record_step_roundtrip(plan_context):
 
 def test_cli_record_step_missing_manifest_emits_toon_error(plan_context):
     """record-step over the CLI without a manifest emits file_not_found via TOON."""
-    # Act
     result = run_script(
         SCRIPT_PATH,
         'record-step',
@@ -442,7 +406,7 @@ def test_cli_record_step_missing_manifest_emits_toon_error(plan_context):
         'executed',
     )
 
-    # Assert — TOON contract: script exits 0 on missing-file errors.
+    # TOON contract: script exits 0 on missing-file errors.
     assert result.returncode == 0
     data = result.toon()
     assert data['status'] == 'error'

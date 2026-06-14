@@ -5,6 +5,7 @@ Tier 2 (direct import) tests covering:
 * _verify_git_repo          — non-git path
 * cmd_force_push            — success path, branch_not_found, push_rejected, push_failed,
                               lease_check_failed, base-branch rejection
+* _find_executor            — helper-based executor path resolution
 
 Tier 3 (subprocess CLI plumbing) tests covering:
 * Missing required args (argparse rejects)
@@ -15,11 +16,10 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
-import tempfile
-import unittest
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 from conftest import get_script_path, run_script
@@ -67,28 +67,23 @@ def _create_feature_branch(path: Path, branch: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-class TestVerifyGitRepo(unittest.TestCase):
+class TestVerifyGitRepo:
     """Direct-import tests for the git-repo verification helper."""
 
-    def setUp(self) -> None:
-        self._tmpdir = tempfile.mkdtemp()
-        self.path = Path(self._tmpdir)
-
-    def tearDown(self) -> None:
-        import shutil
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
-
-    def test_returns_none_for_valid_git_repo(self) -> None:
+    def test_returns_none_for_valid_git_repo(self, tmp_path: Path) -> None:
         """Returns None when path is a valid git working tree."""
-        _init_repo(self.path)
-        result = _verify_git_repo(self.path)
-        self.assertIsNone(result)
+        _init_repo(tmp_path)
 
-    def test_returns_error_for_non_git_path(self) -> None:
+        result = _verify_git_repo(tmp_path)
+
+        assert result is None
+
+    def test_returns_error_for_non_git_path(self, tmp_path: Path) -> None:
         """Returns an error string when path is not a git repo."""
-        result = _verify_git_repo(self.path)
-        self.assertIsNotNone(result)
-        self.assertIn('working tree', result or '')
+        result = _verify_git_repo(tmp_path)
+
+        assert result is not None
+        assert 'working tree' in result
 
 
 # ---------------------------------------------------------------------------
@@ -96,34 +91,39 @@ class TestVerifyGitRepo(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestResolveBranchAndPath(unittest.TestCase):
+class TestResolveBranchAndPath:
     """Direct-import tests for argument resolution."""
 
     def test_project_dir_path_missing_branch_returns_error(self) -> None:
         """--project-dir without --branch produces missing_required_arg error."""
         args = Namespace(plan_id=None, project_dir='/some/path', branch=None)
+
         branch, path, error = _resolve_branch_and_path(args)
-        self.assertIsNone(branch)
-        self.assertIsNone(path)
-        self.assertIsNotNone(error)
+
+        assert branch is None
+        assert path is None
         assert error is not None
-        self.assertEqual(error['error_type'], 'missing_required_arg')
+        assert error['error_type'] == 'missing_required_arg'
 
     def test_project_dir_with_branch_returns_path(self) -> None:
         """--project-dir + --branch escape-hatch resolves successfully."""
         args = Namespace(plan_id=None, project_dir='/some/path', branch='feature/x')
+
         branch, path, error = _resolve_branch_and_path(args)
-        self.assertIsNone(error)
-        self.assertEqual(branch, 'feature/x')
-        self.assertEqual(path, Path('/some/path'))
+
+        assert error is None
+        assert branch == 'feature/x'
+        assert path == Path('/some/path')
 
     def test_no_args_returns_error(self) -> None:
         """Neither --plan-id nor --project-dir → missing_required_arg error."""
         args = Namespace(plan_id=None, project_dir=None, branch=None)
+
         branch, path, error = _resolve_branch_and_path(args)
-        self.assertIsNone(branch)
-        self.assertIsNone(path)
-        self.assertIsNotNone(error)
+
+        assert branch is None
+        assert path is None
+        assert error is not None
 
 
 # ---------------------------------------------------------------------------
@@ -131,69 +131,72 @@ class TestResolveBranchAndPath(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestCmdForcePushEscapeHatch(unittest.TestCase):
+class TestCmdForcePushEscapeHatch:
     """Direct-import tests for cmd_force_push via --project-dir."""
 
-    def setUp(self) -> None:
-        self._tmpdir = tempfile.mkdtemp()
-        self.path = Path(self._tmpdir)
-
-    def tearDown(self) -> None:
-        import shutil
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
-
-    def test_project_dir_not_a_git_repo_returns_error(self) -> None:
+    def test_project_dir_not_a_git_repo_returns_error(self, tmp_path: Path) -> None:
         """--project-dir pointing at a non-git directory → project_dir_not_a_git_repo."""
-        args = Namespace(plan_id=None, project_dir=str(self.path), branch='feature/x')
-        result = cmd_force_push(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'project_dir_not_a_git_repo')
-        self.assertEqual(result['operation'], 'force-push-with-lease')
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
 
-    def test_branch_not_found_locally_returns_error(self) -> None:
+        result = cmd_force_push(args)
+
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'project_dir_not_a_git_repo'
+        assert result['operation'] == 'force-push-with-lease'
+
+    def test_branch_not_found_locally_returns_error(self, tmp_path: Path) -> None:
         """Branch that does not exist locally → branch_not_found."""
-        _init_repo(self.path)
-        args = Namespace(plan_id=None, project_dir=str(self.path), branch='feature/nonexistent')
-        result = cmd_force_push(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'branch_not_found')
-        self.assertIn('feature/nonexistent', result['message'])
+        _init_repo(tmp_path)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/nonexistent')
 
-    def test_main_branch_rejection(self) -> None:
+        result = cmd_force_push(args)
+
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'branch_not_found'
+        assert 'feature/nonexistent' in result['message']
+
+    def test_main_branch_rejection(self, tmp_path: Path) -> None:
         """Attempting to push 'main' → branch_not_found (base branch guard)."""
-        _init_repo(self.path)
-        args = Namespace(plan_id=None, project_dir=str(self.path), branch='main')
-        result = cmd_force_push(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'branch_not_found')
-        self.assertIn('base branch', result['message'])
+        _init_repo(tmp_path)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='main')
 
-    def test_master_branch_rejection(self) -> None:
+        result = cmd_force_push(args)
+
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'branch_not_found'
+        assert 'base branch' in result['message']
+
+    def test_master_branch_rejection(self, tmp_path: Path) -> None:
         """Attempting to push 'master' → branch_not_found (base branch guard)."""
-        _init_repo(self.path)
-        # Create master branch
-        subprocess.run(['git', '-C', str(self.path), 'checkout', '-b', 'master'], check=True)
-        args = Namespace(plan_id=None, project_dir=str(self.path), branch='master')
-        result = cmd_force_push(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'branch_not_found')
-        self.assertIn('base branch', result['message'])
+        _init_repo(tmp_path)
+        subprocess.run(['git', '-C', str(tmp_path), 'checkout', '-b', 'master'], check=True)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='master')
 
-    def test_envelope_includes_project_dir_when_supplied(self) -> None:
+        result = cmd_force_push(args)
+
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'branch_not_found'
+        assert 'base branch' in result['message']
+
+    def test_envelope_includes_project_dir_when_supplied(self, tmp_path: Path) -> None:
         """Response envelope echoes project_dir when --project-dir is used."""
-        _init_repo(self.path)
+        _init_repo(tmp_path)
         # Use a nonexistent branch to get an early error (avoids needing a remote).
-        args = Namespace(plan_id=None, project_dir=str(self.path), branch='feature/x')
-        result = cmd_force_push(args)
-        self.assertIn('project_dir', result)
-        self.assertEqual(result['project_dir'], str(self.path))
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
 
-    def test_envelope_excludes_plan_id_when_project_dir_path(self) -> None:
-        """When --project-dir path is used, plan_id must not appear in response."""
-        _init_repo(self.path)
-        args = Namespace(plan_id=None, project_dir=str(self.path), branch='feature/x')
         result = cmd_force_push(args)
-        self.assertNotIn('plan_id', result)
+
+        assert 'project_dir' in result
+        assert result['project_dir'] == str(tmp_path)
+
+    def test_envelope_excludes_plan_id_when_project_dir_path(self, tmp_path: Path) -> None:
+        """When --project-dir path is used, plan_id must not appear in response."""
+        _init_repo(tmp_path)
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
+
+        result = cmd_force_push(args)
+
+        assert 'plan_id' not in result
 
 
 # ---------------------------------------------------------------------------
@@ -201,76 +204,96 @@ class TestCmdForcePushEscapeHatch(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestCmdForcePushPushFailures(unittest.TestCase):
+def _patch_run_git(monkeypatch: pytest.MonkeyPatch, responses: dict) -> None:
+    """Patch _mod.run_git to return canned responses keyed by an args tuple.
+
+    Any git call whose argv contains all elements of a ``responses`` key returns
+    the mapped triple; everything else falls through to the real ``run_git`` (so
+    e.g. ``rev-parse --verify`` branch-existence checks run for real).
+    """
+    orig_run_git = _mod.run_git
+
+    def fake_run_git(args, **kwargs):
+        key = tuple(args)
+        for pattern, response in responses.items():
+            if all(p in key for p in pattern):
+                return response
+        return orig_run_git(args, **kwargs)
+
+    monkeypatch.setattr(_mod, 'run_git', fake_run_git)
+
+
+class TestCmdForcePushPushFailures:
     """Test push error categorization by monkeypatching run_git."""
 
-    def setUp(self) -> None:
-        self._tmpdir = tempfile.mkdtemp()
-        self.path = Path(self._tmpdir)
-        _init_repo(self.path)
-        _create_feature_branch(self.path, 'feature/x')
-        self._orig_run_git = _mod.run_git
-
-    def tearDown(self) -> None:
-        import shutil
-        _mod.run_git = self._orig_run_git
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
-
-    def _patch_run_git(self, responses: dict) -> None:
-        """Patch run_git to return canned responses keyed by args tuple."""
-        def fake_run_git(args, **kwargs):
-            key = tuple(args)
-            for pattern, response in responses.items():
-                if all(p in key for p in pattern):
-                    return response
-            # Fall through to real git for rev-parse --verify (branch existence)
-            return self._orig_run_git(args, **kwargs)
-        _mod.run_git = fake_run_git
-
-    def test_non_fast_forward_rejection_mapped_to_push_rejected(self) -> None:
+    def test_non_fast_forward_rejection_mapped_to_push_rejected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Lease violation with 'rejected' + 'non-fast-forward' → push_rejected_non_fast_forward."""
-        self._patch_run_git({
+        _init_repo(tmp_path)
+        _create_feature_branch(tmp_path, 'feature/x')
+        _patch_run_git(monkeypatch, {
             ('push', 'origin'): (1, '', 'error: failed to push some refs\n! [rejected] feature/x -> feature/x (non-fast-forward)'),
         })
-        args = Namespace(plan_id=None, project_dir=str(self.path), branch='feature/x')
-        result = cmd_force_push(args)
-        self.assertEqual(result['status'], 'rejected')
-        self.assertEqual(result['error_type'], 'push_rejected_non_fast_forward')
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
 
-    def test_generic_push_failure_mapped_to_push_failed(self) -> None:
+        result = cmd_force_push(args)
+
+        assert result['status'] == 'rejected'
+        assert result['error_type'] == 'push_rejected_non_fast_forward'
+
+    def test_generic_push_failure_mapped_to_push_failed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Non-rejection push failure → push_failed."""
-        self._patch_run_git({
+        _init_repo(tmp_path)
+        _create_feature_branch(tmp_path, 'feature/x')
+        _patch_run_git(monkeypatch, {
             ('push', 'origin'): (1, '', 'error: could not connect to remote'),
         })
-        args = Namespace(plan_id=None, project_dir=str(self.path), branch='feature/x')
-        result = cmd_force_push(args)
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['error_type'], 'push_failed')
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
 
-    def test_success_path_returns_success_status(self) -> None:
+        result = cmd_force_push(args)
+
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'push_failed'
+
+    def test_success_path_returns_success_status(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Successful push returns status=success and branch/remote fields."""
-        self._patch_run_git({
+        _init_repo(tmp_path)
+        _create_feature_branch(tmp_path, 'feature/x')
+        _patch_run_git(monkeypatch, {
             ('push', 'origin'): (0, '', ''),
             ('ls-remote', 'origin'): (0, 'abc123\trefs/heads/feature/x\n', ''),
         })
-        args = Namespace(plan_id=None, project_dir=str(self.path), branch='feature/x')
-        result = cmd_force_push(args)
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(result['branch'], 'feature/x')
-        self.assertEqual(result['remote'], 'origin')
-        self.assertIn('remote_sha', result)
-        self.assertEqual(result['remote_sha'], 'abc123')
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
 
-    def test_success_without_ls_remote_omits_remote_sha(self) -> None:
+        result = cmd_force_push(args)
+
+        assert result['status'] == 'success'
+        assert result['branch'] == 'feature/x'
+        assert result['remote'] == 'origin'
+        assert 'remote_sha' in result
+        assert result['remote_sha'] == 'abc123'
+
+    def test_success_without_ls_remote_omits_remote_sha(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When ls-remote fails, remote_sha is absent (not None or empty)."""
-        self._patch_run_git({
+        _init_repo(tmp_path)
+        _create_feature_branch(tmp_path, 'feature/x')
+        _patch_run_git(monkeypatch, {
             ('push', 'origin'): (0, '', ''),
             ('ls-remote', 'origin'): (1, '', 'connection failed'),
         })
-        args = Namespace(plan_id=None, project_dir=str(self.path), branch='feature/x')
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
+
         result = cmd_force_push(args)
-        self.assertEqual(result['status'], 'success')
-        self.assertNotIn('remote_sha', result)
+
+        assert result['status'] == 'success'
+        assert 'remote_sha' not in result
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +301,7 @@ class TestCmdForcePushPushFailures(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestFindExecutor(unittest.TestCase):
+class TestFindExecutor:
     """Direct-import tests for _find_executor's helper-based resolution.
 
     _find_executor delegates to ``file_ops.get_executor_path()`` (worktree-safe
@@ -287,40 +310,47 @@ class TestFindExecutor(unittest.TestCase):
     missing executor file.
     """
 
-    def setUp(self) -> None:
-        import file_ops  # type: ignore[import-not-found]
-        self._file_ops = file_ops
-        self._orig_get_executor_path = file_ops.get_executor_path
-        self._tmpdir = tempfile.mkdtemp()
-        self.path = Path(self._tmpdir)
-
-    def tearDown(self) -> None:
-        import shutil
-        self._file_ops.get_executor_path = self._orig_get_executor_path
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
-
-    def test_returns_resolved_path_when_executor_exists(self) -> None:
+    def test_returns_resolved_path_when_executor_exists(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When get_executor_path resolves an existing file, return it."""
-        executor = self.path / 'execute-script.py'
+        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
+
+        executor = tmp_path / 'execute-script.py'
         executor.write_text('# executor\n')
-        self._file_ops.get_executor_path = lambda: executor
-        result = _find_executor()
-        self.assertEqual(result, executor)
+        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: executor)
 
-    def test_returns_none_when_executor_missing(self) -> None:
+        result = _find_executor()
+
+        assert result == executor
+
+    def test_returns_none_when_executor_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When the resolved path does not exist on disk, return None."""
-        missing = self.path / 'execute-script.py'  # never created
-        self._file_ops.get_executor_path = lambda: missing
-        result = _find_executor()
-        self.assertIsNone(result)
+        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
 
-    def test_returns_none_when_helper_raises_runtime_error(self) -> None:
+        missing = tmp_path / 'execute-script.py'  # never created
+        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: missing)
+
+        result = _find_executor()
+
+        assert result is None
+
+    def test_returns_none_when_helper_raises_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When get_executor_path raises RuntimeError (no git repo), return None."""
+        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
+
         def _raise() -> Path:
             raise RuntimeError('no git repository')
-        self._file_ops.get_executor_path = _raise
+
+        monkeypatch.setattr(file_ops, 'get_executor_path', _raise)
+
         result = _find_executor()
-        self.assertIsNone(result)
+
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -328,33 +358,31 @@ class TestFindExecutor(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestCmdForcePushCli(unittest.TestCase):
+class TestCmdForcePushCli:
     """Subprocess tests for CLI plumbing of force-push-with-lease."""
 
     def test_missing_plan_id_and_project_dir_exits_with_error(self) -> None:
         """Neither --plan-id nor --project-dir produces a structured error."""
         result = run_script(_SCRIPT_PATH, 'force-push-with-lease')
-        # Expected: exit 0 with TOON error (argparse supplies both as optional)
-        parsed = parse_toon(result.stdout)
-        self.assertEqual(parsed['status'], 'error')
 
-    def test_project_dir_requires_branch(self) -> None:
+        # Expected: exit 0 with TOON error (argparse supplies both as optional).
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'error'
+
+    def test_project_dir_requires_branch(self, tmp_path: Path) -> None:
         """--project-dir without --branch returns missing_required_arg error."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = run_script(
-                _SCRIPT_PATH, 'force-push-with-lease',
-                '--project-dir', tmpdir,
-            )
-            parsed = parse_toon(result.stdout)
-            self.assertEqual(parsed['status'], 'error')
-            self.assertEqual(parsed['error_type'], 'missing_required_arg')
+        result = run_script(
+            _SCRIPT_PATH, 'force-push-with-lease',
+            '--project-dir', str(tmp_path),
+        )
+
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'error'
+        assert parsed['error_type'] == 'missing_required_arg'
 
     def test_help_flag_shows_force_push_subcommand(self) -> None:
         """--help lists force-push-with-lease in output."""
         result = run_script(_SCRIPT_PATH, '--help')
-        self.assertEqual(result.returncode, 0)
-        self.assertIn('force-push-with-lease', result.stdout)
 
-
-if __name__ == '__main__':
-    unittest.main()
+        assert result.returncode == 0
+        assert 'force-push-with-lease' in result.stdout

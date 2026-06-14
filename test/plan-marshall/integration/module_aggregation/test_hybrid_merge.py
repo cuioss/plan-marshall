@@ -196,15 +196,15 @@ def run_integration_tests() -> int:
                 # Run assertions
                 errors = []
 
-                # Assert extensions_used is valid
+                # extensions_used is valid
                 ext_errors = assert_extensions_used(result)
                 errors.extend(ext_errors)
 
-                # Assert hybrid module structure
+                # hybrid module structure
                 hybrid_errors = assert_hybrid_module_structure(modules)
                 errors.extend(hybrid_errors)
 
-                # Assert no unexpected null values
+                # no unexpected null values
                 nulls = assert_no_null_values(result, allowed_null_suffixes=['.readme', '.description', '.parent'])
                 if nulls:
                     errors.append(f'Null values found at: {", ".join(nulls)}')

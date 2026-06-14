@@ -126,13 +126,11 @@ def test_json_phases_structure(plan_context):
 
 def test_json_metadata_structure(plan_context):
     """Test that metadata is stored correctly."""
-    from argparse import Namespace as _NS
-    # Use the metadata-set verb via importlib to seed a value, then check JSON.
     _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_status_cmd_query')
     cmd_metadata = _query.cmd_metadata
 
-    cmd_create(_NS(plan_id='metadata-json-plan', title='Metadata Test', phases='1-init', force=False))
-    cmd_metadata(_NS(plan_id='metadata-json-plan', set=True, get=False, field='change_type', value='feature'))
+    cmd_create(Namespace(plan_id='metadata-json-plan', title='Metadata Test', phases='1-init', force=False))
+    cmd_metadata(Namespace(plan_id='metadata-json-plan', set=True, get=False, field='change_type', value='feature'))
 
     status_file = plan_context.plan_dir_for('metadata-json-plan') / 'status.json'
     content = json.loads(status_file.read_text(encoding='utf-8'))

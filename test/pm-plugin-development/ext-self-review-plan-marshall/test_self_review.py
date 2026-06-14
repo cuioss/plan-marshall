@@ -811,17 +811,15 @@ class TestContractRadiusMonotonicBreadth:
         return project, rel
 
     def test_larger_radius_surfaces_strictly_wider_schema_set(self, tmp_path: Path):
-        # Arrange
         project, rel = self._build_nested_schema_fixture(tmp_path)
 
-        # Act
         _, schema_narrow = _detect_contract_sources([rel], project, radius=1)
         _, schema_wide = _detect_contract_sources([rel], project, radius=5)
         narrow_files = {entry['file'] for entry in schema_narrow}
         wide_files = {entry['file'] for entry in schema_wide}
 
-        # Assert — the bundle-level schema is out of reach at radius 1 but in
-        # reach at radius 5; the wide set is a strict superset of the narrow set.
+        # The bundle-level schema is out of reach at radius 1 but in reach at
+        # radius 5; the wide set is a strict superset of the narrow set.
         schema_path = 'marketplace/bundles/b1/bundle-schema.md'
         assert schema_path not in narrow_files
         assert schema_path in wide_files

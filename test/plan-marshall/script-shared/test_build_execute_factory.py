@@ -47,11 +47,9 @@ class TestDefaultCommandKeyFnScopeAware:
     that module-scoped invocations don't collide with full-scope ones."""
 
     def test_unscoped_command_uses_full_args(self):
-        # Full scope (no module) → just the command name, normalized.
         assert default_command_key_fn('module-tests') == 'module_tests'
 
     def test_scoped_command_includes_module(self):
-        # Module-scoped → includes module suffix separated by underscore.
         assert default_command_key_fn('module-tests plan-marshall') == 'module_tests_plan_marshall'
 
     def test_unscoped_and_scoped_do_not_collide(self):
@@ -103,11 +101,6 @@ class TestDefaultCommandKeyFnNormalization:
 
     def test_simple_single_word(self):
         assert default_command_key_fn('compile') == 'compile'
-
-
-# =============================================================================
-# Tests: --project-dir CLI propagation through register_standard_subparsers
-# =============================================================================
 
 
 def _noop(_args):
@@ -356,17 +349,13 @@ class TestRegisterStandardSubparsersPlanIdPropagation:
         assert ns.project_dir == '/plan/wt'
 
 
-# =============================================================================
-# D6: Build-queue integration at the factory cmd_run wrap site
-# =============================================================================
-#
-# These tests drive the factory's generated ``cmd_run`` end-to-end through the
-# REAL ``build_queue_slot`` context manager. The queue acquire/release seam
-# (``_acquire`` / ``_release_raw``) is mocked on the ``_build_queue_slot``
-# module, so the slot's admit / wait / release behaviour is exercised exactly as
-# it runs in production while the build itself is replaced by a recorder.
-# ``time.sleep`` is patched to a no-op (autouse) so the 60s blocked-poll wait is
-# never actually slept.
+# D6 build-queue integration: these tests drive the factory's generated
+# ``cmd_run`` end-to-end through the REAL ``build_queue_slot`` context manager.
+# The queue acquire/release seam (``_acquire`` / ``_release_raw``) is mocked on
+# the ``_build_queue_slot`` module, so the slot's admit / wait / release
+# behaviour is exercised exactly as it runs in production while the build itself
+# is replaced by a recorder. ``time.sleep`` is patched to a no-op (autouse) so
+# the 60s blocked-poll wait is never actually slept.
 
 
 class _QueueDouble:
@@ -472,10 +461,8 @@ class TestFactoryCmdRunQueueAdmitted:
         rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
 
         assert rc == 0
-        # Build ran exactly once, inside the admitted slot.
         assert exec_recorder.ran is True
         assert len(exec_recorder.calls) == 1
-        # The held admission id was released in the finally.
         assert 'P:uuid-1' in double.released_ids
 
 
@@ -495,7 +482,6 @@ class TestFactoryCmdRunQueueBlockedThenAdmitted:
         rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
 
         assert rc == 0
-        # The build still ran exactly once, only after admission.
         assert len(exec_recorder.calls) == 1
         # The blocked id is NOT released before re-polling — re-poll is idempotent
         # so the plan keeps its FIFO position. Only the final admitted id is
@@ -534,7 +520,6 @@ class TestFactoryCmdRunQueueSaturated:
 
         rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
 
-        # Non-zero exit, structured queue_saturated error, build NEVER ran.
         assert rc == 1
         assert exec_recorder.ran is False
         out = capsys.readouterr().out
@@ -557,9 +542,7 @@ class TestFactoryCmdRunPlanIdAbsentPassthrough:
         rc = cmd_run(argparse.Namespace(command_args='verify', plan_id=plan_id, format='toon'))
 
         assert rc == 0
-        # Build ran unchanged.
         assert len(exec_recorder.calls) == 1
-        # No queue interaction at all.
         assert double.acquire_calls == []
         assert double.release_calls == []
 

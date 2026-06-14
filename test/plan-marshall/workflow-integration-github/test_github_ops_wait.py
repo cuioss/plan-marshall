@@ -552,14 +552,12 @@ def _status_args(*, pr_number=77, plan_id, error_style='generic'):
 def test_ci_status_failure_enriches_each_failing_check_with_real_filtered_log(monkeypatch, plan_context):
     """cmd_ci_status failure TOON: each failing_checks[] entry gains its own
     log_file / filtered_log_file, fed from the REAL github/fail.log fixture."""
-    # Arrange
     rows = _two_failing_check_rows()
     fixture, fetch_calls = _wire_github_failure(monkeypatch, check_rows=rows)
 
-    # Act
     result = github_ops.cmd_ci_status(_status_args(plan_id=plan_context.plan_id))
 
-    # Assert — failure overall, failing_checks present and enriched.
+    # failure overall, failing_checks present and enriched.
     assert result['status'] == 'success'
     assert result['overall_status'] == 'failure'
     assert 'failing_checks' in result
@@ -571,17 +569,16 @@ def test_ci_status_failure_enriches_each_failing_check_with_real_filtered_log(mo
 def test_ci_status_success_path_has_no_failing_checks_key(monkeypatch, plan_context):
     """A green pipeline leaves the success TOON unchanged — no failing_checks,
     and the raw-log fetcher is never invoked."""
-    # Arrange — both checks pass.
+    # both checks pass.
     rows = _two_failing_check_rows()
     for row in rows:
         row['state'] = 'SUCCESS'
         row['bucket'] = 'pass'
     _, fetch_calls = _wire_github_failure(monkeypatch, check_rows=rows)
 
-    # Act
     result = github_ops.cmd_ci_status(_status_args(plan_id=plan_context.plan_id))
 
-    # Assert — unchanged success envelope; enrichment never ran.
+    # unchanged success envelope; enrichment never ran.
     assert result['status'] == 'success'
     assert result['overall_status'] == 'success'
     assert 'failing_checks' not in result
@@ -602,15 +599,13 @@ def _wait_args(*, pr_number=77, plan_id, error_style='generic', timeout=5, inter
 def test_ci_wait_failure_enriches_each_failing_check_with_real_filtered_log(monkeypatch, plan_context):
     """cmd_ci_wait natural-termination failure: each failing_checks[] entry
     gains its own log_file / filtered_log_file from the REAL fixture."""
-    # Arrange
     rows = _two_failing_check_rows()
     fixture, fetch_calls = _wire_github_failure(monkeypatch, check_rows=rows)
     _noop_sleep(monkeypatch)
 
-    # Act — the wait loop terminates immediately (no wait-state checks).
+    # the wait loop terminates immediately (no wait-state checks).
     result = github_ops.cmd_ci_wait(_wait_args(plan_id=plan_context.plan_id))
 
-    # Assert
     assert result['status'] == 'success'
     assert result['final_status'] == 'failure'
     assert 'failing_checks' in result
@@ -621,7 +616,7 @@ def test_ci_wait_failure_enriches_each_failing_check_with_real_filtered_log(monk
 def test_ci_wait_success_path_failing_checks_empty(monkeypatch, plan_context):
     """A green wait result carries an empty failing_checks list and never
     invokes the raw-log fetcher."""
-    # Arrange — both checks pass.
+    # both checks pass.
     rows = _two_failing_check_rows()
     for row in rows:
         row['state'] = 'SUCCESS'
@@ -629,10 +624,8 @@ def test_ci_wait_success_path_failing_checks_empty(monkeypatch, plan_context):
     _, fetch_calls = _wire_github_failure(monkeypatch, check_rows=rows)
     _noop_sleep(monkeypatch)
 
-    # Act
     result = github_ops.cmd_ci_wait(_wait_args(plan_id=plan_context.plan_id))
 
-    # Assert
     assert result['status'] == 'success'
     assert result['final_status'] == 'success'
     assert result['failing_checks'] == []

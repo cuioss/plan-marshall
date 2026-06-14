@@ -252,7 +252,7 @@ class TestStrippedArchiveIntegration:
     """
 
     def test_full_retrospective_on_stripped_archive(self, tmp_path):
-        # Arrange: copy the committed fixture so the test never mutates the
+        # copy the committed fixture so the test never mutates the
         # checked-in tree. Use a unique plan_id to avoid collisions with
         # the OS-tmp bundle path used by collect-fragments in archived
         # mode (``/tmp/plan-retrospective/retro-fragments-<plan_id>.toon``).
@@ -260,7 +260,7 @@ class TestStrippedArchiveIntegration:
         shutil.copytree(_STRIPPED_ARCHIVE_FIXTURE, archived)
         plan_id = 'stripped-archive-integration-test'
 
-        # Act 1: init the bundle in archived mode.
+        # init the bundle in archived mode.
         result_init = run_script(
             _COLLECT_FRAGMENTS_SCRIPT,
             'init',
@@ -273,7 +273,7 @@ class TestStrippedArchiveIntegration:
         )
         assert result_init.success, result_init.stderr
 
-        # Act 2: add each of the 10 committed fragment files under its
+        # add each of the 10 committed fragment files under its
         # consumer-expected aspect key.
         work_dir = archived / 'work'
         for fragment_name, aspect in _FRAGMENT_TO_ASPECT.items():
@@ -293,7 +293,7 @@ class TestStrippedArchiveIntegration:
             )
             assert result_add.success, f'add failed for aspect={aspect}: {result_add.stderr}'
 
-        # Act 3: finalize — returns the bundle path compile-report consumes.
+        # finalize — returns the bundle path compile-report consumes.
         result_finalize = run_script(
             _COLLECT_FRAGMENTS_SCRIPT,
             'finalize',
@@ -307,7 +307,7 @@ class TestStrippedArchiveIntegration:
         bundle_path = finalize_data['bundle_path']
         assert int(finalize_data['aspect_count']) == 10
         try:
-            # Act 4: compile the report in archived mode.
+            # compile the report in archived mode.
             result_compile = run_script(
                 SCRIPT_PATH,
                 'run',
@@ -323,7 +323,7 @@ class TestStrippedArchiveIntegration:
             output_path = Path(data['output_path'])
             assert output_path.exists()
 
-            # Assert: every section expected in _SECTION_SPEC was written —
+            # every section expected in _SECTION_SPEC was written —
             # none were omitted silently.
             sections_written = data.get('sections_written') or []
             sections_omitted = data.get('sections_omitted') or []
@@ -343,7 +343,7 @@ class TestStrippedArchiveIntegration:
             missing = expected_headings - set(sections_written)
             assert not missing, f'Sections missing from report: {sorted(missing)} (omitted={sections_omitted})'
 
-            # Assert: the rendered markdown carries real content for every
+            # the rendered markdown carries real content for every
             # section, not the ``_No data provided._`` placeholder that
             # ``render_section_body`` emits when a fragment is missing.
             content = output_path.read_text(encoding='utf-8')
@@ -439,12 +439,10 @@ class TestFragmentBundleCleanup:
     """Task-4 coverage: fragment-bundle cleanup on cmd_run success vs failure."""
 
     def test_bundle_deleted_after_successful_live_run(self, tmp_path, monkeypatch):
-        # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         fragments = _write_fragments(tmp_path)
         assert fragments.exists()
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'run',
@@ -456,18 +454,15 @@ class TestFragmentBundleCleanup:
             str(fragments),
         )
 
-        # Assert
         assert result.success, result.stderr
         assert (plan_dir / 'quality-verification-report.md').exists()
         assert not fragments.exists(), 'Fragments bundle should be deleted after successful live run'
 
     def test_bundle_deleted_after_successful_archived_run(self, tmp_path):
-        # Arrange
         archived = setup_archived_plan(tmp_path)
         fragments = _write_fragments(tmp_path)
         assert fragments.exists()
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'run',
@@ -479,14 +474,13 @@ class TestFragmentBundleCleanup:
             str(fragments),
         )
 
-        # Assert
         assert result.success, result.stderr
         output_path = Path(result.toon()['output_path'])
         assert output_path.exists()
         assert not fragments.exists(), 'Fragments bundle should be deleted after successful archived run'
 
     def test_bundle_persists_when_cmd_run_raises_before_write(self, tmp_path, monkeypatch):
-        # Arrange: create a live-mode plan directory, then point the script at
+        # create a live-mode plan directory, then point the script at
         # a non-existent plan_id so resolve_plan_dir() → plan_dir.exists() is
         # False and cmd_run raises ValueError BEFORE reaching the markdown
         # write (and therefore before the cleanup block).
@@ -495,7 +489,6 @@ class TestFragmentBundleCleanup:
         assert fragments.exists()
         missing_plan_id = 'plan-that-does-not-exist'
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'run',
@@ -507,12 +500,12 @@ class TestFragmentBundleCleanup:
             str(fragments),
         )
 
-        # Assert: script errored AND bundle still exists on disk for debugging
+        # script errored AND bundle still exists on disk for debugging
         assert not result.success
         assert fragments.exists(), 'Fragments bundle must persist when cmd_run raises before the markdown write'
 
     def test_cleanup_tolerates_missing_bundle_silently(self, tmp_path, monkeypatch, capsys):
-        # Arrange: call cmd_run in-process so we can monkeypatch Path.unlink.
+        # call cmd_run in-process so we can monkeypatch Path.unlink.
         # The real fragments file exists during load_fragments; unlink raises
         # FileNotFoundError, simulating "bundle already removed" races.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
@@ -527,10 +520,9 @@ class TestFragmentBundleCleanup:
 
         monkeypatch.setattr(Path, 'unlink', fake_unlink)
 
-        # Act
         cmd_run(_run_args('live', fragments, plan_id=plan_id))
 
-        # Assert: no raise (test would fail otherwise), no stderr warning
+        # no raise (test would fail otherwise), no stderr warning
         captured = capsys.readouterr()
         assert 'WARN' not in captured.err
         assert 'failed to delete fragments bundle' not in captured.err
@@ -538,7 +530,7 @@ class TestFragmentBundleCleanup:
         assert (plan_dir / 'quality-verification-report.md').exists()
 
     def test_cleanup_logs_warning_on_permission_error(self, tmp_path, monkeypatch, capsys):
-        # Arrange: PermissionError (non-FileNotFoundError OSError) must be
+        # PermissionError (non-FileNotFoundError OSError) must be
         # logged to stderr but MUST NOT abort cmd_run.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         fragments = _write_fragments(tmp_path)
@@ -552,10 +544,10 @@ class TestFragmentBundleCleanup:
 
         monkeypatch.setattr(Path, 'unlink', fake_unlink)
 
-        # Act: cmd_run should complete successfully despite the unlink failure
+        # cmd_run should complete successfully despite the unlink failure
         result = cmd_run(_run_args('live', fragments, plan_id=plan_id))
 
-        # Assert: success path, stderr carries the WARN line
+        # success path, stderr carries the WARN line
         assert result['status'] == 'success'
         assert (plan_dir / 'quality-verification-report.md').exists()
         captured = capsys.readouterr()
@@ -712,7 +704,7 @@ class TestRegistryConsistencyGuard:
         new SECTION_SPEC row that compile-report fails to render is caught
         automatically.
         """
-        # Arrange — expected headings are derived from the registry itself.
+        # expected headings are derived from the registry itself.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         fragments = _write_full_registry_fragments(tmp_path)
         expected_headings = {
@@ -721,7 +713,6 @@ class TestRegistryConsistencyGuard:
             if not fragment_key.startswith('_')
         }
 
-        # Act
         result = run_script(
             SCRIPT_PATH,
             'run',
@@ -733,7 +724,7 @@ class TestRegistryConsistencyGuard:
             str(fragments),
         )
 
-        # Assert — every registry heading is written, none silently omitted.
+        # every registry heading is written, none silently omitted.
         assert result.success, result.stderr
         data = result.toon()
         written = set(data['sections_written'])
@@ -755,7 +746,7 @@ class TestRegistryConsistencyGuard:
         and the consumer-render set stay in lockstep — a key compile-report
         renders but cmd_add rejects (or vice versa) fails here.
         """
-        # Arrange — one plan, one bundle, then add each registry key in turn.
+        # one plan, one bundle, then add each registry key in turn.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         init_result = run_script(
             _COLLECT_FRAGMENTS_SCRIPT_REGISTRY,
@@ -770,7 +761,7 @@ class TestRegistryConsistencyGuard:
         valid_keys = sorted(_retro_sections.valid_aspect_keys())
         assert valid_keys, 'valid_aspect_keys() returned an empty set — registry is mis-wired'
 
-        # Act / Assert — add every registry key; each must be accepted.
+        # add every registry key; each must be accepted.
         for aspect in valid_keys:
             fragment = tmp_path / f'frag-{aspect}.toon'
             fragment.write_text(f'status: success\naspect: {aspect}\n', encoding='utf-8')

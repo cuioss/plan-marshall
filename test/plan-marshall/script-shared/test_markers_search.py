@@ -20,17 +20,11 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 
 _markers_search = importlib.import_module('_markers_search')
 
-# Re-export for convenience
 search_openrewrite_markers = _markers_search.search_openrewrite_markers
 extract_recipe_name = _markers_search.extract_recipe_name
 MARKER_PATTERN = _markers_search.MARKER_PATTERN
 DEFAULT_SKIP_PATTERNS = _markers_search.DEFAULT_SKIP_PATTERNS
 AUTO_SUPPRESS_RECIPES = _markers_search.AUTO_SUPPRESS_RECIPES
-
-
-# =============================================================================
-# Test: MARKER_PATTERN regex
-# =============================================================================
 
 
 class TestMarkerPattern:
@@ -57,11 +51,6 @@ class TestMarkerPattern:
         assert len(matches) == 0
 
 
-# =============================================================================
-# Test: extract_recipe_name()
-# =============================================================================
-
-
 class TestExtractRecipeName:
     """Tests for extract_recipe_name()."""
 
@@ -75,7 +64,6 @@ class TestExtractRecipeName:
         assert extract_recipe_name('UnknownThing needs review') == 'UnknownThing'
 
     def test_strips_trailing_punctuation_on_fallback(self):
-        # When no Recipe/Pattern suffix, falls back to first word with punctuation stripped
         assert extract_recipe_name('Fix: something broken') == 'Fix'
 
     def test_empty_message(self):
@@ -83,11 +71,6 @@ class TestExtractRecipeName:
 
     def test_single_word_recipe(self):
         assert extract_recipe_name('InvalidExceptionUsageRecipe') == 'InvalidExceptionUsageRecipe'
-
-
-# =============================================================================
-# Test: DEFAULT_SKIP_PATTERNS
-# =============================================================================
 
 
 class TestDefaultSkipPatterns:
@@ -106,11 +89,6 @@ class TestDefaultSkipPatterns:
         assert 'node_modules' in DEFAULT_SKIP_PATTERNS
 
 
-# =============================================================================
-# Test: AUTO_SUPPRESS_RECIPES
-# =============================================================================
-
-
 class TestAutoSuppressRecipes:
     """Tests for AUTO_SUPPRESS_RECIPES constant."""
 
@@ -124,11 +102,6 @@ class TestAutoSuppressRecipes:
         for recipe_name, info in AUTO_SUPPRESS_RECIPES.items():
             assert 'category' in info, f'{recipe_name} missing category'
             assert 'reason' in info, f'{recipe_name} missing reason'
-
-
-# =============================================================================
-# Test: search_openrewrite_markers() - source directory handling
-# =============================================================================
 
 
 class TestSearchSourceDirectory:
@@ -145,11 +118,6 @@ class TestSearchSourceDirectory:
             assert result['status'] == 'success'
             assert result['data']['total_markers'] == 0
             assert result['data']['files_affected'] == 0
-
-
-# =============================================================================
-# Test: search_openrewrite_markers() - Java file scanning
-# =============================================================================
 
 
 class TestSearchJavaFiles:
@@ -201,11 +169,6 @@ class TestSearchJavaFiles:
             assert result['data']['total_markers'] == 1
 
 
-# =============================================================================
-# Test: search_openrewrite_markers() - Kotlin / multi-extension support
-# =============================================================================
-
-
 class TestSearchMultipleExtensions:
     """Tests for multi-extension support."""
 
@@ -227,11 +190,6 @@ class TestSearchMultipleExtensions:
             (Path(tmp) / 'Test.java').write_text('/*~~(TODO: SomeRecipe)>*/')
             result = search_openrewrite_markers(tmp, extensions='java')
             assert result['data']['total_markers'] == 1
-
-
-# =============================================================================
-# Test: search_openrewrite_markers() - skip patterns
-# =============================================================================
 
 
 class TestSearchSkipPatterns:
@@ -298,11 +256,6 @@ class TestSearchSkipPatterns:
             assert result['data']['total_markers'] == 1
 
 
-# =============================================================================
-# Test: search_openrewrite_markers() - recipe categorization
-# =============================================================================
-
-
 class TestRecipeCategorization:
     """Tests for recipe categorization (auto_suppress vs ask_user)."""
 
@@ -344,11 +297,6 @@ class TestRecipeCategorization:
             assert len(data['by_category']['ask_user']) == 1
 
 
-# =============================================================================
-# Test: search_openrewrite_markers() - recipe_summary
-# =============================================================================
-
-
 class TestRecipeSummary:
     """Tests for recipe_summary aggregation."""
 
@@ -366,11 +314,6 @@ class TestRecipeSummary:
         with tempfile.TemporaryDirectory() as tmp:
             result = search_openrewrite_markers(tmp)
             assert result['data']['recipe_summary'] == {}
-
-
-# =============================================================================
-# Test: search_openrewrite_markers() - suppression_comment format
-# =============================================================================
 
 
 class TestSuppressionComment:

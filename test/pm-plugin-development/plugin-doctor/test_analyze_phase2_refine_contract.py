@@ -71,7 +71,6 @@ def _make_outside_file(tmp_path: Path, content: str) -> Path:
 
 def test_clean_workflow_emits_no_findings(tmp_path: Path) -> None:
     """A workflow file with no Edit/Write references must produce no findings."""
-    # Arrange
     content = (
         '# Phase 2 Refine\n'
         '\n'
@@ -82,16 +81,13 @@ def test_clean_workflow_emits_no_findings(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    # Act
     findings = analyze_phase2_refine_contract([file_path])
 
-    # Assert
     assert findings == []
 
 
 def test_edit_to_marketplace_emits_finding(tmp_path: Path) -> None:
     """An Edit call targeting marketplace/ must produce a finding."""
-    # Arrange
     content = (
         '# Refine Step\n'
         '\n'
@@ -101,10 +97,8 @@ def test_edit_to_marketplace_emits_finding(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    # Act
     findings = analyze_phase2_refine_contract([file_path])
 
-    # Assert
     assert len(findings) == 1
     finding = findings[0]
     assert finding['rule_id'] == RULE_ID
@@ -115,7 +109,6 @@ def test_edit_to_marketplace_emits_finding(tmp_path: Path) -> None:
 
 def test_write_to_src_emits_finding(tmp_path: Path) -> None:
     """A Write call targeting src/ must produce a finding."""
-    # Arrange
     content = (
         '# Refine\n'
         '\n'
@@ -123,10 +116,8 @@ def test_write_to_src_emits_finding(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    # Act
     findings = analyze_phase2_refine_contract([file_path])
 
-    # Assert
     assert len(findings) == 1
     assert findings[0]['tool'] == 'Write'
     assert findings[0]['path'] == 'src/main/foo.py'
@@ -134,7 +125,6 @@ def test_write_to_src_emits_finding(tmp_path: Path) -> None:
 
 def test_plan_local_path_is_allowed(tmp_path: Path) -> None:
     """An Edit targeting .plan/local/ must produce no finding."""
-    # Arrange
     content = (
         '# Refine\n'
         '\n'
@@ -142,16 +132,13 @@ def test_plan_local_path_is_allowed(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    # Act
     findings = analyze_phase2_refine_contract([file_path])
 
-    # Assert
     assert findings == []
 
 
 def test_worktree_prefix_uppercase_placeholder_is_allowed(tmp_path: Path) -> None:
     """{WORKTREE}/.plan/local/... is the worktree-substituted form — allowed."""
-    # Arrange
     content = (
         '# Refine\n'
         '\n'
@@ -159,16 +146,13 @@ def test_worktree_prefix_uppercase_placeholder_is_allowed(tmp_path: Path) -> Non
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    # Act
     findings = analyze_phase2_refine_contract([file_path])
 
-    # Assert
     assert findings == []
 
 
 def test_worktree_path_placeholder_is_allowed(tmp_path: Path) -> None:
     """{worktree_path}/.plan/local/... is also a valid substitution form."""
-    # Arrange
     content = (
         '# Refine\n'
         '\n'
@@ -176,16 +160,13 @@ def test_worktree_path_placeholder_is_allowed(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    # Act
     findings = analyze_phase2_refine_contract([file_path])
 
-    # Assert
     assert findings == []
 
 
 def test_read_calls_are_ignored(tmp_path: Path) -> None:
     """Read is allowed against any path — must produce no finding."""
-    # Arrange
     content = (
         '# Refine\n'
         '\n'
@@ -195,95 +176,80 @@ def test_read_calls_are_ignored(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    # Act
     findings = analyze_phase2_refine_contract([file_path])
 
-    # Assert
     assert findings == []
 
 
 def test_rules_filter_excludes_rule(tmp_path: Path) -> None:
     """When the rule is not in rules_filter, the analyzer returns no findings."""
-    # Arrange
     content = (
         '# Refine\n'
         'Edit("marketplace/foo.md")\n'
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    # Act — supply a filter that excludes this rule
+    # supply a filter that excludes this rule
     findings = analyze_phase2_refine_contract([file_path], rules_filter={'other-rule'})
 
-    # Assert
     assert findings == []
 
 
 def test_rules_filter_includes_rule(tmp_path: Path) -> None:
     """When the rule IS in rules_filter, findings are emitted normally."""
-    # Arrange
     content = (
         '# Refine\n'
         'Edit("marketplace/foo.md")\n'
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    # Act
     findings = analyze_phase2_refine_contract(
         [file_path],
         rules_filter={RULE_ID, 'other-rule'},
     )
 
-    # Assert
     assert len(findings) == 1
     assert findings[0]['rule_id'] == RULE_ID
 
 
 def test_file_outside_phase2_refine_is_out_of_scope(tmp_path: Path) -> None:
     """Files outside phase-2-refine/ are not scanned even when passed directly."""
-    # Arrange
     content = (
         '# Phase 5 Execute\n'
         'Edit("marketplace/foo.md")\n'
     )
     outside_file = _make_outside_file(tmp_path, content)
 
-    # Act
     findings = analyze_phase2_refine_contract([outside_file])
 
-    # Assert
     assert findings == []
 
 
 def test_directory_input_recurses(tmp_path: Path) -> None:
     """When a directory is passed, the analyzer recurses to find phase-2-refine files."""
-    # Arrange
     content = (
         '# Refine\n'
         'Edit("marketplace/foo.md")\n'
     )
     _make_refine_file(tmp_path, content, filename='SKILL.md')
 
-    # Act — pass the parent directory instead of the file
+    # pass the parent directory instead of the file
     findings = analyze_phase2_refine_contract([tmp_path])
 
-    # Assert
     assert len(findings) == 1
     assert findings[0]['tool'] == 'Edit'
 
 
 def test_suggested_fix_present_in_finding(tmp_path: Path) -> None:
     """Every finding includes a suggested_fix remediation hint."""
-    # Arrange
     content = (
         '# Refine\n'
         'Write("build.gradle")\n'
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    # Act
     findings = analyze_phase2_refine_contract([file_path])
 
-    # Assert
     assert len(findings) == 1
     assert 'suggested_fix' in findings[0]
     assert '.plan/local/' in findings[0]['suggested_fix']

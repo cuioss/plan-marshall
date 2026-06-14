@@ -106,7 +106,6 @@ def test_query_findings_by_resolution(plan_context):
     r1 = add_finding('store-query-res', 'bug', 'Bug 1', 'Detail')
     add_finding('store-query-res', 'bug', 'Bug 2', 'Detail')
 
-    # Resolve one
     resolve_finding('store-query-res', r1['hash_id'], 'fixed')
 
     result = query_findings('store-query-res', resolution='pending')
@@ -173,7 +172,6 @@ def test_resolve_findings_by_type_bulk_count(plan_context):
     assert result['resolved_count'] == 3
     assert len(result['hash_ids']) == 3
 
-    # All bugs are now resolved; none remain pending.
     pending = query_findings('store-bulk-count', finding_type='bug', resolution='pending')
     assert pending['filtered_count'] == 0
     resolved = query_findings('store-bulk-count', finding_type='bug', resolution='fixed')
@@ -190,7 +188,6 @@ def test_resolve_findings_by_type_leaves_other_types(plan_context):
     assert result['status'] == 'success'
     assert result['resolved_count'] == 2
 
-    # The improvement finding must remain pending.
     pending_improve = query_findings(
         'store-bulk-other', finding_type='improvement', resolution='pending'
     )
@@ -202,10 +199,8 @@ def test_resolve_findings_by_type_skips_already_resolved(plan_context):
     r1 = add_finding('store-bulk-dup', 'bug', 'Bug 1', 'Detail')
     add_finding('store-bulk-dup', 'bug', 'Bug 2', 'Detail')
 
-    # Resolve one finding ahead of the bulk call.
     resolve_finding('store-bulk-dup', r1['hash_id'], 'fixed')
 
-    # Bulk resolve should only pick up the one still-pending finding.
     result = resolve_findings_by_type('store-bulk-dup', ('bug',), 'fixed')
     assert result['status'] == 'success'
     assert result['resolved_count'] == 1
@@ -232,7 +227,6 @@ def test_resolve_findings_by_type_multiple_types(plan_context):
     assert result['status'] == 'success'
     assert result['resolved_count'] == 2
 
-    # The tip finding is outside the type set and remains pending.
     pending_tip = query_findings('store-bulk-multi', finding_type='tip', resolution='pending')
     assert pending_tip['filtered_count'] == 1
 
@@ -245,9 +239,8 @@ def test_resolve_findings_by_type_invalid_resolution(plan_context):
     assert result['status'] == 'error'
     assert 'Invalid resolution' in result['message']
 
-    # No finding was mutated.
     pending = query_findings('store-bulk-badres', finding_type='bug', resolution='pending')
-    assert pending['filtered_count'] == 1
+    assert pending['filtered_count'] == 1, 'invalid resolution must leave the finding unmutated'
 
 
 def test_resolve_findings_by_type_custom_from_resolution(plan_context):
@@ -255,10 +248,8 @@ def test_resolve_findings_by_type_custom_from_resolution(plan_context):
     r1 = add_finding('store-bulk-from', 'bug', 'Bug 1', 'Detail')
     add_finding('store-bulk-from', 'bug', 'Bug 2', 'Detail')
 
-    # Move one finding to 'accepted'; the other stays pending.
     resolve_finding('store-bulk-from', r1['hash_id'], 'accepted')
 
-    # Bulk re-resolve only the 'accepted' finding to 'fixed'.
     result = resolve_findings_by_type(
         'store-bulk-from', ('bug',), 'fixed', from_resolution='accepted'
     )
@@ -281,7 +272,6 @@ def test_promote_finding_success(plan_context):
     assert result['status'] == 'success'
     assert result['promoted_to'] == 'manage-lessons'
 
-    # Verify the finding is now marked promoted
     query = query_findings('store-promote', promoted=True)
     assert query['filtered_count'] == 1
 
@@ -368,10 +358,8 @@ def test_qgate_reopen_resolved(plan_context):
         'Flaky test',
         'Detail',
     )
-    # Resolve it
     resolve_qgate_finding('store-qgate-reopen', '5-execute', r1['hash_id'], 'fixed')
 
-    # Re-add same title
     r2 = add_qgate_finding(
         'store-qgate-reopen',
         '5-execute',
@@ -403,12 +391,10 @@ def test_query_qgate_findings(plan_context):
         'Detail',
     )
 
-    # Query all
     result = query_qgate_findings('store-qgate-query', '5-execute')
     assert result['status'] == 'success'
     assert result['total_count'] == 2
 
-    # Query by source
     result = query_qgate_findings('store-qgate-query', '5-execute', source='qgate')
     assert result['filtered_count'] == 1
 
@@ -458,7 +444,6 @@ def test_clear_qgate_findings(plan_context):
     assert result['status'] == 'success'
     assert result['cleared'] == 2
 
-    # Verify cleared
     query = query_qgate_findings('store-qgate-clear', '5-execute')
     assert query['total_count'] == 0
 
