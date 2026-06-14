@@ -156,6 +156,12 @@ Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediati
 | `tmp-redirect-in-skills` | safety | `_analyze_tmp_redirect_in_skills.py` | Plan `bash-compound-command-with-tmp-redirect-triggered` — `>` / `>>` redirects targeting `/tmp/` or `/var/tmp/` inside fenced `bash`/`sh` blocks violate the project policy that all temporary files must live under `.plan/temp/`. The violation is frequently paired with a compound chain (`;`, `&&`), which is the pattern from the source incident. Structural exemptions: comment lines and inline-code spans; only `bash`/`sh`-fenced blocks are scanned. |
 | `bash-fence-inline-code-exemption` | structural | `_analyze_bash_fence_inline_code_exemption.py` | Lesson Detection proposal — reintroduction guard flagging any analyzer module that scans inside a bash/sh fence (defines `_BASH_FENCE_INFO_STRINGS`) while also carrying a markdown inline-code exemption (`_INLINE_CODE_RE` / `_inline_code_spans`). Inside a bash fence backticks are command substitution, not markdown inline-code, so the two markers are mutually exclusive in a single analyzer; co-presence silently skips real command-substitution shapes. Matches zero files in the current (post-PR-#474) tree. |
 
+### Relative-temp-path git -C invariant
+
+| Rule ID | Class | Emitter | Source |
+|---------|-------|---------|--------|
+| `skill-relative-temp-path-git-c` | safety | `_analyze_skill_relative_temp_path.py` | Plan `harness-write-tool-resolves-relative-plan-temp-pa` — a relative `.plan/temp/...` path consumed by a `git -C ... commit -F` command inside fenced `bash`/`sh` blocks in plan-marshall skill markdown diverges between the two legs: the harness `Write` tool resolves the relative path against the MAIN checkout while `git -C {worktree_path}` resolves it against the WORKTREE, so the round-trip references two different files and the commit may read a stale message. The single offender (the `workflow-integration-git` commit step) was fixed in the same plan, so the tree carries zero residual findings — quality-gate-active on day one. Structural exemptions: comment lines and non-`bash`/`sh` fences; the worktree-absolute `{worktree_path}/.plan/temp/...` form is the correct shape and does not match. No markdown inline-code exemption (bash-fence scanner, per the `bash-fence-inline-code-exemption` guard). |
+
 ### Script-call drift
 
 | Rule ID | Class | Emitter | Source |

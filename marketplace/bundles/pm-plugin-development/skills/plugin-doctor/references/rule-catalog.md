@@ -370,6 +370,39 @@ Seven forward-looking lint rules.
 
 ---
 
+## Rule Pack: Relative-temp-path git -C invariant
+
+**Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode AND included in `quality-gate`. Unlike the bash chain-shape pack, this is a NEW anti-pattern with no legacy occurrences in the marketplace tree (the single offender was the bug that motivated the rule, fixed in the same plan), so the tree carries zero residual findings and the rule enforces at quality-gate level on day one.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `skill-relative-temp-path-git-c` | Detect a relative `.plan/temp/...` path consumed by a `git -C ... commit -F` command inside fenced `bash`/`sh` blocks in plan-marshall skill/agent/command markdown — the harness `Write` tool resolves a relative `.plan/temp` path against the main checkout while `git -C {worktree_path}` resolves it against the worktree, so a relative-path round-trip references two different files and the commit may read a stale message | Comment lines (`#`) are exempt; only `bash`/`sh`-fenced blocks are scanned; the worktree-absolute `{worktree_path}/.plan/temp/...` form does not match because the path token after `-F` no longer starts with `.plan/temp/` | None — use the worktree-absolute `{worktree_path}/.plan/temp/...` form on BOTH the `Write` call and the `git commit -F` |
+
+### skill-relative-temp-path-git-c
+
+**Rule ID**: `skill-relative-temp-path-git-c`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_skill_relative_temp_path.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/{skills,agents,commands}/`.
+
+**Intent**: Catch the relative-`.plan/temp`-with-`git -C` divergence that produced a stale-commit-message bug. The harness `Write` tool resolves a relative `.plan/temp/...` path against the MAIN checkout, but a subsequent `git -C {worktree_path} commit -F .plan/temp/...` resolves the same relative path against the WORKTREE. The two legs reference two different files on disk, so the commit reads a stale or empty message instead of the one just authored. A deterministic edit-time lint rule is the regression guard against reintroducing the anti-pattern in any skill that authors a temp file with `Write` and consumes it with `git -C`.
+
+**Detection logic**: Scans every line of fenced `bash` or `sh` blocks in every in-scope markdown file. A `git -C <something> ... commit ... -F <path>` invocation whose `-F` argument is a relative `.plan/temp/...` path (the path token begins with `.plan/temp/` immediately after `-F`) on a non-comment line is a finding, unless it falls into one of the exempt contexts below.
+
+**Permitted contexts**:
+1. **Comment lines** — Lines whose first non-whitespace character is `#` are treated as shell comments and skipped.
+2. **Lines outside bash/sh fenced blocks** — Only lines inside fenced blocks whose info-string is `bash` or `sh` are scanned.
+3. **Worktree-absolute form** — `git -C {worktree_path} commit -F {worktree_path}/.plan/temp/...` produces no finding because the path token after `-F` starts with `{worktree_path}/`, not `.plan/temp/`.
+
+This analyzer scopes its scan to `bash`/`sh` fences and therefore carries NO markdown inline-code exemption — inside a bash fence a backtick span denotes command substitution, not a markdown inline-code span (enforced by the `bash-fence-inline-code-exemption` reintroduction guard).
+
+**Recommended fix**: Use the worktree-absolute `{worktree_path}/.plan/temp/...` path on BOTH legs of the round-trip — the `Write(file_path="{worktree_path}/.plan/temp/...")` call AND the `git -C {worktree_path} commit -F {worktree_path}/.plan/temp/...` command — so they provably reference the same file. `{worktree_path}` is already resolved earlier in the commit workflow, so no new resolution step is required.
+
+**Suppression mechanism**: None — fix the path to the worktree-absolute form.
+
+---
+
 ## Rule Pack: Workflow-doc TOON error-field invariant
 
 **Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode AND included in `quality-gate`. Unlike the bash chain-shape pack, the marketplace tree carries zero residual findings (the normalization sweep that established the canonical `error:` discriminator eliminated every fenced-TOON `error_type` key), so the rule enforces at quality-gate level on day one.

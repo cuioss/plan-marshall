@@ -68,6 +68,7 @@ from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_
 from _analyze_simplicity import scan_simplicity
 from _analyze_skill_mode import analyze_skill_mode
 from _analyze_skill_notation import analyze_skill_notation
+from _analyze_skill_relative_temp_path import analyze_skill_relative_temp_path
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
     analyze_unique_fixture_basenames,
@@ -530,6 +531,16 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(tmp_redirect_issues)
     total_issues += len(tmp_redirect_issues)
 
+    # Marketplace-wide skill-relative-temp-path-git-c rule. Unconditionally
+    # active — detects a relative .plan/temp/... path consumed by a
+    # git -C ... commit -F command inside fenced bash/sh blocks in plan-marshall
+    # skill markdown. The harness Write tool resolves a relative .plan/temp path
+    # against the main checkout while git -C {worktree_path} resolves it against
+    # the worktree, so a relative-path round-trip references two different files.
+    relative_temp_path_issues = analyze_skill_relative_temp_path(marketplace_root)
+    all_issues.extend(relative_temp_path_issues)
+    total_issues += len(relative_temp_path_issues)
+
     # Marketplace-wide WORKFLOW_DOC_TOON_ERROR_FIELD rule. Unconditionally
     # active — flags the non-canonical ``error_type`` key inside fenced
     # ``toon`` workflow/agent error blocks in plan-marshall skill markdown.
@@ -892,6 +903,13 @@ def cmd_quality_gate(args) -> dict:
                                     plan-marshall skill markdown — enforces
                                     the dev-agent-behavior-rules "no shell
                                     constructs" hard rule)
+      - analyze_skill_relative_temp_path (relative ``.plan/temp/...`` path
+                                    consumed by ``git -C ... commit -F`` in
+                                    plan-marshall skill markdown — the harness
+                                    ``Write`` resolves the relative path against
+                                    the main checkout while ``git -C`` resolves
+                                    it against the worktree, so the round-trip
+                                    references two different files)
       - scan_manage_invocation     (manage-invocation-invalid +
                                     missing-canonical-block: documented script
                                     invocations validated against each
@@ -1008,6 +1026,22 @@ def cmd_quality_gate(args) -> dict:
         {
             'rule': 'analyze_workflow_doc_toon_error_field',
             'findings': len(workflow_toon_error_field_findings),
+        }
+    )
+
+    # skill-relative-temp-path-git-c — flags a relative ``.plan/temp/...`` path
+    # consumed by a ``git -C ... commit -F`` command inside fenced bash/sh blocks
+    # in plan-marshall skill markdown. Quality-gate-active: this is a NEW
+    # anti-pattern with no legacy occurrences in the tree (unlike tmp-redirect /
+    # bash-chain), so the post-fix tree produces zero residual findings and the
+    # rule enforces immediately. Findings carry absolute file paths, so _scoped's
+    # path filter applies uniformly under --paths.
+    relative_temp_path_findings = _scoped(analyze_skill_relative_temp_path(marketplace_root))
+    all_issues.extend(relative_temp_path_findings)
+    rule_summaries.append(
+        {
+            'rule': 'analyze_skill_relative_temp_path',
+            'findings': len(relative_temp_path_findings),
         }
     )
 
