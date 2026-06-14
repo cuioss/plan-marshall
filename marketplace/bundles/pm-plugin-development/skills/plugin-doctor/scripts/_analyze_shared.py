@@ -224,8 +224,11 @@ def parse_flat_yaml_config(content: str) -> dict[str, list[str]]:
     Returns a ``{key: [value, ...]}`` mapping. Keys with an empty value list
     are retained as ``key: []``. Lines that are blank, comments, or document
     markers (``---``) are ignored. Inline (``key: [..]``) and block-list
-    (``key:`` then ``  - item``) forms are both accepted; an inline scalar
-    value (``key: single``) is normalised to a single-element list.
+    (``key:`` then ``  - item``) forms are both accepted; a bare
+    comma-separated value (``key: a, b, c``) is split into a multi-element
+    list, and an inline scalar value (``key: single``) is normalised to a
+    single-element list. All three inline forms are routed through the same
+    ``_parse_inline_list`` splitter.
 
     No third-party YAML dependency is used — the accepted subset is
     deliberately flat so a small line scanner suffices.
@@ -258,12 +261,7 @@ def parse_flat_yaml_config(content: str) -> dict[str, list[str]]:
             current_key = key
             result.setdefault(key, [])
             if value:
-                if value.startswith('['):
-                    result[key].extend(_parse_inline_list(value))
-                else:
-                    scalar = value.strip('"').strip("'").strip()
-                    if scalar:
-                        result[key].append(scalar)
+                result[key].extend(_parse_inline_list(value))
             continue
 
         # Anything else (unexpected indentation/format) is ignored — the
@@ -280,6 +278,12 @@ def read_frontmatter_disable_list(content: str) -> set[str]:
 
         ---
         plugin-doctor-disable: [no-historical-prose-in-skills, verb-check]
+        ---
+
+    the bare comma-separated form::
+
+        ---
+        plugin-doctor-disable: no-historical-prose-in-skills, verb-check
         ---
 
     and the YAML block-list form::
