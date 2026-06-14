@@ -164,6 +164,12 @@ retention["logs_days"] = 7
 ### Anti-Patterns to Avoid
 
 ```python
+# BAD: Bare except catches everything including KeyboardInterrupt
+try:
+    result = risky_operation()
+except:
+    pass
+
 # BAD: Catching Exception hides bugs
 try:
     result = operation()
@@ -615,6 +621,21 @@ def pattern_matches_any(pattern: str, names: list[str]) -> bool:
 ## String Handling
 
 Use f-strings for interpolation, including format specs (`f"Total: {price * quantity:.2f}"`) and the debug form (`f"{variable=}"`). Use triple-quoted strings for multi-line SQL/text and implicit-concatenation inside parentheses for wrapped logical strings. Build strings with `"".join(items)` or a list-plus-`join` for loops — never with `+=` in a loop.
+
+### Quote-Normalise Regex-Extracted Config Values
+
+When extracting a value from YAML frontmatter or other quotable config with a regex rather than a real parser, chain `.strip()` then `.strip("\"'")` so a quoted value compares equal to its unquoted form downstream — a regex captures the surrounding quotes verbatim, and the un-normalized value then silently fails an exact-string match that looks correct. Prefer a real parser when the surface is more than a couple of flat keys; reach for a regex only for the trivial flat-key case, and quote-strip when you do.
+
+```python
+import re
+
+# BAD: surrounding quotes leak into the captured value
+m = re.search(r'^domain:\s*(.+)$', content, re.MULTILINE)
+domain = m.group(1).strip()            # '"plan-marshall"' — fails an exact match
+
+# GOOD: normalise the quotes so the downstream comparison succeeds
+domain = m.group(1).strip().strip("\"'")   # 'plan-marshall'
+```
 
 ---
 
