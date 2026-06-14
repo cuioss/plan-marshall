@@ -8,6 +8,16 @@ Finalize steps extensions declare domain-specific steps that execute during the 
 
 ## Implementor Requirements
 
+### Implementor Frontmatter
+
+All finalize-step implementor skills must include in their SKILL.md frontmatter:
+
+```yaml
+implements: plan-marshall:extension-api/standards/ext-point-finalize-steps
+```
+
+Frontmatter is the sole identification source for this extension point: an implementor is discovered by the `implements:` declaration, not by a prose mention or a body-table row. No implementors currently exist (see [Current Implementations](#current-implementations)) — this section is the forward contract every future finalize-step implementor must satisfy.
+
 ### Interface Contract
 
 Each finalize step skill receives:

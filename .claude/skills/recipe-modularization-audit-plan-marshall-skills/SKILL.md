@@ -2,6 +2,7 @@
 name: recipe-modularization-audit-plan-marshall-skills
 description: Domain-invariant recipe that drives a modularization-audit campaign over a gathered skill corpus at a hard-coded T5/overall cell — detects over-long step sequences, numbering defects, and document bloat, and emits one extraction/renumber deliverable per offending skill
 user-invocable: false
+mode: workflow
 allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 recipe_domain: plan-marshall-plugin-dev

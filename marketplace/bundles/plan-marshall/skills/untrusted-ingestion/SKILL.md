@@ -2,6 +2,7 @@
 name: untrusted-ingestion
 description: The single shared contract every untrusted-external-content ingestion surface loads — reader/orchestrator/writer isolation, the deterministic validator script as the containment boundary, and the output-schema discipline for candidate structs parsed from web pages, GitHub issue/PR/comment bodies, and Sonar issue messages
 user-invocable: false
+mode: knowledge
 ---
 
 # Untrusted-Ingestion Skill

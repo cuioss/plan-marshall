@@ -2,6 +2,7 @@
 name: recipe-generalization-sweep
 description: Project-local audit recipe that sweeps the plan-marshall bundle for meta-project-specific leaks and emits remediation deliverables grouped by disposition
 user-invocable: false
+mode: workflow
 allowed-tools: Read, Write, Glob, Grep, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 recipe_domain: plan-marshall-plugin-dev

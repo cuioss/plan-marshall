@@ -2,6 +2,7 @@
 name: workflow-pr-doctor
 description: Diagnose and fix PR issues (build, reviews, Sonar) — thin wrapper around verification-feedback with producer=pr-state
 user-invocable: true
+mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 

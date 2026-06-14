@@ -2,6 +2,7 @@
 name: java-cdi
 description: Core CDI patterns including constructor injection, scopes, producers, events, observers, and interceptors
 user-invocable: false
+mode: knowledge
 ---
 
 # Java CDI Skill

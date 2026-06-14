@@ -2,6 +2,7 @@
 name: workflow-integration-gitlab
 description: GitLab provider for MR review workflows — fetch comments, triage, and respond to review feedback via glab CLI
 user-invocable: false
+mode: workflow
 ---
 
 # GitLab CI Integration Workflow Skill

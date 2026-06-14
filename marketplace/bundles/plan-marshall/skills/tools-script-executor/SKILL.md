@@ -2,6 +2,7 @@
 name: tools-script-executor
 description: Universal script execution pattern via execute-script.py proxy
 user-invocable: false
+mode: knowledge
 ---
 
 # Script Executor Skill

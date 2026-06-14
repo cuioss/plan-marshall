@@ -2,6 +2,7 @@
 name: ref-narrative-styles
 description: Reference library of narrative styles for technical documentation — tone, voice, and structural arcs per genre (engineering-narrative, future user-guide / spec-reference / runbook)
 user-invocable: false
+mode: knowledge
 ---
 
 # Narrative Styles Skill

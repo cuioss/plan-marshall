@@ -2,6 +2,7 @@
 name: ext-triage-reqs
 description: Triage extension for requirements findings during plan-finalize phase
 user-invocable: false
+mode: knowledge
 implements: plan-marshall:extension-api/standards/ext-point-triage
 ---
 

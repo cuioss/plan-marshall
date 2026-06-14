@@ -2,6 +2,7 @@
 name: phase-2-refine
 description: Iterative request clarification until confidence threshold reached
 user-invocable: false
+mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 

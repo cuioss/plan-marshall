@@ -1,6 +1,7 @@
 ---
 name: finalize-step-deploy-target
 description: Generate Claude Code target output via the multi-target generator
+mode: script-executor
 order: 80
 ---
 

@@ -2,6 +2,7 @@
 name: tools-file-ops
 description: Base module providing reusable file operations patterns for workflow scripts
 user-invocable: false
+mode: knowledge
 ---
 
 # File Operations Base Skill

@@ -192,7 +192,7 @@ user-invocable: true
 
 ### Optional Fields
 
-Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invocable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`.
+Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`.
 
 **implements** (optional):
 
@@ -210,6 +210,33 @@ name: ext-triage-java
 description: Java finding triage with suppression syntax and severity guidelines
 user-invocable: false
 implements: plan-marshall:extension-api/standards/ext-point-triage
+---
+```
+
+**mode** (required):
+
+Declares the skill's execution archetype — the single, authoritative signal for how the skill is consumed. `mode` is the **sole source of truth** for the archetype; it replaces the prose `**REFERENCE MODE**` line and the Enforcement-block `**Execution mode**:` line that skills previously carried.
+
+- **Field name**: `mode`
+- **Values** (closed enum — exactly one of):
+
+  | Value | Meaning |
+  |-------|---------|
+  | `knowledge` | Load for context only — reference libraries, standards documents, and the knowledge content of manifests. Its body is reference material, **never executed as instructions**. |
+  | `workflow` | The LLM follows the skill's documented workflow steps sequentially (multi-step procedures, wizards, phase skills, fetch-triage-implement loops, dumb task runners). |
+  | `script-executor` | The skill drives documented executor scripts and routes on their TOON status with minimal LLM reasoning (subcommand-routing skills, `script-deterministic` analyzer/library suites — no LLM judgement). |
+  | `manifest` | An extension manifest — a read-only contract surface modified **only via the Extension API contract**, never edited as a free-form document. |
+
+- **Placement**: in the YAML frontmatter, after the `user-invocable:` line.
+- **Validation**: the plugin-doctor `skill-missing-mode` rule flags any skill whose frontmatter omits `mode` or carries a value outside the enum above.
+- **Compliance**: agents reading a loaded skill comply with its declared `mode` — see the "Skill mode: comply with the declared archetype" rule in `plan-marshall:dev-agent-behavior-rules` (`standards/agent-behavior-rules.md`).
+
+```yaml
+---
+name: java-core
+description: Core Java development standards for patterns, modern features, and performance optimization
+user-invocable: false
+mode: knowledge
 ---
 ```
 
@@ -255,6 +282,7 @@ implements: plan-marshall:extension-api/standards/ext-point-triage
 name: plugin-doctor
 description: Diagnose and fix quality issues in marketplace components
 user-invocable: true
+mode: script-executor
 ---
 ```
 
@@ -264,6 +292,7 @@ user-invocable: true
 name: manage-tasks
 description: Task CRUD operations for planning workflow
 user-invocable: false
+mode: script-executor
 ---
 ```
 
@@ -273,6 +302,7 @@ user-invocable: false
 name: manage-files
 description: File operations for plan work directories
 user-invocable: false
+mode: script-executor
 ---
 ```
 
@@ -349,7 +379,7 @@ Agents must not declare `Task` — the host platform restricts Task from sub-age
 
 ### Issue 4: Unsupported Fields in Skills
 
-Skills must not declare `allowed-tools` or `tools`. The skill schema only supports: `name`, `description`, `user-invocable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`. Any other field is silently ignored — remove it.
+Skills must not declare `allowed-tools` or `tools`. The skill schema only supports: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`. Any other field is silently ignored — remove it.
 
 ### Issue 5: Invalid Tool Names
 
@@ -509,6 +539,8 @@ Use this checklist when creating or reviewing frontmatter:
 - No `tools`, `allowed-tools`, `model`, or `color` fields (not supported for skills)
 - **`user-invocable` field present** (either `true` or `false`)
 - `user-invocable` value matches skill purpose (true for user-facing, false for internal)
+- **`mode` field present** with a value from the closed enum `{knowledge, workflow, script-executor, manifest}`
+- `mode` value matches the skill's archetype (knowledge for reference/standards, workflow for step procedures, script-executor for executor-driven analyzers/libraries, manifest for extension manifests)
 
 ## Reference
 

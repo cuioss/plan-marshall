@@ -1,7 +1,9 @@
 ---
 name: plan-marshall-plugin
 description: Java domain extension with skill domains, module applicability, and workflow integration
+implements: plan-marshall:extension-api/standards/ext-point-domain-bundle
 user-invocable: false
+mode: manifest
 ---
 
 # Plan Marshall Plugin - Java Domain

@@ -2,6 +2,7 @@
 name: dev-general-code-quality
 description: Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, error handling, and documentation standards
 user-invocable: false
+mode: knowledge
 ---
 
 # Code Quality and Documentation Skill

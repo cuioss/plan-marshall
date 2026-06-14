@@ -2,6 +2,7 @@
 name: manage-status
 description: Manage status.json files with phase tracking, metadata, and lifecycle operations
 user-invocable: false
+mode: script-executor
 scope: plan
 ---
 

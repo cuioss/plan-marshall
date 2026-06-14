@@ -2,6 +2,7 @@
 name: phase-1-init
 description: Init phase skill. Creates plan directory, request.md, references, and status. Complete initialization in a single agent call.
 user-invocable: false
+mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 

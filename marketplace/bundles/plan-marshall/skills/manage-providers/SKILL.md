@@ -2,6 +2,7 @@
 name: manage-providers
 description: "Provider management for external tool authentication — secure storage, interactive configuration, and REST client infrastructure"
 user-invocable: false
+mode: script-executor
 ---
 
 # Manage Providers

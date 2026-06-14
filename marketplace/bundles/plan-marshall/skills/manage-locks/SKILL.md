@@ -2,6 +2,7 @@
 name: manage-locks
 description: Cross-session coordination primitives — the unified file-based merge mutex and the build-queue concurrency limiter on one shared, TOCTOU-safe, main-anchored core
 user-invocable: false
+mode: script-executor
 scope: global
 ---
 

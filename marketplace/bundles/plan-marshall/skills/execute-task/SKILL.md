@@ -2,6 +2,7 @@
 name: execute-task
 description: Execute a single plan task with profile-based workflow selection (implementation, module_testing, verification)
 user-invocable: false
+mode: workflow
 ---
 
 # Execute-Task Skill

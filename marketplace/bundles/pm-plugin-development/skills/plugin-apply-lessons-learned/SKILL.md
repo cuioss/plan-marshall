@@ -2,6 +2,7 @@
 name: plugin-apply-lessons-learned
 description: Apply accumulated lessons learned to component documentation
 user-invocable: true
+mode: workflow
 ---
 
 # Apply Lessons Learned Skill

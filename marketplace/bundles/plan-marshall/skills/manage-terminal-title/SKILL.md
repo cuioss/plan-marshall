@@ -2,6 +2,7 @@
 name: manage-terminal-title
 description: Pure platform-agnostic terminal-title composition consumed by platform-runtime via PYTHONPATH
 user-invocable: false
+mode: knowledge
 ---
 
 # Manage Terminal Title

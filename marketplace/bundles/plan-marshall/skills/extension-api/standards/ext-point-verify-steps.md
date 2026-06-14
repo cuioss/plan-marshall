@@ -8,6 +8,16 @@ Verify steps extensions declare domain-specific verification agents that run aft
 
 ## Implementor Requirements
 
+### Implementor Frontmatter
+
+All verify-step implementor skills must include in their SKILL.md frontmatter:
+
+```yaml
+implements: plan-marshall:extension-api/standards/ext-point-verify-steps
+```
+
+Frontmatter is the sole identification source for this extension point: an implementor is discovered by the `implements:` declaration, not by a prose mention or a body-table row. No implementors currently exist (see [Current Implementations](#current-implementations)) — this section is the forward contract every future verify-step implementor must satisfy.
+
 ### Interface Contract
 
 Each verify step skill receives `--plan-id` and `--iteration` (current verification iteration, 1-based). Retry logic is managed by the task runner (Step 9 triage loop), not by the step itself.

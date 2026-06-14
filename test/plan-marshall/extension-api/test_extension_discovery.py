@@ -474,3 +474,217 @@ def test_plan_marshall_plugin_get_skill_domains_omits_build_domain():
     assert 'build' not in keys, (
         'the vestigial build skill-domain must not be declared by plan-marshall-plugin'
     )
+
+
+# =============================================================================
+# Frontmatter-driven manifest discovery: find_extension_path + read_implements_field
+# =============================================================================
+#
+# find_extension_path() resolves each bundle's extension.py by reading the
+# implements: frontmatter declaration from candidate skills/*/SKILL.md files and
+# deriving the sibling extension.py from the matched manifest directory. There is
+# NO path heuristic on the directory name plan-marshall-plugin and NO markdown-body
+# discovery signal. The contract lives in ext-point-domain-bundle.md.
+
+_DOMAIN_BUNDLE_ARCHETYPE = 'plan-marshall:extension-api/standards/ext-point-domain-bundle'
+
+# The 10 production bundles that each ship a domain-bundle manifest. The bundle
+# dir name is the manifest's bundle directory under marketplace/bundles/.
+_PRODUCTION_BUNDLES = (
+    'plan-marshall',
+    'pm-dev-java',
+    'pm-dev-java-cui',
+    'pm-dev-frontend',
+    'pm-dev-frontend-cui',
+    'pm-dev-python',
+    'pm-dev-oci',
+    'pm-documents',
+    'pm-plugin-development',
+    'pm-requirements',
+)
+
+
+def _write_manifest(skill_dir, *, implements, with_extension=True):
+    """Create a SKILL.md (with optional implements:) and sibling extension.py.
+
+    Args:
+        skill_dir: Path to the manifest skill directory to populate.
+        implements: The implements: value to write, or None to omit the key.
+        with_extension: When True, also write a sibling extension.py.
+    """
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    fm_lines = ['---', 'name: ' + skill_dir.name]
+    if implements is not None:
+        fm_lines.append('implements: ' + implements)
+    fm_lines += ['user-invocable: false', '---', '', '# ' + skill_dir.name, '']
+    (skill_dir / 'SKILL.md').write_text('\n'.join(fm_lines), encoding='utf-8')
+    if with_extension:
+        (skill_dir / 'extension.py').write_text('class Extension: ...\n', encoding='utf-8')
+
+
+# --- read_implements_field unit coverage -------------------------------------
+
+
+def test_read_implements_field_returns_value(tmp_path):
+    """The reader returns the implements: scalar from a well-formed frontmatter."""
+    skill = tmp_path / 'manifest'
+    _write_manifest(skill, implements=_DOMAIN_BUNDLE_ARCHETYPE, with_extension=False)
+    assert _discovery.read_implements_field(skill / 'SKILL.md') == _DOMAIN_BUNDLE_ARCHETYPE
+
+
+def test_read_implements_field_strips_surrounding_quotes(tmp_path):
+    """A double- or single-quoted implements: value resolves to the bare value."""
+    skill = tmp_path / 'manifest'
+    skill.mkdir()
+    (skill / 'SKILL.md').write_text(
+        '---\nname: m\nimplements: "' + _DOMAIN_BUNDLE_ARCHETYPE + '"\n---\n\n# m\n',
+        encoding='utf-8',
+    )
+    assert _discovery.read_implements_field(skill / 'SKILL.md') == _DOMAIN_BUNDLE_ARCHETYPE
+
+
+def test_read_implements_field_none_when_key_absent(tmp_path):
+    """A manifest with frontmatter but no implements: key yields None."""
+    skill = tmp_path / 'manifest'
+    _write_manifest(skill, implements=None, with_extension=False)
+    assert _discovery.read_implements_field(skill / 'SKILL.md') is None
+
+
+def test_read_implements_field_none_when_no_frontmatter(tmp_path):
+    """A SKILL.md with no leading --- frontmatter block yields None."""
+    skill = tmp_path / 'manifest'
+    skill.mkdir()
+    (skill / 'SKILL.md').write_text('# manifest\n\nNo frontmatter here.\n', encoding='utf-8')
+    assert _discovery.read_implements_field(skill / 'SKILL.md') is None
+
+
+def test_read_implements_field_none_when_file_missing(tmp_path):
+    """An unreadable / missing SKILL.md yields None rather than raising."""
+    assert _discovery.read_implements_field(tmp_path / 'missing' / 'SKILL.md') is None
+
+
+# --- find_extension_path synthetic-tree coverage -----------------------------
+
+
+def test_find_extension_path_resolves_via_frontmatter_declaration(tmp_path):
+    """find_extension_path() matches the manifest by implements:, not directory name.
+
+    The manifest lives under an arbitrarily-named skill directory (NOT
+    plan-marshall-plugin) and is discovered purely by its implements: declaration.
+    """
+    bundle = tmp_path / 'some-bundle'
+    skill = bundle / 'skills' / 'arbitrary-manifest-name'
+    _write_manifest(skill, implements=_DOMAIN_BUNDLE_ARCHETYPE)
+    resolved = _discovery.find_extension_path(bundle)
+    assert resolved == skill / 'extension.py'
+
+
+def test_find_extension_path_ignores_directory_name_without_declaration(tmp_path):
+    """A plan-marshall-plugin dir WITHOUT the implements: key is NOT discovered.
+
+    Proves the directory-name path heuristic is gone: the legacy directory name
+    no longer suffices for discovery.
+    """
+    bundle = tmp_path / 'some-bundle'
+    skill = bundle / 'skills' / 'plan-marshall-plugin'
+    _write_manifest(skill, implements=None)
+    assert _discovery.find_extension_path(bundle) is None
+
+
+def test_find_extension_path_ignores_non_matching_declaration(tmp_path):
+    """A manifest declaring a DIFFERENT implements: value is not discovered."""
+    bundle = tmp_path / 'some-bundle'
+    skill = bundle / 'skills' / 'plan-marshall-plugin'
+    _write_manifest(skill, implements='plan-marshall:extension-api/standards/ext-point-recipe')
+    assert _discovery.find_extension_path(bundle) is None
+
+
+def test_find_extension_path_none_when_sibling_extension_missing(tmp_path):
+    """A matching manifest with no sibling extension.py yields None."""
+    bundle = tmp_path / 'some-bundle'
+    skill = bundle / 'skills' / 'plan-marshall-plugin'
+    _write_manifest(skill, implements=_DOMAIN_BUNDLE_ARCHETYPE, with_extension=False)
+    assert _discovery.find_extension_path(bundle) is None
+
+
+def test_find_extension_path_resolves_versioned_cache_structure(tmp_path):
+    """The versioned-cache branch (bundle/{version}/skills/...) still resolves."""
+    bundle = tmp_path / 'some-bundle'
+    skill = bundle / '1.0.0' / 'skills' / 'plan-marshall-plugin'
+    _write_manifest(skill, implements=_DOMAIN_BUNDLE_ARCHETYPE)
+    resolved = _discovery.find_extension_path(bundle)
+    assert resolved == skill / 'extension.py'
+
+
+def test_find_extension_path_prefers_source_over_versioned(tmp_path):
+    """When both a source and a versioned manifest declare the archetype, the
+    source-structure manifest (bundle/skills/...) wins over the versioned-cache
+    one (bundle/{version}/skills/...) — the source branch is checked first."""
+    bundle = tmp_path / 'some-bundle'
+    source_skill = bundle / 'skills' / 'plan-marshall-plugin'
+    _write_manifest(source_skill, implements=_DOMAIN_BUNDLE_ARCHETYPE)
+    versioned_skill = bundle / '1.0.0' / 'skills' / 'plan-marshall-plugin'
+    _write_manifest(versioned_skill, implements=_DOMAIN_BUNDLE_ARCHETYPE)
+    resolved = _discovery.find_extension_path(bundle)
+    assert resolved == source_skill / 'extension.py'
+
+
+def test_find_extension_path_skips_hidden_version_dirs(tmp_path):
+    """A hidden version directory is skipped; the valid versioned manifest wins.
+
+    No source-structure manifest is present, so resolution falls to the
+    versioned-cache branch, which must skip the dot-prefixed directory.
+    """
+    bundle = tmp_path / 'some-bundle'
+    hidden_skill = bundle / '.hidden' / 'skills' / 'plan-marshall-plugin'
+    _write_manifest(hidden_skill, implements=_DOMAIN_BUNDLE_ARCHETYPE)
+    valid_skill = bundle / '1.0.0' / 'skills' / 'plan-marshall-plugin'
+    _write_manifest(valid_skill, implements=_DOMAIN_BUNDLE_ARCHETYPE)
+    resolved = _discovery.find_extension_path(bundle)
+    assert resolved == valid_skill / 'extension.py'
+
+
+# --- find_extension_path real-tree coverage: all 10 production manifests ------
+
+
+def test_find_extension_path_resolves_all_10_production_manifests():
+    """find_extension_path() resolves each of the 10 production bundles' manifests.
+
+    The central regression for this deliverable: every production bundle's
+    extension.py is discovered through the frontmatter declaration over the live
+    marketplace tree.
+    """
+    resolved = {}
+    for bundle in _PRODUCTION_BUNDLES:
+        bundle_dir = MARKETPLACE_ROOT / bundle
+        path = _discovery.find_extension_path(bundle_dir)
+        assert path is not None, f'{bundle}: find_extension_path returned None'
+        assert path.is_file(), f'{bundle}: resolved path is not a file: {path}'
+        assert path.name == 'extension.py', f'{bundle}: resolved non-extension.py: {path}'
+        resolved[bundle] = path
+    assert len(resolved) == 10
+
+
+def test_find_extension_path_resolved_manifests_declare_the_archetype():
+    """Each resolved manifest's sibling SKILL.md declares the domain-bundle archetype.
+
+    Confirms the resolution key really is the implements: declaration: the
+    SKILL.md beside each resolved extension.py carries the canonical value.
+    """
+    for bundle in _PRODUCTION_BUNDLES:
+        bundle_dir = MARKETPLACE_ROOT / bundle
+        path = _discovery.find_extension_path(bundle_dir)
+        assert path is not None, f'{bundle}: find_extension_path returned None'
+        skill_md = path.parent / 'SKILL.md'
+        assert _discovery.read_implements_field(skill_md) == _DOMAIN_BUNDLE_ARCHETYPE, (
+            f'{bundle}: resolved manifest SKILL.md does not declare the domain-bundle archetype'
+        )
+
+
+def test_discover_all_extensions_finds_all_production_bundles():
+    """discover_all_extensions() (which calls find_extension_path per bundle)
+    loads every production bundle's Extension via the frontmatter scanner."""
+    extensions = _discovery.discover_all_extensions()
+    found_bundles = {ext['bundle'] for ext in extensions}
+    for bundle in _PRODUCTION_BUNDLES:
+        assert bundle in found_bundles, f'{bundle} not discovered by discover_all_extensions()'

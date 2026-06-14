@@ -2,6 +2,7 @@
 name: java-lombok
 description: Lombok patterns including @Delegate, @Builder, @UtilityClass for reducing boilerplate
 user-invocable: false
+mode: knowledge
 ---
 
 # Java Lombok Skill

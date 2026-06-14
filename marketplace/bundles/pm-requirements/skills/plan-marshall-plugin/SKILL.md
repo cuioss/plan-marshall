@@ -1,7 +1,9 @@
 ---
 name: plan-marshall-plugin
 description: Requirements domain manifest for plan-marshall workflow integration
+implements: plan-marshall:extension-api/standards/ext-point-domain-bundle
 user-invocable: false
+mode: manifest
 ---
 
 # Plan Marshall Plugin - Requirements Domain

@@ -2,6 +2,7 @@
 name: recipe-marshal-json-config-audit
 description: Domain-invariant recipe that audits and improves .plan/marshal.json across nine aspects (default-surfacing, dead-config, docs, naming, units, plus the D5 governance principles — ownership, house-rules, placement, anti-speculation) at a hard-coded T4/module cell
 user-invocable: false
+mode: workflow
 allowed-tools: Read, Glob, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 recipe_domain: plan-marshall-plugin-dev

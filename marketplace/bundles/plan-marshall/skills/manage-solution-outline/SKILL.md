@@ -2,6 +2,7 @@
 name: manage-solution-outline
 description: Manage solution outline documents - standards, examples, validation, and deliverable extraction
 user-invocable: false
+mode: script-executor
 scope: plan
 ---
 

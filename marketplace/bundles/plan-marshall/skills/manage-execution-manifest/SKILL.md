@@ -2,6 +2,7 @@
 name: manage-execution-manifest
 description: Compose, read, and validate the per-plan execution manifest that drives Phase 5 verification and Phase 6 finalize step selection
 user-invocable: false
+mode: script-executor
 scope: plan
 ---
 

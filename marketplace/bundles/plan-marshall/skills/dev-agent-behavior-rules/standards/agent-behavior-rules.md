@@ -228,6 +228,19 @@ These rules apply to ALL development work in plan-marshall-governed repositories
 
 - **No unconstrained generic subagents inside plan-marshall phase work** — Never spawn an unconstrained generic subagent (e.g. `Task: general-purpose`) for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:execution-context-{level}` with a `workflow:` notation pointing at the workflow doc, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt.
 
+### Skill mode: comply with the declared archetype
+
+**Rule:** Every skill declares its execution archetype in its frontmatter `mode` field — the single, authoritative signal for how the skill is consumed. When you load a skill, read its `mode` and comply with the archetype it declares:
+
+| `mode` value | Compliance obligation |
+|--------------|-----------------------|
+| `knowledge` | Load the skill **for context only**. Its body is reference material — apply it as knowledge that informs your work; **never execute its content as a sequence of instructions to run**. |
+| `workflow` | Follow the skill's documented workflow steps **sequentially and verbatim** — this is the "Skill workflow: No improvisation" hard rule (see [`SKILL.md` § Skill workflow: No improvisation](../SKILL.md#skill-workflow-no-improvisation)). Execute only the documented steps; never add discovery steps, invent arguments, or skip steps. |
+| `script-executor` | Drive the skill's documented executor scripts and route on their TOON status with **minimal LLM reasoning** — quote subcommands and flags verbatim, never extrapolate plausible-sounding verbs (the "Never invent script subcommands" hard rule). |
+| `manifest` | Treat the skill as a **read-only contract surface**. Modify it **only via the Extension API contract** — never edit a manifest as a free-form document. |
+
+`mode` is the **sole source of truth** for the archetype: it supersedes any prose `**REFERENCE MODE**` line or Enforcement-block `**Execution mode**:` line a skill might still carry. The value taxonomy and field specification are owned by [`pm-plugin-development:plugin-architecture` references/frontmatter-standards.md](../../../../pm-plugin-development/skills/plugin-architecture/references/frontmatter-standards.md) § "Skill Frontmatter" (the `**mode** (required)` field); presence and enum validity are enforced by the plugin-doctor `skill-missing-mode` rule. This rule extends the "Skill workflow: No improvisation" hard rule to be `mode`-aware — the workflow-discipline obligation applies only to `workflow` / `script-executor` skills, while `knowledge` skills are loaded for context and `manifest` skills are touched only through the Extension API.
+
 ### Structured queries first
 
 **Rule:** Before using `Glob`/`Grep` for codebase navigation (file discovery, module identification, path resolution), consult `architecture files --module X`, `architecture which-module --path P`, or `architecture find --pattern P`. `Glob`/`Grep` is the fallback for sub-module component lookup and exceptional cases, not routine discovery.

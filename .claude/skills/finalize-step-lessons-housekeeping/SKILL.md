@@ -2,6 +2,7 @@
 name: finalize-step-lessons-housekeeping
 description: Finalize-phase wrapper that reconciles the just-finished plan's outcome against the lessons-learned corpus, removing fully-covered lessons, promoting reusable residue into the governing skill before retiring the lesson, and trimming partially-covered ones
 user-invocable: false
+mode: workflow
 allowed-tools: Bash, Read, Edit
 order: 996
 ---

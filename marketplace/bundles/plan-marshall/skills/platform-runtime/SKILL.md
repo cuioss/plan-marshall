@@ -2,6 +2,7 @@
 name: platform-runtime
 description: Platform abstraction layer routing operations to Claude Code or OpenCode implementations
 user-invocable: false
+mode: script-executor
 ---
 
 # Platform Runtime Skill

@@ -2,6 +2,7 @@
 name: finalize-step-pre-submission-self-review
 description: Finalize-phase wrapper that runs the pre-submission structural self-review — deterministic candidate surfacing (pm-plugin-development:ext-self-review-plan-marshall:self_review surface) + LLM cognitive review dispatched under --phase phase-6-finalize (no --role; tracks phase-6-finalize.default)
 user-invocable: false
+mode: workflow
 allowed-tools: Bash, Read, Task
 order: 7
 ---

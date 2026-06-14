@@ -2,6 +2,7 @@
 name: oci-security
 description: "Use when hardening container runtime configuration, scanning for vulnerabilities, securing the image supply chain, or auditing against OWASP Docker Top 10. Covers capability dropping, read-only filesystems, image signing, SBOMs, and Trivy/Cosign/Syft workflows."
 user-invocable: false
+mode: knowledge
 ---
 
 # OCI Container Security

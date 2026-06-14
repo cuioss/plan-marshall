@@ -1,7 +1,9 @@
 ---
 name: plan-marshall-plugin
 description: Plugin development domain manifest with module discovery for plan-marshall workflow integration
+implements: plan-marshall:extension-api/standards/ext-point-domain-bundle
 user-invocable: false
+mode: manifest
 ---
 
 # Plan Marshall Plugin - Plugin Development Domain

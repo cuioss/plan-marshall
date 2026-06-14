@@ -2,6 +2,7 @@
 name: ref-toon-format
 description: TOON format knowledge and usage patterns for agent communication and memory persistence in plan-marshall marketplace
 user-invocable: false
+mode: knowledge
 ---
 
 # TOON Format Reference

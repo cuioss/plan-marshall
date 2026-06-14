@@ -2,6 +2,7 @@
 name: plugin-create
 description: Create new marketplace components (agents, commands, skills, bundles) with proper structure and standards compliance
 user-invocable: true
+mode: workflow
 ---
 
 # Plugin Create Skill

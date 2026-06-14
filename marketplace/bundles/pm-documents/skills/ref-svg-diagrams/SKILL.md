@@ -2,6 +2,7 @@
 name: ref-svg-diagrams
 description: Authoring standards for SVG technical diagrams — uniform visual language, theme handling, AsciiDoc embedding, per-diagram-type patterns
 user-invocable: false
+mode: knowledge
 ---
 
 # SVG Diagrams Skill

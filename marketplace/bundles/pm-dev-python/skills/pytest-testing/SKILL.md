@@ -2,6 +2,7 @@
 name: pytest-testing
 description: "Use when writing, reviewing, or debugging Python tests — covers pytest framework, AAA pattern, fixtures, parametrization, isolation, mocking, assertions, and coverage configuration. Activate for any Python testing task."
 user-invocable: false
+mode: knowledge
 ---
 
 # Pytest Testing Standards

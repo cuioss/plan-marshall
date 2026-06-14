@@ -2,6 +2,7 @@
 name: sync-plugin-cache
 description: Synchronize all marketplace bundles to the Claude plugin cache via the multi-target generator output
 user-invocable: true
+mode: script-executor
 allowed-tools: Bash
 ---
 

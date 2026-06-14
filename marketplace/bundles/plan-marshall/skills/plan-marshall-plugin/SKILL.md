@@ -1,7 +1,9 @@
 ---
 name: plan-marshall-plugin
 description: Build system module discovery consolidating Maven, Gradle, npm, and Python detection
+implements: plan-marshall:extension-api/standards/ext-point-domain-bundle
 user-invocable: false
+mode: manifest
 ---
 
 # Plan Marshall Plugin - Build Discovery

@@ -2,6 +2,7 @@
 name: plan-marshall
 description: Unified plan lifecycle management - create, outline, execute, verify, and finalize plans
 user-invocable: true
+mode: workflow
 ---
 
 # Plan Marshall Skill

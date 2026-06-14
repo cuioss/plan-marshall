@@ -2,6 +2,7 @@
 name: manage-change-ledger
 description: The single append-only change-ledger — one worktree_sha-stamped substrate for kind=build and kind=change entries — plus the first-class worktree-sha freshness API
 user-invocable: false
+mode: script-executor
 scope: global
 ---
 

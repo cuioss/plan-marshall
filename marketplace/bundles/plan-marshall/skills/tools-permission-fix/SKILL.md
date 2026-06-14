@@ -2,6 +2,7 @@
 name: tools-permission-fix
 description: Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes, executor migration, wildcard generation.
 user-invocable: true
+mode: script-executor
 ---
 
 # Permission Fix Skill

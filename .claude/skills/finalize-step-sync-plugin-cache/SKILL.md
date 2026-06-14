@@ -1,6 +1,7 @@
 ---
 name: finalize-step-sync-plugin-cache
 description: Synchronize the Claude plugin cache from target/claude/ via the consolidated sync engine
+mode: script-executor
 order: 85
 ---
 

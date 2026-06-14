@@ -2,6 +2,7 @@
 name: junit-weld-testing
 description: Weld Testing standards for CDI unit testing with @EnableAutoWeld, @AddBeanClasses, and auto-discovery patterns
 user-invocable: false
+mode: knowledge
 ---
 
 # JUnit Weld Testing Skill

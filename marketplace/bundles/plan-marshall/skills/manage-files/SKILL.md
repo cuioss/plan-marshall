@@ -2,6 +2,7 @@
 name: manage-files
 description: Generic file I/O operations for plan directories
 user-invocable: false
+mode: script-executor
 scope: plan
 ---
 

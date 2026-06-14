@@ -185,31 +185,124 @@ def discover_build_extensions() -> list[dict[str, Any]]:
     return extensions
 
 
-def find_extension_path(bundle_dir: Path) -> Path | None:
-    """Find extension.py path in a bundle directory.
+# Canonical ``implements:`` declaration that identifies a domain-bundle manifest
+# skill. See marketplace/bundles/plan-marshall/skills/extension-api/standards/
+# ext-point-domain-bundle.md — the central standard owns the contract; this
+# constant is the discovery key only.
+_DOMAIN_BUNDLE_ARCHETYPE = 'plan-marshall:extension-api/standards/ext-point-domain-bundle'
 
-    Handles both source and cache structures:
-    - Source: bundles/{bundle}/skills/plan-marshall-plugin/extension.py
-    - Cache: {cache}/{bundle}/skills/plan-marshall-plugin/extension.py
-    - Cache versioned: {cache}/{bundle}/1.0.0/skills/plan-marshall-plugin/extension.py
+
+def read_implements_field(skill_md_path: Path) -> str | None:
+    """Read the ``implements:`` scalar from a SKILL.md's YAML frontmatter.
+
+    The ``implements:`` field is the archetype-identification key. It is always
+    a single scalar value (never a YAML list), so this reader extracts only the
+    leading ``key: value`` frontmatter pair named ``implements`` and returns its
+    trimmed value. Surrounding quotes are stripped so a quoted declaration
+    resolves to the same value as an unquoted one.
 
     Args:
-        bundle_dir: Path to the bundle directory
+        skill_md_path: Path to a candidate ``SKILL.md`` file.
 
     Returns:
-        Path to extension.py or None if not found
+        The ``implements:`` value, or ``None`` when the file is unreadable, has
+        no leading ``---`` frontmatter block, or declares no ``implements:`` key.
     """
-    # Try direct path first (source structure)
-    extension_path = bundle_dir / 'skills' / 'plan-marshall-plugin' / 'extension.py'
-    if extension_path.exists():
-        return extension_path
+    try:
+        content = skill_md_path.read_text(encoding='utf-8')
+    except OSError:
+        return None
 
-    # Try versioned path (cache structure from rsync)
-    for version_dir in bundle_dir.iterdir():
+    if not content.startswith('---'):
+        return None
+    end = content.find('\n---', 3)
+    if end == -1:
+        return None
+    fm_text = content[3:end]
+
+    for raw_line in fm_text.split('\n'):
+        line = raw_line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if ':' not in line:
+            continue
+        key, _, value = line.partition(':')
+        if key.strip() == 'implements':
+            return value.strip().strip('"').strip("'") or None
+
+    return None
+
+
+def _scan_skills_root_for_manifest(skills_root: Path) -> Path | None:
+    """Scan a ``skills/`` root for the manifest whose frontmatter declares the
+    domain-bundle archetype and return its sibling ``extension.py``.
+
+    Iterates each ``skills/*/SKILL.md`` candidate, reads the ``implements:``
+    declaration, and selects the directory whose declaration matches
+    :data:`_DOMAIN_BUNDLE_ARCHETYPE`. Returns the matched manifest's sibling
+    ``extension.py`` only when that file exists; otherwise ``None``.
+
+    Args:
+        skills_root: Path to a bundle's ``skills/`` directory.
+
+    Returns:
+        Path to the matched manifest's sibling ``extension.py``, or ``None``.
+    """
+    if not skills_root.is_dir():
+        return None
+
+    for skill_dir in sorted(skills_root.iterdir()):
+        if not skill_dir.is_dir() or skill_dir.name.startswith('.'):
+            continue
+        skill_md = skill_dir / 'SKILL.md'
+        if not skill_md.is_file():
+            continue
+        if read_implements_field(skill_md) != _DOMAIN_BUNDLE_ARCHETYPE:
+            continue
+        extension_path = skill_dir / 'extension.py'
+        if extension_path.is_file():
+            return extension_path
+
+    return None
+
+
+def find_extension_path(bundle_dir: Path) -> Path | None:
+    """Resolve a bundle's ``extension.py`` by frontmatter archetype declaration.
+
+    Scans the bundle's candidate ``skills/*/SKILL.md`` files for the
+    ``implements:`` declaration
+
+        implements: plan-marshall:extension-api/standards/ext-point-domain-bundle
+
+    and derives the sibling ``extension.py`` from the matched manifest's
+    directory. There is no path heuristic: the scanner does NOT identify a
+    manifest by the directory name ``plan-marshall-plugin`` and does NOT read the
+    markdown body for a discovery signal. A manifest whose frontmatter omits the
+    ``implements:`` declaration is not discovered. The contract lives in
+    ext-point-domain-bundle.md — this function is the implementor.
+
+    Both resolution branches are preserved:
+    - Source: bundles/{bundle}/skills/{manifest}/extension.py
+    - Versioned cache: {cache}/{bundle}/{version}/skills/{manifest}/extension.py
+
+    Args:
+        bundle_dir: Path to the bundle directory.
+
+    Returns:
+        Path to the matched manifest's sibling ``extension.py``, or ``None`` when
+        no candidate SKILL.md declares the archetype or no sibling exists.
+    """
+    # Source structure: bundle_dir/skills/*/SKILL.md
+    matched = _scan_skills_root_for_manifest(bundle_dir / 'skills')
+    if matched is not None:
+        return matched
+
+    # Versioned cache structure: bundle_dir/{version}/skills/*/SKILL.md
+    for version_dir in sorted(bundle_dir.iterdir()):
         if version_dir.is_dir() and not version_dir.name.startswith('.'):
-            versioned_path = version_dir / 'skills' / 'plan-marshall-plugin' / 'extension.py'
-            if versioned_path.exists():
-                return versioned_path
+            matched = _scan_skills_root_for_manifest(version_dir / 'skills')
+            if matched is not None:
+                return matched
 
     return None
 

@@ -2,6 +2,7 @@
 name: plan-doctor
 description: Diagnose plan artifacts (TASK-*.json) for unresolved lesson-ID references and other plan-level data integrity defects
 user-invocable: true
+mode: script-executor
 ---
 
 # Plan Doctor Skill

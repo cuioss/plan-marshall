@@ -14,19 +14,25 @@ At runtime, they're discovered from the plugin cache:
 ~/.claude/plugins/cache/plan-marshall/{bundle}/1.0.0/skills/plan-marshall-plugin/extension.py
 ```
 
-**Note**: The skill directory name `plan-marshall-plugin` is a convention — `find_extension_path()` in `extension_discovery.py` searches this hardcoded path. All domain bundles must use this directory name for their extension to be discovered.
+**Note**: Bundles conventionally place the manifest under `skills/plan-marshall-plugin/`, but the directory name is **not** the discovery key. `find_extension_path()` in `extension_discovery.py` discovers the manifest by reading the `implements:` frontmatter declaration from each candidate `skills/*/SKILL.md` and derives the sibling `extension.py` from the matched manifest's directory. See [ext-point-domain-bundle.md](ext-point-domain-bundle.md) for the manifest archetype contract.
 
 ---
 
 ## Skill Directory Convention
 
-Every bundle that provides domain extensions **must** contain a `skills/plan-marshall-plugin/` directory. The `extension_discovery.py` scanner (`find_extension_path()`) looks for this exact path relative to the bundle root:
+Every bundle that provides domain extensions **must** ship a domain-bundle manifest skill whose `SKILL.md` declares:
+
+```yaml
+implements: plan-marshall:extension-api/standards/ext-point-domain-bundle
+```
+
+The manifest skill conventionally lives at `skills/plan-marshall-plugin/`, with the bundle's `extension.py` as its sibling:
 
 ```
 {bundle}/skills/plan-marshall-plugin/extension.py
 ```
 
-The name `plan-marshall-plugin` is a **convention that signals "this bundle is an extension point for plan-marshall"** — it does NOT mean "a plugin for plan-marshall" or "the plan-marshall plugin." Each bundle's `plan-marshall-plugin` directory contains a different domain-specific extension (Java, Python, OCI, etc.), but the directory name is identical across all bundles so the scanner can discover them uniformly.
+The directory name `plan-marshall-plugin` is a **convention that reads "this bundle is an extension point for plan-marshall"** — it does NOT mean "a plugin for plan-marshall" or "the plan-marshall plugin." Each bundle's manifest contains a different domain-specific extension (Java, Python, OCI, etc.). The scanner discovers each manifest uniformly through its `implements:` frontmatter declaration — the directory name is conventional, not load-bearing.
 
 ### Directory Contents
 
@@ -38,12 +44,12 @@ The name `plan-marshall-plugin` is a **convention that signals "this bundle is a
 
 ### Discovery Mechanism
 
-The `find_extension_path()` function in `extension_discovery.py` resolves the extension path using two strategies:
+The `find_extension_path()` function in `extension_discovery.py` discovers the manifest by scanning each bundle's candidate `skills/*/SKILL.md` files for the `implements:` frontmatter declaration and deriving the sibling `extension.py` from the matched manifest's directory. It resolves across two structures:
 
-1. **Source structure**: `marketplace/bundles/{bundle}/skills/plan-marshall-plugin/extension.py`
-2. **Cache structure** (versioned): `~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/skills/plan-marshall-plugin/extension.py`
+1. **Source structure**: `marketplace/bundles/{bundle}/skills/*/SKILL.md`
+2. **Cache structure** (versioned): `~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/skills/*/SKILL.md`
 
-The path segment `skills/plan-marshall-plugin/extension.py` is hardcoded. Bundles that use a different directory name will not be discovered.
+Discovery is keyed on the `implements: plan-marshall:extension-api/standards/ext-point-domain-bundle` declaration, not on a directory-name path literal. A bundle whose manifest `SKILL.md` omits the declaration is not discovered, regardless of its directory name. See [ext-point-domain-bundle.md](ext-point-domain-bundle.md) for the archetype-identification contract.
 
 ### Bundles Implementing This Convention
 
@@ -64,7 +70,7 @@ All 10 production bundles provide a `skills/plan-marshall-plugin/` directory:
 
 ### Why the Same Name Everywhere?
 
-A single, fixed directory name enables automatic discovery without configuration. The scanner iterates over all bundle directories and checks for `skills/plan-marshall-plugin/extension.py` — no registry, no manifest lookup, no per-bundle configuration. This makes adding a new domain extension as simple as creating the directory and implementing `ExtensionBase`.
+The shared `plan-marshall-plugin` directory name is a readability convention so every bundle's manifest is found in the same place by a human. Automatic discovery does not depend on it: the scanner iterates over all bundle directories and selects the `SKILL.md` whose frontmatter declares `implements: plan-marshall:extension-api/standards/ext-point-domain-bundle` — no registry, no per-bundle configuration. This makes adding a new domain extension as simple as creating the manifest skill, declaring the `implements:` key, and implementing `ExtensionBase`.
 
 ---
 
@@ -291,6 +297,7 @@ Each extension point has its own contract document with formal parameters, pre-c
 
 | Extension Point | Hook Method | Contract | Implementations |
 |-----------------|-------------|----------|-----------------|
+| Domain Bundle Manifest | `ExtensionBase` subclass + `extension.py` | [ext-point-domain-bundle.md](ext-point-domain-bundle.md) | 10 |
 | Build System | `discover_modules()` + `ExecuteConfig` factory | [ext-point-build.md](ext-point-build.md) | 4 (Maven, Gradle, npm, Python) |
 | Triage | `provides_triage()` | [ext-point-triage.md](ext-point-triage.md) | 7 |
 | Outline | `provides_outline_skill()` | [ext-point-outline.md](ext-point-outline.md) | 1 |
@@ -684,7 +691,7 @@ class Extension(ExtensionBase):
 
 Three steps materialise a new domain bundle on top of this contract:
 
-1. **Create the discovery directory.** `marketplace/bundles/{bundle}/skills/plan-marshall-plugin/` and an `extension.py` that subclasses `ExtensionBase` and implements `get_skill_domains()`. The path segment is hardcoded — the scanner finds the bundle by the exact directory name. Start from the `Minimal Extension` example above; replace the domain key, name, and profile-skill lists with your domain's content.
+1. **Create the manifest skill.** `marketplace/bundles/{bundle}/skills/plan-marshall-plugin/` with a `SKILL.md` declaring `implements: plan-marshall:extension-api/standards/ext-point-domain-bundle` and a sibling `extension.py` that subclasses `ExtensionBase` and implements `get_skill_domains()`. The scanner finds the bundle by that `implements:` frontmatter declaration, not by the directory name (see [ext-point-domain-bundle.md](ext-point-domain-bundle.md)). Start from the `Minimal Extension` example above; replace the domain key, name, and profile-skill lists with your domain's content.
 2. **Add domain skills.** `marketplace/bundles/{bundle}/skills/{skill}/SKILL.md` for each piece of domain knowledge the bundle provides. At minimum a `core` profile skill set so something loads during dispatches against the new domain. Implementation, module-testing, quality, and documentation profiles are added as the bundle's coverage justifies them.
 3. **Run `/marshall-steward`** in the consuming project. The wizard discovers the new bundle, calls `get_skill_domains()`, writes the registration into `marshal.json` under `skill_domains.{key}`, and prompts for any optional configuration (credentials via `ext-point-provider`, profile overrides, finalize steps via `provides_finalize_steps()`).
 

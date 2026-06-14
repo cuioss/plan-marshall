@@ -2,6 +2,7 @@
 name: recipe-lesson-cleanup
 description: Domain-invariant recipe for converting a single lesson-learned into a slim, deterministic plan with surgical-style cascades
 user-invocable: false
+mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 

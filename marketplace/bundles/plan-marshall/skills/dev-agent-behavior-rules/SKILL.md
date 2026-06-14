@@ -2,6 +2,7 @@
 name: dev-agent-behavior-rules
 description: Foundational agent behavior rules covering user interaction, tool usage, research, dependency management, and document proliferation
 user-invocable: false
+mode: knowledge
 ---
 
 # Development Practices Skill
@@ -84,6 +85,10 @@ Never use Bash for file discovery or reading. Use the structured architecture in
 ### Skill workflow: No improvisation
 
 Execute ONLY the commands documented in the loaded skill's workflow. Never add discovery steps, invent arguments, or skip documented steps.
+
+### Skill mode: comply with the declared archetype
+
+Every skill declares its execution archetype in its frontmatter `mode` field (`knowledge` / `workflow` / `script-executor` / `manifest`) — the sole source of truth for how it is consumed. Read the loaded skill's `mode` and comply: `knowledge` → load for context, never execute its body as instructions; `workflow` → follow the documented steps verbatim (the "Skill workflow: No improvisation" rule above); `script-executor` → drive the documented executor scripts and route on TOON status; `manifest` → treat as a read-only contract modified only via the Extension API. See [`agent-behavior-rules.md` § Skill mode: comply with the declared archetype](standards/agent-behavior-rules.md#skill-mode-comply-with-the-declared-archetype) for the full per-value contract; the field taxonomy is owned by [`pm-plugin-development:plugin-architecture` frontmatter-standards.md](../../../pm-plugin-development/skills/plugin-architecture/references/frontmatter-standards.md).
 
 ### Structured queries first
 

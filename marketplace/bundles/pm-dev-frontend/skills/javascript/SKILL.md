@@ -2,6 +2,7 @@
 name: javascript
 description: Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, JSDoc documentation, and tooling
 user-invocable: false
+mode: knowledge
 ---
 
 # JavaScript Development Standards
@@ -10,7 +11,6 @@ Core JavaScript development standards covering modern JavaScript features (ES202
 
 ## Enforcement
 
-- **Execution mode**: Select workflow and execute immediately
 - **Prohibited actions**: Do not invent script arguments not documented below; do not skip analysis before fixing
 - **Constraints**: All script calls use Rule 9 explicit notation (`python3 .plan/execute-script.py pm-dev-frontend:javascript:jsdoc {subcommand} {args}`)
 

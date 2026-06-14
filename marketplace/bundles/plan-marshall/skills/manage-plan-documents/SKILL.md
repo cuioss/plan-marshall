@@ -2,6 +2,7 @@
 name: manage-plan-documents
 description: Manage request documents within plan directories with schema validation and template-based creation
 user-invocable: false
+mode: script-executor
 scope: plan
 ---
 

@@ -2,6 +2,7 @@
 name: java-null-safety
 description: JSpecify null safety annotations with @NullMarked, @Nullable, and package-level configuration
 user-invocable: false
+mode: knowledge
 ---
 
 # Java Null Safety Skill

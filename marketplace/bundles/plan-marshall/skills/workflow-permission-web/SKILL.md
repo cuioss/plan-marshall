@@ -2,6 +2,7 @@
 name: workflow-permission-web
 description: Analyze and consolidate WebFetch domain permissions across projects with security research and validation
 user-invocable: true
+mode: workflow
 ---
 
 # Manage Web Permissions Skill

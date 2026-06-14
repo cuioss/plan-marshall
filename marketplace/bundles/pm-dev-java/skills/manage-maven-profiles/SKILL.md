@@ -2,6 +2,7 @@
 name: manage-maven-profiles
 description: Maven build profile classification and user workflow for unmatched profiles
 user-invocable: false
+mode: workflow
 ---
 
 # Maven Profile Management

@@ -2,6 +2,7 @@
 name: workflow-integration-git
 description: Git commit workflow with conventional commits, artifact cleanup, and optional push
 user-invocable: false
+mode: workflow
 ---
 
 # Git Workflow Skill

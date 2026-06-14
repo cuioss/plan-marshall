@@ -2,6 +2,7 @@
 name: manage-config
 description: Project-level infrastructure configuration for marshal.json
 user-invocable: false
+mode: script-executor
 scope: hybrid
 ---
 

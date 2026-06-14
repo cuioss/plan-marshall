@@ -2,6 +2,7 @@
 name: recipe-plugin-compliance
 description: Recipe skill that sweeps marketplace bundles for plugin architecture compliance
 user-invocable: false
+mode: workflow
 allowed-tools: Read, Glob, Grep, Bash, Skill
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 recipe_domain: plan-marshall-plugin-dev
