@@ -553,7 +553,7 @@ location: not_found
 
 Atomic phase-5 move-in (notation `plan-marshall:workflow-integration-git:prepare_execute`). In ONE call it materializes the worktree (delegating to the `worktree-create` machinery so a single code path owns `git worktree add` + `.plan` bookkeeping), then MOVES (not copies) the plan directory (`.plan/local/plans/{plan_id}`) from the main checkout into its worktree-resident location and GENERATES a worktree-bound executor (`.plan/execute-script.py`) into the worktree via `generate_executor --marketplace-root {worktree}`. The executor is per-tree DERIVED state, NOT a moved slot — main's copy stays present and untouched; generation is non-fatal. It returns the canonical `worktree_path`.
 
-**The script does NOT change the caller's cwd** — a subprocess cannot mutate its parent's cwd. It RETURNS `worktree_path`; the phase-5 orchestrator pins ITS OWN cwd to that path for the remainder of phase-5+ (D8 wires the pin). The move is atomic-with-rollback (a partial-move failure rolls back so plan state is left WHOLLY on main, never half-moved, returning `status: error`) and idempotent (an already-moved-in plan is a no-op success returning the same path). See ADR-002 and the TOCTOU mitigation menu in `dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
+**The script does NOT change the caller's cwd** — a subprocess cannot mutate its parent's cwd. It RETURNS `worktree_path`; the phase-5 orchestrator pins ITS OWN cwd to that path for the remainder of phase-5+ (D8 wires the pin). The move is atomic-with-rollback (a partial-move failure rolls back so plan state is left WHOLLY on main, never half-moved, returning `status: error`) and idempotent (an already-moved-in plan returns success returning the same path). The idempotent re-entry is **self-healing**: when the plan dir is already moved in but the worktree executor is absent on disk (the partial-materialization case), the re-entry regenerates/copies the missing executor and returns `action: healed` rather than a bare `action: noop`. See ADR-002 and the TOCTOU mitigation menu in `dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:prepare_execute prepare \
@@ -577,13 +577,24 @@ worktree_executor_generated: true
 executor_detail: "worktree executor generated at /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py"
 ```
 
-**Output** (TOON, re-entry — already moved in):
+**Output** (TOON, re-entry — already moved in, executor present):
 ```toon
 status: success
 plan_id: EXAMPLE-PLAN
 worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
 action: noop
 message: "plan state already moved into worktree"
+```
+
+**Output** (TOON, re-entry with missing executor — self-healed): when the plan dir is already moved in but the worktree executor is absent on disk, the re-entry regenerates/copies it and reports the heal:
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+action: healed
+message: "plan state already moved in; regenerated missing worktree executor"
+worktree_executor_generated: true
+executor_detail: "worktree executor generated at /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py"
 ```
 
 **Typed errors** (all `status: error`, `exit_code: 0`):

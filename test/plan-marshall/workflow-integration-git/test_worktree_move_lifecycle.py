@@ -123,7 +123,7 @@ def real_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     # no marketplace tree for. Simulate a clean generation by writing the worktree
     # executor file, so the move-in contract (main executor NOT moved, worktree
     # executor produced) is asserted without the real subprocess.
-    def fake_generate(worktree_path: Path) -> tuple[bool, str]:
+    def fake_generate(worktree_path: Path, plan_id: str) -> tuple[bool, str]:
         wt_exec = worktree_path / '.plan' / 'execute-script.py'
         wt_exec.parent.mkdir(parents=True, exist_ok=True)
         wt_exec.write_text('#!/usr/bin/env python3\n# worktree-bound\n')
