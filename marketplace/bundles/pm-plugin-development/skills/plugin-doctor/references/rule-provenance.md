@@ -219,11 +219,17 @@ The following rule IDs appear in `_doctor_shared.py::FIXABLE_ISSUE_TYPES` becaus
 |---------|-------|---------|--------|
 | `skill-resolver-gap` (already listed under Skill rules) | content | `_doctor_analysis.py` (also surfaced under sub-docs via `subdoc-skill-resolver-gap` channel inside `_doctor_analysis.py`) | Lesson `2026-04-27-18-005`. Listed once under Skill rules. |
 
-### Zero-match rule detector
+### Zero-match coverage (test-layer, not a runtime rule)
 
-| Rule ID | Class | Emitter | Source |
-|---------|-------|---------|--------|
-| `zero-match-rule` | structural | `_analyze_zero_match_rule.py` | Lesson `2026-06-10-22-003` (a doctor rule whose target pattern is textually indistinguishable from a legitimate shape never fires and is dead) and plan `a-doctor-rule-whose-target-pattern-is-textually-i` (D4) — mechanical enforcement of the zero-match acceptance criterion in § "Provenance contract for new rules". A positive-fixture self-test: runs the registered analyzers against a curated known-defect fixture corpus and flags each claimed-and-registered rule ID that fired on no fixture. Severity `warning`, `fixable: False`. |
+The zero-match invariant is enforced at the **test layer**, not by a runtime analyzer. No `_analyze_*.py` module emits a `zero-match-rule` finding, so the invariant carries no row in the emitter tables above and is not part of the registered / quality-gate rule set.
+
+The invariant is: every audit-tracked rule ID the analyzers emit must fire at least once during the plugin-doctor analyzer test suite. It is the suite-coverage property
+
+```
+registered_rule_ids(real_tree) − fired_in_suite − EXEMPT_RULE_IDS == ∅
+```
+
+enforced by `test_zero_match_suite_coverage.py` (`registered_rule_ids` and the `fired_in_suite` derivation live in the plugin-doctor tests' `_fixtures.py`; `EXEMPT_RULE_IDS` lives in `test_zero_match_suite_coverage.py`). A registered rule that neither fires against a positive fixture nor appears in the per-entry-justified `EXEMPT_RULE_IDS` is a real coverage gap — the failing assertion names it, and the fix is a genuine positive unit test for that rule (or, only when the rule structurally cannot fire on a static positive fixture, a justified `EXEMPT_RULE_IDS` entry). Coverage is proven from the test suite itself, over the full registered population minus the exempt set — never from a parallel hand-curated corpus that duplicates the positive tests.
 
 ### Markdown link cross-reference rules
 
@@ -235,7 +241,7 @@ The following rule IDs appear in `_doctor_shared.py::FIXABLE_ISSUE_TYPES` becaus
 
 Before adding a new rule, the author MUST complete a corpus-feasibility check and record its result:
 
-0. **Corpus-feasibility check** — grep the marketplace corpus for BOTH (a) the defect pattern the rule targets AND (b) the count of legitimate occurrences of the same textual shape, and record a one-line legitimate-occurrence note stating that count. A target whose defect shape is textually indistinguishable from a legitimate shape — no structural discriminator separates a real defect from a benign occurrence — is infeasible as a static check and MUST be reported as such rather than shipped. **Zero-match acceptance criterion**: a new rule that matches zero occurrences in the existing corpus is inadmissible unless it ships a positive-fixture proving the matcher fires on a known-defect instance (the mechanism enforced by Deliverable 4 — see the `zero-match-rule` entry in § "Zero-match rule detector" above). A zero-match rule with no positive fixture is presumed dead and MUST be dropped or justified. The `zero-match-rule` rule is the mechanical enforcement of this criterion.
+0. **Corpus-feasibility check** — grep the marketplace corpus for BOTH (a) the defect pattern the rule targets AND (b) the count of legitimate occurrences of the same textual shape, and record a one-line legitimate-occurrence note stating that count. A target whose defect shape is textually indistinguishable from a legitimate shape — no structural discriminator separates a real defect from a benign occurrence — is infeasible as a static check and MUST be reported as such rather than shipped. **Zero-match acceptance criterion**: a new rule must fire at least once during the plugin-doctor analyzer test suite — it must carry a genuine positive unit test that materializes a known-defect instance and asserts the analyzer emits the rule. A rule that fires on no positive test is presumed dead and MUST be dropped or justified. The mechanical enforcement is the suite-coverage invariant `registered_rule_ids(real_tree) − fired_in_suite − EXEMPT_RULE_IDS == ∅` in `test_zero_match_suite_coverage.py` (see § "Zero-match coverage (test-layer, not a runtime rule)" above); a registered rule that neither fires nor appears in the per-entry-justified `EXEMPT_RULE_IDS` fails that test.
 
 Adding a new rule to plugin-doctor requires three artifacts created in lockstep:
 

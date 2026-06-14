@@ -26,6 +26,7 @@ the build_map globs + live footprint.
 import argparse
 
 from _config_core import (
+    compute_build_map_drift,
     load_config,
     merge_build_map,
     require_initialized,
@@ -39,6 +40,7 @@ def cmd_build_map(args: argparse.Namespace) -> dict:
     handlers = {
         'seed': cmd_build_map_seed,
         'read': cmd_build_map_read,
+        'drift': cmd_build_map_drift,
     }
     handler = handlers.get(args.verb)
     if handler:
@@ -91,6 +93,28 @@ def cmd_build_map_read(args: argparse.Namespace) -> dict:
             'status': 'success',
             'build_map': merged,
             'domain_count': len(merged),
+        }
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+
+def cmd_build_map_drift(args: argparse.Namespace) -> dict:
+    """Return the drift between the persisted ``build.map`` and the live derivation.
+
+    Read-only: diffs the current derived map against the persisted block via
+    :func:`compute_build_map_drift` and never calls ``save_config``. The result
+    carries ``in_sync`` plus a per-domain ``drift: {domain: {added_globs,
+    removed_globs}}`` block that the steward's re-run remediation gate consumes to
+    decide whether to prompt for an interactive re-seed.
+    """
+    try:
+        require_initialized()
+        config = load_config()
+        result = compute_build_map_drift(config)
+        return {
+            'status': 'success',
+            'in_sync': result['in_sync'],
+            'drift': result['drift'],
         }
     except Exception as e:
         return {'status': 'error', 'error': str(e)}

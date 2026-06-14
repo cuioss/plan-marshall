@@ -77,6 +77,10 @@ def cmd_finalize_steps_apply_preset(args) -> dict:
 
     config = load_config()
     plan_block = config.setdefault('plan', {})
+    if not isinstance(plan_block, dict):
+        return error_exit(
+            "plan block in marshal.json is not a dict; cannot merge preset steps"
+        )
     phase_entry = plan_block.setdefault(_PHASE_SECTION, {})
     if not isinstance(phase_entry, dict):
         return error_exit(

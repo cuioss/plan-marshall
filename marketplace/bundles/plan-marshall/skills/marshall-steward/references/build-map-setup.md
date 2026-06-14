@@ -41,6 +41,27 @@ build_map:
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map seed --force
 ```
 
+### Detect drift without re-seeding
+
+`build-map seed --force` is the *write* path; `build-map drift` is the read-only *detection* path that tells the operator whether a re-seed is even warranted. The verb diffs the persisted `build.map` against the live derivation and returns `in_sync` plus per-domain `added_globs` / `removed_globs`, never mutating `marshal.json`. The steward's re-run remediation pass (below) consumes it to gate an interactive re-seed, so `--force` is no longer the only way a stale persisted map gets surfaced — a deliberate hand-edit is preserved unless the operator explicitly accepts the re-seed.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-map drift
+```
+
+**Output (TOON)**:
+
+```toon
+status: success
+in_sync: false
+drift:
+  python:
+    added_globs: [...]
+    removed_globs: [...]
+```
+
+`in_sync: true` means the persisted map matches the derivation (no prompt warranted); `in_sync: false` carries the added/removed-glob diff the steward displays before prompting.
+
 ## Wizard Step: Seed the Build Map
 
 Run after the project architecture is discovered (so both the extension set AND the module set are known) and after `marshal.json` is initialised. On a clean first run the block does not yet exist, so the seed reports `action: seeded` — surface the `domain_count` to the user.
@@ -97,3 +118,14 @@ For re-seeding the build map after a domain extension is added or updated, the m
 
 1. Runs `build-map seed` (or `build-map seed --force` for a clean re-derivation) and reports `action` (`seeded` / `preserved` / `re-derived`) plus `domain_count`.
 2. Runs `build-map read` to display the effective map to the operator.
+
+### Interactive Drift Gate at Menu-Mode Entry
+
+Beyond the explicit menu operation above, the steward runs an automatic `build.map` drift gate at **menu-mode entry**, before the Main Menu, as part of its re-run remediation pass (see [`../SKILL.md`](../SKILL.md) § "Re-Run Remediation Pass"). The gate is the operator-friendly counterpart to `--force`:
+
+1. Run `build-map drift` (read-only). If `in_sync: true`, continue silently — no prompt.
+2. If `in_sync: false`, display the added/removed-glob diff and raise a Y/N `AskUserQuestion`:
+   - **Yes** → run `build-map seed --force` to re-seed from the live derivation.
+   - **No** → leave the persisted `build.map` untouched, preserving deliberate hand-edits.
+
+This gate means a stale persisted map is surfaced for re-seed without the operator having to remember to run `--force` manually, while still never clobbering a hand-edited block without explicit consent.

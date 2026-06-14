@@ -19,6 +19,7 @@ ModuleBase, ModulePaths) are available via direct import from _build_discover.
 """
 
 import fnmatch
+import functools
 import subprocess
 from abc import ABC, abstractmethod
 from posixpath import basename
@@ -145,7 +146,7 @@ def derive_globs_from_tree(
             live := sorted(
                 route
                 for route in routes
-                if any(_route_matches(p, route[0]) for p in tracked)
+                if _pattern_matches_any(route[0], tracked)
             )
         )
     }
@@ -209,6 +210,57 @@ def _route_matches(path: str, pattern: str) -> bool:
     if '/' not in pattern:
         return fnmatch.fnmatch(basename(path), pattern)
     return fnmatch.fnmatch(path, pattern)
+
+
+@functools.lru_cache(maxsize=4)
+def _tracked_basenames(tracked_tuple: tuple[str, ...]) -> list[str]:
+    """Return the basenames of ``tracked_tuple``, cached by identity.
+
+    Called by :func:`_pattern_matches_any` for every bare-basename pattern
+    evaluated against the same tracked-file list.  A single ``discover`` call
+    invokes :func:`_pattern_matches_any` once per route, all sharing the same
+    ``tracked`` list — without caching, ``[basename(p) for p in tracked]`` is
+    recomputed O(routes) times.  The ``lru_cache`` key is the tuple of paths, so
+    each unique tracked-file snapshot is computed exactly once per process.
+
+    Args:
+        tracked_tuple: Repo-relative, forward-slashed candidate paths as a tuple
+            (hashable for ``lru_cache`` keying).
+
+    Returns:
+        List of ``posixpath.basename`` values, one per entry in ``tracked_tuple``.
+    """
+    return [basename(p) for p in tracked_tuple]
+
+
+def _pattern_matches_any(pattern: str, tracked: list[str]) -> bool:
+    """Return True when route ``pattern`` matches at least one ``tracked`` path.
+
+    The batch counterpart to the per-element :func:`_route_matches` truthiness
+    loop. Both honour the same two regimes — :func:`_route_matches` decides them
+    per (path, pattern) pair; this function decides the regime once for the whole
+    corpus and hands the matching off to :func:`fnmatch.filter`, which does one
+    batch pass instead of re-dispatching the matcher for every tracked file:
+
+    - **Bare-basename routes** (``pattern`` contains no ``/``): match against the
+      list of path *basenames*, so a config file is matched wherever it lives in
+      the tree.  Basenames are computed once per unique ``tracked`` list via
+      :func:`_tracked_basenames` (``lru_cache``-backed) to avoid O(routes × files)
+      repeated work.
+    - **Path-bearing routes** (``pattern`` contains ``/``): match against the
+      whole repo-relative paths, preserving the single-``*``-spans-``/`` behavior.
+
+    Args:
+        pattern: A route glob — a bare basename (no ``/``) or a path-bearing glob.
+        tracked: Repo-relative, forward-slashed candidate paths.
+
+    Returns:
+        True when ``pattern`` matches at least one path under the regime its shape
+        selects — identical to ``any(_route_matches(p, pattern) for p in tracked)``.
+    """
+    if '/' not in pattern:
+        return bool(fnmatch.filter(_tracked_basenames(tuple(tracked)), pattern))
+    return bool(fnmatch.filter(tracked, pattern))
 
 
 def _route_root(pattern: str) -> str:

@@ -37,6 +37,12 @@ def cmd_system(args) -> dict:
 
     config = load_config()
     system_config = config.get('system', {})
+    if not isinstance(system_config, dict):
+        return error_exit(
+            f"system block in marshal.json is not a dict, got "
+            f"{type(system_config).__name__}",
+            error_type='invalid_type',
+        )
 
     if args.sub_noun == 'retention':
         retention = system_config.get('retention', {})
@@ -48,6 +54,12 @@ def cmd_system(args) -> dict:
             field = args.field
             value = _coerce_value(args.value)
 
+            if not isinstance(retention, dict):
+                return error_exit(
+                    f"system.retention block in marshal.json is not a dict, got "
+                    f"{type(retention).__name__}",
+                    error_type='invalid_type',
+                )
             retention[field] = value
             system_config['retention'] = retention
             config['system'] = system_config
@@ -74,6 +86,12 @@ def cmd_project(args) -> dict:
 
     config = load_config()
     project_config = config.get('project', {})
+    if not isinstance(project_config, dict):
+        return error_exit(
+            f"project block in marshal.json is not a dict, got "
+            f"{type(project_config).__name__}",
+            error_type='invalid_type',
+        )
 
     if args.verb == 'get':
         field = args.field

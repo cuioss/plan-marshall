@@ -878,33 +878,23 @@ Five rules that catch gaps between what the marketplace *declares* and what is *
 
 ---
 
-## Rule Pack: Zero-match rule detector
+## Zero-match coverage (test-layer, not a runtime rule)
 
-**Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode AND included in `quality-gate`. The detector is a positive-fixture self-test: it stays silent for registered rules that make no positive-fixture claim, so a healthy tree carries zero residual findings and the rule can enforce at quality-gate level.
+The zero-match invariant is enforced at the **test layer**, not by a runtime analyzer. There is no `zero-match-rule` finding emitted by any `_analyze_*.py` module, and the invariant is not part of the `analyze` / `quality-gate` registered rule set. The check is the meta-test `test_zero_match_suite_coverage.py`.
 
-| Rule ID | Intent | False-positive policy | Suppression |
-|---------|--------|-----------------------|-------------|
-| `zero-match-rule` | Enforce the zero-match acceptance criterion — a rule whose matcher fires on no known-defect instance is presumed dead. Runs the registered analyzers against a curated positive-fixture corpus and flags each claimed-and-registered rule ID that fired on no fixture | Candidate scope is `corpus_rules ∩ registered_rules`. A registered rule with NO entry in the detector's `FIXTURE_CORPUS` is out of scope (makes no claim, never flagged); a corpus entry whose rule ID is not registered is skipped (the corpus cannot prove a rule the analyzers do not emit) | None — add a firing positive fixture to `FIXTURE_CORPUS`, drop the dead rule, or justify the zero-match per the provenance contract |
+**Invariant**: every audit-tracked rule ID the analyzers emit must fire at least once during the plugin-doctor analyzer test suite:
 
-### zero-match-rule
+```
+registered_rule_ids(real_tree) − fired_in_suite − EXEMPT_RULE_IDS == ∅
+```
 
-**Rule ID**: `zero-match-rule`
+**Where the pieces live**: `registered_rule_ids(root)` and the `fired_in_suite` derivation (each registered rule run against its positive fixture, plus the cross-file rules) are in the plugin-doctor tests' `_fixtures.py`; `EXEMPT_RULE_IDS` — the shrunken, per-entry-justified frozenset of rules that structurally cannot fire on a static positive fixture — is in `test_zero_match_suite_coverage.py`. A companion test (`test_exempt_rule_ids_are_all_registered`) asserts `EXEMPT_RULE_IDS` is a subset of the real-tree registered IDs, so a stale or misspelled exemption fails the build.
 
-**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_zero_match_rule.py`
+**Detection logic**: The meta-test statically derives the registered rule-ID population from the in-tree `_analyze_*.py` modules (the same extractor `test_rule_provenance_table.py` uses — `'type'`/`'rule_id'` literals plus `RULE_*`/`FINDING_TYPE` constants filtered through the audit-tracked-rule-ID heuristic), unions the rule IDs each positive fixture emits when run over its own scratch tree, subtracts the exempt set, and asserts the residual is empty. The assertion message names every uncovered rule so the gap is unambiguous. Stdlib-only, fixtures written under the system temp root.
 
-**Scope**: the plugin-doctor analyzer set under `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_*.py` (registered rule-ID derivation) cross-referenced against the detector's own `FIXTURE_CORPUS`.
+**Recommended fix for a coverage gap**: write a GENUINE positive unit test for the uncovered rule — materialize a minimal known-defect fixture and assert the analyzer emits the rule (real coverage, not a parallel corpus stub). Only when a rule structurally cannot fire on a static positive fixture, add it to `EXEMPT_RULE_IDS` with a per-entry justification comment. Coverage is proven from the test suite itself, over the full registered population minus the exempt set.
 
-**Intent**: Mechanically enforce the **zero-match acceptance criterion** documented in [rule-provenance.md](rule-provenance.md) § "Provenance contract for new rules". A rule whose target pattern is textually indistinguishable from a legitimate shape is infeasible as a static check — its symptom is that it never fires, on the real marketplace OR on a deliberately-broken fixture. A new rule that matches zero corpus occurrences is inadmissible unless it ships a positive fixture proving its matcher fires on a known-defect instance. This detector is that proof harness.
-
-**Detection logic**: Statically derives the set of registered rule IDs from the in-tree `_analyze_*.py` modules (mirroring `test_rule_provenance_table.py`'s extractor — `'type'`/`'rule_id'` literals plus `RULE_*`/`FINDING_TYPE` constants filtered through the audit-tracked-rule-ID heuristic). Materializes each `FixtureSpec` in `FIXTURE_CORPUS` under its own scratch marketplace tree, runs the spec's analyzer over that tree, and collects the union of fired rule IDs. Emits one finding per rule ID in `corpus_rules ∩ registered_rules` that fired on no fixture. Stdlib-only, no subprocess, no mutation of any tracked file (fixtures are written under the system temp root).
-
-**Permitted contexts**:
-1. **Registered rule without a corpus entry** — a rule the analyzers emit but the detector's `FIXTURE_CORPUS` does not claim is out of scope; the detector reports nothing for it. This keeps the real-marketplace run at zero findings rather than flooding one finding per uncovered rule.
-2. **Corpus entry for an unregistered rule** — a `FIXTURE_CORPUS` key whose rule ID is not emitted by any in-tree analyzer is skipped (the corpus cannot prove a rule that does not exist).
-
-**Recommended fix**: When a claimed rule fires on no fixture, either (a) repair the analyzer / fixture so the matcher trips the known-defect instance, (b) drop the dead rule and its provenance row, or (c) justify the zero-match per the provenance contract.
-
-**Suppression mechanism**: None — the finding is a self-test failure that must be resolved at the rule or fixture level.
+**Suppression mechanism**: None — a non-empty gap is a self-test failure resolved by writing the missing positive test or adding a justified exemption.
 
 ---
 

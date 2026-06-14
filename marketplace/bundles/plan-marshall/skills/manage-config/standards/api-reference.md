@@ -235,6 +235,24 @@ manage-config plan phase-5-execute get --field max_iterations
 
 ---
 
+## Noun: finalize-steps
+
+Write the `phase-6-finalize` step list from a named preset. `apply-preset` surgically writes the preset's step list into `plan.phase-6-finalize.steps` while preserving every other phase-6 knob (`max_iterations`, `pr_merge_strategy`, `auto_rebase_threshold`, …). Step enumeration stays on the `plan phase-6-finalize list-finalize-steps` surface; this noun only writes presets. The persisted list is sorted ascending by each step's resolved `order` (see [Order-driven step verbs](#order-driven-step-verbs-phase-5-execute-phase-6-finalize)).
+
+| Verb | Parameters | Description |
+|------|-----------|-------------|
+| `apply-preset` | `--preset` | Surgically overwrite `plan.phase-6-finalize.steps` from a named preset (case-insensitive lookup). Preset names: `local`, `standard`, `full` (least ➜ most coverage; see `finalize_step_presets.py` for the per-preset step lists). Other phase-6 knobs are preserved. |
+
+### Example: apply-preset
+
+```bash
+manage-config finalize-steps apply-preset --preset standard
+```
+
+Success payload fields: `preset` (the applied preset name) and `steps_count` (number of steps written).
+
+---
+
 ## Noun: ext-defaults
 
 Manage extension defaults (generic key-value storage for extension-set configuration).
