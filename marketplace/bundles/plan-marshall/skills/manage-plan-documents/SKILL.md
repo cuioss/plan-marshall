@@ -32,12 +32,24 @@ Domain-specific document management for request documents. Provides logical docu
 manage-plan-documents {document-type} {verb} [options]
 ```
 
+> **No top-level `read` verb.** Every verb below is scoped under a document type
+> (`request`) — there is NO standalone `manage-plan-documents read`. To read a
+> request document you MUST invoke `manage-plan-documents request read --plan-id ...`.
+> Calling `manage-plan-documents read ...` (omitting the `request` document-type
+> positional) is an `argparse_rejection` (exit 2): the parser has no top-level
+> `read` subcommand. The only top-level subcommand is `list-types`; all CRUD verbs
+> (`create`, `read`, `path`, `exists`, `remove`, `mark-clarified`) live under the
+> document type. The same rule applies to every verb in the table below — none of
+> them exists at the top level.
+
 ### Verbs
+
+All verbs below are **document-type-scoped** — invoke them as `manage-plan-documents {document-type} {verb}` (e.g. `request read`), never as a bare top-level subcommand.
 
 | Verb | Description |
 |------|-------------|
 | `create` | Create document from template |
-| `read` | Read document (parsed or raw) |
+| `read` | Read document (parsed or raw) — invoked as `request read`, NOT top-level `read` |
 | `path` | Return canonical artifact path for direct edit (Step 1 of edit flow) |
 | `mark-clarified` | Record clarification transition after direct edit (Step 3 of edit flow) |
 | `exists` | Check if document exists |
