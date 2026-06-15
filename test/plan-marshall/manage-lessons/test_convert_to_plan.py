@@ -9,6 +9,7 @@ creation, and path-traversal rejection on both ``lesson_id`` and ``plan_id``.
 
 import json
 from argparse import Namespace
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -166,3 +167,92 @@ class TestConvertToPlanTombstoneReservation:
             next_id = get_next_id()
 
         assert next_id == '2025-01-01-02-002'
+
+
+class TestConvertToPlanFailedCopyTransactional:
+    """A failed copy must leave the source intact and the plan dir clean.
+
+    The relocation is transactional: copy → read-back verify → delete source.
+    When the copy step raises, the source lesson MUST remain in
+    ``lessons-learned/`` and no partial artifact may survive in the plan
+    directory. This is the regression guard for the single-step ``shutil.move``
+    that could leave the lesson in a missing state on a mid-operation error.
+    """
+
+    _LESSON_CONTENT = """id=2025-01-01-001
+component=test-component
+category=bug
+created=2025-01-01
+
+# Test Lesson
+
+Body content here.
+"""
+
+    def test_failed_copy_leaves_source_intact(self, tmp_path):
+        """When copyfile raises, source survives and no destination is written."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        source = lessons_dir / '2025-01-01-001.md'
+        source.write_text(self._LESSON_CONTENT)
+
+        destination = tmp_path / 'plans' / 'my-plan' / 'lesson-2025-01-01-001.md'
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}), patch.object(
+            _mod.shutil, 'copyfile', side_effect=OSError('disk full')
+        ):
+            result = cmd_convert_to_plan(Namespace(lesson_id='2025-01-01-001', plan_id='my-plan'))
+
+        # The operation reports failure.
+        assert result['status'] == 'error'
+        assert result['error'] == 'copy_failed'
+
+        # Source lesson is untouched — content preserved byte-for-byte.
+        assert source.exists()
+        assert source.read_text() == self._LESSON_CONTENT
+
+        # No partial artifact in the plan directory.
+        assert not destination.exists()
+
+    def test_failed_copy_writes_no_tombstone(self, tmp_path):
+        """A failed copy must not reserve the id — the lesson is still alive."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        (lessons_dir / '2025-01-01-001.md').write_text(self._LESSON_CONTENT)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}), patch.object(
+            _mod.shutil, 'copyfile', side_effect=OSError('disk full')
+        ):
+            result = cmd_convert_to_plan(Namespace(lesson_id='2025-01-01-001', plan_id='my-plan'))
+
+        assert result['status'] == 'error'
+        tombstone = lessons_dir / '.tombstones' / '2025-01-01-001.json'
+        assert not tombstone.exists()
+
+    def test_failed_readback_removes_partial_and_keeps_source(self, tmp_path):
+        """A truncated copy (read-back mismatch) must be cleaned up; source survives."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        source = lessons_dir / '2025-01-01-001.md'
+        source.write_text(self._LESSON_CONTENT)
+
+        destination = tmp_path / 'plans' / 'my-plan' / 'lesson-2025-01-01-001.md'
+
+        def _truncated_copy(src, dst):
+            # Simulate a partial write: the destination ends up shorter than source.
+            Path(dst).write_bytes(b'partial')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}), patch.object(
+            _mod.shutil, 'copyfile', side_effect=_truncated_copy
+        ):
+            result = cmd_convert_to_plan(Namespace(lesson_id='2025-01-01-001', plan_id='my-plan'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'copy_failed'
+
+        # Source preserved.
+        assert source.exists()
+        assert source.read_text() == self._LESSON_CONTENT
+
+        # Partial artifact removed.
+        assert not destination.exists()

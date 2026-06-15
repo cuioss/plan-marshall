@@ -296,9 +296,9 @@ DEFAULT_PLAN_EXECUTE = {
 # Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
 BUILT_IN_FINALIZE_STEPS = [
     'default:pre-push-quality-gate',
-    'default:finalize-step-simplify',
     'default:finalize-step-whole-tree-gate',
     'default:commit-push',
+    'default:finalize-step-simplify',
     'default:create-pr',
     'default:ci-verify',
     'default:automated-review',

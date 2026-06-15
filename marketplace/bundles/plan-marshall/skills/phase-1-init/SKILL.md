@@ -135,6 +135,64 @@ Compare the candidate slug against the `plan_id` values in the returned list.
   appended after truncation, so a suffixed `plan_id` may slightly exceed 50
   characters — this is expected and acceptable.
 
+### Step 2b: Plan-ID Derivation Guard (Phantom-ID Rejection)
+
+**Applicability**: This guard runs **unconditionally** once Step 2 (and, for the
+lesson source, Step 2a) has produced a final `plan_id` — for every source
+(`description`, `lesson`, `issue`, `recipe`) and for an explicit `--plan-id`
+override alike. It is the last checkpoint before Step 3 creates the plan
+directory.
+
+**Rationale**: A lesson-conversion dispatch composes the init call from values it
+holds in context — and the harness's available tokens include the lesson-ID being
+converted and the dispatched execution-context's own agent-id. When the wrong
+token leaks into the `plan_id` slot (a lesson-ID such as `2026-05-11-08-004`, or
+a UUID / execution-context agent token), Step 3 silently creates a *phantom*
+plan directory keyed by that token, and the real lesson is never converted. The
+failure is invisible: the dispatch reports success against an id that does not
+correspond to the intended plan. This guard converts that silent miss into a
+loud, structured contract violation the orchestrator can surface on the
+lesson-conversion side.
+
+**Reject when** the final `plan_id` matches **either** shape:
+
+1. **Lesson-ID shape** — `YYYY-MM-DD-HH-NNN` (four hyphen-separated numeric
+   groups: a `YYYY-MM-DD` date, a two-digit hour, and a zero-padded sequence
+   number). Regex: `^\d{4}-\d{2}-\d{2}-\d{2}-\d{3,}$`. A `plan_id` of this shape
+   is a lesson-ID that leaked into the plan-id slot — the caller passed the
+   lesson being converted as the plan id.
+2. **Agent-id shape** — any of:
+   - a UUID (`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`),
+   - a bare hexadecimal string of 12 or more hex characters with no hyphens
+     (`^[0-9a-fA-F]{12,}$`, e.g. `aa82aa78f2414dc79` — the harness agent-id
+     shape with no UUID hyphens and no prefix), or
+   - an execution-context token (a value beginning case-insensitively with
+     `execution-context` or `agent-`, e.g. `execution-context-level-3`,
+     `agent-7f3c`).
+   A `plan_id` matching any of these alternatives is the dispatched agent's own id
+   that leaked into the plan-id slot.
+
+A legitimately derived slug — kebab-case words from a description, an
+`issue-{number}`, a `recipe-{key}-{yyyy-mm-dd-hh}`, or a lesson **title** slug —
+never matches either shape, so the guard has no false-positive surface against
+the documented Step 2 / Step 2a derivations.
+
+**On a match**, abort the phase immediately and return the structured contract
+violation (do NOT proceed to Step 3, do NOT create any plan directory). When the
+plan directory does not yet exist, the work-log emit in § Error Handling is
+skipped — return the TOON directly:
+
+```toon
+status: error
+error: phantom_plan_id
+plan_id: {derived_plan_id}
+detected_shape: lesson_id | agent_id
+message: "Derived plan_id '{derived_plan_id}' matches a {detected_shape} shape — a lesson-ID or agent-id leaked into the plan-id slot. Refusing to create a phantom plan directory."
+recovery: "Re-dispatch init with an explicit --plan-id (a kebab-case slug), or fix the lesson-conversion call that passed the {detected_shape} as the plan_id."
+```
+
+**On no match**, the derived `plan_id` is valid — continue to Step 3.
+
 ### Step 3: Create or Reference Plan
 
 ```bash
@@ -766,6 +824,29 @@ error: plan_exists
 message: Plan already exists: {plan_id}
 recovery: Use --plan-id to specify different ID, or resume existing
 ```
+
+### Phantom Plan ID (Step 2b Guard)
+
+Raised by **Step 2b: Plan-ID Derivation Guard** when the final derived `plan_id`
+matches a lesson-ID shape (`YYYY-MM-DD-HH-NNN`) or an agent-id shape (UUID,
+bare hex string of 12 or more characters such as `aa82aa78f2414dc79`, or
+`execution-context` / `agent-` token). This is a **contract violation on the
+lesson-conversion dispatch side** — a lesson-ID or the dispatched agent's own id
+leaked into the plan-id slot, which would otherwise create a phantom plan
+directory keyed by that token while the intended lesson is never converted. The
+guard fires before Step 3, so no plan directory exists yet and the work-log emit
+above is skipped.
+
+```toon
+status: error
+error: phantom_plan_id
+plan_id: {derived_plan_id}
+detected_shape: lesson_id | agent_id
+message: Derived plan_id '{derived_plan_id}' matches a {detected_shape} shape — a lesson-ID or agent-id leaked into the plan-id slot. Refusing to create a phantom plan directory.
+recovery: Re-dispatch init with an explicit --plan-id (a kebab-case slug), or fix the lesson-conversion call that passed the {detected_shape} as the plan_id.
+```
+
+The orchestrator's post-init contract assertion (`plan-marshall:plan-marshall/workflow/planning.md` § Action: init → **Post-init contract assertion**) treats this `error: phantom_plan_id` return as a hard failure and refuses to advance to phase-2-refine, surfacing the violation to the lesson-conversion caller.
 
 ---
 
