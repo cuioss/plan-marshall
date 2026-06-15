@@ -95,9 +95,9 @@ File: `<base>/plans/{plan_id}/handshakes.toon` (owned exclusively by `phase_hand
 
 ```toon
 plan_id: recipe-plugin-compliance
-handshakes[2]{phase,captured_at,override,override_reason,main_sha,main_dirty,main_dirty_files,worktree_sha,worktree_dirty,references_valid,task_state_hash,qgate_open_count,config_hash,unfinished_tasks_count,phase_steps_complete,pending_findings_by_type,pending_findings_blocking_count}:
-  5-execute,2026-04-14T17:42:57Z,false,"",3823a0dd…,0,[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,"","build-error=0,test-failure=0,lint-issue=0,sonar-issue=0",0
-  6-finalize,2026-04-14T18:01:12Z,false,"",15efe821…,0,[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,e7f8a9…,"build-error=0,test-failure=0,lint-issue=0,sonar-issue=0,pr-comment=0",0
+handshakes[2]{phase,captured_at,override,override_reason,main_sha,main_dirty,main_dirty_files,worktree_sha,worktree_dirty,references_valid,task_state_hash,qgate_open_count,config_hash,unfinished_tasks_count,phase_steps_complete,pending_findings_by_type,pending_findings_blocking_count,pr_title_present}:
+  5-execute,2026-04-14T17:42:57Z,false,"",3823a0dd…,0,[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,"","build-error=0,test-failure=0,lint-issue=0,sonar-issue=0",0,9f8e7d…
+  6-finalize,2026-04-14T18:01:12Z,false,"",15efe821…,0,[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,e7f8a9…,"build-error=0,test-failure=0,lint-issue=0,sonar-issue=0,pr-comment=0",0,9f8e7d…
 ```
 
 Rationale for flat TOON over nested: simpler parsing, one row per phase, direct diff-ability. Adding a new invariant adds a new column; captures missing a column are treated as "not captured, skip comparison" during verify, so new invariants can roll out without invalidating history.
@@ -122,6 +122,7 @@ Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples. The para
 | `task_graph_valid` | always | adjacency graph from `manage-tasks read` (cycle / dangling detection) | `blocking_at_every_boundary` | broken task graph blocking transition |
 | `pending_findings_by_type` | always | per-type breakdown from `manage-findings list --type T --resolution pending` for every known type, serialized as `"build-error=N,test-failure=N,..."` | `blocking_at_every_boundary` | retrospective view of the queue at every boundary |
 | `pending_findings_blocking_count` | always | sum of pending counts across the **hardcoded ACTIONABLE** finding-type set (see [resolution rule](#pending_findings_blocking_count-resolution)) | `blocking_at_every_boundary` | phase advance with actionable findings still pending |
+| `pr_title_present` | always (no-op / empty column at `1-init` via internal phase gate) | present-sentinel hash `_hash_dict({'present': True})` of `metadata.pr_title`; raises `PrTitleMissing` when empty/missing at `2-refine`+ (see [error payload](#pr_title_missing-capture-time-error)) | `blocking_at_every_boundary` | missing or empty PR title from refine onward |
 
 ### Blocking classification
 
@@ -282,6 +283,22 @@ message: "worktree_metadata_drift: metadata.use_worktree is set but worktree_pat
 **Detection fingerprint:** `phase_handshake` reports `metadata.use_worktree=None` (the metadata read swallowed a non-resolving notation and returned `{}`) while `manage-status read` shows a non-empty `metadata.use_worktree` value. The two readings disagreeing is the signature of this failure class.
 
 **Root cause and resolution:** historically this error also fired spuriously when `metadata.use_worktree` was stored as the JSON string `"true"` instead of the boolean `true`. `manage-status metadata --set` now coerces boolean-typed metadata keys (`use_worktree`) from the raw CLI string to a JSON boolean before storage, so the stored value is always a proper boolean. A persistent `worktree_metadata_drift` after that fix indicates a genuine unresolved worktree path — repair `metadata.worktree_path` (re-run phase-5-execute Step 2.5 materialization) and re-enter the phase.
+
+### `pr_title_missing` capture-time error
+
+The `pr_title_present` invariant guards that a commit-style PR title was authored at phase-2-refine Step 13 and persisted to `status.metadata.pr_title`, so phase-6-finalize `create-pr.md` has a deterministic `--title` source. At `1-init` the capture returns `None` (the title does not yet exist — refine authors it), so the column stays empty pre-refine. From `2-refine` onward, when `metadata.pr_title` is empty/missing/whitespace-only the capture raises `PrTitleMissing` and `cmd_capture` returns a structured error payload **without writing a row**:
+
+```toon
+status: error
+error: pr_title_missing
+plan_id: X
+phase: 2-refine
+message: "pr_title_present failed for phase '2-refine': metadata.pr_title is absent or empty — phase-2-refine Step 13 must author and persist a commit-style PR title via `manage-status metadata --set --field pr_title`"
+```
+
+**Trigger condition:** the active phase is `2-refine` or later AND `metadata.pr_title` is absent, empty, or whitespace-only (phase-2-refine skipped its Step 13 title-authoring obligation, or the field was clobbered downstream).
+
+**Resolution:** re-run phase-2-refine Step 13 title authoring so a non-empty `pr_title` is persisted via `manage-status metadata --set --field pr_title`, then re-enter the phase. A present-sentinel hash (`_hash_dict({'present': True})`) encodes only the PRESENCE of the title, so a legitimate title edit between boundaries does NOT trip drift detection.
 
 ## Integration with phase lifecycle
 

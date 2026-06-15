@@ -752,6 +752,21 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 The accepted enum values are `simple | complex`. `manage-execution-manifest compose --track` and phase-4-plan read this field as the single source of truth — `manage-references get --field track` returns the value without inference once refine writes it here. The value is also returned in the Step 13 TOON below.
 
+### Author and persist the PR title
+
+Author a commit-style PR title from the **clarified request** and persist it to `status.json` metadata so phase-6-finalize `create-pr.md` has a deterministic source to bind `--title` from — symmetric to the `scope_estimate` / `track` persists above:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  metadata --plan-id {plan_id} --set --field pr_title --value "{authored_title}"
+```
+
+**Title-authoring guidance:** Author a concise, conventional-commit-style PR title — ≤72 characters, imperative mood, `type(scope): summary` shape consistent with this repo's commit convention (e.g. `fix(create-pr): bind --title from persisted pr_title`). Derive it from the clarified request narrative, not from the raw original input.
+
+**Distinctness from the descriptive `title`:** `pr_title` is **distinct from the existing descriptive top-level `title` field** authored at phase-1-init. The top-level `title` is the plan's human-readable label; `pr_title` is the commit-style PR title consumed at finalize. Persisting `pr_title` under `status.metadata` never mutates the top-level `title`.
+
+The value is also surfaced in the Step 13 "Return Output with Decisions" TOON below.
+
 **Note**: Compatibility is NOT persisted to references.json (it is read directly from marshal.json by consumers).
 
 ### Log Decisions (with duplicate guard)
@@ -786,6 +801,7 @@ confidence: {achieved_confidence}
 track: {simple|complex}
 track_reasoning: {track_reasoning}
 scope_estimate: {scope_estimate}
+pr_title: {pr_title}
 compatibility: {compatibility}
 compatibility_description: {compatibility_description}
 domains: [{detected domains}]

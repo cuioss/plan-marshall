@@ -177,14 +177,24 @@ def stub_handshake_run_script(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def stub_load_status_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub ``cmds._load_status_metadata`` to a non-worktree empty dict.
+    """Stub ``cmds._load_status_metadata`` to a non-worktree metadata dict.
 
     The production helper shells out to ``manage-status read`` via the
     executor; with the executor symlink pointing at the main checkout the
     real call would resolve against the wrong PLAN_BASE_DIR. The metadata
-    we need is "no worktree", and an empty dict satisfies that.
+    we need is "no worktree", which an absent ``worktree_path`` satisfies.
+
+    A realistic post-refine plan carries ``pr_title`` (authored at
+    phase-2-refine Step 13), so the stub includes it — the
+    ``pr_title_present`` invariant raises ``PrTitleMissing`` at the
+    ``2-refine``+ boundaries this lifecycle exercises when the field is
+    absent, exactly as a real plan that skipped refine title-authoring would.
     """
-    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: {})
+    monkeypatch.setattr(
+        cmds,
+        '_load_status_metadata',
+        lambda _pid: {'pr_title': 'fix(handshake): lifecycle e2e PR title'},
+    )
 
 
 # =============================================================================

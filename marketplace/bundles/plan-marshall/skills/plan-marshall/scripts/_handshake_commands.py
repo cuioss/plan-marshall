@@ -48,6 +48,7 @@ from _invariants import (  # type: ignore[import-not-found]
     BlockingFindingsPresent,
     MainCheckoutDirtiedDuringPlan,
     PhaseStepsIncomplete,
+    PrTitleMissing,
     _capture_pending_findings_blocking_count,
     _main_dirty_drift_diff,
     _worktree_materialized,
@@ -408,6 +409,14 @@ def cmd_capture(args: Any) -> dict[str, Any]:
             'blocking_count': exc.blocking_count,
             'blocking_types': exc.blocking_types,
             'per_type': exc.per_type,
+            'message': str(exc),
+        }
+    except PrTitleMissing as exc:
+        return {
+            'status': 'error',
+            'error': 'pr_title_missing',
+            'plan_id': plan_id,
+            'phase': phase,
             'message': str(exc),
         }
     row = _row_for_capture(

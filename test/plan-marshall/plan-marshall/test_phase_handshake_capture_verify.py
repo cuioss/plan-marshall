@@ -509,3 +509,73 @@ def test_verify_main_columns_persist_regardless_of_classification(
     row = rows[0]
     assert row.get('main_sha')
     assert 'main_dirty' in row
+
+
+# =============================================================================
+# pr_title_present invariant — cmd_capture integration + storage schema
+# =============================================================================
+
+
+@pytest.fixture
+def only_pr_title_invariant(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace INVARIANTS with just the real pr_title_present entry.
+
+    Lets cmd_capture exercise the real invariant code path without the other
+    invariants trying to shell out.
+    """
+    stubbed = [
+        ('pr_title_present', inv._always, inv._capture_pr_title_present),
+    ]
+    monkeypatch.setattr(inv, 'INVARIANTS', stubbed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', stubbed)
+
+
+def test_handshake_fields_includes_pr_title_present() -> None:
+    """The TOON column schema must include ``pr_title_present``."""
+    assert 'pr_title_present' in store.HANDSHAKE_FIELDS
+
+
+def test_cmd_capture_pr_title_present_success(
+    plan_context, only_pr_title_invariant, stub_metadata
+) -> None:
+    """A present pr_title at 2-refine captures a row with a non-empty column."""
+    stub_metadata['pr_title'] = 'fix(create-pr): bind --title from persisted pr_title'
+    result = cmds.cmd_capture(_ns(plan_id='prt-ok', phase='2-refine'))
+    assert result['status'] == 'success'
+    assert 'pr_title_present' in result['invariants']
+    row = store.get_row('prt-ok', '2-refine')
+    assert row is not None
+    assert row['pr_title_present'] != ''
+
+
+def test_cmd_capture_pr_title_missing_returns_error(
+    plan_context, only_pr_title_invariant, stub_metadata
+) -> None:
+    """An absent pr_title at 2-refine+ surfaces a structured error and no row."""
+    # stub_metadata starts empty → pr_title absent.
+    result = cmds.cmd_capture(_ns(plan_id='prt-fail', phase='2-refine'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'pr_title_missing'
+    assert result['phase'] == '2-refine'
+    assert 'pr_title' in result['message']
+    assert store.get_row('prt-fail', '2-refine') is None
+
+
+def test_cmd_capture_pr_title_empty_returns_error(
+    plan_context, only_pr_title_invariant, stub_metadata
+) -> None:
+    """A whitespace-only pr_title at 2-refine+ also raises and writes no row."""
+    stub_metadata['pr_title'] = '   '
+    result = cmds.cmd_capture(_ns(plan_id='prt-empty', phase='2-refine'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'pr_title_missing'
+    assert store.get_row('prt-empty', '2-refine') is None
+
+
+def test_cmd_capture_pr_title_omitted_at_1_init(
+    plan_context, only_pr_title_invariant, stub_metadata
+) -> None:
+    """At 1-init the capture is a no-op — success with the column omitted."""
+    result = cmds.cmd_capture(_ns(plan_id='prt-init', phase='1-init'))
+    assert result['status'] == 'success'
+    assert 'pr_title_present' not in result['invariants']

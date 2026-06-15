@@ -1260,3 +1260,109 @@ def test_blocking_count_returns_none_on_qgate_query_failure(monkeypatch) -> None
     result = inv._capture_pending_findings_blocking_count('plan-qgate-fail', {}, '5-execute')
 
     assert result is None
+
+
+# =============================================================================
+# _capture_pr_title_present: refine-authored PR title presence invariant
+# =============================================================================
+
+
+def test_capture_pr_title_present_short_circuits_for_1_init() -> None:
+    """At phase '1-init' the capture returns None — the title does not yet exist.
+
+    phase-2-refine Step 13 authors the title; pre-refine the column stays empty
+    and is skipped during verify. A present pr_title at 1-init is irrelevant.
+    """
+    result = inv._capture_pr_title_present('plan-x', {'pr_title': 'fix(x): y'}, '1-init')
+
+    assert result is None, f'expected None at 1-init, got {result!r}'
+
+
+@pytest.mark.parametrize('phase', ['2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'])
+def test_capture_pr_title_present_returns_hash_when_present(phase: str) -> None:
+    """A non-empty pr_title at 2-refine+ returns a stable 16-char hex hash."""
+    result = inv._capture_pr_title_present('plan-x', {'pr_title': 'fix(create-pr): bind title'}, phase)
+
+    assert isinstance(result, str), f'expected hash string, got {result!r}'
+    assert len(result) == 16, f'expected 16-char hash, got {len(result)} chars: {result}'
+    assert all(c in '0123456789abcdef' for c in result), f'expected lowercase hex, got {result!r}'
+
+
+def test_capture_pr_title_present_hash_is_presence_sentinel_not_content() -> None:
+    """Two DIFFERENT non-empty titles produce the SAME hash.
+
+    The sentinel encodes only the PRESENCE of a title, so a legitimate title
+    edit between boundaries must NOT trip drift detection.
+    """
+    first = inv._capture_pr_title_present('plan-x', {'pr_title': 'fix(a): one'}, '2-refine')
+    second = inv._capture_pr_title_present('plan-x', {'pr_title': 'feat(b): two different title'}, '5-execute')
+
+    assert first == second, (
+        'pr_title_present must be a presence-only sentinel — distinct titles '
+        f'must hash identically, got {first!r} != {second!r}'
+    )
+
+
+@pytest.mark.parametrize('phase', ['2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'])
+@pytest.mark.parametrize('metadata', [{}, {'pr_title': ''}, {'pr_title': '   '}, {'pr_title': None}])
+def test_capture_pr_title_present_raises_when_missing_or_empty(phase: str, metadata: dict) -> None:
+    """Absent / empty / whitespace-only pr_title at 2-refine+ raises PrTitleMissing."""
+    with pytest.raises(inv.PrTitleMissing) as excinfo:
+        inv._capture_pr_title_present('plan-x', metadata, phase)
+
+    assert excinfo.value.phase == phase, f'exception must carry the phase, got {excinfo.value.phase!r}'
+
+
+def test_pr_title_present_registry_tuple_present() -> None:
+    """The registry must wire ``pr_title_present`` to the capture function.
+
+    Guards against accidental removal of the tuple from ``INVARIANTS`` —
+    without this entry the boundary never enforces the deterministic title.
+    """
+    names = [name for name, _, _ in inv.INVARIANTS]
+    assert 'pr_title_present' in names, f'pr_title_present must be registered, got {names}'
+    entry = next(t for t in inv.INVARIANTS if t[0] == 'pr_title_present')
+    _name, applies_fn, capture_fn = entry
+    assert capture_fn is inv._capture_pr_title_present
+    # Always-applicable: the phase gate lives inside the capture function.
+    assert applies_fn('any-plan', {}) is True
+
+
+def test_pr_title_present_reachable_via_capture_all(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``capture_all`` must surface ``pr_title_present`` from the registry.
+
+    Narrows ``INVARIANTS`` to just the pr_title entry so the other invariants
+    don't try to shell out, then exercises the registry-driven capture path.
+    """
+    narrowed = [
+        ('pr_title_present', inv._always, inv._capture_pr_title_present),
+    ]
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+
+    captured = inv.capture_all('plan-x', {'pr_title': 'fix(x): y'}, '2-refine')
+
+    assert 'pr_title_present' in captured, (
+        f'capture_all must include pr_title_present, got keys: {list(captured)}'
+    )
+    assert isinstance(captured['pr_title_present'], str)
+
+
+def test_pr_title_present_capture_all_omits_at_1_init(monkeypatch: pytest.MonkeyPatch) -> None:
+    """At 1-init the capture returns None, so capture_all omits the column."""
+    narrowed = [
+        ('pr_title_present', inv._always, inv._capture_pr_title_present),
+    ]
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+
+    captured = inv.capture_all('plan-x', {'pr_title': 'fix(x): y'}, '1-init')
+
+    assert 'pr_title_present' not in captured, (
+        f'capture_all must omit pr_title_present at 1-init, got: {list(captured)}'
+    )
+
+
+@pytest.mark.parametrize('phase', ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'])
+def test_pr_title_present_partition_blocking_at_every_boundary(phase: str) -> None:
+    """pr_title_present carries the ``blocking_at_every_boundary`` classification."""
+    assert inv.INVARIANT_BLOCKING_SCOPE['pr_title_present'] == 'blocking_at_every_boundary'
+    assert inv.is_invariant_blocking_at_phase('pr_title_present', phase) is True

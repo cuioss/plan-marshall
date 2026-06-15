@@ -40,6 +40,7 @@ HANDSHAKE_FIELDS = [
     'phase_steps_complete',
     'pending_findings_by_type',
     'pending_findings_blocking_count',
+    'pr_title_present',
 ]
 
 # Subset of :data:`HANDSHAKE_FIELDS` that store TOON list values rather

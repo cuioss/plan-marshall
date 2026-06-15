@@ -403,6 +403,46 @@ def test_skill_md_documents_enum_and_persistence_call() -> None:
     )
 
 
+# -----------------------------------------------------------------------------
+# pr_title authoring pin — fail loudly if Step 13 loses the obligation to
+# author and persist a commit-style PR title. create-pr.md (phase-6-finalize)
+# reads metadata.pr_title as its deterministic --title source, so dropping the
+# persist step here silently breaks the finalize PR-title pipeline.
+# -----------------------------------------------------------------------------
+
+
+def test_detail_doc_documents_pr_title_persist_obligation() -> None:
+    """The refine detail standard must document the pr_title persist call.
+
+    Pins both the canonical ``manage-status metadata --set --field pr_title``
+    invocation and the return-TOON ``pr_title`` surfacing, so a future edit
+    that drops the Step 13 title-authoring obligation fails loudly here.
+    """
+    text = _DETAIL_PATH.read_text(encoding='utf-8')
+
+    assert 'manage-status' in text and '--field pr_title' in text, (
+        'Detail doc must document the manage-status metadata --set --field pr_title '
+        'persistence call so phase-6-finalize create-pr.md has a deterministic '
+        'title source.'
+    )
+    assert 'pr_title:' in text, (
+        'Detail doc Step 13 return TOON must surface pr_title for downstream visibility.'
+    )
+
+
+def test_skill_md_documents_pr_title_persist_obligation() -> None:
+    """SKILL.md Step 13 must reference the pr_title persist obligation and the
+    canonical persistence call so the entry-point summary stays consistent."""
+    skill_path = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-2-refine' / 'SKILL.md'
+    text = skill_path.read_text(encoding='utf-8')
+
+    assert 'pr_title' in text, 'SKILL.md Step 13 must reference the pr_title persist obligation.'
+    assert 'manage-status metadata --set --field pr_title' in text, (
+        'SKILL.md must document the canonical manage-status metadata --set '
+        '--field pr_title invocation so the workflow summary stays in sync.'
+    )
+
+
 # Sanity check: ensure the test file lives where the deliverable specifies.
 def test_test_file_lives_at_expected_path() -> None:
     """Pin the file's own location — the deliverable explicitly named this

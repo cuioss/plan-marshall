@@ -64,11 +64,11 @@ Inspect the returned TOON — branch on BOTH `status` AND `state` (an open PR is
 
 ### Generate PR body
 
-Read the request summary:
+Read the clarified request to ground the body description (the `clarified_request` section falls back to `original_input` automatically when no clarification round ran):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
-  --plan-id {plan_id} --section summary
+  --plan-id {plan_id} --section clarified_request
 ```
 
 Use the path-allocate pattern: the script allocates the scratch path, the main
@@ -123,11 +123,22 @@ reviewer trust model that the rest of the finalize pipeline is built on. If a
 template section calls for a file that is not in `{changed_files}`, omit the
 section rather than invent a reference.
 
+#### Step 3.5: Resolve the PR title from the persisted status field
+
+Ground the PR title against the deterministic source authored at phase-2-refine Step 13 and persisted to `status.metadata.pr_title` — mirroring the `{base_branch}` grounding bind above. Do NOT improvise a title from `request.md` or the commit log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field pr_title
+```
+
+Bind `{pr_title}` ← the returned `value`. An empty or missing `pr_title` here is an error — the `pr_title_present` phase-handshake invariant should already have blocked the `2-refine`+ boundary, so reaching this step with no title means the invariant was bypassed. STOP and return an error TOON rather than improvising a title.
+
 #### Step 4: Create PR via CI abstraction
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr create \
-  --title "{title from request.md}" --plan-id {plan_id} --base {base_branch}
+  --title "{pr_title}" --plan-id {plan_id} --base {base_branch}
 ```
 
 The `pr create` subcommand reads the body from the prepared scratch file, creates
