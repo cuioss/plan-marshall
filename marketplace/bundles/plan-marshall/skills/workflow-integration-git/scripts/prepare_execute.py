@@ -175,14 +175,106 @@ _GENERATE_EXECUTOR_PATH = (
 )
 
 
-def _generate_worktree_executor(worktree_path: Path) -> tuple[bool, str]:
-    """Generate ``worktree_path/.plan/execute-script.py`` with worktree-bound mappings.
+def _worktree_executor_path(worktree_path: Path) -> Path:
+    return worktree_path / PLAN_DIR_NAME / 'execute-script.py'
 
-    Invokes ``generate_executor.py generate --marketplace-root {worktree_path}``
-    as a subprocess. NON-FATAL and idempotent: any failure (missing generator,
-    non-zero exit, launch error) is reported in the return value and NEVER
-    raised, so the already-completed plan-dir move is preserved — the worktree
-    can recover later via ``/marshall-steward``.
+
+def _executor_landed(executor_path: Path) -> bool:
+    """Return True when ``executor_path`` exists on disk AND is non-empty.
+
+    The on-disk post-assertion (FIX 1): a generation that exits 0 but writes
+    nothing (the plugin-cache-install case, where the worktree has no vendored
+    ``marketplace/bundles`` and anchoring lands nowhere) leaves the executor
+    absent or empty. ``returncode == 0`` alone is NOT proof the file landed, so
+    the success verdict must be derived from on-disk reality, never from
+    generation intent.
+    """
+    try:
+        return executor_path.is_file() and not executor_path.is_symlink() and executor_path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _main_executor_path(plan_id: str) -> Path | None:
+    """Resolve the MAIN checkout's executor (``.plan/execute-script.py``).
+
+    The main executor is per-tree DERIVED state that ADR-002 keeps present and
+    untouched at move-in; at this point the caller's cwd is still MAIN, so it is
+    the byte-source for the copy-from-main fallback. Derived from the
+    main-checkout plan dir the script already resolves via ``get_plan_dir`` (the
+    one monkeypatch seam tests exercise): ``main_plan_dir`` is
+    ``<main>/.plan/local/plans/{id}``, so walking up to the ``.plan`` directory
+    yields ``<main>/.plan`` whose child ``execute-script.py`` is the source. This
+    mirrors the main-anchored exception (``resolve_main_anchored_path``) without
+    coupling the copy to real git-common-dir resolution, keeping the fallback
+    testable under the isolated tmp_path layout.
+
+    Returns the resolved path, or ``None`` when the ``.plan`` ancestor cannot be
+    located (a malformed main layout) — the caller treats ``None`` as "no main
+    executor available to copy".
+    """
+    try:
+        main_plan_dir = get_plan_dir(plan_id)
+    except RuntimeError:
+        return None
+    curr = main_plan_dir
+    while curr != curr.parent:
+        if curr.name == PLAN_DIR_NAME:
+            return curr / 'execute-script.py'
+        curr = curr.parent
+    return None
+
+
+def _copy_main_executor(worktree_path: Path, plan_id: str) -> tuple[bool, str]:
+    """Copy main's executor verbatim into the worktree (the FIX 2 fallback).
+
+    Used when generation is not viable or did not land on disk. The executor is a
+    pure notation→absolute-path proxy whose mappings are project-wide
+    plugin-cache absolutes (cwd-independent) and which resolves ``.plan/local`` by
+    walking up from cwd — so a verbatim copy of main's executor satisfies the
+    EXACT same contract as a fresh generation (solution_outline.md §Overview).
+    Re-asserts the copied file landed and is non-empty before reporting success.
+
+    Returns ``(copied, detail)`` — never raises (non-fatal contract).
+    """
+    main_executor = _main_executor_path(plan_id)
+    if main_executor is None or not _executor_landed(main_executor):
+        return False, 'no main executor available to copy from'
+    wt_executor = _worktree_executor_path(worktree_path)
+    try:
+        wt_executor.parent.mkdir(parents=True, exist_ok=True)
+        wt_executor.unlink(missing_ok=True)
+        shutil.copy(str(main_executor), str(wt_executor))
+    except OSError as exc:
+        return False, f'copy-from-main failed: {exc}'
+    if not _executor_landed(wt_executor):
+        return False, f'copy-from-main produced no file on disk at {wt_executor}'
+    return True, f'worktree executor copied from main ({main_executor} -> {wt_executor})'
+
+
+def _generate_worktree_executor(worktree_path: Path, plan_id: str) -> tuple[bool, str]:
+    """Produce ``worktree_path/.plan/execute-script.py`` and confirm it on disk.
+
+    Two production mechanisms, tried in order, with the verdict ALWAYS derived
+    from on-disk reality (never generation intent):
+
+      1. **Generation** — invoke ``generate_executor.py generate
+         --marketplace-root {worktree_path}`` as a subprocess. Then assert
+         (FIX 1) the target executor exists AND is non-empty via
+         :func:`_executor_landed`. A ``returncode == 0`` that wrote nothing (the
+         plugin-cache install where the worktree has no vendored
+         ``marketplace/bundles``) does NOT count as success and falls through.
+      2. **Copy-from-main fallback** (FIX 2) — when generation is unavailable
+         (missing generator), failed to launch, exited non-zero, or exited 0 but
+         left no file, copy main's executor verbatim via
+         :func:`_copy_main_executor`. The copy is byte-equivalent to a correct
+         generation (solution_outline.md §Overview) and only changes the
+         PRODUCTION MECHANISM when marketplace anchoring is structurally
+         unavailable.
+
+    NON-FATAL and idempotent: every failure mode is reported in the return value
+    and NEVER raised, so the already-completed plan-dir move is preserved — the
+    worktree can recover later via ``/marshall-steward``.
 
     The subprocess runs with ``cwd`` pinned to ``worktree_path``: the generator
     writes its output to ``get_tracked_config_dir()/execute-script.py``, which is
@@ -192,11 +284,20 @@ def _generate_worktree_executor(worktree_path: Path) -> tuple[bool, str]:
     would clobber main's executor — the exact regression this fix prevents.
     ``--marketplace-root`` only pins bundle DISCOVERY, not the output location.
 
-    Returns ``(generated, detail)``: ``generated`` is True on a clean generation,
-    ``detail`` is a short human-readable status string for the payload.
+    Returns ``(produced, detail)``: ``produced`` is True only after the worktree
+    executor is confirmed present and non-empty on disk (by either mechanism);
+    ``detail`` names which mechanism produced it (or why neither could).
     """
+    wt_executor = _worktree_executor_path(worktree_path)
+
     if not _GENERATE_EXECUTOR_PATH.exists():
-        return False, f'generator not found at {_GENERATE_EXECUTOR_PATH}'
+        # Generation is unavailable — go straight to the copy-from-main fallback.
+        copied, copy_detail = _copy_main_executor(worktree_path, plan_id)
+        if copied:
+            return True, copy_detail
+        return False, f'generator not found at {_GENERATE_EXECUTOR_PATH}; {copy_detail}'
+
+    launch_detail: str | None = None
     try:
         result = subprocess.run(
             [
@@ -212,13 +313,25 @@ def _generate_worktree_executor(worktree_path: Path) -> tuple[bool, str]:
             check=False,
         )
     except OSError as exc:
-        return False, f'generation failed to launch: {exc}'
-    if result.returncode != 0:
-        lines = (result.stderr or result.stdout or '').strip().splitlines()
-        tail = lines[-1] if lines else f'exit {result.returncode}'
-        return False, f'generation exited {result.returncode}: {tail}'
-    wt_executor = worktree_path / PLAN_DIR_NAME / 'execute-script.py'
-    return True, f'worktree executor generated at {wt_executor}'
+        launch_detail = f'generation failed to launch: {exc}'
+    else:
+        if result.returncode != 0:
+            lines = (result.stderr or result.stdout or '').strip().splitlines()
+            tail = lines[-1] if lines else f'exit {result.returncode}'
+            launch_detail = f'generation exited {result.returncode}: {tail}'
+        elif _executor_landed(wt_executor):
+            # FIX 1: only report success after the file is confirmed on disk.
+            return True, f'worktree executor generated at {wt_executor}'
+        else:
+            # returncode 0 but no file landed (plugin-cache "exited 0, wrote
+            # nothing" condition) — do NOT report a generation that did not land.
+            launch_detail = f'generation exited 0 but no file landed at {wt_executor}'
+
+    # FIX 2: generation did not produce a usable executor — copy from main.
+    copied, copy_detail = _copy_main_executor(worktree_path, plan_id)
+    if copied:
+        return True, copy_detail
+    return False, f'{launch_detail}; {copy_detail}'
 
 
 # ---------------------------------------------------------------------------
@@ -319,15 +432,35 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
     # Runs AFTER worktree materialization so .plan/local is guaranteed present.
     # If the plan dir is already a real (non-symlink) path resident in the
     # worktree AND its parent .plan/local is a real directory, the move-in
-    # already ran (phase-5 re-entry). Return a no-op success carrying the path.
+    # already ran (phase-5 re-entry).
     if _is_real_moved_in(wt_plan_dir):
+        # FIX 3: self-heal a partial materialization. A prior run may have moved
+        # the plan dir in but left the executor absent (the original defect:
+        # generation reported success for a file that never landed). Before
+        # returning a bare noop, check the worktree executor on disk; when it is
+        # missing, regenerate/copy it and report the heal. This makes the move-in
+        # genuinely self-healing without re-attempting ``git worktree add``.
+        wt_executor = _worktree_executor_path(worktree_path)
+        if _executor_landed(wt_executor):
+            return _assert_cwd_unchanged(
+                {
+                    'status': 'success',
+                    'plan_id': plan_id,
+                    'worktree_path': str(worktree_path),
+                    'action': 'noop',
+                    'message': 'plan state already moved into worktree',
+                }
+            )
+        generated, executor_detail = _generate_worktree_executor(worktree_path, plan_id)
         return _assert_cwd_unchanged(
             {
                 'status': 'success',
                 'plan_id': plan_id,
                 'worktree_path': str(worktree_path),
-                'action': 'noop',
-                'message': 'plan state already moved into worktree',
+                'action': 'healed',
+                'message': 'plan state already moved in; regenerated missing worktree executor',
+                'worktree_executor_generated': generated,
+                'executor_detail': executor_detail,
             }
         )
 
@@ -385,7 +518,7 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
     # The executor is per-tree DERIVED state — main's copy is never moved, so
     # the worktree needs its own. Generation is non-fatal: a failure is reported
     # in the payload but never rolls back the completed plan-dir move.
-    generated, executor_detail = _generate_worktree_executor(worktree_path)
+    generated, executor_detail = _generate_worktree_executor(worktree_path, plan_id)
 
     return _assert_cwd_unchanged(
         {
