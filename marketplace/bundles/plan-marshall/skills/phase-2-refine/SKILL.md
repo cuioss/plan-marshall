@@ -256,7 +256,7 @@ qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
 ```
 
-`qgate_validation_required` is `true` when the lesson-derived plan path activated at Step 13.5 (`plan_source` set and not `recipe`), `false` otherwise. See Step 13 item 6 for the orchestrator dispatch contract.
+`qgate_validation_required` is `true` when the lesson-derived plan path activated at Step 13.5 (`plan_source` set and not `recipe`), `false` otherwise. See Step 13 item 7 for the orchestrator dispatch contract.
 
 **Data Location Reference**:
 - Track/scope decisions: `decision.log` filtered by `(plan-marshall:phase-2-refine)`
