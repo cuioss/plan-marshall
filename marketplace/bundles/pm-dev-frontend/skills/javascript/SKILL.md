@@ -1,6 +1,6 @@
 ---
 name: javascript
-description: Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, JSDoc documentation, and tooling
+description: Core JavaScript development standards covering ES modules, modern patterns, web component patterns (Lit), DOM trust boundaries / XSS prevention, code quality, async programming, JSDoc documentation, and tooling
 user-invocable: false
 mode: knowledge
 ---
@@ -45,7 +45,7 @@ Use when: Reviewing code complexity, applying refactoring patterns, or enforcing
 Read: standards/modern-patterns.md
 ```
 
-Use when: Writing new code using destructuring, template literals, spread/rest, array methods, or class patterns.
+Use when: Writing new code using destructuring, template literals, spread/rest, array methods, or class patterns. Also covers DOM trust boundaries / XSS prevention — load when rendering untrusted data into the DOM.
 
 **Async Programming** (load for async code):
 ```

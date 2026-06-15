@@ -357,6 +357,49 @@ const handleSearch = debounce((query) => { /* API call */ }, 300);
 const handleScroll = throttle(() => { /* Update UI */ }, 100);
 ```
 
+## DOM Trust Boundaries / XSS
+
+Untrusted data rendered into the DOM is a script-injection (XSS) trust boundary. The hazard is API-specific: properties and methods that parse their argument as HTML execute embedded markup; properties that treat their argument as text do not.
+
+### Prefer text-assigning APIs for untrusted data
+
+```javascript
+// Safe: textContent treats the value as text — no markup is parsed
+element.textContent = userInput;
+
+// Safe: setAttribute does not parse HTML
+element.setAttribute('title', userInput);
+
+// Unsafe: innerHTML / outerHTML parse the value as HTML and execute injected markup
+element.innerHTML = userInput;           // XSS sink
+element.outerHTML = userInput;           // XSS sink
+
+// Unsafe: insertAdjacentHTML parses HTML
+element.insertAdjacentHTML('beforeend', userInput);  // XSS sink
+
+// Safe alternative when building structure: createElement + textContent
+const cell = document.createElement('td');
+cell.textContent = userInput;
+row.appendChild(cell);
+```
+
+Other HTML-parsing sinks to treat as untrusted-data hazards: `document.write`, `Range.createContextualFragment`, and `DOMParser.parseFromString` with `'text/html'`. Assigning a `javascript:` value to `href`/`src` or to an `on*` event-handler attribute is equally a script sink — never set those from untrusted input.
+
+### Encode for the destination context
+
+Text placed inside an attribute, a URL, or a `<script>`/`<style>` context requires context-specific encoding, not generic HTML escaping. Build URLs with `encodeURIComponent` for query/path components and validate the scheme (reject anything but `http:`/`https:`) before assigning to `href`/`src`.
+
+### Sanitize when HTML output is unavoidable
+
+When rendering untrusted HTML is a genuine requirement (e.g. a rich-text field), sanitize with a vetted library rather than hand-rolled regex:
+
+```javascript
+// DOMPurify: allow-list sanitizer — strips scripts, event handlers, and dangerous URLs
+element.innerHTML = DOMPurify.sanitize(untrustedHtml);
+```
+
+`DOMPurify` is a third-party dependency — adding it is a user-approval step. Where the platform supports it, enable **Trusted Types** (`require-trusted-types-for 'script'` via Content-Security-Policy) so the browser enforces that only sanitizer-produced `TrustedHTML` values reach HTML-parsing sinks, turning the trust boundary into a runtime guarantee.
+
 ## See Also
 
 - [JavaScript Fundamentals](javascript-fundamentals.md) - Core patterns
