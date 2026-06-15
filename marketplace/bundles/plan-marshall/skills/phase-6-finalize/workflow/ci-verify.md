@@ -81,7 +81,27 @@ Before classification, invoke `manage-ci-artifacts` to write the
 per-job log slices plus `manifest.toon` under
 `artifacts/ci-runs/{run_id}/`. This MUST run even on a green CI so
 retrospectives have full evidence. Pass the jobs file from step 2 via
-`--jobs-file` so the green-CI path persists per-job evidence:
+`--jobs-file` so the green-CI path persists per-job evidence.
+
+**Required-field guard (run before the persist call).** Both `run_id`
+and `head_sha` are mandatory inputs to the persist call — `run_id`
+forms the artifact directory name (`artifacts/ci-runs/{run_id}/`) and
+`head_sha` stamps the manifest. When either is empty, do NOT invoke
+`manage-ci-artifacts persist` for this run: emit a WARNING naming the
+missing field and continue to Step 4. Artifact persistence is advisory
+— a missing field skips the persist for this run only and MUST NOT
+block the green-CI early-return (Step 4) nor step completion (Step 8):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[WARNING] (plan-marshall:phase-6-finalize:ci-verify) Skipping CI artifact persistence — empty {run_id|head_sha}"
+```
+
+A `head_sha` fallback via `git -C {worktree_path} rev-parse HEAD` is a
+secondary option only and is intentionally NOT implemented here; there
+is no `run_id` fallback. When both fields are non-empty, run the
+persist call:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-ci-artifacts:manage-ci-artifacts \
