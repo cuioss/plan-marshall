@@ -178,11 +178,7 @@ class Extension(ExtensionBase):
     def _apply_conditional_default(profile: dict, skill_marker: str, present: bool) -> None:
         """Promote a skill to defaults when its dependency is present, else demote it.
 
-        Moves entries whose ``skill`` contains ``skill_marker`` between the profile's
-        ``defaults`` and ``optionals`` lists so the conditional-default behavior fires.
-        When ``present`` is True the skill is moved optionals -> defaults; when False it
-        is moved defaults -> optionals. Both directions are no-ops when the entry is
-        already in the target list.
+        Both directions are no-ops when the entry is already in the target list.
         """
         defaults = profile.setdefault('defaults', [])
         optionals = profile.setdefault('optionals', [])
