@@ -59,6 +59,13 @@ Read: standards/container.md
 
 Use when: Configuring container images, Docker Compose, health checks, or certificate management.
 
+**Inbound REST Validation** (load for validating REST resource inputs):
+```
+Read: standards/quarkus-rest-validation.md
+```
+
+Use when: Validating untrusted REST request bodies, query/path/header parameters with jakarta.validation (`@Valid`, `@NotNull`, `@Size`, `@Pattern`), or testing negative-path 400 responses.
+
 ## Templates
 
 - `templates/quarkus-test.java.tmpl` — @QuarkusTest with CDI injection and nested test structure
@@ -75,6 +82,7 @@ Use when: Configuring container images, Docker Compose, health checks, or certif
 | Standard | Purpose |
 |----------|---------|
 | quarkus-testing.md | @QuarkusTest, JaCoCo, REST Assured |
+| quarkus-rest-validation.md | Inbound Bean Validation on REST resources (jakarta.validation, @Valid, ConstraintViolationException → 400, adversarial REST tests) |
 | quarkus-native.md | GraalVM native image builds |
 | quarkus-reflection.md | Reflection registration for native |
 | container.md | Docker deployment, health checks, certificate management |
