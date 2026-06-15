@@ -1,6 +1,6 @@
 ---
 name: cui-http
-description: CUI HTTP client standards with HttpHandler, HttpResult pattern, and async-first adapters
+description: CUI HTTP standards for de.cuioss:cui-http — HttpHandler client configuration, HttpResult error handling, async adapters with ETag caching and resilient retry, custom content converters, SSL/TLS context, HTTP status classification, and inbound HTTP security input-sanitization (de.cuioss.http.security validation pipelines)
 user-invocable: false
 mode: knowledge
 ---
