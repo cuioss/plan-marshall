@@ -77,9 +77,51 @@ Skill: {returned_extension_skill}
 
 The extension brings its `standards/severity.md`, `standards/suppression.md`, and `standards/pr-comment-disposition.md` into context. Once loaded for a domain, do not reload for subsequent same-domain groups.
 
+### 3b-pre. Design-decision reconciliation guard
+
+Before the batched outcome decision, reconcile every finding in the group against the plan's standing design decisions. Automated review-bot suggestions (the `pr-comment` producer) and Sonar issues (the `sonar-issue` producer) routinely re-raise a design point that a prior decision in this plan has already settled — applying the suggestion would silently reverse that decision. This guard runs only for the `pr-comment` and `sonar-issue` finding types — the external-bot suggestions that are blind to the plan's design decisions. It does NOT run for the other finding types that flow through Step 3b (`test-failure`, `lint-issue`, `build-error`), whose findings are not design-decision suggestions. It fires once per group, after Step 3a's extension load and before the batched decision below.
+
+For each finding in the group:
+
+1. **Scan `decision.log` for overlapping design decisions.** Read the plan's decision log and select the entries whose text overlaps the finding's design point (the surface, rule, or behavioural choice the suggestion would change):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
+     --plan-id {plan_id} --type decision
+   ```
+
+2. **Apply LLM judgment to the matching entries.** Decide whether any standing decision *contradicts* the finding's suggestion — i.e., the suggestion would reverse, soften, or re-open a choice the plan already recorded as settled. Classify the finding into exactly one of three outcomes: **contradiction**, **ambiguous**, or **none**.
+
+3. **On contradiction → decline the suggestion (do NOT FIX).** Do not allocate a fix task and do not apply the suggestion. Instead:
+
+   - Post the reconciliation rationale on the finding's review surface. For `pr-comment`, post it as the PR thread reply via the prepare-comment → thread-reply chain already documented in Step 3c's FIX body (`tools-integration-ci pr prepare-comment` → `pr thread-reply` → `pr resolve-thread`), with the comment body stating that the suggestion contradicts a standing `decision.log` decision and is declined. For `sonar-issue`, record the same rationale as the Sonar dismissal rationale via the `workflow-integration-sonar` dismissal surface (the same surface Step 3c's ACCEPT body uses for `sonar-issue`).
+   - Record the decline in `decision.log`:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
+       --plan-id {plan_id} --level INFO \
+       --message "(plan-marshall:triage:reconciliation-guard) Declined {finding_type} {finding.hash_id} — contradicts standing decision: {cited decision.log rationale}"
+     ```
+
+   - Resolve the finding as `taken_into_account` (not a FIX) via the resolve call already documented in Step 3c:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+       --plan-id {plan_id} --hash-id {finding.hash_id} --resolution taken_into_account \
+       --detail "Declined — contradicts standing decision.log decision: {cited rationale}"
+     ```
+
+   A finding declined here is fully resolved and does NOT enter the batched decision below.
+
+4. **On ambiguity → escalate via AskUserQuestion.** When the overlap is unclear or the contradiction cannot be judged confidently (potential overlap, but the standing decision does not unambiguously settle the design point), do NOT decline and do NOT silently apply. Push the `{hash_id, rationale}` onto the per-dispatch deferred-questions list (Step 3d) so it is raised as an `AskUserQuestion` in Step 4. The finding does NOT enter the batched decision below; its outcome is determined by the user's answer.
+
+5. **On no contradiction → proceed unchanged.** When no standing decision contradicts the suggestion, the finding falls through to the existing batched outcome decision in Step 3b below, unchanged.
+
+Use only the existing documented call shapes — `manage-logging read`/`decision`, `tools-integration-ci pr` thread-reply chain, the `workflow-integration-sonar` dismissal surface, and `manage-findings resolve` — exactly as Step 3c uses them. Do not invent new `manage-*` verbs.
+
 ### 3b. One batched LLM decision per group
 
-For all findings in the group, decide in one pass. Return per-finding outcomes:
+For all findings in the group **that the reconciliation guard (Step 3b-pre) did not already decline or defer**, decide in one pass. Return per-finding outcomes:
 
 ```toon
 decisions[N]{hash_id, outcome, rationale}:

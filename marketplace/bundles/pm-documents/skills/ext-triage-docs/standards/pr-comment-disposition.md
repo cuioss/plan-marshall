@@ -129,3 +129,4 @@ Default → ESCALATE (do not silently fix or resolve unknown categories)
 - `plan-marshall:manage-adr` — ADR format and lifecycle
 - `pm-documents:manage-interface` — Interface specification format
 - `plan-marshall:dev-agent-behavior-rules` — PR review hard rule (validate bot suggestions against plan intent)
+- [`../../../../plan-marshall/skills/plan-marshall/workflow/triage.md`](../../../../plan-marshall/skills/plan-marshall/workflow/triage.md) § "Design-decision reconciliation guard" — central guard that declines a review-bot or Sonar suggestion which would reverse a standing `decision.log` decision; enforcement-critical logic lives in the central standard only, not inlined here
