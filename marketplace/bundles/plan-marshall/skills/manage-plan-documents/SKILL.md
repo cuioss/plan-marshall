@@ -34,8 +34,8 @@ manage-plan-documents {document-type} {verb} [options]
 
 > **No top-level `read` verb.** Every verb below is scoped under a document type
 > (`request`) — there is NO standalone `manage-plan-documents read`. To read a
-> request document you MUST invoke `manage-plan-documents request read --plan-id …`.
-> Calling `manage-plan-documents read …` (omitting the `request` document-type
+> request document you MUST invoke `manage-plan-documents request read --plan-id ...`.
+> Calling `manage-plan-documents read ...` (omitting the `request` document-type
 > positional) is an `argparse_rejection` (exit 2): the parser has no top-level
 > `read` subcommand. The only top-level subcommand is `list-types`; all CRUD verbs
 > (`create`, `read`, `path`, `exists`, `remove`, `mark-clarified`) live under the
@@ -55,7 +55,7 @@ All verbs below are **document-type-scoped** — invoke them as `manage-plan-doc
 | `exists` | Check if document exists |
 | `remove` | Delete document |
 
-> `list-types` is the ONLY top-level subcommand (it takes no document-type positional). See the [Operations](#operations) section's `list-types` entry.
+> `list-types` is the ONLY top-level subcommand (it takes no document-type positional). See the [list-types](#list-types) entry under the Operations section.
 
 ---
 
