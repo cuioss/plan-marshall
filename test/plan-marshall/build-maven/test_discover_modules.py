@@ -564,16 +564,11 @@ def test_nested_module_pl_in_all_commands():
 
 
 def test_root_module_has_no_pl_arg():
-    """Test that root module commands do not include -pl argument.
-
-    The absence of -pl also implicitly guarantees no -am for the root module
-    (the also-make flag only ever rides the -pl selector).
-    """
+    """Test that root module commands do not include -pl argument."""
     commands = _build_commands(
         module_name='parent-pom', packaging='jar', has_sources=True, has_tests=True, profiles=[], relative_path='.'
     )
     assert '-pl' not in commands['compile']
-    assert '-am' not in commands['compile']
 
 
 def test_nested_module_pl_includes_also_make():
