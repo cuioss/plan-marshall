@@ -32,7 +32,7 @@ cmd_fetch_and_store = sonar_mod.cmd_fetch_and_store
 # call, which extends the shared ci_base subcommand registry. ``extract_routing_args`` is the
 # router-level pre-parser that the bug stripped ``--plan-id`` through; the regression test below
 # exercises it directly.
-from ci_base import extract_routing_args  # type: ignore[import-not-found]  # noqa: E402
+from ci_base import extract_routing_args  # type: ignore[import-not-found]  # noqa: E402,I001
 
 
 # =============================================================================
