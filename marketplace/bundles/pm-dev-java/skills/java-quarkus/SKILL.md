@@ -1,6 +1,6 @@
 ---
 name: java-quarkus
-description: Quarkus-specific CDI standards with testing, native image support, and GraalVM reflection configuration
+description: Quarkus-specific CDI standards with testing, native image support, GraalVM reflection configuration, and inbound REST input validation
 user-invocable: false
 mode: knowledge
 ---

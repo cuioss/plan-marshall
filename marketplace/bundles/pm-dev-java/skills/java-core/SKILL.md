@@ -1,6 +1,6 @@
 ---
 name: java-core
-description: Core Java development standards for patterns, modern features, and performance optimization
+description: Core Java development standards for patterns, modern features, performance optimization, and inbound input validation at trust boundaries
 user-invocable: false
 mode: knowledge
 ---
