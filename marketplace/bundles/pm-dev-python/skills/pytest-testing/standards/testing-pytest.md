@@ -138,6 +138,46 @@ def test_uppercase(input, expected):
     assert input.upper() == expected
 ```
 
+## Property-Based and Adversarial Testing
+
+`@pytest.mark.parametrize` covers hand-picked example rows. **Property-based testing** instead asserts a property over a generated space of inputs — including the boundary, malformed, and injection-shaped values an author would not hand-pick — using the **Hypothesis** framework.
+
+> **Third-party dependency.** Hypothesis ships as the `hypothesis` package; it is NOT in the standard library. Adding it to a project's test dependencies is a user-approval step — do not assume it is present.
+
+Decorate a test with `@given` and supply `hypothesis.strategies` for each argument; Hypothesis generates and minimises failing cases:
+
+```python
+from hypothesis import assume, example, given, settings
+from hypothesis import strategies as st
+
+
+@given(st.text())
+@example("")                      # pin a known-adversarial vector (empty string)
+@example("'; DROP TABLE users--")  # pin a known injection-shaped vector
+def test_normalise_is_idempotent(value):
+    assume("\x00" not in value)   # filter out preconditions that don't apply
+    once = normalise(value)
+    assert normalise(once) == once  # property: normalise is idempotent
+
+
+@given(st.integers(min_value=0))
+@settings(max_examples=500)        # budget control — more examples, deeper search
+def test_encode_decode_roundtrip(n):
+    assert decode(encode(n)) == n
+```
+
+API summary:
+
+| Construct | Role |
+|-----------|------|
+| `@given(strategies...)` | Generate inputs for the test from the given strategies |
+| `strategies.text()` / `.integers()` / composite strategies | Describe the input space (composable for structured data) |
+| `@example(value)` | Pin a specific known-adversarial vector so it is always tried |
+| `assume(predicate)` | Discard generated inputs that fail a precondition |
+| `@settings(max_examples=...)` | Control the per-test example budget |
+
+Prefer property-based tests over a handful of hand-picked literals when validating parsers, normalisers, encoders, and any code that must hold a property across a wide, adversarial input space.
+
 ## Mocking
 
 ### Patching Module State
