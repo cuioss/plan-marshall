@@ -42,7 +42,7 @@ class Extension(ExtensionBase):
                             },
                             {
                                 'skill': 'pm-documents:ref-narrative-styles',
-                                'description': 'Narrative styles for technical documentation — tone, voice, and arc per surface (concept pages, user guides, spec references)',
+                                'description': 'Narrative styles for technical documentation — tone, voice, and arc for the engineering-narrative style',
                             },
                             {
                                 'skill': 'pm-documents:ref-svg-diagrams',
