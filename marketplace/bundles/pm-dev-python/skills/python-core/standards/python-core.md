@@ -297,6 +297,69 @@ if not user_path.resolve().is_relative_to(safe_base):
     raise ValueError("Invalid path")
 ```
 
+### Injection and Unsafe Deserialization
+
+Treat every externally-sourced value (request data, file contents, environment, CLI args) as untrusted at these stdlib boundaries.
+
+**Subprocess** — never `shell=True` with untrusted input; pass an argv list so the OS, not a shell, receives the arguments:
+
+```python
+import subprocess
+
+# Right: argv list, no shell — arguments are never re-parsed
+subprocess.run(["git", "log", "--oneline", user_ref], check=True)
+
+# Wrong: shell=True lets user_ref inject arbitrary commands
+subprocess.run(f"git log {user_ref}", shell=True)  # command injection
+
+# If a shell is genuinely unavoidable, quote each interpolated value
+import shlex
+subprocess.run(f"git log {shlex.quote(user_ref)}", shell=True)
+```
+
+**Unsafe deserialization** — `pickle` executes arbitrary code while loading; never unpickle untrusted bytes, and never use bare `yaml.load`:
+
+```python
+import pickle
+import yaml
+
+# Wrong: pickle.load / pickle.loads on untrusted data is remote code execution
+pickle.loads(untrusted_bytes)
+
+# Wrong: yaml.load without a safe loader can construct arbitrary objects
+yaml.load(untrusted_text)               # unsafe
+
+# Right: yaml.safe_load for YAML; json for plain data interchange
+yaml.safe_load(untrusted_text)
+import json
+json.loads(untrusted_text)
+```
+
+**Dynamic execution** — `eval` / `exec` / `compile` on externally-sourced strings run arbitrary code; use `ast.literal_eval` to parse a literal:
+
+```python
+import ast
+
+# Wrong: eval/exec on an untrusted string executes it
+eval(untrusted_expr)
+
+# Right: literal_eval parses only Python literals, never executes
+value = ast.literal_eval(untrusted_expr)  # e.g. "[1, 2, 3]" -> [1, 2, 3]
+```
+
+**SQL** — always use DB-API 2.0 parameter placeholders with a params tuple; never interpolate user values into the query string:
+
+```python
+import sqlite3
+
+# Right: placeholder + params tuple — the driver escapes the value
+cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))      # sqlite3
+cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))     # psycopg
+
+# Wrong: string interpolation is SQL injection
+cur.execute(f"SELECT * FROM users WHERE id = {user_id}")
+```
+
 ---
 
 ## Async Programming

@@ -43,7 +43,7 @@ class Extension(ExtensionBase):
                             },
                             {
                                 'skill': 'pm-dev-java:java-lombok',
-                                'description': 'Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate',
+                                'description': 'Lombok patterns including @Delegate, @Builder, @Value, @Data, @UtilityClass for reducing boilerplate',
                             },
                             {
                                 'skill': 'pm-dev-java:java-quarkus',
@@ -158,33 +158,36 @@ class Extension(ExtensionBase):
             'high', signals, module_data=module_data, active_profiles=active_profiles
         )
 
-        # Module-level customization: move CDI/Lombok to optionals based on deps
+        # Module-level customization: conditionally default CDI/Lombok based on deps.
+        # java-cdi/java-lombok are statically declared in optionals (the dep-absent
+        # baseline). When the corresponding dependency is present, promote the skill
+        # from optionals to defaults so it always loads; when absent, demote any
+        # default occurrence back to optionals (keeping the two paths symmetric).
         deps = module_data.get('dependencies') or []
         dep_strings = [d if isinstance(d, str) else '' for d in deps]
         has_cdi = any('jakarta.enterprise' in d or 'javax.enterprise' in d for d in dep_strings)
         has_lombok = any('lombok' in d for d in dep_strings)
 
         for profile in result['skills_by_profile'].values():
-            if not has_cdi:
-                cdi_entries = [
-                    e for e in profile.get('defaults', []) if isinstance(e, dict) and 'java-cdi' in e.get('skill', '')
-                ]
-                for entry in cdi_entries:
-                    profile['defaults'].remove(entry)
-                    if entry not in profile['optionals']:
-                        profile['optionals'].append(entry)
-            if not has_lombok:
-                lombok_entries = [
-                    e
-                    for e in profile.get('defaults', [])
-                    if isinstance(e, dict) and 'java-lombok' in e.get('skill', '')
-                ]
-                for entry in lombok_entries:
-                    profile['defaults'].remove(entry)
-                    if entry not in profile['optionals']:
-                        profile['optionals'].append(entry)
+            self._apply_conditional_default(profile, 'java-cdi', present=has_cdi)
+            self._apply_conditional_default(profile, 'java-lombok', present=has_lombok)
 
         return result
+
+    @staticmethod
+    def _apply_conditional_default(profile: dict, skill_marker: str, present: bool) -> None:
+        """Promote a skill to defaults when its dependency is present, else demote it.
+
+        Both directions are no-ops when the entry is already in the target list.
+        """
+        defaults = profile.setdefault('defaults', [])
+        optionals = profile.setdefault('optionals', [])
+        source, target = (optionals, defaults) if present else (defaults, optionals)
+        moved = [e for e in source if isinstance(e, dict) and skill_marker in e.get('skill', '')]
+        for entry in moved:
+            source.remove(entry)
+            if entry not in target:
+                target.append(entry)
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""

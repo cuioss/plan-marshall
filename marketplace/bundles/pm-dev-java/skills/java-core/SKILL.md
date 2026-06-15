@@ -1,6 +1,6 @@
 ---
 name: java-core
-description: Core Java development standards for patterns, modern features, and performance optimization
+description: Core Java development standards for patterns, modern features, performance optimization, and inbound input validation at trust boundaries
 user-invocable: false
 mode: knowledge
 ---
@@ -80,7 +80,14 @@ Use when: Organizing related constants hierarchically using nested static classe
 Read: standards/java-security-patterns.md
 ```
 
-Use when: Working with authentication, encryption, secrets, or sensitive data. Covers secure logging rules, startup config validation, anti-patterns (hardcoded secrets, insecure error messages), and security principles.
+Use when: Working with authentication, encryption, secrets, or sensitive data. Covers secure logging rules, startup config validation, anti-patterns (hardcoded secrets, insecure error messages), and security principles. This is the OUTBOUND security surface.
+
+**Input Validation** (load for validating externally-sourced inputs):
+```
+Read: standards/java-input-validation.md
+```
+
+Use when: Validating inbound data at the trust boundary — deserialized payloads, file inputs, CLI arguments, message-queue bodies — with programmatic `jakarta.validation` (`Validator`, constraint annotations, `@Valid` cascading). This is the INBOUND validation surface, distinct from the outbound Security Patterns above.
 
 ## Related Skills
 

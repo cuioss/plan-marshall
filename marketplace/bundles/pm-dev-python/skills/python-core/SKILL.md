@@ -1,6 +1,6 @@
 ---
 name: python-core
-description: "Use when writing, reviewing, or refactoring Python 3.10+ code — covers type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports. Activate for any Python production code task. Also use when working with pathlib, dataclass, pydantic, match statements, or structural pattern matching."
+description: "Use when writing, reviewing, or refactoring Python 3.10+ code — covers type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports. Activate for any Python production code task. Also use when working with pathlib, dataclass, pydantic, match statements, or structural pattern matching, or when hardening untrusted input (secure subprocess, deserialization, eval, and SQL injection sinks)."
 user-invocable: false
 mode: knowledge
 ---
@@ -47,6 +47,7 @@ Load progressively by section based on current task. **Never load the entire fil
 | Error Handling | Writing try/except blocks, custom exceptions, validation patterns |
 | Resource Management | File I/O, context managers, custom resource cleanup |
 | Path Handling | File path operations, `pathlib.Path` usage, path security |
+| Security / injection | Validating untrusted input, running subprocesses, deserializing external data, building SQL (`subprocess`/`shlex`, `pickle`/`yaml.safe_load`, `eval`/`ast.literal_eval`, DB-API placeholders) |
 | Async Programming | `asyncio` patterns, concurrency with `gather()`, rate limiting |
 | Structural Pattern Matching | `match` statements, destructuring, class patterns, guard clauses |
 | Modern Features (3.11-3.13) | Exception groups, `@override`, `itertools.batched()` |
@@ -70,6 +71,7 @@ Read standards/python-core.md
 | Data structures | `dataclass` (default), `attrs` (performance), `pydantic` (API boundaries) |
 | Error handling | Specific exceptions only, minimal try scope, chain with `from` |
 | Resources | Always context managers; `pathlib.Path` for all file/path operations |
+| Security / injection | No `shell=True`/argv lists; `yaml.safe_load` not `yaml.load`; `ast.literal_eval` not `eval`; DB-API placeholders not f-strings |
 | Pattern matching | `match`/`case` for structural destructuring; `if/elif` for simple comparisons |
 | Async | `asyncio.run()` entry point, `gather()` for concurrency, `Semaphore` for rate limiting |
 | Naming | `lower_with_under` (functions/modules), `CapWords` (classes), `CAPS_WITH_UNDER` (constants) |

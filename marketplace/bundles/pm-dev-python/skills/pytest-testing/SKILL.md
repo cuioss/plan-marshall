@@ -1,6 +1,6 @@
 ---
 name: pytest-testing
-description: "Use when writing, reviewing, or debugging Python tests — covers pytest framework, AAA pattern, fixtures, parametrization, isolation, mocking, assertions, and coverage configuration. Activate for any Python testing task."
+description: "Use when writing, reviewing, or debugging Python tests — covers pytest framework, AAA pattern, fixtures, parametrization, isolation, mocking, assertions, coverage configuration, and property-based / adversarial testing (Hypothesis). Activate for any Python testing task."
 user-invocable: false
 mode: knowledge
 ---
@@ -51,6 +51,7 @@ Activate when:
 - Script path discovery (dual-path pattern)
 - Fixture scope and autouse
 - Parametrization
+- Property-based and adversarial testing (Hypothesis)
 - Mocking (module state, functions)
 - Assertions (basic, exceptions, approximate)
 - Output capture (`capsys`, `capfd`)
@@ -72,6 +73,7 @@ Read standards/testing-pytest.md
 | Isolation | `tmp_path` for files, `monkeypatch` for state, autouse `_restore_cwd` |
 | Fixtures | `conftest.py` for shared, function scope by default |
 | Parametrize | `@pytest.mark.parametrize` for input variations |
+| Property-based / adversarial | Hypothesis `@given` / `strategies` / `@example` (third-party `hypothesis` dep — user-approval) |
 | Exceptions | `pytest.raises(ExcType, match="pattern")` |
 | Approximate | `pytest.approx(value, rel=tolerance)` |
 | Output capture | `capsys` for Python, `capfd` for subprocess output |

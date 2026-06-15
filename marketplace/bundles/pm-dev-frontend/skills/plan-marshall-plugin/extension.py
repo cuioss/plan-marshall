@@ -28,7 +28,7 @@ class Extension(ExtensionBase):
                         'defaults': [
                             {
                                 'skill': 'pm-dev-frontend:javascript',
-                                'description': 'Core JavaScript development standards covering ES modules, modern patterns, and code quality',
+                                'description': 'Core JavaScript development standards covering ES modules, modern patterns, web component patterns, DOM trust boundaries / XSS prevention, and code quality',
                             },
                             {
                                 'skill': 'plan-marshall:dev-general-code-quality',

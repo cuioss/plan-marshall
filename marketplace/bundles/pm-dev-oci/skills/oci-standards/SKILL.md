@@ -1,6 +1,6 @@
 ---
 name: oci-standards
-description: "Use when writing, reviewing, or debugging Dockerfiles and Containerfiles — covers base image selection, multi-stage builds, version pinning, .dockerignore, multi-platform builds, OCI labels, certificate management, and Quarkus distroless health probes. Activate for any container image building task."
+description: "Use when writing, reviewing, or debugging Dockerfiles and Containerfiles — covers base image selection, multi-stage builds, version pinning, .dockerignore (including excluding secrets from the build context), multi-platform builds, OCI labels, certificate management, secrets management (never embedding secrets in image layers, BuildKit build-time secrets, runtime secret injection), and Quarkus distroless health probes. Activate for any container image building or build-context hardening task."
 user-invocable: false
 mode: knowledge
 ---

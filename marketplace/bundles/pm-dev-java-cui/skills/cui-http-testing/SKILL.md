@@ -1,6 +1,6 @@
 ---
 name: cui-http-testing
-description: CUI MockWebServer standards for HTTP client testing with JUnit 5 integration
+description: CUI MockWebServer standards for HTTP testing with JUnit 5 — @MockResponseConfig setup, request verification, HTTPS/TLS testing, @ModuleDispatcher routing, timeout/resilience testing, and generator-driven adversarial attack-database testing (path/header/query)
 user-invocable: false
 mode: knowledge
 ---
@@ -119,6 +119,10 @@ void shouldIncludeAuthHeader(MockWebServer server, URIBuilder uriBuilder) throws
 }
 ```
 
+### Step 3: Drive Adversarial / Negative-Path Tests (For Security-Relevant HTTP Code)
+
+When the task tests code that reads untrusted HTTP input (path segments, query parameters, headers), load the **Adversarial / Negative-Path Testing** section of `standards/testing-mockwebserver.md`. It documents the `de.cuioss.http.security.database` attack databases (`OWASPTop10AttackDatabase`, `ApacheCVEAttackDatabase`, `ModSecurityCRSAttackDatabase`) and the `AttackDatabase.ArgumentsProvider` parameterized-test pattern. Drive adversarial inputs from the curated databases rather than hardcoding a few attack literals.
+
 ## Key Rules
 
 - `@MockResponseConfig` is repeatable — use multiple annotations for multiple endpoints
@@ -130,7 +134,7 @@ void shouldIncludeAuthHeader(MockWebServer server, URIBuilder uriBuilder) throws
 
 | Standard | Purpose |
 |----------|---------|
-| `standards/testing-mockwebserver.md` | @EnableMockWebServer, @MockResponseConfig, @ModuleDispatcher, HTTPS, request verification |
+| `standards/testing-mockwebserver.md` | @EnableMockWebServer, @MockResponseConfig, @ModuleDispatcher, HTTPS, request verification, and adversarial attack-database testing |
 
 ## Related Skills
 

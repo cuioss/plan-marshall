@@ -403,6 +403,39 @@ class RetryLogicTest {
 
 Combine MockWebServer with the generator framework for parameterized HTTP testing. For detailed generator usage patterns and requirements, see `pm-dev-java-cui:cui-testing` skill.
 
+## Adversarial / Negative-Path Testing
+
+Security-relevant HTTP code (anything reading untrusted path segments, query parameters, or headers) MUST be tested against known attack patterns, not just a handful of hand-picked literals. Hardcoded adversarial strings are the concrete failure mode: a test author picks a few `../` payloads, the implementation passes, and the dozens of encoding-evasion and CVE variants the author never thought of go untested. The `cui-http` library ships curated **attack databases** of the `de.cuioss.http.security.database` package that drive these inputs from a vetted corpus instead.
+
+### Attack-database contract
+
+Every database implements `de.cuioss.http.security.database.AttackDatabase`:
+
+- `Iterable<AttackTestCase> getAttackTestCases()` — the curated attack corpus.
+- `default Stream<AttackTestCase> streamTestCases()` — the same corpus as a stream for parameterized tests.
+- a nested `AttackDatabase.ArgumentsProvider<T>` for the modern JUnit 5 `@ArgumentsSource` pattern (no `@MethodSource` boilerplate).
+
+Each `AttackTestCase` carries the attack string, the expected `UrlSecurityFailureType`, an attack description, and the detection rationale — so a failing case reports exactly which threat class slipped through.
+
+### Driving attack databases through parameterized tests
+
+```java
+import de.cuioss.http.security.database.AttackTestCase;
+import de.cuioss.http.security.database.OWASPTop10AttackDatabase;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ArgumentsSource;
+
+@ParameterizedTest
+@ArgumentsSource(OWASPTop10AttackDatabase.ArgumentsProvider.class)
+void rejectsOwaspTop10Attacks(AttackTestCase testCase) {
+    // Each iteration feeds one curated attack string; assert the validator rejects it
+    assertThrows(UrlSecurityException.class,
+        () -> pathValidator.validate(testCase.attackString()));
+}
+```
+
+Named databases verified against the current `cui-http` source include `OWASPTop10AttackDatabase`, `ApacheCVEAttackDatabase`, and `ModSecurityCRSAttackDatabase` (the package also ships `NginxCVEAttackDatabase`, `IISCVEAttackDatabase`, `OWASPZAPAttackDatabase`, and protocol/encoding-specific databases). Prefer the database-driven generator pattern over hardcoded payload literals so the adversarial corpus stays comprehensive and maintained upstream.
+
 ## Troubleshooting
 
 * **Use parameter injection**: Always inject `URIBuilder`, `MockWebServer`, or `SSLContext` -- never construct manually
