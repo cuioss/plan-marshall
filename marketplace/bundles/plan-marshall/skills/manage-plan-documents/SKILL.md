@@ -55,8 +55,6 @@ All verbs below are **document-type-scoped** — invoke them as `manage-plan-doc
 | `exists` | Check if document exists |
 | `remove` | Delete document |
 
-> `list-types` is the ONLY top-level subcommand (it takes no document-type positional). See the [list-types](#list-types) entry under the Operations section.
-
 ---
 
 ## Editing Flow — Three-Step Path-Allocate Pattern
