@@ -214,6 +214,29 @@ class TaskGraphInvalid(Exception):
         super().__init__('task_graph_valid failed: ' + ', '.join(parts))
 
 
+class PrTitleMissing(Exception):
+    """Raised by the ``pr_title_present`` invariant capture when the invariant
+    applies (phase ``2-refine`` onward) but ``status.metadata.pr_title`` is
+    absent or empty/whitespace-only.
+
+    Shaped like :class:`PhaseStepsIncomplete` / :class:`TaskGraphInvalid`: the
+    constructor formats a descriptive message and keeps the structured ``phase``
+    field as an attribute so ``cmd_capture`` can surface a structured error
+    payload (``error: pr_title_missing``) and refuse to persist the handshake
+    row — thereby blocking the phase transition until phase-2-refine Step 13
+    authors and persists the PR title.
+    """
+
+    def __init__(self, phase: str):
+        self.phase = phase
+        super().__init__(
+            f'pr_title_present failed for phase {phase!r}: '
+            'metadata.pr_title is absent or empty — phase-2-refine Step 13 must '
+            'author and persist a commit-style PR title via '
+            '`manage-status metadata --set --field pr_title`'
+        )
+
+
 AppliesFn = Callable[[str, dict[str, Any]], bool]
 CaptureFn = Callable[[str, dict[str, Any], str], Any]
 
@@ -1318,6 +1341,39 @@ def _capture_phase_steps_complete(
     return _hash_dict(sorted(required))
 
 
+def _capture_pr_title_present(_plan_id: str, metadata: dict[str, Any], phase: str) -> Any:
+    """Verify that a commit-style PR title has been authored and persisted.
+
+    phase-2-refine Step 13 authors a commit-style PR title from the clarified
+    request and persists it to ``status.metadata.pr_title``; phase-6-finalize
+    ``create-pr.md`` reads it as the deterministic ``--title`` source. This
+    invariant guards that the title survives every boundary from refine onward.
+
+    Phase gate (lives inside the capture, mirroring
+    :func:`_capture_qgate_open_count` — the ``applies_fn`` signature is
+    ``(plan_id, metadata)`` and does NOT receive ``phase``, so the
+    phase-conditional logic MUST branch on ``phase`` here, registered with
+    :func:`_always`):
+
+    - At ``1-init`` the title does not yet exist (refine authors it), so return
+      ``None`` — the column stays empty pre-refine and is skipped during verify.
+    - At ``2-refine`` and every later phase, read ``metadata.pr_title``:
+      - non-empty after ``str(...).strip()`` → return a stable present-sentinel
+        hash ``_hash_dict({'present': True})``. The sentinel encodes only the
+        PRESENCE of the title, not its content, so a legitimate title edit does
+        NOT trip drift detection.
+      - empty / missing / whitespace-only → raise :class:`PrTitleMissing` so
+        ``cmd_capture`` surfaces a structured error and refuses to persist the
+        row, blocking the boundary.
+    """
+    if phase == '1-init':
+        return None
+    raw = metadata.get('pr_title')
+    if raw is not None and str(raw).strip():
+        return _hash_dict({'present': True})
+    raise PrTitleMissing(phase)
+
+
 # --- registry ------------------------------------------------------------
 
 INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
@@ -1335,6 +1391,7 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('task_graph_valid', _always, _capture_task_graph_valid),
     ('pending_findings_by_type', _always, _capture_pending_findings_by_type),
     ('pending_findings_blocking_count', _always, _capture_pending_findings_blocking_count),
+    ('pr_title_present', _always, _capture_pr_title_present),
 ]
 
 
@@ -1443,6 +1500,7 @@ INVARIANT_BLOCKING_SCOPE: dict[str, BlockingScope] = {
     'task_graph_valid': 'blocking_at_every_boundary',
     'pending_findings_by_type': 'blocking_at_every_boundary',
     'pending_findings_blocking_count': 'blocking_at_every_boundary',
+    'pr_title_present': 'blocking_at_every_boundary',
 }
 
 

@@ -233,10 +233,11 @@ When confidence reaches threshold:
 1. **Persist module mapping** to `work/module_mapping.toon`
 2. **Persist `scope_estimate`** to `references.json` via `manage-references set --field scope_estimate --value {scope_estimate}` (one of `none | surgical | single_module | multi_module | broad`)
 3. **Persist `track`** to `references.json` via `manage-references set --field track --value {track}` (one of `simple | complex`) — symmetric to the `scope_estimate` persist above. The value is **derived from the planning lane**, not from a refine-time classifier: `planning_lane == deep` ⇒ `track = complex` (the deep lane runs the Complex-Track outline); `planning_lane == light` ⇒ `track = simple` (the light lane reuses Simple-Track deliverable authoring by construction). `manage-execution-manifest compose --track` and phase-4-plan read this field as the single source of truth.
-4. **Log decisions** to decision.log (scope, domains -- with duplicate guard)
-5. **Run Q-Gate verification checks**: module mapping completeness, track-scope consistency, scope realism, confidence justification
-6. **Signal q-gate-validation activation for the narrative-vs-code-validator** — lesson-derived plans only. When `status.json` reports `plan_source` set to a non-recipe value (i.e., `plan_source` is present and not the literal string `recipe`), the phase sets `qgate_validation_required: true` in its return TOON so the orchestrator (`plan-marshall:plan-marshall/workflow/planning.md`) dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level Task after the phase returns. The phase body cannot dispatch q-gate-validation itself because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. Lesson-derived plans encode the source lesson id directly in `plan_source` (e.g., `2026-05-11-08-004`), so the guard MUST treat any non-null, non-`recipe` value as lesson-derived. The orchestrator aggregates the validator's `qgate_pending_count` into the phase's running count before re-evaluating the existing 3-iteration auto-loop predicate. The validator classifies each code claim as `valid`, `stale`, or `invalid`: a `stale` finding is a low-confidence / outline-confirm-required signal (NOT an outright invalid finding), so refine **preserves** any deliverable carrying a `stale` finding as an outline-depth confirmation signal rather than discarding it — the STALE-vs-INVALID verdict definition lives in [`plan-marshall/workflow/q-gate-validation.md` § 2.14](../plan-marshall/workflow/q-gate-validation.md#214-narrative-vs-code-validator) only. See [`refine-workflow-detail.md` Step 13.5](standards/refine-workflow-detail.md#step-135-dispatch-q-gate-validation--lesson-derived-plans-only) for the activation-guard contract and the STALE-preservation rule. The flag is `false` when `plan_source` is absent or equals `recipe`.
-7. **Return output**:
+4. **Author and persist a commit-style PR title** to `status.json` metadata via `manage-status metadata --set --field pr_title --value "{authored_title}"` — symmetric to the `scope_estimate` / `track` persists above. Author a concise, conventional-commit-style PR title (≤72 chars, imperative mood, `type(scope): summary` shape consistent with this repo's commit convention) from the **clarified request**. `pr_title` is **distinct from the descriptive top-level `title` field** (the plan's human label authored at init): `title` is the human-readable plan label, while `pr_title` is the commit-style PR title consumed at phase-6-finalize `create-pr.md` as the deterministic `--title` source. The value is also returned in the Step 13 return TOON (item 8 below) so downstream visibility exists.
+5. **Log decisions** to decision.log (scope, domains -- with duplicate guard)
+6. **Run Q-Gate verification checks**: module mapping completeness, track-scope consistency, scope realism, confidence justification
+7. **Signal q-gate-validation activation for the narrative-vs-code-validator** — lesson-derived plans only. When `status.json` reports `plan_source` set to a non-recipe value (i.e., `plan_source` is present and not the literal string `recipe`), the phase sets `qgate_validation_required: true` in its return TOON so the orchestrator (`plan-marshall:plan-marshall/workflow/planning.md`) dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level Task after the phase returns. The phase body cannot dispatch q-gate-validation itself because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. Lesson-derived plans encode the source lesson id directly in `plan_source` (e.g., `2026-05-11-08-004`), so the guard MUST treat any non-null, non-`recipe` value as lesson-derived. The orchestrator aggregates the validator's `qgate_pending_count` into the phase's running count before re-evaluating the existing 3-iteration auto-loop predicate. The validator classifies each code claim as `valid`, `stale`, or `invalid`: a `stale` finding is a low-confidence / outline-confirm-required signal (NOT an outright invalid finding), so refine **preserves** any deliverable carrying a `stale` finding as an outline-depth confirmation signal rather than discarding it — the STALE-vs-INVALID verdict definition lives in [`plan-marshall/workflow/q-gate-validation.md` § 2.14](../plan-marshall/workflow/q-gate-validation.md#214-narrative-vs-code-validator) only. See [`refine-workflow-detail.md` Step 13.5](standards/refine-workflow-detail.md#step-135-dispatch-q-gate-validation--lesson-derived-plans-only) for the activation-guard contract and the STALE-preservation rule. The flag is `false` when `plan_source` is absent or equals `recipe`.
+8. **Return output**:
 
 ```toon
 status: success
@@ -245,6 +246,7 @@ confidence: {achieved_confidence}
 track: {simple|complex}
 track_reasoning: {track_reasoning}
 scope_estimate: {scope_estimate}
+pr_title: {pr_title}
 compatibility: {compatibility}
 compatibility_description: {compatibility_description}
 simplicity: {simplicity}
@@ -254,7 +256,7 @@ qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
 ```
 
-`qgate_validation_required` is `true` when the lesson-derived plan path activated at Step 13.5 (`plan_source` set and not `recipe`), `false` otherwise. See Step 13 item 5 for the orchestrator dispatch contract.
+`qgate_validation_required` is `true` when the lesson-derived plan path activated at Step 13.5 (`plan_source` set and not `recipe`), `false` otherwise. See Step 13 item 6 for the orchestrator dispatch contract.
 
 **Data Location Reference**:
 - Track/scope decisions: `decision.log` filtered by `(plan-marshall:phase-2-refine)`
@@ -280,7 +282,7 @@ display_detail: "<{confidence}% confidence, track {track}, {qgate_pending_count}
 
 `display_detail` shape on success: `"{confidence}% confidence, track {track}, {qgate_pending_count} pending"` (e.g. `"92% confidence, track complex, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
 
-All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `compatibility`, `compatibility_description`, `simplicity`, `simplicity_description`, `domains`, `qgate_pending_count`) are documented in Step 13 above.
+All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `pr_title`, `compatibility`, `compatibility_description`, `simplicity`, `simplicity_description`, `domains`, `qgate_pending_count`) are documented in Step 13 above.
 
 ---
 
