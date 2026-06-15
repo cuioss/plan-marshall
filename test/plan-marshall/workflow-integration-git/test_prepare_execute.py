@@ -468,19 +468,19 @@ class TestCopyMainExecutor:
         assert copied is False
         assert 'no main executor available' in detail
 
-    def test_returns_false_when_copyfile_raises_oserror(
+    def test_returns_false_when_copy_raises_oserror(
         self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # A copyfile OSError is reported as a non-fatal failure, never raised.
+        # A shutil.copy OSError is reported as a non-fatal failure, never raised.
         env = isolated_env
         worktree_path = env['worktree_path']
         (worktree_path / '.plan').mkdir(parents=True, exist_ok=True)
         env['executor'].write_text('#!/usr/bin/env python3\n# MAIN\n')
 
-        def failing_copy(src: str, dst: str) -> None:
-            raise OSError('simulated copyfile failure')
+        def failing_copy(src: str, dst: str, **kwargs: object) -> None:
+            raise OSError('simulated copy failure')
 
-        monkeypatch.setattr(prepare_execute.shutil, 'copyfile', failing_copy)
+        monkeypatch.setattr(prepare_execute.shutil, 'copy', failing_copy)
 
         copied, detail = prepare_execute._copy_main_executor(worktree_path, env['plan_id'])
         assert copied is False
