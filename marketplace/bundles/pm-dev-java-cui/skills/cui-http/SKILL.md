@@ -82,6 +82,10 @@ return switch (result) {
 };
 ```
 
+### Step 3: Validate Inbound HTTP Input (When Reading Untrusted Requests)
+
+When the task reads HTTP components from an untrusted inbound request (servlet, JAX-RS resource, request filter — path segments, query parameters, header names/values), load the **Inbound HTTP Security** section of `standards/cui-http.md`. It documents the `de.cuioss.http.security` validation pipelines (`PipelineFactory`, `HttpSecurityValidator`, `SecurityConfiguration`) — the server-side counterpart to the client-side adapters above. Validate every externally-sourced HTTP component at the boundary before use.
+
 ## Key Concepts
 
 ### HttpResult Sealed Interface
@@ -104,7 +108,7 @@ Type-safe result handling with exhaustive pattern matching:
 
 | Standard | Purpose |
 |----------|---------|
-| `standards/cui-http.md` | HttpHandler builder, HttpResult pattern matching, adapters, error categories |
+| `standards/cui-http.md` | HttpHandler builder, HttpResult pattern matching, adapters, error categories, and inbound HTTP security (input-sanitization pipelines) |
 
 ## Related Skills
 
