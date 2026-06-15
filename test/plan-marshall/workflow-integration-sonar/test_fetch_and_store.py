@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 """Tests for workflow-integration-sonar sonar.py — producer-side surface.
 
 The triage / triage-batch subcommands have been retired. The remaining
