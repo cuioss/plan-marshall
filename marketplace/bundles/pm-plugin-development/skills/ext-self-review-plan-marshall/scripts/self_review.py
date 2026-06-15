@@ -2,12 +2,14 @@
 """Deterministic candidate surfacing for the pre-submission-self-review finalize step.
 
 Reads the worktree's diff against the base branch, scans added lines in modified
-files, and emits fifteen candidate lists (regexes, user-facing strings, markdown
+files, and emits seventeen candidate lists (regexes, user-facing strings, markdown
 sections, symmetric-pair functions, flag-guard pairs, contract sources,
-schema-bearing files, keep-identifier markers, producer-consumer pairs,
+schema-bearing files, keep-identifier markers, protected identifiers,
+producer-consumer pairs,
 source-of-truth duplicates, same-document normative directives, description-vs-body
 frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk
-touched claims) as TOON for the LLM cognitive review pass to consume.
+touched claims, advertised-form help strings) as TOON for the LLM cognitive
+review pass to consume.
 
 Storage: stateless — reads the worktree diff and derives the plan footprint
 live from the worktree (``compute-footprint``: ``{base}...HEAD`` ∪ porcelain).
@@ -211,6 +213,49 @@ _COUNT_PROSE = re.compile(
 # a single-token swap — the ``+`` line is surfaced so the cognitive pass
 # re-verifies the REST of the line's claims, not just the swapped token.
 _TOKENIZE = re.compile(r'\w+|[^\w\s]')
+
+# Advertised-form-help-string detection.
+# An argparse field whose ``help=`` string advertises MORE THAN ONE accepted
+# input form (e.g. "Issue number or URL", "path or ref"). The canonical signal
+# is a disjunction (`` or ``) inside the help text adjacent to a form noun —
+# URL/path/ref/name/identifier — paired with a bare number/identifier form. The
+# regex captures the ``help`` argument's quoted value AND, when present on the
+# same call, the ``dest=``/long-flag that names the argparse destination so the
+# raw-pass cross-reference can target the right attribute.
+#
+# Group 1: the long ``--flag`` name (when the add_argument call names one).
+# Group 2: the quote char of the help string.
+# Group 3: the help string value.
+_HELP_FIELD = re.compile(
+    r"\bhelp\s*=\s*(?:r|f|rf|fr)?(['\"])(.*?)\1"
+)
+# The long-flag token of an add_argument call — e.g. ``'--issue'`` or
+# ``"--issue-ref"``. Group 1 captures the dest-deriving flag (dashes mapped to
+# underscores yields the argparse ``dest``).
+_ADD_ARGUMENT_FLAG = re.compile(
+    r"""['"]--([A-Za-z][A-Za-z0-9_-]*)['"]"""
+)
+# An explicit ``dest='name'`` keyword on an add_argument call. Group 2 captures
+# the destination attribute name verbatim (overrides the flag-derived dest).
+_DEST_KWARG = re.compile(
+    r"""\bdest\s*=\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1"""
+)
+# A multi-form advertisement marker inside a help string: a `` or `` disjunction
+# adjacent to one of the form nouns (URL/path/ref/name/identifier/id). Matched
+# case-insensitively. The presence of this marker is what distinguishes a
+# multi-form help ("Issue number or URL") from a single-form help ("Issue
+# number").
+_MULTI_FORM_MARKER = re.compile(
+    r'(?i)\bor\b.*\b(?:url|uri|path|ref|name|identifier|id|slug|number)\b'
+    r'|\b(?:url|uri|path|ref|name|identifier|id|slug|number)\b.*\bor\b'
+)
+# Tokens that normalize an externally-supplied value into a single canonical
+# form — when a handler routes ``args.<dest>`` through one of these before use,
+# the advertised forms are reconciled and no candidate is surfaced.
+_NORMALIZATION_TOKENS = re.compile(
+    r'\b(?:normali[sz]e|parse|resolve|canonical|extract|to_url|to_id|'
+    r'from_url|split|strip|rstrip|lstrip|replace|urlparse|sub)\b'
+)
 
 
 # =============================================================================
@@ -1397,6 +1442,190 @@ def _detect_touched_claims(
     return out
 
 
+def _raw_pass_line_for_dest(
+    file_lines: list[tuple[int, str]], dest: str
+) -> tuple[int, str] | None:
+    """Find a raw-value pass-through of ``args.<dest>`` among ``file_lines``.
+
+    A *raw pass-through* is a use of the argparse destination attribute that
+    forwards the externally-supplied value WITHOUT routing it through a
+    normalization call first — ``str(args.<dest>)``, a bare ``args.<dest>``
+    read, or an f-string interpolation ``{args.<dest>}``. A line that ALSO
+    carries a normalization token (``normalize``/``parse``/``urlparse``/...) is
+    NOT a raw pass — the value is reconciled there, so it is skipped.
+
+    Returns the first ``(line, content)`` raw-pass occurrence, or ``None`` when
+    no raw pass-through of ``args.<dest>`` exists in the candidate scope.
+    """
+    # Match args.<dest> (attribute access) NOT immediately followed by another
+    # identifier char, so ``args.issue`` does not match ``args.issue_url``.
+    access = re.compile(
+        r'\bargs\.' + re.escape(dest) + r'(?![A-Za-z0-9_])'
+    )
+    for lineno, content in file_lines:
+        if access.search(content) is None:
+            continue
+        if _NORMALIZATION_TOKENS.search(content) is not None:
+            # The value is normalized on this line — not a raw pass-through.
+            continue
+        return lineno, content
+    return None
+
+
+def _resolve_dest_from_line(content: str) -> str | None:
+    """Resolve the argparse dest from a single ``add_argument`` line.
+
+    An explicit ``dest='name'`` kwarg wins; otherwise the long ``--flag`` token
+    is mapped to a dest by replacing dashes with underscores. Returns ``None``
+    when neither token is present on the line.
+    """
+    m_dest = _DEST_KWARG.search(content)
+    if m_dest is not None:
+        return m_dest.group(2)
+    m_flag = _ADD_ARGUMENT_FLAG.search(content)
+    if m_flag is not None:
+        return m_flag.group(1).replace('-', '_')
+    return None
+
+
+def _resolve_dest_from_post_image(
+    post_image: list[str], help_lineno: int
+) -> str | None:
+    """Resolve the dest by reconstructing a multi-line ``add_argument`` call.
+
+    ``help_lineno`` is the 1-based post-image line of the ``help=`` string.
+    The walk scans backwards from that line (inclusive) until it reaches the
+    line carrying the opening ``add_argument(`` call, accumulating each line's
+    flag/dest token along the way. The first resolvable token wins (an explicit
+    ``dest=`` on any scanned line takes priority over a ``--flag``, matching the
+    single-line precedence). Returns ``None`` when the call's opening cannot be
+    located within ``_MAX_CALL_LOOKBACK`` lines or carries no flag/dest token.
+    """
+    if help_lineno < 1 or help_lineno > len(post_image):
+        return None
+    idx = help_lineno - 1  # 0-based index into post_image
+    flag_dest: str | None = None
+    steps = 0
+    while idx >= 0 and steps <= _MAX_CALL_LOOKBACK:
+        line = post_image[idx]
+        m_dest = _DEST_KWARG.search(line)
+        if m_dest is not None:
+            # Explicit dest= on any line of the call wins immediately.
+            return m_dest.group(2)
+        if flag_dest is None:
+            m_flag = _ADD_ARGUMENT_FLAG.search(line)
+            if m_flag is not None:
+                flag_dest = m_flag.group(1).replace('-', '_')
+        if _ADD_ARGUMENT_OPEN.search(line) is not None:
+            # Reached the call's opening line — stop the backward walk.
+            return flag_dest
+        idx -= 1
+        steps += 1
+    return None
+
+
+# The opening token of an ``add_argument`` call. Used as the backward-walk
+# terminator when reconstructing a multi-line call from the post-image.
+_ADD_ARGUMENT_OPEN = re.compile(r'\.add_argument\s*\(')
+
+# Upper bound on how many lines the backward walk inspects before giving up.
+# A single ``add_argument`` call almost never spans more than a handful of
+# lines; the cap guards against scanning the whole file when the opening token
+# is somehow absent.
+_MAX_CALL_LOOKBACK = 40
+
+
+def _detect_advertised_form_help_strings(
+    added: list[tuple[str, int, str]],
+    project_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Detect a multi-form ``help=`` string whose handler passes the raw value.
+
+    An argparse ``help`` string that advertises more than one accepted input
+    form (e.g. "Issue number or URL") promises the handler will accept every
+    advertised form. When the handler then forwards the raw ``args.<dest>``
+    value WITHOUT a normalization call (``str(args.issue)``, a bare
+    ``args.issue`` read, or an f-string interpolation of it), the advertised
+    contract drifts from the handler behaviour — only the form the raw value
+    happens to be in actually works.
+
+    For each added ``.py`` line that carries a multi-form ``help=`` string on an
+    ``add_argument`` call, the detector resolves the argparse destination (from
+    an explicit ``dest=`` kwarg, else from the long ``--flag`` with dashes
+    mapped to underscores) and searches the SAME file's added lines for a raw
+    pass-through of ``args.<dest>``. A candidate is surfaced only when both the
+    multi-form help AND a raw-pass site are present in the diff with no
+    intervening normalization on the raw-pass line.
+
+    When ``help=`` sits on a continuation line of a multi-line ``add_argument``
+    call, the ``--flag`` / ``dest=`` token lives on a preceding line that may
+    not be present in the diff. In that case same-line dest resolution fails. To
+    recover, the caller may pass ``project_dir``: the detector then walks
+    backwards through the file's post-image from the ``help=`` line to the
+    opening ``add_argument(`` and resolves the dest from the reconstructed call
+    context. With ``project_dir=None`` (e.g. unit tests, or when the post-image
+    is unavailable) the detector falls back to diff-only same-line resolution.
+
+    Each entry carries ``file``, ``line`` (the help-string line), ``arg`` (the
+    resolved destination), ``help_text`` (the truncated help string), and
+    ``raw_pass_line`` (the post-image line number of the raw pass-through). The
+    detector mirrors the review-anchor exclusion of ``contract_sources`` /
+    ``schema_bearing_files`` / ``count_prose``: it is NOT summed into
+    ``counts.total``.
+    """
+    # Group added .py lines per file so the raw-pass search is scoped to the
+    # same file as the help string (a handler's argument definition and its
+    # usage live in one module).
+    py_lines_by_file: dict[str, list[tuple[int, str]]] = {}
+    for path, lineno, content in added:
+        if path.endswith('.py'):
+            py_lines_by_file.setdefault(path, []).append((lineno, content))
+
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, str]] = set()
+    post_image_cache: dict[str, list[str]] = {}
+    for path, file_lines in py_lines_by_file.items():
+        for lineno, content in file_lines:
+            m_help = _HELP_FIELD.search(content)
+            if m_help is None:
+                continue
+            help_text = m_help.group(2)
+            if _MULTI_FORM_MARKER.search(help_text) is None:
+                continue
+            # Resolve the argparse destination: explicit dest= wins, else the
+            # long --flag with dashes mapped to underscores. Both tokens may
+            # sit on the same diff line as the help string.
+            dest = _resolve_dest_from_line(content)
+            if dest is None and project_dir is not None:
+                # The flag/dest token is on a preceding line of a multi-line
+                # add_argument call that is absent from the diff. Reconstruct
+                # the call context from the file's post-image and retry.
+                if path not in post_image_cache:
+                    post_image_cache[path] = _read_post_image(project_dir, path)
+                dest = _resolve_dest_from_post_image(
+                    post_image_cache[path], lineno
+                )
+            if dest is None:
+                continue
+            raw_pass = _raw_pass_line_for_dest(file_lines, dest)
+            if raw_pass is None:
+                continue
+            key = (path, lineno, dest)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                {
+                    'file': path,
+                    'line': lineno,
+                    'arg': dest,
+                    'help_text': _truncate(help_text, 200),
+                    'raw_pass_line': raw_pass[0],
+                }
+            )
+    return out
+
+
 # =============================================================================
 # Subcommand: surface
 # =============================================================================
@@ -1475,6 +1704,9 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         allowed = set(modified_files)
         changed_pairs = [pr for pr in changed_pairs if pr[0] in allowed]
     touched_claims = _detect_touched_claims(changed_pairs)
+    advertised_form_help_strings = _detect_advertised_form_help_strings(
+        added, project_dir
+    )
 
     output = {
         'status': 'success',
@@ -1498,8 +1730,10 @@ def _cmd_surface(args: argparse.Namespace) -> int:
             'unguarded_boundaries': len(unguarded_boundaries),
             'count_prose': len(count_prose),
             'touched_claims': len(touched_claims),
-            # ``count_prose`` is a review-anchor list (like ``contract_sources``
-            # and ``schema_bearing_files``) and is excluded from ``total``; the
+            'advertised_form_help_strings': len(advertised_form_help_strings),
+            # ``count_prose`` and ``advertised_form_help_strings`` are
+            # review-anchor lists (like ``contract_sources`` and
+            # ``schema_bearing_files``) and are excluded from ``total``; the
             # line-level lists ``unguarded_boundaries`` and ``touched_claims``
             # are included.
             'total': (
@@ -1533,6 +1767,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'unguarded_boundaries': unguarded_boundaries,
         'count_prose': count_prose,
         'touched_claims': touched_claims,
+        'advertised_form_help_strings': advertised_form_help_strings,
     }
     output_toon(output)
     return 0
@@ -1552,7 +1787,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_surface = sub.add_parser(
         'surface',
-        help='Emit fifteen candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims) from the worktree diff as TOON.',
+        help='Emit seventeen candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers, protected identifiers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings) from the worktree diff as TOON.',
         allow_abbrev=False,
     )
     add_plan_id_arg(p_surface)

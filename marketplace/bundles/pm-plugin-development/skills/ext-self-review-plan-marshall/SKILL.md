@@ -1,6 +1,6 @@
 ---
 name: ext-self-review-plan-marshall
-description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims) for pre-submission structural self-review.
+description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings) for pre-submission structural self-review.
 user-invocable: false
 mode: script-executor
 implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing
@@ -49,7 +49,7 @@ The marker is a pure structural signal — no LLM call is added to the surface s
 
 ## Subcommand: `surface`
 
-Surfaces fifteen candidate lists from the worktree's staged diff against the base branch.
+Surfaces seventeen candidate lists from the worktree's staged diff against the base branch.
 
 ### Inputs
 
@@ -86,6 +86,7 @@ counts:
   unguarded_boundaries: N14
   count_prose: N15
   touched_claims: N16
+  advertised_form_help_strings: N17
   total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16
 
 regexes[N1]{file,line,pattern}:
@@ -135,9 +136,12 @@ count_prose[N15]{file,line,text}:
 
 touched_claims[N16]{file,line,text}:
   {repo-relative-path},{line},{added-line-text}
+
+advertised_form_help_strings[N17]{file,line,arg,help_text,raw_pass_line}:
+  {repo-relative-py-path},{line},{argparse-dest},{multi-form-help-text},{raw-pass-line}
 ```
 
-> The `total` count covers the twelve line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`) only. `contract_sources`, `schema_bearing_files`, and `count_prose` are review-anchor categories with their own counts; they are not summed into `total` — `contract_sources` and `schema_bearing_files` because each modified file contributes at most one entry whose payload is references rather than candidates, and `count_prose` because it anchors a sibling-SKILL.md re-check rather than flagging an added line. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
+> The `total` count covers the twelve line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`) only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories with their own counts; they are not summed into `total` — `contract_sources` and `schema_bearing_files` because each modified file contributes at most one entry whose payload is references rather than candidates, `count_prose` because it anchors a sibling-SKILL.md re-check rather than flagging an added line, and `advertised_form_help_strings` because it anchors a contract-drift sub-check rather than flagging a standalone line-level defect. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
 
 ### Detection Rules
 
@@ -191,6 +195,8 @@ touched_claims[N16]{file,line,text}:
 
 15. **Near-identical-hunk touched claims** — for each adjacent removed/added (`-`/`+`) line pair within a hunk, both lines are tokenized; the pair fires when the two token sequences are equal in length AND differ in exactly one position (a single-token swap). The `+` line is surfaced so the cognitive pass re-verifies the REST of the line's claims, not just the swapped token. A whitespace-only difference (identical token sequences) and a multi-token difference are both excluded. Each entry carries `file`, `line` (the `+` line's post-image line number), and `text` (the truncated `+` line). The cognitive review's check 12 re-checks the surfaced line's surviving claims.
 
+16. **Advertised-form help strings** — added `.py` lines on an `add_argument` call whose `help=` string advertises MORE THAN ONE accepted input form (e.g. "Issue number or URL"), paired with a raw-value pass-through of that argument in the SAME handler. The detector resolves the argparse destination (from an explicit `dest=` kwarg, else from the long `--flag` with dashes mapped to underscores) and searches the same file's added lines for a raw pass-through of `args.<dest>` — `str(args.<dest>)`, a bare `args.<dest>` read, or an f-string interpolation of it — that carries NO normalization call. A candidate is surfaced only when both the multi-form help AND a raw-pass site are present in the diff. The advertised contract ("this argument accepts every advertised form") drifts from the handler behaviour when only the form the raw value happens to be in actually works. Each entry carries `file`, `line` (the help-string line), `arg` (the resolved destination), `help_text` (the truncated help string), and `raw_pass_line` (the post-image line number of the raw pass-through). The list is a **review anchor** excluded from `total` (alongside `contract_sources`, `schema_bearing_files`, and `count_prose`). The cognitive review's check 5 (contract drift) reads the `help_text` and `raw_pass_line` site in context to decide whether the advertised-form promise is a real defect.
+
 ### Errors
 
 | Condition | Output |
@@ -227,6 +233,7 @@ This script is a **worktree-scoped (Bucket B)** script (per `tools-script-execut
 - Lone-unguarded-boundary detection: a `subprocess.run(...)` with no `check=True` outside a `try`, and a file-I/O call (`open(...)`, `Path.read_text(...)`) outside a `try`, each surface a candidate (positive); the same calls with `check=True` or inside a `try/except` in the same function surface nothing; a `def` header resets the try-window across functions; network calls (`urllib`, `socket`) surface nothing (out of scope)
 - Stale count-prose detection: a modified sibling file plus a SKILL.md whose prose carries `twelve fields` / `5 rules` surfaces those count-prose lines (positive); a digit NOT adjacent to a cardinality noun surfaces nothing; a modified file outside any skill directory surfaces nothing; the same skill dir reached via two modified siblings deduplicates per `(file, line)`
 - Near-identical-hunk touched-claim detection: the diff-pair walk (`_iter_changed_line_pairs`) yields `(file, post_line, removed, added)` for adjacent `-`/`+` pairs and ignores unpaired lines and context-broken pairs; a `-`/`+` pair differing by exactly one token surfaces the `+` line as a `touched_claim` (positive); a many-token difference, an identical pair, and a differing-token-count pair each surface nothing (negative)
+- Advertised-form help-string detection: a multi-form `help=` string (e.g. "Issue number or URL") paired with a raw `args.<dest>` pass-through surfaces a candidate (positive); `dest=` kwarg override and dash-to-underscore dest derivation resolve correctly; single-form help, an already-normalized handler, no diff'd raw-pass site, and non-Python files each surface nothing (negative); identifier word-boundary discipline (`args.issue` does not match `args.issue_url`); and the `counts.total` review-anchor exclusion invariant holds end-to-end (the new list is excluded from `total` whether or not it fires)
 
 ## Canonical invocations
 
