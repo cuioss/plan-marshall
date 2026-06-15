@@ -79,7 +79,7 @@ The extension brings its `standards/severity.md`, `standards/suppression.md`, an
 
 ### 3b-pre. Design-decision reconciliation guard
 
-Before the batched outcome decision, reconcile every finding in the group against the plan's standing design decisions. Automated review-bot suggestions (the `pr-comment` producer) and Sonar issues (the `sonar-issue` producer) routinely re-raise a design point that a prior decision in this plan has already settled — applying the suggestion would silently reverse that decision. This guard runs for **all** finding types processed through Step 3b — both `pr-comment` and `sonar-issue`. It fires once per group, after Step 3a's extension load and before the batched decision below.
+Before the batched outcome decision, reconcile every finding in the group against the plan's standing design decisions. Automated review-bot suggestions (the `pr-comment` producer) and Sonar issues (the `sonar-issue` producer) routinely re-raise a design point that a prior decision in this plan has already settled — applying the suggestion would silently reverse that decision. This guard runs only for the `pr-comment` and `sonar-issue` finding types — the external-bot suggestions that are blind to the plan's design decisions. It does NOT run for the other finding types that flow through Step 3b (`test-failure`, `lint-issue`, `build-error`), whose findings are not design-decision suggestions. It fires once per group, after Step 3a's extension load and before the batched decision below.
 
 For each finding in the group:
 
