@@ -138,3 +138,4 @@ Default → ESCALATE (do not silently fix or resolve unknown categories)
 - `pm-plugin-development:plugin-doctor` — Quality gate rules
 - `plan-marshall:dev-agent-behavior-rules` — PR review hard rule (validate bot suggestions against plan intent)
 - `plan-marshall:ref-toon-format` — TOON output format for scripts
+- [`../../../../plan-marshall/skills/plan-marshall/workflow/triage.md`](../../../../plan-marshall/skills/plan-marshall/workflow/triage.md) § "Design-decision reconciliation guard" — central guard that declines a review-bot or Sonar suggestion which would reverse a standing `decision.log` decision; enforcement-critical logic lives in the central standard only, not inlined here
