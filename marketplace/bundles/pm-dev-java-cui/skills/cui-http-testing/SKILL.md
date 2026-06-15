@@ -1,6 +1,6 @@
 ---
 name: cui-http-testing
-description: CUI MockWebServer standards for HTTP client testing with JUnit 5 integration
+description: CUI MockWebServer standards for HTTP testing with JUnit 5 — @MockResponseConfig setup, request verification, HTTPS/TLS testing, @ModuleDispatcher routing, timeout/resilience testing, and generator-driven adversarial attack-database testing (path/header/query)
 user-invocable: false
 mode: knowledge
 ---
