@@ -1,7 +1,7 @@
 ---
 name: default:finalize-step-print-phase-breakdown
 description: Optional finalize-summary supplement that captures the Phase Breakdown table from metrics.md, writes it directly to work/phase-breakdown-output.txt, and lets the renderer append it after the per-step [OK] list
-order: 997
+order: 999
 ---
 
 # Finalize Step: print-phase-breakdown
@@ -28,7 +28,7 @@ The step is the **producer** in the cross-deliverable contract documented in `ou
 
 ## Ordering constraint
 
-`order: 997` places this step AFTER `default:record-metrics` (order 990, which produces `metrics.md`) and BEFORE `default:archive-plan` (order 1000, which moves the plan directory). Do NOT relocate this step outside that window — the producer relies on `metrics.md` existing under `.plan/local/plans/{plan_id}/`, and the consumer (renderer snapshot) reads `work/phase-breakdown-output.txt` from the same live directory before archive moves it.
+`order: 999` places this step AFTER `default:record-metrics` (order 998, which produces `metrics.md`) and BEFORE `default:archive-plan` (order 1000, which moves the plan directory). Do NOT relocate this step outside that window — the producer relies on `metrics.md` existing under `.plan/local/plans/{plan_id}/`, and the consumer (renderer snapshot) reads `work/phase-breakdown-output.txt` from the same live directory before archive moves it.
 
 ## Workflow
 
@@ -92,4 +92,4 @@ Finalize MUST continue — this step is presentation-only and never blocks plan 
 
 - [../../manage-metrics/SKILL.md](../../manage-metrics/SKILL.md) — `print-phase-breakdown` subcommand (the producer that writes the artifact directly)
 - [output-template.md](output-template.md) — renderer (the consumer that reads `work/phase-breakdown-output.txt` and appends the supplement section)
-- [record-metrics.md](record-metrics.md) — the previous-order step (990) that produces `metrics.md`
+- [record-metrics.md](record-metrics.md) — the previous-order step (998) that produces `metrics.md`

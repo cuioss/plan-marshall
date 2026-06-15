@@ -614,7 +614,7 @@ def test_list_finalize_steps_builtins_have_order(tmp_path):
     assert by_name['default:create-pr']['order'] == 20
     assert by_name['default:automated-review']['order'] == 30
     assert by_name['default:archive-plan']['order'] == 1000
-    assert by_name['default:record-metrics']['order'] == 990
+    assert by_name['default:record-metrics']['order'] == 998
 
 
 def test_list_finalize_steps_project_skill_order_from_frontmatter(tmp_path):

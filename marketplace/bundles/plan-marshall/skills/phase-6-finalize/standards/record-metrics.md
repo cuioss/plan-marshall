@@ -1,7 +1,7 @@
 ---
 name: default:record-metrics
 description: Record final plan metrics before archive
-order: 990
+order: 998
 ---
 
 # Record Metrics
@@ -19,7 +19,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
  This step performs three sequenced `manage-metrics` invocations — `end-phase`, `enrich`, `generate` — and emits the `mark-step-done` handshake. All three writes MUST land on the live plan directory; the consolidated finalize output (step outcomes, end-state verification, and plan-complete summary) is rendered by the dedicated template in `standards/output-template.md`.
 
-**CRITICAL**: `default:record-metrics` MUST immediately precede `default:archive-plan` in the pipeline. All three metrics commands (`end-phase`, `enrich`, `generate`) write inside `.plan/plans/{plan_id}/` — `end-phase` updates `work/metrics.toon`, `enrich` supplements the same TOON with JSONL session tokens, and `generate` renders `metrics.md`. `default:archive-plan` then moves that directory to `.plan/archived-plans/{date}-{plan_id}/`. If archive runs first, the live directory no longer exists and any of the three commands would recreate it as a post-archive orphan.
+**CRITICAL**: `default:record-metrics` MUST be the LAST token-accounting step in the pipeline — it runs AFTER all token-consuming finalize steps (`plan-marshall:plan-retrospective`, `project:finalize-step-lessons-housekeeping`) and BEFORE the read-only `default:finalize-step-print-phase-breakdown` / `default:archive-plan` tail. This ordering is what lets `end-phase` fold the token spend of every dispatched finalize step — including retrospective and lessons-housekeeping — into the closed `6-finalize` phase row: those steps persist their `<usage>` totals to `work/metrics-accumulator-6-finalize.toon` before this step runs, so `end-phase`'s accumulator read captures the full phase total. All three metrics commands (`end-phase`, `enrich`, `generate`) write inside `.plan/plans/{plan_id}/` — `end-phase` updates `work/metrics.toon`, `enrich` supplements the same TOON with JSONL session tokens, and `generate` renders `metrics.md`. All three writes MUST land on the live (pre-archive) plan directory: `default:archive-plan` then moves that directory to `.plan/archived-plans/{date}-{plan_id}/`, so if archive ran first the live directory would no longer exist and any of the three commands would recreate it as a post-archive orphan.
 
 ## Record Phase End for 6-Finalize
 
