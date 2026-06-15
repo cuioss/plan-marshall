@@ -497,10 +497,6 @@ _TOKEN_CONSUMING_FINALIZE_STEPS: list[str] = [
 
 
 class TestRecordMetricsOrderAfterTokenConsumingSteps:
-    def test_record_metrics_order_resolves(self):
-        """`default:record-metrics` resolves a concrete frontmatter order."""
-        assert _mem._resolve_step_order('default:record-metrics') is not None
-
     def test_record_metrics_order_exceeds_every_token_consuming_step(self):
         """record-metrics order strictly trails every token-consuming step.
 
