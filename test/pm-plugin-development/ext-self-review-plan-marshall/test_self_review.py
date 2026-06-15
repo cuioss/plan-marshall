@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from self_review import (  # type: ignore[import-not-found]
+    _detect_advertised_form_help_strings,
     _detect_contract_sources,
     _detect_count_prose,
     _detect_description_vs_body,
@@ -1590,3 +1591,207 @@ class TestDetectTouchedClaims:
         pairs = [('foo.py', 5, 'two words', 'two extra words here')]
         out = _detect_touched_claims(pairs)
         assert out == []
+
+
+# =============================================================================
+# Test: _detect_advertised_form_help_strings (advertised-form help string)
+# =============================================================================
+
+
+class TestDetectAdvertisedFormHelpStrings:
+    """A multi-form ``help=`` string whose handler forwards the raw value.
+
+    The detector fires only when BOTH a multi-form ``help=`` string (an `` or ``
+    disjunction adjacent to a form noun like ``URL``/``path``/``number``) AND a
+    raw pass-through of ``args.<dest>`` (no normalization) are present in the
+    same file's added lines. It mirrors the review-anchor exclusion of
+    ``contract_sources``/``count_prose``: surfaced candidates are NOT summed into
+    ``counts.total`` (see ``TestCountsTotalInvariant``).
+    """
+
+    def test_multi_form_help_with_raw_pass_surfaces_candidate(self):
+        added = [
+            ('cli.py', 10, "    p.add_argument('--issue', help='Issue number or URL')"),
+            ('cli.py', 25, '    target = str(args.issue)'),
+        ]
+        out = _detect_advertised_form_help_strings(added)
+        assert len(out) == 1
+        assert out[0]['file'] == 'cli.py'
+        assert out[0]['line'] == 10
+        assert out[0]['arg'] == 'issue'
+        assert out[0]['help_text'] == 'Issue number or URL'
+        assert out[0]['raw_pass_line'] == 25
+
+    def test_dest_kwarg_overrides_flag_derived_dest(self):
+        added = [
+            (
+                'cli.py',
+                10,
+                "    p.add_argument('--issue-ref', dest='issue', help='ref name or URL')",
+            ),
+            ('cli.py', 25, '    return f"{args.issue}"'),
+        ]
+        out = _detect_advertised_form_help_strings(added)
+        assert len(out) == 1
+        assert out[0]['arg'] == 'issue'
+        assert out[0]['raw_pass_line'] == 25
+
+    def test_flag_dashes_map_to_underscore_dest(self):
+        added = [
+            ('cli.py', 10, "    p.add_argument('--issue-ref', help='Issue ref or URL')"),
+            ('cli.py', 30, '    value = args.issue_ref'),
+        ]
+        out = _detect_advertised_form_help_strings(added)
+        assert len(out) == 1
+        assert out[0]['arg'] == 'issue_ref'
+        assert out[0]['raw_pass_line'] == 30
+
+    def test_single_form_help_surfaces_nothing(self):
+        # No `` or `` disjunction — single advertised form, no contract to drift.
+        added = [
+            ('cli.py', 10, "    p.add_argument('--issue', help='Issue number')"),
+            ('cli.py', 25, '    target = str(args.issue)'),
+        ]
+        out = _detect_advertised_form_help_strings(added)
+        assert out == []
+
+    def test_normalized_value_surfaces_nothing(self):
+        # The raw value is routed through a normalization call (`parse`), so the
+        # advertised forms are reconciled — not a raw pass-through.
+        added = [
+            ('cli.py', 10, "    p.add_argument('--issue', help='Issue number or URL')"),
+            ('cli.py', 25, '    target = parse(args.issue)'),
+        ]
+        out = _detect_advertised_form_help_strings(added)
+        assert out == []
+
+    def test_no_raw_pass_site_surfaces_nothing(self):
+        # Multi-form help but the dest is never read back — no drift surface.
+        added = [
+            ('cli.py', 10, "    p.add_argument('--issue', help='Issue number or URL')"),
+            ('cli.py', 25, '    unrelated = compute_other()'),
+        ]
+        out = _detect_advertised_form_help_strings(added)
+        assert out == []
+
+    def test_skips_non_python_files(self):
+        added = [
+            ('doc.md', 10, "p.add_argument('--issue', help='Issue number or URL')"),
+            ('doc.md', 25, 'target = str(args.issue)'),
+        ]
+        out = _detect_advertised_form_help_strings(added)
+        assert out == []
+
+    def test_attribute_access_not_confused_with_longer_dest(self):
+        # ``args.issue`` must not match ``args.issue_url`` — the raw-pass search
+        # uses a trailing identifier-boundary guard. Only the genuine ``args.issue``
+        # read counts; here there is none, so no candidate is surfaced.
+        added = [
+            ('cli.py', 10, "    p.add_argument('--issue', help='Issue number or URL')"),
+            ('cli.py', 25, '    target = str(args.issue_url)'),
+        ]
+        out = _detect_advertised_form_help_strings(added)
+        assert out == []
+
+    def test_empty_added_surfaces_nothing(self):
+        assert _detect_advertised_form_help_strings([]) == []
+
+
+# =============================================================================
+# Test: counts.total invariant (review-anchor lists excluded from total)
+# =============================================================================
+
+
+class TestCountsTotalInvariant:
+    """``counts.total`` excludes the four review-anchor lists.
+
+    The end-to-end ``surface`` output sums every line-level candidate list into
+    ``counts.total`` EXCEPT the four review-anchor lists
+    (``contract_sources``, ``schema_bearing_files``, ``count_prose``,
+    ``advertised_form_help_strings``). This test drives the real ``_cmd_surface``
+    path over a git fixture whose uncommitted diff triggers the
+    advertised-form detector, and asserts the new detector populates its own
+    list while leaving ``total`` equal to the sum of the INCLUDED lists only.
+    """
+
+    # The four lists deliberately excluded from ``counts.total``.
+    _REVIEW_ANCHOR_LISTS = (
+        'contract_sources',
+        'schema_bearing_files',
+        'count_prose',
+        'advertised_form_help_strings',
+    )
+
+    def _surface(self, repo: Path):
+        from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+
+        script = get_script_path(
+            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
+        )
+        result = run_script(
+            script,
+            'surface',
+            '--plan-id',
+            'counts-invariant-plan',
+            '--project-dir',
+            str(repo),
+            '--base-branch',
+            'main',
+        )
+        assert result.success, f'surface failed: stderr={result.stderr}'
+        return result.toon()
+
+    def test_advertised_form_excluded_from_total(self, tmp_path):
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        # An uncommitted change that triggers the advertised-form detector: a
+        # multi-form help string plus a raw pass-through of args.issue.
+        (repo / 'cli.py').write_text(
+            'import argparse\n'
+            '\n'
+            'def build(p):\n'
+            "    p.add_argument('--issue', help='Issue number or URL')\n"
+            '\n'
+            'def run(args):\n'
+            '    return str(args.issue)\n'
+        )
+        _git(repo, 'add', 'cli.py')
+
+        data = self._surface(repo)
+
+        # The new detector fired.
+        assert int(data['counts']['advertised_form_help_strings']) >= 1
+        assert len(data['advertised_form_help_strings']) >= 1
+
+        # counts.total equals the sum of every count EXCEPT the four review-anchor
+        # lists — proving the advertised-form list is excluded.
+        counts = data['counts']
+        included_sum = sum(
+            int(v)
+            for k, v in counts.items()
+            if k != 'total' and k not in self._REVIEW_ANCHOR_LISTS
+        )
+        assert int(counts['total']) == included_sum
+
+    def test_total_invariant_holds_with_no_advertised_form(self, tmp_path):
+        # A diff that does NOT trigger the advertised-form detector must still
+        # satisfy the invariant — total == sum of included lists.
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'plain.py').write_text('x = 1\nprint("hello")\n')
+        _git(repo, 'add', 'plain.py')
+
+        data = self._surface(repo)
+
+        assert int(data['counts']['advertised_form_help_strings']) == 0
+        counts = data['counts']
+        included_sum = sum(
+            int(v)
+            for k, v in counts.items()
+            if k != 'total' and k not in self._REVIEW_ANCHOR_LISTS
+        )
+        assert int(counts['total']) == included_sum

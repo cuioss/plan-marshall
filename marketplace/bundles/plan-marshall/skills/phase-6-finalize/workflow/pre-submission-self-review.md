@@ -24,7 +24,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Domain-Aware Candidate Surfacing
 
-The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the fifteen candidate sub-lists below as TOON. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
+The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the seventeen candidate sub-lists below as TOON. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
 
 ## Inputs (inline step — Step 1)
 
@@ -37,7 +37,7 @@ The deterministic surfacer is pluggable via the `ext-self-review-{domain}` exten
 |-------------------|:--------:|-------------|
 | `plan_id` | Yes | Plan identifier. |
 | `WORKTREE` | Yes | Repo-relative working-directory path. |
-| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the fifteen candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
+| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the seventeen candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
 
 | `candidates` sub-list | Schema | Purpose |
 |-----------------------|--------|---------|
@@ -48,6 +48,7 @@ The deterministic surfacer is pluggable via the `ext-self-review-{domain}` exten
 | `flag_guard_pairs[N]{file,line,flag,forms_covered}` | Argument-presence guards over a `--flag` token, with the flag forms each guard covers (`space` / `equals` / `both`) | Flag-form-coverage comparison (part of check #1) |
 | `contract_sources[N]{file,sources}` | Per modified file: nearby `SKILL.md` and `standards/*.md` paths | Contract cross-reference anchor |
 | `schema_bearing_files[N]{file,format}` | Markdown files within the contract radius whose content contains a fenced JSON or TOON block | Contract drift detection |
+| `advertised_form_help_strings[N]{file,line,arg,help_text,raw_pass_line}` | argparse `help=` strings advertising more than one accepted input form paired with a raw `args.<dest>` pass-through that does no normalization | Advertised-form drift (sub-check of check #5) |
 | `keep_markers[N]{file,line,identifier,kind}` + `protected_identifiers[M]` | `<!-- self-review: keep <id> -->` markers in the post-image; the top-level `protected_identifiers` set mirrors the identifier values for fast membership checks | Duplication scan refuses to drop any protected identifier |
 | `producer_consumer[N]{file,line,key,consumed}` | Produced output-dict keys (`output['key'] = ...`) with no consumer (`foo['key']` / `.get('key')`) anywhere in the diff | Dangling-producer check (check #6) |
 | `source_of_truth[N]{name,files,values}` | UPPER_SNAKE_CASE constants assigned divergent literals across two diff files | Source-of-truth drift check (check #7) |
@@ -79,7 +80,7 @@ Capture `{cov_scope}` and `{cov_instruction}` (when absent, treat as `inherit`).
 
 ### Step 1: Deterministic surface (inline)
 
-Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the fifteen candidate sub-lists in a single TOON document on stdout.
+Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the seventeen candidate sub-lists in a single TOON document on stdout.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -101,7 +102,7 @@ Capture the helper's TOON output as `{candidates_toon}` for forwarding to the co
 
 ### Step 1b: Candidate-count gate (inline vs dispatch) — B5
 
-Parse the candidate sub-lists from `{candidates_toon}` and read `total_candidates` from the surfacer's `counts.total` field, which sums the twelve line-level heuristic lists (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`). The review-anchor lists (`contract_sources`, `schema_bearing_files`, `count_prose`) and the derived `protected_identifiers` index are excluded from `total_candidates` for the same reason they are excluded from `counts.total` (see the surfacing skill's § Output note).
+Parse the candidate sub-lists from `{candidates_toon}` and read `total_candidates` from the surfacer's `counts.total` field, which sums the twelve line-level heuristic lists (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`). The review-anchor lists (`contract_sources`, `schema_bearing_files`, `count_prose`, `advertised_form_help_strings`) and the derived `protected_identifiers` index are excluded from `total_candidates` for the same reason they are excluded from `counts.total` (see the surfacing skill's § Output note).
 
 Evaluate the gate, with the threshold `{gate}` indexed by `{cov_scope}` (`inherit`/`change-set` → `5`; `artifact` → `8`; `component`/`module`/`overall` → `12`). The `inherit` path preserves the `<= 5` threshold verbatim:
 
@@ -204,6 +205,7 @@ The "absence-class" checks — contract drift (check 5) and its three variant la
    - For every `markdown_sections` entry whose `file` equals (or shares a parent skill with) a `contract_sources` entry, verify that the new/edited section's documented schema, table fields, or detection heuristic agrees with what the code under that skill actually emits or enforces.
    - For every code hunk that adds or modifies a function emitting a schema (e.g., `output_toon({...})`, `print(json.dumps({...}))`), verify that the emitted field set matches the schema declared in the corresponding `schema_bearing_files` entry. Missing fields, renamed fields, or extra undocumented fields are all drift.
    - For every detection heuristic added or modified (e.g., regex over a project marker, glob over a path category), verify that the heuristic agrees with the contract section that documents the same detection rule. A loosened heuristic (substring where the contract specifies a structured marker) is drift.
+   - **Advertised-form sub-check** — for each `advertised_form_help_strings` entry, the helper has surfaced an argparse `help=` string (`help_text`, on `line`) that advertises more than one accepted input form for the destination `arg` AND a raw `args.<arg>` pass-through (at `raw_pass_line`) that forwards the externally-supplied value with no intervening normalization. The advertised contract — "this argument accepts every advertised form" — drifts from the handler behaviour when only the form the raw value happens to be in actually works. Read both the `help_text` and the `raw_pass_line` site in context: a help string that promises e.g. "Issue number or URL" while the handler passes `args.issue` raw (never normalizing the URL form to a number, or vice versa) is advertised-form drift. When the handler DOES normalize the value before use (the surfacer would not have surfaced the candidate, but re-confirm on the live file), or the multiple "forms" are genuinely interchangeable downstream, record no finding.
 
    Defect → record finding `{file, line, defect_class: contract_drift, rationale: <which contract source disagrees with the hunk, and what the drift is>}` — but ONLY after the **Present-state grounding precondition** above confirms the drift survives in the CURRENT worktree file state. Re-read the flagged content from the live document with the `Read` tool; when the current file already reflects the corrected schema/field-set/heuristic (the drift the hunk snapshot suggested is no longer present on disk), the candidate is a stale diff-snapshot — record NO finding.
 
