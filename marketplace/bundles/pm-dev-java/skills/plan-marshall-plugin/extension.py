@@ -43,7 +43,7 @@ class Extension(ExtensionBase):
                             },
                             {
                                 'skill': 'pm-dev-java:java-lombok',
-                                'description': 'Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate',
+                                'description': 'Lombok patterns including @Delegate, @Builder, @Value, @Data, @UtilityClass for reducing boilerplate',
                             },
                             {
                                 'skill': 'pm-dev-java:java-quarkus',
