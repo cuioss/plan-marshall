@@ -1696,6 +1696,83 @@ class TestDetectAdvertisedFormHelpStrings:
     def test_empty_added_surfaces_nothing(self):
         assert _detect_advertised_form_help_strings([]) == []
 
+    # ---- Multi-line add_argument: post-image walk-back (project_dir) ----
+
+    # A multi-line add_argument call whose ``--flag`` and ``help=`` sit on
+    # different physical lines. Only the help= line and the raw-pass line are
+    # present in the diff; the ``--flag`` line is absent.
+    _MULTI_LINE_SOURCE = (
+        "def build_parser(p):\n"
+        "    p.add_argument(\n"
+        "        '--issue',\n"
+        "        help='Issue number or URL',\n"
+        "    )\n"
+        "\n"
+        "def run(args):\n"
+        "    target = str(args.issue)\n"
+    )
+
+    def test_multiline_diff_only_does_not_resolve_dest(self):
+        # Without project_dir, the --flag line is absent from the diff, so the
+        # help= continuation line alone cannot resolve the dest — no candidate.
+        added = [
+            ('cli.py', 4, "        help='Issue number or URL',"),
+            ('cli.py', 8, '    target = str(args.issue)'),
+        ]
+        out = _detect_advertised_form_help_strings(added)
+        assert out == []
+
+    def test_multiline_post_image_walkback_surfaces_candidate(self, tmp_path):
+        # With project_dir, the detector walks backwards through the file's
+        # post-image from the help= line to the opening add_argument( and
+        # resolves the dest from the preceding --flag line.
+        (tmp_path / 'cli.py').write_text(self._MULTI_LINE_SOURCE, encoding='utf-8')
+        added = [
+            ('cli.py', 4, "        help='Issue number or URL',"),
+            ('cli.py', 8, '    target = str(args.issue)'),
+        ]
+        out = _detect_advertised_form_help_strings(added, tmp_path)
+        assert len(out) == 1
+        assert out[0]['file'] == 'cli.py'
+        assert out[0]['line'] == 4
+        assert out[0]['arg'] == 'issue'
+        assert out[0]['help_text'] == 'Issue number or URL'
+        assert out[0]['raw_pass_line'] == 8
+
+    def test_multiline_post_image_dest_kwarg_walkback(self, tmp_path):
+        # An explicit dest= on a preceding line of the multi-line call wins
+        # over the flag-derived dest, resolved via the post-image walk-back.
+        source = (
+            "def build_parser(p):\n"
+            "    p.add_argument(\n"
+            "        '--issue-ref',\n"
+            "        dest='issue',\n"
+            "        help='ref name or URL',\n"
+            "    )\n"
+            "\n"
+            "def run(args):\n"
+            "    return f'{args.issue}'\n"
+        )
+        (tmp_path / 'cli.py').write_text(source, encoding='utf-8')
+        added = [
+            ('cli.py', 5, "        help='ref name or URL',"),
+            ('cli.py', 9, "    return f'{args.issue}'"),
+        ]
+        out = _detect_advertised_form_help_strings(added, tmp_path)
+        assert len(out) == 1
+        assert out[0]['arg'] == 'issue'
+        assert out[0]['raw_pass_line'] == 9
+
+    def test_multiline_missing_post_image_falls_back_to_none(self, tmp_path):
+        # project_dir is supplied but the file does not exist on disk (empty
+        # post-image), so the walk-back cannot resolve the dest — no candidate.
+        added = [
+            ('cli.py', 4, "        help='Issue number or URL',"),
+            ('cli.py', 8, '    target = str(args.issue)'),
+        ]
+        out = _detect_advertised_form_help_strings(added, tmp_path)
+        assert out == []
+
 
 # =============================================================================
 # Test: counts.total invariant (review-anchor lists excluded from total)

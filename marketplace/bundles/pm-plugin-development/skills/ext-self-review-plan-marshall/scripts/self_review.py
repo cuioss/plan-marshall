@@ -1472,8 +1472,72 @@ def _raw_pass_line_for_dest(
     return None
 
 
+def _resolve_dest_from_line(content: str) -> str | None:
+    """Resolve the argparse dest from a single ``add_argument`` line.
+
+    An explicit ``dest='name'`` kwarg wins; otherwise the long ``--flag`` token
+    is mapped to a dest by replacing dashes with underscores. Returns ``None``
+    when neither token is present on the line.
+    """
+    m_dest = _DEST_KWARG.search(content)
+    if m_dest is not None:
+        return m_dest.group(2)
+    m_flag = _ADD_ARGUMENT_FLAG.search(content)
+    if m_flag is not None:
+        return m_flag.group(1).replace('-', '_')
+    return None
+
+
+def _resolve_dest_from_post_image(
+    post_image: list[str], help_lineno: int
+) -> str | None:
+    """Resolve the dest by reconstructing a multi-line ``add_argument`` call.
+
+    ``help_lineno`` is the 1-based post-image line of the ``help=`` string.
+    The walk scans backwards from that line (inclusive) until it reaches the
+    line carrying the opening ``add_argument(`` call, accumulating each line's
+    flag/dest token along the way. The first resolvable token wins (an explicit
+    ``dest=`` on any scanned line takes priority over a ``--flag``, matching the
+    single-line precedence). Returns ``None`` when the call's opening cannot be
+    located within ``_MAX_CALL_LOOKBACK`` lines or carries no flag/dest token.
+    """
+    if help_lineno < 1 or help_lineno > len(post_image):
+        return None
+    idx = help_lineno - 1  # 0-based index into post_image
+    flag_dest: str | None = None
+    steps = 0
+    while idx >= 0 and steps <= _MAX_CALL_LOOKBACK:
+        line = post_image[idx]
+        m_dest = _DEST_KWARG.search(line)
+        if m_dest is not None:
+            # Explicit dest= on any line of the call wins immediately.
+            return m_dest.group(2)
+        if flag_dest is None:
+            m_flag = _ADD_ARGUMENT_FLAG.search(line)
+            if m_flag is not None:
+                flag_dest = m_flag.group(1).replace('-', '_')
+        if _ADD_ARGUMENT_OPEN.search(line) is not None:
+            # Reached the call's opening line — stop the backward walk.
+            return flag_dest
+        idx -= 1
+        steps += 1
+    return None
+
+
+# The opening token of an ``add_argument`` call. Used as the backward-walk
+# terminator when reconstructing a multi-line call from the post-image.
+_ADD_ARGUMENT_OPEN = re.compile(r'\.add_argument\s*\(')
+
+# Upper bound on how many lines the backward walk inspects before giving up.
+# A single ``add_argument`` call almost never spans more than a handful of
+# lines; the cap guards against scanning the whole file when the opening token
+# is somehow absent.
+_MAX_CALL_LOOKBACK = 40
+
+
 def _detect_advertised_form_help_strings(
     added: list[tuple[str, int, str]],
+    project_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Detect a multi-form ``help=`` string whose handler passes the raw value.
 
@@ -1493,6 +1557,15 @@ def _detect_advertised_form_help_strings(
     multi-form help AND a raw-pass site are present in the diff with no
     intervening normalization on the raw-pass line.
 
+    When ``help=`` sits on a continuation line of a multi-line ``add_argument``
+    call, the ``--flag`` / ``dest=`` token lives on a preceding line that may
+    not be present in the diff. In that case same-line dest resolution fails. To
+    recover, the caller may pass ``project_dir``: the detector then walks
+    backwards through the file's post-image from the ``help=`` line to the
+    opening ``add_argument(`` and resolves the dest from the reconstructed call
+    context. With ``project_dir=None`` (e.g. unit tests, or when the post-image
+    is unavailable) the detector falls back to diff-only same-line resolution.
+
     Each entry carries ``file``, ``line`` (the help-string line), ``arg`` (the
     resolved destination), ``help_text`` (the truncated help string), and
     ``raw_pass_line`` (the post-image line number of the raw pass-through). The
@@ -1510,6 +1583,7 @@ def _detect_advertised_form_help_strings(
 
     out: list[dict[str, Any]] = []
     seen: set[tuple[str, int, str]] = set()
+    post_image_cache: dict[str, list[str]] = {}
     for path, file_lines in py_lines_by_file.items():
         for lineno, content in file_lines:
             m_help = _HELP_FIELD.search(content)
@@ -1519,15 +1593,20 @@ def _detect_advertised_form_help_strings(
             if _MULTI_FORM_MARKER.search(help_text) is None:
                 continue
             # Resolve the argparse destination: explicit dest= wins, else the
-            # long --flag with dashes mapped to underscores.
-            m_dest = _DEST_KWARG.search(content)
-            if m_dest is not None:
-                dest = m_dest.group(2)
-            else:
-                m_flag = _ADD_ARGUMENT_FLAG.search(content)
-                if m_flag is None:
-                    continue
-                dest = m_flag.group(1).replace('-', '_')
+            # long --flag with dashes mapped to underscores. Both tokens may
+            # sit on the same diff line as the help string.
+            dest = _resolve_dest_from_line(content)
+            if dest is None and project_dir is not None:
+                # The flag/dest token is on a preceding line of a multi-line
+                # add_argument call that is absent from the diff. Reconstruct
+                # the call context from the file's post-image and retry.
+                if path not in post_image_cache:
+                    post_image_cache[path] = _read_post_image(project_dir, path)
+                dest = _resolve_dest_from_post_image(
+                    post_image_cache[path], lineno
+                )
+            if dest is None:
+                continue
             raw_pass = _raw_pass_line_for_dest(file_lines, dest)
             if raw_pass is None:
                 continue
@@ -1625,7 +1704,9 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         allowed = set(modified_files)
         changed_pairs = [pr for pr in changed_pairs if pr[0] in allowed]
     touched_claims = _detect_touched_claims(changed_pairs)
-    advertised_form_help_strings = _detect_advertised_form_help_strings(added)
+    advertised_form_help_strings = _detect_advertised_form_help_strings(
+        added, project_dir
+    )
 
     output = {
         'status': 'success',
