@@ -358,6 +358,7 @@ skills_by_profile:
    - Deliverable description
 3. Include optional if description indicates relevance to the task
 4. Log reasoning for each optional skill decision
+5. Before finalizing optionals, apply the **Security-Skill Attachment Sub-pattern** (below): when the deliverable context matches an untrusted-inbound-input signal, deterministically force the mapped security skill(s) into `task.skills` regardless of the LLM optional-relevance verdict.
 
 **Example Reasoning** (for JSON→TOON migration task):
 ```
@@ -954,6 +955,37 @@ When all four conditions hold, **auto-decompose** the deliverable into the canon
 3. **Atomicity** — the production change and all forced test updates form a single atomic deliverable so verify passes on the first cut and every commit is independently buildable; never a production task followed by a separate "fix the tests" task.
 
 **Cross-reference**: the substance of the discovery → classification → atomicity procedure — the two-pronged grep, the old-default-vs-override classification rule, and the single-atomic-change discipline — lives once in [`../dev-general-module-testing/standards/testing-methodology.md`](../dev-general-module-testing/standards/testing-methodology.md#enumerate-existing-test-consumers-before-changing-a-default--constant--enum-value) § "Enumerate Existing Test Consumers Before Changing a Default / Constant / Enum Value". This sub-pattern carries only the recognition trigger and the touch-set shape — **do NOT duplicate the enumeration procedure detail here**.
+
+## Security-Skill Attachment Sub-pattern
+
+**Applies when**: a task's deliverable context indicates the code reads **untrusted inbound input** (HTTP requests, externally-sourced values crossing a trust boundary). The LLM optional-relevance match (Step 5 Resolution Logic) routinely misses security skills for these tasks — a "servlet reading an HTTP header" deliverable does not lexically resemble a security skill's description — so a domain that owns concrete security skills never attaches them. This sub-pattern removes that reliance on LLM judgment for the untrusted-inbound-input case by **deterministically forcing** the mapped security skill(s) into `task.skills`. It augments, and does not replace, the LLM optional matching — every other optional is still resolved by relevance as usual.
+
+**Trigger predicate**: the trigger fires for a task when its deliverable context — the deliverable **title**, **description**, **`affected_files`** paths, and **change-per-file narrative** — contains any of the inbound-input signal keywords below.
+
+**Inbound-input signal keywords** (the single normative source — this list MUST NOT be inline-copied elsewhere; reference this section by name):
+
+- HTTP header(s) / request header
+- URL / URI
+- path segment / path parameter
+- query parameter
+- servlet
+- request handler
+- route / routing
+- `X-`-prefixed header names
+- untrusted input
+- inbound
+
+**Domain → security-skill mapping** (the single normative source — extensible by adding one row per domain as concrete per-domain security skills exist; NO speculative rows):
+
+| Domain | Attach to `implementation`-profile task | Attach to paired `module_testing`-profile task |
+|--------|------------------------------------------|------------------------------------------------|
+| `java-cui` (`pm-dev-java-cui`) | `pm-dev-java-cui:cui-http` | `pm-dev-java-cui:cui-http-testing` |
+
+**Mechanism (deterministic forced-inclusion)**: when the trigger predicate fires for a task whose domain has a mapping row, add the mapped skill(s) to `task.skills` regardless of the LLM optional-relevance verdict — the `implementation`-profile skill on the implementation task and the paired `module_testing`-profile skill on its paired test task. A task whose domain has no mapping row is unaffected (the trigger is a no-op for it). When the same skill is already present (declared as a default, or already matched as an optional), forced-inclusion is idempotent — do not duplicate the entry.
+
+**Boundary respected**: this trigger operates at phase-4-plan **task-assembly** time by forcing the OPTIONAL into `task.skills`. It does NOT promote these skills to bundle-profile `defaults` — the defaults/optionals split is bundle-owned (`pm-dev-java-cui/extension.py`) and is not overridable from here. The forced-inclusion is per-task and does not mutate any bundle profile.
+
+**Worked example** (the lesson's exact failure case): a deliverable titled "servlet reading an HTTP header" in the `java-cui` domain matches the keywords `servlet` and `HTTP header`; the `java-cui` mapping row therefore forces `pm-dev-java-cui:cui-http` onto the implementation task and `pm-dev-java-cui:cui-http-testing` onto its paired module_testing task — deterministically, even though neither skill's description lexically matched the deliverable.
 
 ## Skill Resolution Guidelines
 
