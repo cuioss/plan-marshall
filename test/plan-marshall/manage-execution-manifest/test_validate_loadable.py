@@ -467,3 +467,53 @@ class TestCheckSeedMode:
         assert result is not None
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_arguments'
+
+
+# =============================================================================
+# record-metrics order regression — must trail every token-consuming step
+# =============================================================================
+#
+# `default:record-metrics` is the LAST token-accounting finalize step: its
+# `end-phase` call folds the `<usage>` spend of every dispatched finalize step
+# into the closed `6-finalize` phase row, so it MUST resolve to a frontmatter
+# `order` strictly greater than every token-consuming step's order. The
+# token-consuming finalize steps are the ones whose bodies dispatch a subagent
+# or run a token-spending sweep before record-metrics closes the ledger:
+# deploy-target, sync-plugin-cache, lessons-housekeeping, plugin-doctor, and
+# pre-submission-self-review. This regression would fail if record-metrics'
+# order were reverted below any of them (the defect this plan corrected).
+
+
+# The token-consuming finalize steps that MUST precede record-metrics, in the
+# step-id form `_resolve_step_order` consumes (project: steps resolve from
+# `.claude/skills/{bare-name}/SKILL.md`).
+_TOKEN_CONSUMING_FINALIZE_STEPS: list[str] = [
+    'project:finalize-step-deploy-target',
+    'project:finalize-step-sync-plugin-cache',
+    'project:finalize-step-lessons-housekeeping',
+    'project:finalize-step-plugin-doctor',
+    'project:finalize-step-pre-submission-self-review',
+]
+
+
+class TestRecordMetricsOrderAfterTokenConsumingSteps:
+    def test_record_metrics_order_exceeds_every_token_consuming_step(self):
+        """record-metrics order strictly trails every token-consuming step.
+
+        Fails if record-metrics' frontmatter `order` is reverted at or below
+        any token-consuming finalize step — the regression this plan guards.
+        """
+        record_metrics_order = _mem._resolve_step_order('default:record-metrics')
+        assert record_metrics_order is not None
+
+        for step in _TOKEN_CONSUMING_FINALIZE_STEPS:
+            step_order = _mem._resolve_step_order(step)
+            assert step_order is not None, (
+                f'token-consuming step {step!r} has no resolvable frontmatter order'
+            )
+            assert record_metrics_order > step_order, (
+                f'record-metrics order ({record_metrics_order}) must be strictly '
+                f'greater than {step!r} order ({step_order}) — record-metrics must '
+                f'run after every token-consuming finalize step so end-phase folds '
+                f'their token spend into the closed 6-finalize phase row'
+            )

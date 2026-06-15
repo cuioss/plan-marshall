@@ -73,9 +73,9 @@
         "default:branch-cleanup",
         "project:finalize-step-deploy-target",
         "project:finalize-step-sync-plugin-cache",
-        "default:record-metrics",
         "plan-marshall:plan-retrospective",
         "project:finalize-step-lessons-housekeeping",
+        "default:record-metrics",
         "default:finalize-step-print-phase-breakdown",
         "default:archive-plan"
       ],

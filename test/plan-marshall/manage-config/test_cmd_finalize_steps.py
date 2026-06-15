@@ -68,8 +68,13 @@ def _read_finalize_section(fixture_dir: Path) -> dict:
 
 # ``apply-preset`` sorts the preset's step list ascending by resolved
 # frontmatter ``order`` before persisting (Deliverable 3). The FULL preset
-# is declared with ``archive-plan`` (order=1000) ahead of
-# ``plan-marshall:plan-retrospective`` (order=995), so the persisted order
+# is declared with ``record-metrics`` and ``archive-plan`` ahead of
+# ``plan-marshall:plan-retrospective`` in the literal constant, but the
+# resolved frontmatter orders put them in a different sequence:
+# ``plan-marshall:plan-retrospective`` (order=995), then
+# ``default:record-metrics`` (order=998 — it is the LAST token-accounting
+# step, so it runs after retrospective folds its token spend into the phase
+# row), then ``default:archive-plan`` (order=1000). The persisted order thus
 # differs from the literal ``FinalizeStepPresets.FULL`` constant. LOCAL and
 # STANDARD are already in ascending order, so the sort is a no-op for them.
 _FULL_SORTED: list[str] = [
@@ -81,8 +86,8 @@ _FULL_SORTED: list[str] = [
     'default:sonar-roundtrip',
     'default:lessons-capture',
     'default:branch-cleanup',
-    'default:record-metrics',
     'plan-marshall:plan-retrospective',
+    'default:record-metrics',
     'default:archive-plan',
 ]
 
@@ -223,11 +228,13 @@ def test_apply_preset_uppercase_alias_succeeds(plan_context):
 def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context):
     """apply-preset sorts the preset's steps ascending by frontmatter order.
 
-    The FULL preset is declared with ``default:archive-plan`` (order=1000)
-    ahead of ``plan-marshall:plan-retrospective`` (order=995). Before the
-    auto-sort, that out-of-order pair would persist verbatim into
-    ``plan.phase-6-finalize.steps`` — exactly the durability gap this
-    deliverable closes. After the sort, the persisted list must be ascending.
+    The FULL preset is declared with ``default:record-metrics`` and
+    ``default:archive-plan`` ahead of ``plan-marshall:plan-retrospective``
+    (order=995). Before the auto-sort, that out-of-order group would persist
+    verbatim into ``plan.phase-6-finalize.steps`` — exactly the durability
+    gap this deliverable closes. After the sort, the persisted list must be
+    ascending, which places ``plan-marshall:plan-retrospective`` (995) before
+    ``default:record-metrics`` (998) before ``default:archive-plan`` (1000).
     """
     _resolve_step_orders = _cmd_mod._resolve_step_orders
 
@@ -242,8 +249,13 @@ def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context
     assert orders == sorted(orders), (
         f'persisted phase-6-finalize.steps are not ascending by order: {orders}'
     )
-    # Concretely: plan-retrospective (995) must precede archive-plan (1000).
+    # Concretely: plan-retrospective (995) precedes record-metrics (998),
+    # which precedes archive-plan (1000) — record-metrics is the last
+    # token-accounting step, after retrospective and before the read-only tail.
     assert persisted.index('plan-marshall:plan-retrospective') < persisted.index(
+        'default:record-metrics'
+    )
+    assert persisted.index('default:record-metrics') < persisted.index(
         'default:archive-plan'
     )
 
