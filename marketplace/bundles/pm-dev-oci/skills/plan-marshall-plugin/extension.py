@@ -75,7 +75,7 @@ class Extension(ExtensionBase):
                         'defaults': [
                             {
                                 'skill': 'pm-dev-oci:oci-standards',
-                                'description': 'OCI container standards and Dockerfile best practices',
+                                'description': 'OCI container standards, Dockerfile best practices, and build-context hardening (secrets management, .dockerignore secret exclusion, BuildKit secrets)',
                             },
                         ],
                         'optionals': [],
