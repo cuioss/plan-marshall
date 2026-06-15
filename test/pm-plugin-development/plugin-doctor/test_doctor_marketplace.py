@@ -1157,13 +1157,15 @@ def test_real_marketplace_quality_gate_has_zero_findings():
     # whole-tree manage-invocation scan that derives script --help surfaces.
     result = run_script(SCRIPT_PATH, 'quality-gate', timeout=600)
 
-    data = parse_output(result)
+    # Assert the exit code FIRST, before parsing — a script crash would make
+    # parse_output raise, masking the real returncode and stderr behind a
+    # parsing exception. The simplified message carries no parsed data.
     assert result.returncode == 0, (
         f'quality-gate over the real marketplace tree exited {result.returncode} '
-        f'(expected 0). status={data.get("status")!r}, total_issues='
-        f'{data.get("total_issues")!r}, findings={data.get("findings")}. '
-        f'stderr: {result.stderr!r}'
+        f'(expected 0). stderr: {result.stderr!r}'
     )
+
+    data = parse_output(result)
     assert data['status'] == 'pass', (
         f'quality-gate over the real tree reported status={data.get("status")!r} '
         f'(expected pass). findings={data.get("findings")}, full output: {data}'
