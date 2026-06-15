@@ -69,6 +69,10 @@ class Extension(ExtensionBase):
                                 'skill': 'pm-dev-python:python-core',
                                 'description': 'Core Python patterns — types, data structures, error handling, naming',
                             },
+                            {
+                                'skill': 'plan-marshall:dev-general-code-quality',
+                                'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
+                            },
                         ],
                         'optionals': [],
                     },
