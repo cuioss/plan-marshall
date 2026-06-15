@@ -1134,6 +1134,49 @@ def test_quality_gate_argparse_violation_fails(tmp_path):
     assert data['total_issues'] >= 1, 'Should report at least one finding'
 
 
+def test_real_marketplace_quality_gate_has_zero_findings():
+    """The real marketplace tree passes quality-gate with zero findings.
+
+    This is the CI-equivalent regression anchor: ``quality-gate`` with no
+    ``--marketplace-root``/``PM_MARKETPLACE_ROOT`` override resolves the REAL
+    tree via script-relative ``find_marketplace_root``, so every registered
+    blocking rule (``scan_argparse_safety``, ``validate_extension_contracts``,
+    ``analyze_argument_naming``, ``analyze_shell_substitution_in_skills``,
+    ``analyze_skill_relative_temp_path``, ``scan_manage_invocation``,
+    ``scan_finalize_step_token``) runs against the live corpus in one
+    invocation. When a developer registers a new quality-gate blocking rule
+    that has pre-existing violations in the real tree, this test fails
+    immediately — forcing a fix of the violations or a narrowing of the rule
+    before the PR can produce a passing ``verify / verify`` check.
+    """
+    if not marketplace_available():
+        pytest.skip('Real marketplace not available')
+
+    # No env_overrides / --marketplace-root: script-relative discovery targets
+    # the real tree, exactly as CI runs it. The generous timeout covers the
+    # whole-tree manage-invocation scan that derives script --help surfaces.
+    result = run_script(SCRIPT_PATH, 'quality-gate', timeout=600)
+
+    # Assert the exit code FIRST, before parsing — a script crash would make
+    # parse_output raise, masking the real returncode and stderr behind a
+    # parsing exception. The simplified message carries no parsed data.
+    assert result.returncode == 0, (
+        f'quality-gate over the real marketplace tree exited {result.returncode} '
+        f'(expected 0). stderr: {result.stderr!r}'
+    )
+
+    data = parse_output(result)
+    assert data['status'] == 'pass', (
+        f'quality-gate over the real tree reported status={data.get("status")!r} '
+        f'(expected pass). findings={data.get("findings")}, full output: {data}'
+    )
+    assert data['total_issues'] == 0, (
+        f'quality-gate over the real tree reported {data["total_issues"]} finding(s) '
+        f'(expected 0). Each finding names the offending rule/file: '
+        f'{data.get("findings")}. Full output: {data}'
+    )
+
+
 def _build_two_skill_scope_fixture(temp_root: Path) -> tuple[Path, Path, Path]:
     """Build a fixture with a violating skill A and a clean skill B.
 
