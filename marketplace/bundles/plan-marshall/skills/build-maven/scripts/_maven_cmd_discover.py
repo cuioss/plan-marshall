@@ -728,12 +728,19 @@ def _build_commands(
     """
     skill = 'plan-marshall:build-maven:maven'
     is_root_module = not relative_path or relative_path == '.'
-    pl_arg = '' if is_root_module else f' -pl {relative_path}'
+    # ``-am`` (--also-make) builds the selected module's upstream reactor
+    # dependencies first, so an intra-reactor test-jar resolves on a clean
+    # checkout. It is safe for build commands, but MUST NOT be used with
+    # ``clean``: ``mvn clean -pl <module> -am`` would wipe the ``target/``
+    # directories of all upstream reactor dependencies, forcing a full rebuild.
+    pl_arg = '' if is_root_module else f' -pl {relative_path} -am'
+    # ``clean`` only scopes to the target module — no upstream cleanup.
+    pl_no_am_arg = '' if is_root_module else f' -pl {relative_path}'
 
     # 1. Always (all modules including pom): clean, the verify/quality-gate
     #    gate, install, plus the compile/package reactor passthrough.
     cmd_map: dict[str, str] = {
-        'clean': f'clean{pl_arg}',
+        'clean': f'clean{pl_no_am_arg}',
         'quality-gate': f'verify{pl_arg}',
         'verify': f'verify{pl_arg}',
         'install': f'install{pl_arg}',

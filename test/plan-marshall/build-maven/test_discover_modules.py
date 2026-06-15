@@ -522,6 +522,9 @@ def test_nested_module_uses_relative_path_for_pl():
     Maven requires -pl to use the directory path relative to reactor root,
     not the artifact ID. For nested modules like benchmarking/benchmark-core,
     the artifact ID (benchmark-core) differs from the relative path.
+
+    The -pl selector must also carry -am (--also-make) so the module's upstream
+    reactor dependencies build first on a clean checkout.
     """
     commands = _build_commands(
         module_name='benchmark-core',
@@ -531,13 +534,18 @@ def test_nested_module_uses_relative_path_for_pl():
         profiles=[],
         relative_path='benchmarking/benchmark-core',
     )
-    # The -pl argument must use the relative path, not the artifact ID
-    assert '-pl benchmarking/benchmark-core' in commands['compile']
+    # The -pl argument must use the relative path, not the artifact ID, and
+    # must be followed by -am.
+    assert '-pl benchmarking/benchmark-core -am' in commands['compile']
     assert '-pl benchmark-core' not in commands['compile']
 
 
 def test_nested_module_pl_in_all_commands():
-    """Test that all commands for a nested module use the correct -pl path."""
+    """Test that non-root module commands use -pl with -am, except clean.
+
+    clean uses -pl WITHOUT -am to avoid wiping upstream reactor target dirs.
+    All other commands use -pl -am so upstream deps are built first.
+    """
     commands = _build_commands(
         module_name='oauth-sheriff-quarkus',
         packaging='jar',
@@ -546,10 +554,13 @@ def test_nested_module_pl_in_all_commands():
         profiles=[],
         relative_path='oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus',
     )
-    for cmd_name in ['clean', 'compile', 'verify', 'module-tests', 'quality-gate']:
-        assert '-pl oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus' in commands[cmd_name], (
-            f'{cmd_name} should use relative_path for -pl'
+    for cmd_name in ['compile', 'verify', 'module-tests', 'quality-gate']:
+        assert '-pl oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus -am' in commands[cmd_name], (
+            f'{cmd_name} should use relative_path for -pl with -am'
         )
+    # clean uses -pl without -am to avoid cleaning upstream reactor dependencies
+    assert '-pl oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus' in commands['clean']
+    assert '-am' not in commands['clean']
 
 
 def test_root_module_has_no_pl_arg():
@@ -558,6 +569,29 @@ def test_root_module_has_no_pl_arg():
         module_name='parent-pom', packaging='jar', has_sources=True, has_tests=True, profiles=[], relative_path='.'
     )
     assert '-pl' not in commands['compile']
+
+
+def test_nested_module_pl_includes_also_make():
+    """Test that the test-ladder commands carry -am for a non-root module.
+
+    -am (--also-make) on the test ladder (test-compile, module-tests) is the
+    exact fix: without it, a module that depends on a sibling-produced test-jar
+    fails at test-compile / test on a clean checkout because the upstream
+    reactor module was never built. These rungs are the ones the bug broke.
+    """
+    commands = _build_commands(
+        module_name='oauth-sheriff-quarkus',
+        packaging='jar',
+        has_sources=True,
+        has_tests=True,
+        profiles=[],
+        relative_path='oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus',
+    )
+    for cmd_name in ['test-compile', 'module-tests']:
+        assert cmd_name in commands, f'{cmd_name} should be present for a non-root module with tests'
+        assert '-pl oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus -am' in commands[cmd_name], (
+            f'{cmd_name} must emit -am after the -pl selector'
+        )
 
 
 # =============================================================================
