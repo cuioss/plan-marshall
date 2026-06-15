@@ -504,12 +504,14 @@ def test_plan_phase_2_refine_get_simplicity_returns_lean_default(plan_context):
     assert result['value'] == 'lean'
 
 
-def test_built_in_finalize_steps_includes_finalize_step_simplify_at_order_8_position():
-    """default:finalize-step-simplify occupies the order-8 ordinal slot in BUILT_IN_FINALIZE_STEPS.
+def test_built_in_finalize_steps_places_simplify_after_commit_push():
+    """default:finalize-step-simplify sits AFTER default:commit-push in BUILT_IN_FINALIZE_STEPS.
 
-    The slot is index 1: after default:pre-push-quality-gate (order 5, index 0)
-    and before default:finalize-step-whole-tree-gate (order 9, index 2) and
-    default:commit-push (order 10, index 3).
+    simplify is a post-commit-push MAY_MUTATE step (PR #688). The canonical head
+    order is default:pre-push-quality-gate (index 0),
+    default:finalize-step-whole-tree-gate (index 1), default:commit-push (index 2),
+    then default:finalize-step-simplify (index 3) — matching the MAY_MUTATE-after-
+    commit-push invariant the compose-time placement guard enforces.
     """
     steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
 
@@ -518,9 +520,9 @@ def test_built_in_finalize_steps_includes_finalize_step_simplify_at_order_8_posi
         'default:finalize-step-simplify must be seeded into BUILT_IN_FINALIZE_STEPS'
     )
     assert steps[0] == 'default:pre-push-quality-gate'
-    assert steps[1] == 'default:finalize-step-simplify'
-    assert steps[2] == 'default:finalize-step-whole-tree-gate'
-    assert steps[3] == 'default:commit-push'
+    assert steps[1] == 'default:finalize-step-whole-tree-gate'
+    assert steps[2] == 'default:commit-push'
+    assert steps[3] == 'default:finalize-step-simplify'
 
 
 def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
@@ -539,26 +541,31 @@ def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
     )
 
 
-def test_built_in_finalize_steps_includes_whole_tree_gate_before_commit_push():
-    """default:finalize-step-whole-tree-gate must sit before default:commit-push.
+def test_built_in_finalize_steps_orders_gate_then_commit_then_simplify():
+    """Canonical order: whole-tree-gate before commit-push, simplify after commit-push.
 
-    The gate must run pre-commit so a surviving deleted-symbol reference BLOCKS
-    the push — mirroring the pre-push-quality-gate ordering rationale. The new
-    step is inserted after default:finalize-step-simplify (index 1) and before
-    default:commit-push.
+    The whole-tree-gate must run pre-commit so a surviving deleted-symbol
+    reference BLOCKS the push — mirroring the pre-push-quality-gate ordering
+    rationale. simplify is a post-commit-push MAY_MUTATE step (PR #688), so it
+    must follow commit-push. The canonical chain is therefore
+    whole-tree-gate < commit-push < simplify.
     """
     steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
 
-    # presence and pre-commit ordinal placement
+    # presence and ordinal placement
     assert 'default:finalize-step-whole-tree-gate' in steps, (
         'default:finalize-step-whole-tree-gate must be seeded into BUILT_IN_FINALIZE_STEPS'
     )
     gate_index = steps.index('default:finalize-step-whole-tree-gate')
     commit_index = steps.index('default:commit-push')
     simplify_index = steps.index('default:finalize-step-simplify')
-    assert simplify_index < gate_index < commit_index, (
-        'finalize-step-whole-tree-gate must run after finalize-step-simplify and '
-        'before commit-push (pre-commit gate)'
+    assert gate_index < commit_index < simplify_index, (
+        'finalize-step-whole-tree-gate must run before commit-push (pre-commit gate) '
+        'and finalize-step-simplify must run after commit-push (post-commit-push MAY_MUTATE)'
+    )
+    # direct mirror of the request mandate: simplify follows commit-push
+    assert simplify_index > commit_index, (
+        'finalize-step-simplify must follow commit-push'
     )
 
 

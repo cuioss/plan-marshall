@@ -495,6 +495,7 @@ The classification logic for the read-side corpus operations lives under `refere
 | Error Code | Cause |
 |------------|-------|
 | `not_found` | Lesson ID doesn't exist (get, update, set-body, convert-to-plan) |
+| `copy_failed` | `convert-to-plan` failed to copy the lesson to the plan directory (I/O error or read-back content mismatch); source lesson is left intact, no partial artifact survives |
 | `invalid_category` | Category not in: bug, improvement, anti-pattern |
 | `invalid_context` | JSON context parsing failed (from-error) |
 | `invalid_input` | `set-body` invoked without exactly one of `--file` / `--content`, or both supplied |

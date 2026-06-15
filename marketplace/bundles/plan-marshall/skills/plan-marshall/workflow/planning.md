@@ -778,6 +778,68 @@ The agent returns `plan_id` and `domain` in its TOON. Passing `lesson_id` trigge
 
 **Anti-pattern (prohibited):** Never dispatch the lesson conversion with `source=lesson, content={verbatim lesson text}` in the prompt body. Inline `content` is the `description` source path and causes `phase-1-init` to treat the input as a free-form description — Step 5b is skipped and the original lesson file is orphaned in `lessons-learned/` instead of being archived inside the plan directory. Always reference the lesson by `lesson_id`; never paste its body.
 
+#### Post-init contract assertion (lesson-sourced)
+
+phase-1-init's generic post-init assertion (see **Action: init** § Post-init contract assertion) is a necessary-but-insufficient gate for a lesson-sourced dispatch: it asserts only that `plan_id` is non-empty and no rogue `pr_url` / `branch` / files-patched payload is present. It does NOT verify that the lesson-source path actually ran. The failure class this guard catches: the dispatch silently ignores `lesson_id`, falls back to its **own agent id** as the `plan_id` (Step 2a's slug derivation never ran), records `source: description` instead of `source: lesson`, and runs `convert-to-plan` (removing the lesson from the corpus) WITHOUT placing the Step 5b plan-dir copy — yet returns a plausible `status: success` TOON that passes the generic assertion. Net effect: a phantom plan whose `request.md` holds the plan_id instead of the lesson body, and a lesson silently gone from the corpus with no plan-dir copy.
+
+Because this dispatch always carries `lesson_id`, the orchestrator MUST run the three additional lesson-source assertions below — after the dispatch returns and BEFORE the auto-continued pipeline advances to phase-2-refine. Capture the dispatched agent's id as `{agent_id}` (the `Task` tool surfaces it on the dispatch) for assertion (b).
+
+**Assertion (a) — `source == lesson`**: read the new plan's `request.md` and assert the recorded `source` is `lesson` (not `description`). A `description` source is the structural tell that the lesson-source path was skipped:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id}
+```
+
+Parse the `source` field from the returned `content`. Assertion (a) fails when `source != lesson`.
+
+**Assertion (b) — `plan_id` is not an agent-id pattern**: a real lesson plan_id is a title-derived kebab slug; an agent-id-shaped value (hex-only, no hyphens or word segments — matching `^[0-9a-f]{12,}$`) means Step 2a's slug derivation fell through and the agent mis-registered its own id as the plan. Assertion (b) fails when `plan_id` matches `^[0-9a-f]{12,}$` OR `plan_id == {agent_id}`.
+
+**Assertion (c) — Step 5b post-condition file exists**: the lesson file MUST have been relocated into the plan directory by `convert-to-plan`. Assert it exists on disk via the managed API:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files exists \
+  --plan-id {plan_id} --file lesson-{lesson_id}.md
+```
+
+Parse `exists` from the output. Assertion (c) fails when `exists: false` — the lesson was removed from the corpus but no plan-dir copy was placed (the orphaning failure mode).
+
+**Success branch** — all three assertions pass (`source == lesson`, `plan_id` is a non-agent-id slug, the plan-dir lesson file exists):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:plan-marshall) Post-init lesson-source assertion passed (source=lesson, slug plan_id, plan-dir lesson file present)"
+```
+
+Continue to the auto-continued planning pipeline (2-refine etc.).
+
+**Violation branch** — any of the three assertions fails. The orchestrator MUST emit a `[CRITICAL]` work-log entry naming the violated condition, return the structured error TOON, and refuse to advance to phase-2-refine.
+
+`{offending_signal}` names the specific violation: `source=description (expected lesson)` for assertion (a), `agent-id-shaped plan_id: {plan_id}` for assertion (b), or `missing plan-dir lesson file: lesson-{lesson_id}.md` for assertion (c).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id:-none} --level ERROR \
+  --message "[CRITICAL] (plan-marshall:plan-marshall) Lesson-conversion contract violation — phase-1-init silently ignored lesson_id: {offending_signal}"
+```
+
+Return:
+
+```toon
+status: error
+error: init_contract_violation
+display_detail: "lesson conversion silently ignored lesson_id"
+plan_id: {plan_id}
+offending_signal: {offending_signal}
+```
+
+Do NOT continue to phase-2-refine. The orchestrator stops here; recovery requires restoring the lesson body to the corpus under a fresh id (`manage-lessons add` + `set-body --file`), deleting the phantom plan (`manage-status delete-plan`), and re-dispatching the conversion with explicit `plan_id` (title slug) and `domain` overrides.
+
+**Cross-references**:
+- `plan-marshall:phase-1-init` § Enforcement / Step 2a (plan-id derivation guard) and Step 5b (convert-to-plan post-condition abort) — the skill-level complements to this orchestrator-boundary assertion
+- **Action: init** § Post-init contract assertion — the generic post-init guard this lesson-source guard layers on top of
+
 ### Analyze all lessons
 
 When "Analyze all lessons" is selected, run the analyze workflow. This is an interactive LLM workflow — no plan is created.

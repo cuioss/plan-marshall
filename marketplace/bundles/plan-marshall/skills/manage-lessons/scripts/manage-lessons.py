@@ -592,6 +592,12 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
 
     The lesson is renamed to lesson-{id}.md inside .plan/local/plans/{plan_id}/.
     Errors if the source lesson does not exist.
+
+    The relocation is transactional: the source is deleted only AFTER the copy to
+    the plan directory has been written and verified as complete and readable
+    (byte-for-byte read-back). A failed copy or read-back leaves the source intact
+    and removes any partial artifact from the plan directory, so the lesson is
+    never left in a missing state when an error occurs mid-operation.
     """
     if any(sep in args.lesson_id for sep in ('/', '\\', '..')) or any(sep in args.plan_id for sep in ('/', '\\', '..')):
         return {
@@ -623,7 +629,31 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
     plan_dir.mkdir(parents=True, exist_ok=True)
     destination = plan_dir / f'lesson-{args.lesson_id}.md'
 
-    shutil.move(source, destination)
+    # Transactional copy-verify-delete: copy the source into the plan directory,
+    # verify the copy is complete and readable, and only then delete the source.
+    # A failure at any point before the source delete leaves the source intact and
+    # removes any partial destination artifact, so the lesson is never lost.
+    source_bytes = source.read_bytes()
+    try:
+        shutil.copyfile(source, destination)
+        # Read-back verification: the destination must exist and its content must
+        # match the source byte-for-byte before the source may be deleted.
+        if not destination.exists() or destination.read_bytes() != source_bytes:
+            raise OSError('copy verification failed: destination content mismatch')
+    except OSError as exc:
+        # Clean up any partial artifact; leave the source untouched.
+        if destination.exists():
+            destination.unlink()
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'copy_failed',
+            'message': f'Failed to copy lesson {args.lesson_id} to plan directory: {exc}',
+            'source': str(source),
+            'destination': str(destination),
+        }
+
+    source.unlink()
 
     # Reserve the consumed id with a tombstone so it stays reserved even if the
     # plan directory (and the relocated .md inside it) is later deleted. Unlike
