@@ -49,6 +49,28 @@ python3 marketplace/targets/generate.py --target opencode --output target/openco
 
 The OpenCode adapter produces output conforming to the OpenCode specification; only the Claude target is validated end-to-end. Adapter implementations register in `TARGET_REGISTRY` (see `marketplace/targets/generate.py`).
 
+== Open-Standard Alignment
+
+Plan Marshall's component format predates and overlaps with the `SKILL.md` open standard published at https://agentskills.io[agentskills.io]. This section is an informative gap analysis — it records where the two agree, where Plan Marshall extends the spec, and how the adapter system above relates to the standard. It makes no behavioural claims and adds no build steps.
+
+=== Where the formats conform
+
+The open standard defines a skill as a directory containing a `SKILL.md` file whose YAML frontmatter carries a `name` and a `description`. Every Plan Marshall skill satisfies this base shape: each lives at `marketplace/bundles/<bundle>/skills/<skill>/SKILL.md` and declares `name` plus `description` in the form the spec expects (see link:../../marketplace/bundles/pm-plugin-development/skills/plugin-architecture/references/frontmatter-standards.md[`frontmatter-standards.md`] § Skill Frontmatter). A reader that understands only the open standard can therefore discover and name every Plan Marshall skill from its frontmatter alone.
+
+=== Where Plan Marshall extends the spec
+
+Plan Marshall adds frontmatter fields the open standard does not define. These are additive — a spec-only reader ignores them, and they never change the meaning of `name` or `description`:
+
+* `user-invocable` (required) — whether the skill appears in the slash menu or is loaded only internally.
+* `mode` (required) — the execution archetype (`knowledge` / `workflow` / `script-executor` / `manifest`) that tells an agent how to consume the skill.
+* `implements` (optional) — declares that the skill satisfies a Plan Marshall extension-point contract.
+
+The full optional set (`argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`) is documented in `frontmatter-standards.md`. None of these fields is part of the agentskills.io spec; they are Plan Marshall's own workflow metadata.
+
+=== How the adapter system relates to the standard
+
+The `marketplace/targets/` adapter system (see _Adapter System_ above) is Plan Marshall's own multi-assistant export mechanism — it transforms the source bundles into per-target output such as `target/claude/` and `target/opencode/`. It is **not** an agentskills.io conformance layer: it neither validates against the published spec nor emits a spec-conformant package. The adapter predates the standard and serves a different purpose (cross-assistant portability of Plan Marshall's own format), so the two are independent. A future agentskills.io target, if one were added, would register in `TARGET_REGISTRY` like any other adapter.
+
 == Plugin cache sync (meta-project only)
 
 When modifying plugin source files (skills, agents, commands) inside the Plan Marshall meta-project, changes do not take effect until the plugin cache is updated. After editing files in `marketplace/bundles/`, run:

@@ -237,6 +237,8 @@ One-time migration on a developer machine:
 
 The marketplace uses an adapter system to export bundles to other AI assistant formats while keeping Claude Code as the primary, native format. **Only Claude Code is tested as a runtime.** The OpenCode adapter generates output conforming to the OpenCode specification but has not been validated in a live OpenCode environment.
 
+For how this format relates to the `SKILL.md` open standard at [agentskills.io](https://agentskills.io) — where the two conform, where plan-marshall extends the spec, and how the adapter system relates to the standard — see the "Open-Standard Alignment" section in [`doc/developer/marketplace-build.adoc`](doc/developer/marketplace-build.adoc).
+
 ```
 Source of truth:     marketplace/bundles/*  (Claude Code format)
                             │

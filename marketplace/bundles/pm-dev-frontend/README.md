@@ -62,6 +62,10 @@ pm-dev-frontend/
 - Python 3 for automation scripts
 - Node.js and npm for JavaScript builds
 
+## See Also
+
+- **Anthropic `frontend-design` skill** — Anthropic ships an official `frontend-design` skill for visual-aesthetic guidance (distinctive, production-grade UI; avoiding generic "AI slop" design). `pm-dev-frontend` and `frontend-design` are complementary: this bundle governs **code standards** (JavaScript/CSS correctness, structure, quality, tooling), while `frontend-design` governs **visual aesthetics** (layout, typography, design quality). Reach for `frontend-design` when the task is making an interface look distinctive and polished; reach for `pm-dev-frontend` when the task is writing correct, well-structured frontend code. This is a pointer only — `pm-dev-frontend` does not vendor or restate the `frontend-design` content.
+
 ## Support
 
 - Repository: https://github.com/cuioss/plan-marshall

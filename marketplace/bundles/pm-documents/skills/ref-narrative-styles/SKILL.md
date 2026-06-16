@@ -1,6 +1,6 @@
 ---
 name: ref-narrative-styles
-description: Reference library of narrative styles for technical documentation — tone, voice, and structural arc for the engineering-narrative style
+description: Reference library of narrative styles for technical documentation — tone, voice, and structural arc for the engineering-narrative, reference-spec, and tutorial-walkthrough styles
 user-invocable: false
 mode: knowledge
 ---
@@ -43,6 +43,8 @@ Do not load this skill when:
 | Style document | Genre | What it sounds like |
 |----------------|-------|----------------------|
 | [`styles/engineering-narrative.md`](styles/engineering-narrative.md) | Documents that motivate a piece of engineering — design RFCs, concept pages, the narrative section of an ADR. | Matter-of-fact, slightly self-ironic, third-person present tense. Opens with the problem, describes the structural response, names the honest limit. |
+| [`styles/reference-spec.md`](styles/reference-spec.md) | Lookup surfaces a reader consults mid-document — API specs, CLI manuals, schema definitions, canonical-invocation blocks. | Flat, exact, complete. Each entry stands alone: verbatim signature, per-clause semantics, named failure modes. |
+| [`styles/tutorial-walkthrough.md`](styles/tutorial-walkthrough.md) | Guided paths that take a reader from nothing to a working result — getting-started guides, setup runbooks, first-run pages. | Encouraging, concrete, patient. Second-person imperative, one ordered action per step, each ending in an observable checkpoint. |
 
 ## Adding a new style
 
