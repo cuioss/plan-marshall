@@ -15,29 +15,31 @@ interpretation guide.
 
 Every number this check derives comes from `metrics.toon`'s `total_tokens`, which
 `manage-metrics` records as **`input_tokens + output_tokens` only**. It **excludes
-`cache_read_input_tokens` and `cache_creation_input_tokens`** — and in a real session
-`cache_read` is ~99% of token traffic (one forensic measured a **133.8× gap**:
-356,208 counted vs 47,656,694 full). So `total_tokens` measures **generation +
-fresh input**, not total token cost.
+`cache_read_input_tokens` and `cache_creation_input_tokens`**, so it measures
+**generation + fresh input**, not total token traffic.
 
 Consequences every reader of this block MUST hold:
 
-- The dominant real cost — *(number of turns) × (context size per turn)*, billed as
-  `cache_read` — is **invisible** here. A plan that re-reads a large context across
-  many turns (e.g. one fragmented into many `execution-context` envelopes) can be far
-  more expensive than its `total_tokens` shows.
-- **Build cost is invisible.** A build is one turn whose own generation is tiny; its
-  real cost (a full-context `cache_read` round-trip, plus a `cache_creation` re-cache
-  penalty when it outlasts the ~5-min cache TTL) is not in `total_tokens`. This is why
-  `cross-check-synthesis`'s `churn_explains_walltime` correlates build churn against
-  wall-clock, not against this metric.
+- The per-turn context re-read — *(number of turns) × (context size per turn)*, billed
+  as `cache_read` — is **not** in this figure. The size of that gap **scales with
+  context size per turn**: it is large for a monolithic/bloated session and modest for
+  the isolated `execution-context` envelopes plan-marshall normally runs (kept to
+  ~10-15K each by per-dispatch context isolation, `doc/concepts/token-management.adoc`
+  §6). One forensic on a deliberately large-context session measured a 133.8× gap; that
+  is an upper-bound illustration, **not** a typical run.
+- **Builds are not the gap.** Builds are cheap in tokens by design
+  (`doc/concepts/build-management.adoc`: ~100-token TOON, LLM suspended on the
+  synchronous call). The metric's blind spot is the per-turn context re-read that
+  applies to *every* turn, not a build cost. `cross-check-synthesis`'s
+  `churn_explains_walltime` correlates build churn against wall-clock for that reason —
+  builds cost latency, not tokens.
 - Treat the flags below as **generation-volume** signals. A high `tokens_per_file` /
   `big_spend_tiny_footprint` means a lot was *generated* relative to the footprint —
-  not necessarily a lot was *spent* (or vice-versa: a cheap-to-generate plan with a
-  huge context and many turns under-reports badly).
+  not necessarily a lot of total traffic (a plan with a large context across many turns
+  under-reports its full traffic here).
 
-This is a known `manage-metrics` defect; until it records the full usage view, every
-verdict from this check is bounded by it.
+Recording the full usage view (`cache_read` + `cache_creation`) is a known
+`manage-metrics` improvement; until then, read this check as generation volume.
 
 ## Inputs the check reads
 
