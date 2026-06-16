@@ -57,11 +57,15 @@ For each parsed line the script:
    wrapper stamped `INFO`. Two recording-noise classes are deliberately NOT
    flagged: (a) `DEBUG`-level lines (diagnostic output *below* `INFO`, never a
    failure — flagging every non-INFO level previously swept thousands of DEBUG
-   lines into the error count); and (b) a completed script-execution call stamped
-   at an elevated level but carrying no failure marker — a benign non-zero-exit
-   probe (`read`/`exists`/`list`/`get` answering "not found"), which is a normal
-   query result, not a runtime failure. A genuine failure always carries a
-   failure marker, so it is still flagged at any level.
+   lines into the error count); and (b) a completed script-execution call whose
+   subcommand is a known read-only **query** (`exists`/`read`/`get`/`list`/`find`/
+   `search`) stamped at an elevated level with no failure marker — a benign
+   non-zero-exit probe answering "not found", which is a normal query result, not a
+   runtime failure. The exclusion is restricted to that query allowlist: a
+   NON-query command (e.g. `run`) at an elevated level with no marker is NOT treated
+   as benign and stays flagged, so a genuine failure from a non-probe command is
+   never silently dropped. A genuine failure also always carries a failure marker,
+   so it is still flagged at any level regardless of subcommand.
 4. **Flags slow calls** — a script call whose duration is `>= slow_call_seconds`
    (but below the impossible ceiling).
 5. **Flags impossible / hang durations** — a single deterministic script call

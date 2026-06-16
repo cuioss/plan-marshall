@@ -1469,6 +1469,30 @@ class TestEmitGlobalLogBlock:
         assert 'error_count: 1' in block
         assert 'genuine_signal_count: 1' in block
 
+    def test_non_query_command_at_error_is_not_a_benign_probe(self, tmp_path: Path):
+        # The benign-probe exclusion is restricted to read-only QUERY subcommands.
+        # A non-query command (e.g. `run`) at ERROR with no failure marker must STILL
+        # be flagged — it is a genuine failure, not a "not found" probe.
+        _write_metrics_window(
+            tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
+        )
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [
+                # ERROR-level `run` call, has a duration, NO failure marker — not a query.
+                _line('2026-06-01T10:10:00Z', 'ERROR', 'pm:b:b run (0.50s)'),
+                # ERROR-level `exists` query with a duration — benign, excluded.
+                _line('2026-06-01T10:20:00Z', 'ERROR', 'pm:f:f exists (0.21s)'),
+            ],
+        )
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        block = audit.emit_global_log_block(result)
+
+        # the `run` failure is flagged; the `exists` probe is not
+        assert 'error_count: 1' in block
+
     def test_empty_result_renders_zero_signal_block(self, tmp_path: Path):
         # no logs at all
         result = audit.cross_global_log_analysis(tmp_path)

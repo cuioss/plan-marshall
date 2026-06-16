@@ -1263,6 +1263,19 @@ _LOG_FAIL_MARKERS_RE = re.compile(
 # genuine signal; everything else is not.
 _ELEVATED_LOG_LEVELS = frozenset({"WARNING", "WARN", "ERROR", "CRITICAL", "FATAL"})
 
+# Read-only QUERY subcommands that legitimately exit non-zero on "not found" — the
+# executor stamps the call line at ERROR even though "absent" is a normal answer.
+# ONLY a completed script call whose subcommand is in this set is treated as a benign
+# probe and excluded from error-flagging. A NON-query command (e.g. `run`, `verify`,
+# `compile`) at an elevated level with no failure marker is a genuine failure and
+# stays flagged — narrowing the exclusion to this allowlist prevents silently dropping
+# real failures from non-probe commands. The set is deliberately conservative: a
+# query verb omitted here merely re-earns a benign error-flag (noise), whereas a
+# non-query verb wrongly included would hide a real failure.
+_LOG_BENIGN_PROBE_SUBCOMMANDS = frozenset(
+    {"exists", "read", "get", "list", "find", "search"}
+)
+
 # Impossible / hang-shaped duration ceiling (seconds). A single deterministic
 # script call recorded at/over this is not a real wall-clock cost — it is a
 # clock-skew artifact or a hung-then-killed call. Distinct from the
@@ -1393,6 +1406,7 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
 
                 head = _LOG_SCRIPT_HEAD_RE.match(rest)
                 is_script_call = False
+                script_sub = ""
                 if head:
                     sub = head.group("sub") or ""
                     key = f"{head.group('notation')} {sub}".strip()
@@ -1400,6 +1414,7 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
                     dur_m = _LOG_DUR_RE.search(rest)
                     if dur_m:
                         is_script_call = True
+                        script_sub = sub
                         seconds = float(dur_m.group(1))
                         call_seconds[key] += seconds
                         total_seconds += seconds
@@ -1423,12 +1438,18 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
                             )
 
                 has_marker = bool(_LOG_FAIL_MARKERS_RE.search(rest))
-                # A completed script-execution call stamped at an elevated level
-                # but carrying NO failure marker is a benign non-zero-exit probe —
-                # `read`/`exists`/`list`/`get` answering "not found" — not a real
-                # failure. Flag only genuine failures: any failure-marker body (at
-                # any level), OR an elevated-level line that is not such a probe.
-                benign_probe = is_script_call and not has_marker
+                # A completed script call is a benign non-zero-exit probe ONLY when its
+                # subcommand is a known read-only QUERY (`exists`/`read`/`get`/`list`/
+                # `find`/`search`) answering "not found" — not a real failure. A
+                # non-query command (e.g. `run`) at an elevated level with no failure
+                # marker is NOT benign and stays flagged. Flag genuine failures: any
+                # failure-marker body (at any level), OR an elevated-level line that is
+                # not a known-query benign probe.
+                benign_probe = (
+                    is_script_call
+                    and script_sub in _LOG_BENIGN_PROBE_SUBCOMMANDS
+                    and not has_marker
+                )
                 if has_marker or (level in _ELEVATED_LOG_LEVELS and not benign_probe):
                     error_lines.append(
                         {
