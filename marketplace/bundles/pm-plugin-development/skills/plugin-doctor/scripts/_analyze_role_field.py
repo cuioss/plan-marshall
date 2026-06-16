@@ -155,7 +155,7 @@ def _is_step_file(frontmatter: dict[str, str]) -> bool:
     of these keys and are therefore not subject to the role-field requirement.
     """
     name = frontmatter.get('name', '')
-    if not name.startswith('default:'):
+    if not isinstance(name, str) or not name.startswith('default:'):
         return False
     if 'description' not in frontmatter:
         return False
@@ -178,6 +178,8 @@ def _is_canonical_verify_step(frontmatter: dict[str, str]) -> bool:
     static ``role:`` value.
     """
     name = frontmatter.get('name', '')
+    if not isinstance(name, str):
+        return False
     return name == 'default:verify' or name.startswith('default:verify:')
 
 

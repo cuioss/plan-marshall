@@ -295,6 +295,26 @@ class TestCanonicalVerifyExemption:
         findings = analyze_role_field(tmp_path)
         assert findings == []
 
+    def test_non_string_name_does_not_crash(self, tmp_path: Path) -> None:
+        """A malformed frontmatter with a non-string ``name`` (YAML int/null) must NOT
+        raise AttributeError — both the step-file and canonical-verify predicates
+        type-guard the value before calling string methods (Gemini review finding e4c9ce).
+        """
+        scoped = _make_scoped_dir(tmp_path)
+        _write(
+            scoped / 'malformed.md',
+            '---\n'
+            'name: 123\n'
+            'description: Malformed name field\n'
+            'order: 10\n'
+            '---\n'
+            '\n'
+            '# Malformed\n',
+        )
+        # A non-string name is simply not a default: step — must not raise.
+        findings = analyze_role_field(tmp_path)
+        assert isinstance(findings, list)
+
     def test_canonical_verify_prefixed_step_id_without_role_produces_no_finding(
         self, tmp_path: Path
     ) -> None:
