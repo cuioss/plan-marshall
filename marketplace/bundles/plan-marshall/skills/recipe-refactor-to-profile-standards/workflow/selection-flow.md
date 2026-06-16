@@ -171,6 +171,7 @@ AskUserQuestion:
         # ≤4 skills per page; defaults pre-checked, optionals unchecked:
         - label: "{skill_notation}"
           description: "{skill_description}"
+          checked: {true_for_defaults_else_false}
       multiSelect: true
 ```
 
