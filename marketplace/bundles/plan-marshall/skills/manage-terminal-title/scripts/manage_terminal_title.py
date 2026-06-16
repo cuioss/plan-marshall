@@ -34,10 +34,14 @@ from __future__ import annotations
 #   ✓  done (per-turn ``Stop`` event)
 #   ✅  terminal (whole plan complete / archived) — the thick U+2705 check-mark,
 #       deliberately distinct from the thin ✓ ``_ICON_DONE`` used per turn.
+#   ⚙  busy / executing a long-running tool — surfaced on ``PreToolUse`` +
+#       ``Bash``, deliberately distinct from ➤ ``_ICON_ACTIVE`` and the ?
+#       ``_ICON_WAITING`` icon.
 _ICON_ACTIVE = "➤"  # ➤
 _ICON_WAITING = "?"
 _ICON_DONE = "✓"  # ✓
 _ICON_TERMINAL = "✅"  # ✅
+_ICON_BUSY = "⚙"  # ⚙
 
 
 # --- Title-token glyph vocabulary (lock state → glyph) ----------------------
@@ -72,6 +76,7 @@ def resolve_icon(event: str | None, tool_name: str | None = None) -> str:
     - ``UserPromptSubmit`` → ``➤``
     - ``Notification`` → ``?`` (canonical "needs attention")
     - ``PreToolUse`` with ``tool_name == "AskUserQuestion"`` → ``?``
+    - ``PreToolUse`` with ``tool_name == "Bash"`` → ``⚙`` (busy / long-running tool)
     - ``PostToolUse`` with ``tool_name == "AskUserQuestion"`` → ``➤``
     - ``PostToolUse`` with any other tool (e.g. ``Bash``) → ``➤``
     - ``Stop`` → ``✓``
@@ -89,6 +94,8 @@ def resolve_icon(event: str | None, tool_name: str | None = None) -> str:
         return _ICON_WAITING
     if event == "PreToolUse" and tool_name == "AskUserQuestion":
         return _ICON_WAITING
+    if event == "PreToolUse" and tool_name == "Bash":
+        return _ICON_BUSY
     # UserPromptSubmit, SessionStart, PostToolUse (any tool), and every
     # unknown/missing event fall through to the active default.
     return _ICON_ACTIVE

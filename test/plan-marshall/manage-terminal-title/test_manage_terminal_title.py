@@ -10,7 +10,7 @@ exercise every composition code path documented in the module:
   ``'{icon} {body}'`` (no glyph) when no ``title_token`` is set.
 - The :data:`TITLE_TOKEN_GLYPHS` glyph map (⏳ / 🔒) is correct.
 - :func:`resolve_icon` maps each hook event to the canonical process icon
-  (➤ active / ? waiting / ✓ done) including the defensive default.
+  (➤ active / ? waiting / ✓ done / ⚙ busy) including the defensive default.
 - The terminal-state override: ``current_phase`` in ``complete`` / ``archived``
   forces ✅ regardless of event, ➤/? never appear, and the Completed body
   renders.
@@ -43,6 +43,7 @@ ICON_ACTIVE = "➤"  # ➤
 ICON_WAITING = "?"
 ICON_DONE = "✓"  # ✓
 ICON_TERMINAL = "✅"  # ✅
+ICON_BUSY = "⚙"  # ⚙
 
 GLYPH_LOCK_WAITING = "⏳"  # ⏳
 GLYPH_LOCK_OWNED = "\U0001f512"  # 🔒
@@ -110,8 +111,10 @@ class TestResolveIconWaiting:
         assert resolve_icon("PreToolUse", "AskUserQuestion") == ICON_WAITING
 
     def test_pre_tool_use_other_tool_is_active(self):
-        # PreToolUse with a non-AskUserQuestion tool falls through to active.
-        assert resolve_icon("PreToolUse", "Bash") == ICON_ACTIVE
+        # PreToolUse with a genuinely-other tool (neither AskUserQuestion nor
+        # Bash) falls through to active.
+        assert resolve_icon("PreToolUse", "Read") == ICON_ACTIVE
+        assert resolve_icon("PreToolUse", "Write") == ICON_ACTIVE
 
     def test_pre_tool_use_no_tool_is_active(self):
         assert resolve_icon("PreToolUse") == ICON_ACTIVE
@@ -126,6 +129,25 @@ class TestResolveIconDone:
     def test_done_icon_distinct_from_terminal(self):
         # The per-turn ✓ is deliberately distinct from the terminal ✅.
         assert ICON_DONE != ICON_TERMINAL
+
+
+class TestResolveIconBusy:
+    """PreToolUse + Bash resolves to the ⚙ busy icon (long-running tool)."""
+
+    def test_pre_tool_use_bash_is_busy(self):
+        assert resolve_icon("PreToolUse", "Bash") == ICON_BUSY
+
+    def test_busy_icon_distinct_from_every_other_palette_literal(self):
+        # ⚙ must be unambiguous against every other palette icon, including the
+        # lock-state glyphs surfaced inline in the same title.
+        assert ICON_BUSY not in {
+            ICON_ACTIVE,
+            ICON_WAITING,
+            ICON_DONE,
+            ICON_TERMINAL,
+            GLYPH_LOCK_WAITING,
+            GLYPH_LOCK_OWNED,
+        }
 
 
 # =============================================================================
@@ -236,6 +258,12 @@ class TestComposeIconResolution:
             {"current_phase": "2-refine"}, "PreToolUse", tool_name="AskUserQuestion"
         )
         assert result.startswith(f"{ICON_WAITING} ")
+
+    def test_pre_tool_use_bash_busy(self):
+        result = compose(
+            {"current_phase": "2-refine"}, "PreToolUse", tool_name="Bash"
+        )
+        assert result.startswith(f"{ICON_BUSY} ")
 
     def test_icon_override_supersedes_event(self):
         # Push-mode icon_override wins over the event-resolved icon for a
