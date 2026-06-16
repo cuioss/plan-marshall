@@ -4,7 +4,7 @@ Re-runs the seven-row decision matrix from
 `plan-marshall:manage-execution-manifest/standards/decision-rules.md` against
 every scanned plan and reports plans whose persisted `execution.toon` disagrees
 with the rule the inputs would fire today. Also surfaces the `name_drift` signal
-by resolving each phase-5 step ID to its `role:` frontmatter and intersecting
+by resolving each phase-5 step ID to its matrix `role:` in-code and intersecting
 the resolved roles against `{quality-gate, module-tests}`, mirroring the
 composer's Role-Field Intersection.
 
@@ -54,7 +54,7 @@ rows[N]{plan_id,verdict,severity,reason,expected_rule,actual_rule,change_type,sc
 | `recipe` | The plan-source / recipe-key surrogate. |
 | `affected` | `len(affected_files)`. |
 | `modified` | `len(modified_files)`. |
-| `name_drift` | Populated when a phase-5 step ID resolves to no `role:` frontmatter (unresolvable role) or the resolved roles have zero intersection with `{quality-gate, module-tests}` (see below). Empty otherwise. |
+| `name_drift` | Populated when a phase-5 step ID resolves to no matrix `role:` (unresolvable role) or the resolved roles have zero intersection with `{quality-gate, module-tests}` (see below). Empty otherwise. |
 
 ## Verdict columns
 
@@ -70,25 +70,40 @@ The script bins each plan into exactly one of four verdicts:
 ## The name_drift column
 
 The `name_drift` column is computed by role resolution, not literal-name
-matching. For each step ID in `phase_5.verification_steps`, the script strips any
-namespace prefix (`default:quality_check` → `quality_check`) and resolves the
-step's `role:` frontmatter from
-`marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/{step}.md`
-(e.g. `quality_check.md` → `role: quality-gate`, `build_verify.md` →
-`role: module-tests`). The resolved roles are intersected against
-`{quality-gate, module-tests}`, mirroring the composer's Role-Field Intersection
+matching. For each step ID in `phase_5.verification_steps`, the script resolves
+the step's matrix `role:` **in-code** — no standards `.md` file is read (the
+per-step `phase-5-execute/standards/{name}.md` role-files were deleted in favor
+of the single parameterized canonical-verify step). Resolution mirrors the
+composer's `_role_of`:
+
+- **Canonical-verify steps** of the shape `default:verify:{canonical}` (or the
+  bare `verify:{canonical}` form) derive the role from the trailing
+  `{canonical}` segment via the canonical→role table (e.g.
+  `default:verify:quality-gate` → `quality-gate`, `default:verify:module-tests`
+  / `default:verify:verify` → `module-tests`, `default:verify:coverage` →
+  `coverage`). The single source of this mapping is
+  `marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/canonical_verify.md`
+  § "derived role", copied in-code by both the composer and `scripts/audit.py`.
+- **Legacy bare default-step names** (`quality_check` → `quality-gate`,
+  `build_verify` → `module-tests`, `coverage_check` → `coverage`) resolve via an
+  in-code back-compat table for archived plans whose manifests predate the
+  parameterized form.
+
+The resolved roles are intersected against `{quality-gate, module-tests}`,
+mirroring the composer's Role-Field Intersection
 (`manage-execution-manifest/standards/decision-rules.md` § "Role-Field
 Intersection").
 
 Genuine drift is exactly one of:
 
-- **Unresolvable role** — a step ID with no standards file or no `role:`
-  frontmatter (the resolver degrades to "unresolved" rather than crashing when
-  the standards directory is absent).
+- **Unresolvable role** — a step ID whose `{canonical}` segment is unknown (not
+  in the canonical→role table) or whose bare name is not a recognized legacy
+  default-step name. The resolver degrades to "unresolved" rather than crashing.
 - **Zero intersection** — a non-empty `phase_5` whose resolved roles do not
   include `quality-gate` or `module-tests`.
 
-The step IDs `quality_check` and `build_verify` are CORRECT — they resolve to
+The step IDs `default:verify:quality-gate` and `default:verify:module-tests`
+(and the legacy `quality_check` / `build_verify`) are CORRECT — they resolve to
 roles `quality-gate` and `module-tests` and are NEVER flagged. There is no
 "renamed name" to alias back: a well-composed manifest using the canonical step
 IDs always intersects, regardless of the surface step-ID spelling, because the

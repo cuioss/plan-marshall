@@ -446,11 +446,17 @@ def _discover_all_verify_steps() -> list[dict]:
 
     all_steps: list[dict] = []
 
-    # Source 1: Built-in steps — read order from standards/{name}.md frontmatter
+    # Source 1: Built-in steps — read order from standards/{name}.md frontmatter.
+    # Every built-in verify step is now the parameterized canonical-verify form
+    # ``default:verify:{canonical}``; all such IDs share the single backing
+    # standards doc ``canonical_verify.md`` (frontmatter ``name: default:verify``,
+    # ``order: 10``). A non-canonical ``default:{name}`` ID (none ship today) falls
+    # back to ``standards/{name}.md`` by its bare segment.
     for step_name in BUILT_IN_VERIFY_STEPS:
         bare = step_name.split(':', 1)[1] if ':' in step_name else step_name
+        standards_file = 'canonical_verify' if bare.startswith('verify:') else bare
         standards_path = resolve_bundle_path(
-            BUNDLES_DIR, 'plan-marshall', f'skills/phase-5-execute/standards/{bare}.md'
+            BUNDLES_DIR, 'plan-marshall', f'skills/phase-5-execute/standards/{standards_file}.md'
         )
         all_steps.append(
             {
@@ -840,13 +846,13 @@ def cmd_skill_domains(args) -> dict:
 
         config['skill_domains'] = skill_domains
 
-        # Persist verify steps to plan.phase-5-execute.steps
+        # Persist verify steps to plan.phase-5-execute.verification_steps
         # Build flat list: built-in steps + extension steps
         from _config_defaults import BUILT_IN_VERIFY_STEPS
 
         plan_config = config.get('plan', {})
         execute_section = plan_config.get('phase-5-execute', {})
-        execute_section['steps'] = list(BUILT_IN_VERIFY_STEPS) + extension_verify_steps
+        execute_section['verification_steps'] = list(BUILT_IN_VERIFY_STEPS) + extension_verify_steps
         plan_config['phase-5-execute'] = execute_section
         config['plan'] = plan_config
 

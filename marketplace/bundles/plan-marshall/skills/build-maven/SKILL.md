@@ -61,6 +61,12 @@ Reads `pom.xml` `<modules>` declarations from the parent POM.
 2. Apply skip list from configuration (`build.maven.profiles.skip`)
 3. Map to canonical command names (`build.maven.profiles.map.canonical`)
 
+### Discover as the canonical source for integration-tests / e2e
+
+`discover` is the authoritative source for the `integration-tests` and `e2e` test targets consumed at **end-of-phase-5 whole-tree verification**. These canonicals are not separate plugins or hard-coded goals — they are Maven profiles that `discover` surfaces from each `pom.xml`'s declared profile ids (and, lazily, the inherited profiles `enrich_maven_module` resolves via `help:all-profiles`). The Profile Processing Pipeline above maps those discovered profiles to canonical command names (`build.maven.profiles.map.canonical`), so a project's `integration-tests` / `e2e` canonical resolves iff `discover` found the backing Maven profile. On a project that declares no such profile, the canonical does not resolve and the end-of-phase-5 step records `skipped` rather than failing.
+
+Whole-tree gates such as `integration-tests` and `e2e` live only in the `verification_steps` end-of-phase-5 sweep, never in the module-scoped per-deliverable build. The phase-5-execute canonical-verify step reads the canonical from its `default:verify:{canonical}` step ID and resolves it through `architecture resolve --command {canonical}`, which consults this discover-derived profile-to-canonical mapping. For the exact step-invocation shape — how the parameterized canonical-verify step invokes the resolved `integration-tests` target, honours its `execution_tier` / `bash_timeout_seconds`, and reports pass/skip/fail — see the central standard at [`../phase-5-execute/standards/canonical_verify.md`](../phase-5-execute/standards/canonical_verify.md) (do NOT inline-copy the invocation shape here).
+
 ## Canonical invocations
 
 The canonical argparse surface for `maven.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".

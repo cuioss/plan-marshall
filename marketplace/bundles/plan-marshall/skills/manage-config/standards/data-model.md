@@ -52,12 +52,15 @@ JSON structure and field definitions for project configuration.
     "phase-5-execute": {
       "commit_and_push": true,
       "max_iterations": 5,
-      "per_deliverable_build": "compile+scoped-test",
+      "per_deliverable_build": [
+        "default:verify:compile",
+        "default:verify:module-tests"
+      ],
       "per_task_budget_reserve_tokens": "50K",
-      "steps": [
-        "default:quality_check",
-        "default:build_verify",
-        "default:coverage_check"
+      "verification_steps": [
+        "default:verify:quality-gate",
+        "default:verify:module-tests",
+        "default:verify:coverage"
       ]
     },
     "phase-6-finalize": {
@@ -347,7 +350,7 @@ These fields live directly under `plan`, outside any phase block.
 
 ### phase-5-execute
 
-Execute phase with integrated verification pipeline. Contains the `commit_and_push` boolean, iteration limits, and a flat ordered `steps` list for verification.
+Execute phase with integrated verification pipeline. Contains the `commit_and_push` boolean, iteration limits, and a flat ordered `verification_steps` list for verification.
 
 ```json
 {
@@ -355,12 +358,15 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
     "phase-5-execute": {
       "commit_and_push": true,
       "max_iterations": 5,
-      "per_deliverable_build": "compile+scoped-test",
+      "per_deliverable_build": [
+        "default:verify:compile",
+        "default:verify:module-tests"
+      ],
       "per_task_budget_reserve_tokens": "50K",
-      "steps": [
-        "default:quality_check",
-        "default:build_verify",
-        "default:coverage_check"
+      "verification_steps": [
+        "default:verify:quality-gate",
+        "default:verify:module-tests",
+        "default:verify:coverage"
       ]
     }
   }
@@ -371,22 +377,42 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
 |-------|------|---------|--------|
 | `commit_and_push` | bool | true | true=commit per-deliverable + push at finalize; false=local-only run (commit-push/push/PR steps stripped by the manifest `commit_push_disabled` pre-filter) |
 | `max_iterations` | int | 5 | Maximum verify-execute-verify loops |
-| `per_deliverable_build` | string | "compile+scoped-test" | off, compile-only, compile+scoped-test, full — build depth at each per-deliverable chain-tail point (Step 10). `off` skips the focused build; `compile-only` type-checks the changed module; `compile+scoped-test` adds the module's scoped tests; `full` runs a whole-tree quality-gate per deliverable (legacy, opt-in). |
+| `per_deliverable_build` | list[string] | `["default:verify:compile","default:verify:module-tests"]` | A list of `default:verify:{canonical}` step IDs — the canonical-verify rungs phase-5-execute runs for the changed module at each per-deliverable chain-tail point (Step 10). The default runs `compile` + the module's scoped `module-tests`. Set to `[]` to disable the focused build (the whole-tree sweep at end-of-phase remains the only build). Each entry must be a `default:verify:{canonical}` ID; the retired enum strings (`off` / `compile-only` / `compile+scoped-test` / `full`) are rejected with a migration error. |
 | `per_task_budget_reserve_tokens` | string | "50K" | Per-task budget **reserve** — the minimum context-window margin that must remain free before the budget-bounded task loop starts another task. Governs the continue-vs-yield sentinel. The `_tokens` suffix names the unit; the human-friendly value form (`"50K"`) is parsed to an int by `sensible_number.parse_sensible_int` in the phase-5-execute consumer. The workflow's documented fallback when the key is absent is `50000`. |
+
+#### Verify step ID scheme
+
+Both `verification_steps` and `per_deliverable_build` reference verify steps by step ID. There is exactly one parameterized built-in verify step, encoded as `default:verify:{canonical}` — the trailing `{canonical}` segment (e.g. `quality-gate`, `module-tests`, `coverage`, `compile`, `integration-tests`, `e2e`) is the parameter phase-5-execute feeds to `architecture resolve --command {canonical}`. The legacy fixed-name IDs (`default:quality_check` / `default:build_verify` / `default:coverage_check`) are retired. The composer derives the decision-matrix role from the canonical segment (`quality-gate`→quality-gate, `verify`/`module-tests`→module-tests, `coverage`→coverage). See [`phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md) for the parameterized-step contract.
 
 #### Verification Steps
 
-The `steps` list contains an ordered sequence of verification step references. Two types:
+The `verification_steps` list contains an ordered sequence of verification step references. Two types:
 
-- **Built-in steps** (no colon): `quality_check` (run quality-gate), `build_verify` (run full test suite)
+- **Built-in steps** (`default:verify:{canonical}`): the parameterized canonical-verify step — e.g. `default:verify:quality-gate` (run quality-gate), `default:verify:module-tests` (run full test suite), `default:verify:coverage` (coverage threshold).
 - **Extension steps** (colon notation): Fully-qualified skill references from domain bundles (e.g., `my-bundle:my-verify-step`)
 
 Built-in steps are always first in the default list. Extension steps are appended by `skill-domains configure` from `provides_verify_steps()` in each domain's `extension.py`. See [extension-contract.md](../../extension-api/standards/extension-contract.md) for the complete contract.
 
 Managed via:
-- `plan phase-5-execute set-steps --steps quality_check,build_verify`
+- `plan phase-5-execute set-steps --steps default:verify:quality-gate,default:verify:module-tests`
 - `plan phase-5-execute add-step --step my-bundle:my-verify-step`
-- `plan phase-5-execute remove-step --step quality_check`
+- `plan phase-5-execute remove-step --step default:verify:quality-gate`
+- `plan phase-5-execute set --field per_deliverable_build --value default:verify:compile,default:verify:module-tests` (comma-separated list; empty value disables the focused build)
+- `plan phase-5-execute remove-field --field steps` (delete an arbitrary persisted key under the phase section — e.g. removing the legacy `steps` key; see [remove-field](#remove-field) below)
+
+#### remove-field
+
+`plan {phase} remove-field --field {key}` deletes an arbitrary scalar/list key from the *persisted* phase section of `marshal.json`. It is available on every phase sub-noun (`phase-1-init` … `phase-6-finalize`).
+
+- Operates on the on-disk section only — NOT the defaults-merged read view. Removing a key the defaults still seed re-exposes the default value on the next `get`; the verb removes an explicit override, it cannot suppress a default.
+- Removing a key with no default (e.g. the legacy `plan.phase-5-execute.steps` key left over from before `verification_steps` was introduced) deletes it cleanly.
+- Removing a key that is not present in the persisted section returns an error (`Field '{key}' not present in {phase}`) rather than a silent no-op, so callers get an explicit signal.
+
+Example — drop the retired `steps` key from a migrated config:
+
+```
+plan phase-5-execute remove-field --field steps
+```
 
 ### phase-6-finalize
 

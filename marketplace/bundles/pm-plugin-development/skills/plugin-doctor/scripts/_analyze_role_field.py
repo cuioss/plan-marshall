@@ -35,6 +35,18 @@ non-empty ``role:`` field. A finding is emitted when:
 - the frontmatter block is present but does not declare a ``role:`` key
 - the ``role:`` key is present but the value is empty / whitespace-only
 
+Canonical-verify exemption
+--------------------------
+The single parameterized canonical-verify step (``name: default:verify`` or
+any ``default:verify:`` step ID) is **exempt** from the static ``role:``
+requirement. That step backs every canonical command and derives its matrix
+role dynamically from the trailing canonical segment at compose time
+(``manage-execution-manifest._role_of``) — there is no static ``role:``
+frontmatter to require. See
+``marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/
+canonical_verify.md``. Legacy-style role-less step files (any other
+``name: default:…`` step) still produce a finding.
+
 Findings have the shape::
 
     {
@@ -152,6 +164,23 @@ def _is_step_file(frontmatter: dict[str, str]) -> bool:
     return True
 
 
+def _is_canonical_verify_step(frontmatter: dict[str, str]) -> bool:
+    """Return True iff the frontmatter identifies the parameterized canonical-verify step.
+
+    The canonical-verify step is the single parameterized built-in step that
+    backs every canonical command — its dispatch token is ``default:verify``
+    and its step IDs carry the ``default:verify:`` prefix
+    (``default:verify:quality-gate`` etc). It derives its matrix role
+    dynamically from the trailing canonical segment at compose time
+    (``manage-execution-manifest._role_of``) and therefore carries **no**
+    static ``role:`` frontmatter. It is exempt from the role-field
+    requirement; every other ``name: default:…`` step file still requires a
+    static ``role:`` value.
+    """
+    name = frontmatter.get('name', '')
+    return name == 'default:verify' or name.startswith('default:verify:')
+
+
 def _has_role_field(text: str) -> bool:
     """Return True iff the file is exempt from or satisfies the ``role:`` requirement.
 
@@ -166,8 +195,11 @@ def _has_role_field(text: str) -> bool:
       a helper doc.
     - Files whose frontmatter is present but does NOT identify the file as a
       phase-5 step file (per ``_is_step_file``) are also helper documents.
-    - Only files identified as step files are required to declare a non-empty
-      ``role:`` value.
+    - The parameterized canonical-verify step (``name: default:verify`` or a
+      ``default:verify:`` step ID) is exempt: it derives its role dynamically
+      at compose time and carries no static ``role:`` frontmatter.
+    - Only the remaining (legacy-style) files identified as step files are
+      required to declare a non-empty ``role:`` value.
     """
     frontmatter = _parse_frontmatter_keys(text)
     if frontmatter is None:
@@ -175,6 +207,10 @@ def _has_role_field(text: str) -> bool:
         return True
     if not _is_step_file(frontmatter):
         # Helper / narrative document — role: requirement does not apply.
+        return True
+    if _is_canonical_verify_step(frontmatter):
+        # Canonical-verify step derives its role dynamically — exempt from the
+        # static role: requirement.
         return True
     return bool(frontmatter.get('role'))
 

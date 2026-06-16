@@ -615,7 +615,7 @@ This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUS
 - `scope_estimate` — read from `manage-references get --field scope_estimate` (deliverables 2 / 3 wire this in earlier in the plan lifecycle).
 - `recipe_key` — OPTIONAL override only. The composer reads `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) on its own, so lesson- and recipe-derived plans select the `recipe` rule even when this flag is omitted. Pass `--recipe-key` only to force a recipe rule that status metadata does not already imply.
 - `affected_files_count` — `manage-references get --field affected_files`, count entries.
-- `phase-5-steps` candidate (`{p5_csv}`) — read via the bash call below, comma-join the returned `steps` list.
+- `phase-5-steps` candidate (`{p5_csv}`) — read via the bash call below, comma-join the returned `verification_steps` list (the phase-5 block stores its verification step list under `verification_steps`, not `steps`).
 - `phase-6-steps` candidate (`{p6_csv}`) — read via the bash call below, comma-join the returned `steps` list.
 - `commit_and_push` — read via the bash call below, from the `commit_and_push` field; omit `--commit-and-push` on `compose` when the field is absent (defaults to `true`).
 
@@ -638,10 +638,10 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --field steps
+  plan phase-5-execute get --field verification_steps
 ```
 
-Parse `value` as a list and comma-join to produce `{p5_csv}`.
+Parse `value` as a list and comma-join to produce `{p5_csv}`. (The phase-5 block stores its verification step list under `verification_steps`; phase-6 still uses `steps`.)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -701,7 +701,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The composer's `decision.log` entry (one per applied rule) provides the audit trail; the manifest itself stays lean and diffable. The seven-row matrix is documented in `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md`.
 
-**Per-task verification routing (data-driven)**: After the seven-row matrix runs, the composer performs an `execution_tier` routing pass over every `TASK-*.json` in the plan. For each `verification.commands` entry, the composer subprocesses `architecture resolve` to obtain the four-field augmented TOON (`bash_timeout_seconds`, `exceeds_bash_ceiling`, `execution_tier`, `hint`) and branches: `orchestrator` commands are mapped to their canonical phase-5 step ID (`quality-gate → default:quality_check`, `verify`/`module-tests → default:build_verify`, `coverage → default:coverage_check`), appended to `phase_5.verification_steps` (de-duped), and removed from the task's verification list; `per_task` commands stay per-task and the task's `verification.bash_timeout_seconds` field is set to the maximum measured timeout across surviving commands. Non-build / unresolvable executables pass through unchanged. The routing is data-driven — no hardcoded "long-running" command list — and the authoritative source is `architecture resolve` per the "Structured queries first" hard rule. See `manage-execution-manifest/standards/decision-rules.md § execution_tier Routing` for the full contract and `manage-architecture/standards/resolve-command.md` for the failure mode that motivated the routing.
+**Per-task verification routing (data-driven)**: After the seven-row matrix runs, the composer performs an `execution_tier` routing pass over every `TASK-*.json` in the plan. For each `verification.commands` entry, the composer subprocesses `architecture resolve` to obtain the four-field augmented TOON (`bash_timeout_seconds`, `exceeds_bash_ceiling`, `execution_tier`, `hint`) and branches: `orchestrator` commands are mapped to their canonical phase-5 step ID — emitted as **bare** names per the boundary-normalization contract (`quality-gate → quality_check`, `verify`/`module-tests → build_verify`, `coverage → coverage_check`) so no stray `default:`-prefixed ID is appended alongside the bare names the matrix already produced — appended to `phase_5.verification_steps` (de-duped), and removed from the task's verification list; `per_task` commands stay per-task and the task's `verification.bash_timeout_seconds` field is set to the maximum measured timeout across surviving commands. Non-build / unresolvable executables pass through unchanged. The routing is data-driven — no hardcoded "long-running" command list — and the authoritative source is `architecture resolve` per the "Structured queries first" hard rule. The composer derives each canonical-verify step's matrix role from the trailing canonical segment of its `default:verify:{canonical}` ID (rather than a per-canonical role-file), then applies the generic footprint pre-filter that drops any footprint-gated whole-tree canonical (`integration` / `e2e`) the live footprint does not exercise. See `manage-execution-manifest/standards/decision-rules.md § execution_tier Routing`, § "Role derivation for canonical-verify steps", and § "Generic footprint pre-filter" for the full contracts, and `manage-architecture/standards/resolve-command.md` for the failure mode that motivated the routing.
 
 ### Step 8: Q-Gate Verification Checks
 

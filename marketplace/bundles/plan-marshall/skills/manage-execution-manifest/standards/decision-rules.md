@@ -16,11 +16,23 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `build_map_globs` | derived from `marshal.json::build.map` — the union of every entry's `glob` across all domains | list[string] (default: empty when build_map absent) |
 | `whole_tree_invariant_trigger_globs` | the constant `_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS` in `manage-execution-manifest.py` — the two trigger categories (doctor / sweep-test) consumed by the `whole_tree_gate_inactive` additive arm; the bundle changed-set (`affected_files` ∪ outline/legacy fallbacks, via `_read_bundle_change_paths`) is matched against these globs | list[string] (fixed) |
 | `live_footprint` | derived on demand from the worktree (`{base}...HEAD` ∪ porcelain via `compute_plan_branch_diff`); empty before the worktree is materialized | list[string] (default: empty) |
-| `phase_5_candidates` | `marshal.json::plan.phase-5-execute.steps` | list[string] |
+| `phase_5_candidates` | `marshal.json::plan.phase-5-execute.verification_steps` (phase-aware list-field — see [Phase-aware step source](#phase-aware-step-source)) | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
+| `live_footprint` (canonical-verify gate) | derived on demand from the worktree via `_resolve_footprint` (empty before the worktree is materialized) | list[string] |
 | `affected_files` | `references.json::affected_files` | list[string] (read directly by the composer; empty by default in the current pipeline) |
 | `modified_files` (legacy back-compat) | `references.json::modified_files` | list[string] (read by Bundle source detection only, as a back-compat fallback for archived plans that still carry the key; see "Bundle source detection" below for the union semantics with `affected_files` and the solution-outline fallback) |
 | `outline_affected_files` | `solution_outline.md` deliverable `**Affected files:**` blocks (flattened across deliverables) | list[string] (read directly by the composer as the canonical pre-execute fallback when references-side fields are empty; see "Bundle source detection" below) |
+
+## Phase-aware step source
+
+The composer reads each phase's candidate step list from `marshal.json` via `_read_marshal_phase_steps(phase_key)`. The list-field name read under the phase block is **phase-aware** (resolved by `_marshal_steps_field`):
+
+| Phase key | marshal.json list-field |
+|-----------|-------------------------|
+| `phase-5-execute` | `verification_steps` |
+| `phase-6-finalize` (and any other phase) | `steps` |
+
+The phase-5 block stores its verification step list under `verification_steps` (renamed from the generic `steps` so the phase-5 list is self-describing and distinct from phase-6's finalize `steps`). For backward compatibility with project `marshal.json` files that have not yet migrated the phase-5 block, the reader falls back to the generic `steps` key when `verification_steps` is absent.
 
 ## Outputs
 
@@ -355,7 +367,7 @@ When no violation is detected (any carve-out holds, or the ordering is correct),
 
 **Routing predicate** (per command):
 
-- **`execution_tier == 'orchestrator'`**: the command's adaptive Bash timeout has crossed the 600s host ceiling. The composer maps the build verb to the matching phase-5 step ID (`quality-gate → default:quality_check`, `verify` / `module-tests → default:build_verify`, `coverage → default:coverage_check`), appends it (de-duped) to `phase_5.verification_steps`, and drops the command from the task's `verification.commands`. A task whose entire `verification.commands` list routes to orchestrator ends up with an empty list — that is the correct "all orchestrator" signal.
+- **`execution_tier == 'orchestrator'`**: the command's adaptive Bash timeout has crossed the 600s host ceiling. The composer maps the build verb to the matching boundary-normalized canonical-verify step ID (`quality-gate → verify:quality-gate`, `verify` / `module-tests → verify:module-tests`, `coverage → verify:coverage`), appends it (de-duped) to `phase_5.verification_steps`, and drops the command from the task's `verification.commands`. A task whose entire `verification.commands` list routes to orchestrator ends up with an empty list — that is the correct "all orchestrator" signal.
 - **`execution_tier == 'per_task'`**: the command fits inside the Bash ceiling. The composer writes `bash_timeout_seconds` into the task's `verification` dict alongside `commands` so the dispatched sub-agent reads the numeric timeout directly. When a task has multiple `per_task` commands, the maximum `bash_timeout_seconds` wins (the sub-agent honours the most-demanding command).
 - **No `execution_tier` field** (non-build executable — raw shell, `grep`, `manage-*` notation): the command stays in the task and no `bash_timeout_seconds` annotation is added. Today's behaviour is preserved.
 
@@ -373,11 +385,39 @@ When no violation is detected (any carve-out holds, or the ordering is correct),
 
 Rows 2, 3, 5, and 6 intersect the `phase_5_candidates` list against a set of canonical roles (`{quality-gate}`, `{module-tests}`, `{quality-gate, module-tests}`) rather than against literal step IDs. The mechanism is structural: each phase-5 step standards file under `marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/` declares its role in YAML frontmatter (e.g., `role: quality-gate` on `quality_check.md`, `role: module-tests` on `build_verify.md`, `role: coverage` on `coverage_check.md`). At compose time the composer resolves each candidate step ID to its source file and reads the `role:` value; intersection is `candidate_role ∈ {target_role, ...}` rather than `candidate_id ∈ {literal_id, ...}`.
 
-This decouples canonical names from intersection logic. The composer never compares candidate step IDs directly against literal strings like `'quality-gate'` — those names are role values, not step IDs. Step IDs are arbitrary handles (e.g., `default:quality_check`, `default:build_verify`) whose intersection-meaningful attribute is the role declared in their source file.
+This decouples canonical names from intersection logic. The composer never compares candidate step IDs directly against literal strings like `'quality-gate'` — those names are role values, not step IDs. Step IDs are arbitrary handles (e.g., `default:verify:quality-gate`, `default:verify:module-tests`) whose intersection-meaningful attribute is the role derived from their canonical segment.
 
 **External steps** (`project:` and `bundle:skill` prefixes) have no role file and resolve to `role = None`; they are therefore never selected by any role-based intersection. This is the correct behavior: Rows 2/3/5/6 select built-in verify steps only.
 
 **Drift enforcement**: A `MISSING_ROLE_FIELD` analyzer in `pm-plugin-development:plugin-doctor` flags any phase-5 step standards file missing the `role:` frontmatter field at edit time, preventing future name-drift defects.
+
+### Role derivation for canonical-verify steps
+
+The single parameterized canonical-verify step (`default:verify:{canonical}`; see [`phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md)) has **no per-canonical role-file**. Its matrix `role:` is derived by `_role_of` from the trailing `{canonical}` segment via the `_CANONICAL_TO_ROLE` table — the composer's copy of the canonical→role mapping owned by `canonical_verify.md`:
+
+| canonical segment | derived `role:` |
+|-------------------|-----------------|
+| `quality-gate` | `quality-gate` |
+| `verify` / `module-tests` | `module-tests` |
+| `coverage` | `coverage` |
+| `integration-tests` | `integration` |
+| `e2e` | `e2e` |
+
+A `default:verify:{canonical}` (or its bare `verify:{canonical}`) ID is recognized before the role-file read path; an unrecognized canonical resolves to `role = None` (and is therefore never role-selected), preserving the "missing data → step is never role-selected" convention. This is the generalization that lets the role intersection (Rows 2/3/5/6) and the docs-only heuristic operate on the parameterized canonical-verify vocabulary without a per-canonical role-file for each command.
+
+## Generic footprint pre-filter (`canonical_verify_inactive`)
+
+**Type**: Composition-time phase-5 pre-filter. Runs *after* the seven-row matrix and `execution_tier` routing have produced the final `phase_5.verification_steps` list — so it sees every canonical-verify step that will be persisted, including any appended by orchestrator-tier routing.
+
+**Condition**: a `default:verify:{canonical}` step whose derived role is a **footprint-gated whole-tree role** (`integration` / `e2e`) is dropped when the live footprint is **non-empty** AND carries **no path** of that role. The gate is canonical-agnostic — it is driven entirely by the `_CANONICAL_TO_ROLE` derivation plus the `_FOOTPRINT_GATED_CANONICAL_ROLES` membership table, with no per-canonical branch in the code path. The core roles (`quality-gate` / `module-tests` / `coverage`) are NEVER footprint-gated; they always run when present.
+
+**Safety against compose-time emptiness**: during early compose (phase-4-plan, before the worktree is materialized) the live footprint is empty, so the pre-filter is a **no-op** and every canonical survives. The gate only fires against a non-empty footprint that genuinely lacks the gating role's paths — a project with no integration/e2e sources never schedules those whole-tree gates, while every code-shaped plan keeps its core verification.
+
+**Decision log line** (emitted only when at least one step is dropped):
+
+```
+(plan-marshall:manage-execution-manifest:compose) canonical_verify_inactive — dropped {steps} from phase_5.verification_steps (no matching footprint role)
+```
 
 ## The Seven-Row Matrix
 

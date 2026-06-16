@@ -3,7 +3,7 @@
 
 Guards the single-resolver coverage-check contract: cmd_coverage must invoke
 pytest with native --cov-fail-under and --cov-report=xml flags so the
-phase-5-execute default:coverage_check verify step requires only one
+phase-5-execute default:verify:coverage verify step requires only one
 resolver call (architecture resolve --command coverage) — threshold
 enforcement happens inside the build tool, not in a follow-up
 build-pyproject:pyproject_build coverage-report dispatch.

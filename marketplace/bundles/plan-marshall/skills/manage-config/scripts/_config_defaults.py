@@ -223,35 +223,81 @@ DEFAULT_PLAN_PLAN = {
     'effort': 'level-3',
 }
 
-# Built-in verify step names (dispatch table in phase-5-execute SKILL.md)
-# Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
-BUILT_IN_VERIFY_STEPS = ['default:quality_check', 'default:build_verify', 'default:coverage_check']
+# Built-in verify step names (dispatch table in phase-5-execute SKILL.md).
+# Each step is a parameterized canonical-verify ID of the shape
+# ``default:verify:{canonical}`` — the trailing canonical segment is the
+# parameter phase-5-execute feeds to ``architecture resolve --command
+# {canonical}``, and the composer derives the matrix role from it via
+# ``manage-execution-manifest._CANONICAL_TO_ROLE``. There is one parameterized
+# step backing every canonical; the legacy fixed-name IDs
+# (``default:quality_check`` / ``default:build_verify`` / ``default:coverage_check``)
+# are gone. See ``phase-5-execute/standards/canonical_verify.md``.
+BUILT_IN_VERIFY_STEPS = [
+    'default:verify:quality-gate',
+    'default:verify:module-tests',
+    'default:verify:coverage',
+]
 
 # Human-readable descriptions for built-in verify steps
 BUILT_IN_VERIFY_STEP_DESCRIPTIONS = {
-    'default:quality_check': 'Run quality-gate build command',
-    'default:build_verify': 'Run full test suite',
-    'default:coverage_check': 'Run coverage build and verify threshold',
+    'default:verify:quality-gate': 'Run quality-gate build command',
+    'default:verify:module-tests': 'Run full test suite',
+    'default:verify:coverage': 'Run coverage build and verify threshold',
 }
 
-# Valid values for phase-5-execute.per_deliverable_build — enum controlling the
-# build depth phase-5-execute runs at each per-deliverable chain-tail point.
-#   - 'off':                 skip the per-deliverable build entirely (end-of-phase sweep is the only build)
-#   - 'compile-only':        resolve the changed module and run compile only
-#   - 'compile+scoped-test': compile + scoped module-tests for the changed module (default)
-#   - 'full':                whole-tree quality-gate per deliverable (legacy behavior; opt-in only)
-VALID_PER_DELIVERABLE_BUILD = ('off', 'compile-only', 'compile+scoped-test', 'full')
+# Canonical-verify step prefix. A ``per_deliverable_build`` list entry MUST be a
+# ``default:verify:{canonical}`` ID; the prefix-strict validator rejects any
+# other shape (including the retired ``per_deliverable_build`` enum strings).
+_VERIFY_STEP_PREFIX = 'default:verify:'
+
+# The retired ``per_deliverable_build`` enum vocabulary. These strings are no
+# longer accepted — ``per_deliverable_build`` is now a LIST of
+# ``default:verify:{canonical}`` step IDs. The validator names these explicitly
+# so a config carrying an old enum value gets an actionable migration error
+# rather than a generic "not a list" rejection.
+RETIRED_PER_DELIVERABLE_BUILD_ENUM = ('off', 'compile-only', 'compile+scoped-test', 'full')
 
 
-def validate_per_deliverable_build(value: str) -> None:
-    """Validate that `per_deliverable_build` is one of the allowed enum values.
+def validate_per_deliverable_build(value: object) -> None:
+    """Validate that ``per_deliverable_build`` is a list of canonical-verify IDs.
+
+    ``per_deliverable_build`` is a LIST of ``default:verify:{canonical}`` step
+    IDs (e.g. ``['default:verify:compile', 'default:verify:module-tests']``)
+    selecting which canonical-verify rungs phase-5-execute runs at each
+    per-deliverable chain-tail point. The empty list is permitted (it disables
+    the per-deliverable build, matching the retired ``off`` enum value).
 
     Raises:
-        ValueError: If ``value`` is not in :data:`VALID_PER_DELIVERABLE_BUILD`.
+        ValueError: If ``value`` is not a list, if any entry is not a
+            ``default:verify:{canonical}`` string, or if a retired enum string
+            (``off`` / ``compile-only`` / ``compile+scoped-test`` / ``full``)
+            is supplied.
     """
-    if value not in VALID_PER_DELIVERABLE_BUILD:
+    if isinstance(value, str) and value in RETIRED_PER_DELIVERABLE_BUILD_ENUM:
         raise ValueError(
-            f"Invalid per_deliverable_build '{value}'. Allowed: {list(VALID_PER_DELIVERABLE_BUILD)}"
+            f"per_deliverable_build no longer accepts the enum value '{value}'. "
+            f"It is now a list of '{_VERIFY_STEP_PREFIX}{{canonical}}' step IDs "
+            "(e.g. ['default:verify:compile','default:verify:module-tests']; "
+            "use [] to disable the per-deliverable build)."
+        )
+    if not isinstance(value, list):
+        raise ValueError(
+            f"Invalid per_deliverable_build {value!r}: expected a list of "
+            f"'{_VERIFY_STEP_PREFIX}{{canonical}}' step IDs."
+        )
+    retired = [e for e in value if isinstance(e, str) and e in RETIRED_PER_DELIVERABLE_BUILD_ENUM]
+    if retired:
+        raise ValueError(
+            f"per_deliverable_build no longer accepts the enum value '{retired[0]}'. "
+            f"It is now a list of '{_VERIFY_STEP_PREFIX}{{canonical}}' step IDs "
+            "(e.g. ['default:verify:compile','default:verify:module-tests']; "
+            "use [] to disable the per-deliverable build)."
+        )
+    invalid = [e for e in value if not (isinstance(e, str) and e.startswith(_VERIFY_STEP_PREFIX))]
+    if invalid:
+        raise ValueError(
+            f"Invalid per_deliverable_build entries {invalid!r}: every entry must be a "
+            f"'{_VERIFY_STEP_PREFIX}{{canonical}}' step ID."
         )
 
 
@@ -263,12 +309,16 @@ DEFAULT_PLAN_EXECUTE = {
     # manifest commit_push_disabled pre-filter.
     'commit_and_push': True,
     'max_iterations': 5,
-    # Per-deliverable build depth gating phase-5-execute's chain-tail focused
-    # build (Step 10). Enum: see VALID_PER_DELIVERABLE_BUILD /
-    # validate_per_deliverable_build. Default 'compile+scoped-test' resolves the
-    # changed module and runs compile + scoped module-tests, keeping mid-execute
-    # builds focused; the whole-tree quality sweep stays once at end-of-phase.
-    'per_deliverable_build': 'compile+scoped-test',
+    # Per-deliverable build gating phase-5-execute's chain-tail focused build
+    # (Step 10). A LIST of 'default:verify:{canonical}' step IDs (validated by
+    # validate_per_deliverable_build); each entry is a canonical-verify rung the
+    # chain-tail runs for the changed module. The default
+    # ['default:verify:compile','default:verify:module-tests'] preserves the
+    # former 'compile+scoped-test' behaviour — compile + scoped module-tests for
+    # the changed module — keeping mid-execute builds focused while the
+    # whole-tree quality sweep stays once at end-of-phase. Use [] to disable the
+    # per-deliverable build (the former 'off' enum value).
+    'per_deliverable_build': ['default:verify:compile', 'default:verify:module-tests'],
     # Per-task budget reserve gating the phase-5-execute continue-vs-yield
     # sentinel. The `_tokens` suffix names the unit (tokens); the value is the
     # human-friendly magnitude string "50K", parsed back to the int 50000 by the
@@ -278,7 +328,7 @@ DEFAULT_PLAN_EXECUTE = {
     # the workflow's documented fallback when the knob is absent is 50000.
     # Registering it here makes the reserve operator-visible in marshal.json.
     'per_task_budget_reserve_tokens': '50K',
-    'steps': list(BUILT_IN_VERIFY_STEPS),
+    'verification_steps': list(BUILT_IN_VERIFY_STEPS),
     # Per-phase effort default (seeded at init; balanced-preset baseline). The
     # phase-5-execute role group has the `default` (per-task implementation) and
     # `verification-feedback` (build-runner triage) subkeys, so the on-disk shape
@@ -459,7 +509,7 @@ def get_default_config() -> dict:
     - Module facts come from per-module derived.json/enriched.json under
       .plan/architecture/<module>/, with the module set canonicalised by
       .plan/architecture/_project.json["modules"] (see plan-marshall:manage-architecture)
-    - Extension verify steps in phase-5-execute.steps are appended by skill-domains configure
+    - Extension verify steps in phase-5-execute.verification_steps are appended by skill-domains configure
     """
     import copy
 

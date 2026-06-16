@@ -63,7 +63,7 @@ class Extension(ExtensionBase):
 
 - Plan has completed all implementation tasks
 - Steps registered in `marshal.json` under `plan.phase-5-execute.steps`
-- Built-in steps (`default:quality_check`, `default:build_verify`) execute first
+- Built-in steps (`default:verify:quality-gate`, `default:verify:module-tests`) execute first
 
 ### Post-Conditions
 
@@ -109,8 +109,8 @@ Extension steps are appended to the flat `plan.phase-5-execute.steps` list after
   "plan": {
     "phase-5-execute": {
       "steps": [
-        "default:quality_check",
-        "default:build_verify",
+        "default:verify:quality-gate",
+        "default:verify:module-tests",
         "my-bundle:my-verify-step"
       ]
     }
@@ -135,7 +135,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 # Replace entire steps list
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-steps --steps default:quality_check,default:build_verify
+  plan phase-5-execute set-steps --steps default:verify:quality-gate,default:verify:module-tests
 
 # List all available verify steps (built-in + extensions)
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
@@ -143,4 +143,4 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-v
 
 ## Current Implementations
 
-No bundles currently provide verification steps. Coverage verification is handled by the built-in `default:coverage_check` step, not by an extension.
+No bundles currently provide verification steps. Coverage verification is handled by the built-in `default:verify:coverage` step, not by an extension.

@@ -199,8 +199,8 @@ class TestExecutorDispatchScenarios:
 
         Row 4 intersects candidates by ``role: module-tests`` (see
         manage-execution-manifest decision-rules.md § Role-Field Intersection).
-        Only ``build_verify`` declares that role; ``quality_check`` and
-        ``coverage_check`` are dropped.
+        Only ``verify:module-tests`` derives that role; ``verify:quality-gate``
+        and ``verify:coverage`` are dropped.
         """
         plan_context.plan_dir_for('p5-tests-only')
         cmd_compose(
@@ -209,16 +209,16 @@ class TestExecutorDispatchScenarios:
                 change_type='verification',
                 scope_estimate='single_module',
                 affected_files_count=4,
-                phase_5_steps='quality_check,build_verify,coverage_check',
+                phase_5_steps='verify:quality-gate,verify:module-tests,verify:coverage',
             )
         )
         manifest = read_manifest('p5-tests-only')
         assert manifest is not None
-        assert manifest['phase_5']['verification_steps'] == ['build_verify']
+        assert manifest['phase_5']['verification_steps'] == ['verify:module-tests']
 
         dispatched = _derive_executor_dispatch(manifest)
-        assert dispatched == ['build_verify', 'quality-gate'], (
-            f'tests-only manifest must dispatch [build_verify, quality-gate] '
+        assert dispatched == ['verify:module-tests', 'quality-gate'], (
+            f'tests-only manifest must dispatch [verify:module-tests, quality-gate] '
             f'(per-task + Step 11b sweep), got {dispatched}'
         )
         # Exactly ONE quality-gate sweep — Step 11b never doubles up.

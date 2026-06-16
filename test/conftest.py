@@ -994,7 +994,7 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
         'phase-5-execute': {
             'commit_and_push': True,
             'max_iterations': 5,
-            'steps': ['quality_check', 'build_verify'],
+            'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
         },
         'phase-6-finalize': {
             'max_iterations': 3,

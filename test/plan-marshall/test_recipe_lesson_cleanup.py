@@ -526,7 +526,7 @@ class TestRecipePathEndToEnd:
         defensively drops the legacy ``ci-wait`` step ID while retaining
         the review gates.
 
-        Uses ``build_verify`` in the phase-5 candidate set so its declared
+        Uses ``verify:module-tests`` in the phase-5 candidate set so its derived
         ``role: module-tests`` keeps Row 3 (docs_only) from firing first
         — see manage-execution-manifest decision-rules.md § Role-Field
         Intersection.
@@ -539,7 +539,7 @@ class TestRecipePathEndToEnd:
             scope_estimate='surgical',
             recipe_key=None,
             affected_files_count=2,
-            phase_5_steps='quality_check,build_verify',
+            phase_5_steps='verify:quality-gate,verify:module-tests',
             phase_6_steps=','.join(candidates),
             commit_and_push=None,
         )

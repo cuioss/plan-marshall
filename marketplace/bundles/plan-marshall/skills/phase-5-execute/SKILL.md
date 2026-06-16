@@ -1,6 +1,6 @@
 ---
 name: phase-5-execute
-description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially.
+description: Execute phase skill for plan management. Manifest-driven task runner that executes tasks from TASK-*.json files sequentially and runs the per-deliverable plus end-of-phase verification sweep from manifest.phase_5.verification_steps.
 user-invocable: false
 mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
@@ -31,6 +31,7 @@ Skill: plan-marshall:dev-agent-behavior-rules
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
 - Never target file paths outside the active git worktree.
+- Never stop to ask the user "should I run the integration/e2e tests?" — every entry in `manifest.phase_5.verification_steps` runs automatically. The manifest is the single authority for which verification steps fire; the composer already footprint-gated and resolvability-skipped each entry at compose time, so there is no per-run human decision about whether to run a given canonical verify step.
 
 **Constraints:**
 - Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
@@ -127,7 +128,7 @@ Contains: the *scope × thoroughness* coverage contract each task body honors at
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-5-execute`** (resolves through `phase-5-execute.default`). The dispatch unit is **budget-bounded** — explicitly NEITHER per-task NOR per-deliverable. The orchestrator dispatches phase-5-execute as ONE `execution-context` envelope that greedily drives the task loop over **as many tasks as the per-task budget reserve permits — which bundles several small deliverables into one envelope and may span a single large deliverable across several envelopes**. Per task the envelope LOADS the `execute-task` skill in-context as a `Skill:` (via `resolve-execute-task-skill`) with the task-declared skill list as runtime input — leaf-legal in-context skill loading per [`dev-agent-behavior-rules`](../dev-agent-behavior-rules/SKILL.md), explicitly NOT a per-task `Task:` subagent dispatch. `per_task_budget_reserve_tokens` is the RESERVE that must remain free before the loop starts another task, not an envelope ceiling, so a single envelope grows well past that reserve. The envelope yields to the orchestrator — which then re-dispatches a fresh envelope to resume the loop — only at one of three TASK-boundary re-dispatch points: (a) the token-budget sentinel; (b) `triage_required` (Step 11/11b verify / quality-gate failure); (c) `baseline_drift`. It is NOT one envelope per task and NOT one envelope per deliverable. Deliverable boundaries govern the COMMIT + FOCUSED-BUILD points only — the Step 10 Per-Deliverable Chain-Tail (an unconditional per-deliverable commit, plus a focused per-module build) is a **sub-event that fires within OR across envelopes, decoupled from where the budget sentinel yields, and is NOT a dispatch boundary**; because the sentinel yields at TASK boundaries (between `finalize-step` and the next `manage-tasks next`), a mid-deliverable yield is normal and lossless (`finalize-step` persists in-flight task state, and the Step 10 chain-tail commit still fires whenever the run reaches it, regardless of which envelope gets there). This per-task body runs as a **leaf** inside the `execution-context` envelope — it cannot itself issue a `Task:` dispatch (see [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md), the canonical leaf/dispatch-topology contract). The built-in verification steps (`default:quality_check`, `default:build_verify`, `default:coverage_check`) stay inline as pure build invocations — no LLM judgement, no envelope. Step 9 independent change verification stays inline (three deterministic re-checks: git-diff empty-test, obfuscation-pattern grep, exit-code compare). Steps 11 and 11b detect the test-failure / lint-issue, persist each finding to the per-plan Q-Gate store (`manage-findings qgate add` — a script call, legal inside a leaf), then **return a `triage_required` signal to the main-context orchestrator**; the orchestrator owns the **`verification-feedback`** dispatch (`--phase phase-5-execute --role verification-feedback`, `producer=build-runner`) and consumes its return to drive the fix-task / suppress / accept branch. The leaf never dispatches `verification-feedback` itself. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2, § 4 (Heuristic 3 — per-iteration `Task:` dispatch only when models differ OR iterations parallelise; the budget-bounded task loop is the iterate-in-context application), and § 5.1 (script over dispatch; phase-scoped resolution + producer-mode bundling).
+This phase dispatches under one role key: **`phase-5-execute`** (resolves through `phase-5-execute.default`). The dispatch unit is **budget-bounded** — explicitly NEITHER per-task NOR per-deliverable. The orchestrator dispatches phase-5-execute as ONE `execution-context` envelope that greedily drives the task loop over **as many tasks as the per-task budget reserve permits — which bundles several small deliverables into one envelope and may span a single large deliverable across several envelopes**. Per task the envelope LOADS the `execute-task` skill in-context as a `Skill:` (via `resolve-execute-task-skill`) with the task-declared skill list as runtime input — leaf-legal in-context skill loading per [`dev-agent-behavior-rules`](../dev-agent-behavior-rules/SKILL.md), explicitly NOT a per-task `Task:` subagent dispatch. `per_task_budget_reserve_tokens` is the RESERVE that must remain free before the loop starts another task, not an envelope ceiling, so a single envelope grows well past that reserve. The envelope yields to the orchestrator — which then re-dispatches a fresh envelope to resume the loop — only at one of three TASK-boundary re-dispatch points: (a) the token-budget sentinel; (b) `triage_required` (Step 11/11b verify / quality-gate failure); (c) `baseline_drift`. It is NOT one envelope per task and NOT one envelope per deliverable. Deliverable boundaries govern the COMMIT + FOCUSED-BUILD points only — the Step 10 Per-Deliverable Chain-Tail (an unconditional per-deliverable commit, plus a focused per-module build) is a **sub-event that fires within OR across envelopes, decoupled from where the budget sentinel yields, and is NOT a dispatch boundary**; because the sentinel yields at TASK boundaries (between `finalize-step` and the next `manage-tasks next`), a mid-deliverable yield is normal and lossless (`finalize-step` persists in-flight task state, and the Step 10 chain-tail commit still fires whenever the run reaches it, regardless of which envelope gets there). This per-task body runs as a **leaf** inside the `execution-context` envelope — it cannot itself issue a `Task:` dispatch (see [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md), the canonical leaf/dispatch-topology contract). The built-in verification steps (the single parameterized `default:verify:{canonical}` step) stay inline as pure build invocations — no LLM judgement, no envelope. Step 9 independent change verification stays inline (three deterministic re-checks: git-diff empty-test, obfuscation-pattern grep, exit-code compare). Steps 11 and 11b detect the test-failure / lint-issue, persist each finding to the per-plan Q-Gate store (`manage-findings qgate add` — a script call, legal inside a leaf), then **return a `triage_required` signal to the main-context orchestrator**; the orchestrator owns the **`verification-feedback`** dispatch (`--phase phase-5-execute --role verification-feedback`, `producer=build-runner`) and consumes its return to drive the fix-task / suppress / accept branch. The leaf never dispatches `verification-feedback` itself. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2, § 4 (Heuristic 3 — per-iteration `Task:` dispatch only when models differ OR iterations parallelise; the budget-bounded task loop is the iterate-in-context application), and § 5.1 (script over dispatch; phase-scoped resolution + producer-mode bundling).
 
 ## Execution Loop
 
@@ -171,7 +172,7 @@ Extract `phase_5.early_terminate` (bool) and `phase_5.verification_steps` (list[
 
 The verification steps to execute at end of phase come from `phase_5.verification_steps` — this **replaces** today's lookup of `marshal.json`'s `phase-5-execute.steps`. The list is consumed by Step 11b (Final Quality Sweep) and the verification dispatch loop. See **Verification Step Types** below for dispatch rules.
 
-The step IDs in the manifest are **bare** (e.g., `quality-gate`, `module-tests`, `coverage`) — translate them to the `default:` prefixed names used by the Built-in Step Dispatch Table by prepending `default:` for built-in steps. Steps that already contain `:` are passed through verbatim (project/skill steps).
+The step IDs in the manifest are **bare** — `cmd_compose`'s boundary normalization strips only the leading `default:` prefix, so a built-in canonical-verify step appears as `verify:{canonical}` (e.g., `verify:quality-gate`, `verify:module-tests`, `verify:coverage`). Translate them to the `default:` prefixed names used by the Built-in Step Dispatch Table by prepending `default:` for built-in steps — e.g., `verify:quality-gate` → `default:verify:quality-gate`. Steps that already contain `:` beyond the `verify:` segment for project/skill steps (a `project:` or `bundle:skill` prefix) are passed through verbatim.
 
 ---
 
@@ -181,7 +182,7 @@ The `phase_5.verification_steps` list from the manifest contains verification st
 
 | Type | Notation | Resolution |
 |------|----------|------------|
-| **built-in** | `default:` prefix (e.g., `default:quality_check`) | Execute built-in verification command (see dispatch table) |
+| **built-in** | `default:` prefix (e.g., `default:verify:quality-gate`) | Execute built-in verification command (see dispatch table) |
 | **project** | `project:` prefix (e.g., `project:verify-step-lint`) | `Skill: {notation}` with interface contract |
 | **skill** | fully-qualified `bundle:skill` (e.g., `my-bundle:my-verify-step`) | `Skill: {notation}` with interface contract |
 
@@ -196,11 +197,9 @@ Each verify step declares an `order: <int>` value in its authoritative source �
 
 | Step Name | Action | Description |
 |-----------|--------|-------------|
-| `default:quality_check` | Run quality-gate build command | Code quality checks |
-| `default:build_verify` | Run full test suite | Build verification |
-| `default:coverage_check` | Run resolved coverage build; threshold enforcement is native to the build tool | Coverage threshold verification |
+| `default:verify:{canonical}` | Resolve the trailing `{canonical}` via `architecture resolve --command {canonical}` and run the resolved executable | Single parameterized verify step backing every canonical (`quality-gate`, `module-tests`/`verify`, `coverage`, `integration-tests`, `e2e`, …); the canonical is a parameter, not a hardcoded branch — see `standards/canonical_verify.md` |
 
-**`coverage_check` dispatch**: Resolve via `architecture resolve --command coverage` and run the resolved executable. Threshold enforcement is native to the resolved command — pytest receives `--cov-fail-under={threshold}` from `build.py::cmd_coverage`, and JaCoCo (Maven/Gradle) enforces the threshold via build-tool configuration. No secondary parse-and-check call is required.
+**Dispatch detection**: a step ID starting with the `default:verify:` prefix routes to the single parameterized canonical-verify step. The SKILL strips the `default:` prefix and feeds the trailing `{canonical}` segment to `architecture resolve --command {canonical}`. The full step body — canonical resolution, `execution_tier`/`bash_timeout_seconds` handling, the unresolved-canonical skip, and the module-scoped vs whole-tree invocation contract — lives in `standards/canonical_verify.md`; do NOT restate it here. Threshold enforcement for `coverage` is native to the resolved build command (pytest `--cov-fail-under`, JaCoCo build-tool config) — no secondary parse-and-check call is required.
 
 ### Interface Contract for External Steps
 
@@ -589,7 +588,7 @@ The orchestrator's `phase-boundary` call in `workflow/execution.md` (recorded at
 
 ### Step 8c: Record Per-Step Execution Outcome to the Manifest
 
-**Applies to**: every Phase 5 verification step the envelope dispatches — the per-task `default:quality_check` / `default:build_verify` / `default:coverage_check` built-in steps, the Step 11b final quality sweep, and each external (`project:` / `bundle:skill`) verification step. This is the consuming side of the `record-step` contract published by `manage-execution-manifest` (see that skill's Producers table — `phase-5-execute` is named as a `record-step` producer).
+**Applies to**: every Phase 5 verification step the envelope dispatches — the per-task `default:verify:{canonical}` built-in steps, the Step 11b final quality sweep, and each external (`project:` / `bundle:skill`) verification step. This is the consuming side of the `record-step` contract published by `manage-execution-manifest` (see that skill's Producers table — `phase-5-execute` is named as a `record-step` producer).
 
 After a verification step settles (its build/check completes with a known outcome), append one execution-log row to the manifest so per-step execution metadata is loggable per-plan deterministically, rather than relying on the fragile orchestrator `<usage>`-forwarding boundary call alone:
 
@@ -601,8 +600,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 See `manage-execution-manifest` Canonical invocations → `record-step` for the authoritative argument surface. Contract:
 
-- `--phase` is always `5-execute` in this phase; `--step-id` is the verification step ID (e.g. `quality_check`, `build_verify`, `coverage_check`, or an external step's notation).
-- `--outcome` is `executed` when the step ran, `skipped` when a skip rule fired (e.g. the Step 11b skip when `verification_steps` is empty, or the Step 10b documentation-only / `off` skip), and `error` when the step's build/check exited non-zero (recorded BEFORE the Step 11/11b `triage_required` return so the failed attempt is on the execution log).
+- `--phase` is always `5-execute` in this phase; `--step-id` is the verification step ID (e.g. `verify:quality-gate`, `verify:module-tests`, `verify:coverage`, or an external step's notation).
+- `--outcome` is `executed` when the step ran, `skipped` when a skip rule fired (e.g. the Step 11b skip when `verification_steps` is empty, or the Step 10b documentation-only / empty-list skip), and `error` when the step's build/check exited non-zero (recorded BEFORE the Step 11/11b `triage_required` return so the failed attempt is on the execution log).
 - The token-attribution triple (`--total-tokens` / `--tool-uses` / `--duration-ms`) is the per-step cost; supply the integers parsed from the dispatched agent's `<usage>` block when one is available, and `0` for inline build invocations that carry no `<usage>` tag (a skipped step legitimately reports zeros). These are the SAME integers forwarded to the Step 8b `accumulate-agent-usage` call — Step 8b sums them into the per-phase accumulator that fills the `total_tokens` column, while Step 8c records the per-step breakdown; the two are complementary, not redundant.
 - The manifest MUST already exist (composed by `phase-4-plan` Step 8b); `record-step` returns `file_not_found` otherwise. The append is atomic and one decision-log line is emitted per record.
 
@@ -710,56 +709,38 @@ The per-deliverable commit fires UNCONDITIONALLY at every chain tail:
      --task-id {task_id}
    ```
 
-#### Step 10b: Focused Per-Deliverable Build (derived-ladder, depth-sliced)
+#### Step 10b: Focused Per-Deliverable Build (module-scoped canonical-verify steps)
 
-The mid-execute per-deliverable build is **focused** by design: it consumes the deliverable's `build_map`-derived ladder — the canonical commands `architecture derive-verification` stamps per changed file — and runs the subset of that ladder selected by the depth knob, never a whole-tree sweep (except the opt-in `full` depth). There is **one** classification source: the same `build_map`-derived ladder that drives `derive-verification` also drives this step — no independent re-classification of the changed paths. The whole-tree quality sweep (`build_verify` / `quality_check`) stays **once** at end-of-phase (Step 11b) and is never repeated mid-execute. This step fires at the chain tail, after the Step 10a commit decision.
+The mid-execute per-deliverable build is **focused** by design: it runs the `per_deliverable_build` list of `default:verify:{canonical}` step IDs **module-scoped** over the changed module(s), never a whole-tree sweep. The whole-tree quality sweep stays **once** at end-of-phase (Step 11b/11c) and is never repeated mid-execute — whole-tree gates (e.g. `integration-tests`, `e2e`) are NOT permitted in `per_deliverable_build`; they live in `verification_steps`. This step fires at the chain tail, after the Step 10a commit decision.
 
-1. **Read the depth knob** — resolve `per_deliverable_build` from the plan-scoped config:
+1. **Read the `per_deliverable_build` list** from the plan-scoped config:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
      plan phase-5-execute get --field per_deliverable_build --audit-plan-id {plan_id}
    ```
 
-   The knob is an enum with four execution depths (`off` / `compile-only` / `compile+scoped-test` / `full`); the default is `compile+scoped-test`. The enum vocabulary and its validator are owned by `plan-marshall:manage-config` (`per_deliverable_build` field) — do NOT restate the enum semantics here; this step consumes the resolved value.
+   The value is a **LIST** of `default:verify:{canonical}` step IDs (the same vocabulary as `verification_steps`); the default is `[default:verify:compile, default:verify:module-tests]`, which reproduces today's compile + scoped-test behaviour. The empty list `[]` means "no per-deliverable build" (the end-of-phase sweep is the only build). The vocabulary and its list-membership validator are owned by `plan-marshall:manage-config` (`per_deliverable_build` field) — do NOT restate the validation here; this step consumes the resolved list.
 
-2. **`off`** → skip the per-deliverable build entirely. The end-of-phase Step 11b sweep is the only build. Log the decision and proceed to Step 11:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     decision --plan-id {plan_id} --level INFO \
-     --message "(plan-marshall:phase-5-execute) per_deliverable_build=off — skipping focused build for deliverable {deliverable}; end-of-phase sweep is the only build"
-   ```
-
-3. **Derive the deliverable's build ladder** — for depths other than `off`, run the single deterministic deriver over the deliverable's changed paths to obtain the per-changed-file canonical-command rungs. There is no separate file-type re-classification step; the deriver IS the classifier:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     derive-verification --changed-artifacts {comma_separated_changed_paths} --audit-plan-id {plan_id}
-   ```
-
-   Each row in the returned `commands[]` carries a `build_class` (the canonical command name — `compile` / `module-tests` / `verify` / `none`) and the architecture-resolved `executable` for that rung. The `build_class` vocabulary and the `build_class` → command mapping are owned by [`../manage-architecture/standards/resolve-command.md` § Build-class → verification command](../manage-architecture/standards/resolve-command.md#build-class--verification-command) — do NOT restate the vocabulary here; this step consumes the derived rows. A deliverable whose changed paths classify entirely to `none` (e.g. a documentation-only change — documentation has no build owner) yields **zero rungs** — the documentation-only short-circuit is therefore a structural property of the derived ladder, not a parallel classification: when no `compile` / `module-tests` / `verify` rung is present, no build runs for the deliverable.
-
-4. **Slice the derived ladder by depth and run the selected rungs** via the `executable` each row carries (never hard-code `./pw` / `mvn` / `gradle` / `npm` — the deriver already resolved each rung):
-
-   - **`compile-only`** → run only the rows whose `build_class` is `compile`. Skip `module-tests` rows.
-   - **`compile+scoped-test`** (default) → run the `compile` rows AND the `module-tests` rows (each `module-tests` rung is itself the `test-compile` + `module-tests` pair the deriver stamped). `compile` and `module-tests` are distinct checks — `module-tests` does not subsume `compile` — so both rung kinds run at this depth.
-   - **`full`** → ignore the per-rung slice and resolve+run the whole-tree `quality-gate` (the legacy whole-tree-per-deliverable behavior; opt-in only):
-
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-       resolve --command quality-gate --audit-plan-id {plan_id}
-     ```
-
-   For every rung executed (derived `executable` or the `full`-depth `quality-gate`), honor the architecture-resolved `bash_timeout_seconds` / `execution_tier` envelope carried on the row: for `execution_tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `execution_tier=orchestrator` return control to the orchestrator to run the long build (do NOT background it). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure). Log the documentation-only path when the derived ladder carries no rung:
+2. **Empty list `[]`** → skip the per-deliverable build entirely. The end-of-phase Step 11b/11c sweep is the only build. Log the decision and proceed to Step 11:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      decision --plan-id {plan_id} --level INFO \
-     --message "(plan-marshall:phase-5-execute) Derived ladder for deliverable {deliverable} carries zero rungs — no build runs for this deliverable"
+     --message "(plan-marshall:phase-5-execute) per_deliverable_build=[] — skipping focused build for deliverable {deliverable}; end-of-phase sweep is the only build"
    ```
 
-5. **On non-zero exit** — route the failure through the **existing Step 11 per-task triage path**: persist each failing finding to the Q-Gate store (`manage-findings qgate add`) and return the `triage_required` signal to the orchestrator. Do NOT invent a new triage surface — reuse the Step 11 contract verbatim (`producer=build-runner`, `finding_type=test-failure`).
+3. **For each `default:verify:{canonical}` entry in the list**, invoke the **canonical-verify step module-scoped** over the changed module(s): resolve `architecture resolve --command {canonical} --module {changed_module}` and run the resolved executable, honouring the returned `execution_tier` / `bash_timeout_seconds`. Do NOT restate the resolution/execution-tier logic here — see [`standards/canonical_verify.md`](canonical_verify.md) § "Module-scoped vs whole-tree invocation" and § "Workflow" for the authoritative step body (module-scoped invocation supplies `--module {changed_module}`; the unresolved-canonical skip and the tier hand-off apply identically). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure).
+
+   **Documentation-only short-circuit**: a changed-path set with no buildable module yields no module-scoped run (the canonical does not resolve / there is no changed module). Log:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:phase-5-execute) No buildable module for deliverable {deliverable} — no module-scoped build runs for this deliverable"
+   ```
+
+4. **On non-zero exit** — route the failure through the **existing Step 11 per-task triage path**: persist each failing finding to the Q-Gate store (`manage-findings qgate add`) and return the `triage_required` signal to the orchestrator. Do NOT invent a new triage surface — reuse the Step 11 contract verbatim (`producer=build-runner`, `finding_type=test-failure`).
 
 ### Step 11: Triage Verification Failure
 
@@ -890,7 +871,7 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
      --message "[STATUS] (plan-marshall:phase-5-execute) Final quality sweep: {pass|fail}"
    ```
 
-This step is the single source of "did the phase end clean?" — it appends the canonical `quality-gate` once after all task-level verification has settled, providing a stable end-of-phase quality signal. Only the manifest's `verification_steps` list controls whether it fires; per-doc skip logic in `quality_check.md` / `build_verify.md` / `coverage_check.md` has been removed in favor of this manifest-driven gate.
+This step is the single source of "did the phase end clean?" — it appends the canonical `quality-gate` once after all task-level verification has settled, providing a stable end-of-phase quality signal. Only the manifest's `verification_steps` list controls whether it fires; per-doc skip logic has been removed in favor of this manifest-driven gate (the single parameterized `canonical_verify.md` step carries no embedded skip logic).
 
 ### Step 11c: Execute-Exit Verify Gate (One `verify` per Affected Bundle)
 

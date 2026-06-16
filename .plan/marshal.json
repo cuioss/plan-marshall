@@ -33,12 +33,15 @@
     "phase-5-execute": {
       "commit_and_push": true,
       "max_iterations": 5,
-      "per_deliverable_build": "compile+scoped-test",
+      "per_deliverable_build": [
+        "default:verify:compile",
+        "default:verify:module-tests"
+      ],
       "per_task_budget_reserve_tokens": "50K",
-      "steps": [
-        "default:quality_check",
-        "default:build_verify",
-        "default:coverage_check"
+      "verification_steps": [
+        "default:verify:quality-gate",
+        "default:verify:module-tests",
+        "default:verify:coverage"
       ],
       "effort": {
         "default": "level-4",

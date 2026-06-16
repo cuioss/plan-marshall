@@ -250,7 +250,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │      │     │                                                                           │
 │      │     ▼                                                                           │
 │      │   /Built-in verification:                                                       │
-│      │     quality_check / build_verify / coverage_check/   (scripts)                  │
+│      │     default:verify:{canonical}  (one parameterized step; canonical is a param)  │
 │      │                                                                                 │
 │      └── verification.passed: false                                                    │
 │            │  leaf returns triage_required (Steps 11 / 11b persist                     │
