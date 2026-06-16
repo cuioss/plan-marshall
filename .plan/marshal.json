@@ -51,7 +51,7 @@
       "pr_merge_strategy": "squash",
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "auto_merge_after_ci": true,
+      "final_merge_without_asking": true,
       "self_review": "auto",
       "qgate": "auto",
       "simplify": "auto",
