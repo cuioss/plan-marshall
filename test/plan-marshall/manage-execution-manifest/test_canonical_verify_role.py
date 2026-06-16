@@ -10,10 +10,9 @@ canonical, and the canonical is the parameter that selects the role.
 
 This module covers the HAPPY-PATH role-from-canonical resolution: every
 ``{canonical}`` entry in ``_CANONICAL_TO_ROLE`` maps to the expected role
-through both the ``default:``-prefixed and bare forms, plus the direct
-``_role_from_canonical`` derivation helper. The negative cases (unknown
-canonical, external steps, the legacy bare-name path) live in the sibling
-modules ``test_canonical_verify_inactive.py`` and
+through both the ``default:``-prefixed and bare forms. The negative cases
+(unknown canonical, external steps, the legacy bare-name path) live in the
+sibling modules ``test_canonical_verify_inactive.py`` and
 ``test_manage_execution_manifest_compose.py`` (``TestRoleLoader``).
 """
 
@@ -45,8 +44,6 @@ def _load_module(name: str, filename: str):
 
 _mem = _load_module('_mem_canonical_role', 'manage-execution-manifest.py')
 _role_of = _mem._role_of
-_role_from_canonical = _mem._role_from_canonical
-_CANONICAL_TO_ROLE = _mem._CANONICAL_TO_ROLE
 
 
 # The canonical → role expectations the composer must honor. Sourced from the
@@ -63,29 +60,6 @@ _CANONICAL_ROLE_CASES = [
     ('integration-tests', 'integration'),
     ('e2e', 'e2e'),
 ]
-
-
-class TestRoleFromCanonicalHelper:
-    """``_role_from_canonical`` derives the matrix role from a canonical segment."""
-
-    @pytest.mark.parametrize('canonical,expected_role', _CANONICAL_ROLE_CASES)
-    def test_known_canonical_derives_expected_role(self, canonical, expected_role):
-        assert _role_from_canonical(canonical) == expected_role
-
-    def test_unknown_canonical_derives_none(self):
-        """An unrecognized canonical falls through to None (never role-selected)."""
-        assert _role_from_canonical('not-a-canonical') is None
-
-    def test_helper_tracks_production_table(self):
-        """Every parametrized case is present in the production table.
-
-        Guards against the table and these tests drifting apart: if a new
-        canonical is added to ``_CANONICAL_TO_ROLE`` without a matching case
-        here, this assertion still passes, but a case for a canonical that was
-        REMOVED from the table fails loudly.
-        """
-        for canonical, expected_role in _CANONICAL_ROLE_CASES:
-            assert _CANONICAL_TO_ROLE.get(canonical) == expected_role
 
 
 class TestCanonicalVerifyRoleResolution:

@@ -163,16 +163,6 @@ _CANONICAL_TO_ROLE: dict[str, str] = {
 }
 
 
-def _role_from_canonical(canonical: str) -> str | None:
-    """Derive the matrix ``role:`` for a canonical-verify ``{canonical}`` segment.
-
-    Returns ``None`` for an unrecognized canonical so the caller falls through
-    to the role-file path (and ultimately to ``role = None``), preserving the
-    "missing data → step is never role-selected" convention.
-    """
-    return _CANONICAL_TO_ROLE.get(canonical)
-
-
 def _role_of(step_id: str, cache: dict[str, str | None]) -> str | None:
     """Resolve a phase-5 candidate step ID to its matrix ``role:`` value.
 
@@ -206,7 +196,7 @@ def _role_of(step_id: str, cache: dict[str, str | None]) -> str | None:
     # segment by table lookup.
     if bare.startswith(_CANONICAL_VERIFY_PREFIX):
         canonical = bare[len(_CANONICAL_VERIFY_PREFIX) :]
-        derived_role = _role_from_canonical(canonical)
+        derived_role = _CANONICAL_TO_ROLE.get(canonical)
         cache[step_id] = derived_role
         return derived_role
 
@@ -976,29 +966,16 @@ def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> N
 # =============================================================================
 
 
-def _marshal_steps_field(phase_key: str) -> str:
-    """Return the marshal.json list-field name that holds ``phase_key``'s steps.
-
-    The phase-5-execute config block stores its verification step list under
-    the ``verification_steps`` key (renamed from the generic ``steps`` so the
-    phase-5 list is self-describing and distinct from phase-6's finalize
-    ``steps``). Every other phase — notably ``phase-6-finalize`` — still uses
-    the generic ``steps`` key. This is the single place that maps a phase key
-    to its list-field name so the reader stays phase-aware.
-    """
-    return 'verification_steps' if phase_key == 'phase-5-execute' else 'steps'
-
-
 def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     """Read the configured step list for ``phase_key`` from marshal.json.
 
     ``phase_key`` is the marshal.json key (e.g. ``'phase-5-execute'`` or
     ``'phase-6-finalize'``). The list-field read under that key is
-    phase-aware (see :func:`_marshal_steps_field`): ``phase-5-execute`` reads
-    ``verification_steps`` while ``phase-6-finalize`` (and any other phase)
-    reads ``steps``. Returns the list of full step references as declared in
-    marshal.json (prefixes preserved), or ``None`` when the marshal file is
-    missing, the keys are absent, or the value is not a list.
+    phase-aware: ``phase-5-execute`` reads ``verification_steps`` while
+    ``phase-6-finalize`` (and any other phase) reads ``steps``. Returns the
+    list of full step references as declared in marshal.json (prefixes
+    preserved), or ``None`` when the marshal file is missing, the keys are
+    absent, or the value is not a list.
 
     For backward compatibility with project marshal.json files that have not
     yet migrated the phase-5 block to ``verification_steps``, the reader falls
@@ -1026,7 +1003,7 @@ def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     phase = plan.get(phase_key)
     if not isinstance(phase, dict):
         return None
-    field = _marshal_steps_field(phase_key)
+    field = 'verification_steps' if phase_key == 'phase-5-execute' else 'steps'
     steps = phase.get(field)
     # Back-compat: a phase-5 block written before the verification_steps
     # rename still carries the list under the generic ``steps`` key.
