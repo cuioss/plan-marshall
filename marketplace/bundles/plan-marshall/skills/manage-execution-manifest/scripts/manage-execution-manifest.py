@@ -1468,6 +1468,8 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
     'self_review': (
         frozenset(
             {
+                'pre-submission-self-review',
+                'default:pre-submission-self-review',
                 'finalize-step-pre-submission-self-review',
                 'project:finalize-step-pre-submission-self-review',
             }
