@@ -247,7 +247,9 @@ containers:
         readOnly: true
 ```
 
-**Verification**: `docker history <image>` must not contain any secret values.
+**Verification**: `docker history <image>` only surfaces secrets passed via `ENV`/`ARG`/build instructions — it misses secrets written to files during `RUN` steps. Audit the extracted layer contents with `docker save img:tag | strings | grep -iE "token|secret|password"`, and use Trivy `--scanners secret` as the tool-grade equivalent in CI.
+
+**Incident response**: Once a secret has appeared in a pushed layer it is compromised and MUST be rotated. Fixing the Dockerfile and rebuilding does not un-leak the already-pushed layer — anyone who pulled the prior image retains the secret.
 
 ---
 
@@ -420,7 +422,7 @@ services:
 | Network isolated | Container on scoped network, no `--network=host` | D03 |
 | Capabilities dropped | `--cap-drop=ALL` with selective adds | D04 |
 | Security profiles active | seccomp/AppArmor not disabled | D05 |
-| No embedded secrets | `docker history` clean, no ENV secrets | D06 |
+| No embedded secrets | `docker save \| strings \| grep` finds no secret values; no ENV secrets | D06 |
 | Resource limits set | Memory, CPU, PID limits configured | D07 |
 | Image signed | `cosign verify` succeeds | D08 |
 | Filesystem read-only | `--read-only` flag set | D09 |
