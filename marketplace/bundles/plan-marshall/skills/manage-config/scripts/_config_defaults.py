@@ -109,7 +109,7 @@ DEFAULT_OPEN_IN_IDE = True
 DEFAULT_PLAN_COVERAGE = {'thoroughness': 'inherit', 'scope': 'inherit'}
 
 # Run-at-all gate enum. Each distributed gate knob (deep_lane, escalation,
-# revalidation, qgate, self_review, plugin_doctor, simplify) takes one of these
+# revalidation, qgate, self_review, simplify) takes one of these
 # values. `auto` (the default) defers to the owning phase's decision machinery;
 # `always` forces the gate's step/lane in; `never` forces it out.
 VALID_RUN_AT_ALL = ('auto', 'always', 'never')
@@ -358,15 +358,14 @@ DEFAULT_PLAN_FINALIZE = {
     # Finalize run-at-all gates (auto|always|never), consumed by the manifest
     # composer's finalize step-selection (manage-execution-manifest.py). Each
     # gate maps to exactly one finalize step: self_review ->
-    # finalize-step-pre-submission-self-review; qgate -> pre-push-quality-gate
-    # (finalize blocking-findings re-capture); plugin_doctor ->
-    # finalize-step-plugin-doctor; simplify -> finalize-step-simplify. `auto`
+    # pre-submission-self-review; qgate -> pre-push-quality-gate
+    # (finalize blocking-findings re-capture); simplify ->
+    # finalize-step-simplify. `auto`
     # (default) defers to the existing decision machinery; `always`/`never`
     # force the step in/out. Read via
     # `manage-config plan phase-6-finalize get --field <gate>`.
     'self_review': 'auto',
     'qgate': 'auto',
-    'plugin_doctor': 'auto',
     'simplify': 'auto',
     # Default timeout (seconds) for the CI-completion polling commands consumed
     # by tools-integration-ci/scripts/ci_base.py (`ci checks wait`,
