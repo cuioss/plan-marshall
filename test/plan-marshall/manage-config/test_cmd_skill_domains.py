@@ -269,7 +269,7 @@ def test_skill_domains_detect_runs(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -313,7 +313,7 @@ def test_skill_domains_detect_no_overwrite(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -403,7 +403,7 @@ def test_get_available_uses_discovery(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -465,7 +465,7 @@ def test_configure_domains(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -509,7 +509,7 @@ def test_configure_always_adds_system(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -575,7 +575,7 @@ def test_get_available_works_without_skill_domains(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -612,7 +612,7 @@ def test_configure_works_without_skill_domains(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -654,7 +654,7 @@ def test_list_requires_skill_domains(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -942,7 +942,7 @@ def test_configure_preserves_project_skills(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -1011,7 +1011,7 @@ def test_configure_preserves_build_map_and_active_profiles(plan_context, monkeyp
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -1070,7 +1070,7 @@ def test_configure_drops_project_skills_for_removed_domains(plan_context, monkey
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -1117,7 +1117,7 @@ def test_get_nested_includes_project_skills(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
@@ -1158,8 +1158,8 @@ def test_list_verify_steps_returns_built_in(plan_context, monkeypatch):
 
     assert result['status'] == 'success'
     step_names = [s['name'] for s in result['steps']]
-    assert 'default:quality_check' in step_names
-    assert 'default:build_verify' in step_names
+    assert 'default:verify:quality-gate' in step_names
+    assert 'default:verify:module-tests' in step_names
 
 
 def test_list_verify_steps_discovers_project_skills(plan_context):
@@ -1204,14 +1204,20 @@ def _run_verify_discovery_in_cwd(cwd: Path) -> list[dict]:
 
 
 def test_list_verify_steps_builtins_have_order(tmp_path):
-    """Built-in verify steps carry order values parsed from standards/*.md frontmatter."""
+    """Built-in verify steps carry the order parsed from canonical_verify.md frontmatter.
+
+    Every built-in verify step is now the parameterized canonical-verify form
+    ``default:verify:{canonical}``; all three share the single backing standards
+    doc ``canonical_verify.md`` (``order: 10``), so each discovered step exposes
+    order 10.
+    """
     with patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]):
         steps = _run_verify_discovery_in_cwd(tmp_path)
 
     by_name = {s['name']: s for s in steps if s['source'] == 'built-in'}
-    assert by_name['default:quality_check']['order'] == 10
-    assert by_name['default:build_verify']['order'] == 20
-    assert by_name['default:coverage_check']['order'] == 30
+    assert by_name['default:verify:quality-gate']['order'] == 10
+    assert by_name['default:verify:module-tests']['order'] == 10
+    assert by_name['default:verify:coverage']['order'] == 10
 
 
 def test_list_verify_steps_project_skill_order_from_frontmatter(tmp_path):

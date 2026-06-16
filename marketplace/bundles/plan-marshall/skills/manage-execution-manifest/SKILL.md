@@ -100,7 +100,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--scope-estimate` (required): `none|surgical|single_module|multi_module|broad` — from solution outline metadata (deliverable 2)
 - `--recipe-key` (optional override): Forces the `recipe` rule. When omitted, the composer reads the provenance itself from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`), so lesson- and recipe-derived plans select the `recipe` rule without the caller forwarding this flag.
 - `--affected-files-count` (optional, default 0): Count of affected files surfaced by the outline; used by the `early_terminate` rule
-- `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs from `marshal.json` (e.g., `quality-gate,module-tests,coverage`). The decision matrix selects a subset. If omitted, defaults to `quality-gate,module-tests`.
+- `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs. The composer prefers `marshal.json::plan.phase-5-execute.verification_steps` (the phase-aware list-field — phase-5 reads `verification_steps`, every other phase reads `steps`; see [decision-rules.md](standards/decision-rules.md) § "Phase-aware step source"), falling back to this CSV only when no marshal.json is present. The IDs may be the legacy bare role-file forms (`default:quality_check`, …) or the parameterized canonical-verify form `default:verify:{canonical}` (e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`), whose matrix role is derived from the trailing canonical segment (see [decision-rules.md](standards/decision-rules.md) § "Role derivation for canonical-verify steps"). The decision matrix selects a subset, then the generic footprint pre-filter (§ "Generic footprint pre-filter") drops any footprint-gated whole-tree canonical (`integration` / `e2e`) that the live footprint does not exercise.
 - `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `commit-push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
 - `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `commit-push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
 
@@ -203,6 +203,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--plan-id` (required): Plan identifier
 - `--phase-5-steps` (optional): Comma-separated allowed Phase 5 step IDs to validate against
 - `--phase-6-steps` (optional): Comma-separated allowed Phase 6 step IDs to validate against
+
+**Prefix-agnostic step-ID comparison**: the unknown-ID check strips the optional `default:` prefix from BOTH the allowed set and the manifest step IDs before the set-membership test, so a bare manifest ID (e.g. `verify:module-tests`) validates against a `default:`-prefixed allowed-list entry (e.g. `default:verify:module-tests`) and vice versa. `project:` / `bundle:skill` prefixes are preserved verbatim, so external steps still compare exactly. This is what lets the composer's boundary-normalized (bare) manifest IDs validate against an allowed-list passed in either prefixed or bare form.
 
 **Output** (TOON):
 ```toon
@@ -397,6 +399,10 @@ Before the seven-row matrix and the bot-enforcement guard, the composer applies 
 **`drop_review_on_scope_gate`** — read from `marshal.json` at `plan.phase-6-finalize.drop_review_on_scope_gate` (default `false`). When `true` **and** the plan is itself scope-gated (`scope_estimate ∈ {surgical, single_module}`), the scope gate additionally drops `automated-review` — the single deliberate path that suppresses the bot-review gate, explicitly opted into. The override is scoped, not global: on `multi_module` / `broad` / `none` plans it is inert, so flipping the project-wide knob can never silently disable bot review on a large plan. The default keeps the bot-review invariant intact.
 
 The composer emits one `decision.log` line per scope-gated subtraction (canonical prefix `(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction`) and surfaces `scope_gated_finalize_dropped` and `drop_review_on_scope_gate` in the `compose` result for observability.
+
+### Generic footprint pre-filter for canonical-verify steps (`canonical_verify_inactive`)
+
+After the seven-row matrix and `execution_tier` routing produce the final `phase_5.verification_steps` list, the composer applies a canonical-agnostic footprint pre-filter: a `default:verify:{canonical}` step whose derived role is a footprint-gated whole-tree role (`integration` / `e2e`) is dropped when the live footprint is non-empty AND carries no path of that role. The core roles (`quality-gate` / `module-tests` / `coverage`) are never footprint-gated. The pre-filter is a no-op when the footprint is empty (early compose, before the worktree is materialized), so every canonical survives until a re-compose can observe the real footprint. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) canonical_verify_inactive`). The full rule and the safety-against-compose-time-emptiness rationale are documented in [standards/decision-rules.md](standards/decision-rules.md) § "Generic footprint pre-filter".
 
 ### phase-6-finalize run-at-all selection (`ceremony_finalize_selection`)
 

@@ -508,7 +508,7 @@ Documentation recognition is owned generically by `manage-execution-manifest`'s 
 
 ### classify_build_class (canonical command per entry)
 
-Maps each `(glob, role)` the aggregator holds to its **canonical-named `build_class`** — the canonical command name the entry resolves to (`compile` / `module-tests` / `verify` / `docs-validate` / `none`). There is no indirection enum: the `build_class` value IS the canonical command, so one vocabulary spans `build_map`, `derive-verification`, `architecture resolve`, and the `per_deliverable_build` depth knob (same meaning ⇒ same word).
+Maps each `(glob, role)` the aggregator holds to its **canonical-named `build_class`** — the canonical command name the entry resolves to (`compile` / `module-tests` / `verify` / `docs-validate` / `none`). There is no indirection enum: the `build_class` value IS the canonical command, so one vocabulary spans `build_map`, `derive-verification`, `architecture resolve`, and the `per_deliverable_build` list of `default:verify:{canonical}` step IDs (same meaning ⇒ same word).
 
 **Lifecycle**: Called by `aggregate_build_map()` once per collected `(glob, role)` route to stamp the entry's `build_class` before it is written into `build.map`.
 
@@ -677,7 +677,7 @@ class Extension(ExtensionBase):
         return "pm-dev-java:ext-triage-java"
 
     def provides_verify_steps(self) -> list[dict]:
-        return []  # Coverage is now a built-in verify step (default:coverage_check)
+        return []  # Coverage is now a built-in verify step (default:verify:coverage)
 
     def discover_modules(self, project_root: str) -> list:
         # Delegate to script in scripts/ directory

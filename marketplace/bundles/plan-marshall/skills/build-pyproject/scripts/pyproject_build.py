@@ -13,12 +13,17 @@ Subcommands:
     parse           Parse pyprojectx build output and categorize issues
     check-warnings  Categorize build warnings against acceptable patterns
     coverage-report Ad-hoc diagnostic parser invoked manually for inspection.
-                    NOT part of the default:coverage_check verify-step pipeline
-                    (which uses single-resolver native enforcement via the
-                    architecture-resolved coverage command, with the pytest
-                    --cov-fail-under flag enforcing the threshold inside the
-                    build itself). Use this subcommand for manual local
-                    inspection of coverage.py XML output only.
+                    NOT part of the default:verify:coverage verify-step
+                    pipeline (which uses single-resolver native enforcement via
+                    the architecture-resolved `coverage` canonical command, with
+                    the pytest --cov-fail-under flag enforcing the threshold
+                    inside the build itself). The composer derives the
+                    `coverage` matrix role from the `coverage` canonical segment
+                    of `default:verify:coverage`; this build skill exposes
+                    `coverage` as a `run` canonical so `architecture resolve
+                    --command coverage` resolves the executable. Use this
+                    subcommand for manual local inspection of coverage.py XML
+                    output only.
 """
 
 import sys
@@ -55,7 +60,7 @@ def main() -> int:
         'Python/pyprojectx (build-pyproject) build operations',
         register_standard_subparsers(
             run_handler=cmd_run,
-            run_args_help="Canonical command to execute (e.g., 'verify', 'module-tests', 'quality-gate')",
+            run_args_help="Canonical command to execute (e.g., 'compile', 'verify', 'module-tests', 'quality-gate', 'coverage')",
             parse_handler=parse_log,
             parse_help='Parse pyprojectx build output and categorize issues',
             coverage_handler=cmd_coverage_report,

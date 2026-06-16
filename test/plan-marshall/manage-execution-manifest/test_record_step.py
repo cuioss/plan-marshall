@@ -94,7 +94,7 @@ def _compose_ns(
 
 def _record_ns(
     plan_id: str = 'rec-plan',
-    step_id: str = 'quality_check',
+    step_id: str = 'verify:quality-gate',
     phase: str = '5-execute',
     outcome: str = 'executed',
     total_tokens: int = 0,
@@ -129,7 +129,7 @@ def test_record_executed_appends_row_with_token_attribution(plan_context):
     result = cmd_record_step(
         _record_ns(
             plan_id='rec-exec',
-            step_id='quality_check',
+            step_id='verify:quality-gate',
             phase='5-execute',
             outcome='executed',
             total_tokens=1200,
@@ -141,7 +141,7 @@ def test_record_executed_appends_row_with_token_attribution(plan_context):
     assert result is not None
     assert result['status'] == 'success'
     assert result['recorded'] is True
-    assert result['step_id'] == 'quality_check'
+    assert result['step_id'] == 'verify:quality-gate'
     assert result['phase'] == '5-execute'
     assert result['outcome'] == 'executed'
     assert result['total_tokens'] == 1200
@@ -158,7 +158,7 @@ def test_record_executed_persists_row_to_manifest(plan_context):
     cmd_record_step(
         _record_ns(
             plan_id='rec-persist',
-            step_id='build_verify',
+            step_id='verify:module-tests',
             total_tokens=900,
             tool_uses=3,
             duration_ms=1500,
@@ -171,7 +171,7 @@ def test_record_executed_persists_row_to_manifest(plan_context):
     assert isinstance(log, list)
     assert len(log) == 1
     entry = log[0]
-    assert entry['step_id'] == 'build_verify'
+    assert entry['step_id'] == 'verify:module-tests'
     assert entry['outcome'] == 'executed'
     assert entry['total_tokens'] == 900
     assert entry['tool_uses'] == 3
@@ -184,7 +184,7 @@ def test_record_skipped_appends_row(plan_context):
     _compose('rec-skip')
 
     result = cmd_record_step(
-        _record_ns(plan_id='rec-skip', step_id='coverage', outcome='skipped')
+        _record_ns(plan_id='rec-skip', step_id='verify:coverage', outcome='skipped')
     )
 
     assert result is not None and result['status'] == 'success'
@@ -211,7 +211,7 @@ def test_record_token_attribution_defaults_to_zero(plan_context):
     """Omitting the token-attribution flags records zeros, not missing columns."""
     _compose('rec-zero')
 
-    result = cmd_record_step(_record_ns(plan_id='rec-zero', step_id='quality_check', outcome='skipped'))
+    result = cmd_record_step(_record_ns(plan_id='rec-zero', step_id='verify:quality-gate', outcome='skipped'))
 
     assert result is not None
     assert result['total_tokens'] == 0
@@ -230,7 +230,7 @@ def test_record_negative_token_values_clamped_to_zero(plan_context):
     result = cmd_record_step(
         _record_ns(
             plan_id='rec-neg',
-            step_id='quality_check',
+            step_id='verify:quality-gate',
             total_tokens=-50,
             tool_uses=-1,
             duration_ms=-999,
@@ -252,9 +252,9 @@ def test_record_appends_in_order_and_count_increments(plan_context):
     """Repeated records append rows deterministically; reading back reflects order."""
     _compose('rec-order')
 
-    r1 = cmd_record_step(_record_ns(plan_id='rec-order', step_id='quality_check', outcome='executed'))
-    r2 = cmd_record_step(_record_ns(plan_id='rec-order', step_id='build_verify', outcome='executed'))
-    r3 = cmd_record_step(_record_ns(plan_id='rec-order', step_id='coverage', outcome='skipped'))
+    r1 = cmd_record_step(_record_ns(plan_id='rec-order', step_id='verify:quality-gate', outcome='executed'))
+    r2 = cmd_record_step(_record_ns(plan_id='rec-order', step_id='verify:module-tests', outcome='executed'))
+    r3 = cmd_record_step(_record_ns(plan_id='rec-order', step_id='verify:coverage', outcome='skipped'))
 
     # running count tracks the append log
     assert r1['execution_log_count'] == 1
@@ -263,7 +263,7 @@ def test_record_appends_in_order_and_count_increments(plan_context):
 
     # read-back preserves the recorded sequence
     log = read_manifest('rec-order')[EXECUTION_LOG_KEY]
-    assert [e['step_id'] for e in log] == ['quality_check', 'build_verify', 'coverage']
+    assert [e['step_id'] for e in log] == ['verify:quality-gate', 'verify:module-tests', 'verify:coverage']
     assert [e['outcome'] for e in log] == ['executed', 'executed', 'skipped']
 
 
@@ -271,8 +271,8 @@ def test_record_same_step_twice_appends_two_rows(plan_context):
     """The log is an ordered append log, not a keyed map — repeats append."""
     _compose('rec-dup')
 
-    cmd_record_step(_record_ns(plan_id='rec-dup', step_id='quality_check', outcome='error'))
-    result = cmd_record_step(_record_ns(plan_id='rec-dup', step_id='quality_check', outcome='executed'))
+    cmd_record_step(_record_ns(plan_id='rec-dup', step_id='verify:quality-gate', outcome='error'))
+    result = cmd_record_step(_record_ns(plan_id='rec-dup', step_id='verify:quality-gate', outcome='executed'))
 
     assert result['execution_log_count'] == 2
     log = read_manifest('rec-dup')[EXECUTION_LOG_KEY]
@@ -366,7 +366,7 @@ def test_cli_record_step_roundtrip(plan_context):
         '--plan-id',
         'cli-rec',
         '--step-id',
-        'quality_check',
+        'verify:quality-gate',
         '--phase',
         '5-execute',
         '--outcome',
@@ -383,7 +383,7 @@ def test_cli_record_step_roundtrip(plan_context):
     data = result.toon()
     assert data['status'] == 'success'
     assert data['recorded'] is True
-    assert data['step_id'] == 'quality_check'
+    assert data['step_id'] == 'verify:quality-gate'
     assert data['outcome'] == 'executed'
     assert data['total_tokens'] == 1500
     assert data['tool_uses'] == 4
@@ -399,7 +399,7 @@ def test_cli_record_step_missing_manifest_emits_toon_error(plan_context):
         '--plan-id',
         'cli-rec-missing',
         '--step-id',
-        'quality_check',
+        'verify:quality-gate',
         '--phase',
         '5-execute',
         '--outcome',

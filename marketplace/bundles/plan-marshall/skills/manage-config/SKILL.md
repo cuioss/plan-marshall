@@ -163,16 +163,16 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_and_push --value false
 
-# Select the per-deliverable build depth — enum: off | compile-only | compile+scoped-test | full
+# Select the per-deliverable build — comma-separated list of default:verify:{canonical} step IDs (empty disables it)
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field per_deliverable_build --value full
+  plan phase-5-execute set --field per_deliverable_build --value default:verify:compile,default:verify:module-tests
 ```
 
 **phase-5-execute per-deliverable build field:**
 
 | Field | Type | Default | Semantics |
 |-------|------|---------|-----------|
-| `per_deliverable_build` | enum(`off`\|`compile-only`\|`compile+scoped-test`\|`full`) | `compile+scoped-test` | Build depth phase-5-execute runs at each per-deliverable chain-tail point (Step 10). `off` skips the per-deliverable build entirely (the end-of-phase quality sweep is the only build); `compile-only` resolves the changed module and runs compile only; `compile+scoped-test` additionally runs scoped `module-tests` for the changed module; `full` runs whole-tree `quality-gate` per deliverable (legacy behavior, opt-in only). Read by phase-5-execute per-deliverable. Invalid values are rejected by the config setter. |
+| `per_deliverable_build` | list[`default:verify:{canonical}`] | `[default:verify:compile, default:verify:module-tests]` | Canonical-verify rungs phase-5-execute runs at each per-deliverable chain-tail point (Step 10), module-scoped to the changed module. The default runs compile + scoped `module-tests`; `[]` disables the per-deliverable build (the end-of-phase sweep is the only build). The retired enum strings (`off` / `compile-only` / `compile+scoped-test` / `full`) are rejected with a migration error. Read by phase-5-execute per-deliverable. |
 
 **Symmetric auto-continuation knobs:** the forward (`finalize_without_asking`) and reverse (`loop_back_without_asking`) auto-continuation knobs, together with `final_merge_without_asking`, are flat knobs under `plan.phase-6-finalize` — read/written via the standard `manage-config plan phase-6-finalize get/set --field <knob>` access shape.
 
@@ -521,8 +521,8 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "phase-5-execute": {
       "commit_and_push": true,
       "max_iterations": 5,
-      "per_deliverable_build": "compile+scoped-test",
-      "steps": ["quality_check", "build_verify"]
+      "per_deliverable_build": ["default:verify:compile", "default:verify:module-tests"],
+      "verification_steps": ["default:verify:quality-gate", "default:verify:module-tests", "default:verify:coverage"]
     },
     "phase-6-finalize": {
       "max_iterations": 3,

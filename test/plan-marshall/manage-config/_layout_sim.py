@@ -28,15 +28,28 @@ def bare(step_name: str) -> str:
 
 
 def write_phase_standards(skill_root: Path, step_names: list[str]) -> None:
-    """Create ``standards/{bare}.md`` with monotonically increasing ``order`` frontmatter.
+    """Create the ``standards/*.md`` docs production discovery reads for ``step_names``.
 
-    One file per entry in ``step_names``; ``order`` is ``(index + 1) * 10`` so the
-    discovered ordering is deterministic and gap-free.
+    Each ``default:verify:{canonical}`` step resolves to the single
+    ``canonical_verify.md`` doc (frontmatter ``name: default:verify``,
+    ``order: 10``) — every parameterized canonical-verify step shares that one
+    backing doc. Any non-canonical ``default:{name}`` step is written to its own
+    ``standards/{bare}.md`` with monotonically increasing ``order`` frontmatter
+    (``(index + 1) * 10``) so its discovered ordering is deterministic.
     """
     standards_dir = skill_root / 'standards'
     standards_dir.mkdir(parents=True, exist_ok=True)
+    wrote_canonical_verify = False
     for offset, step_name in enumerate(step_names):
         bare_name = bare(step_name)
+        if bare_name.startswith('verify:'):
+            # All parameterized canonical-verify steps share canonical_verify.md.
+            if not wrote_canonical_verify:
+                (standards_dir / 'canonical_verify.md').write_text(
+                    '---\nname: default:verify\ndescription: canonical verify step\norder: 10\n---\n\n# default:verify\n'
+                )
+                wrote_canonical_verify = True
+            continue
         order = (offset + 1) * 10
         (standards_dir / f'{bare_name}.md').write_text(
             f'---\nname: {bare_name}\ndescription: {bare_name} step\norder: {order}\n---\n\n# {bare_name}\n'

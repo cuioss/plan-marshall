@@ -86,6 +86,13 @@ def _add_phase_subparser(
     phase_get = phase_sub.add_parser('get', help=f'Get {phase_name} config', allow_abbrev=False)
     add_field_arg(phase_get, required=False)
 
+    # remove-field: delete an arbitrary persisted key under the phase section
+    # (e.g. the legacy plan.phase-5-execute.steps key). Available on every phase.
+    phase_remove_field = phase_sub.add_parser(
+        'remove-field', help=f'Remove an arbitrary key from {phase_name} config', allow_abbrev=False
+    )
+    add_field_arg(phase_remove_field)
+
     if has_scalar:
         phase_set = phase_sub.add_parser('set', help=f'Set {phase_name} field', allow_abbrev=False)
         add_field_arg(phase_set)

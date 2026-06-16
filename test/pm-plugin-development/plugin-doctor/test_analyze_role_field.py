@@ -260,6 +260,112 @@ class TestRoleFieldEmpty:
 
 
 # ===========================================================================
+# Canonical-verify exemption: the parameterized canonical-verify step derives
+# its role dynamically at compose time and is exempt from the static role:
+# requirement. Every other (legacy-style) role-less step file still fires.
+# ===========================================================================
+
+
+class TestCanonicalVerifyExemption:
+    """The ``default:verify`` / ``default:verify:`` step is exempt from role:."""
+
+    def test_canonical_verify_step_without_role_produces_no_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """The bare ``name: default:verify`` step carries no static role: and is exempt.
+
+        This mirrors the on-disk
+        ``phase-5-execute/standards/canonical_verify.md`` frontmatter:
+        ``name: default:verify`` + ``description`` + ``order`` and NO
+        ``role:`` field. The role is derived dynamically from the trailing
+        canonical segment at compose time, so the static requirement does not
+        apply.
+        """
+        scoped = _make_scoped_dir(tmp_path)
+        _write(
+            scoped / 'canonical_verify.md',
+            '---\n'
+            'name: default:verify\n'
+            'description: Parameterized canonical-verify step\n'
+            'order: 10\n'
+            '---\n'
+            '\n'
+            '# Canonical Verify\n',
+        )
+        findings = analyze_role_field(tmp_path)
+        assert findings == []
+
+    def test_non_string_name_does_not_crash(self, tmp_path: Path) -> None:
+        """A malformed frontmatter with a non-string ``name`` (YAML int/null) must NOT
+        raise AttributeError — both the step-file and canonical-verify predicates
+        type-guard the value before calling string methods (Gemini review finding e4c9ce).
+        """
+        scoped = _make_scoped_dir(tmp_path)
+        _write(
+            scoped / 'malformed.md',
+            '---\n'
+            'name: 123\n'
+            'description: Malformed name field\n'
+            'order: 10\n'
+            '---\n'
+            '\n'
+            '# Malformed\n',
+        )
+        # A non-string name is simply not a default: step — must not raise.
+        findings = analyze_role_field(tmp_path)
+        assert isinstance(findings, list)
+
+    def test_canonical_verify_prefixed_step_id_without_role_produces_no_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """A ``default:verify:{canonical}`` step ID is also exempt from role:."""
+        scoped = _make_scoped_dir(tmp_path)
+        _write(
+            scoped / 'verify_quality_gate.md',
+            '---\n'
+            'name: default:verify:quality-gate\n'
+            'description: Canonical-verify step for quality-gate\n'
+            'order: 11\n'
+            '---\n',
+        )
+        findings = analyze_role_field(tmp_path)
+        assert findings == []
+
+    def test_legacy_role_less_step_still_fires_alongside_exempt_canonical_verify(
+        self, tmp_path: Path
+    ) -> None:
+        """The exemption is scoped: a legacy role-less step file still fires.
+
+        With both an exempt canonical-verify step and a legacy-style role-less
+        step in the same directory, exactly one finding is emitted — for the
+        legacy step, not the canonical-verify step.
+        """
+        scoped = _make_scoped_dir(tmp_path)
+        # Exempt — canonical-verify step, no role:.
+        _write(
+            scoped / 'canonical_verify.md',
+            '---\n'
+            'name: default:verify\n'
+            'description: Parameterized canonical-verify step\n'
+            'order: 10\n'
+            '---\n',
+        )
+        # Legacy-style role-less step — must still fire.
+        legacy = _write(
+            scoped / 'quality_check.md',
+            '---\n'
+            'name: default:quality_check\n'
+            'description: Run quality-gate build command\n'
+            'order: 20\n'
+            '---\n',
+        )
+        findings = analyze_role_field(tmp_path)
+        assert len(findings) == 1
+        assert findings[0]['file'] == str(legacy)
+        assert findings[0]['snippet'] == 'quality_check'
+
+
+# ===========================================================================
 # Path-scope guard: files outside the scoped directory are not scanned
 # ===========================================================================
 

@@ -9,9 +9,12 @@ established pattern for path-resolved project scripts).
 
 Coverage:
 
-- D1 — ``detect_name_drift`` role resolution: canonical step IDs, the
+- D1 — ``detect_name_drift`` role resolution (purely in-code, no role-file
+  read): the parameterized canonical-verify step IDs
+  (``default:verify:{canonical}``), the legacy bare default-step names, the
   ``default:``-namespaced case (``lesson-2026-05-29-13-001.md`` sub-lesson
-  13-002), unresolvable roles, and the empty-phase_5 no-op.
+  13-002), unresolvable roles (unknown canonical / unknown bare name), and the
+  empty-phase_5 no-op.
 - D1 — precision/severity: genuine signals counted, informational rows excluded
   from the genuine-signal total.
 - D2 — ``dormate_plans`` batch dormation: multi-id and ``--dormate-all`` success,
@@ -66,7 +69,56 @@ def _inputs(phase_5: list[str]) -> Any:
 # =============================================================================
 
 class TestNameDriftRoleResolution:
-    def test_canonical_step_ids_not_flagged(self):
+    def test_parameterized_canonical_verify_steps_not_flagged(self):
+        # the post-deletion shape: a well-composed manifest carries the single
+        # parameterized canonical-verify step, one row per canonical.
+        inputs = _inputs(['default:verify:quality-gate', 'default:verify:module-tests'])
+        cache: dict[str, str | None] = {}
+
+        drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
+        resolved = {
+            audit._resolve_step_role(PROJECT_ROOT, s, cache)
+            for s in inputs.manifest_phase_5
+        }
+
+        # quality-gate → quality-gate, module-tests → module-tests; resolution is
+        # in-code via the canonical→role table (no role-file read).
+        assert drift is None
+        assert resolved == {'quality-gate', 'module-tests'}
+
+    def test_canonical_verify_aliases_resolve_to_module_tests(self):
+        # the `verify` and `module-tests` canonicals both map to module-tests;
+        # a coverage canonical resolves but alone gives zero intersection.
+        cache: dict[str, str | None] = {}
+
+        assert (
+            audit._resolve_step_role(PROJECT_ROOT, 'default:verify:verify', cache)
+            == 'module-tests'
+        )
+        assert (
+            audit._resolve_step_role(PROJECT_ROOT, 'verify:module-tests', cache)
+            == 'module-tests'
+        )
+        assert (
+            audit._resolve_step_role(PROJECT_ROOT, 'default:verify:coverage', cache)
+            == 'coverage'
+        )
+
+    def test_canonical_verify_alongside_coverage_not_flagged(self):
+        # a coverage/integration step alongside a core role does NOT mis-flag:
+        # the intersection with {quality-gate, module-tests} is non-empty.
+        inputs = _inputs(
+            ['default:verify:quality-gate', 'default:verify:coverage']
+        )
+        cache: dict[str, str | None] = {}
+
+        drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
+
+        assert drift is None
+
+    def test_legacy_bare_step_ids_not_flagged(self):
+        # archived plans whose manifests predate the parameterized form carry the
+        # legacy bare names; they resolve in-code via the back-compat table.
         inputs = _inputs(['quality_check', 'build_verify'])
         cache: dict[str, str | None] = {}
 
@@ -77,7 +129,7 @@ class TestNameDriftRoleResolution:
         assert cache['quality_check'] == 'quality-gate'
         assert cache['build_verify'] == 'module-tests'
 
-    def test_namespaced_step_ids_resolve_to_roles_and_not_flagged(self):
+    def test_namespaced_legacy_step_ids_resolve_to_roles_and_not_flagged(self):
         # the lesson-2026-05-29-13-001 sub-lesson 13-002 namespaced shape
         inputs = _inputs(['default:quality_check', 'default:build_verify'])
         cache: dict[str, str | None] = {}
@@ -92,8 +144,18 @@ class TestNameDriftRoleResolution:
         assert drift is None
         assert resolved == {'quality-gate', 'module-tests'}
 
+    def test_unknown_canonical_flagged_as_genuine_drift(self):
+        # a parameterized step whose {canonical} segment is not in the table
+        inputs = _inputs(['default:verify:bogus-canonical'])
+        cache: dict[str, str | None] = {}
+
+        drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
+
+        assert drift is not None
+        assert 'unresolvable role' in drift
+
     def test_unresolvable_role_flagged_as_genuine_drift(self):
-        # a step ID with no standards file / no role: frontmatter
+        # a bare step name absent from both the canonical and legacy tables
         inputs = _inputs(['not_a_real_step'])
         cache: dict[str, str | None] = {}
 
@@ -102,6 +164,15 @@ class TestNameDriftRoleResolution:
         assert drift is not None
         assert 'unresolvable role' in drift
 
+    def test_resolution_is_in_code_independent_of_filesystem(self, tmp_path: Path):
+        # resolution no longer reads any role-file: a repo_root with no
+        # phase-5-execute/standards directory resolves the same as PROJECT_ROOT.
+        cache: dict[str, str | None] = {}
+
+        role = audit._resolve_step_role(tmp_path, 'default:verify:quality-gate', cache)
+
+        assert role == 'quality-gate'
+
     def test_empty_phase_5_returns_no_drift(self):
         inputs = _inputs([])
         cache: dict[str, str | None] = {}
@@ -109,19 +180,6 @@ class TestNameDriftRoleResolution:
         drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
 
         assert drift is None
-
-    def test_standards_dir_absent_degrades_to_unresolved(self, tmp_path: Path):
-        # a repo_root with no phase-5-execute/standards directory
-        inputs = _inputs(['quality_check'])
-        cache: dict[str, str | None] = {}
-
-        # best-effort: unresolved rather than crash
-        role = audit._resolve_step_role(tmp_path, 'quality_check', cache)
-        drift = audit.detect_name_drift(inputs, tmp_path, cache)
-
-        assert role is None
-        assert drift is not None
-        assert 'unresolvable role' in drift
 
 # =============================================================================
 # D1 — precision / severity in the manifest block summary

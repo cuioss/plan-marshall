@@ -30,8 +30,37 @@ PHASE_SECTIONS = {f'phase-{p}' for p in PHASES}
 # Phases that use ordered steps list (set-steps, add-step, remove-step, set-max-iterations)
 LIST_STEP_PHASES = {'phase-5-execute', 'phase-6-finalize'}
 
+# Per-phase config key holding the ordered step list. phase-5-execute stores its
+# verify-step list under `verification_steps` (the self-describing name decoupling
+# it from phase-6-finalize's generic `steps`); phase-6-finalize keeps `steps`.
+LIST_STEP_KEYS = {
+    'phase-5-execute': 'verification_steps',
+    'phase-6-finalize': 'steps',
+}
+
 # Phases with simple scalar fields only
 SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-plan'}
+
+# Canonical-verify step prefixes. Every step ID of the shape
+# ``default:verify:{canonical}`` (and its legacy ``verify:{canonical}`` form) is
+# backed by the single ``canonical_verify.md`` standards doc, so they all resolve
+# to the SAME frontmatter ``order`` (10). They are therefore exempt from the
+# distinct-order collision check: their effective ordering comes from their
+# position in the persisted ``verification_steps`` list, not from the shared
+# frontmatter order. See ``phase-5-execute/standards/canonical_verify.md`` §
+# "Ordering among canonical-verify entries".
+_CANONICAL_VERIFY_PREFIXES = ('default:verify:', 'verify:')
+
+
+def _is_canonical_verify_step(step: str) -> bool:
+    """Return True when ``step`` is a canonical-verify step ID.
+
+    Canonical-verify steps (``default:verify:{canonical}`` / ``verify:{canonical}``)
+    all share the single ``canonical_verify.md`` backing doc and its order, so
+    they are ordered by list position rather than by their (shared) resolved
+    order.
+    """
+    return step.startswith(_CANONICAL_VERIFY_PREFIXES)
 
 
 def _discover_steps_for_phase(phase_section: str) -> list[dict]:
@@ -49,7 +78,7 @@ def _discover_steps_for_phase(phase_section: str) -> list[dict]:
 
 def _resolve_step_orders(
     steps: list[str], phase_section: str
-) -> tuple[list[tuple[str, int]], dict | None]:
+) -> tuple[list[tuple[str, float]], dict | None]:
     """Resolve `(step, order)` pairs and detect missing/colliding orders.
 
     Order is taken exclusively from each step's authoritative source (frontmatter
@@ -57,19 +86,36 @@ def _resolve_step_orders(
     `project:` steps, or the return-dict `order` field for extension-contributed
     skills).
 
+    Canonical-verify steps (``default:verify:{canonical}`` / ``verify:{canonical}``)
+    are a special case: they all share the single ``canonical_verify.md`` backing
+    doc and therefore resolve to the SAME frontmatter order. They are exempt from
+    the distinct-order collision check — multiple canonical-verify steps are valid
+    and are ordered by their position in the input ``steps`` list. To preserve that
+    list position while still sorting them relative to non-canonical steps, each
+    canonical-verify step's effective order is its shared base order plus a tiny
+    fractional offset derived from its list index (``base + index * 1e-6``), so the
+    sorted output keeps the input order within the canonical-verify group. Only
+    NON-canonical-verify steps participate in the distinct-order collision check.
+
     Returns:
         (resolved, error):
-            - On success: (list of (step, order) in input order, None).
+            - On success: (list of (step, order) in input order, None). Orders are
+              floats so canonical-verify steps can carry a fractional list-position
+              offset.
             - On missing order: ([], error_exit payload).
-            - On collision: ([], error_exit payload).
+            - On collision (non-canonical steps only): ([], error_exit payload).
     """
     discovered = {s['name']: s.get('order') for s in _discover_steps_for_phase(phase_section)}
 
-    resolved: list[tuple[str, int]] = []
-    for step in steps:
+    resolved: list[tuple[str, float]] = []
+    for index, step in enumerate(steps):
         discovered_order = discovered.get(step)
         if isinstance(discovered_order, int):
-            resolved.append((step, discovered_order))
+            if _is_canonical_verify_step(step):
+                # Order by list position within the shared canonical-verify slot.
+                resolved.append((step, discovered_order + index * 1e-6))
+            else:
+                resolved.append((step, float(discovered_order)))
             continue
         return [], error_exit(
             'missing_order',
@@ -81,20 +127,33 @@ def _resolve_step_orders(
             ),
         )
 
+    # Collision check: canonical-verify steps may freely share their common base
+    # order with one another (they are disambiguated by the list-position offset
+    # above), but every OTHER pair sharing an integer base order is a genuine
+    # collision. We therefore record one representative per base order and flag a
+    # collision whenever a step lands on an already-seen base order UNLESS both the
+    # incoming step and the recorded representative are canonical-verify steps.
     seen: dict[int, str] = {}
     for step, order in resolved:
-        if order in seen:
-            return [], error_exit(
-                'order_collision',
-                steps=[seen[order], step],
-                order=order,
-                phase=phase_section,
-                detail=(
-                    f"Steps '{seen[order]}' and '{step}' share order={order} in {phase_section}. "
-                    'Reassign one of the colliding steps in its authoritative source.'
-                ),
-            )
-        seen[order] = step
+        int_order = int(order)
+        prior = seen.get(int_order)
+        if prior is not None:
+            both_canonical = _is_canonical_verify_step(step) and _is_canonical_verify_step(prior)
+            if not both_canonical:
+                return [], error_exit(
+                    'order_collision',
+                    steps=[prior, step],
+                    order=int_order,
+                    phase=phase_section,
+                    detail=(
+                        f"Steps '{prior}' and '{step}' share order={int_order} in {phase_section}. "
+                        'Reassign one of the colliding steps in its authoritative source.'
+                    ),
+                )
+            # Both canonical — keep the FIRST representative so a later
+            # non-canonical step on the same base order still collides.
+            continue
+        seen[int_order] = step
 
     return resolved, None
 
@@ -127,13 +186,19 @@ def cmd_phase(args, phase_section: str) -> dict:
 
     elif args.verb == 'set' and phase_section in (SCALAR_PHASES | LIST_STEP_PHASES):
         field = args.field
-        value = _coerce_value(args.value)
-        # Enum fields: reject invalid values before mutating config
+        # per_deliverable_build is a LIST of 'default:verify:{canonical}' step
+        # IDs — parse the comma-separated --value into a list (empty string ->
+        # empty list, which disables the per-deliverable build) and validate the
+        # list shape before mutating config. All other fields coerce as scalars.
+        value: str | bool | int | list[str]
         if phase_section == 'phase-5-execute' and field == 'per_deliverable_build':
+            value = [s.strip() for s in args.value.split(',') if s.strip()]
             try:
-                validate_per_deliverable_build(str(value))
+                validate_per_deliverable_build(value)
             except ValueError as e:
                 return error_exit(str(e))
+        else:
+            value = _coerce_value(args.value)
         section[field] = value
         plan_config[phase_section] = section
         config['plan'] = plan_config
@@ -150,6 +215,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         return success_exit({'phase': phase_section, key: value})
 
     elif args.verb == 'set-steps' and phase_section in LIST_STEP_PHASES:
+        list_key = LIST_STEP_KEYS[phase_section]
         steps_str = args.steps  # comma-separated
         steps = [s.strip() for s in steps_str.split(',') if s.strip()]
         if not steps:
@@ -160,15 +226,16 @@ def cmd_phase(args, phase_section: str) -> dict:
             return err
 
         sorted_steps = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
-        section['steps'] = sorted_steps
+        section[list_key] = sorted_steps
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit({'phase': phase_section, 'steps': sorted_steps, 'count': len(sorted_steps)})
+        return success_exit({'phase': phase_section, list_key: sorted_steps, 'count': len(sorted_steps)})
 
     elif args.verb == 'add-step' and phase_section in LIST_STEP_PHASES:
+        list_key = LIST_STEP_KEYS[phase_section]
         step = args.step
-        steps = list(section.get('steps', []))
+        steps = list(section.get(list_key, []))
         if step in steps:
             return error_exit(f"Step '{step}' already exists in {phase_section}")
 
@@ -177,23 +244,42 @@ def cmd_phase(args, phase_section: str) -> dict:
             return err
 
         sorted_steps = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
-        section['steps'] = sorted_steps
+        section[list_key] = sorted_steps
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit({'phase': phase_section, 'step': step, 'steps': sorted_steps, 'count': len(sorted_steps)})
+        return success_exit({'phase': phase_section, 'step': step, list_key: sorted_steps, 'count': len(sorted_steps)})
 
     elif args.verb == 'remove-step' and phase_section in LIST_STEP_PHASES:
+        list_key = LIST_STEP_KEYS[phase_section]
         step = args.step
-        steps = list(section.get('steps', []))
+        steps = list(section.get(list_key, []))
         if step not in steps:
             return error_exit(f"Step '{step}' not found in {phase_section}")
 
         steps.remove(step)
-        section['steps'] = steps
+        section[list_key] = steps
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit({'phase': phase_section, 'step': step, 'steps': steps, 'count': len(steps)})
+        return success_exit({'phase': phase_section, 'step': step, list_key: steps, 'count': len(steps)})
+
+    elif args.verb == 'remove-field':
+        # Delete an arbitrary scalar/list key from the persisted phase section.
+        # Operates on the on-disk section only (NOT the defaults-merged view), so
+        # removing a key the defaults still seed re-exposes the default value on
+        # the next read — the verb removes an explicit override, it cannot
+        # suppress a default. The legacy `plan.phase-5-execute.steps` key (which
+        # has no default) is removed cleanly. Removing an absent key is an error
+        # so callers get an explicit signal rather than a silent no-op.
+        field = args.field
+        persisted = plan_config.get(phase_section, {})
+        if field not in persisted:
+            return error_exit(f"Field '{field}' not present in {phase_section}")
+        del persisted[field]
+        plan_config[phase_section] = persisted
+        config['plan'] = plan_config
+        save_config(config)
+        return success_exit({'phase': phase_section, 'field': field, 'removed': True})
 
     return error_exit('Unknown phase verb')

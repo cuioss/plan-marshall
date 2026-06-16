@@ -31,7 +31,7 @@ Canonical definitions for terms used across the plan-marshall bundle. When a ter
 | **profile** | A task execution category that determines which skills are loaded and what verification is performed. Values: `implementation`, `module_testing`, `integration_testing`, `quality`, `verification`, `standalone`. |
 | **change_type** | Classification of the requested change, detected during phase-3-outline. Values: `feature`, `enhancement`, `bug_fix`, `tech_debt`, `analysis`, `verification`. Each type has a corresponding outline template (`change-{type}.md`). |
 | **compatibility mode** | Strategy for handling breaking changes during tech_debt/refactoring. Values: `breaking` (remove old API), `deprecation` (keep old with warnings), `smart_and_ask` (analyze impact and ask user). Configured in `marshal.json`. |
-| **verification step** | A check executed after task implementation. Types: built-in (`quality_check`, `build_verify`, `coverage_check`), project (`project:*`), skill-based (`bundle:skill`). |
+| **verification step** | A check executed after task implementation. Types: built-in (the single parameterized `default:verify:{canonical}` form, e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`), project (`project:*`), skill-based (`bundle:skill`). |
 
 ## Architecture & Configuration
 

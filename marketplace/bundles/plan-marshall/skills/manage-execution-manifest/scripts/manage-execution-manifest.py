@@ -111,12 +111,15 @@ VALID_RECORD_OUTCOMES = ('executed', 'skipped', 'error')
 EXECUTION_LOG_KEY = 'execution_log'
 
 # Default candidate step sets when callers don't pass --phase-5-steps / --phase-6-steps.
-# These are bare step IDs (post boundary-normalization shape) that resolve to
-# standards files at marketplace/bundles/plan-marshall/skills/phase-5-execute/
-# standards/{name}.md. Each declares its ``role:`` frontmatter field, consumed
-# by ``_role_of`` below for structural role-based intersection in the 7-row
-# decision matrix.
-DEFAULT_PHASE_5_STEPS = ('quality_check', 'build_verify')
+# These are bare step IDs (post boundary-normalization shape). The phase-5
+# defaults are parameterized canonical-verify IDs in their bare
+# ``verify:{canonical}`` form (the ``default:`` prefix is stripped at the compose
+# boundary); their matrix ``role:`` is resolved purely in-code by ``_role_of``
+# below (via the ``_CANONICAL_TO_ROLE`` table, keyed on the trailing canonical
+# segment) for structural role-based intersection in the 7-row decision matrix.
+# There are no longer any legacy fixed-name IDs and no per-step
+# ``standards/{name}.md`` role-files to read.
+DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'finalize-step-whole-tree-gate',
     'commit-push',
@@ -132,81 +135,76 @@ DEFAULT_PHASE_6_STEPS = (
     'archive-plan',
 )
 
-# Path to the phase-5-execute standards directory, used by ``_role_of`` to
-# resolve a candidate step ID to its source file and read the ``role:``
-# frontmatter field. ``resolve_skills_root`` identity-walks to the owning
-# bundle's ``skills`` directory (no index arithmetic), and we descend into the
-# sibling phase-5-execute skill's standards directory.
-_PHASE_5_STANDARDS_DIR = resolve_skills_root(Path(__file__)) / 'phase-5-execute' / 'standards'
-
-
 def _strip_default_prefix(step: str) -> str:
     """Return the bare step name regardless of the optional ``default:`` prefix."""
     return step[len('default:') :] if step.startswith('default:') else step
 
 
+# Canonical-verify step prefix. A step ID of the shape
+# ``default:verify:{canonical}`` (or its bare ``verify:{canonical}`` form) is
+# the single parameterized canonical-verify step — the matrix role is derived
+# from the trailing ``{canonical}`` segment rather than from a per-canonical
+# role-file. See ``phase-5-execute/standards/canonical_verify.md``.
+_CANONICAL_VERIFY_PREFIX = 'verify:'
+
+# Canonical command segment → matrix ``role:`` value. This is the composer's
+# copy of the canonical→role table documented in
+# ``phase-5-execute/standards/canonical_verify.md`` § "derived role". Both
+# ``verify`` and ``module-tests`` map to the ``module-tests`` role (running the
+# full module-test suite); ``quality-gate`` maps to ``quality-gate``;
+# ``coverage`` maps to ``coverage``; whole-tree gates map to their own roles.
+_CANONICAL_TO_ROLE: dict[str, str] = {
+    'quality-gate': 'quality-gate',
+    'verify': 'module-tests',
+    'module-tests': 'module-tests',
+    'coverage': 'coverage',
+    'integration-tests': 'integration',
+    'e2e': 'e2e',
+}
+
+
 def _role_of(step_id: str, cache: dict[str, str | None]) -> str | None:
-    """Resolve a phase-5 candidate step ID to its ``role:`` frontmatter value.
+    """Resolve a phase-5 candidate step ID to its matrix ``role:`` value.
 
     The composer intersects phase-5 candidates by role rather than by literal
-    step ID. For each candidate, we resolve the step's source file (e.g.,
-    ``quality_check`` → ``marketplace/bundles/plan-marshall/skills/phase-5-execute/
-    standards/quality_check.md``) and read the ``role:`` field from the YAML
-    frontmatter.
+    step ID. Resolution is purely in-code via the ``_CANONICAL_TO_ROLE`` table —
+    no role-file is ever read (the ``phase-5-execute/standards/{name}.md``
+    role-files were deleted). Every built-in verify step is a parameterized
+    canonical-verify step (``default:verify:{canonical}`` or the bare
+    ``verify:{canonical}`` form); the role is derived from the trailing
+    ``{canonical}`` segment via the ``_CANONICAL_TO_ROLE`` table. A single
+    parameterized step backs every canonical, and the canonical is the parameter
+    that selects the role.
 
     Returns ``None`` for:
 
-    - External steps (``project:`` or ``bundle:skill``) — no role-file concept.
-    - Built-in steps whose source file is missing.
-    - Files without a ``role:`` frontmatter field (plugin-doctor's
-      ``MISSING_ROLE_FIELD`` analyzer catches this drift at edit time).
+    - External steps (``project:`` or ``bundle:skill``) — no role concept.
+    - Canonical-verify steps whose ``{canonical}`` segment is unrecognized.
+    - Any other bare name that is not a ``verify:{canonical}`` form (preserving
+      the "missing data → step is never role-selected" convention).
 
-    Results are cached per compose call to avoid re-reading the same file when
-    a candidate appears in multiple intersection sites.
+    Results are cached per compose call to avoid re-resolving the same step
+    when a candidate appears in multiple intersection sites.
     """
     if step_id in cache:
         return cache[step_id]
 
-    # External steps (project:foo or bundle:skill) have no role file — they
-    # are dispatched as PROJECT/SKILL steps, not built-in default steps.
-    if ':' in step_id and not step_id.startswith('default:'):
-        cache[step_id] = None
-        return None
-
     bare = _strip_default_prefix(step_id)
-    path = _PHASE_5_STANDARDS_DIR / f'{bare}.md'
-    if not path.is_file():
-        cache[step_id] = None
-        return None
 
-    try:
-        text = path.read_text(encoding='utf-8')
-    except OSError:
-        cache[step_id] = None
-        return None
+    # Canonical-verify steps: ``default:verify:{canonical}`` (bare:
+    # ``verify:{canonical}``). The role is derived from the trailing canonical
+    # segment by table lookup.
+    if bare.startswith(_CANONICAL_VERIFY_PREFIX):
+        canonical = bare[len(_CANONICAL_VERIFY_PREFIX) :]
+        derived_role = _CANONICAL_TO_ROLE.get(canonical)
+        cache[step_id] = derived_role
+        return derived_role
 
-    # Minimal YAML frontmatter parsing: scan the first ``---``-fenced block
-    # for a ``role:`` key. We avoid pulling in PyYAML to keep the script's
-    # dependency surface narrow; the frontmatter shape is constrained by
-    # plugin-doctor and the test suite.
-    role: str | None = None
-    if text.startswith('---'):
-        lines = text.splitlines()
-        for line in lines[1:]:
-            if line.strip() == '---':
-                break
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                continue
-            if ':' in stripped:
-                key, _, value = stripped.partition(':')
-                if key.strip() == 'role':
-                    candidate = value.strip().strip('"').strip("'")
-                    if candidate:
-                        role = candidate
-                    break
-    cache[step_id] = role
-    return role
+    # External steps (project:foo or bundle:skill) have no role — they are
+    # dispatched as PROJECT/SKILL steps, not built-in default steps. Any other
+    # bare name (no longer any legacy fixed-name ID) is never role-selected.
+    cache[step_id] = None
+    return None
 
 
 # =============================================================================
@@ -261,11 +259,11 @@ def _decide(
     name of the rule that fired (one of the seven rule keys defined in
     standards/decision-rules.md).
 
-    Rows 2, 3, 5, 6 intersect phase-5 candidates by the ``role:`` frontmatter
-    field of each candidate's source standards file rather than by literal
-    step ID. The intersection mechanism is structural: candidates declare
-    their role explicitly (e.g., ``role: quality-gate``) and the matrix
-    matches against a set of role names. See ``_role_of`` and
+    Rows 2, 3, 5, 6 intersect phase-5 candidates by each candidate's matrix
+    ``role:`` rather than by literal step ID. The intersection mechanism is
+    structural: each candidate's role is resolved in-code by ``_role_of`` (via
+    the ``_CANONICAL_TO_ROLE`` table, keyed on the trailing canonical segment)
+    and the matrix matches against a set of role names. See ``_role_of`` and
     ``standards/decision-rules.md`` § Role-Field Intersection.
 
     Rule 1's ``early_terminate`` predicate also requires ``task_queue_active``
@@ -587,10 +585,10 @@ def _looks_docs_only(phase_5_candidates: list[str], role_cache: dict[str, str | 
 
     The composer treats any candidate set whose declared roles include
     neither ``module-tests`` nor ``coverage`` as a docs-only signal. Real
-    code-shaped plans always include at least one candidate whose ``role:``
-    frontmatter is ``module-tests`` (typically ``default:build_verify``).
+    code-shaped plans always include at least one candidate whose derived role
+    is ``module-tests`` (typically ``default:verify:module-tests``).
 
-    Uses the per-compose role cache to avoid re-reading frontmatter files.
+    Uses the per-compose role cache to avoid re-resolving the same step.
     """
     roles = {_role_of(s, role_cache) for s in phase_5_candidates}
     return 'module-tests' not in roles and 'coverage' not in roles
@@ -969,12 +967,19 @@ def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> N
 
 
 def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
-    """Read ``plan.{phase_key}.steps`` from marshal.json.
+    """Read the configured step list for ``phase_key`` from marshal.json.
 
     ``phase_key`` is the marshal.json key (e.g. ``'phase-5-execute'`` or
-    ``'phase-6-finalize'``). Returns the list of full step references as
-    declared in marshal.json (prefixes preserved), or ``None`` when the
-    marshal file is missing, the keys are absent, or the value is not a list.
+    ``'phase-6-finalize'``). The list-field read under that key is
+    phase-aware: ``phase-5-execute`` reads ``verification_steps`` while
+    ``phase-6-finalize`` (and any other phase) reads ``steps``. Returns the
+    list of full step references as declared in marshal.json (prefixes
+    preserved), or ``None`` when the marshal file is missing, the keys are
+    absent, or the value is not a list.
+
+    For backward compatibility with project marshal.json files that have not
+    yet migrated the phase-5 block to ``verification_steps``, the reader falls
+    back to the generic ``steps`` key when the phase-aware field is absent.
 
     The composer prefers this source over the agent-supplied
     ``--phase-{5,6}-steps`` CSV because marshal.json is the authoritative
@@ -998,7 +1003,12 @@ def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     phase = plan.get(phase_key)
     if not isinstance(phase, dict):
         return None
-    steps = phase.get('steps')
+    field = 'verification_steps' if phase_key == 'phase-5-execute' else 'steps'
+    steps = phase.get(field)
+    # Back-compat: a phase-5 block written before the verification_steps
+    # rename still carries the list under the generic ``steps`` key.
+    if steps is None and field != 'steps':
+        steps = phase.get('steps')
     if not isinstance(steps, list):
         return None
     return [s for s in steps if isinstance(s, str) and s]
@@ -1120,6 +1130,77 @@ def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], pl
         return [s for s in phase_6_candidates if s != 'pre-submission-self-review'], True
 
     return phase_6_candidates, False
+
+
+# Footprint roles that gate a whole-tree canonical-verify step. Each canonical
+# whose derived matrix role appears here is footprint-gated: when the live
+# footprint is non-empty AND carries no path of the gating role, the
+# corresponding ``default:verify:{canonical}`` step is dropped from the
+# composed phase-5 list. This is the generic, canonical-agnostic
+# footprint pre-filter — it adds no per-canonical branch, only a role→suffix
+# membership test. ``integration`` / ``e2e`` are the gateable roles because a
+# project with no integration/e2e sources never needs those whole-tree gates;
+# the core ``quality-gate`` / ``module-tests`` / ``coverage`` roles are NEVER
+# footprint-gated (they always run when present).
+_FOOTPRINT_GATED_CANONICAL_ROLES: dict[str, tuple[str, ...]] = {
+    'integration': ('it.java', 'integrationtest', 'integration_test', 'test_integration', '_it.py'),
+    'e2e': ('e2e', 'endtoend', 'end_to_end'),
+}
+
+
+def _footprint_has_role(footprint: list[str], suffix_markers: tuple[str, ...]) -> bool:
+    """Return True when any footprint path's lowercased name contains a marker.
+
+    The match is a generic substring test against the path's basename and the
+    full path (lowercased), so it is build-system agnostic — it never imports a
+    build extension or reads ``build.map``. A canonical whose gating role has at
+    least one matching path is kept; one with zero matches is dropped only when
+    the footprint is otherwise non-empty.
+    """
+    for path in footprint:
+        low = path.lower()
+        if any(marker in low for marker in suffix_markers):
+            return True
+    return False
+
+
+def _apply_canonical_verify_inactive(
+    phase_5_steps: list[str],
+    plan_id: str,
+    role_cache: dict[str, str | None],
+) -> tuple[list[str], list[str]]:
+    """Generic footprint pre-filter for ``default:verify:{canonical}`` steps.
+
+    Drops a composed phase-5 canonical-verify step when its derived role is a
+    footprint-gated role (``integration`` / ``e2e``) AND the live, non-empty
+    footprint carries no path of that role. The gate is canonical-agnostic: it
+    is driven entirely by the ``_CANONICAL_TO_ROLE`` derivation and the
+    ``_FOOTPRINT_GATED_CANONICAL_ROLES`` membership table, with no per-canonical
+    branch in the code path.
+
+    Safety against compose-time emptiness: during early compose (phase-4-plan,
+    before the worktree is materialised) the footprint is empty, so the
+    pre-filter is a no-op and every canonical survives — the gate only fires
+    against a NON-empty footprint that genuinely lacks the gating role's paths.
+    Non-canonical-verify step IDs (``project:`` / ``bundle:skill`` steps) are
+    passed through untouched.
+
+    Returns ``(kept_steps, dropped_steps)``.
+    """
+    footprint = _resolve_footprint(plan_id)
+    if not footprint:
+        return phase_5_steps, []
+
+    kept: list[str] = []
+    dropped: list[str] = []
+    for step in phase_5_steps:
+        role = _role_of(step, role_cache)
+        gating_markers = _FOOTPRINT_GATED_CANONICAL_ROLES.get(role) if role else None
+        if gating_markers is not None and not _footprint_has_role(footprint, gating_markers):
+            dropped.append(step)
+            continue
+        kept.append(step)
+    return kept, dropped
 
 
 # Code-touching change types that gate ``finalize-step-simplify`` activation.
@@ -1894,11 +1975,23 @@ def _validate_may_mutate_placement(phase_6_steps: list[str]) -> str | None:
 # coverage / module-tests). Verbs not in this map are left to the consumer
 # (the composer skips routing for unmapped verbs, preserving today's
 # behaviour).
+#
+# The step IDs are BARE (no ``default:`` prefix) per the boundary-
+# normalization contract: the candidate lists are stripped to bare names at
+# the compose boundary (``_strip_default_prefix``), and ``phase_5.verification
+# _steps`` is built from those bare names. Each routed step ID is the bare
+# canonical-verify form ``verify:{canonical}`` (the post-strip shape of
+# ``default:verify:{canonical}``); both ``verify`` and ``module-tests`` route to
+# ``verify:module-tests`` (the canonical-verify step whose derived role is
+# ``module-tests``). Emitting a ``default:``-prefixed ID here would append a
+# duplicate prefixed form alongside the bare form the matrix already produced,
+# and the prefixed stray would then fail the prefix-strict validate gate.
+# Keeping the routed step IDs bare matches the rest of the phase-5 list.
 _VERB_TO_PHASE_5_STEP: dict[str, str] = {
-    'quality-gate': 'default:quality_check',
-    'verify': 'default:build_verify',
-    'module-tests': 'default:build_verify',
-    'coverage': 'default:coverage_check',
+    'quality-gate': 'verify:quality-gate',
+    'verify': 'verify:module-tests',
+    'module-tests': 'verify:module-tests',
+    'coverage': 'verify:coverage',
 }
 
 
@@ -2352,6 +2445,30 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     mutated_tasks = _route_task_verification_commands(plan_id, body)
     _log_execution_tier_routing(plan_id, mutated_tasks, list(body['phase_5'].get('verification_steps', [])))
 
+    # Generic footprint pre-filter for canonical-verify steps. Runs AFTER the
+    # seven-row matrix and execution_tier routing have produced the final
+    # phase-5 verification list, so it sees every canonical-verify step that
+    # will be persisted (including any appended by orchestrator-tier routing).
+    # It drops a ``default:verify:{canonical}`` step whose derived role is a
+    # footprint-gated whole-tree role (integration / e2e) when the live,
+    # non-empty footprint carries no path of that role — canonical-agnostic,
+    # driven entirely by ``_CANONICAL_TO_ROLE`` + the membership table. A no-op
+    # when the footprint is empty (early compose) or no canonical-verify step is
+    # footprint-gated. See standards/decision-rules.md § Generic footprint
+    # pre-filter and phase-5-execute/standards/canonical_verify.md.
+    canonical_verify_role_cache: dict[str, str | None] = {}
+    body['phase_5']['verification_steps'], canonical_verify_dropped = _apply_canonical_verify_inactive(
+        list(body['phase_5'].get('verification_steps', [])),
+        plan_id,
+        canonical_verify_role_cache,
+    )
+    if canonical_verify_dropped:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) canonical_verify_inactive — '
+            f'dropped {canonical_verify_dropped} from phase_5.verification_steps (no matching footprint role)',
+        )
+
     # plan.phase-6-finalize run-at-all selection runs AFTER the seven-row
     # matrix (and execution_tier routing) and BEFORE the bot-enforcement guard.
     # It forces each of the three finalize gates' steps in (`always`) or out
@@ -2668,9 +2785,9 @@ def _render_standards_rel_path(absolute: Path) -> str:
 def _read_frontmatter_order(path: Path) -> int | None:
     """Read the integer ``order:`` frontmatter key from a markdown file.
 
-    Mirrors the minimal frontmatter parser used by ``_role_of`` — scans the
-    first ``---``-fenced block for an ``order:`` key and returns its value
-    coerced to ``int``. Returns ``None`` when the file is missing, has no
+    A minimal frontmatter parser — scans the first ``---``-fenced block for an
+    ``order:`` key and returns its value coerced to ``int``. Returns ``None``
+    when the file is missing, has no
     frontmatter block, lacks an ``order:`` key, or the value is not an
     integer. PyYAML is intentionally avoided to keep the dependency surface
     narrow; the frontmatter shape is constrained by plugin-doctor and the
@@ -2989,16 +3106,26 @@ def cmd_validate(args: argparse.Namespace) -> dict[str, Any] | None:
         p6_steps = []
 
     # Step-ID checks (only when caller passes candidate sets).
+    #
+    # The comparison is PREFIX-AGNOSTIC: the composer normalizes manifest step
+    # IDs to bare names at the compose boundary (``_strip_default_prefix``),
+    # while the caller's ``--phase-{5,6}-steps`` CSV may still carry the
+    # optional ``default:`` prefix (e.g. ``default:verify:module-tests``). Stripping
+    # the prefix from BOTH the allowed set and the manifest step IDs before the
+    # set-membership test lets a bare manifest ID validate against a
+    # ``default:``-prefixed allowed-list (and vice versa). ``project:`` /
+    # ``bundle:skill`` prefixes are preserved verbatim by
+    # ``_strip_default_prefix`` so external steps still compare exactly.
     p5_unknown: list[str] = []
     p6_unknown: list[str] = []
     if args.phase_5_steps is not None:
-        allowed_5 = set(_split_csv(args.phase_5_steps, ()))
-        p5_unknown = [s for s in p5_steps if s not in allowed_5]
+        allowed_5 = {_strip_default_prefix(s) for s in _split_csv(args.phase_5_steps, ())}
+        p5_unknown = [s for s in p5_steps if _strip_default_prefix(s) not in allowed_5]
         if p5_unknown:
             errors.append(f'phase_5.verification_steps contains unknown IDs: {p5_unknown}')
     if args.phase_6_steps is not None:
-        allowed_6 = set(_split_csv(args.phase_6_steps, ()))
-        p6_unknown = [s for s in p6_steps if s not in allowed_6]
+        allowed_6 = {_strip_default_prefix(s) for s in _split_csv(args.phase_6_steps, ())}
+        p6_unknown = [s for s in p6_steps if _strip_default_prefix(s) not in allowed_6]
         if p6_unknown:
             errors.append(f'phase_6.steps contains unknown IDs: {p6_unknown}')
 

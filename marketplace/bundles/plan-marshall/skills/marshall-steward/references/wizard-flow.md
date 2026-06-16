@@ -348,13 +348,24 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Ask the user to accept defaults (all generic verify steps + 10 finalize steps, default iterations) or configure individually. The 10 default finalize steps (the `BUILT_IN_FINALIZE_STEPS` list in `_config_defaults.py`) are `pre-push-quality-gate`, `commit-push`, `create-pr`, `ci-verify`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, and `archive-plan`. `pre-push-quality-gate` is a built-in default whose activation is derived from `build.map` — it activates whenever the live footprint touches a glob registered in the build_map (those globs are the explicit `(pattern, role)` routes each *applicable* extension declares via `classify_globs()`, seeded at Step 8b, not author-shipped static literals). CI completion is a dispatcher-resolved precondition (`requires: [ci-complete]` declared on `ci-verify`, `automated-review`, and `sonar-roundtrip` frontmatters), not a sibling step. If configuring, discover available steps and apply.
 
-**Verification steps** (phase-5-execute) — per-step multi-select:
+**Verification steps** (phase-5-execute) — discover the project's canonical verify steps, then per-step multi-select.
+
+The phase-5-execute verification pipeline is configured through the `verification_steps` list under `plan.phase-5-execute`. Each entry is a parameterized canonical-verify step ID of the form `default:verify:{canonical}` — the step-id vocabulary (which canonicals exist, how each derives a matrix role, and the module-scoped vs whole-tree distinction) is owned by the central canonical-verify standard at [`../../phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md). Do NOT inline-copy the step IDs here; consult that doc for the authoritative set.
+
+**Discover the project's canonical verify steps.** The set of canonicals the wizard offers is derived from the project architecture discovered in Step 8 — the build system and its resolvable commands determine which canonicals apply (e.g. a project with no integration-test profile does not surface `default:verify:integration-tests`). Enumerate the available steps via `list-verify-steps` (which reflects the discovered architecture) rather than hard-coding a list:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
+```
+
+**Present the discovered steps for selection** and write the chosen `verification_steps` list. The default selection is the project's discovered whole-tree canonicals (the end-of-phase-5 sweep gates — typically `quality-gate`, `module-tests`, and `coverage`, plus any whole-tree `integration-tests` / `e2e` the architecture resolved); operators may decline individual steps via the multi-select. Persist the chosen list with `set-steps`, which writes the `verification_steps` key:
+
+```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-steps --steps {selection}
 ```
+
+The `verification_steps` list feeds the whole-tree end-of-phase-5 sweep; the module-scoped per-deliverable build is configured separately via `per_deliverable_build` (see [data-model.md](../../manage-config/standards/data-model.md) § phase-5-execute). Whole-tree-only gates such as `integration-tests` / `e2e` belong in `verification_steps`, never in `per_deliverable_build` — see [`../../phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md) § "Module-scoped vs whole-tree invocation".
 
 **Finalize steps** (phase-6-finalize) — preset-first, with a Custom escape hatch. Present the finalize-step preset picker BEFORE the per-step `list-finalize-steps` / `set-steps` flow, mirroring the single-AskUserQuestion preset-picker pattern documented in [effort-menu.md](../standards/effort-menu.md) (do not inline-copy that flow — the normative contract lives there). The three preset descriptions are sourced verbatim from `FinalizeStepPresets.describe(name)` (`finalize_step_presets.py`), and the Custom option falls through to the existing per-step multi-select escape hatch.
 

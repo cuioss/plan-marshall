@@ -109,7 +109,7 @@ The `hint` field is a recognition token, not optional prose — its presence in 
 
 `architecture derive-verification --changed-artifacts PATH1,PATH2,...` is the single deterministic consumer of the `build_map` file-to-build contract. It classifies each changed-artifact path to a `build_class` via the merged `build_map` (seed ∪ user overrides, longest-glob-wins), groups by `build_class`, and emits the architecture-resolved verification command set per the closed mapping below. This table is the **single source of truth** for the build_class → command mapping — `manage-execution-manifest` and `phase-4-plan` consume the deriver, they do not re-derive the table.
 
-The `build_class` value **names the canonical command directly** — there is no indirection map between the `build_class` and the command it resolves. The deriver resolves `build_class` as the canonical command itself (via `resolve --command {build_class}`), handling `none` as the only non-`resolve` case. The same word — `compile`, `module-tests`, `verify` — spans `build_map`, this deriver, `architecture resolve`, and the `per_deliverable_build` depth knob.
+The `build_class` value **names the canonical command directly** — there is no indirection map between the `build_class` and the command it resolves. The deriver resolves `build_class` as the canonical command itself (via `resolve --command {build_class}`), handling `none` as the only non-`resolve` case. The same word — `compile`, `module-tests`, `verify` — spans `build_map`, this deriver, `architecture resolve`, and the `per_deliverable_build` list of `default:verify:{canonical}` step IDs.
 
 | `build_class` | role it attaches to | derived verification command(s) |
 |---|---|---|

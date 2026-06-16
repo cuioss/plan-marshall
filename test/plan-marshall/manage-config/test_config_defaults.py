@@ -206,48 +206,165 @@ def test_get_default_config_includes_per_task_budget_reserve_tokens():
     assert parse_sensible_int(execute['per_task_budget_reserve_tokens']) == 50000
 
 
+_EXPECTED_PER_DELIVERABLE_BUILD = ['default:verify:compile', 'default:verify:module-tests']
+
+
 def test_default_plan_execute_includes_per_deliverable_build():
-    """DEFAULT_PLAN_EXECUTE must declare per_deliverable_build with default compile+scoped-test."""
+    """DEFAULT_PLAN_EXECUTE must declare per_deliverable_build as the canonical-verify list."""
     execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
 
     assert 'per_deliverable_build' in execute_defaults, (
         'per_deliverable_build must be schema-registered in DEFAULT_PLAN_EXECUTE'
     )
-    assert execute_defaults['per_deliverable_build'] == 'compile+scoped-test', (
-        'per_deliverable_build default must be compile+scoped-test (focused per-deliverable build)'
+    # The knob is now a LIST of default:verify:{canonical} step IDs (the former
+    # 'compile+scoped-test' enum expanded to compile + module-tests rungs).
+    assert execute_defaults['per_deliverable_build'] == _EXPECTED_PER_DELIVERABLE_BUILD, (
+        "per_deliverable_build default must be ['default:verify:compile',"
+        "'default:verify:module-tests'] (focused per-deliverable build)"
     )
 
 
 def test_get_default_config_includes_per_deliverable_build():
-    """get_default_config() must surface plan.phase-5-execute.per_deliverable_build == compile+scoped-test."""
+    """get_default_config() must surface plan.phase-5-execute.per_deliverable_build as the list default."""
     config = _config_defaults_mod.get_default_config()
 
     execute = config['plan']['phase-5-execute']
-    assert execute.get('per_deliverable_build') == 'compile+scoped-test'
+    assert execute.get('per_deliverable_build') == _EXPECTED_PER_DELIVERABLE_BUILD
 
 
-def test_valid_per_deliverable_build_enumerates_expected_values():
-    """VALID_PER_DELIVERABLE_BUILD must enumerate exactly the four allowed enum values."""
-    values = _config_defaults_mod.VALID_PER_DELIVERABLE_BUILD
+def test_retired_per_deliverable_build_enum_names_the_old_vocabulary():
+    """RETIRED_PER_DELIVERABLE_BUILD_ENUM must name the four retired enum strings.
 
-    # default must be a member of the enum
-    assert values == ('off', 'compile-only', 'compile+scoped-test', 'full')
-    assert _config_defaults_mod.DEFAULT_PLAN_EXECUTE['per_deliverable_build'] in values
+    The old enum vocabulary is no longer accepted; the validator names these
+    explicitly so a config carrying an old value gets an actionable migration
+    error rather than a generic "not a list" rejection.
+    """
+    retired = _config_defaults_mod.RETIRED_PER_DELIVERABLE_BUILD_ENUM
 
-
-def test_validate_per_deliverable_build_accepts_allowed_values():
-    """validate_per_deliverable_build must accept every value in VALID_PER_DELIVERABLE_BUILD."""
-    # no exception for any allowed value
-    for value in _config_defaults_mod.VALID_PER_DELIVERABLE_BUILD:
-        _config_defaults_mod.validate_per_deliverable_build(value)
+    assert retired == ('off', 'compile-only', 'compile+scoped-test', 'full')
+    # the default value must NOT be one of the retired enum strings
+    assert _config_defaults_mod.DEFAULT_PLAN_EXECUTE['per_deliverable_build'] not in retired
 
 
-def test_validate_per_deliverable_build_rejects_unknown_value():
-    """validate_per_deliverable_build must raise ValueError for a value outside the enum."""
+def test_validate_per_deliverable_build_accepts_canonical_verify_list():
+    """validate_per_deliverable_build must accept a list of default:verify:{canonical} IDs."""
+    # no exception for a valid canonical-verify list
+    _config_defaults_mod.validate_per_deliverable_build(
+        ['default:verify:compile', 'default:verify:module-tests']
+    )
+    # the seeded default must validate
+    _config_defaults_mod.validate_per_deliverable_build(
+        _config_defaults_mod.DEFAULT_PLAN_EXECUTE['per_deliverable_build']
+    )
+
+
+def test_validate_per_deliverable_build_accepts_empty_list():
+    """validate_per_deliverable_build must accept [] (disables the per-deliverable build)."""
+    # the empty list is the replacement for the retired 'off' enum value
+    _config_defaults_mod.validate_per_deliverable_build([])
+
+
+def test_validate_per_deliverable_build_rejects_retired_enum_values():
+    """validate_per_deliverable_build must reject every retired enum string with a migration error."""
     import pytest
 
-    with pytest.raises(ValueError, match='Invalid per_deliverable_build'):
+    for retired in _config_defaults_mod.RETIRED_PER_DELIVERABLE_BUILD_ENUM:
+        with pytest.raises(ValueError, match='no longer accepts the enum value'):
+            _config_defaults_mod.validate_per_deliverable_build(retired)
+
+
+def test_validate_per_deliverable_build_rejects_non_list():
+    """validate_per_deliverable_build must reject a non-list value that is not a retired enum string."""
+    import pytest
+
+    with pytest.raises(ValueError, match='expected a list'):
         _config_defaults_mod.validate_per_deliverable_build('reckless')
+
+
+def test_validate_per_deliverable_build_rejects_non_canonical_entries():
+    """validate_per_deliverable_build must reject list entries lacking the default:verify: prefix."""
+    import pytest
+
+    with pytest.raises(ValueError, match='every entry must be a'):
+        _config_defaults_mod.validate_per_deliverable_build(
+            ['default:verify:compile', 'bogus-step']
+        )
+
+
+# =============================================================================
+# remove-field verb (cmd_phase) — deletes a key under a phase section
+# =============================================================================
+
+
+def test_remove_field_deletes_explicit_phase_key(plan_context):
+    """`phase-5-execute remove-field --field per_deliverable_build` deletes the persisted key.
+
+    The verb operates on the on-disk section only: removing a key that the
+    defaults still seed re-exposes the default on the next read, so the
+    follow-up get surfaces the seeded default rather than KeyError.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # set an explicit override so the key is present in the persisted section
+    set_args = Namespace(
+        verb='set', field='per_deliverable_build', value='default:verify:compile'
+    )
+    set_result = _cmd_quality_phases_mod.cmd_phase(set_args, 'phase-5-execute')
+    assert set_result['status'] == 'success'
+
+    # remove the persisted override
+    remove_args = Namespace(verb='remove-field', field='per_deliverable_build')
+    remove_result = _cmd_quality_phases_mod.cmd_phase(remove_args, 'phase-5-execute')
+
+    assert remove_result['status'] == 'success'
+    assert remove_result['field'] == 'per_deliverable_build'
+    assert remove_result['removed'] is True
+
+    # removing a key the defaults seed re-exposes the default on the next read
+    get_args = Namespace(verb='get', field='per_deliverable_build')
+    get_result = _cmd_quality_phases_mod.cmd_phase(get_args, 'phase-5-execute')
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == _EXPECTED_PER_DELIVERABLE_BUILD
+
+
+def test_remove_field_errors_on_absent_key(plan_context):
+    """`remove-field` must error when the key is not present in the persisted section.
+
+    Removing an absent key is an explicit error (not a silent no-op) so callers
+    get a clear signal.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # the legacy `steps` key has no default and is absent from a fresh config
+    remove_args = Namespace(verb='remove-field', field='steps')
+    result = _cmd_quality_phases_mod.cmd_phase(remove_args, 'phase-5-execute')
+
+    assert result['status'] == 'error'
+
+
+def test_remove_field_removes_legacy_steps_key(plan_context):
+    """`remove-field --field steps` cleanly removes the legacy phase-5 steps key.
+
+    The legacy `plan.phase-5-execute.steps` key has no default, so removing it
+    leaves a clean section with no re-exposed default.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+
+    # inject a legacy `steps` key into the persisted phase-5-execute section
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config['plan']['phase-5-execute']['steps'] = ['default:verify:quality-gate']
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    remove_args = Namespace(verb='remove-field', field='steps')
+    result = _cmd_quality_phases_mod.cmd_phase(remove_args, 'phase-5-execute')
+
+    assert result['status'] == 'success'
+    assert result['removed'] is True
+
+    # the legacy key is gone from the persisted section
+    persisted = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert 'steps' not in persisted['plan']['phase-5-execute']
 
 
 def test_default_plan_finalize_omits_pre_push_quality_gate_activation_globs():

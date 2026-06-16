@@ -168,22 +168,50 @@ CROSS_PLAN_CHECKS = {
 }
 
 # The roles the phase-5 verification steps must resolve to for a manifest to be
-# considered well-composed. A phase-5 step ID is resolved to its `role:`
-# frontmatter (e.g. `quality_check` → `quality-gate`, `build_verify` →
-# `module-tests`) and intersected against this set, mirroring the composer's
-# Role-Field Intersection (`manage-execution-manifest/standards/decision-rules.md`
-# § "Role-Field Intersection"). Genuine `name_drift` is an unresolvable role or a
-# non-empty phase_5 that resolves to zero of these roles — NOT a renamed name.
+# considered well-composed. A phase-5 step ID is resolved to its matrix `role:`
+# in-code (e.g. `default:verify:quality-gate` → `quality-gate`,
+# `default:verify:module-tests` → `module-tests`) and intersected against this
+# set, mirroring the composer's Role-Field Intersection
+# (`manage-execution-manifest/standards/decision-rules.md` § "Role-Field
+# Intersection"). Genuine `name_drift` is an unresolvable role or a non-empty
+# phase_5 that resolves to zero of these roles — NOT a renamed name.
 QUALITY_GATE_ROLES = {"quality-gate", "module-tests"}
 
-# Repo-relative location of the phase-5 verification-step standards docs whose
-# `role:` frontmatter the resolver reads.
-PHASE_5_STANDARDS_REL = (
-    "marketplace/bundles/plan-marshall/skills/phase-5-execute/standards"
-)
+# Canonical-verify step prefix. A phase-5 step ID of the shape
+# `default:verify:{canonical}` (or its bare `verify:{canonical}` form) is the
+# single parameterized canonical-verify step — the matrix role is derived from
+# the trailing `{canonical}` segment via `_CANONICAL_TO_ROLE` rather than from a
+# per-canonical role-file (the `phase-5-execute/standards/{name}.md` role-files
+# were deleted). See `phase-5-execute/standards/canonical_verify.md`.
+_CANONICAL_VERIFY_PREFIX = "verify:"
 
-# Frontmatter `role:` line shape, e.g. `role: quality-gate`.
-_ROLE_FRONTMATTER_RE = re.compile(r"^\s*role:\s*(\S+)\s*$")
+# Canonical command segment → matrix `role:` value. This mirrors the composer's
+# `_CANONICAL_TO_ROLE` table in
+# `manage-execution-manifest/scripts/manage-execution-manifest.py`, itself the
+# composer's copy of the canonical→role mapping documented in
+# `phase-5-execute/standards/canonical_verify.md`. Both `verify` and
+# `module-tests` map to the `module-tests` role; whole-tree gates map to their
+# own roles. Resolution is purely in-code — the deleted standards docs are never
+# read.
+_CANONICAL_TO_ROLE: dict[str, str] = {
+    "quality-gate": "quality-gate",
+    "verify": "module-tests",
+    "module-tests": "module-tests",
+    "coverage": "coverage",
+    "integration-tests": "integration",
+    "e2e": "e2e",
+}
+
+# Legacy bare default-step name → matrix `role:` value. The three default-step
+# bare names (`quality_check` / `build_verify` / `coverage_check`) predate the
+# parameterized `default:verify:{canonical}` form; their backing role-files have
+# been deleted, so their role is resolved in-code here. Mirrors the composer's
+# `_LEGACY_BARE_NAME_ROLE` table.
+_LEGACY_BARE_NAME_ROLE: dict[str, str] = {
+    "quality_check": "quality-gate",
+    "build_verify": "module-tests",
+    "coverage_check": "coverage",
+}
 
 # ---------------------------------------------------------------------------
 # Centralized threshold table
@@ -559,6 +587,16 @@ def derive_expected_rule(inputs: PlanInputs) -> str:
     n_affected = inputs.affected_files_count
     candidates = inputs.phase_5_candidates
 
+    # Row 3 resolves candidate step IDs to their matrix roles (mirroring the
+    # composer's Role-Field Intersection) rather than testing literal-string
+    # membership: a well-composed phase_5 carries parameterized IDs such as
+    # `default:verify:module-tests`, not the bare role string `module-tests`.
+    role_cache: dict[str, str | None] = {}
+    candidate_roles = {
+        _resolve_step_role(inputs.plan_dir, step_id, role_cache)
+        for step_id in candidates
+    }
+
     # Row 1
     if change_type == "analysis" and n_affected == 0:
         return "early_terminate_analysis"
@@ -570,8 +608,8 @@ def derive_expected_rule(inputs: PlanInputs) -> str:
         scope in {"surgical", "single_module"}
         and change_type in {"tech_debt", "enhancement"}
         and n_affected > 0
-        and "module-tests" not in candidates
-        and "coverage" not in candidates
+        and "module-tests" not in candidate_roles
+        and "coverage" not in candidate_roles
     ):
         return "docs_only"
     # Row 4
@@ -605,49 +643,76 @@ def verdict_for(inputs: PlanInputs) -> tuple[str, str]:
 
 
 def _strip_step_namespace(step_id: str) -> str:
-    """Strip any namespace prefix from a phase-5 step ID.
+    """Strip only the optional `default:` prefix from a phase-5 step ID.
 
-    `default:quality_check` → `quality_check`; `quality_check` → `quality_check`.
+    `default:quality_check` → `quality_check`; `quality_check` → `quality_check`;
+    `default:verify:quality-gate` → `verify:quality-gate` (the canonical-verify
+    form is preserved so the trailing `{canonical}` segment is recoverable). This
+    mirrors the composer's `_strip_default_prefix` — it MUST NOT split on the
+    last colon, which would collapse a parameterized step to its bare canonical
+    and break role derivation.
     """
-    return step_id.split(":")[-1].strip()
+    bare = step_id.strip()
+    prefix = "default:"
+    return bare[len(prefix):] if bare.startswith(prefix) else bare
 
 
-def _resolve_step_role(repo_root: Path, step_id: str, cache: dict[str, str | None]) -> str | None:
-    """Resolve a phase-5 step ID to its `role:` frontmatter value.
+def _resolve_step_role(
+    _repo_root: Path, step_id: str, cache: dict[str, str | None]
+) -> str | None:
+    """Resolve a phase-5 step ID to its matrix `role:` value, purely in-code.
 
-    Reads `phase-5-execute/standards/{step}.md` and returns the `role:` value, or
-    `None` when the standards file is absent, unreadable, or carries no `role:`
-    frontmatter. Results (including unresolved `None`) are memoized in `cache`.
-    Best-effort: a missing standards directory degrades to "role unresolved"
-    rather than raising.
+    Resolution mirrors the composer's `_role_of` — no standards `.md` file is
+    read (the `phase-5-execute/standards/{name}.md` role-files were deleted):
+
+    - Canonical-verify steps (`default:verify:{canonical}` or the bare
+      `verify:{canonical}` form) derive the role from the trailing `{canonical}`
+      segment via the `_CANONICAL_TO_ROLE` table.
+    - Legacy bare default-step names (`quality_check` / `build_verify` /
+      `coverage_check`) resolve via the `_LEGACY_BARE_NAME_ROLE` table.
+
+    Returns `None` for external steps (`project:` / `bundle:skill`),
+    canonical-verify steps whose `{canonical}` is unrecognized, and any other
+    bare name absent from `_LEGACY_BARE_NAME_ROLE` — preserving the "missing
+    data → step is never role-selected" convention. The `_repo_root` parameter
+    is retained for call-site stability (role resolution no longer touches the
+    filesystem). Results (including unresolved `None`) are memoized in `cache`.
     """
+    if step_id in cache:
+        return cache[step_id]
+
     bare = _strip_step_namespace(step_id)
-    if bare in cache:
-        return cache[bare]
-    role: str | None = None
-    standards_dir = (repo_root / PHASE_5_STANDARDS_REL).resolve()
-    doc = (standards_dir / f"{bare}.md").resolve()
-    if doc.is_relative_to(standards_dir) and doc.is_file():
-        try:
-            for line in doc.read_text(encoding="utf-8").splitlines():
-                m = _ROLE_FRONTMATTER_RE.match(line)
-                if m:
-                    role = m.group(1)
-                    break
-        except OSError:
-            role = None
-    cache[bare] = role
+
+    # Canonical-verify steps: `default:verify:{canonical}` (bare:
+    # `verify:{canonical}`). Role is derived from the trailing canonical segment.
+    if bare.startswith(_CANONICAL_VERIFY_PREFIX):
+        canonical = bare[len(_CANONICAL_VERIFY_PREFIX):]
+        role = _CANONICAL_TO_ROLE.get(canonical)
+        cache[step_id] = role
+        return role
+
+    # External steps (`project:foo` / `bundle:skill`) have no role.
+    if ":" in step_id and not step_id.startswith("default:"):
+        cache[step_id] = None
+        return None
+
+    # Legacy bare default-step names resolve via the in-code table. An
+    # unrecognized bare name resolves to `None` (never role-selected).
+    role = _LEGACY_BARE_NAME_ROLE.get(bare)
+    cache[step_id] = role
     return role
 
 
 def detect_name_drift(inputs: PlanInputs, repo_root: Path, role_cache: dict[str, str | None]) -> str | None:
-    """Genuine name_drift detection via role resolution.
+    """Genuine name_drift detection via in-code role resolution.
 
-    Resolves each phase-5 step ID to its `role:` frontmatter and intersects the
-    resolved roles against {quality-gate, module-tests}, mirroring the composer.
-    Genuine drift is exactly: (a) a step ID whose role cannot be resolved, or
-    (b) a non-empty phase_5 list that resolves to zero quality-gate/module-tests
-    roles. A phase_5 of `['quality_check', 'build_verify']` resolves to
+    Resolves each phase-5 step ID to its matrix `role:` (via the
+    `_CANONICAL_TO_ROLE` / `_LEGACY_BARE_NAME_ROLE` tables, mirroring the
+    composer's `_role_of`) and intersects the resolved roles against
+    {quality-gate, module-tests}. Genuine drift is exactly: (a) a step ID whose
+    role cannot be resolved, or (b) a non-empty phase_5 list that resolves to
+    zero quality-gate/module-tests roles. A well-composed phase_5 such as
+    `['default:verify:quality-gate', 'default:verify:module-tests']` resolves to
     {quality-gate, module-tests} and is NOT flagged.
     """
     if not inputs.manifest_phase_5:
@@ -662,8 +727,8 @@ def detect_name_drift(inputs: PlanInputs, repo_root: Path, role_cache: dict[str,
             resolved_roles.add(role)
     if unresolved:
         return (
-            f"phase_5 step ID(s) {unresolved} resolve to no `role:` frontmatter "
-            f"under {PHASE_5_STANDARDS_REL}/ — unresolvable role"
+            f"phase_5 step ID(s) {unresolved} resolve to no matrix `role:` "
+            f"(unknown canonical or unknown legacy step) — unresolvable role"
         )
     if not (resolved_roles & QUALITY_GATE_ROLES):
         return (

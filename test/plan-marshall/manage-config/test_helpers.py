@@ -61,7 +61,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                 'phase-5-execute': {
                     'commit_and_push': True,
                     'max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
+                    'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -162,7 +162,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 'compatibility': 'breaking',
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'steps': ['default:quality_check', 'default:build_verify'],
+                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,

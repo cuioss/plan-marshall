@@ -59,15 +59,15 @@ from conftest import run_script  # noqa: E402
 
 
 def test_execute_verify_get(plan_context):
-    """Test plan phase-5-execute get returns steps list config."""
+    """Test plan phase-5-execute get returns verification_steps list config."""
     create_marshal_json(plan_context.fixture_dir)
 
     result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
 
     assert result['status'] == 'success'
     assert 'max_iterations' in result
-    assert 'steps' in result
-    assert 'default:quality_check' in result['steps']
+    assert 'verification_steps' in result
+    assert 'default:verify:quality-gate' in result['verification_steps']
 
 
 def test_execute_verify_set_max_iterations(plan_context):
@@ -83,27 +83,86 @@ def test_execute_verify_set_max_iterations(plan_context):
     assert config['plan']['phase-5-execute']['max_iterations'] == 10
 
 
-def test_execute_set_steps(plan_context):
-    """Test plan phase-5-execute set-steps replaces entire steps list, sorted by discovered order."""
+def test_execute_set_steps_single_canonical_verify_round_trips(plan_context):
+    """set-steps with a single canonical-verify step persists it to verification_steps.
+
+    Every built-in canonical-verify step (`default:verify:{canonical}`) shares the
+    single backing standards doc `canonical_verify.md` (order 10), so a single-step
+    set-steps resolves its order cleanly and round-trips.
+    """
     create_marshal_json(plan_context.fixture_dir)
 
-    # Pass built-ins in reverse to prove ordering comes from discovery, not call order.
     result = cmd_plan(
         Namespace(
             sub_noun='phase-5-execute',
             verb='set-steps',
-            steps='default:coverage_check,default:build_verify,default:quality_check',
+            steps='default:verify:quality-gate',
         )
     )
 
     assert result['status'] == 'success'
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    # Sorted by discovered order: 10, 20, 30
-    assert config['plan']['phase-5-execute']['steps'] == [
-        'default:quality_check',
-        'default:build_verify',
-        'default:coverage_check',
+    assert config['plan']['phase-5-execute']['verification_steps'] == ['default:verify:quality-gate']
+
+
+def test_execute_set_steps_multiple_canonical_verify_succeeds_ordered_by_list_position(plan_context):
+    """set-steps over >1 canonical-verify step SUCCEEDS, ordered by list position.
+
+    The built-in canonical-verify steps all resolve their order from the single
+    `canonical_verify.md` doc (order 10), so they share a base order by design.
+    They are EXEMPT from the distinct-order collision guard in
+    `_resolve_step_orders` — multiple canonical-verify steps are valid, and their
+    effective ordering comes from their position in the persisted
+    `verification_steps` list (canonical_verify.md § "Ordering among
+    canonical-verify entries"; data-model.md). This asserts the resolved contract:
+    no order_collision, and list position is preserved verbatim.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set-steps',
+            steps='default:verify:quality-gate,default:verify:module-tests',
+        )
+    )
+
+    assert result['status'] == 'success'
+
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert config['plan']['phase-5-execute']['verification_steps'] == [
+        'default:verify:quality-gate',
+        'default:verify:module-tests',
+    ]
+
+
+def test_execute_set_steps_multiple_canonical_verify_preserves_reverse_list_order(plan_context):
+    """Canonical-verify list position is the effective order — reversed input round-trips reversed.
+
+    Because all canonical-verify steps share base order 10, the persisted order is
+    determined ONLY by input list position (via the list-index offset in
+    `_resolve_step_orders`). A reversed input list therefore persists reversed,
+    proving the ordering is list-position-driven rather than collapsing to a
+    discovery-order canonicalization.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set-steps',
+            steps='default:verify:coverage,default:verify:module-tests,default:verify:quality-gate',
+        )
+    )
+
+    assert result['status'] == 'success'
+
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert config['plan']['phase-5-execute']['verification_steps'] == [
+        'default:verify:coverage',
+        'default:verify:module-tests',
+        'default:verify:quality-gate',
     ]
 
 
@@ -116,9 +175,9 @@ def test_execute_add_step(plan_context, monkeypatch):
         _cmd_quality_phases,
         '_discover_steps_for_phase',
         lambda phase: [
-            {'name': 'default:quality_check', 'order': 10},
-            {'name': 'default:build_verify', 'order': 20},
-            {'name': 'default:coverage_check', 'order': 30},
+            {'name': 'default:verify:quality-gate', 'order': 10},
+            {'name': 'default:verify:module-tests', 'order': 20},
+            {'name': 'default:verify:coverage', 'order': 30},
             {'name': 'pm-documents:doc-verify', 'order': 500},
         ],
     )
@@ -135,30 +194,30 @@ def test_execute_add_step(plan_context, monkeypatch):
     assert result['status'] == 'success'
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    steps = config['plan']['phase-5-execute']['steps']
+    steps = config['plan']['phase-5-execute']['verification_steps']
     assert 'pm-documents:doc-verify' in steps
     # Order 500 places it after the default built-ins (10, 20, 30)
     assert steps[-1] == 'pm-documents:doc-verify'
 
 
 def test_execute_remove_step(plan_context):
-    """Test plan phase-5-execute remove-step removes from steps list."""
+    """Test plan phase-5-execute remove-step removes from verification_steps list."""
     create_marshal_json(plan_context.fixture_dir)
 
     result = cmd_plan(
         Namespace(
             sub_noun='phase-5-execute',
             verb='remove-step',
-            step='default:quality_check',
+            step='default:verify:quality-gate',
         )
     )
 
     assert result['status'] == 'success'
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    steps = config['plan']['phase-5-execute']['steps']
-    assert 'default:quality_check' not in steps
-    assert 'default:build_verify' in steps
+    steps = config['plan']['phase-5-execute']['verification_steps']
+    assert 'default:verify:quality-gate' not in steps
+    assert 'default:verify:module-tests' in steps
 
 
 def test_execute_verify_get_field(plan_context):
@@ -185,13 +244,13 @@ def test_execute_add_step_duplicate(plan_context):
         Namespace(
             sub_noun='phase-5-execute',
             verb='add-step',
-            step='default:quality_check',
+            step='default:verify:quality-gate',
             position=None,
         )
     )
 
     assert result['status'] == 'error'
-    assert 'default:quality_check' in result['error']
+    assert 'default:verify:quality-gate' in result['error']
 
 
 def test_execute_remove_step_not_found(plan_context):
@@ -474,14 +533,15 @@ def test_execute_add_step_order_collision_returns_error(plan_context, monkeypatc
     """add-step fails with `error: order_collision` mirroring set-steps semantics."""
     create_marshal_json(plan_context.fixture_dir)
 
-    # Inject discovery where the new extension step shares order 10 with quality_check.
+    # Inject discovery where the new extension step shares order 10 with the
+    # quality-gate canonical-verify step.
     monkeypatch.setattr(
         _cmd_quality_phases,
         '_discover_steps_for_phase',
         lambda phase: [
-            {'name': 'default:quality_check', 'order': 10},
-            {'name': 'default:build_verify', 'order': 20},
-            {'name': 'default:coverage_check', 'order': 30},
+            {'name': 'default:verify:quality-gate', 'order': 10},
+            {'name': 'default:verify:module-tests', 'order': 20},
+            {'name': 'default:verify:coverage', 'order': 30},
             {'name': 'pm-documents:doc-verify', 'order': 10},
         ],
     )
@@ -506,7 +566,13 @@ def test_execute_add_step_order_collision_returns_error(plan_context, monkeypatc
 
 
 def test_execute_set_steps_round_trip_cache_layout(plan_context):
-    """set-steps over built-in verify steps reports no missing_order in the versioned cache layout."""
+    """A single canonical-verify step resolves its order from the versioned cache layout.
+
+    The canonical-verify steps all resolve their order from the single
+    `canonical_verify.md` doc; the layout sim writes that one doc for every
+    `default:verify:{canonical}` step. This proves the order resolves (no
+    missing_order) when discovery runs against the versioned plugin-cache shape.
+    """
     create_marshal_json(plan_context.fixture_dir)
     cache_base = build_phase_layout(
         plan_context.fixture_dir / 'cache_bundles',
@@ -519,26 +585,25 @@ def test_execute_set_steps_round_trip_cache_layout(plan_context):
         patch.object(_cmd_skill_domains, 'BUNDLES_DIR', cache_base),
         patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
     ):
-        # Pass built-ins in reverse to prove sorting comes from resolved order, not call order.
         result = cmd_plan(
             Namespace(
                 sub_noun='phase-5-execute',
                 verb='set-steps',
-                steps='default:coverage_check,default:build_verify,default:quality_check',
+                steps='default:verify:quality-gate',
             )
         )
 
     assert result['status'] == 'success', f'Expected success (no missing_order) in cache layout, got {result}'
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    assert config['plan']['phase-5-execute']['steps'] == [
-        'default:quality_check',
-        'default:build_verify',
-        'default:coverage_check',
-    ]
+    assert config['plan']['phase-5-execute']['verification_steps'] == ['default:verify:quality-gate']
 
 
 def test_execute_set_steps_round_trip_source_layout(plan_context):
-    """set-steps over built-in verify steps reports no missing_order in the source layout."""
+    """A single canonical-verify step resolves its order from the source layout.
+
+    Mirrors the cache-layout round-trip against the marketplace-source shape;
+    proves `canonical_verify.md`'s order resolves there too (no missing_order).
+    """
     create_marshal_json(plan_context.fixture_dir)
     source_base = build_phase_layout(
         plan_context.fixture_dir / 'source_bundles',
@@ -555,17 +620,13 @@ def test_execute_set_steps_round_trip_source_layout(plan_context):
             Namespace(
                 sub_noun='phase-5-execute',
                 verb='set-steps',
-                steps='default:coverage_check,default:build_verify,default:quality_check',
+                steps='default:verify:quality-gate',
             )
         )
 
     assert result['status'] == 'success', f'Expected success (no missing_order) in source layout, got {result}'
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    assert config['plan']['phase-5-execute']['steps'] == [
-        'default:quality_check',
-        'default:build_verify',
-        'default:coverage_check',
-    ]
+    assert config['plan']['phase-5-execute']['verification_steps'] == ['default:verify:quality-gate']
 
 
 # =============================================================================
@@ -662,7 +723,7 @@ def test_phase_5_execute_set(plan_context):
 
 
 def test_phase_5_execute_get_per_deliverable_build_default(plan_context):
-    """Test plan phase-5-execute get returns the per_deliverable_build default."""
+    """Test plan phase-5-execute get returns the per_deliverable_build list default."""
     create_marshal_json(plan_context.fixture_dir)
 
     result = cmd_plan(
@@ -670,31 +731,12 @@ def test_phase_5_execute_get_per_deliverable_build_default(plan_context):
     )
 
     assert result['status'] == 'success'
-    assert result['value'] == 'compile+scoped-test'
+    # The knob is now a LIST of default:verify:{canonical} step IDs.
+    assert result['value'] == ['default:verify:compile', 'default:verify:module-tests']
 
 
-def test_phase_5_execute_set_per_deliverable_build_valid(plan_context):
-    """Test plan phase-5-execute set accepts each valid per_deliverable_build enum value."""
-    create_marshal_json(plan_context.fixture_dir)
-
-    for value in _config_defaults.VALID_PER_DELIVERABLE_BUILD:
-        result = cmd_plan(
-            Namespace(
-                sub_noun='phase-5-execute',
-                verb='set',
-                field='per_deliverable_build',
-                value=value,
-            )
-        )
-
-        assert result['status'] == 'success', f'Expected {value} to be accepted, got {result}'
-
-        config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-        assert config['plan']['phase-5-execute']['per_deliverable_build'] == value
-
-
-def test_phase_5_execute_set_per_deliverable_build_invalid_rejected(plan_context):
-    """Test plan phase-5-execute set rejects an invalid per_deliverable_build value."""
+def test_phase_5_execute_set_per_deliverable_build_list_round_trips(plan_context):
+    """Test plan phase-5-execute set parses the comma-separated value into a validated list."""
     create_marshal_json(plan_context.fixture_dir)
 
     result = cmd_plan(
@@ -702,13 +744,117 @@ def test_phase_5_execute_set_per_deliverable_build_invalid_rejected(plan_context
             sub_noun='phase-5-execute',
             verb='set',
             field='per_deliverable_build',
-            value='bogus',
+            value='default:verify:compile,default:verify:module-tests',
+        )
+    )
+
+    assert result['status'] == 'success'
+    # the comma-separated --value round-trips as a list on disk
+    assert result['value'] == ['default:verify:compile', 'default:verify:module-tests']
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert config['plan']['phase-5-execute']['per_deliverable_build'] == [
+        'default:verify:compile',
+        'default:verify:module-tests',
+    ]
+
+
+def test_phase_5_execute_set_per_deliverable_build_empty_disables(plan_context):
+    """Test plan phase-5-execute set with an empty value persists [] (disables the focused build)."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set',
+            field='per_deliverable_build',
+            value='',
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['value'] == []
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert config['plan']['phase-5-execute']['per_deliverable_build'] == []
+
+
+def test_phase_5_execute_set_per_deliverable_build_rejects_retired_enum(plan_context):
+    """Test plan phase-5-execute set rejects the retired per_deliverable_build enum strings."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    # the retired 'compile+scoped-test' enum value must be rejected with a migration error
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set',
+            field='per_deliverable_build',
+            value='compile+scoped-test',
         )
     )
 
     assert result['status'] == 'error'
-    assert 'per_deliverable_build' in result['error']
-    assert 'bogus' in result['error']
+    assert 'no longer accepts the enum value' in result['error']
+
+
+def test_phase_5_execute_set_per_deliverable_build_rejects_non_canonical_entry(plan_context):
+    """Test plan phase-5-execute set rejects a list entry lacking the default:verify: prefix."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set',
+            field='per_deliverable_build',
+            value='default:verify:compile,bogus',
+        )
+    )
+
+    assert result['status'] == 'error'
+    assert 'every entry must be a' in result['error']
+
+
+def test_phase_5_execute_remove_field_deletes_persisted_key(plan_context):
+    """Test plan phase-5-execute remove-field deletes a persisted phase key.
+
+    Removing per_deliverable_build (a defaults-seeded key) re-exposes the list
+    default on the next get — the verb removes an explicit override only.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+
+    # set an explicit override so the key is present in the persisted section
+    set_result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set',
+            field='per_deliverable_build',
+            value='default:verify:compile',
+        )
+    )
+    assert set_result['status'] == 'success'
+
+    remove_result = cmd_plan(
+        Namespace(sub_noun='phase-5-execute', verb='remove-field', field='per_deliverable_build')
+    )
+
+    assert remove_result['status'] == 'success'
+    assert remove_result['removed'] is True
+
+    # the seeded default is re-exposed after the override is removed
+    get_result = cmd_plan(
+        Namespace(sub_noun='phase-5-execute', verb='get', field='per_deliverable_build')
+    )
+    assert get_result['value'] == ['default:verify:compile', 'default:verify:module-tests']
+
+
+def test_phase_5_execute_remove_field_errors_on_absent_key(plan_context):
+    """Test plan phase-5-execute remove-field errors when the key is absent from the persisted section."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    # the legacy `steps` key has no default and is absent from a fresh config
+    result = cmd_plan(
+        Namespace(sub_noun='phase-5-execute', verb='remove-field', field='steps')
+    )
+
+    assert result['status'] == 'error'
 
 
 def test_phase_2_refine_get_includes_compatibility(plan_context):
