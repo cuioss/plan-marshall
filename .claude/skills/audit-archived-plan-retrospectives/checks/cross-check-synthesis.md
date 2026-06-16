@@ -42,7 +42,7 @@ evaluated.
 | Coupling | Fires when | Reads from | Qualifying caveat |
 |----------|------------|------------|-------------------|
 | `trend_empty_untrustworthy` | `token-efficiency-trend` `regression` is **empty** AND `input-integrity` reports ≥1 `data_confidence: blind` plan. | token-efficiency-trend, input-integrity | An empty regression over blind-execute plans is **floor, not truth** — the trend saw no rise because execute tokens were never recorded, not because spend is flat. The empty regression is NOT itself a finding; the coupling marks it untrustworthy. |
-| `churn_explains_walltime` | A plan flagged sequence `non_minimal_build` / `build_churn` whose build wall-clock (`total_build_seconds`) sits in the corpus **upper half** (≥ median over build-running plans). | sequence-and-build-minimality | Build redundancy explains **wall-clock** waste, **not** token cost: a build runs as a subprocess (zero model tokens during the run) and returns a bounded result TOON, so its token cost is ~fixed regardless of duration. The token over-spend belongs to message/reasoning volume (the `long_session` signal), not builds — correlating churn against token metrics was a mis-attribution. |
+| `churn_explains_walltime` | A plan flagged sequence `non_minimal_build` / `build_churn` whose build wall-clock (`total_build_seconds`) sits in the corpus **upper half** (≥ median over build-running plans). | sequence-and-build-minimality | Build cost is correlated against **wall-clock** because the recorded token metric **cannot see it**. A build runs as a subprocess (zero model tokens during the run) and is one tool-call turn among many; its real token cost is a full-context `cache_read` round-trip — plus a `cache_creation` re-cache penalty when the build exceeds the ~5-min prompt-cache TTL — and **both are excluded from `total_tokens` (input+output only; see the token-economics measurement caveat)**. So build token cost is invisible to the metric, and correlating churn against it was noise. **Do NOT read a fired coupling as "builds are token-cheap"** — their cost is real but unrecorded. The *visible* token over-spend on these plans is generation volume (`long_session`) + execution-context fragmentation, not builds. |
 | `qgate_gap_chain` | A plan flagged quality-chain `no_qgate6` / `auto_review_only` that ALSO carries sequence `ci_rerun` OR token-economics `finalize_heavy`. | quality-chain, sequence-and-build-minimality, token-economics | A missing self-review surface co-occurring with a CI re-run / heavy finalize is the **shift-right tax** — the PR round-trip paid for what an earlier gate could have caught. |
 | `argparse_signature_cluster` | recurring-pattern argparse-shaped signatures correlate with global-log ERROR / argparse-rejection counts AND quality-verification unfiled signatures — **collapsed to ONE candidate**. | recurring-pattern-detector, global-log-analysis, quality-verification-report | The three facets are three views of **ONE** source-keyed argparse drift — file ONE source-keyed lesson, not one per facet (per the SKILL.md source-keyed argparse-rejection rule). |
 | `scope_underestimate_cost` | A plan flagged scope-estimate-accuracy under-estimation (`mismatch`) that ALSO sits in the high tokens-per-file tail (≥ corpus-median `tokens_per_file`) OR carries a task-count outlier. | scope-estimate-accuracy, token-economics, task-count-efficiency | An under-estimated scope **predicts** the over-spend — the coupling names the predicted-vs-actual gap, not a fresh finding. |
@@ -85,10 +85,14 @@ completeness critic:
 - **`churn_explains_walltime`** — the named plans' build redundancy wasted
   **wall-clock**, corroborated by a build wall-clock (`total_build_seconds`) in the
   corpus upper half. Read against the three structural caveats in
-  `checks/sequence-and-build-minimality.md`. Do NOT read this as a token-cost
-  signal: a build's token cost is ~fixed (bounded result TOON), so the remedy is
-  fewer/cheaper builds to reclaim wall-clock, not to cut tokens — the token
-  over-spend lives in message/reasoning volume (`long_session`), a separate axis.
+  `checks/sequence-and-build-minimality.md`. The correlation is against wall-clock
+  because the recorded token metric **cannot see** build cost: a build's real token
+  cost — a full-context `cache_read` round-trip, plus a `cache_creation` re-cache
+  penalty when the build exceeds the ~5-min cache TTL — is **excluded from
+  `total_tokens`** (input+output only). **Do NOT read this as "builds are
+  token-cheap"**; their cost is real but unrecorded. The *visible* token over-spend
+  lives in generation volume (`long_session`) + execution-context fragmentation —
+  separate axes the metric can partly see.
 - **`qgate_gap_chain`** — the named plans paid the shift-right tax. Cross-read
   with the quality-chain shift-left tiers: a Tier-1 `auto_review_only` finding on
   a plan that also re-ran CI is the strongest avoidable-rework signal.
