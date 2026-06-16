@@ -146,6 +146,7 @@ CHECK_NAMES = [
     "sequence-and-build-minimality",
     "input-integrity",
     "task-graph-redundancy",
+    "architecture-lookup-ratio",
     # cross-check-synthesis is the facet-completeness critic; it consumes the
     # other checks' computed results, so it MUST be last in this list (run_checks
     # dispatches in CHECK_NAMES order and synthesis reads the retained results).
@@ -163,6 +164,7 @@ CROSS_PLAN_CHECKS = {
     "token-economics",
     "quality-chain",
     "sequence-and-build-minimality",
+    "architecture-lookup-ratio",
     # cross-check-synthesis is cross-plan: it joins the other checks' corpus-level
     # results into coupling verdicts rather than emitting one row per plan.
     "cross-check-synthesis",
@@ -4018,6 +4020,207 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Cross-plan: architecture-lookup-ratio (information-lookup vs build-lookup)
+# ---------------------------------------------------------------------------
+#
+# manage-architecture subcommands split by INTENT. INFORMATION-LOOKUP (orientation /
+# navigation) queries answer "where is X / which module owns this path / what files /
+# project shape" — the structured-query alternative to Glob/Grep/raw-bash exploration
+# (token-management.adoc §4). BUILD-LOOKUP resolves the canonical build command + the
+# verification step set (build-management.adoc). DISCOVERY (discover / enrich / crawl-*)
+# is one-time architecture CONSTRUCTION, not a per-plan lookup, so it is counted
+# separately and EXCLUDED from the ratio.
+_ALR_INFO_SUBS = frozenset(
+    {
+        "find",
+        "which-module",
+        "files",
+        "module",
+        "modules",
+        "info",
+        "overview",
+        "topology",
+        "graph",
+        "commands",
+    }
+)
+_ALR_BUILD_SUBS = frozenset({"resolve", "derive-verification"})
+
+
+def _architecture_lookup_ratio_plan(inputs: PlanInputs) -> dict[str, Any]:
+    """Count one plan's manage-architecture calls split by intent.
+
+    Reads the plan-scoped `logs/script-execution.log` and tallies every
+    `manage-architecture:architecture {sub}` call into INFORMATION-LOOKUP
+    (orientation / navigation), BUILD-LOOKUP (canonical-command resolution), or
+    DISCOVERY (one-time construction). Returns the per-plan row dict consumed by
+    `emit_architecture_lookup_ratio_block`. Best-effort: a plan with no log degrades
+    to an all-zero row rather than raising.
+    """
+    sel = inputs.plan_dir / "logs" / "script-execution.log"
+    info = build = discovery = 0
+    if sel.is_file():
+        try:
+            text = sel.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        for line in text.splitlines():
+            m = _SBM_CALL_RE.match(line)
+            if not m or not _sbm_is_arch(m.group("notation")):
+                continue
+            sub = m.group("sub")
+            if sub in _ALR_INFO_SUBS:
+                info += 1
+            elif sub in _ALR_BUILD_SUBS:
+                build += 1
+            else:
+                discovery += 1
+    # ratio = information lookups per build lookup; None when no build lookup ran
+    # (a plan with zero build lookups has no defined ratio and cannot be flagged).
+    ratio = (info / build) if build else None
+    return {
+        "plan_id": inputs.plan_id,
+        "change_type": inputs.change_type or "",
+        "info_lookups": info,
+        "build_lookups": build,
+        "discovery_calls": discovery,
+        "total_arch": info + build + discovery,
+        "ratio": ratio,
+    }
+
+
+def _alr_genuine(row: dict[str, Any]) -> bool:
+    """A row is genuine when it carries the build_dominated_lookup flag."""
+    return bool(row.get("flags"))
+
+
+def cross_architecture_lookup_ratio(all_inputs: list[PlanInputs]) -> dict[str, Any]:
+    """Per-plan information-lookup vs build-lookup ratio + corpus aggregates.
+
+    For each plan counts manage-architecture INFORMATION-LOOKUP vs BUILD-LOOKUP calls
+    (see `_architecture_lookup_ratio_plan`), then flags `build_dominated_lookup` on
+    plans that ran a non-trivial number of build lookups yet sit in the bottom
+    quartile of the corpus info/build ratio — a candidate for "navigation bypassed the
+    structured-query lever". Corpus-relative: the build-volume floor (`median`) and the
+    ratio cut (`p25`) are derived from the LIVE corpus, never hard-coded; a
+    degenerate-corpus guard suppresses the flag when the ratio has no real low tail.
+
+    A low ratio is NOT inherently a defect — a recipe / surgical / issue-fix plan
+    legitimately pre-knows its targets and needs no navigation. The flag is a prompt
+    (see `checks/architecture-lookup-ratio.md`), not a verdict. Best-effort: an empty
+    corpus yields all-zero aggregates and no rows.
+    """
+    rows = [_architecture_lookup_ratio_plan(i) for i in all_inputs]
+
+    total_info = sum(r["info_lookups"] for r in rows)
+    total_build = sum(r["build_lookups"] for r in rows)
+    total_discovery = sum(r["discovery_calls"] for r in rows)
+
+    # Corpus thresholds over the plans that actually ran a build lookup — a plan with
+    # zero build lookups has no ratio and cannot be build-dominated.
+    build_rows = [r for r in rows if r["build_lookups"] > 0]
+    ratios = [r["ratio"] for r in build_rows]
+    builds = [float(r["build_lookups"]) for r in build_rows]
+    median_build = median(builds)
+    ratio_p25 = percentile(ratios, 25.0) if ratios else 0.0
+    median_ratio = median(ratios) if ratios else 0.0
+    # Degenerate-corpus guard: only flag when the ratio distribution has a real low
+    # tail (p25 strictly below the median). A uniform corpus flags nobody.
+    has_spread = ratio_p25 < median_ratio
+
+    for r in rows:
+        flags: list[str] = []
+        if (
+            has_spread
+            and r["build_lookups"] >= median_build
+            and r["ratio"] is not None
+            and r["ratio"] <= ratio_p25
+        ):
+            flags.append(
+                f"build_dominated_lookup(info/build={r['ratio']:.2f}<=p25={ratio_p25:.2f};"
+                f"build={r['build_lookups']}>=median={median_build:.0f})"
+            )
+        r["flags"] = flags
+
+    corpus_ratio = (total_info / total_build) if total_build else None
+    return {
+        "plans_in_corpus": len(rows),
+        "corpus_info_lookups": total_info,
+        "corpus_build_lookups": total_build,
+        "corpus_discovery_calls": total_discovery,
+        "corpus_info_build_ratio": corpus_ratio,
+        "median_build_lookups": median_build,
+        "ratio_p25": ratio_p25,
+        "median_ratio": median_ratio,
+        "rows": rows,
+    }
+
+
+def emit_architecture_lookup_ratio_block(result: dict[str, Any]) -> str:
+    """Emit the cross-plan architecture-lookup-ratio block with the D1 severity column.
+
+    Per-plan rows carry the information-lookup vs build-lookup counts and the
+    info/build ratio; a row is `genuine` when it carries `build_dominated_lookup`,
+    `informational` otherwise — stamped via the shared `_severity_summary` helper. The
+    block leads with corpus totals and the corpus-derived thresholds so each flagged
+    row is self-describing. A LOW ratio is NOT inherently a defect — see
+    `checks/architecture-lookup-ratio.md`: a recipe / surgical / issue-fix plan
+    legitimately pre-knows its targets and needs no navigation. The flag is a prompt to
+    check whether navigation bypassed the structured-query lever (Read / raw-bash
+    instead of `architecture find`/`which-module`), not a verdict.
+    """
+    rows = result["rows"]
+    for r in rows:
+        r["flags_str"] = ";".join(r["flags"])
+        r["ratio_str"] = f"{r['ratio']:.2f}" if r["ratio"] is not None else "n/a"
+    rows, genuine_signal_count = _severity_summary(rows, _alr_genuine)
+
+    cr = result["corpus_info_build_ratio"]
+    out = [
+        "check: architecture-lookup-ratio",
+        "status: success",
+        # INFORMATION-LOOKUP = orientation/navigation verbs (find/which-module/files/
+        # module/info/overview/...); BUILD-LOOKUP = resolve/derive-verification.
+        # DISCOVERY (discover/enrich/crawl) is one-time setup — reported, excluded from
+        # the ratio. A low ratio may mean "no navigation needed" — see the sub-doc.
+        f"plans_in_corpus: {result['plans_in_corpus']}",
+        f"corpus_info_lookups: {result['corpus_info_lookups']}",
+        f"corpus_build_lookups: {result['corpus_build_lookups']}",
+        f"corpus_discovery_calls: {result['corpus_discovery_calls']}",
+        (
+            f"corpus_info_build_ratio: {cr:.3f}"
+            if cr is not None
+            else "corpus_info_build_ratio: n/a"
+        ),
+        f"median_build_lookups: {result['median_build_lookups']:.0f}",
+        f"ratio_p25: {result['ratio_p25']:.3f}",
+        f"median_ratio: {result['median_ratio']:.3f}",
+        f"genuine_signal_count: {genuine_signal_count}",
+        f"rows[{len(rows)}]{{plan_id,change_type,info_lookups,build_lookups,"
+        f"discovery_calls,total_arch,ratio,flags,severity}}:",
+    ]
+    for r in rows:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    r["plan_id"],
+                    r["change_type"],
+                    r["info_lookups"],
+                    r["build_lookups"],
+                    r["discovery_calls"],
+                    r["total_arch"],
+                    r["ratio_str"],
+                    r["flags_str"],
+                    r["severity"],
+                ]
+            )
+        )
+    return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Cross-plan: cross-check-synthesis (facet-completeness critic, runs LAST)
 # ---------------------------------------------------------------------------
 #
@@ -4642,6 +4845,22 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             summary_metrics["task-graph-redundancy_genuine"] = sum(
                 1 for r in tgr_rows if _task_graph_redundancy_genuine(r)
             )
+
+    # architecture-lookup-ratio is a standalone cross-plan check (not consumed by
+    # synthesis), so it is gated only on explicit selection.
+    if "architecture-lookup-ratio" in selected:
+        alr_result = cross_architecture_lookup_ratio(all_inputs)
+        all_results["architecture-lookup-ratio"] = alr_result
+        blocks.append(emit_architecture_lookup_ratio_block(alr_result))
+        summary_metrics["architecture-lookup-ratio_flagged"] = sum(
+            1 for r in alr_result["rows"] if r["flags"]
+        )
+        summary_metrics["architecture-lookup-ratio_corpus_info"] = alr_result[
+            "corpus_info_lookups"
+        ]
+        summary_metrics["architecture-lookup-ratio_corpus_build"] = alr_result[
+            "corpus_build_lookups"
+        ]
 
     # cross-check-synthesis MUST run LAST — it reads every upstream result the
     # blocks above retained into `all_results`.

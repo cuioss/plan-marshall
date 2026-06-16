@@ -1,6 +1,6 @@
 ---
 name: audit-archived-plan-retrospectives
-description: Audit archived plans across fifteen retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, PR-merge velocity, task-count efficiency, global-log analysis, token-economics, quality-chain, sequence-and-build-minimality, input-integrity corpus completeness, task-graph redundancy, and cross-check-synthesis facet-completeness — file lessons through the three-gate policy, and dormate reviewed plans
+description: Audit archived plans across sixteen retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, PR-merge velocity, task-count efficiency, global-log analysis, token-economics, quality-chain, sequence-and-build-minimality, input-integrity corpus completeness, task-graph redundancy, architecture-lookup-ratio (information-lookup vs build-lookup), and cross-check-synthesis facet-completeness — file lessons through the three-gate policy, and dormate reviewed plans
 user-invocable: true
 mode: workflow
 allowed-tools: Bash, Read, Grep, Write, AskUserQuestion
@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Grep, Write, AskUserQuestion
 
 # Audit Archived Plan Retrospectives (project-local)
 
-Fifteen-check retrospective auditor over the archived-plan corpus. The skill is
+Sixteen-check retrospective auditor over the archived-plan corpus. The skill is
 the LLM-driven orchestration narrative; `scripts/audit.py` is the deterministic
 computation core. The orchestrator selects which checks to run, surfaces each
 check's script-computed TOON verbatim, drives lesson filing through the
@@ -86,7 +86,7 @@ names, anomaly classes, or verdicts that the script did not emit.
 | `--plan-dir PATH` | optional | Override the default `.plan/local/archived-plans` root. Useful when auditing a vendored snapshot. |
 | `--plan-id ID` | optional | Restrict the scan to one archived plan (its directory basename). |
 | `--include-active` | optional | Additionally scan `.plan/local/plans/` so in-flight plans are reported alongside archived ones. Active plans without a manifest are reported as `incomplete`, not `drift`. |
-| `--check NAME` | optional | Run a single check instead of all. Valid names: `execution-context-manifest`, `quality-verification-report`, `metrics`, `recurring-pattern-detector`, `token-efficiency-trend`, `scope-estimate-accuracy`, `pr-merge-velocity`, `task-count-efficiency`, `global-log-analysis`, `token-economics`, `quality-chain`, `sequence-and-build-minimality`, `input-integrity`, `task-graph-redundancy`, `cross-check-synthesis`. Default: run every check. When `--check cross-check-synthesis` is selected, the script still computes the upstream checks it consumes (without emitting their blocks) so the synthesis can fire. |
+| `--check NAME` | optional | Run a single check instead of all. Valid names: `execution-context-manifest`, `quality-verification-report`, `metrics`, `recurring-pattern-detector`, `token-efficiency-trend`, `scope-estimate-accuracy`, `pr-merge-velocity`, `task-count-efficiency`, `global-log-analysis`, `token-economics`, `quality-chain`, `sequence-and-build-minimality`, `input-integrity`, `task-graph-redundancy`, `architecture-lookup-ratio`, `cross-check-synthesis`. Default: run every check. When `--check cross-check-synthesis` is selected, the script still computes the upstream checks it consumes (without emitting their blocks) so the synthesis can fire. |
 | `--dormate ID [ID ...] --confirmed` | optional | Relocate one or more archived plans to `.plan/temp/dormated-plans/{plan_id}/`. Accepts an explicit list of plan IDs; duplicate IDs are deduplicated silently. The whole batch is all-or-nothing — a single grammar violation, missing source, or pre-existing destination refuses the entire batch with nothing moved. Inert (refused, exit 0) without `--confirmed`. The interactive confirmation is owned by the LLM body (Step 5), never delegated to the script. |
 | `--dormate-all --confirmed` | optional | Relocate EVERY archived plan under `.plan/local/archived-plans/` to `.plan/temp/dormated-plans/` in one call. Same all-or-nothing posture as `--dormate`. Inert (refused, exit 0) without `--confirmed`. The body MUST surface the full would-move plan list before confirming (Step 5). |
 | `--dormate-global-logs --confirmed` | optional | Relocate COMPLETE past-date global logs (`{prefix}-YYYY-MM-DD.log`) from `.plan/local/logs/` to `.plan/temp/dormated-plans/global-logs/`. Today's still-active log is never moved. Inert (refused, exit 0) without `--confirmed`; on a destination-name clash the whole move refuses (`status: error`) rather than overwriting. The interactive confirmation is owned by the LLM body (Step 5), never delegated to the script. |
@@ -114,6 +114,7 @@ the rows.
 | Sequence and build minimality | [`checks/sequence-and-build-minimality.md`](checks/sequence-and-build-minimality.md) | Cross-plan call-sequence reconstruction from `logs/script-execution.log`, bucketed into phases by the `logs/work.log` `[DISPATCH] role=phase-N` timeline; per-build duration classification (minimal `<120s` / scoped / heavy `>400s`) and work.log build-verb mining (verify / scoped-vs-all module-tests / quality-gate / coverage / compile), with redundancy / non-minimality flags (build_churn, non_minimal_build, docs_only_build, ci_rerun, phase_reentry, arch_over_resolution, consecutive_dup). Carries three structural caveats (finalize-fold conflation, verify-count-upper-bound vs heavy-duration-floor, consecutive_dup over-count) documented in the sub-doc. |
 | Input integrity | [`checks/input-integrity.md`](checks/input-integrity.md) | Per-plan input presence/health (execution.toon / metrics.toon / references.json / tasks/ / artifacts/findings/ / logs/script-execution.log) plus three input-health flags (metrics_blind, incomplete_lifecycle, missing_dispatch_markers) and a corpus data_confidence summary (fully-recorded / partial / blind). The **no-false-healthy foundation**: every other check MUST annotate rows derived from a metrics_blind plan as "floor, not truth", and no check may claim "all healthy" over blind-input plans. |
 | Task-graph redundancy | [`checks/task-graph-redundancy.md`](checks/task-graph-redundancy.md) | Per-plan task-graph adjacency over `tasks/TASK-*.json`: `multi_task_file` (a file edited by ≥2 tasks — the primary duplicate-task signal), `dup_substep` (same `(target, intent)` in >1 task), `in_task_build` (a heavy build/verify baked into a task's verification that phase-5/6 already runs), `verif_task_fanout` (>1 module_testing/verification task), and `deliverable_fanout` (a deliverable whose task count exceeds the per-run corpus outlier threshold `max(3, median*2)`). All five sub-checks emit `genuine`. |
+| Architecture-lookup-ratio | [`checks/architecture-lookup-ratio.md`](checks/architecture-lookup-ratio.md) | Per-plan ratio of **information lookup** (architecture orientation/navigation: `find`/`which-module`/`files`/`module`/`info`/`overview`) vs **build lookup** (`resolve`/`derive-verification`), both from `logs/script-execution.log`. Corpus-derived `build_dominated_lookup` flag (build_lookups ≥ corpus-median AND info/build ratio ≤ corpus-p25, with a degenerate-corpus guard) surfaces plans whose architecture use is build-resolution-heavy with little navigation — a PROMPT (not a verdict) to check whether navigation bypassed the structured-query lever (`Read`/raw-bash instead of `architecture find`). A low ratio may simply mean no navigation was needed (recipe/surgical/issue-fix). Discovery verbs (`discover`/`enrich`/`crawl-*`) are counted separately and excluded from the ratio. |
 | Cross-check synthesis | [`checks/cross-check-synthesis.md`](checks/cross-check-synthesis.md) | The **facet-completeness critic** (runs LAST). Joins the OTHER checks' retained structured results into six cross-check couplings single rows miss: `trend_empty_untrustworthy` (empty token-trend regression over blind-execute plans), `churn_explains_walltime` (non_minimal_build/build_churn corroborated by a plan's build wall-clock `total_build_seconds` upper-half — build redundancy wastes wall-clock, not tokens), `qgate_gap_chain` (no_qgate6/auto_review_only correlating with ci_rerun / finalize_heavy), `argparse_signature_cluster` (recurring-pattern argparse signatures correlating with global-log errors and unfiled quality-verification signatures — collapsed to ONE candidate), `scope_underestimate_cost` (scope under-estimation correlating with high tokens/file or a task-count outlier), and `redundant_build_churn` (task-graph-redundancy `in_task_build` correlating with sequence `build_churn`/`phase_reentry`). Each coupling carries its qualifying caveat and the D1 severity column; the block operationalizes the Step-4b completeness gate. |
 
 ## Usage Examples
@@ -157,13 +158,13 @@ Validate + expand the gathered pair in one call — `coverage expand` validates 
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage expand --thoroughness {T} --scope {S}
 ```
 
-This is a **single-invocation** audit skill that runs outside a plan, so hold the gathered identifier + expanded instruction **in-context** for the invocation (the in-context path of the contract's persistence mechanism — no `status.json` write). Consume the **expanded instruction** (NOT the raw cell) in Steps 1 and 4b below. When the user selects `inherit/inherit` (the default), the expanded instruction is behavior-preserving and Steps 1–4b run exactly as before (all 15 checks, full corpus, today's Step-4b gate).
+This is a **single-invocation** audit skill that runs outside a plan, so hold the gathered identifier + expanded instruction **in-context** for the invocation (the in-context path of the contract's persistence mechanism — no `status.json` write). Consume the **expanded instruction** (NOT the raw cell) in Steps 1 and 4b below. When the user selects `inherit/inherit` (the default), the expanded instruction is behavior-preserving and Steps 1–4b run exactly as before (all 16 checks, full corpus, today's Step-4b gate).
 
 See `dev-agent-behavior-rules/standards/thoroughness.md` for the ladders and `coverage-gathering-contract.md` for the gather shape and the cell→instruction table — restate neither here.
 
 ### Step 1: Select the checks to run, governed by the coverage cell
 
-The expanded instruction's **scope rung** sets the corpus radius: `change-set`/`artifact` → a single plan (`--plan-id`); `component`/`module` → a domain/scope-filtered subset of the corpus; `overall` → the full archived-plan corpus (today's default). Its **thoroughness rung** gates check breadth: `T1` → cheap deterministic checks across a representative sample; `T2` → all 15 checks once; `T3` → all 15 plus the `cross-check-synthesis` coupling join; `T4`/`T5` → all 15 plus the Step-4b loop-until-dry / what-did-I-miss adversarial completeness pass.
+The expanded instruction's **scope rung** sets the corpus radius: `change-set`/`artifact` → a single plan (`--plan-id`); `component`/`module` → a domain/scope-filtered subset of the corpus; `overall` → the full archived-plan corpus (today's default). Its **thoroughness rung** gates check breadth: `T1` → cheap deterministic checks across a representative sample; `T2` → all 16 checks once; `T3` → all 16 plus the `cross-check-synthesis` coupling join; `T4`/`T5` → all 16 plus the Step-4b loop-until-dry / what-did-I-miss adversarial completeness pass.
 
 When the user supplies an explicit `--check {name}`, that narrows to one check regardless of the thoroughness rung. The check names are listed in the **Available checks** table above; each maps to a `checks/{name}.md` sub-document and a `--check {name}` value the script accepts. The `inherit/inherit` expanded instruction reproduces today's behavior: all checks, the full corpus.
 
@@ -204,8 +205,10 @@ sequence-and-build-minimality flag (`build_churn`, `non_minimal_build`,
 (`metrics_blind`, `incomplete_lifecycle`, `missing_dispatch_markers`, or a
 `data_confidence: blind` plan), a task-graph-redundancy flag (`multi_task_file`,
 `dup_substep`, `in_task_build`, `verif_task_fanout`, `deliverable_fanout` — read
-each against `checks/task-graph-redundancy.md`), or a cross-check-synthesis
-coupling that FIRED (`trend_empty_untrustworthy`, `churn_explains_walltime`,
+each against `checks/task-graph-redundancy.md`), an architecture-lookup-ratio flag
+(`build_dominated_lookup` — read against `checks/architecture-lookup-ratio.md`: a
+PROMPT, not a verdict; a low ratio may simply mean no navigation was needed), or a
+cross-check-synthesis coupling that FIRED (`trend_empty_untrustworthy`, `churn_explains_walltime`,
 `qgate_gap_chain`, `argparse_signature_cluster`, `scope_underestimate_cost`,
 `redundant_build_churn` — read each against its qualifying caveat in
 `checks/cross-check-synthesis.md`) —
@@ -344,7 +347,8 @@ cannot pass the gate while any coupling fired unresolved.
       input-integrity flag — `metrics_blind`, `incomplete_lifecycle`,
       `missing_dispatch_markers`, a task-graph-redundancy flag —
       `multi_task_file`, `dup_substep`, `in_task_build`, `verif_task_fanout`,
-      `deliverable_fanout`, or a FIRED cross-check-synthesis coupling —
+      `deliverable_fanout`, an architecture-lookup-ratio flag —
+      `build_dominated_lookup`, or a FIRED cross-check-synthesis coupling —
       `trend_empty_untrustworthy`, `churn_explains_walltime`, `qgate_gap_chain`,
       `argparse_signature_cluster`, `scope_underestimate_cost`,
       `redundant_build_churn`) was adjudicated
