@@ -247,7 +247,7 @@ containers:
         readOnly: true
 ```
 
-**Verification**: `docker history <image>` only surfaces secrets passed via `ENV`/`ARG`/build instructions — it misses secrets written to files during `RUN` steps. Audit the extracted layer contents with `docker save img:tag | tar -xO | strings | grep -iE "token|secret|password"`, and use Trivy `--scanners secret` as the tool-grade equivalent in CI.
+**Verification**: `docker history <image>` only surfaces secrets passed via `ENV`/`ARG`/build instructions — it misses secrets written to files during `RUN` steps. Audit the extracted layer contents with `docker save img:tag | strings | grep -iE "token|secret|password"`, and use Trivy `--scanners secret` as the tool-grade equivalent in CI.
 
 **Incident response**: Once a secret has appeared in a pushed layer it is compromised and MUST be rotated. Fixing the Dockerfile and rebuilding does not un-leak the already-pushed layer — anyone who pulled the prior image retains the secret.
 

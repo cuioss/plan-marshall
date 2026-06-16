@@ -90,11 +90,12 @@ COPY .env /app/
 ARG SECRET_KEY
 RUN curl -H "Authorization: $SECRET_KEY" https://api.example.com
 
-# WRONG - false fix: rm in the same RUN does not erase the secret from the layer
+# WRONG - false fix: rm in a subsequent RUN does not erase the secret from the prior layer.
+# Even if combined in a single RUN, the secret is still leaked in the image history/metadata.
 RUN echo "$NPM_TOKEN" > ~/.npmrc && npm install && rm ~/.npmrc
 ```
 
-A `rm` in a subsequent instruction — or even later in the same `RUN` — cannot erase content already frozen into a prior layer. The write and the delete both land in the layer's history; the file is recoverable from the pre-delete filesystem state regardless of the trailing `rm`.
+A `rm` in a subsequent instruction cannot erase content already frozen into a prior layer; the file remains fully recoverable from that layer's filesystem. While executing the write and `rm` within a single `RUN` instruction does prevent the file from persisting in the layer's filesystem snapshot, the secret is still leaked in the image's metadata and history (visible via `docker history`) — for example through the recorded build command or build arguments.
 
 ### Verify Layers Carry No Secrets
 
@@ -102,7 +103,7 @@ A `rm` in a subsequent instruction — or even later in the same `RUN` — canno
 
 ```bash
 # Catches secrets written to files inside any layer, not just build args
-docker save img:tag | tar -xO | strings | grep -iE "token|secret|password"
+docker save img:tag | strings | grep -iE "token|secret|password"
 ```
 
 Use Trivy `--scanners secret` as the tool-grade equivalent in CI (see `supply-chain-security.md` for the full Trivy workflow):
