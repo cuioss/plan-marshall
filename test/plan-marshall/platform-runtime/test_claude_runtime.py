@@ -318,8 +318,8 @@ class TestInstallTerminalTitleHooks:
 
     def test_fresh_install_creates_all_render_events(self, rt, tmp_path):
         """Fresh install populates SessionStart (matcher-less + clear), UserPromptSubmit,
-        Notification, Stop, PreToolUse:AskUserQuestion, PostToolUse:AskUserQuestion, and
-        PostToolUse:Bash with the renderer command."""
+        Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash,
+        PostToolUse:AskUserQuestion, and PostToolUse:Bash with the renderer command."""
         target = tmp_path / ".claude" / "settings.local.json"
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
@@ -350,15 +350,16 @@ class TestInstallTerminalTitleHooks:
             # The single entry is matcher-less.
             assert event_entries[0].get("matcher", "") == ""
 
-        # PreToolUse: matcher="AskUserQuestion" + render command.
+        # PreToolUse: matcher="AskUserQuestion" AND matcher="Bash" render entries.
         pre_tool_use = hooks_block["PreToolUse"]
-        assert _count_command(pre_tool_use, _RENDER_HOOK_COMMAND) == 1
-        pre_ask_entries = [
-            entry
+        assert _count_command(pre_tool_use, _RENDER_HOOK_COMMAND) == 2
+        pre_matchers = {
+            entry.get("matcher")
             for entry in pre_tool_use
-            if isinstance(entry, dict) and entry.get("matcher") == "AskUserQuestion"
-        ]
-        assert len(pre_ask_entries) == 1
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert pre_matchers == {"AskUserQuestion", "Bash"}
 
         # PostToolUse: matcher="AskUserQuestion" AND matcher="Bash" render entries.
         post_tool_use = hooks_block["PostToolUse"]
@@ -403,6 +404,7 @@ class TestInstallTerminalTitleHooks:
             "Notification",
             "Stop",
             "PreToolUse:AskUserQuestion",
+            "PreToolUse:Bash",
             "PostToolUse:AskUserQuestion",
             "PostToolUse:Bash",
         }
@@ -437,8 +439,10 @@ class TestInstallTerminalTitleHooks:
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
         assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 2
-        for event_name in ("UserPromptSubmit", "Notification", "Stop", "PreToolUse"):
+        for event_name in ("UserPromptSubmit", "Notification", "Stop"):
             assert _count_command(hooks_block[event_name], _RENDER_HOOK_COMMAND) == 1
+        # PreToolUse carries two render entries (AskUserQuestion + Bash).
+        assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
         # PostToolUse carries two render entries (AskUserQuestion + Bash).
         assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
 
@@ -447,35 +451,44 @@ class TestInstallTerminalTitleHooks:
     # ------------------------------------------------------------------
 
     def test_fresh_install_adds_pre_and_post_bash_entries(self, rt, tmp_path):
-        """A fresh install adds the PreToolUse:AskUserQuestion and PostToolUse:Bash render
-        entries and reports them with matcher-qualified labels in installed_events."""
+        """A fresh install adds the PreToolUse:AskUserQuestion, PreToolUse:Bash, and
+        PostToolUse:Bash render entries and reports them with matcher-qualified labels
+        in installed_events."""
         target = tmp_path / ".claude" / "settings.local.json"
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
         installed = set(result["installed_events"])
         assert "PreToolUse:AskUserQuestion" in installed
+        assert "PreToolUse:Bash" in installed
         assert "PostToolUse:AskUserQuestion" in installed
         assert "PostToolUse:Bash" in installed
 
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
-        # PreToolUse has exactly one AskUserQuestion render entry.
+        # PreToolUse has exactly two render entries (AskUserQuestion + Bash).
         pre = hooks_block["PreToolUse"]
-        assert _count_command(pre, _RENDER_HOOK_COMMAND) == 1
-        assert pre[0].get("matcher") == "AskUserQuestion"
+        assert _count_command(pre, _RENDER_HOOK_COMMAND) == 2
+        pre_matchers = {
+            entry.get("matcher")
+            for entry in pre
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert pre_matchers == {"AskUserQuestion", "Bash"}
         # PostToolUse has exactly two render entries (AskUserQuestion + Bash).
         assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
 
     def test_pre_and_post_bash_entries_dedup_idempotent(self, rt, tmp_path):
         """Re-invoking after a fresh install reports the PreToolUse:AskUserQuestion,
-        PostToolUse:AskUserQuestion, and PostToolUse:Bash render entries as already-present
-        and does not duplicate them."""
+        PreToolUse:Bash, PostToolUse:AskUserQuestion, and PostToolUse:Bash render entries
+        as already-present and does not duplicate them."""
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
 
         result = _parsed(rt.project_install_hook(str(target)))
         already = set(result["already_present_events"])
         assert "PreToolUse:AskUserQuestion" in already
+        assert "PreToolUse:Bash" in already
         assert "PostToolUse:AskUserQuestion" in already
         assert "PostToolUse:Bash" in already
         # Nothing fresh installed on the second run.
@@ -483,7 +496,7 @@ class TestInstallTerminalTitleHooks:
 
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
-        assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
         assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
 
     # ------------------------------------------------------------------
@@ -1345,6 +1358,7 @@ class TestSessionRenderTitleStateAwareIcon:
             ({"hook_event_name": "UserPromptSubmit"}, "➤"),
             ({"hook_event_name": "Notification"}, "?"),
             ({"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion"}, "?"),
+            ({"hook_event_name": "PreToolUse", "tool_name": "Bash"}, "⚙"),
             ({"hook_event_name": "PostToolUse", "tool_name": "AskUserQuestion"}, "➤"),
             ({"hook_event_name": "PostToolUse", "tool_name": "Bash"}, "➤"),
             ({"hook_event_name": "Stop"}, "✓"),
@@ -2810,6 +2824,7 @@ class TestHealthCheck:
         "Notification",
         "Stop",
         "PreToolUse:AskUserQuestion",
+        "PreToolUse:Bash",
         "PostToolUse:AskUserQuestion",
         "PostToolUse:Bash",
         "statusLine",
@@ -2885,6 +2900,7 @@ class TestHealthCheck:
             "Notification",
             "Stop",
             "PreToolUse:AskUserQuestion",
+            "PreToolUse:Bash",
             "PostToolUse:AskUserQuestion",
             "PostToolUse:Bash",
             "statusLine",
