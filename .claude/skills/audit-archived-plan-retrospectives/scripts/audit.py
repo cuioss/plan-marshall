@@ -88,8 +88,9 @@ suite of deterministic checks:
   emitted strings) and reports the cross-check couplings that single-check rows
   alone miss: (a) a token-trend `regression=empty` that is untrustworthy because
   input-integrity reports blind execute phases; (b) sequence
-  `non_minimal_build`/`build_churn` explaining token-economics execute/finalize
-  cost and a metrics `disproportionate_token`; (c) quality-chain
+  `non_minimal_build`/`build_churn` corroborated by a plan's build WALL-CLOCK
+  (`total_build_seconds` upper half) — build redundancy wastes wall-clock, not
+  tokens; (c) quality-chain
   `no_qgate6`/`auto_review_only` correlating with sequence `ci_rerun` and
   token-economics `finalize_heavy`; (d) recurring-pattern argparse signatures
   correlating with global-log ERROR/argparse-rejection counts and
@@ -1237,11 +1238,42 @@ _LOG_SCRIPT_HEAD_RE = re.compile(
 # Lines whose body signals a failure even when the LEVEL cell is INFO (a script
 # can exit non-zero while the logging wrapper stamps INFO). Mirrors the prototype
 # FAIL_MARKERS set.
+#
+# The bare `Error` / `failed` markers use a slug-boundary guard `(?<![\w-])…(?![\w-])`
+# rather than a plain `\b`: a hyphen is a word boundary, so `\bError\b` matched the
+# word "error" embedded in a branch/plan slug (e.g. `workflow-doc-error-branches`),
+# producing failure false-positives on ordinary INFO branch-intent lines. Requiring
+# the marker NOT to be flanked by a word char OR a hyphen keeps real status text
+# ("Build failed", "Error:") while excluding slug-embedded occurrences. The specific
+# markers (invalid choice / Traceback / exit_code / argparse_rejection / status:error)
+# are already unambiguous and need no guard.
 _LOG_FAIL_MARKERS_RE = re.compile(
     r"invalid choice|unrecognized arguments|the following arguments are required"
-    r"|Traceback|exit[_ ]?code\s*[=:]?\s*[12]|argparse_rejection|\bError\b|\bfailed\b"
+    r"|Traceback|exit[_ ]?code\s*[=:]?\s*[12]|argparse_rejection"
+    r"|(?<![\w-])Error(?![\w-])|(?<![\w-])failed(?![\w-])"
     r"|status:\s*error",
     re.IGNORECASE,
+)
+
+# LEVELS that are *more severe* than INFO. Only these (or a failure-marker body)
+# flag a line as an error. DEBUG is diagnostic output *below* INFO and is NOT an
+# error: flagging every non-INFO level swept thousands of DEBUG lines into the
+# error count (the recording-noise the audit-tool precision fix removed). A line
+# at one of these levels — or any line whose body carries a failure marker — is a
+# genuine signal; everything else is not.
+_ELEVATED_LOG_LEVELS = frozenset({"WARNING", "WARN", "ERROR", "CRITICAL", "FATAL"})
+
+# Read-only QUERY subcommands that legitimately exit non-zero on "not found" — the
+# executor stamps the call line at ERROR even though "absent" is a normal answer.
+# ONLY a completed script call whose subcommand is in this set is treated as a benign
+# probe and excluded from error-flagging. A NON-query command (e.g. `run`, `verify`,
+# `compile`) at an elevated level with no failure marker is a genuine failure and
+# stays flagged — narrowing the exclusion to this allowlist prevents silently dropping
+# real failures from non-probe commands. The set is deliberately conservative: a
+# query verb omitted here merely re-earns a benign error-flag (noise), whereas a
+# non-query verb wrongly included would hide a real failure.
+_LOG_BENIGN_PROBE_SUBCOMMANDS = frozenset(
+    {"exists", "read", "get", "list", "find", "search"}
 )
 
 # Impossible / hang-shaped duration ceiling (seconds). A single deterministic
@@ -1322,7 +1354,8 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
 
     Reads `script-execution-*.log`, `work-*.log`, and `decision-*.log` under
     `.plan/local/logs/`, buckets lines by LEVEL, aggregates script calls per
-    `notation subcommand`, and flags: non-INFO / failure-marker lines, slow calls
+    `notation subcommand`, and flags: elevated-level (>= WARNING) / failure-marker
+    lines — excluding benign non-zero-exit probe calls — slow calls
     (`>= slow_call_seconds`), impossible/hang durations
     (`>= _IMPOSSIBLE_DURATION_SECONDS`), high-frequency callers
     (`>= high_frequency_calls`), and test-fixture leaks. Each flagged line is
@@ -1372,12 +1405,16 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
                 level_counts[level] += 1
 
                 head = _LOG_SCRIPT_HEAD_RE.match(rest)
+                is_script_call = False
+                script_sub = ""
                 if head:
                     sub = head.group("sub") or ""
                     key = f"{head.group('notation')} {sub}".strip()
                     call_counts[key] += 1
                     dur_m = _LOG_DUR_RE.search(rest)
                     if dur_m:
+                        is_script_call = True
+                        script_sub = sub
                         seconds = float(dur_m.group(1))
                         call_seconds[key] += seconds
                         total_seconds += seconds
@@ -1400,7 +1437,20 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
                                 }
                             )
 
-                if level != "INFO" or _LOG_FAIL_MARKERS_RE.search(rest):
+                has_marker = bool(_LOG_FAIL_MARKERS_RE.search(rest))
+                # A completed script call is a benign non-zero-exit probe ONLY when its
+                # subcommand is a known read-only QUERY (`exists`/`read`/`get`/`list`/
+                # `find`/`search`) answering "not found" — not a real failure. A
+                # non-query command (e.g. `run`) at an elevated level with no failure
+                # marker is NOT benign and stays flagged. Flag genuine failures: any
+                # failure-marker body (at any level), OR an elevated-level line that is
+                # not a known-query benign probe.
+                benign_probe = (
+                    is_script_call
+                    and script_sub in _LOG_BENIGN_PROBE_SUBCOMMANDS
+                    and not has_marker
+                )
+                if has_marker or (level in _ELEVATED_LOG_LEVELS and not benign_probe):
                     error_lines.append(
                         {
                             "ts": ts_text,
@@ -3689,6 +3739,11 @@ def emit_token_economics_block(result: dict[str, Any]) -> str:
     out = [
         "check: token-economics",
         "status: success",
+        # total_tokens = input+output ONLY (manage-metrics excludes cache_read /
+        # cache_creation; cache_read is ~99% of real traffic). Every figure below is a
+        # GENERATION-VOLUME proxy, not a cost measure — see checks/token-economics.md
+        # "Measurement caveat".
+        "measurement_caveat: total_tokens=input+output; excludes cache_read/cache_creation (~99% of traffic) — generation-volume proxy, not cost",
         f"plans_in_corpus: {result['plans_in_corpus']}",
         # Derived (floating) thresholds — every one measured from THIS run's
         # corpus, never hard-coded. Echoed so the flagged rows are self-describing.
@@ -3991,12 +4046,13 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
 #       regression over blind-execute plans is "floor, not truth" — the trend
 #       saw no rise because the execute tokens were never recorded, not because
 #       spend is flat.
-#   (b) churn_explains_cost         — a plan flagged sequence non_minimal_build /
-#       build_churn that is ALSO flagged token-economics finalize_heavy /
-#       big_spend_tiny_footprint OR carries a metrics disproportionate_token.
-#       Caveat: the build redundancy is a plausible CAUSE of the execute/finalize
-#       token cost — correlation across facets, to be confirmed against the
-#       per-build durations before filing.
+#   (b) churn_explains_walltime     — a plan flagged sequence non_minimal_build /
+#       build_churn whose build wall-clock (total_build_seconds) sits in the corpus
+#       upper half (>= median). Caveat: build redundancy explains WALL-CLOCK waste,
+#       NOT token cost — a build's token cost is ~fixed (it runs as a subprocess and
+#       returns a bounded result TOON), so the token over-spend belongs to message /
+#       reasoning volume (long_session), not builds. The earlier token-cost framing
+#       was a mis-attribution.
 #   (c) qgate_gap_chain             — a plan flagged quality-chain no_qgate6 /
 #       auto_review_only that ALSO carries sequence ci_rerun OR token-economics
 #       finalize_heavy. Caveat: a missing self-review surface co-occurring with a
@@ -4046,17 +4102,6 @@ def _syn_flagged_plans(result: Any, flag_predicate: Callable[[str], bool]) -> se
     return out
 
 
-def _syn_metrics_disproportionate_plans(metrics_rows: Any) -> set[str]:
-    """Return plan ids whose metrics row carries a disproportionate_token signal."""
-    out: set[str] = set()
-    if not isinstance(metrics_rows, list):
-        return out
-    for row in metrics_rows:
-        if isinstance(row, dict) and row.get("disproportionate_token"):
-            out.add(str(row.get("plan_id")))
-    return out
-
-
 def _syn_in_task_build_plans(tgr_rows: Any) -> set[str]:
     """Return plan ids whose task-graph-redundancy row carries an in_task_build."""
     out: set[str] = set()
@@ -4066,6 +4111,32 @@ def _syn_in_task_build_plans(tgr_rows: Any) -> set[str]:
         if isinstance(row, dict) and row.get("in_task_build"):
             out.add(str(row.get("plan_id")))
     return out
+
+
+def _syn_build_walltime_outlier_plans(sequence: Any) -> set[str]:
+    """Return plan ids whose build wall-clock sits in the corpus upper half.
+
+    Reads each sequence row's `total_build_seconds` and returns the plans at or
+    above the median of the plans that ran at least one build. Zero-build plans are
+    excluded — they cannot waste build wall-time — and the median is taken over the
+    non-zero population so a corpus dominated by build-free plans does not collapse
+    the threshold to zero. This is the WALL-CLOCK correlate the `churn_explains_walltime`
+    coupling joins against: build redundancy wastes wall-clock, not tokens (a build's
+    token cost is ~fixed regardless of duration). Best-effort: a missing / malformed
+    result yields an empty set.
+    """
+    if not isinstance(sequence, dict):
+        return set()
+    pairs: list[tuple[str, int]] = []
+    for row in sequence.get("rows", []) or []:
+        pid = row.get("plan_id")
+        secs = row.get("total_build_seconds")
+        if pid and isinstance(secs, (int, float)) and secs > 0:
+            pairs.append((str(pid), int(secs)))
+    if not pairs:
+        return set()
+    threshold = median([float(s) for _, s in pairs])
+    return {pid for pid, s in pairs if s >= threshold}
 
 
 def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
@@ -4083,7 +4154,6 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
     integrity = all_results.get("input-integrity")
     sequence = all_results.get("sequence-and-build-minimality")
     economics = all_results.get("token-economics")
-    metrics_rows = all_results.get("metrics")
     quality_chain = all_results.get("quality-chain")
     recurring = all_results.get("recurring-pattern-detector")
     global_log = all_results.get("global-log-analysis")
@@ -4123,32 +4193,46 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
         }
     )
 
-    # (b) churn_explains_cost.
+    # (b) churn_explains_walltime.
+    #
+    # This coupling correlates build churn against build WALL-CLOCK
+    # (`total_build_seconds`), NOT against the token metric — because the token metric
+    # CANNOT see build cost. A build runs as a subprocess (zero model tokens during the
+    # run) and is one tool-call turn among many (~2% of turns in the recipe forensic);
+    # its real token cost is a full-context `cache_read` round-trip plus, for a build
+    # exceeding the ~5-min prompt-cache TTL, a `cache_creation` re-cache penalty on the
+    # next turn. BOTH of those are EXCLUDED from the recorded `total_tokens`
+    # (= input + output only — see the token-economics measurement caveat), so build
+    # token cost is invisible to the metric and correlating churn against it was noise.
+    # Wall-clock is the only measurable proxy for build redundancy here. Do NOT read a
+    # fired coupling as "builds are token-cheap": their token cost is real but unrecorded.
+    # The visible token over-spend on these plans is generation volume (the
+    # `long_session` signal) + execution-context fragmentation, not builds.
     churn_plans = _syn_flagged_plans(
         sequence,
         lambda f: f.startswith("non_minimal_build") or f.startswith("build_churn"),
     )
-    econ_cost_plans = _syn_flagged_plans(
-        economics,
-        lambda f: f.startswith("finalize_heavy") or f.startswith("big_spend_tiny_footprint"),
-    )
-    dispro_plans = _syn_metrics_disproportionate_plans(metrics_rows)
-    b_plans = sorted(churn_plans & (econ_cost_plans | dispro_plans))
+    walltime_outlier_plans = _syn_build_walltime_outlier_plans(sequence)
+    b_plans = sorted(churn_plans & walltime_outlier_plans)
     b_fired = bool(b_plans)
     rows.append(
         {
-            "coupling": "churn_explains_cost",
+            "coupling": "churn_explains_walltime",
             "fired": b_fired,
             "detail": (
-                f"{len(b_plans)} plan(s) with non_minimal_build/build_churn AND "
-                f"finalize_heavy/big_spend_tiny_footprint OR disproportionate_token: "
+                f"{len(b_plans)} plan(s) with non_minimal_build/build_churn AND build "
+                f"wall-clock in the corpus upper half (>= median total_build_seconds): "
                 f"{';'.join(b_plans)}"
                 if b_fired
-                else f"churn_plans={len(churn_plans)};econ_cost_plans={len(econ_cost_plans)};dispro_plans={len(dispro_plans)}"
+                else f"churn_plans={len(churn_plans)};walltime_outlier_plans={len(walltime_outlier_plans)}"
             ),
             "caveat": (
-                "build redundancy is a plausible CAUSE of the execute/finalize "
-                "cost — confirm against per-build durations before filing"
+                "build cost is correlated against WALL-CLOCK because the recorded token "
+                "metric CANNOT see it: a build's real token cost (a full-context cache_read "
+                "round-trip, plus a cache_creation re-cache penalty when it exceeds the "
+                "~5-min cache TTL) is EXCLUDED from total_tokens (input+output only). Do NOT "
+                "read this as 'builds are token-cheap' — their cost is real but unrecorded; "
+                "the visible token over-spend is generation volume + envelope fragmentation"
             ),
         }
     )

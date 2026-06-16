@@ -11,6 +11,34 @@ plan in isolation. The deterministic computation lives in `scripts/audit.py`
 (`cross_token_economics` / `emit_token_economics_block`); this sub-document is the
 interpretation guide.
 
+## Measurement caveat: `total_tokens` is an output-volume proxy, not a cost measure
+
+Every number this check derives comes from `metrics.toon`'s `total_tokens`, which
+`manage-metrics` records as **`input_tokens + output_tokens` only**. It **excludes
+`cache_read_input_tokens` and `cache_creation_input_tokens`** — and in a real session
+`cache_read` is ~99% of token traffic (one forensic measured a **133.8× gap**:
+356,208 counted vs 47,656,694 full). So `total_tokens` measures **generation +
+fresh input**, not total token cost.
+
+Consequences every reader of this block MUST hold:
+
+- The dominant real cost — *(number of turns) × (context size per turn)*, billed as
+  `cache_read` — is **invisible** here. A plan that re-reads a large context across
+  many turns (e.g. one fragmented into many `execution-context` envelopes) can be far
+  more expensive than its `total_tokens` shows.
+- **Build cost is invisible.** A build is one turn whose own generation is tiny; its
+  real cost (a full-context `cache_read` round-trip, plus a `cache_creation` re-cache
+  penalty when it outlasts the ~5-min cache TTL) is not in `total_tokens`. This is why
+  `cross-check-synthesis`'s `churn_explains_walltime` correlates build churn against
+  wall-clock, not against this metric.
+- Treat the flags below as **generation-volume** signals. A high `tokens_per_file` /
+  `big_spend_tiny_footprint` means a lot was *generated* relative to the footprint —
+  not necessarily a lot was *spent* (or vice-versa: a cheap-to-generate plan with a
+  huge context and many turns under-reports badly).
+
+This is a known `manage-metrics` defect; until it records the full usage view, every
+verdict from this check is bounded by it.
+
 ## Inputs the check reads
 
 For every plan carrying a parseable `work/metrics.toon`, the script joins three
