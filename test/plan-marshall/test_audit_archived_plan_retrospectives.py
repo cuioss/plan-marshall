@@ -1413,7 +1413,7 @@ class TestEmitGlobalLogBlock:
     the summary lines carry the level buckets and per-band counts."""
 
     def test_block_carries_summary_lines_and_genuine_count(self, tmp_path: Path):
-        # one ERROR (in-window) + one slow call
+        # one genuine ERROR failure (carries failure markers) + one slow call
         _write_metrics_window(
             tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
         )
@@ -1421,7 +1421,9 @@ class TestEmitGlobalLogBlock:
             tmp_path,
             'script-execution-2026-06-01.log',
             [
-                _line('2026-06-01T10:10:00Z', 'ERROR', 'pm:x:x run -> boom (0.10s)'),
+                # A real failure: carries markers (status: error / exit_code=1) and is
+                # NOT a bare script-call probe, so the corrected flagger flags it.
+                _line('2026-06-01T10:10:00Z', 'ERROR', 'pm:x:x run -> status: error exit_code=1'),
                 _line('2026-06-01T10:20:00Z', 'INFO', 'pm:y:y run (40.0s)'),
             ],
         )
@@ -1437,6 +1439,35 @@ class TestEmitGlobalLogBlock:
         assert 'error_count: 1' in block
         assert 'slow_call_count: 1' in block
         assert 'rows[2]{kind,detail,attributed_plans,severity}:' in block
+
+    def test_debug_and_benign_probes_excluded_from_error_count(self, tmp_path: Path):
+        # The corrected flagger flags only elevated levels (>=WARNING) + real failure
+        # markers, and excludes (a) DEBUG diagnostics (below INFO) and (b) bare
+        # script-call probes at an elevated level with no failure marker (a benign
+        # non-zero-exit query such as `exists`/`read` answering "not found").
+        _write_metrics_window(
+            tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
+        )
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [
+                # DEBUG diagnostic — NOT an error.
+                _line('2026-06-01T10:05:00Z', 'DEBUG', 'pm:a:a resolve cache hit'),
+                # benign ERROR-level probe: a completed script call (has a duration)
+                # with no failure marker — a "not found" boolean query, NOT a failure.
+                _line('2026-06-01T10:10:00Z', 'ERROR', 'pm:f:f exists (0.21s)'),
+                # a genuine marker-bearing failure IS still flagged at any level.
+                _line('2026-06-01T10:20:00Z', 'INFO', 'pm:g:g check Traceback (most recent call last)'),
+            ],
+        )
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        block = audit.emit_global_log_block(result)
+
+        # Only the Traceback line is a genuine error; DEBUG + benign probe excluded.
+        assert 'error_count: 1' in block
+        assert 'genuine_signal_count: 1' in block
 
     def test_empty_result_renders_zero_signal_block(self, tmp_path: Path):
         # no logs at all
@@ -3573,7 +3604,7 @@ def _coupling_row(result: dict[str, Any], name: str) -> dict[str, Any]:
 
 class TestCrossCheckSynthesisFlaggedPlansHelper:
     """``_syn_flagged_plans`` collects plan ids whose flags match a predicate;
-    ``_syn_metrics_disproportionate_plans`` collects disproportionate-token ids."""
+    ``_syn_build_walltime_outlier_plans`` collects the build-wall-clock upper half."""
 
     def test_matching_flag_collected(self):
         # two plans, only one carries a build_churn flag
@@ -3598,23 +3629,38 @@ class TestCrossCheckSynthesisFlaggedPlansHelper:
         # empty set, no raise
         assert matched == set()
 
-    def test_disproportionate_token_plans_collected(self):
-        # one disproportionate metrics row, one normal
-        metrics_rows = [
-            {'plan_id': 'p-dispro', 'disproportionate_token': True},
-            {'plan_id': 'p-normal', 'disproportionate_token': False},
-        ]
+    def test_build_walltime_outlier_plans_collected(self):
+        # three build-running plans; the upper half (>= median total_build_seconds)
+        result = _flag_result(
+            [
+                {'plan_id': 'p-hi', 'flags': [], 'total_build_seconds': 900},
+                {'plan_id': 'p-mid', 'flags': [], 'total_build_seconds': 450},
+                {'plan_id': 'p-lo', 'flags': [], 'total_build_seconds': 50},
+            ]
+        )
 
-        plans = audit._syn_metrics_disproportionate_plans(metrics_rows)
+        plans = audit._syn_build_walltime_outlier_plans(result)
 
-        # only the disproportionate plan
-        assert plans == {'p-dispro'}
+        # median of [50,450,900] = 450; plans >= 450 are the outliers
+        assert plans == {'p-hi', 'p-mid'}
 
-    def test_disproportionate_non_list_yields_empty_set(self):
-        # best-effort on a non-list input
-        plans = audit._syn_metrics_disproportionate_plans(None)
+    def test_build_walltime_excludes_zero_build_plans(self):
+        # a plan that ran no builds (0 seconds) cannot be a wall-clock outlier
+        result = _flag_result(
+            [
+                {'plan_id': 'p-build', 'flags': [], 'total_build_seconds': 300},
+                {'plan_id': 'p-nobuild', 'flags': [], 'total_build_seconds': 0},
+            ]
+        )
 
-        assert plans == set()
+        plans = audit._syn_build_walltime_outlier_plans(result)
+
+        # only the build-running plan; the zero-build plan is excluded entirely
+        assert plans == {'p-build'}
+
+    def test_build_walltime_non_dict_yields_empty_set(self):
+        # best-effort on a non-dict input
+        assert audit._syn_build_walltime_outlier_plans(None) == set()
 
 class TestCrossCheckSynthesisCouplingA:
     """Coupling (a) trend_empty_untrustworthy: empty token-trend regression
@@ -3667,62 +3713,63 @@ class TestCrossCheckSynthesisCouplingA:
         assert row['fired'] is False
 
 class TestCrossCheckSynthesisCouplingB:
-    """Coupling (b) churn_explains_cost: a plan flagged non_minimal_build /
-    build_churn AND (finalize_heavy / big_spend_tiny_footprint OR a
-    disproportionate-token metrics signal)."""
+    """Coupling (b) churn_explains_walltime: a plan flagged non_minimal_build /
+    build_churn whose build WALL-CLOCK (total_build_seconds) is in the corpus upper
+    half. It correlates churn against wall-clock — NOT against token metrics, which
+    cannot see build cost (cache_read/cache_creation are excluded from total_tokens)."""
 
-    def test_fires_on_churn_plus_econ_cost(self):
-        # same plan flagged for build churn AND finalize_heavy
+    def test_fires_on_churn_with_high_walltime(self):
+        # a churning plan whose build wall-clock is at/above the corpus median
         all_results = {
             'sequence-and-build-minimality': _flag_result(
-                [{'plan_id': 'p-x', 'flags': ['non_minimal_build:2']}]
+                [
+                    {'plan_id': 'p-hi', 'flags': ['non_minimal_build:2'], 'total_build_seconds': 800},
+                    {'plan_id': 'p-lo', 'flags': ['build_churn:3'], 'total_build_seconds': 100},
+                ]
             ),
-            'token-economics': _flag_result(
-                [{'plan_id': 'p-x', 'flags': ['finalize_heavy']}]
-            ),
-            'metrics': [],
         }
 
         result = audit.cross_check_synthesis(all_results)
-        row = _coupling_row(result, 'churn_explains_cost')
+        row = _coupling_row(result, 'churn_explains_walltime')
 
-        # fired, names the plan
+        # median of [100,800]=450; only p-hi (800>=450) is both churning AND upper-half
         assert row['fired'] is True
-        assert 'p-x' in row['detail']
+        assert 'p-hi' in row['detail']
+        assert 'p-lo' not in row['detail']
 
-    def test_fires_on_churn_plus_disproportionate_metrics(self):
-        # churn flag intersects with a disproportionate metrics row
+    def test_fires_on_build_churn_flag_specifically(self):
+        # the build_churn flag (not just non_minimal_build) also qualifies
         all_results = {
             'sequence-and-build-minimality': _flag_result(
-                [{'plan_id': 'p-y', 'flags': ['build_churn:4']}]
+                [
+                    {'plan_id': 'p-churn', 'flags': ['build_churn:6'], 'total_build_seconds': 600},
+                    {'plan_id': 'p-clean', 'flags': [], 'total_build_seconds': 200},
+                ]
             ),
-            'token-economics': _flag_result([]),
-            'metrics': [{'plan_id': 'p-y', 'disproportionate_token': True}],
         }
 
         result = audit.cross_check_synthesis(all_results)
-        row = _coupling_row(result, 'churn_explains_cost')
+        row = _coupling_row(result, 'churn_explains_walltime')
 
-        # fired via the metrics arm of the OR
+        # median [200,600]=400; p-churn (600>=400) churns AND is upper-half
         assert row['fired'] is True
-        assert 'p-y' in row['detail']
+        assert 'p-churn' in row['detail']
 
-    def test_does_not_fire_when_churn_and_cost_disjoint(self):
-        # churn on one plan, cost on a DIFFERENT plan (no intersection)
+    def test_does_not_fire_when_churn_has_low_walltime(self):
+        # churn on a plan whose build wall-clock is BELOW the corpus median
         all_results = {
             'sequence-and-build-minimality': _flag_result(
-                [{'plan_id': 'p-churn', 'flags': ['non_minimal_build:2']}]
+                [
+                    {'plan_id': 'p-churn-lo', 'flags': ['build_churn:5'], 'total_build_seconds': 50},
+                    {'plan_id': 'p-clean-hi', 'flags': [], 'total_build_seconds': 900},
+                ]
             ),
-            'token-economics': _flag_result(
-                [{'plan_id': 'p-cost', 'flags': ['finalize_heavy']}]
-            ),
-            'metrics': [],
         }
 
         result = audit.cross_check_synthesis(all_results)
-        row = _coupling_row(result, 'churn_explains_cost')
+        row = _coupling_row(result, 'churn_explains_walltime')
 
-        # disjoint sets => not fired
+        # median [50,900]=475; the only upper-half plan (p-clean-hi) does not churn
         assert row['fired'] is False
 
 class TestCrossCheckSynthesisCouplingC:
