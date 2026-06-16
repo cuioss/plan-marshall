@@ -2,7 +2,7 @@
 """Distribution-contract tests for the three auto-continuation knobs (D9).
 
 When the ``ceremony_policy`` block was dissolved, the three auto-continuation knobs
-(``finalize_without_asking`` / ``loop_back_without_asking`` / ``auto_merge_after_ci``)
+(``finalize_without_asking`` / ``loop_back_without_asking`` / ``final_merge_without_asking``)
 were distributed back into ``plan.phase-6-finalize`` — the phase whose decisions they
 govern. The former ``ceremony_policy.automation`` home and the dedicated
 ``ceremony-policy`` read verb are both gone.
@@ -14,9 +14,12 @@ Three orthogonal assertions per knob:
 2. **Old home is gone** — neither ``DEFAULT_CEREMONY_POLICY`` nor a top-level
    ``ceremony_policy`` key survives in ``get_default_config()``; the knob lives in
    ``DEFAULT_PLAN_FINALIZE``.
-3. **Effective behavior preserved** — the distributed defaults are byte-identical to
-   the historical values (forward auto-continue ``True``, reverse halt ``False``,
-   auto-merge ``True``), so existing plans behave the same.
+3. **Post-migration defaults are exact** — the distributed defaults match their intended
+   post-migration values (forward auto-continue ``True``, reverse halt ``False``,
+   final-merge-without-asking ``False``). The first two preserve the historical
+   ``ceremony_policy`` defaults; the merge gate's default was deliberately flipped from the
+   historical ``auto_merge_after_ci: True`` to ``final_merge_without_asking: False``
+   (lesson 2026-06-16-10-001) so new projects prompt before the irreversible merge.
 
 The handlers are exercised via direct importlib loading (the manage-config test
 convention); read-only round-trip stability of marshal.json is asserted by hashing
@@ -62,11 +65,13 @@ _cmd_init = _load_module('_cmd_init_for_distribution', '_cmd_init.py')
 import conftest  # noqa: E402, F401
 
 
-# The three distributed knobs with their historical (preserved) defaults.
+# The three distributed knobs with their post-migration defaults. The first two preserve
+# their historical ceremony_policy values; final_merge_without_asking was deliberately
+# flipped True->False (lesson 2026-06-16-10-001).
 _MIGRATED_KNOBS = (
     ('finalize_without_asking', True),
     ('loop_back_without_asking', False),
-    ('auto_merge_after_ci', True),
+    ('final_merge_without_asking', False),
 )
 
 
@@ -85,7 +90,7 @@ def test_each_knob_resolves_from_phase_6_finalize(plan_context):
     _cmd_init.cmd_init(Namespace(force=False))
     before = _hash_marshal(plan_context.fixture_dir)
 
-    # each knob resolves to its historical default, read-only
+    # each knob resolves to its post-migration default, read-only
     for knob, expected in _MIGRATED_KNOBS:
         result = _cmd_quality_phases.cmd_phase(
             Namespace(verb='get', field=knob), 'phase-6-finalize'
@@ -133,17 +138,17 @@ def test_ceremony_policy_block_is_dissolved():
 
 
 # =============================================================================
-# (3) Effective behavior preserved (defaults match the historical values)
+# (3) Distributed defaults match their intended post-migration values
 # =============================================================================
 
 
 def test_migrated_defaults_match_historical_values():
-    """The distributed defaults are byte-identical to the historical loose defaults."""
+    """The distributed defaults match their intended post-migration values (merge gate flipped)."""
     finalize = _config_defaults.DEFAULT_PLAN_FINALIZE
-    # forward auto-continue True, reverse halt False, auto-merge True
+    # forward auto-continue True, reverse halt False, final-merge-without-asking False
     for knob, expected in _MIGRATED_KNOBS:
         assert finalize[knob] is expected, (
-            f'{knob} must preserve its historical default {expected}'
+            f'{knob} must resolve to its post-migration default {expected}'
         )
 
 

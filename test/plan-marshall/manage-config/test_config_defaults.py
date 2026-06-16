@@ -2,7 +2,7 @@
 """Test default-config schema additions for the split-gate / default-base-branch plan.
 
 Covers:
-- `DEFAULT_PLAN_FINALIZE` includes `auto_merge_after_ci` with default `False`.
+- `DEFAULT_PLAN_FINALIZE` includes `final_merge_without_asking` with default `False`.
 - A fresh marshal.json carries `project.default_base_branch == 'main'`.
 - The new `project` CLI noun round-trips a custom `default_base_branch`.
 """
@@ -86,8 +86,8 @@ _cmd_effort_mod = _load_module(
 )
 
 
-def test_default_plan_finalize_includes_auto_merge_after_ci():
-    """DEFAULT_PLAN_FINALIZE must declare auto_merge_after_ci with default True.
+def test_default_plan_finalize_includes_final_merge_without_asking():
+    """DEFAULT_PLAN_FINALIZE must declare final_merge_without_asking with default False.
 
     The knob is a flat field under plan.phase-6-finalize — the ceremony_policy
     block was dissolved and every automation knob distributed back into its
@@ -95,14 +95,14 @@ def test_default_plan_finalize_includes_auto_merge_after_ci():
     """
     finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
-    # homed in the phase block with the True default
-    assert 'auto_merge_after_ci' in finalize, (
-        'auto_merge_after_ci must be schema-registered in DEFAULT_PLAN_FINALIZE'
+    # homed in the phase block with the False default
+    assert 'final_merge_without_asking' in finalize, (
+        'final_merge_without_asking must be schema-registered in DEFAULT_PLAN_FINALIZE'
     )
-    assert finalize['auto_merge_after_ci'] is True, (
-        'auto_merge_after_ci default must be True '
-        '(auto-merge after CI, serialized via the cross-plan merge-lock; '
-        'set False to prompt on every merge)'
+    assert finalize['final_merge_without_asking'] is False, (
+        'final_merge_without_asking default must be False '
+        '(interactive-by-default: prompt the operator before the final merge; '
+        'set True to merge without asking, serialized via the cross-plan merge-lock)'
     )
 
 

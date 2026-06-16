@@ -163,7 +163,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The pre-rebase gate decides whether the upcoming `worktree-rebase-to → force-push-with-lease → ci wait` sequence fires silently or prompts the operator for confirmation. It is driven by the `auto_rebase_threshold` knob (read above in the **Conflict-Severity Classifier** section) and the classifier's `{decision}`.
 
-The merge step itself is governed by a separate gate (see **Pre-Merge Confirmation Gate** below) routed by the orthogonal `auto_merge_after_ci` knob. The two gates are independent: a permissive `auto_rebase_threshold` does NOT imply a permissive merge gate, and vice versa.
+The merge step itself is governed by a separate gate (see **Pre-Merge Confirmation Gate** below) routed by the orthogonal `final_merge_without_asking` knob. The two gates are independent: a permissive `auto_rebase_threshold` does NOT imply a permissive merge gate, and vice versa.
 
 The gate is **mandatory when `{decision} == needs_user`** (genuine conflict, classifier-bypassed threshold, or `state == merged` re-entry path where there is no rebase to perform but the operator is asked to confirm local cleanup) and **bypassed when `{decision} == auto_proceed`** (clean or auto-resolvable rebase under a permissive threshold).
 
@@ -305,16 +305,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Only if `state == open`** (when `state == merged` there is nothing to merge — skip this entire section and proceed to **Wait for Merge CI**, which itself is a no-op on the `state == merged` path).
 
-The pre-merge gate fires after `ci wait` returns green on the rebased branch and BEFORE the `pr merge --delete-branch` call below. It is suppressed only when `auto_merge_after_ci == true`. The gate is orthogonal to the pre-rebase gate above — the operator may have auto-proceeded through rebase but still be asked to confirm the irreversible merge step.
+The pre-merge gate fires after `ci wait` returns green on the rebased branch and BEFORE the `pr merge --delete-branch` call below. It is suppressed only when `final_merge_without_asking == true`. The gate is orthogonal to the pre-rebase gate above — the operator may have auto-proceeded through rebase but still be asked to confirm the irreversible merge step.
 
 #### Read the auto-merge gate
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field auto_merge_after_ci
+  plan phase-6-finalize get --field final_merge_without_asking
 ```
 
-Extract `value` as `{auto_merge_after_ci}` (default: `true`). Valid values: `true`, `false`. The default is now `true` — auto-merge after CI, serialized across plans via the cross-plan merge-lock so concurrent plans can never race on the merge-to-main critical section. `false` is the explicit interactive opt-out (prompt the operator before merging). The read mechanism is a plain boolean — no tri-state, no back-compat normalization.
+Extract `value` as `{final_merge_without_asking}` (default: `false`). Valid values: `true`, `false`. The default is now `false` — interactive-by-default: the operator is prompted to confirm before the irreversible merge to `main`. `true` is the explicit opt-in to unattended auto-merge after CI, serialized across plans via the cross-plan merge-lock so concurrent plans can never race on the merge-to-main critical section. The read mechanism is a plain boolean — no tri-state, no back-compat normalization.
 
 #### Re-run the classifier against the current head
 
@@ -329,18 +329,18 @@ Parse the TOON return for refreshed `classification`, `auto_reconciled`, `confli
 
 If the script exits non-zero, STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict.
 
-#### Auto-merge bypass (`auto_merge_after_ci == true`)
+#### Auto-merge bypass (`final_merge_without_asking == true`)
 
-When `{auto_merge_after_ci} == true`, skip the `AskUserQuestion` block entirely and log the bypass:
+When `{final_merge_without_asking} == true`, skip the `AskUserQuestion` block entirely and log the bypass:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: pre-merge auto-proceed (auto_merge_after_ci=true), pre-merge confirmation gate bypassed"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: pre-merge auto-proceed (final_merge_without_asking=true), pre-merge confirmation gate bypassed"
 ```
 
 ##### Acquire the cross-plan merge-lock (auto path only)
 
-The auto path is ALWAYS lock-coordinated: because auto-merge serializes through the unified merge-lock, concurrent plans can never race on the merge-to-main critical section, which is precisely what makes auto-merge a safe default. BEFORE the merge, acquire the lock. `acquire` is BLOCKING — the poll loop lives inside the Python script (`time.sleep`), NOT a Bash loop — and `--timeout 300` sets the 5-minute Pre-Merge Gate window (the file primitive's own default is the shorter 30s used by `integrate_into_main`'s inner mutex). Call it with a Bash tool timeout of ~360000ms (6 minutes) to cover the 5-minute internal poll plus margin (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock acquire`):
+The auto path is ALWAYS lock-coordinated: because auto-merge serializes through the unified merge-lock, concurrent plans can never race on the merge-to-main critical section, which is precisely what makes opt-in auto-merge safe under concurrency. BEFORE the merge, acquire the lock. `acquire` is BLOCKING — the poll loop lives inside the Python script (`time.sleep`), NOT a Bash loop — and `--timeout 300` sets the 5-minute Pre-Merge Gate window (the file primitive's own default is the shorter 30s used by `integrate_into_main`'s inner mutex). Call it with a Bash tool timeout of ~360000ms (6 minutes) to cover the 5-minute internal poll plus margin (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock acquire`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
@@ -381,7 +381,7 @@ Then proceed directly to **Merge PR (if not yet merged)** below. The `{merge_con
 
 > **Sync note**: the merge-lock is the unified `plan-marshall:manage-locks:merge_lock` primitive (the file-based `O_EXCL` mutex). After this plan merges, the `finalize-step-sync-plugin-cache` step syncs the plugin cache and regenerates the executor against main (after the cache sync), so the notation resolves.
 
-#### Interactive merge prompt (`auto_merge_after_ci == false`)
+#### Interactive merge prompt (`final_merge_without_asking == false`)
 
 Present the merge context and ask the operator to confirm. The prompt is anchored to the current (post-rebase, post-CI) head SHA via the freshly-re-run classifier above:
 
@@ -425,14 +425,14 @@ Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, 
 
 ### Merge PR (if not yet merged)
 
-**Only if `state == open` AND the pre-merge gate above resolved to `{merge_consent} == explicit_yes`** (the `auto_merge_after_ci == true` bypass also sets `{merge_consent} = explicit_yes`):
+**Only if `state == open` AND the pre-merge gate above resolved to `{merge_consent} == explicit_yes`** (the `final_merge_without_asking == true` bypass also sets `{merge_consent} = explicit_yes`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr merge \
     --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch
 ```
 
-If merge fails with branch protection error ('base branch policy prohibits the merge'), fall back to auto-merge — the operator's "Yes, merge" answer (or the `auto_merge_after_ci == true` bypass) is the consent for both the direct merge and its auto-merge fallback:
+If merge fails with branch protection error ('base branch policy prohibits the merge'), fall back to auto-merge — the operator's "Yes, merge" answer (or the `final_merge_without_asking == true` bypass) is the consent for both the direct merge and its auto-merge fallback:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr auto-merge \
@@ -525,7 +525,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 #### Release the cross-plan merge-lock (auto path only)
 
-**Only if the merge-lock was acquired on the auto path** (`{auto_merge_after_ci} == true` and `merge_lock acquire` returned `status: success` / `action: acquired`). The release fires AFTER `switch-and-pull` has pulled the merge commit into the base branch — the merge-to-main critical section is now complete, so the lock file can be freed for the next plan (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock release`):
+**Only if the merge-lock was acquired on the auto path** (`{final_merge_without_asking} == true` and `merge_lock acquire` returned `status: success` / `action: acquired`). The release fires AFTER `switch-and-pull` has pulled the merge commit into the base branch — the merge-to-main critical section is now complete, so the lock file can be freed for the next plan (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock release`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \

@@ -5,7 +5,7 @@ The gate-decision logic itself lives in workflow doc text
 (`marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md`),
 so this suite pins:
 
-1. The config-knob plumbing (`auto_rebase_threshold` and `auto_merge_after_ci`
+1. The config-knob plumbing (`auto_rebase_threshold` and `final_merge_without_asking`
    are reachable through `manage-config plan phase-6-finalize get/set --field`
    with the documented default values).
 2. The doc-level invariants of the split-gate structure — two distinct
@@ -97,23 +97,23 @@ def test_auto_rebase_threshold_roundtrips_when_set(plan_context):
     assert get_result['value'] == 'auto_resolvable'
 
 
-def test_auto_merge_after_ci_default_is_true(plan_context):
-    """Fresh marshal.json must surface auto_merge_after_ci default True.
+def test_final_merge_without_asking_default_is_false(plan_context):
+    """Fresh marshal.json must surface final_merge_without_asking default False.
 
     The knob is a flat field under plan.phase-6-finalize; the runtime read is
-    now `plan phase-6-finalize get --field auto_merge_after_ci`.
+    now `plan phase-6-finalize get --field final_merge_without_asking`.
     """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    args = Namespace(verb='get', field='auto_merge_after_ci')
+    args = Namespace(verb='get', field='final_merge_without_asking')
     result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-6-finalize')
 
     assert result['status'] == 'success'
-    assert result['value'] is True
+    assert result['value'] is False
 
 
-def test_auto_merge_after_ci_read_from_phase_6_finalize(plan_context):
-    """auto_merge_after_ci reads through the standard phase get verb.
+def test_final_merge_without_asking_read_from_phase_6_finalize(plan_context):
+    """final_merge_without_asking reads through the standard phase get verb.
 
     A fresh marshal.json (no live override) reads the canonical default from
     the merged plan.phase-6-finalize block.
@@ -125,7 +125,7 @@ def test_auto_merge_after_ci_read_from_phase_6_finalize(plan_context):
     result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-6-finalize')
 
     assert result['status'] == 'success'
-    assert result['auto_merge_after_ci'] is True
+    assert result['final_merge_without_asking'] is False
 
 
 # ---- Doc-level invariants ----------------------------------------------------
@@ -149,11 +149,13 @@ def test_doc_routes_pre_rebase_via_auto_rebase_threshold():
     assert 'branch_cleanup_auto_proceed_threshold' not in text
 
 
-def test_doc_routes_pre_merge_via_auto_merge_after_ci():
-    """The pre-merge gate must reference the new `auto_merge_after_ci` knob."""
+def test_doc_routes_pre_merge_via_final_merge_without_asking():
+    """The pre-merge gate must reference the renamed `final_merge_without_asking` knob."""
     text = _branch_cleanup_text()
 
-    assert 'auto_merge_after_ci' in text
+    assert 'final_merge_without_asking' in text
+    # The legacy name MUST be fully removed by the branch-cleanup.md rename.
+    assert 'auto_merge_after_ci' not in text
 
 
 def test_doc_pre_merge_reruns_classifier_for_freshness():

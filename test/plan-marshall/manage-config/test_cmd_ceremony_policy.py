@@ -4,7 +4,7 @@
 The ``ceremony-policy`` noun was retired from ``manage-config.py`` argparse and the
 ``_cmd_ceremony_policy.py`` handler deleted. The three auto-continuation knobs the
 verb used to surface (``finalize_without_asking`` / ``loop_back_without_asking`` /
-``auto_merge_after_ci``) are now flat fields under ``plan.phase-6-finalize``, read /
+``final_merge_without_asking``) are now flat fields under ``plan.phase-6-finalize``, read /
 written via the standard ``plan phase-6-finalize get/set --field <knob>`` access shape.
 
 This module pins the post-retirement contract:
@@ -61,7 +61,7 @@ import conftest  # noqa: E402, F401
 _MIGRATED_KNOBS = (
     ('finalize_without_asking', True),
     ('loop_back_without_asking', False),
-    ('auto_merge_after_ci', True),
+    ('final_merge_without_asking', False),
 )
 
 
@@ -117,20 +117,25 @@ def test_each_automation_knob_reads_via_phase_get(plan_context):
 
 
 def test_automation_knob_set_then_get_roundtrips(plan_context):
-    """``plan phase-6-finalize set --field auto_merge_after_ci --value false`` round-trips."""
+    """``plan phase-6-finalize set --field final_merge_without_asking --value true`` round-trips.
+
+    Sets the knob to ``true`` (the non-default opt-in to merge without asking)
+    so the round-trip proves persistence against a value distinct from the
+    ``False`` default.
+    """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
     # set then get
     set_result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(verb='set', field='auto_merge_after_ci', value='false'), 'phase-6-finalize'
+        Namespace(verb='set', field='final_merge_without_asking', value='true'), 'phase-6-finalize'
     )
     get_result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(verb='get', field='auto_merge_after_ci'), 'phase-6-finalize'
+        Namespace(verb='get', field='final_merge_without_asking'), 'phase-6-finalize'
     )
 
     # bool coercion + persistence
     assert set_result['status'] == 'success'
-    assert get_result['value'] is False
+    assert get_result['value'] is True
 
 
 def test_run_at_all_gate_set_then_get_roundtrips(plan_context):

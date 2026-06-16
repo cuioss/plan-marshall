@@ -349,12 +349,11 @@ DEFAULT_PLAN_FINALIZE = {
     # Automation knobs — once a finalize gate has run, proceed without asking?
     # finalize_without_asking gates the auto-continue from execute into the
     # finalize pipeline; loop_back_without_asking gates the auto-loop-back on a
-    # finalize-driven fix; auto_merge_after_ci gates the post-CI auto-merge.
-    # Historical defaults preserved. Read via
-    # `manage-config plan phase-6-finalize get --field <knob>`.
+    # finalize-driven fix; final_merge_without_asking gates the post-CI auto-merge.
+    # Read via `manage-config plan phase-6-finalize get --field <knob>`.
     'finalize_without_asking': True,
     'loop_back_without_asking': False,
-    'auto_merge_after_ci': True,
+    'final_merge_without_asking': False,
     # Finalize run-at-all gates (auto|always|never), consumed by the manifest
     # composer's finalize step-selection (manage-execution-manifest.py). Each
     # gate maps to exactly one finalize step: self_review ->
@@ -382,7 +381,7 @@ DEFAULT_PLAN_FINALIZE = {
     # ceiling.
     'checks_wait_timeout_seconds': 600,
     # Threshold gating the pre-rebase auto-proceed decision in branch-cleanup.md,
-    # orthogonal to `plan.phase-6-finalize.auto_merge_after_ci` (which gates
+    # orthogonal to `plan.phase-6-finalize.final_merge_without_asking` (which gates
     # the post-CI merge). The
     # value `no_overlap_only` permits the auto-rebase to proceed only when the
     # rebase would touch a disjoint file set; any overlap defers to the operator.
