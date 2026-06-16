@@ -1323,6 +1323,7 @@ _SCOPE_GATED_SURGICAL_DROP = frozenset(
     {
         'plan-retrospective',
         'plan-marshall:plan-retrospective',
+        'pre-submission-self-review',
         'finalize-step-pre-submission-self-review',
         'project:finalize-step-pre-submission-self-review',
         'finalize-step-plugin-doctor',
@@ -1371,8 +1372,9 @@ def _apply_scope_gated_finalize(
     Subtractions:
 
     - ``scope_estimate == 'surgical'`` → drop ``plan-marshall:plan-retrospective``,
-      ``project:finalize-step-pre-submission-self-review``, and
-      ``project:finalize-step-plugin-doctor`` (both bare and prefixed forms).
+      ``pre-submission-self-review``, and ``finalize-step-plugin-doctor`` (every
+      bare and prefixed form — including the generic ``default:`` /
+      meta-project ``project:`` variants).
     - ``scope_estimate == 'single_module'`` → drop only
       ``plan-marshall:plan-retrospective``.
     - Any other scope value → no implicit subtraction.
