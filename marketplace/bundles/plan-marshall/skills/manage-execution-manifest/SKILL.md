@@ -388,7 +388,7 @@ For each rule fired, `compose` emits one `decision.log` entry — written in-pro
 
 Before the seven-row matrix and the bot-enforcement guard, the composer applies a scope-gated pre-filter that drops heavyweight phase-6 review/audit steps based on `scope_estimate`:
 
-- **`surgical`** — drops `plan-marshall:plan-retrospective`, `project:finalize-step-pre-submission-self-review`, and `project:finalize-step-plugin-doctor` (both bare and prefixed forms are matched).
+- **`surgical`** — drops `plan-marshall:plan-retrospective`, pre-submission-self-review, and `project:finalize-step-plugin-doctor`. Every bare and prefixed form is matched — for pre-submission-self-review this covers both the generic `default:pre-submission-self-review` (normalized bare `pre-submission-self-review`) and the meta-project `project:finalize-step-pre-submission-self-review` wrapper.
 - **`single_module`** — drops only `plan-marshall:plan-retrospective`.
 - **`multi_module` / `broad` / `none`** — no implicit subtraction; the full candidate set is retained.
 

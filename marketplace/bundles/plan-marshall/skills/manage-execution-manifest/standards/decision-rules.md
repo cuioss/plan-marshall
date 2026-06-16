@@ -208,7 +208,7 @@ When the gate passes via the breaking arm, the pre-filter is a no-op and emits n
 
 **Effect**: heavyweight phase-6 review/audit steps are removed from `phase_6_candidates` by scope before the rows are evaluated:
 
-- **`scope_estimate == 'surgical'`** — drops `plan-marshall:plan-retrospective`, `project:finalize-step-pre-submission-self-review`, and `project:finalize-step-plugin-doctor`. Both bare and prefixed forms are matched (the candidate list is `default:`-namespace-normalized at intake, but `project:` / `bundle:skill` prefixes are preserved verbatim, so the match-set lists both forms).
+- **`scope_estimate == 'surgical'`** — drops `plan-marshall:plan-retrospective`, pre-submission-self-review, and `project:finalize-step-plugin-doctor`. Every bare and prefixed form is matched: for pre-submission-self-review this covers the generic `default:pre-submission-self-review` (normalized to bare `pre-submission-self-review` at intake) used by consuming projects AND the meta-project `project:finalize-step-pre-submission-self-review` wrapper. The candidate list is `default:`-namespace-normalized at intake, but `project:` / `bundle:skill` prefixes are preserved verbatim, so the match-set lists both forms.
 - **`scope_estimate == 'single_module'`** — drops only `plan-marshall:plan-retrospective`.
 - **`scope_estimate ∈ {none, multi_module, broad}`** — no implicit subtraction; the full candidate set survives into the matrix.
 
