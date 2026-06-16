@@ -1323,6 +1323,7 @@ _SCOPE_GATED_SURGICAL_DROP = frozenset(
     {
         'plan-retrospective',
         'plan-marshall:plan-retrospective',
+        'pre-submission-self-review',
         'finalize-step-pre-submission-self-review',
         'project:finalize-step-pre-submission-self-review',
         'finalize-step-plugin-doctor',
@@ -1371,8 +1372,9 @@ def _apply_scope_gated_finalize(
     Subtractions:
 
     - ``scope_estimate == 'surgical'`` → drop ``plan-marshall:plan-retrospective``,
-      ``project:finalize-step-pre-submission-self-review``, and
-      ``project:finalize-step-plugin-doctor`` (both bare and prefixed forms).
+      ``pre-submission-self-review``, and ``finalize-step-plugin-doctor`` (every
+      bare and prefixed form — including the generic ``default:`` /
+      meta-project ``project:`` variants).
     - ``scope_estimate == 'single_module'`` → drop only
       ``plan-marshall:plan-retrospective``.
     - Any other scope value → no implicit subtraction.
@@ -1430,24 +1432,23 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # plan.phase-6-finalize run-at-all selection (post-matrix transform)
 # =============================================================================
 #
-# The four finalize run-at-all gates (`plan.phase-6-finalize.<gate>`) drive
+# The three finalize run-at-all gates (`plan.phase-6-finalize.<gate>`) drive
 # a post-matrix transform that forces each gate's finalize step in (`always`),
 # out (`never`), or defers to the existing decision machinery (`auto`, the
 # default no-op). Each gate maps to exactly one finalize step ID:
 #
-#   self_review   → finalize-step-pre-submission-self-review
+#   self_review   → default:pre-submission-self-review
 #   qgate         → pre-push-quality-gate (the finalize blocking-findings re-capture)
-#   plugin_doctor → finalize-step-plugin-doctor
 #   simplify      → finalize-step-simplify (holistic post-implementation sweep)
 #
-# `simplify` is the symmetric peer of the other three gates: `auto` defers to
+# `simplify` is the symmetric peer of the other two gates: `auto` defers to
 # the `simplify_inactive` pre-filter that already decided the step at matrix
 # time, `always` re-adds it even when that pre-filter dropped it, and `never`
 # forces it out.
 #
 # The transform NEVER touches `automated-review`: the bot-review invariant
 # (enforced by `_apply_bot_enforcement_guard`) is orthogonal and is preserved
-# verbatim — the four finalize gates are the only
+# verbatim — the three finalize gates are the only
 # finalize steps this transform may add or drop. Run-at-all values are validated
 # at set time by `manage-config`'s `validate_run_at_all`; the composer
 # defensively treats any non-`{always,never}` value (including `auto` and a
@@ -1457,9 +1458,10 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # candidate list may carry. Candidate lists are `default:`-namespace-normalized
 # at intake (`_strip_default_prefix`), but `project:` / `bundle:skill` prefixes
 # are preserved verbatim, so the match-sets below list every form. The `always`
-# re-insertion uses the canonical `project:`-prefixed form for the two
-# finalize-step skills (their authoritative manifest shape) and the bare form
-# for `pre-push-quality-gate` (a built-in `default:` step, normalized bare).
+# re-insertion uses the canonical `default:`-prefixed form for
+# pre-submission-self-review (matching the workflow frontmatter `name:`) and the
+# bare form for `pre-push-quality-gate` (a built-in `default:` step, normalized
+# bare).
 
 # Gate → (match-set, canonical insertion form). The match-set covers every
 # prefixed/bare form a candidate list may carry; the insertion form is the
@@ -1468,24 +1470,17 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
     'self_review': (
         frozenset(
             {
+                'pre-submission-self-review',
+                'default:pre-submission-self-review',
                 'finalize-step-pre-submission-self-review',
                 'project:finalize-step-pre-submission-self-review',
             }
         ),
-        'project:finalize-step-pre-submission-self-review',
+        'default:pre-submission-self-review',
     ),
     'qgate': (
         frozenset({'pre-push-quality-gate'}),
         'pre-push-quality-gate',
-    ),
-    'plugin_doctor': (
-        frozenset(
-            {
-                'finalize-step-plugin-doctor',
-                'project:finalize-step-plugin-doctor',
-            }
-        ),
-        'project:finalize-step-plugin-doctor',
     ),
     'simplify': (
         frozenset({'finalize-step-simplify'}),
@@ -1494,23 +1489,23 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
 }
 
 # The run-at-all gate fields for the finalize section, in canonical order.
-_CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'plugin_doctor', 'simplify')
+_CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'simplify')
 
 # Canonical default for every finalize gate when marshal.json omits the block.
 _CEREMONY_FINALIZE_DEFAULT = 'auto'
 
 
 def _read_finalize_gates() -> dict[str, str]:
-    """Resolve the four ``plan.phase-6-finalize`` run-at-all gate values.
+    """Resolve the three ``plan.phase-6-finalize`` run-at-all gate values.
 
     Reads ``marshal.json``'s ``plan.phase-6-finalize`` block directly (the
     composer reads marshal.json straight through, like the planning-lane
     router), merging the canonical ``auto`` default under any absent gate. Each
-    gate (``self_review`` / ``qgate`` / ``plugin_doctor`` / ``simplify``) is a
+    gate (``self_review`` / ``qgate`` / ``simplify``) is a
     flat phase-local knob — read via
     ``manage-config plan phase-6-finalize get --field <gate>``.
 
-    Returns a ``{gate: value}`` dict for the four finalize gates; values are
+    Returns a ``{gate: value}`` dict for the three finalize gates; values are
     always one of the configured values (or the ``auto`` default). The caller
     treats any value other than ``always`` / ``never`` as defer.
     """
@@ -2359,7 +2354,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
 
     # plan.phase-6-finalize run-at-all selection runs AFTER the seven-row
     # matrix (and execution_tier routing) and BEFORE the bot-enforcement guard.
-    # It forces each of the four finalize gates' steps in (`always`) or out
+    # It forces each of the three finalize gates' steps in (`always`) or out
     # (`never`) on the matrix-produced `phase_6.steps`, deferring to the existing
     # machinery on `auto` (the default). `always` is the only path that can
     # re-add a step the scope_gated_finalize pre-filter dropped — which is the

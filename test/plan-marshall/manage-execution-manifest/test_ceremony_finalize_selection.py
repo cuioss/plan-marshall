@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Tests for the ``ceremony_finalize_selection`` post-matrix transform.
 
-The transform applies the four ``plan.phase-6-finalize`` run-at-all gates
-(``self_review`` / ``qgate`` / ``plugin_doctor`` / ``simplify``, each
+The transform applies the three ``plan.phase-6-finalize`` run-at-all gates
+(``self_review`` / ``qgate`` / ``simplify``, each
 ``always|never|auto``) to the matrix-produced ``phase_6.steps``:
 
 - ``auto`` (the default) defers to the existing machinery — no-op.
@@ -76,18 +76,17 @@ _mem._log_execution_tier_routing = lambda *a, **kw: None  # type: ignore[attr-de
 # Helpers
 # =============================================================================
 
-# The full candidate set including the three ceremony-gated finalize steps in
+# The full candidate set including the ceremony-gated finalize steps in
 # their canonical (project-prefixed / bare) form. The composer strips the
 # `default:` prefix at intake but preserves `project:` prefixes verbatim.
 _CEREMONY_FINALIZE_STEPS = [
     'pre-push-quality-gate',
     'project:finalize-step-pre-submission-self-review',
-    'project:finalize-step-plugin-doctor',
 ]
 
 
 def _phase_6_with_ceremony_steps() -> str:
-    """Default phase-6 candidates plus the three ceremony-gated finalize steps."""
+    """Default phase-6 candidates plus the ceremony-gated finalize steps."""
     steps = list(DEFAULT_PHASE_6_STEPS) + _CEREMONY_FINALIZE_STEPS
     return ','.join(steps)
 
@@ -206,7 +205,7 @@ def _restore_footprint_resolver():
 
 
 class TestCeremonyFinalizeAuto:
-    """All three gates default to ``auto`` → the transform is a no-op."""
+    """All gates default to ``auto`` → the transform is a no-op."""
 
     def test_absent_ceremony_block_is_no_op(self, plan_context):
         _seed_marshal()  # no finalize gate overrides at all
@@ -220,7 +219,6 @@ class TestCeremonyFinalizeAuto:
         assert gates == {
             'self_review': 'auto',
             'qgate': 'auto',
-            'plugin_doctor': 'auto',
             'simplify': 'auto',
         }
         assert result['ceremony_finalize_forced_in'] == []
@@ -228,7 +226,7 @@ class TestCeremonyFinalizeAuto:
 
     def test_explicit_auto_gates_are_no_op(self, plan_context):
         _seed_marshal(
-            finalize_gates={'self_review': 'auto', 'qgate': 'auto', 'plugin_doctor': 'auto'}
+            finalize_gates={'self_review': 'auto', 'qgate': 'auto', 'simplify': 'auto'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -239,11 +237,13 @@ class TestCeremonyFinalizeAuto:
         assert result['ceremony_finalize_forced_in'] == []
         assert result['ceremony_finalize_forced_out'] == []
         # On a multi_module feature plan (Row 7 default, no scope gate), the
-        # three ceremony steps survive the matrix untouched.
+        # ceremony steps survive the matrix untouched. The original
+        # project:-prefixed candidate survives (auto does not re-insert the
+        # canonical default: form), so its bare form is the
+        # finalize-step-pre-submission-self-review variant.
         bare = _bare(_manifest_phase_6_steps(result))
         assert 'finalize-step-pre-submission-self-review' in bare
         assert 'pre-push-quality-gate' in bare
-        assert 'finalize-step-plugin-doctor' in bare
 
 
 # =============================================================================
@@ -256,7 +256,7 @@ class TestCeremonyFinalizeNever:
 
     def test_never_drops_each_gate_step(self, plan_context):
         _seed_marshal(
-            finalize_gates={'self_review': 'never', 'qgate': 'never', 'plugin_doctor': 'never'}
+            finalize_gates={'self_review': 'never', 'qgate': 'never'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -266,18 +266,17 @@ class TestCeremonyFinalizeNever:
         assert result['status'] == 'success'
         bare = _bare(_manifest_phase_6_steps(result))
         assert 'finalize-step-pre-submission-self-review' not in bare
+        assert 'pre-submission-self-review' not in bare
         assert 'pre-push-quality-gate' not in bare
-        assert 'finalize-step-plugin-doctor' not in bare
         forced_out = set(result['ceremony_finalize_forced_out'])
         assert 'project:finalize-step-pre-submission-self-review' in forced_out
         assert 'pre-push-quality-gate' in forced_out
-        assert 'project:finalize-step-plugin-doctor' in forced_out
 
     def test_never_is_no_op_when_step_already_absent(self, plan_context):
-        # Candidate set EXCLUDES plugin_doctor; never plugin_doctor is a no-op.
+        # Candidate set EXCLUDES self_review; never self_review is a no-op.
         candidates = [s for s in _phase_6_with_ceremony_steps().split(',')
-                      if s != 'project:finalize-step-plugin-doctor']
-        _seed_marshal(finalize_gates={'plugin_doctor': 'never'})
+                      if s != 'project:finalize-step-pre-submission-self-review']
+        _seed_marshal(finalize_gates={'self_review': 'never'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -290,7 +289,7 @@ class TestCeremonyFinalizeNever:
 
     def test_never_preserves_automated_review(self, plan_context):
         _seed_marshal(
-            finalize_gates={'self_review': 'never', 'qgate': 'never', 'plugin_doctor': 'never'},
+            finalize_gates={'self_review': 'never', 'qgate': 'never'},
             ci_provider='github',
         )
         _stub_footprint(_FOOTPRINT)
@@ -312,10 +311,11 @@ class TestCeremonyFinalizeAlways:
     """``always`` re-adds the gate's step even when a pre-filter dropped it."""
 
     def test_always_readds_steps_dropped_by_surgical_scope_gate(self, plan_context):
-        # On surgical scope, scope_gated_finalize drops self_review and
-        # plugin_doctor (and plan-retrospective). `always` must re-add both.
+        # On surgical scope, scope_gated_finalize drops self_review
+        # (and plan-retrospective). `always` must re-add it via the canonical
+        # default:pre-submission-self-review insertion form.
         _seed_marshal(
-            finalize_gates={'self_review': 'always', 'plugin_doctor': 'always'}
+            finalize_gates={'self_review': 'always'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -330,11 +330,9 @@ class TestCeremonyFinalizeAlways:
         assert result is not None
         assert result['status'] == 'success'
         bare = _bare(_manifest_phase_6_steps(result))
-        assert 'finalize-step-pre-submission-self-review' in bare
-        assert 'finalize-step-plugin-doctor' in bare
+        assert 'pre-submission-self-review' in bare
         forced_in = set(result['ceremony_finalize_forced_in'])
-        assert 'project:finalize-step-pre-submission-self-review' in forced_in
-        assert 'project:finalize-step-plugin-doctor' in forced_in
+        assert 'default:pre-submission-self-review' in forced_in
 
     def test_always_readds_qgate_dropped_by_inactive_prefilter(self, plan_context):
         # Empty footprint → pre_push_quality_gate_inactive drops the qgate step.
@@ -362,7 +360,7 @@ class TestCeremonyFinalizeAlways:
         assert 'finalize-step-pre-submission-self-review' in _bare(_manifest_phase_6_steps(result))
 
     def test_always_inserts_before_plan_mutating_tail(self, plan_context):
-        _seed_marshal(finalize_gates={'plugin_doctor': 'always'})
+        _seed_marshal(finalize_gates={'self_review': 'always'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -377,9 +375,71 @@ class TestCeremonyFinalizeAlways:
         steps = _manifest_phase_6_steps(result)
         # The re-added step must precede archive-plan (plan-mutating tail).
         bare_seq = [next(iter(_bare([s]))) for s in steps]
-        assert 'finalize-step-plugin-doctor' in bare_seq
+        assert 'pre-submission-self-review' in bare_seq
         assert 'archive-plan' in bare_seq
-        assert bare_seq.index('finalize-step-plugin-doctor') < bare_seq.index('archive-plan')
+        assert bare_seq.index('pre-submission-self-review') < bare_seq.index('archive-plan')
+
+
+# =============================================================================
+# Test: generic consuming-project self_review form (default:pre-submission-self-review)
+# =============================================================================
+
+
+class TestCeremonyFinalizeGenericSelfReviewForm:
+    """A consuming project lists the GENERIC ``default:pre-submission-self-review``
+    step (not the meta-project ``project:``-prefixed wrapper). The composer
+    `_strip_default_prefix`-normalizes it to bare ``pre-submission-self-review``
+    at intake, so the ``self_review`` gate's match-set MUST recognize that bare
+    form — otherwise ``never`` cannot drop it and ``always`` re-inserts a
+    duplicate. Regression for the match-set that omitted the normalized form
+    after the canonical insertion form was generalized to ``default:``.
+    """
+
+    def _generic_candidates(self) -> str:
+        steps = list(DEFAULT_PHASE_6_STEPS) + [
+            'pre-push-quality-gate',
+            'default:pre-submission-self-review',
+        ]
+        return ','.join(steps)
+
+    def test_never_drops_generic_default_form(self, plan_context):
+        _seed_marshal(finalize_gates={'self_review': 'never'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='ceremony-never-generic',
+                phase_6_steps=self._generic_candidates(),
+            )
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        # The normalized bare form must be dropped by `never`.
+        assert 'pre-submission-self-review' not in _bare(_manifest_phase_6_steps(result))
+
+    def test_always_does_not_duplicate_generic_default_form(self, plan_context):
+        _seed_marshal(finalize_gates={'self_review': 'always'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='ceremony-always-generic',
+                phase_6_steps=self._generic_candidates(),
+            )
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        # `always` must see the already-present normalized form and NOT re-insert
+        # a duplicate. Count raw occurrences (a set would mask the duplicate).
+        steps = _manifest_phase_6_steps(result)
+        occurrences = sum(
+            1 for s in steps
+            if next(iter(_bare([s]))) == 'pre-submission-self-review'
+        )
+        assert occurrences == 1
+        assert 'default:pre-submission-self-review' not in result['ceremony_finalize_forced_in']
 
 
 # =============================================================================
@@ -389,7 +449,8 @@ class TestCeremonyFinalizeAlways:
 
 class TestCeremonyFinalizeSimplify:
     """The ``simplify`` gate forces ``finalize-step-simplify`` in/out, with
-    ``auto`` deferring to the matrix-time ``simplify_inactive`` pre-filter.
+    ``auto`` deferring to the matrix-time ``simplify_inactive`` pre-filter. It is
+    the symmetric peer of the other two finalize gates (self_review / qgate).
 
     ``finalize-step-simplify`` is a member of ``DEFAULT_PHASE_6_STEPS``; the
     ``simplify_inactive`` pre-filter keeps it only when
@@ -514,7 +575,7 @@ class TestCeremonyFinalizeDeterminism:
 
     def test_repeated_compose_is_deterministic(self, plan_context):
         _seed_marshal(
-            finalize_gates={'self_review': 'always', 'qgate': 'never', 'plugin_doctor': 'auto'}
+            finalize_gates={'self_review': 'always', 'qgate': 'never', 'simplify': 'auto'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -583,7 +644,7 @@ class TestCeremonyFinalizeAdrPropose:
         """Setting every ceremony gate to ``never`` drops only the ceremony
         steps — adr-propose is not a ceremony gate, so it survives."""
         _seed_marshal(
-            finalize_gates={'self_review': 'never', 'qgate': 'never', 'plugin_doctor': 'never'}
+            finalize_gates={'self_review': 'never', 'qgate': 'never', 'simplify': 'never'}
         )
         _stub_footprint(_FOOTPRINT)
 

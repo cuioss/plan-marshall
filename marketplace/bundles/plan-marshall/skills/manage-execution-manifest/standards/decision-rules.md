@@ -85,7 +85,7 @@ Each row that emits a Phase 6 list (whether by intersection, subtraction, or pas
 
 After the seven-row matrix runs, two post-matrix transforms inspect the matrix output before the manifest is persisted, in this order:
 
-1. **`ceremony_finalize_selection`** — applies the four `plan.phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `plugin_doctor` / `simplify`, each `always|never|auto`) to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `automated-review`. Documented in its own subsection below.
+1. **`ceremony_finalize_selection`** — applies the three `plan.phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `simplify`, each `always|never|auto`) to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `automated-review`. Documented in its own subsection below.
 2. **`bot_enforcement_guard`** — on GitHub/GitLab plans where `default:automated-review` is missing from the final `phase_6.steps`, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
 
 ### Pre-Filter: `commit_push_disabled`
@@ -208,7 +208,7 @@ When the gate passes via the breaking arm, the pre-filter is a no-op and emits n
 
 **Effect**: heavyweight phase-6 review/audit steps are removed from `phase_6_candidates` by scope before the rows are evaluated:
 
-- **`scope_estimate == 'surgical'`** — drops `plan-marshall:plan-retrospective`, `project:finalize-step-pre-submission-self-review`, and `project:finalize-step-plugin-doctor`. Both bare and prefixed forms are matched (the candidate list is `default:`-namespace-normalized at intake, but `project:` / `bundle:skill` prefixes are preserved verbatim, so the match-set lists both forms).
+- **`scope_estimate == 'surgical'`** — drops `plan-marshall:plan-retrospective`, pre-submission-self-review, and `project:finalize-step-plugin-doctor`. Every bare and prefixed form is matched: for pre-submission-self-review this covers the generic `default:pre-submission-self-review` (normalized to bare `pre-submission-self-review` at intake) used by consuming projects AND the meta-project `project:finalize-step-pre-submission-self-review` wrapper. The candidate list is `default:`-namespace-normalized at intake, but `project:` / `bundle:skill` prefixes are preserved verbatim, so the match-set lists both forms.
 - **`scope_estimate == 'single_module'`** — drops only `plan-marshall:plan-retrospective`.
 - **`scope_estimate ∈ {none, multi_module, broad}`** — no implicit subtraction; the full candidate set survives into the matrix.
 
@@ -262,13 +262,12 @@ The never-silently-drop policy is load-bearing: an unclassified path indicates e
 
 **Type**: Composition-time post-matrix transform (NOT a pre-filter). Runs *after* the seven-row matrix has produced the final `phase_6.steps` list and *after* `execution_tier` routing, *before* the `bot_enforcement_guard`.
 
-**Inputs**: the four `plan.phase-6-finalize` run-at-all gates, read directly from `marshal.json::plan.phase-6-finalize`:
+**Inputs**: the three `plan.phase-6-finalize` run-at-all gates, read directly from `marshal.json::plan.phase-6-finalize`:
 
 | Gate | Finalize step it controls | Run-at-all values |
 |------|---------------------------|-------------------|
-| `self_review` | `finalize-step-pre-submission-self-review` | `always` \| `never` \| `auto` (default) |
+| `self_review` | `default:pre-submission-self-review` | `always` \| `never` \| `auto` (default) |
 | `qgate` | `pre-push-quality-gate` (finalize blocking-findings re-capture) | `always` \| `never` \| `auto` (default) |
-| `plugin_doctor` | `finalize-step-plugin-doctor` | `always` \| `never` \| `auto` (default) |
 | `simplify` | `finalize-step-simplify` (holistic post-implementation simplification sweep) | `always` \| `never` \| `auto` (default) |
 
 **Gate resolution**: the composer reads `marshal.json::plan.phase-6-finalize.<gate>` directly (merging the canonical `auto` default under any absent gate). Each gate is a flat phase-local knob — there is no condition-scoped override layer.
@@ -276,10 +275,10 @@ The never-silently-drop policy is load-bearing: an unclassified path indicates e
 **Effect** (per gate, against the matrix-produced `phase_6.steps`):
 
 - **`never`** — every match-set form of the gate's step (bare and `project:`-prefixed) is removed from `phase_6.steps`. A no-op when already absent. The composer applies the resolved value directly.
-- **`always`** — the gate's canonical step is ensured present, inserted before the plan-mutating tail (`archive-plan` / `record-metrics` / `branch-cleanup` / `plan-marshall:plan-retrospective`) when absent. A no-op when any match-set form is already present. `always` is the **only** path that can re-add a step the relevant pre-filter dropped — that is the point: an operator-set `always` overrides the implicit gate. For `self_review` / `qgate` / `plugin_doctor` the overridden pre-filter is `scope_gated_finalize`; for `simplify` it is `simplify_inactive`.
-- **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` / `plugin_doctor` that is the `scope_gated_finalize` pre-filter and the seven-row matrix; for `simplify` it is the `simplify_inactive` pre-filter (which drops the step when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`). No-op in every case.
+- **`always`** — the gate's canonical step is ensured present, inserted before the plan-mutating tail (`archive-plan` / `record-metrics` / `branch-cleanup` / `plan-marshall:plan-retrospective`) when absent. A no-op when any match-set form is already present. `always` is the **only** path that can re-add a step the relevant pre-filter dropped — that is the point: an operator-set `always` overrides the implicit gate. For `self_review` / `qgate` the overridden pre-filter is `scope_gated_finalize`; for `simplify` it is `simplify_inactive`.
+- **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` that is the `scope_gated_finalize` pre-filter and the seven-row matrix; for `simplify` it is the `simplify_inactive` pre-filter (which drops the step when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`). No-op in every case.
 
-**The deliberate `automated-review` carve-out**: this transform's gate map contains only the four finalize steps (`finalize-step-pre-submission-self-review`, `pre-push-quality-gate`, `finalize-step-plugin-doctor`, `finalize-step-simplify`). It NEVER adds or drops `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is structurally preserved regardless of any gate value. The two transforms are orthogonal: finalize selection forces the four review/lint/simplify gates per operator policy; the bot guard independently ensures `automated-review` is scheduled on GitHub/GitLab plans.
+**The deliberate `automated-review` carve-out**: this transform's gate map contains only the three finalize steps (`default:pre-submission-self-review`, `pre-push-quality-gate`, `finalize-step-simplify`). It NEVER adds or drops `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is structurally preserved regardless of any gate value. The two transforms are orthogonal: finalize selection forces the three review/simplify gates per operator policy; the bot guard independently ensures `automated-review` is scheduled on GitHub/GitLab plans.
 
 **Why a post-matrix transform (not a pre-filter)**: `always` must be able to re-add a step that `scope_gated_finalize` removed before the matrix ran. A pre-filter runs before the matrix, so it cannot express force-include against a subtraction the scope gate already applied. Running after the matrix lets the transform see the final list and override both the scope gate and any row-level narrowing.
 
@@ -289,9 +288,9 @@ The never-silently-drop policy is load-bearing: an unclassified path indicates e
 (plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — finalize.{gate}={value}, {added|dropped} {step} {to|from} phase_6.steps
 ```
 
-When all four gates resolve to `auto` (the default), the transform is a no-op and emits no log entry.
+When all three gates resolve to `auto` (the default), the transform is a no-op and emits no log entry.
 
-**Cross-reference**: the gate schema (run-at-all enum, defaults) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize — this section documents only how the composer consumes the four finalize gates. Do not restate the schema here.
+**Cross-reference**: the gate schema (run-at-all enum, defaults) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize — this section documents only how the composer consumes the three finalize gates. Do not restate the schema here.
 
 ## Bot-Enforcement Guard
 

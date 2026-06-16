@@ -3811,6 +3811,38 @@ class TestScopeGatedFinalizePreFilter:
         assert 'commit-push' in steps
         assert 'lessons-capture' in steps
 
+    def test_surgical_drops_generic_default_self_review_form(self, plan_context):
+        """A consuming project listing the GENERIC default:pre-submission-self-review
+        step (normalized to bare pre-submission-self-review at intake) must also be
+        dropped on surgical scope — the surgical drop-set covers the normalized
+        bare form, not only the meta-project project: wrapper. Regression for the
+        drop-set that omitted the bare form after the canonical was generalized."""
+        candidates = tuple(
+            'default:pre-submission-self-review'
+            if s == 'project:finalize-step-pre-submission-self-review'
+            else s
+            for s in _SCOPE_GATE_PHASE_6
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='scope-surgical-generic-selfreview',
+                change_type='feature',
+                scope_estimate='surgical',
+                affected_files_count=2,
+                phase_5_steps='quality_check,build_verify',
+                phase_6_steps=','.join(candidates),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest('scope-surgical-generic-selfreview')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # The normalized bare form must be dropped by the surgical scope gate.
+        assert 'pre-submission-self-review' not in steps
+        assert 'default:pre-submission-self-review' not in steps
+        # Baseline steps survive.
+        assert 'commit-push' in steps
+
     def test_drop_review_additionally_drops_automated_review(self, plan_context):
         """drop_review_on_scope_gate=true additionally drops automated-review."""
         _write_drop_review_marshal(plan_context.fixture_dir, override=True)

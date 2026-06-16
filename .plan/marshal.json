@@ -54,7 +54,6 @@
       "auto_merge_after_ci": true,
       "self_review": "auto",
       "qgate": "auto",
-      "plugin_doctor": "auto",
       "simplify": "auto",
       "checks_wait_timeout_seconds": 600,
       "auto_rebase_threshold": "no_overlap_only",

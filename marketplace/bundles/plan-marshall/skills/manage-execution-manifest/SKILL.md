@@ -127,7 +127,6 @@ drop_review_on_scope_gate: false
 ceremony_finalize_gates:
   self_review: auto
   qgate: auto
-  plugin_doctor: auto
   simplify: auto
 ceremony_finalize_forced_in[0]:
 ceremony_finalize_forced_out[0]:
@@ -389,7 +388,7 @@ For each rule fired, `compose` emits one `decision.log` entry — written in-pro
 
 Before the seven-row matrix and the bot-enforcement guard, the composer applies a scope-gated pre-filter that drops heavyweight phase-6 review/audit steps based on `scope_estimate`:
 
-- **`surgical`** — drops `plan-marshall:plan-retrospective`, `project:finalize-step-pre-submission-self-review`, and `project:finalize-step-plugin-doctor` (both bare and prefixed forms are matched).
+- **`surgical`** — drops `plan-marshall:plan-retrospective`, pre-submission-self-review, and `project:finalize-step-plugin-doctor`. Every bare and prefixed form is matched — for pre-submission-self-review this covers both the generic `default:pre-submission-self-review` (normalized bare `pre-submission-self-review`) and the meta-project `project:finalize-step-pre-submission-self-review` wrapper.
 - **`single_module`** — drops only `plan-marshall:plan-retrospective`.
 - **`multi_module` / `broad` / `none`** — no implicit subtraction; the full candidate set is retained.
 
@@ -401,13 +400,12 @@ The composer emits one `decision.log` line per scope-gated subtraction (canonica
 
 ### phase-6-finalize run-at-all selection (`ceremony_finalize_selection`)
 
-After the seven-row matrix produces the final `phase_6.steps` (and after `execution_tier` routing), and before the bot-enforcement guard, the composer applies the four `plan.phase-6-finalize` run-at-all gates — each `always|never|auto` — to force their finalize steps in or out:
+After the seven-row matrix produces the final `phase_6.steps` (and after `execution_tier` routing), and before the bot-enforcement guard, the composer applies the three `plan.phase-6-finalize` run-at-all gates — each `always|never|auto` — to force their finalize steps in or out:
 
 | Gate | Finalize step | `never` → drop · `always` → force-include · `auto` → defer |
 |------|---------------|------------------------------------------------------------|
-| `self_review` | `finalize-step-pre-submission-self-review` | force the pre-submission structural + cognitive self-review |
+| `self_review` | `default:pre-submission-self-review` | force the pre-submission structural + cognitive self-review |
 | `qgate` | `pre-push-quality-gate` | force the finalize blocking-findings re-capture |
-| `plugin_doctor` | `finalize-step-plugin-doctor` | force the structural marketplace lint before push |
 | `simplify` | `finalize-step-simplify` | force the holistic post-implementation simplification sweep |
 
 `always` is the only path that re-adds a step the `scope_gated_finalize` pre-filter dropped — an operator-set `always` overrides the implicit scope gate. Gate values are read directly from the flat phase-local knobs `marshal.json::plan.phase-6-finalize.<gate>`. The transform NEVER touches `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is preserved verbatim regardless of any gate value.

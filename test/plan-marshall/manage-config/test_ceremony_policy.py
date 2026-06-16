@@ -11,7 +11,7 @@ governs:
 - ``revalidation``                   → ``plan.phase-2-refine``
 - ``qgate`` (planning)               → ``plan.phase-3-outline``
 - ``self_review`` / ``qgate`` /
-  ``plugin_doctor`` / ``simplify``    → ``plan.phase-6-finalize``
+  ``simplify``                       → ``plan.phase-6-finalize``
 - the three auto-continuation knobs  → ``plan.phase-6-finalize``
 
 This module pins the post-dissolution contract:
@@ -74,7 +74,6 @@ _DISTRIBUTED_GATES = (
     ('phase-3-outline', 'qgate'),
     ('phase-6-finalize', 'self_review'),
     ('phase-6-finalize', 'qgate'),
-    ('phase-6-finalize', 'plugin_doctor'),
     ('phase-6-finalize', 'simplify'),
 )
 

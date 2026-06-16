@@ -109,8 +109,8 @@ def test_default_plan_finalize_includes_auto_merge_after_ci():
 def test_default_plan_finalize_simplify_defaults_to_auto():
     """DEFAULT_PLAN_FINALIZE must declare the simplify gate with default 'auto'.
 
-    `simplify` is the symmetric peer of the other three finalize gates
-    (self_review / qgate / plugin_doctor): `auto` defers to the manifest
+    `simplify` is the symmetric peer of the other two finalize gates
+    (self_review / qgate): `auto` defers to the manifest
     composer's `simplify_inactive` pre-filter, while always/never force the
     finalize-step-simplify step in/out.
     """
@@ -133,12 +133,12 @@ def test_get_default_config_includes_finalize_simplify():
     assert finalize.get('simplify') == 'auto'
 
 
-def test_default_plan_finalize_carries_all_four_finalize_gates():
-    """DEFAULT_PLAN_FINALIZE must carry the four distributed finalize gates at 'auto'."""
+def test_default_plan_finalize_carries_all_finalize_gates():
+    """DEFAULT_PLAN_FINALIZE must carry the three distributed finalize gates at 'auto'."""
     finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
-    # the symmetric-peer ladder: simplify joins the existing three gates
-    for gate in ('self_review', 'qgate', 'plugin_doctor', 'simplify'):
+    # the symmetric-peer ladder: self_review / qgate / simplify
+    for gate in ('self_review', 'qgate', 'simplify'):
         assert finalize.get(gate) == 'auto', (
             f'plan.phase-6-finalize.{gate} default must be auto'
         )
