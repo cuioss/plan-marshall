@@ -60,54 +60,17 @@ If recipe not found, show error with available recipes.
 
 ### Step 1a: Built-in Recipe Selected
 
-If the user selects the built-in "Refactor to Profile Standards" recipe:
+If the user selects the built-in "Refactor to Profile Standards" recipe, run the multi-domain selection flow defined in [`recipe-refactor-to-profile-standards/workflow/selection-flow.md`](../../recipe-refactor-to-profile-standards/workflow/selection-flow.md). That document is the single source of truth for the selection mechanics — do **not** inline-copy the domain/profile selection screens here. A single recipe run covers ALL auto-detected domains × one chosen profile, with a per-domain user-selected standards-skill set.
 
-1. **Select domain**: Query configured domains and present for selection:
+The flow's three steps (auto-detect domains, DYNAMIC single-select profile + data-driven `package_source`, per-domain paginated skill multi-select) persist the multi-domain metadata field set (`recipe_domains`, `recipe_profile`, `recipe_package_source`, `recipe_selected_skills__{domain}`) and derive the profile-suffixed `plan_id` (`refactor-to-profile-standards-{profile}`). See the selection-flow document's **Metadata Field Contract** for the field shapes and Step 3 below for how `recipe.md` consumes them.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  skill-domains list
-```
+After running the selection flow, set the static recipe metadata for downstream use:
 
-Present domain selection using `AskUserQuestion`:
-
-```
-AskUserQuestion:
-  questions:
-    - question: "Which domain should be refactored?"
-      header: "Domain"
-      options:
-        # For each configured domain (dynamic):
-        - label: "{domain_name}"
-          description: "Domain from {source}"
-      multiSelect: false
-```
-
-2. **Select profile**: Present profile selection using `AskUserQuestion`:
-
-```
-AskUserQuestion:
-  questions:
-    - question: "Which code should be refactored?"
-      header: "Profile"
-      options:
-        - label: "Implementation"
-          description: "Refactor production code"
-        - label: "Module testing"
-          description: "Refactor test code"
-      multiSelect: false
-```
-
-3. **Derive package source** from profile:
-   - `implementation` → `packages`
-   - `module_testing` → `test_packages`
-
-4. Set recipe metadata for downstream use:
-   - `recipe_key` = `refactor-to-profile-standards`
-   - `recipe_name` = `Refactor to Profile Standards`
-   - `recipe_skill` = `plan-marshall:recipe-refactor-to-profile-standards`
-   - `default_change_type` = `tech_debt`
-   - `scope` = `codebase_wide`
+- `recipe_key` = `refactor-to-profile-standards`
+- `recipe_name` = `Refactor to Profile Standards`
+- `recipe_skill` = `plan-marshall:recipe-refactor-to-profile-standards`
+- `default_change_type` = `tech_debt`
+- `scope` = `codebase_wide`
 
 ### Step 2: Create Plan via Init Agent
 
@@ -128,13 +91,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-1-init workflow=plan-marshall:phase-1-init/SKILL.md plan_id=none"
 ```
 
-Dispatch:
+Dispatch. **For the built-in "Refactor to Profile Standards" recipe**, pass the profile-suffixed `plan_id` override (`refactor-to-profile-standards-{profile}`, derived in the selection flow's Step B3) as the `plan_id` prompt-body field — phase-1-init Step 2 already accepts an explicit `plan_id` override, so two parallel recipe runs for distinct profiles yield distinct, non-colliding plans (and distinct `feature/{plan_id}` branches). **For all other recipes**, pass `plan_id: none` (phase-1-init auto-generates the id):
 
 ```
 Task: plan-marshall:{target}
   prompt: |
     name: phase-1-init
-    plan_id: none
+    plan_id: {profile_suffixed_plan_id_for_builtin_else_none}
     skills[1]:
     - plan-marshall:phase-1-init
     workflow: plan-marshall:phase-1-init/SKILL.md
@@ -144,7 +107,7 @@ Task: plan-marshall:{target}
     content: {recipe_key}
 ```
 
-The agent returns `plan_id` and `domains` in its TOON.
+Substitute `{profile_suffixed_plan_id_for_builtin_else_none}` with `refactor-to-profile-standards-{profile}` on the built-in path (the value derived in the selection flow's Step B3) and `none` on every other path. The agent returns `plan_id` and `domains` in its TOON.
 
 ### Step 3: Store Recipe Metadata
 
@@ -170,27 +133,16 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
   --value {recipe_skill}
 ```
 
-**For built-in recipe only** — store additional fields for the generic recipe skill:
+**For built-in recipe only** — the multi-domain selection flow (Step 1a → [`selection-flow.md`](../../recipe-refactor-to-profile-standards/workflow/selection-flow.md)) ALREADY persisted the following `status.json` metadata fields during its Steps A/B/C; no re-write is required here. The canonical shapes are owned by the selection-flow document's **Metadata Field Contract** — do not restate them; this table names the consumed field set:
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} \
-  --set \
-  --field recipe_domain \
-  --value {selected_domain}
+| Field | Shape | Persisted by |
+|-------|-------|--------------|
+| `recipe_domains` | Comma-separated auto-detected domain list (e.g. `java,javascript`) | selection-flow Step A |
+| `recipe_profile` | Single chosen profile — any profile a detected domain exposes (NOT limited to `implementation`/`module_testing`) | selection-flow Step B1 |
+| `recipe_package_source` | Architecture-iteration field, derived data-driven from the selected profile's declared `package_source` (defaults to `packages`) | selection-flow Step B2 |
+| `recipe_selected_skills__{domain}` | One field per detected domain that exposes the chosen profile, holding a comma-separated list of user-selected skill notations | selection-flow Step C |
 
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} \
-  --set \
-  --field recipe_profile \
-  --value {selected_profile}
-
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} \
-  --set \
-  --field recipe_package_source \
-  --value {derived_package_source}
-```
+The generic recipe skill (`plan-marshall:recipe-refactor-to-profile-standards`) consumes this multi-domain field set at runtime. The legacy single-domain `recipe_domain` field is replaced by the comma-separated `recipe_domains` field — there is no per-domain `plan_id` or `recipe_domain` suffix, because a single run spans all detected domains and only the profile is the `plan_id` suffix axis.
 
 ### Step 3a: Gather + expand + persist the coverage cell (keyed on `coverage_gathering`)
 
@@ -263,6 +215,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 - `plan-marshall:extension-api` — `provides_recipes()` method in ExtensionBase
 - `plan-marshall:phase-2-refine` — Recipe shortcut (scope selection only)
 - `plan-marshall:phase-3-outline` — Recipe-aware routing (skip change-type detection)
+- [`recipe-refactor-to-profile-standards/workflow/selection-flow.md`](../../recipe-refactor-to-profile-standards/workflow/selection-flow.md) — Built-in recipe multi-domain selection flow (Step 1a references it; Step 2 passes the profile-suffixed `plan_id`; Step 3 consumes the persisted metadata field set)
 
 ## Output
 

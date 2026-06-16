@@ -52,6 +52,7 @@ class Extension(ExtensionBase):
                         ],
                     },
                     'implementation': {
+                        'package_source': 'packages',
                         'defaults': [
                             {
                                 'skill': 'plan-marshall:dev-general-code-quality',
@@ -74,6 +75,7 @@ class Extension(ExtensionBase):
                         ],
                     },
                     'module_testing': {
+                        'package_source': 'test_packages',
                         'defaults': [
                             {
                                 'skill': 'pm-dev-java:junit-core',

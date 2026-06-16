@@ -67,7 +67,25 @@ class Extension(ExtensionBase):
 
 ## Runtime Invocation Contract
 
-### Parameters
+The runtime field set differs by recipe kind. The built-in recipe
+(`refactor-to-profile-standards`) spans **every** auto-detected domain in a single run, so
+it carries a **multi-domain** field set. Custom (extension and project) recipes carry the
+**single-domain** field set; their interface is unchanged.
+
+### Parameters (built-in recipe — multi-domain)
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plan_id` | str | Yes | Plan identifier |
+| `recipe_domains` | str | Yes | Comma-separated list of every auto-detected domain (e.g., `java,javascript`). One run spans all listed domains. Replaces the legacy single `recipe_domain`. |
+| `recipe_profile` | str | Yes | Single chosen profile — **any** profile a detected domain exposes. NOT limited to `implementation` / `module_testing`; a domain may expose arbitrary profile values (e.g., `documentation`, `integration_testing`) and the recipe accepts whichever one the user selects. |
+| `recipe_package_source` | str | Yes | Architecture field to iterate, derived **data-driven** from the chosen profile's declared package source. `packages` / `test_packages` today, but open to any architecture field a future profile declares — see [per-profile package_source declaration](#per-profile-package_source-declaration). |
+| `recipe_selected_skills__{domain}` | str | Yes (one per detected domain) | Per-domain comma-separated list of the user-finalized standards-skill notations to enforce for that domain. Present once per domain in `recipe_domains` that exposes `recipe_profile`. |
+
+The built-in multi-domain field set is persisted by the recipe's selection flow and is always
+populated for that recipe — see [`plan-marshall:recipe-refactor-to-profile-standards` SKILL.md § Input](../../recipe-refactor-to-profile-standards/SKILL.md) for the authoritative field definitions; this contract names the fields rather than redefining them.
+
+### Parameters (custom recipe — single-domain)
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -76,10 +94,22 @@ class Extension(ExtensionBase):
 | `recipe_profile` | str | No | Target profile (`implementation`, `module_testing`) |
 | `recipe_package_source` | str | No | Package source (`packages`, `test_packages`) |
 
-The `recipe_domain` / `recipe_profile` / `recipe_package_source` values are recipe-declared:
-project recipes declare them as frontmatter keys (see [Project Recipe Frontmatter](#project-recipe-frontmatter)),
-while extension recipes return them from `provides_recipes()`. A user-supplied value at plan
-creation time overrides the recipe-declared default where the recipe omits the key.
+The custom-recipe `recipe_domain` / `recipe_profile` / `recipe_package_source` values are
+recipe-declared: project recipes declare them as frontmatter keys (see [Project Recipe
+Frontmatter](#project-recipe-frontmatter)), while extension recipes return them from
+`provides_recipes()`. A user-supplied value at plan creation time overrides the recipe-declared
+default where the recipe omits the key.
+
+### Per-profile package_source declaration
+
+`recipe_package_source` is no longer hardcoded to `packages` for `implementation` and
+`test_packages` for `module_testing`. It is derived data-driven from the selected profile's
+**declared package source**: each profile may optionally declare which architecture field
+(`manage-architecture module --full`) its scope units come from. The built-in recipe reads that
+declaration for the chosen `recipe_profile` and forwards it as `recipe_package_source`, so any
+profile — including ones that expose a non-`packages`/`test_packages` field — resolves to the
+correct iteration source without a hardcoded per-profile branch. When a profile declares no
+package source, the recipe falls back to the conventional `packages` / `test_packages` mapping.
 
 ### Pre-Conditions
 
@@ -90,7 +120,7 @@ creation time overrides the recipe-declared default where the recipe omits the k
 ### Post-Conditions
 
 - `solution_outline.md` written with module-grouped deliverables
-- Recipe metadata stored in `status.json` (`recipe_key`, `recipe_skill`, `recipe_domain`, etc.)
+- Recipe metadata stored in `status.json` (`recipe_key`, `recipe_skill`, plus the built-in multi-domain set `recipe_domains` / `recipe_profile` / `recipe_package_source` / `recipe_selected_skills__{domain}`, or the custom single-domain `recipe_domain` set)
 - Each deliverable has scope, affected files, verification commands
 
 ### Lifecycle

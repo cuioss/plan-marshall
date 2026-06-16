@@ -84,7 +84,7 @@ manage-config resolve-domain-skills \
   --domain java --profile implementation
 ```
 
-Returns `defaults` and `optionals` arrays with skill references and descriptions.
+Returns `defaults` and `optionals` arrays with skill references and descriptions. Also returns `package_source` when the resolved profile declares one (see [`skill-domains-operations.md`](skill-domains-operations.md) § resolve-domain-skills for the output shape).
 
 ### Example: configure-execute-task-skills
 

@@ -107,14 +107,16 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 ```
 
-**Built-in recipe only** (`recipe_key == "refactor-to-profile-standards"`): Read additional fields. Skip these for custom recipes — they are not set and will return `field_not_found` errors.
+**Built-in recipe only** (`recipe_key == "refactor-to-profile-standards"`): Read the multi-domain field set the built-in recipe's selection flow persists. Skip these for custom recipes — they are not set and will return `field_not_found` errors. The field set is the canonical multi-domain input contract — see [`recipe-refactor-to-profile-standards/SKILL.md` § Input](../../recipe-refactor-to-profile-standards/SKILL.md) for the authoritative definitions; do not inline-copy the field descriptions here.
+
+A single built-in recipe run spans ALL auto-detected domains × one chosen profile, so the field set is `recipe_domains` (comma-separated domain list — replaces the legacy single `recipe_domain`), `recipe_profile`, `recipe_package_source`, plus one `recipe_selected_skills__{domain}` field per detected domain that exposes the chosen profile.
 
 ```bash
 # Only read these if recipe_key == "refactor-to-profile-standards"
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --get \
-  --field recipe_domain
+  --field recipe_domains
 
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
@@ -125,6 +127,16 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
   --plan-id {plan_id} \
   --get \
   --field recipe_package_source
+```
+
+Then, for each `{domain}` in the comma-separated `recipe_domains` value, read that domain's user-selected skill set (one field per detected domain — a domain that does not expose the chosen profile contributes no field):
+
+```bash
+# Repeat per {domain} in recipe_domains
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_selected_skills__{domain}
 ```
 
 2. Resolve recipe to get `default_change_type`:
@@ -148,7 +160,23 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Recipe plan — using recipe skill {recipe_skill} with change_type={default_change_type}"
 ```
 
-5. Load the recipe skill directly:
+5. Load the recipe skill directly, passing the input field set that matches the recipe kind:
+
+**Built-in recipe** (`recipe_key == "refactor-to-profile-standards"`): pass the multi-domain field set read above — `recipe_domains` (comma-separated), `recipe_profile`, `recipe_package_source`, and one `recipe_selected_skills__{domain}` input per detected domain:
+
+```
+Skill: {recipe_skill}
+  Input:
+    plan_id: {plan_id}
+    recipe_domains: {recipe_domains from metadata}
+    recipe_profile: {recipe_profile from metadata}
+    recipe_package_source: {recipe_package_source from metadata}
+    # one line per {domain} in recipe_domains that exposes the chosen profile:
+    recipe_selected_skills__{domain}: {recipe_selected_skills__{domain} from metadata}
+```
+
+**Custom recipe** (any other `recipe_key`): pass the single-domain field set as before — these recipes carry no multi-domain field set:
+
 ```
 Skill: {recipe_skill}
   Input:

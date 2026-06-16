@@ -96,6 +96,17 @@ def cmd_resolve_domain_skills(args) -> dict:
         'defaults': defaults_with_desc,
         'optionals': optionals_with_desc,
     }
+
+    # Surface the resolved profile's declared package_source — the manage-architecture
+    # module --full field this profile iterates (implementation: packages,
+    # module_testing: test_packages). This is the data-driven source the built-in
+    # recipe selection flow reads to derive recipe_package_source for an arbitrary
+    # profile, replacing the hardcoded profile->source switch. Profiles that declare
+    # no package_source (core/quality) omit the key.
+    package_source = profile_config.get('package_source')
+    if package_source is not None:
+        result['package_source'] = package_source
+
     if project_skills_with_desc:
         result['project_skills'] = project_skills_with_desc
 
