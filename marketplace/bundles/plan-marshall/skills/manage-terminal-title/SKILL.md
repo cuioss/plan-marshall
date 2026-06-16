@@ -90,7 +90,15 @@ this map is the single owner of the state→glyph rendering. The glyph is omitte
 |-------|------|
 | `UserPromptSubmit` / `SessionStart` / `PostToolUse` (any tool) / default | ➤ active |
 | `Notification` / `PreToolUse:AskUserQuestion` | ? waiting |
+| `PreToolUse:Bash` | ⚙ busy |
 | `Stop` | ✓ done |
+
+`PreToolUse:Bash` resolves to the ⚙ busy icon (`_ICON_BUSY`, U+2699) — surfaced
+while a long-running Bash tool call executes. `PreToolUse:Bash` and
+`PostToolUse:Bash` bracket the busy window: the title switches to ⚙ on enter and
+falls back to ➤ active on exit (`PostToolUse` for any tool resolves to ➤). The ⚙
+busy icon is deliberately distinct from ➤ active, ? waiting, and the two
+`TITLE_TOKEN_GLYPHS` lock-state values (⏳ / 🔒).
 
 **Terminal-state override:** when `state_dict['current_phase']` is `complete` or
 `archived`, `compose` forces the icon to ✅ (`_ICON_TERMINAL`, U+2705 — the thick

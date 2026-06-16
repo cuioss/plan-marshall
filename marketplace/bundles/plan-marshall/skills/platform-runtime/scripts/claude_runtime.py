@@ -86,11 +86,14 @@ _HOOK_COMMAND = (
     f"{_EXECUTOR_GUARD_SUFFIX}"
 )
 
-# Render-title hook command installed across all seven render-trigger events
+# Render-title hook command installed across all eight render-trigger events
 # plus statusLine. Invoked by Claude Code on SessionStart (matcher-less + matcher
 # "clear"), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion,
-# PostToolUse:AskUserQuestion, and PostToolUse:Bash; the statusLine variant
-# appends ``--statusline`` for plain-text emission. The statusLine variant is
+# PreToolUse:Bash, PostToolUse:AskUserQuestion, and PostToolUse:Bash; the
+# statusLine variant appends ``--statusline`` for plain-text emission. The
+# PreToolUse:Bash entry surfaces the ⚙ busy icon BEFORE a long-running shell
+# command runs, so the title no longer shows the misleading ➤ active arrow
+# while the command is in flight. The statusLine variant is
 # built explicitly (not by appending to the guarded render command) so
 # ``--statusline`` lands on the python3 invocation, not after ``|| true``.
 _RENDER_HOOK_COMMAND = (
@@ -133,6 +136,7 @@ _DISPLAY_RENDER_ENTRIES: tuple[tuple[str, str, str], ...] = (
     ("Notification", "Notification", ""),
     ("Stop", "Stop", ""),
     ("PreToolUse:AskUserQuestion", "PreToolUse", "AskUserQuestion"),
+    ("PreToolUse:Bash", "PreToolUse", "Bash"),
     ("PostToolUse:AskUserQuestion", "PostToolUse", "AskUserQuestion"),
     ("PostToolUse:Bash", "PostToolUse", "Bash"),
 )
@@ -262,8 +266,10 @@ def _install_terminal_title_hooks(
       entries (matcher-less + ``matcher: "clear"``).
     - ``hooks.UserPromptSubmit``, ``hooks.Notification``, ``hooks.Stop`` —
       single matcher-less render entries each.
-    - ``hooks.PreToolUse`` — one render entry with ``matcher: "AskUserQuestion"``
-      so the ``?`` icon flips BEFORE the prompt is answered.
+    - ``hooks.PreToolUse`` — two render entries: one with
+      ``matcher: "AskUserQuestion"`` so the ``?`` icon flips BEFORE the prompt is
+      answered, and one with ``matcher: "Bash"`` so the ⚙ busy icon flips BEFORE
+      a long-running shell command runs.
     - ``hooks.PostToolUse`` — two render entries: one with
       ``matcher: "AskUserQuestion"`` and one with ``matcher: "Bash"`` (the
       latter refreshes the title immediately after each shell call).
@@ -289,8 +295,9 @@ def _install_terminal_title_hooks(
           freshly added on this call. SessionStart appears at most once even
           though it gets two render entries. The tool-scoped PreToolUse and
           PostToolUse entries use matcher-qualified labels
-          (``PreToolUse:AskUserQuestion``, ``PostToolUse:AskUserQuestion``,
-          ``PostToolUse:Bash``) so each can be reported individually.
+          (``PreToolUse:AskUserQuestion``, ``PreToolUse:Bash``,
+          ``PostToolUse:AskUserQuestion``, ``PostToolUse:Bash``) so each can be
+          reported individually.
         - ``already_present_events`` (list[str]): event labels where our render
           entry was already present (no write).
         - ``statusLine_status`` (str): one of ``installed``, ``already_present``,
@@ -357,7 +364,9 @@ def _install_terminal_title_hooks(
             else:
                 already_present_events.append(event_name)
 
-        # --- PreToolUse with matcher:"AskUserQuestion" (flip "?" before prompt). ---
+        # --- PreToolUse with matcher:"AskUserQuestion" and matcher:"Bash". ---
+        # AskUserQuestion flips the "?" icon before the prompt is answered; Bash
+        # flips the ⚙ busy icon before a long-running shell command runs.
         pre_tool_use = hooks_block.setdefault("PreToolUse", [])
         if not isinstance(pre_tool_use, list):
             pre_tool_use = []
@@ -367,6 +376,11 @@ def _install_terminal_title_hooks(
             installed_events.append("PreToolUse:AskUserQuestion")
         else:
             already_present_events.append("PreToolUse:AskUserQuestion")
+        if not _has_render_entry(pre_tool_use, matcher="Bash"):
+            pre_tool_use.append(_render_entry(matcher="Bash"))
+            installed_events.append("PreToolUse:Bash")
+        else:
+            already_present_events.append("PreToolUse:Bash")
 
         # --- PostToolUse with matcher:"AskUserQuestion" and matcher:"Bash". ---
         post_tool_use = hooks_block.setdefault("PostToolUse", [])
