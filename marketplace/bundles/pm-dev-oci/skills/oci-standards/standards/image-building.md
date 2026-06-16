@@ -89,6 +89,26 @@ COPY .env /app/
 # WRONG - visible in image history
 ARG SECRET_KEY
 RUN curl -H "Authorization: $SECRET_KEY" https://api.example.com
+
+# WRONG - false fix: rm in the same RUN does not erase the secret from the layer
+RUN echo "$NPM_TOKEN" > ~/.npmrc && npm install && rm ~/.npmrc
+```
+
+A `rm` in a subsequent instruction — or even later in the same `RUN` — cannot erase content already frozen into a prior layer. The write and the delete both land in the layer's history; the file is recoverable from the pre-delete filesystem state regardless of the trailing `rm`.
+
+### Verify Layers Carry No Secrets
+
+`docker history <image>` only surfaces secrets passed via `ENV`/`ARG`/build instructions — it misses secrets written to files during `RUN` steps. Audit the extracted layer contents instead:
+
+```bash
+# Catches secrets written to files inside any layer, not just build args
+docker save img:tag | tar -xO | strings | grep -iE "token|secret|password"
+```
+
+Use Trivy `--scanners secret` as the tool-grade equivalent in CI (see `supply-chain-security.md` for the full Trivy workflow):
+
+```bash
+trivy image --scanners secret img:tag
 ```
 
 ### Use BuildKit Secrets
@@ -102,6 +122,12 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm install
 
 ```bash
 docker build --secret id=npmrc,src=.npmrc .
+```
+
+The `# syntax=docker/dockerfile:1` directive assumes BuildKit is the active builder. On Docker <23 (where BuildKit is not the default), enable it explicitly or `--mount=type=secret` is silently ignored:
+
+```bash
+DOCKER_BUILDKIT=1 docker build --secret id=npmrc,src=.npmrc .
 ```
 
 ### Runtime Secret Injection
