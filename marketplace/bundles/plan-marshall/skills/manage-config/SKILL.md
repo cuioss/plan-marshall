@@ -53,7 +53,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-d
 
 - A key already present in the live config is preserved unchanged. "Present"
   means "key exists" — value comparison is NOT performed, so a user-set
-  `auto_merge_after_ci: false` survives even when the default is `false`.
+  `final_merge_without_asking: true` survives even when the default is `false`.
 - Nested dicts are merged recursively, so a deeply-nested missing sub-key
   (e.g. `plan.phase-6-finalize.auto_rebase_threshold` when `phase-6-finalize`
   exists but the sub-key does not) is added without disturbing siblings.
@@ -174,7 +174,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 |-------|------|---------|-----------|
 | `per_deliverable_build` | enum(`off`\|`compile-only`\|`compile+scoped-test`\|`full`) | `compile+scoped-test` | Build depth phase-5-execute runs at each per-deliverable chain-tail point (Step 10). `off` skips the per-deliverable build entirely (the end-of-phase quality sweep is the only build); `compile-only` resolves the changed module and runs compile only; `compile+scoped-test` additionally runs scoped `module-tests` for the changed module; `full` runs whole-tree `quality-gate` per deliverable (legacy behavior, opt-in only). Read by phase-5-execute per-deliverable. Invalid values are rejected by the config setter. |
 
-**Symmetric auto-continuation knobs:** the forward (`finalize_without_asking`) and reverse (`loop_back_without_asking`) auto-continuation knobs, together with `auto_merge_after_ci`, are flat knobs under `plan.phase-6-finalize` — read/written via the standard `manage-config plan phase-6-finalize get/set --field <knob>` access shape.
+**Symmetric auto-continuation knobs:** the forward (`finalize_without_asking`) and reverse (`loop_back_without_asking`) auto-continuation knobs, together with `final_merge_without_asking`, are flat knobs under `plan.phase-6-finalize` — read/written via the standard `manage-config plan phase-6-finalize get/set --field <knob>` access shape.
 
 ### Manage Verification Steps
 
@@ -260,7 +260,7 @@ The lifecycle run-at-all gates and automation knobs are flat knobs under their o
 | `qgate` (planning) | `plan.phase-3-outline` | `plan phase-3-outline get --field qgate` |
 | `finalize_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field finalize_without_asking` |
 | `loop_back_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field loop_back_without_asking` |
-| `auto_merge_after_ci` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field auto_merge_after_ci` |
+| `final_merge_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field final_merge_without_asking` |
 | `self_review` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field self_review` |
 | `qgate` (finalize) | `plan.phase-6-finalize` | `plan phase-6-finalize get --field qgate` |
 | `simplify` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field simplify` |
@@ -529,7 +529,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "review_bot_buffer_seconds": 180,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "auto_merge_after_ci": true,
+      "final_merge_without_asking": false,
       "self_review": "auto",
       "qgate": "auto",
       "simplify": "auto",
@@ -565,7 +565,7 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 |-------|---------|---------|
 | `finalize_without_asking` | `true` | Auto-continue into finalize after execute. |
 | `loop_back_without_asking` | `false` | Auto-re-enter on a finalize loop_back outcome. |
-| `auto_merge_after_ci` | `true` | Auto-merge the PR after CI passes. |
+| `final_merge_without_asking` | `false` | Merge the PR after CI passes without prompting the operator. |
 
 **Access shape.** Read/write each knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate` or `plan phase-6-finalize get --field finalize_without_asking`. See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
 

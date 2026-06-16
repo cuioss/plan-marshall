@@ -69,7 +69,7 @@ JSON structure and field definitions for project configuration.
       "drop_review_on_scope_gate": false,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "auto_merge_after_ci": true,
+      "final_merge_without_asking": false,
       "self_review": "auto",
       "qgate": "auto",
       "simplify": "auto",
@@ -404,7 +404,7 @@ Finalize pipeline with numbered boolean steps.
       "drop_review_on_scope_gate": false,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "auto_merge_after_ci": true,
+      "final_merge_without_asking": false,
       "self_review": "auto",
       "qgate": "auto",
       "simplify": "auto",
@@ -424,11 +424,11 @@ Finalize pipeline with numbered boolean steps.
 | `review_bot_buffer_seconds` | int | 180 | Max seconds to wait after CI for new review-bot comments to arrive (used as `--timeout` for `pr wait-for-comments`; the polling subcommand exits as soon as a new comment is posted, so this is a ceiling, not a fixed delay) |
 | `pr_merge_strategy` | string | "squash" | squash, merge, rebase — the merge method the branch-cleanup step passes to `pr merge` |
 | `checks_wait_timeout_seconds` | int | 600 | Default timeout (seconds) for the CI-completion polling commands consumed by `ci_base.py` (`ci checks wait`, `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two `issue wait-for-*` polls). An explicit `--timeout` CLI flag always wins; the 600s fallback covers callers running outside a plan-marshall project. This is a finalize wait-policy, owned by phase-6-finalize. |
-| `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `auto_merge_after_ci`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
+| `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `final_merge_without_asking`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
 | `drop_review_on_scope_gate` | bool | false | Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter. `false` (default) keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans. |
 | `finalize_without_asking` | bool | true | Forward auto-continuation: auto-continue into finalize after execute completes. `true` (default) skips the gate. |
 | `loop_back_without_asking` | bool | false | Reverse auto-continuation: auto-re-enter execute on a `phase-6-finalize` `loop_back` outcome. `false` (default) halts at every loop_back and returns control to the user; `true` opts into the full unattended cycle, capped by `max_iterations`. |
-| `auto_merge_after_ci` | bool | true | Whether to merge automatically once CI passes. `true` (default) merges under the unified `manage-locks:merge_lock` cross-plan mutex (acquired by the branch-cleanup Pre-Merge Gate); `false` prompts the operator before merging. |
+| `final_merge_without_asking` | bool | false | Whether to merge the PR after CI passes without prompting the operator. `true` merges under the unified `manage-locks:merge_lock` cross-plan mutex (acquired by the branch-cleanup Pre-Merge Gate); `false` (default) prompts the operator before merging. |
 | `self_review` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the pre-submission structural + cognitive self-review (canonical step `default:pre-submission-self-review`). `always` overrides the manifest composer's `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | `qgate` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the finalize blocking-findings re-capture (`pre-push-quality-gate`). **Highest-risk gate** — `never` can mask real build/test failures and push a red tree. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | `simplify` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the holistic post-implementation simplification sweep (`finalize-step-simplify`). `always` forces the step in even when the composer's `simplify_inactive` pre-filter would drop it; `never` removes it; `auto` (the default) defers to that pre-filter. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
@@ -439,7 +439,7 @@ Default steps: `default:commit-push`, `default:create-pr`, `default:automated-re
 
 ### Run-at-all gates and finalize automation knobs (phase-local)
 
-The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`, `qgate` under `phase-3-outline`, and `self_review` / `qgate` / `simplify` plus the three automation knobs (`finalize_without_asking` / `loop_back_without_asking` / `auto_merge_after_ci`) under `phase-6-finalize`. Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
+The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`, `qgate` under `phase-3-outline`, and `self_review` / `qgate` / `simplify` plus the three automation knobs (`finalize_without_asking` / `loop_back_without_asking` / `final_merge_without_asking`) under `phase-6-finalize`. Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
 
 The three `phase-6-finalize` gates map one-to-one to finalize steps and are consumed by the manifest composer's finalize selection post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection" for the gate→step map and the `automated-review` carve-out. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, `revalidation` by the refine revalidation pass, and `phase-3-outline.qgate` by the planning-time Q-Gate dispatch.
 

@@ -105,25 +105,26 @@ class TestLoopBackWithoutAskingDefault:
         )
 
 
-class TestAutoMergeAfterCiDefault:
-    """``auto_merge_after_ci`` defaults to ``True`` — auto-merge after CI,
-    coordinated via the cross-plan merge-lock so concurrently-finalizing
-    plans serialize safely on the merge-to-main critical section. ``False``
-    is the explicit interactive opt-out (prompt the operator before merge).
-    The flag is a plain boolean — NOT a tri-state. It is a flat knob under
-    ``plan.phase-6-finalize`` (the ``ceremony_policy`` block was dissolved and
-    every automation knob distributed back into its owning phase)."""
+class TestFinalMergeWithoutAskingDefault:
+    """``final_merge_without_asking`` defaults to ``False`` — the operator is
+    prompted before the irreversible final merge (interactive-by-default).
+    ``True`` is the explicit opt-in to merge without asking, coordinated via
+    the cross-plan merge-lock so concurrently-finalizing plans serialize
+    safely on the merge-to-main critical section. The flag is a plain boolean
+    — NOT a tri-state. It is a flat knob under ``plan.phase-6-finalize`` (the
+    ``ceremony_policy`` block was dissolved and every automation knob
+    distributed back into its owning phase)."""
 
-    def test_default_is_true(self) -> None:
+    def test_default_is_false(self) -> None:
         """``get_default_config()`` MUST expose
-        ``plan.phase-6-finalize.auto_merge_after_ci == True``."""
+        ``plan.phase-6-finalize.final_merge_without_asking == False``."""
         cfg = _config_defaults.get_default_config()
         assert (
-            cfg['plan']['phase-6-finalize']['auto_merge_after_ci']
-            is True
+            cfg['plan']['phase-6-finalize']['final_merge_without_asking']
+            is False
         ), (
             'get_default_config()["plan"]["phase-6-finalize"]'
-            '["auto_merge_after_ci"] must default to True'
+            '["final_merge_without_asking"] must default to False'
         )
 
     def test_finalize_block_default_matches(self) -> None:
@@ -131,28 +132,28 @@ class TestAutoMergeAfterCiDefault:
         value exposed by ``get_default_config()`` — they are the same
         physical default and must never drift."""
         assert (
-            _config_defaults.DEFAULT_PLAN_FINALIZE['auto_merge_after_ci']
-            is True
+            _config_defaults.DEFAULT_PLAN_FINALIZE['final_merge_without_asking']
+            is False
         )
 
-    def test_fresh_project_seeds_true(self) -> None:
+    def test_fresh_project_seeds_false(self) -> None:
         """A fresh project bootstrap (calling ``get_default_config()``
-        without any prior marshal.json) MUST seed ``auto_merge_after_ci``
-        with the ``True`` default under ``plan.phase-6-finalize`` — the key
-        being absent would force every downstream consumer to apply its own
-        fallback, and the lock-coordinated default would not flow to fresh
-        projects."""
+        without any prior marshal.json) MUST seed
+        ``final_merge_without_asking`` with the ``False`` default under
+        ``plan.phase-6-finalize`` — the key being absent would force every
+        downstream consumer to apply its own fallback, and the
+        interactive-by-default behavior would not flow to fresh projects."""
         cfg = _config_defaults.get_default_config()
         finalize = cfg['plan']['phase-6-finalize']
-        assert 'auto_merge_after_ci' in finalize, (
-            'Fresh-project bootstrap must seed auto_merge_after_ci '
+        assert 'final_merge_without_asking' in finalize, (
+            'Fresh-project bootstrap must seed final_merge_without_asking '
             'explicitly in plan.phase-6-finalize'
         )
         assert (
-            finalize['auto_merge_after_ci']
-            == _config_defaults.DEFAULT_PLAN_FINALIZE['auto_merge_after_ci']
+            finalize['final_merge_without_asking']
+            == _config_defaults.DEFAULT_PLAN_FINALIZE['final_merge_without_asking']
         )
-        assert finalize['auto_merge_after_ci'] is True
+        assert finalize['final_merge_without_asking'] is False
 
 
 class TestWorkingPrefixesDefault:

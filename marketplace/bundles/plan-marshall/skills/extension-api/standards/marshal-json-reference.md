@@ -46,7 +46,7 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 | `plan.phase-6-finalize.simplify` | User config | manage-execution-manifest (finalize selection) | - |
 | `plan.phase-6-finalize.finalize_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
-| `plan.phase-6-finalize.auto_merge_after_ci` | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |
+| `plan.phase-6-finalize.final_merge_without_asking` | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |
 
 ## Project Configuration (marshal.json)
 
