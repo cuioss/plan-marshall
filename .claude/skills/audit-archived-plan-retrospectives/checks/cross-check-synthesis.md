@@ -42,7 +42,7 @@ evaluated.
 | Coupling | Fires when | Reads from | Qualifying caveat |
 |----------|------------|------------|-------------------|
 | `trend_empty_untrustworthy` | `token-efficiency-trend` `regression` is **empty** AND `input-integrity` reports ≥1 `data_confidence: blind` plan. | token-efficiency-trend, input-integrity | An empty regression over blind-execute plans is **floor, not truth** — the trend saw no rise because execute tokens were never recorded, not because spend is flat. The empty regression is NOT itself a finding; the coupling marks it untrustworthy. |
-| `churn_explains_cost` | A plan flagged sequence `non_minimal_build` / `build_churn` that is ALSO flagged token-economics `finalize_heavy` / `big_spend_tiny_footprint` OR carries a metrics `disproportionate_token`. | sequence-and-build-minimality, token-economics, metrics | The build redundancy is a plausible **cause** of the execute/finalize token cost — a correlation across facets, to be confirmed against the per-build durations (sequence sub-doc) before filing. |
+| `churn_explains_walltime` | A plan flagged sequence `non_minimal_build` / `build_churn` whose build wall-clock (`total_build_seconds`) sits in the corpus **upper half** (≥ median over build-running plans). | sequence-and-build-minimality | Build redundancy explains **wall-clock** waste, **not** token cost: a build runs as a subprocess (zero model tokens during the run) and returns a bounded result TOON, so its token cost is ~fixed regardless of duration. The token over-spend belongs to message/reasoning volume (the `long_session` signal), not builds — correlating churn against token metrics was a mis-attribution. |
 | `qgate_gap_chain` | A plan flagged quality-chain `no_qgate6` / `auto_review_only` that ALSO carries sequence `ci_rerun` OR token-economics `finalize_heavy`. | quality-chain, sequence-and-build-minimality, token-economics | A missing self-review surface co-occurring with a CI re-run / heavy finalize is the **shift-right tax** — the PR round-trip paid for what an earlier gate could have caught. |
 | `argparse_signature_cluster` | recurring-pattern argparse-shaped signatures correlate with global-log ERROR / argparse-rejection counts AND quality-verification unfiled signatures — **collapsed to ONE candidate**. | recurring-pattern-detector, global-log-analysis, quality-verification-report | The three facets are three views of **ONE** source-keyed argparse drift — file ONE source-keyed lesson, not one per facet (per the SKILL.md source-keyed argparse-rejection rule). |
 | `scope_underestimate_cost` | A plan flagged scope-estimate-accuracy under-estimation (`mismatch`) that ALSO sits in the high tokens-per-file tail (≥ corpus-median `tokens_per_file`) OR carries a task-count outlier. | scope-estimate-accuracy, token-economics, task-count-efficiency | An under-estimated scope **predicts** the over-spend — the coupling names the predicted-vs-actual gap, not a fresh finding. |
@@ -82,11 +82,13 @@ completeness critic:
   `blind_plan_ids` floor the trend; the honest read is "no measurable regression
   among fully-recorded plans; the blind plans are floored". This coupling
   enforces the input-integrity no-false-healthy obligation across the trend facet.
-- **`churn_explains_cost`** — the named plans' execute/finalize token cost has a
-  plausible build-redundancy cause. Confirm against the sequence check's per-build
-  durations and the three structural caveats in
-  `checks/sequence-and-build-minimality.md` before filing; the coupling is a
-  correlation, not a proven cause.
+- **`churn_explains_walltime`** — the named plans' build redundancy wasted
+  **wall-clock**, corroborated by a build wall-clock (`total_build_seconds`) in the
+  corpus upper half. Read against the three structural caveats in
+  `checks/sequence-and-build-minimality.md`. Do NOT read this as a token-cost
+  signal: a build's token cost is ~fixed (bounded result TOON), so the remedy is
+  fewer/cheaper builds to reclaim wall-clock, not to cut tokens — the token
+  over-spend lives in message/reasoning volume (`long_session`), a separate axis.
 - **`qgate_gap_chain`** — the named plans paid the shift-right tax. Cross-read
   with the quality-chain shift-left tiers: a Tier-1 `auto_review_only` finding on
   a plan that also re-ran CI is the strongest avoidable-rework signal.

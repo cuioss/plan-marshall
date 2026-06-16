@@ -48,12 +48,20 @@ For each parsed line the script:
 2. **Aggregates script calls** — keys each script-execution line by
    `notation subcommand` (trailing args dropped) and accumulates a call count and
    summed duration per key.
-3. **Flags error / non-INFO lines** — any line whose LEVEL is not `INFO`, OR
-   whose body matches a failure marker (`invalid choice`,
+3. **Flags error / elevated-level lines** — any line whose LEVEL is *elevated*
+   (`WARNING`/`WARN`/`ERROR`/`CRITICAL`/`FATAL` — levels more severe than `INFO`),
+   OR whose body matches a failure marker (`invalid choice`,
    `the following arguments are required`, `unrecognized arguments`, `Traceback`,
    `exit_code 1/2`, `status: error`, `Error`, `failed`). These are
    argparse-rejection and runtime-failure signatures even when the logging
-   wrapper stamped `INFO`.
+   wrapper stamped `INFO`. Two recording-noise classes are deliberately NOT
+   flagged: (a) `DEBUG`-level lines (diagnostic output *below* `INFO`, never a
+   failure — flagging every non-INFO level previously swept thousands of DEBUG
+   lines into the error count); and (b) a completed script-execution call stamped
+   at an elevated level but carrying no failure marker — a benign non-zero-exit
+   probe (`read`/`exists`/`list`/`get` answering "not found"), which is a normal
+   query result, not a runtime failure. A genuine failure always carries a
+   failure marker, so it is still flagged at any level.
 4. **Flags slow calls** — a script call whose duration is `>= slow_call_seconds`
    (but below the impossible ceiling).
 5. **Flags impossible / hang durations** — a single deterministic script call
