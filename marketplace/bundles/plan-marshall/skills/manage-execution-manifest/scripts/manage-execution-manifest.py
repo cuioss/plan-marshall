@@ -1437,7 +1437,7 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # out (`never`), or defers to the existing decision machinery (`auto`, the
 # default no-op). Each gate maps to exactly one finalize step ID:
 #
-#   self_review   → pre-submission-self-review
+#   self_review   → default:pre-submission-self-review
 #   qgate         → pre-push-quality-gate (the finalize blocking-findings re-capture)
 #   simplify      → finalize-step-simplify (holistic post-implementation sweep)
 #
