@@ -3740,10 +3740,11 @@ def emit_token_economics_block(result: dict[str, Any]) -> str:
         "check: token-economics",
         "status: success",
         # total_tokens = input+output ONLY (manage-metrics excludes cache_read /
-        # cache_creation; cache_read is ~99% of real traffic). Every figure below is a
-        # GENERATION-VOLUME proxy, not a cost measure — see checks/token-economics.md
-        # "Measurement caveat".
-        "measurement_caveat: total_tokens=input+output; excludes cache_read/cache_creation (~99% of traffic) — generation-volume proxy, not cost",
+        # cache_creation; the excluded share scales with per-turn context size — large
+        # for a monolithic session, modest for an isolated envelope). Every figure below
+        # is a GENERATION-VOLUME proxy, not a total-traffic measure — see
+        # checks/token-economics.md "Measurement caveat".
+        "measurement_caveat: total_tokens=input+output; excludes cache_read/cache_creation (context-size-dependent under-count) — generation-volume proxy, not total traffic",
         f"plans_in_corpus: {result['plans_in_corpus']}",
         # Derived (floating) thresholds — every one measured from THIS run's
         # corpus, never hard-coded. Echoed so the flagged rows are self-describing.
@@ -4196,18 +4197,16 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
     # (b) churn_explains_walltime.
     #
     # This coupling correlates build churn against build WALL-CLOCK
-    # (`total_build_seconds`), NOT against the token metric — because the token metric
-    # CANNOT see build cost. A build runs as a subprocess (zero model tokens during the
-    # run) and is one tool-call turn among many (~2% of turns in the recipe forensic);
-    # its real token cost is a full-context `cache_read` round-trip plus, for a build
-    # exceeding the ~5-min prompt-cache TTL, a `cache_creation` re-cache penalty on the
-    # next turn. BOTH of those are EXCLUDED from the recorded `total_tokens`
-    # (= input + output only — see the token-economics measurement caveat), so build
-    # token cost is invisible to the metric and correlating churn against it was noise.
-    # Wall-clock is the only measurable proxy for build redundancy here. Do NOT read a
-    # fired coupling as "builds are token-cheap": their token cost is real but unrecorded.
-    # The visible token over-spend on these plans is generation volume (the
-    # `long_session` signal) + execution-context fragmentation, not builds.
+    # (`total_build_seconds`), NOT against the token metric. Builds are cheap in tokens
+    # BY DESIGN — `doc/concepts/build-management.adoc`: a build costs ~100 tokens (the
+    # TOON envelope), the LLM suspends on the synchronous call (zero tokens during the
+    # wait), and the build log never enters context. So build redundancy is a
+    # WALL-CLOCK cost (the developer pays it in latency), not a token cost — that is the
+    # axis to correlate against. (Separately, the recorded `total_tokens` = input+output
+    # excludes cache_read/cache_creation, a context-size-dependent under-count of total
+    # traffic — but that is a per-turn property orthogonal to builds; see the
+    # token-economics measurement caveat.) The visible token over-spend on these plans
+    # is generation volume (`long_session`) + execution-context fragmentation, not builds.
     churn_plans = _syn_flagged_plans(
         sequence,
         lambda f: f.startswith("non_minimal_build") or f.startswith("build_churn"),
@@ -4227,12 +4226,11 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
                 else f"churn_plans={len(churn_plans)};walltime_outlier_plans={len(walltime_outlier_plans)}"
             ),
             "caveat": (
-                "build cost is correlated against WALL-CLOCK because the recorded token "
-                "metric CANNOT see it: a build's real token cost (a full-context cache_read "
-                "round-trip, plus a cache_creation re-cache penalty when it exceeds the "
-                "~5-min cache TTL) is EXCLUDED from total_tokens (input+output only). Do NOT "
-                "read this as 'builds are token-cheap' — their cost is real but unrecorded; "
-                "the visible token over-spend is generation volume + envelope fragmentation"
+                "build redundancy is a WALL-CLOCK cost, not a token cost: builds are cheap "
+                "in tokens by design (~100-token TOON; the LLM suspends on the synchronous "
+                "call — doc/concepts/build-management.adoc), so churn is correlated against "
+                "wall-clock. The visible token over-spend on these plans is generation "
+                "volume (long_session) + execution-context fragmentation, not builds"
             ),
         }
     )

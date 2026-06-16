@@ -30,6 +30,8 @@ The synchronous shape is the load-bearing property here. The LLM is *suspended* 
 **Zero tokens during the wait does not mean zero cost.**
 
 Long-running builds still consume wall-clock time the developer pays for in latency. The `manage-metrics` accumulator records per-phase build duration, so the cost is measurable; the canonical-commands resolver records observed durations and adapts its timeout ceiling per command, so subsequent runs of the same build set the right budget instead of hard-coding a one-size-fits-all value. The abstraction makes the build cheap *in tokens*; it does not make it instantaneous.
+
+One second-order token effect: when a build's wait exceeds the prompt cache's ephemeral TTL (~5 minutes), the cached context prefix expires during the suspension, so the *resume* turn re-establishes the cache (a `cache_creation` cost on the next turn rather than the cheap `cache_read`). This is a per-turn caching artifact, not the build's own cost, and it is bounded by the small isolated-envelope context (xref:token-management.adoc[Token Management] § Per-dispatch context isolation) — minor next to the latency the build already costs.
 ====
 
 == Related
