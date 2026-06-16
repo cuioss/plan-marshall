@@ -33,7 +33,7 @@ Central reference for all extension-related configuration paths in `marshal.json
 
 ## Run-at-all Gates and Finalize Automation Knobs (marshal.json)
 
-The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs under their owning phase — `deep_lane` / `escalation` under `plan.phase-1-init`, `revalidation` under `plan.phase-2-refine`, `qgate` under `plan.phase-3-outline`, and the finalize gates (`self_review` / `qgate` / `plugin_doctor` / `simplify`) plus the three automation knobs under `plan.phase-6-finalize`. Read at runtime via `manage-config plan <phase> get --field <knob>`. See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs" for the full schema.
+The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs under their owning phase — `deep_lane` / `escalation` under `plan.phase-1-init`, `revalidation` under `plan.phase-2-refine`, `qgate` under `plan.phase-3-outline`, and the finalize gates (`self_review` / `qgate` / `simplify`) plus the three automation knobs under `plan.phase-6-finalize`. Read at runtime via `manage-config plan <phase> get --field <knob>`. See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs" for the full schema.
 
 | Path | Set By | Used By | Extension Point Doc |
 |------|--------|---------|---------------------|
@@ -43,7 +43,6 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 | `plan.phase-3-outline.qgate` | User config | deep-lane outline dispatch | - |
 | `plan.phase-6-finalize.self_review` | User config | manage-execution-manifest (finalize selection) | - |
 | `plan.phase-6-finalize.qgate` | User config | manage-execution-manifest (finalize selection) | - |
-| `plan.phase-6-finalize.plugin_doctor` | User config | manage-execution-manifest (finalize selection) | - |
 | `plan.phase-6-finalize.simplify` | User config | manage-execution-manifest (finalize selection) | - |
 | `plan.phase-6-finalize.finalize_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |

@@ -72,7 +72,6 @@ JSON structure and field definitions for project configuration.
       "auto_merge_after_ci": true,
       "self_review": "auto",
       "qgate": "auto",
-      "plugin_doctor": "auto",
       "simplify": "auto",
       "steps": [
         "default:commit-push", "default:create-pr", "default:automated-review",
@@ -408,7 +407,6 @@ Finalize pipeline with numbered boolean steps.
       "auto_merge_after_ci": true,
       "self_review": "auto",
       "qgate": "auto",
-      "plugin_doctor": "auto",
       "simplify": "auto",
       "steps": [
         "default:commit-push", "default:create-pr", "default:automated-review",
@@ -433,7 +431,6 @@ Finalize pipeline with numbered boolean steps.
 | `auto_merge_after_ci` | bool | true | Whether to merge automatically once CI passes. `true` (default) merges under the unified `manage-locks:merge_lock` cross-plan mutex (acquired by the branch-cleanup Pre-Merge Gate); `false` prompts the operator before merging. |
 | `self_review` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the pre-submission structural + cognitive self-review (`finalize-step-pre-submission-self-review`). `always` overrides the manifest composer's `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | `qgate` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the finalize blocking-findings re-capture (`pre-push-quality-gate`). **Highest-risk gate** — `never` can mask real build/test failures and push a red tree. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
-| `plugin_doctor` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the structural marketplace lint before push (`finalize-step-plugin-doctor`). `always` overrides the `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | `simplify` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the holistic post-implementation simplification sweep (`finalize-step-simplify`). `always` forces the step in even when the composer's `simplify_inactive` pre-filter would drop it; `never` removes it; `auto` (the default) defers to that pre-filter. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | — (pre-push-quality-gate activation) | derived | — | The `default:pre-push-quality-gate` finalize step's activation is **derived from `build.map`** — no dedicated config key. The manifest composer activates the step when the live footprint touches any `glob` registered in `build.map`; an absent build_map or no footprint match leaves the step inactive. |
 | `steps` | list | (see below) | Ordered list of step references to execute — persisted sorted ascending by each step's authoritative `order` value |
@@ -442,7 +439,7 @@ Default steps: `default:commit-push`, `default:create-pr`, `default:automated-re
 
 ### Run-at-all gates and finalize automation knobs (phase-local)
 
-The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`, `qgate` under `phase-3-outline`, and `self_review` / `qgate` / `plugin_doctor` / `simplify` plus the three automation knobs (`finalize_without_asking` / `loop_back_without_asking` / `auto_merge_after_ci`) under `phase-6-finalize`. Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
+The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`, `qgate` under `phase-3-outline`, and `self_review` / `qgate` / `simplify` plus the three automation knobs (`finalize_without_asking` / `loop_back_without_asking` / `auto_merge_after_ci`) under `phase-6-finalize`. Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
 
 The four `phase-6-finalize` gates map one-to-one to finalize steps and are consumed by the manifest composer's finalize selection post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection" for the gate→step map and the `automated-review` carve-out. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, `revalidation` by the refine revalidation pass, and `phase-3-outline.qgate` by the planning-time Q-Gate dispatch.
 

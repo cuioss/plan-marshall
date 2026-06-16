@@ -263,7 +263,6 @@ The lifecycle run-at-all gates and automation knobs are flat knobs under their o
 | `auto_merge_after_ci` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field auto_merge_after_ci` |
 | `self_review` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field self_review` |
 | `qgate` (finalize) | `plan.phase-6-finalize` | `plan phase-6-finalize get --field qgate` |
-| `plugin_doctor` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field plugin_doctor` |
 | `simplify` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field simplify` |
 
 ### Read an automation knob
@@ -533,7 +532,6 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "auto_merge_after_ci": true,
       "self_review": "auto",
       "qgate": "auto",
-      "plugin_doctor": "auto",
       "simplify": "auto",
       "steps": [
         "commit_push", "create_pr", "automated_review",
@@ -559,7 +557,6 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 | `qgate` | `phase-3-outline` | Whether the planning-time q-gate validation runs (deep-lane outline dispatch). |
 | `self_review` | `phase-6-finalize` | Whether the pre-submission structural + cognitive self-review runs (manifest finalize step-selection). |
 | `qgate` | `phase-6-finalize` | Whether finalize re-captures blocking findings. **Highest-risk gate** — `never` can mask real build/test failures. |
-| `plugin_doctor` | `phase-6-finalize` | Whether structural marketplace lint runs before push. |
 | `simplify` | `phase-6-finalize` | Whether the holistic post-implementation simplification sweep (`finalize-step-simplify`) runs. `always` forces it in even when the composer's `simplify_inactive` pre-filter would drop it; `never` skips it; `auto` defers to that pre-filter. |
 
 **Finalize automation knobs (boolean, under `phase-6-finalize`):**
