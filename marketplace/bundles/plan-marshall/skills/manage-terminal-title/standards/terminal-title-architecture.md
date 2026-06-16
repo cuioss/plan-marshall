@@ -33,8 +33,8 @@ STATE (manage-status)            COMPOSER (manage-terminal-title)   RESOLVE+EMIT
 │   token (NO rendering)    │     │     pm:Completed[:{short}]   │  │  3. _read_title_state(plan_id):      │
 └────────────┬─────────────┘     │  2. TITLE_TOKEN_GLYPHS[token]│  │     a. live status.json              │
              │ writes            │     ⏳/🔒 (active phase)      │  │     b. archived status.json glob     │
-             ▼                   │  3. resolve_icon(event)      │  │  4. compose(state, event)  ──────────┤
-   status.json                  │     ➤/?/✓, ✅ terminal       │  │  5. emit per platform:               │
+             ▼                   │  3. resolve_icon(event,tool) │  │  4. compose(state, event)  ──────────┤
+   status.json                  │     ➤/?/⚙/✓, ✅ terminal     │  │  5. emit per platform:               │
    (current_phase,              │        override               │  │     OSC terminalSequence (every event)│
     short_description,  ────────►│  → '{icon} {glyph} {body}'   ──►│     + sessionTitle (UI, gated)        │
     title_token)                │     or None (no-op)          │  │     statusLine: plain '{icon} {body}' │
@@ -126,10 +126,14 @@ composes `'{icon} {glyph} {body}'` from three independent inputs:
   (`complete` / `archived`) regardless of the persisted token — a finished plan
   holds no live lock state.
 - **Icon** — the process icon from the hook event (➤ active / ? waiting /
-  ✓ done), with a **terminal-state override to ✅** (`_ICON_TERMINAL`, U+2705)
-  for `complete` / `archived` phases regardless of the event or `icon_override`.
-  The thick ✅ is deliberately distinct from the thin ✓ `_ICON_DONE` used per
-  turn. The process icons ➤ and ? MUST NOT appear for a finished plan.
+  ⚙ busy / ✓ done), with a **terminal-state override to ✅** (`_ICON_TERMINAL`,
+  U+2705) for `complete` / `archived` phases regardless of the event or
+  `icon_override`. The thick ✅ is deliberately distinct from the thin ✓
+  `_ICON_DONE` used per turn. The ⚙ busy icon (`_ICON_BUSY`, U+2699) is surfaced
+  on the `PreToolUse:Bash` render trigger while a long-running Bash tool call
+  executes; `PreToolUse:Bash` and `PostToolUse:Bash` bracket the busy window
+  (busy on enter, back to ➤ active on exit). The process icons ➤ and ? MUST NOT
+  appear for a finished plan.
 
 ## Resolve + Emit — `platform-runtime`
 
