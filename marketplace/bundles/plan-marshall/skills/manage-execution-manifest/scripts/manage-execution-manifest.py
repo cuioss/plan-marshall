@@ -1446,7 +1446,7 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 #
 # The transform NEVER touches `automated-review`: the bot-review invariant
 # (enforced by `_apply_bot_enforcement_guard`) is orthogonal and is preserved
-# verbatim — the four finalize gates are the only
+# verbatim — the three finalize gates are the only
 # finalize steps this transform may add or drop. Run-at-all values are validated
 # at set time by `manage-config`'s `validate_run_at_all`; the composer
 # defensively treats any non-`{always,never}` value (including `auto` and a
@@ -2352,7 +2352,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
 
     # plan.phase-6-finalize run-at-all selection runs AFTER the seven-row
     # matrix (and execution_tier routing) and BEFORE the bot-enforcement guard.
-    # It forces each of the four finalize gates' steps in (`always`) or out
+    # It forces each of the three finalize gates' steps in (`always`) or out
     # (`never`) on the matrix-produced `phase_6.steps`, deferring to the existing
     # machinery on `auto` (the default). `always` is the only path that can
     # re-add a step the scope_gated_finalize pre-filter dropped — which is the
