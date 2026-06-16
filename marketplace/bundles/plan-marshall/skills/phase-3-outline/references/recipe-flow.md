@@ -58,27 +58,30 @@ User request (free-form)                 User selects recipe + parameters
 │  standards       │  │                     │  │  For projects w/o  │
 │                  │  │                     │  │  domain extensions  │
 └────────┬─────────┘  └─────────┬──────────┘  └─────────┬──────────┘
-         │                      │                        │
-User selects:          resolve-recipe returns   resolve-recipe returns
-• domain (java, js..)  skill, change_type,      skill, change_type,
-• profile (impl/test)  scope                    scope (source=project)
-• derives pkg_source            │                        │
-         │                      │                        │
-         └──────────────────────┼────────────────────────┘
+         │                      │                       │
+auto-detect ALL domains         │                       │
+select ONE profile              │                       │
+ (any exposed value)     resolve-recipe returns  resolve-recipe returns
+derive pkg_source        skill, change_type,     skill, change_type,
+ from profile            scope                   scope (source=project)
+         │                      │                       │
+         └──────────────────────┼───────────────────────┘
                                 │
-                   ┌────────────▼────────────┐
-                   │  Store metadata in      │
-                   │  status.json            │
-                   │                         │
-                   │  plan_source = recipe   │
-                   │  recipe_key             │
-                   │  recipe_skill           │
-                   │  recipe_domain *        │
-                   │  recipe_profile *       │
-                   │  recipe_package_source *│
-                   │                         │
-                   │  * built-in only        │
-                   └─────────────────────────┘
+                   ┌────────────▼───────────────────────┐
+                   │  Store metadata in                 │
+                   │  status.json                       │
+                   │                                    │
+                   │  plan_source = recipe              │
+                   │  recipe_key                        │
+                   │  recipe_skill                      │
+                   │  recipe_domains *                  │
+                   │  recipe_profile *                  │
+                   │  recipe_package_source *           │
+                   │  recipe_selected_skills__{domain} *│
+                   │   (one per detected domain)        │
+                   │                                    │
+                   │  * built-in only                   │
+                   └────────────────────────────────────┘
 ```
 
 ## Phase-3-Outline: Recipe Detection (Step 2.5)
@@ -100,22 +103,28 @@ phase-3-outline
      │       │     │  YES    │
      │       │     └────┬────┘
      │       │          │
-     │       │    1. Read metadata: recipe_key, recipe_skill,
-     │       │       recipe_domain, recipe_profile, recipe_package_source
+     │       │    1. Read metadata: recipe_key, recipe_skill;
+     │       │       built-in → recipe_domains (plural),
+     │       │       recipe_profile, recipe_package_source,
+     │       │       recipe_selected_skills__{domain} (per domain);
+     │       │       custom → recipe_domain (singular)
      │       │          │
      │       │    2. resolve-recipe → get default_change_type
      │       │          │
      │       │    3. Set change_type in status (skip detect agent)
      │       │          │
-     │       │    4. Load recipe skill:
-     │       │       ┌──────────────────────────────────┐
-     │       │       │ Skill: {recipe_skill}            │
-     │       │       │   Input:                         │
-     │       │       │     plan_id                      │
-     │       │       │     recipe_domain                │
-     │       │       │     recipe_profile               │
-     │       │       │     recipe_package_source        │
-     │       │       └──────────────┬───────────────────┘
+     │       │    4. Load recipe skill (built-in field set shown;
+     │       │       custom passes the singular recipe_domain set):
+     │       │       ┌────────────────────────────────────────┐
+     │       │       │ Skill: {recipe_skill}                  │
+     │       │       │   Input:                               │
+     │       │       │     plan_id                            │
+     │       │       │     recipe_domains (comma-separated)   │
+     │       │       │     recipe_profile (any exposed value) │
+     │       │       │     recipe_package_source (per profile)│
+     │       │       │     recipe_selected_skills__{domain}   │
+     │       │       │       (one per detected domain)        │
+     │       │       └──────────────┬─────────────────────────┘
      │       │                      │
      │       │              skill writes:
      │       │              • deliverables
@@ -136,12 +145,23 @@ phase-3-outline
 
 ## Unified Recipe Skill Interface
 
-Both built-in and custom recipe skills are loaded by phase-3-outline through the same call. The interface is identical — only the implementation differs.
+Both built-in and custom recipe skills are loaded by phase-3-outline through the same call. The contract (load skill → write `solution_outline.md` → return) is identical; only the input field set differs by recipe kind — the built-in recipe spans every auto-detected domain, so it carries a multi-domain field set, whereas a custom recipe carries the single-domain set.
 
 ```
 phase-3-outline Step 2.5
      │
-     │  For ALL recipe types (built-in and custom):
+     │  Built-in recipe (multi-domain — spans ALL detected domains):
+     │
+     │  Skill: {recipe_skill}
+     │    Input:
+     │      plan_id: {plan_id}
+     │      recipe_domains: {comma-separated detected domains}
+     │      recipe_profile: {any profile a domain exposes}
+     │      recipe_package_source: {derived from the profile}
+     │      recipe_selected_skills__{domain}: {per-domain skill set}
+     │        (one field per detected domain exposing the profile)
+     │
+     │  Custom recipe (single-domain — interface unchanged):
      │
      │  Skill: {recipe_skill}
      │    Input:
@@ -150,7 +170,7 @@ phase-3-outline Step 2.5
      │      recipe_profile: {profile or empty}
      │      recipe_package_source: {package_source or empty}
      │
-     │  Must write:
+     │  Both kinds must write:
      │    • solution_outline.md (deliverables grouped by module)
      │
      │  Each deliverable must include:
@@ -160,7 +180,7 @@ phase-3-outline Step 2.5
      └── Returns to phase-3-outline → Step 11 (no Q-Gate)
 ```
 
-The three `recipe_*` parameters are guaranteed non-empty for the built-in recipe. Custom recipes receive them if the extension declares `profile` and `package_source` on the recipe dict; otherwise they are empty strings and the custom skill must determine these values itself.
+For the built-in recipe the multi-domain field set is always populated — `recipe_domains` lists every auto-detected domain, `recipe_profile` is the single chosen profile (any value a detected domain exposes, not limited to `implementation`/`module_testing`), `recipe_package_source` is derived data-driven from that profile's declared package source, and one `recipe_selected_skills__{domain}` field is present per detected domain that exposes the profile. Custom recipes receive the single-domain `recipe_domain`/`recipe_profile`/`recipe_package_source` set if the extension declares `profile` and `package_source` on the recipe dict; otherwise they are empty strings and the custom skill must determine these values itself.
 
 Full interface contract: see `plan-marshall:extension-api` [extension-contract.md](../../extension-api/standards/extension-contract.md#provides_recipes).
 
@@ -173,17 +193,20 @@ The built-in recipe is domain-invariant. It uses the input parameters to resolve
 ```
 recipe-refactor-to-profile-standards
      │
-     │  Inputs: plan_id, recipe_domain, recipe_profile, recipe_package_source
-     │          (all guaranteed non-empty for built-in)
+     │  Inputs: plan_id, recipe_domains (comma-separated), recipe_profile,
+     │          recipe_package_source,
+     │          recipe_selected_skills__{domain} (one per detected domain)
      │
-     ├─ Step 1: Resolve skills
-     │    resolve-domain-skills --domain {domain} --profile {profile}
-     │    → collects core + profile defaults + optionals
+     ├─ Step 0: Gather + expand + persist coverage cell
+     │
+     ├─ Step 1: Resolve per-domain selected skills
+     │    read recipe_selected_skills__{domain} from metadata per domain
+     │    → user-finalized skill set per domain (NOT re-resolved here)
      │
      ├─ Step 2: List modules
      │    architecture modules → present to user for filtering
      │
-     ├─ Step 3: Per module — load packages and create deliverables
+     ├─ Step 3: Per domain × module — load packages and create deliverables
      │    │
      │    │  architecture module --module {name} --full
      │    │  → iterate {recipe_package_source} field
@@ -191,11 +214,12 @@ recipe-refactor-to-profile-standards
      │    │  For each package:
      │    │  ┌───────────────────────────────────────────┐
      │    │  │ Deliverable:                              │
-     │    │  │   title: Refactor: {module}/{package}     │
+     │    │  │   title: Refactor ({profile}):            │
+     │    │  │          {module}/{package}               │
      │    │  │   change_type: tech_debt                  │
-     │    │  │   domain: {recipe_domain}                 │
+     │    │  │   domain: {domain} (iterated domain)      │
      │    │  │   profile: {recipe_profile}               │
-     │    │  │   skills: {resolved from Step 1}          │
+     │    │  │   skills: {domain's selected skill set}   │
      │    │  │   files: {from architecture data}         │
      │    │  └───────────────────────────────────────────┘
      │    │
@@ -204,7 +228,7 @@ recipe-refactor-to-profile-standards
      │    │  analysis + fixing in one pass per package.
      │    │
      │
-     └─ Step 4: Write solution_outline.md grouped by module
+     └─ Step 4: Write solution_outline.md grouped by domain then module
 ```
 
 ---
@@ -250,32 +274,36 @@ provides_recipes() ──────►  skill_domains.{domain}.recipes  ──
 
 ## End-to-End: Built-in Recipe Example
 
-Concrete example: user wants to refactor Java production code to standards.
+Concrete example: user wants to refactor production code to standards across a multi-domain repo (java + javascript).
 
 ```
 User: /plan-marshall action=recipe
          │
          ▼
   recipe.md Step 1
-  ┌─────────────────────────────────┐
-  │ Built-in: Refactor to Profile   │ ◄── user selects
-  │ Custom:   (none registered)     │
-  └────────────────┬────────────────┘
-                   │
+  ┌─────────────────────────────────────────┐
+  │ Built-in: Refactor to Profile           │ ◄── user selects
+  │ Custom:   (none registered)             │
+  └────────────────────┬────────────────────┘
+                       │
   recipe.md Step 1a
-  ┌─────────────────────────────────┐
-  │ Domain:  java                   │ ◄── user selects
-  │ Profile: implementation         │ ◄── user selects
-  │ Package source: packages        │ ◄── derived
-  └────────────────┬────────────────┘
-                   │
+  ┌─────────────────────────────────────────┐
+  │ Domains: java, javascript               │ ◄── auto-detected (ALL)
+  │ Profile: implementation                 │ ◄── user selects ONE
+  │ Package source: packages                │ ◄── derived from profile
+  │ Skills (per domain):                    │ ◄── user multi-selects
+  │   java       → java-core, java-cdi, ... │
+  │   javascript → javascript, jest-...     │
+  └────────────────────┬────────────────────┘
+                       │
   recipe.md Step 2: execution-context (workflow=phase-1-init/SKILL.md)
-         │ creates plan, plan_id = "recipe-java-impl"
+         │ creates plan, plan_id = "refactor-to-profile-standards-implementation"
          │
   recipe.md Step 3: store metadata
          │ plan_source=recipe, recipe_key, recipe_skill,
-         │ recipe_domain=java, recipe_profile=implementation,
-         │ recipe_package_source=packages
+         │ recipe_domains=java,javascript, recipe_profile=implementation,
+         │ recipe_package_source=packages,
+         │ recipe_selected_skills__java=..., recipe_selected_skills__javascript=...
          │
   ┌──────▼──────────────────────────┐
   │ phase-2-refine                  │
@@ -291,17 +319,18 @@ User: /plan-marshall action=recipe
   │     → change_type=tech_debt     │
   │   → Skill: plan-marshall:recipe-  │
   │     refactor-to-profile-stds    │
-  │       domain=java               │
-  │       profile=implementation    │
-  │       package_source=packages   │
+  │     domains=java,javascript     │
+  │     profile=implementation      │
+  │     package_source=packages     │
+  │     selected_skills__{domain}   │
   │                                 │
   │   Recipe skill:                 │
-  │   1. resolve-domain-skills      │
-  │      → java-core, java-cdi, ... │
+  │   1. per domain: use selected   │
+  │      skills (java-core, jest..) │
   │   2. architecture modules       │
   │      → my-core, my-api, my-web  │
-  │   3. Per module: iterate pkgs   │
-  │      → 1 deliverable per pkg    │
+  │   3. Per domain × module:       │
+  │      iterate pkgs → 1 deliv/pkg │
   │   4. Write solution_outline.md  │
   │                                 │
   │   (no Q-Gate — deterministic)   │
@@ -311,7 +340,7 @@ User: /plan-marshall action=recipe
   │ phase-4-plan                    │
   │   1 task per deliverable        │
   │   profile: implementation       │
-  │   skills: resolved from domain  │
+  │   skills: per-domain selected   │
   └──────┬──────────────────────────┘
          │
   ┌──────▼──────────────────────────┐
@@ -335,17 +364,22 @@ User: /plan-marshall action=recipe
 recipe.md                    phase-3-outline              recipe skill
 ─────────                    ───────────────              ────────────
 
-Sets in status.json:         Reads from status.json:      Receives as input:
-                                  │                            │
-plan_source=recipe ──────────► plan_source ─── if recipe ──┐  │
-recipe_key ──────────────────► recipe_key ─── resolve ─────┤  │
-recipe_skill ────────────────► recipe_skill ── Skill: ─────┤  │
-recipe_domain ───────────────► recipe_domain ──────────────►│──► recipe_domain
-recipe_profile ──────────────► recipe_profile ─────────────►│──► recipe_profile
-recipe_package_source ───────► recipe_package_source ──────►│──► recipe_package_source
-                                                            │
-                              Also sets:                    │
-                              change_type ◄── from resolve-recipe
+Sets in status.json:              Reads from status.json:        Receives as input (built-in):
+                                       │                       │
+plan_source=recipe ──────────────► plan_source ─── if recipe ──┤
+recipe_key ──────────────────────► recipe_key ─── resolve ─────┤
+recipe_skill ────────────────────► recipe_skill ── Skill: ─────┤
+recipe_domains ──────────────────► recipe_domains ────────────►│──► recipe_domains
+recipe_profile ──────────────────► recipe_profile ────────────►│──► recipe_profile
+recipe_package_source ───────────► recipe_package_source ─────►│──► recipe_package_source
+recipe_selected_skills__{domain} ► recipe_selected_skills__{d}►│──► recipe_selected_skills__{domain}
+  (one per detected domain)                                    │       (one per detected domain)
+                                                               │
+                                   Also sets:                  │
+                                   change_type ◄── from resolve-recipe
+
+Custom recipes carry the single-domain recipe_domain field instead of
+recipe_domains / recipe_selected_skills__{domain}.
 ```
 
 ## Related

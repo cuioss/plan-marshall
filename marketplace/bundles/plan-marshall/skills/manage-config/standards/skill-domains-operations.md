@@ -44,6 +44,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 status: success
 domain: java
 profile: implementation
+package_source: packages
 
 defaults:
   pm-dev-java:java-core: Java patterns, conventions, null-safety
@@ -54,6 +55,8 @@ optionals:
   pm-dev-java:java-cdi: CDI patterns (@ApplicationScoped, @Inject)
   pm-dev-java:java-maintenance: Code maintenance and refactoring patterns
 ```
+
+`package_source` is present only when the resolved profile declares it in its `extension.py` profile dict. Profiles that do not declare `package_source` (e.g., `core`, `quality`) omit the key from output.
 
 ### Aggregation Logic
 
