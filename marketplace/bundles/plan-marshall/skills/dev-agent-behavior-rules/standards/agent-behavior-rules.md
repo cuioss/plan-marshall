@@ -20,7 +20,9 @@ A plain-English index of the rules below. Each line is a memory hook that links 
 | Leave it cleaner than you found it. | [Boy Scout Rule](#boy-scout-rule) |
 | If in doubt, ask. | [Principle 1: Ask When In Doubt](#principle-1-ask-when-in-doubt) |
 | Research current best practices before deciding. | [Principle 2: Always Research Topics](#principle-2-always-research-topics) |
+| Use judgment, but don't invent requirements — research, then ask. | [Principle 3: Apply Judgment Within Constraints](#principle-3-apply-judgment-within-constraints) |
 | Use the proper tools for file work, not raw shell. | [Principle 4: Use Proper Tools for File Operations](#principle-4-use-proper-tools-for-file-operations) |
+| Reuse existing documents; never create one without approval. | [Principle 5: Don't Proliferate Documents](#principle-5-dont-proliferate-documents) |
 | Never add a dependency without approval. | [Principle 6: Never Add Dependencies Without User Approval](#principle-6-never-add-dependencies-without-user-approval) |
 | Build the minimum, not the maximum. | [Principle 7: Implement the Minimum, Not the Maximum](#principle-7-implement-the-minimum-not-the-maximum) |
 | Obey each skill's declared `mode`. | [Skill mode: comply with the declared archetype](#skill-mode-comply-with-the-declared-archetype) |
