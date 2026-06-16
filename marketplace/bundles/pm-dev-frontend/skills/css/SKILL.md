@@ -52,3 +52,4 @@ Use when: Optimizing CSS performance, implementing dark mode, improving accessib
 
 - `pm-dev-frontend:lint-config` — Stylelint, Prettier configuration
 - `pm-dev-frontend:javascript` — JavaScript standards
+- Anthropic `frontend-design` skill — Visual-aesthetic guidance (distinctive, production-grade UI; avoiding generic "AI slop" design). Complementary to this skill: `css` governs code standards, `frontend-design` governs visual aesthetics. Pointer only — no content duplicated here.

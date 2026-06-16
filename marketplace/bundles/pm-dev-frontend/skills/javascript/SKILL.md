@@ -128,7 +128,7 @@ python3 .plan/execute-script.py pm-dev-frontend:javascript:jsdoc analyze \
 
 ## Related Skills
 
-- `plan-marshall:dev-general-code-quality` - Language-agnostic code quality principles
 - `plan-marshall:dev-general-code-quality` - Language-agnostic code quality and documentation principles
 - `pm-dev-frontend:css` - CSS standards
 - `pm-dev-frontend:lint-config` - ESLint, Prettier, Stylelint configuration
+- Anthropic `frontend-design` skill - Visual-aesthetic guidance (distinctive, production-grade UI; avoiding generic "AI slop" design). Complementary to this skill: `javascript` governs code standards, `frontend-design` governs visual aesthetics. Pointer only — no content duplicated here.
