@@ -29,7 +29,7 @@ Concrete violations of OCI container standards (see `pm-dev-oci:oci-standards`, 
 | HEALTHCHECK absent | Long-running service image without `HEALTHCHECK` (or k8s probe equivalent) | `oci-standards` (Quarkus distroless probes section) |
 | Hadolint `error` (DL3xxx) | DL3008 unpinned apt, DL3009 missing `--no-install-recommends`, DL3015 `--no-install-recommends` missing | `oci-standards` |
 | CVE — CRITICAL/HIGH with patch available | Trivy reports CVE-YYYY-NNNN with `Fixed Version` field populated | `oci-security`, `severity.md` |
-| Secret in image | Hardcoded password/token in `ENV`, `ARG` leaked via `--build-arg`, `.env` copied into image | `oci-security` (Secret Management) |
+| Secret in image | Hardcoded password/token in `ENV`, `ARG` leaked via `--build-arg`, `.env` copied into image, `RUN ... && rm <secret>` false-fix (delete does not erase the secret from the layer), secret written to a file by a `RUN` script | `oci-security` (Secret Management) |
 | Image not signed | Missing Cosign signature in supply-chain pipeline | `oci-security` (Image Signing) |
 | SBOM missing | Production image without Syft-generated SBOM in CI | `oci-security` (SBOM) |
 | Multi-platform omission | Image declared for `linux/amd64,linux/arm64` only builds `amd64` | `oci-standards` (Multi-Platform Builds) |
