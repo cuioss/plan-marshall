@@ -49,9 +49,6 @@ def _task_cost(task: dict[str, Any]) -> int:
     Args:
         task: A task record dict carrying a ``predicted_cost_tokens`` field.
 
-    Returns:
-        The task's predicted token cost.
-
     Raises:
         ValueError: when ``predicted_cost_tokens`` is missing, not an integer
             magnitude, or negative.
