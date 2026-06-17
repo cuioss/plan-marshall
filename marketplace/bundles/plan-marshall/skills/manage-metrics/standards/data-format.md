@@ -25,18 +25,20 @@ phase.1-init.tool_uses: 12
 phase.2-refine.start: 2026-03-27T10:03:15Z
 phase.2-refine.end: 2026-03-27T10:08:45Z
 phase.2-refine.total_tokens: 42000
-enriched.input_tokens: 450000
-enriched.output_tokens: 35000
-enriched.total_tokens: 485000
-enriched.message_count: 127
+phase.2-refine.input_tokens: 38000
+phase.2-refine.output_tokens: 4000
+phase.2-refine.cache_read_input_tokens: 210000
+phase.2-refine.cache_creation_input_tokens: 12000
+phase.2-refine.billing_weighted_total: 78000
+session_message_count: 127
 ```
 
 ### Key Naming Convention
 
 > **Phase naming**: TOON keys use the `phase.{N}-{name}.{field}` prefix form (e.g., `phase.1-init.start`). The canonical phase name is `1-init` — see [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) for the standard phase list.
 
-- `phase.{phase_name}.{field}` — per-phase timing/token data
-- `enriched.{field}` — session transcript enrichment data (attributed to plan as a whole)
+- `phase.{phase_name}.{field}` — per-phase timing/token data, including the four-field usage view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) and the derived `billing_weighted_total` written by `enrich`
+- `session_message_count` — plan-level count of transcript messages carrying usage data, written by `enrich`
 
 ### Per-Phase Fields
 
@@ -52,7 +54,27 @@ enriched.message_count: 127
 | `subagent_tool_uses` | int | `enrich` post-hoc transcript walk |
 | `subagent_duration_ms` | int | `enrich` post-hoc transcript walk |
 | `subagent_samples` | int | `enrich` post-hoc transcript walk — count of attributed Task-agent calls |
+| `input_tokens` | int | `enrich` four-field walk — sum of `message.usage.input_tokens` across the parent orchestrator turns AND every subagent transcript attributed to this phase |
+| `output_tokens` | int | `enrich` four-field walk — sum of `message.usage.output_tokens` (same dual-source attribution) |
+| `cache_read_input_tokens` | int | `enrich` four-field walk — sum of `message.usage.cache_read_input_tokens` (same dual-source attribution) |
+| `cache_creation_input_tokens` | int | `enrich` four-field walk — sum of `message.usage.cache_creation_input_tokens` (same dual-source attribution) |
+| `billing_weighted_total` | int | Derived by `enrich` from the four-field view: `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`. A billing-cost figure, NOT a work-comparable measure |
 | `idle_duration_ms` | int | Derived by `generate` — the per-phase idle residual `max(0, wall_clock_ms - worked_ms)` |
+
+The four-field usage view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) lives only in the raw `message.usage` dicts inside the transcripts — the single-figure `<usage>` return tag carries no input/output split and no cache fields. `enrich` accumulates these four fields per phase from BOTH the parent orchestrator turns and every discovered subagent transcript, then records `billing_weighted_total` per phase. These fields exist independently of `total_tokens`, which `enrich` leaves untouched.
+
+#### Whole-transcript attribution and slug-gap robustness
+
+Each subagent transcript is summed as a whole and attributed to the single phase window containing its spawn/first-message timestamp (latest-window-wins on a boundary tie). Transcripts are NOT split by slug boundaries — the whole transcript is attributed to the one phase that spawned it. Subagent discovery is anchored to the *resolved parent transcript location* (`{parent_transcript_path.parent}/{session_id}/subagents/agent-*.jsonl`) rather than re-derived from the current git root, so the worktree-vs-main-checkout cwd at `enrich` time no longer changes the answer. The direct-session-file fallback branch retains the legacy cwd-slug path.
+
+#### Billing weights
+
+| Field | Weight | Rationale |
+|-------|--------|-----------|
+| `input_tokens` | 1.0 | Baseline input cost |
+| `output_tokens` | 1.0 | Counted at par in the weighted total |
+| `cache_read_input_tokens` | 0.1 | A cached read is ~0.1× the cost of an input token (request-stated approximation) |
+| `cache_creation_input_tokens` | 1.25 | A cache-creation write is ~1.25× the cost of an input token (request-stated approximation) |
 
 `subagent_*` fields exist independently of the closed-phase `total_tokens` row. The closed-phase row is filled at `end-phase` time from explicit flags (preferred) or the accumulator file (fallback). The `subagent_*` fields are written by `enrich` as a post-hoc safety net so that even when the orchestrator never called `accumulate-agent-usage`, the transcript walk surfaces the missed totals.
 
@@ -70,12 +92,13 @@ For every phase row that carries both signals, `Worked <= Reported (wall)` MUST 
 
 ### Enrichment Fields
 
+`enrich` writes the four-field usage view and `billing_weighted_total` per phase (under the `phase.{phase_name}.{field}` prefix — see Per-Phase Fields above), plus one plan-level field:
+
 | Field | Type | Source |
 |-------|------|--------|
-| `input_tokens` | int | JSONL session transcript parsing |
-| `output_tokens` | int | JSONL session transcript parsing |
-| `total_tokens` | int | Sum of input + output |
-| `message_count` | int | Number of messages in transcript |
+| `session_message_count` | int | Plan-level count of transcript messages that carried usage data (input/output/total) |
+
+The four-field usage view is no longer stored as plan-level `enriched.{field}` keys — it is attributed per phase by the transcript walks. See the Per-Phase Fields table for `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, and `billing_weighted_total`.
 
 ## Generated Report (metrics.md)
 
@@ -91,13 +114,17 @@ The `generate` command produces a markdown report with per-phase rows:
 | 3-outline | 7m 0s | 8m 15s | 1m 15s | 68,000 | 25 |
 | **Total** | **13m 30s** | **16m 45s** | **3m 15s** | **135,514** | **45** |
 
-## Session Enrichment
+## 2-refine
 
-- Input tokens: 450,000
-- Output tokens: 35,000
-- Total tokens: 485,000
-- Messages: 127
+- Total tokens: 42,000
+- Input tokens: 38,000
+- Output tokens: 4,000
+- Cache read input tokens: 210,000
+- Cache creation input tokens: 12,000
+- **Billing-weighted total**: 78,000 (billing-cost figure, not a work-comparable measure — cache_read sums context re-reads across turns)
 ```
+
+The four-field usage view and the billing-weighted total are rendered per phase (each phase that carries them gets its own bullet list), not as a single plan-level "Session Enrichment" block. Each four-field bullet renders only when its underlying value is present and non-zero.
 
 ### Duration Formatting
 
@@ -172,8 +199,8 @@ generate status in `generate_status` / `generate_message` instead of
 |--------|-----------|-------------|
 | Task agent `<usage>` tags (forwarded to `end-phase` flags) | Agent-delegated phases — single agent per phase | Per-phase |
 | `accumulate-agent-usage` per-phase accumulator file | Phases that dispatch multiple agents (`5-execute`, `6-finalize`) | Per-phase, summed across agent returns |
-| JSONL session transcript (`enrich` main-context) | Main-context phases | Per-plan (spans phases) |
-| JSONL session transcript (`enrich` subagent attribution) | Any phase whose timestamp window contains Task tool calls | Per-phase (`subagent_*` fields) |
+| JSONL session transcript (`enrich` subagent `<usage>`-tag attribution) | Any phase whose timestamp window contains Task tool calls | Per-phase (`subagent_*` fields) |
+| Raw `message.usage` dicts in the parent + subagent transcripts (`enrich` four-field walk) | Any phase whose window contains a parent turn or a spawned subagent transcript | Per-phase (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `billing_weighted_total`) |
 
 ## Per-Phase Subagent Accumulator (`work/metrics-accumulator-{phase}.toon`)
 

@@ -75,6 +75,23 @@ DISPATCH_TERMINATION_CAUSES = (
 )
 USAGE_TAG_RE = re.compile(r'<usage>([\s\S]*?)</usage>', re.MULTILINE)
 USAGE_FIELD_RE = re.compile(r'^\s*(total_tokens|subagent_tokens|tool_uses|duration_ms)\s*:\s*(\d+)', re.MULTILINE)
+SESSION_ID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+
+# The four distinct Claude API usage fields. These live only in the raw
+# subagent-transcript `message.usage` dicts — the subagent `<usage>` return tag
+# carries a single token figure with no input/output split and no cache fields.
+USAGE_FOUR_FIELDS = (
+    'input_tokens',
+    'output_tokens',
+    'cache_read_input_tokens',
+    'cache_creation_input_tokens',
+)
+# Billing weights (request-stated approximations): a cached read is ~0.1x the
+# cost of an input token, and a cache creation write is ~1.25x. The weighted
+# total is a billing-cost figure, NOT a work-comparable measure — cache_read
+# sums context re-reads across turns.
+BILLING_WEIGHT_CACHE_READ = 0.1
+BILLING_WEIGHT_CACHE_CREATION = 1.25
 
 
 def _resolve_cwd() -> str:
@@ -94,26 +111,53 @@ def _resolve_cwd() -> str:
     return os.getcwd()
 
 
-def _resolve_subagent_transcripts(session_id: str) -> list[Path]:
+def _resolve_subagent_transcripts(
+    session_id: str,
+    parent_transcript_path: Path | None = None,
+) -> list[Path]:
     """Return absolute paths of subagent transcript JSONLs for the given parent session.
 
     Subagent transcripts live under
-    ``~/.claude/projects/{cwd-slug}/{parent_session_id}/subagents/agent-*.jsonl``.
-    When the directory does not exist or contains no matches, returns an empty list.
+    ``{project_dir}/{parent_session_id}/subagents/agent-*.jsonl``.
+
+    Discovery is anchored to the *resolved parent transcript location* when
+    ``parent_transcript_path`` is supplied: the subagents directory is derived as
+    ``parent_transcript_path.parent / session_id / 'subagents'``. This is the
+    deterministic, robust path — it pins discovery to the actual project-dir the
+    parent transcript was found under, so the worktree-vs-main-checkout cwd no
+    longer changes the answer. Phase-5 pins cwd to the plan's worktree, so the
+    subagent transcripts produced during phase-5+ live under a worktree-derived
+    project-dir slug, while ``enrich`` (run at finalize) may resolve a
+    main-checkout git root; re-deriving the slug from the git root would look
+    under the wrong directory and silently return ``[]``, zeroing every field.
+
+    When ``parent_transcript_path`` is ``None`` (the direct-session-file fallback
+    branch), the legacy ``_resolve_cwd()``-slug path is used as a documented
+    fallback. When the directory does not exist or contains no matches, returns
+    an empty list.
+
+    The session-id UUID format guard is preserved on both paths.
     """
+    if not re.fullmatch(SESSION_ID_RE, session_id):
+        return []
+
+    if parent_transcript_path is not None:
+        subagents_dir = parent_transcript_path.parent / session_id / 'subagents'
+    else:
+        try:
+            home = Path.home()
+        except (OSError, RuntimeError):
+            return []
+        projects = home / '.claude' / 'projects'
+        cwd_slug = _resolve_cwd().replace('/', '-')
+        subagents_dir = projects / cwd_slug / session_id / 'subagents'
+
     try:
-        home = Path.home()
-    except (OSError, RuntimeError):
+        if not subagents_dir.is_dir():
+            return []
+        return sorted(p for p in subagents_dir.glob('agent-*.jsonl') if p.is_file())
+    except OSError:
         return []
-    projects = home / '.claude' / 'projects'
-    cwd = _resolve_cwd()
-    cwd_slug = cwd.replace('/', '-')
-    if not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', session_id):
-        return []
-    subagents_dir = projects / cwd_slug / session_id / 'subagents'
-    if not subagents_dir.is_dir():
-        return []
-    return sorted(p for p in subagents_dir.glob('agent-*.jsonl') if p.is_file())
 
 
 def _accumulator_path(plan_id: str, phase: str) -> Path:
@@ -672,6 +716,27 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if tool_uses:
             lines.append(f'- **Tool uses**: {int(tool_uses)}')
 
+        # Four-field usage view (sourced by `enrich` from subagent-transcript +
+        # parent-window `message.usage` walks). Rendered per phase when present.
+        _four_field_labels = (
+            ('input_tokens', 'Input tokens'),
+            ('output_tokens', 'Output tokens'),
+            ('cache_read_input_tokens', 'Cache read input tokens'),
+            ('cache_creation_input_tokens', 'Cache creation input tokens'),
+        )
+        for field, label in _four_field_labels:
+            value = phase.get(field)
+            if isinstance(value, (int, float)) and value:
+                lines.append(f'- **{label}**: {int(value):,}')
+
+        billing = phase.get('billing_weighted_total')
+        if isinstance(billing, (int, float)) and billing:
+            lines.append(
+                f'- **Billing-weighted total**: {int(billing):,} '
+                '(billing-cost figure, not a work-comparable measure — '
+                'cache_read sums context re-reads across turns)'
+            )
+
         lines.append('')
 
     md_content = '\n'.join(lines)
@@ -1191,6 +1256,99 @@ def _attribute_subagent_usage(
     return True
 
 
+def _add_usage_four_fields(usage: dict, bucket: dict[str, int]) -> None:
+    """Accumulate the four `message.usage` fields from ``usage`` into ``bucket``.
+
+    Reads ``input_tokens``, ``output_tokens``, ``cache_read_input_tokens``, and
+    ``cache_creation_input_tokens`` (each defaulting to 0 when absent or
+    non-integer) and adds them to the running per-phase bucket.
+    """
+    for field in USAGE_FOUR_FIELDS:
+        raw = usage.get(field)
+        if isinstance(raw, bool):
+            continue
+        if isinstance(raw, int):
+            bucket[field] = bucket.get(field, 0) + raw
+
+
+def _sum_subagent_transcript(path: Path) -> tuple[dict[str, int], str | None]:
+    """Sum the four `message.usage` fields across one subagent transcript JSONL.
+
+    Walks every JSONL line, accumulating the four-field usage view into a single
+    per-transcript bucket, and captures the transcript's spawn/first-message
+    timestamp (the first JSONL line carrying a ``timestamp`` string).
+
+    Returns ``(four_field_bucket, first_timestamp_iso)``. ``first_timestamp_iso``
+    is ``None`` when no line carried a timestamp (the transcript then cannot be
+    attributed to a phase window).
+    """
+    bucket: dict[str, int] = dict.fromkeys(USAGE_FOUR_FIELDS, 0)
+    first_timestamp: str | None = None
+    try:
+        with open(path, encoding='utf-8', errors='replace') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                if first_timestamp is None:
+                    ts = entry.get('timestamp')
+                    if isinstance(ts, str) and ts:
+                        first_timestamp = ts
+                msg = entry.get('message', {})
+                usage = msg.get('usage', {}) if isinstance(msg, dict) else {}
+                if isinstance(usage, dict) and usage:
+                    _add_usage_four_fields(usage, bucket)
+    except OSError:
+        return dict.fromkeys(USAGE_FOUR_FIELDS, 0), None
+    return bucket, first_timestamp
+
+
+def _window_for_timestamp(
+    timestamp_iso: str | None,
+    windows: list[tuple[str, datetime, datetime]],
+) -> str | None:
+    """Return the phase name whose window contains ``timestamp_iso``, else None.
+
+    Boundary ties (a timestamp landing exactly on ``end_time`` of phase N ==
+    ``start_time`` of phase N+1) resolve to the newer phase via latest-window-wins
+    (reversed-windows iteration), mirroring ``_attribute_subagent_usage``.
+    """
+    if not timestamp_iso:
+        return None
+    try:
+        ts = datetime.fromisoformat(timestamp_iso.replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+    for phase_name, start_dt, end_dt in reversed(windows):
+        if start_dt <= ts <= end_dt:
+            return phase_name
+    return None
+
+
+def _billing_weighted_total(four_fields: dict[str, int]) -> int:
+    """Compute the billing-weighted token total from the four-field usage view.
+
+    ``input + output + round(0.1 * cache_read) + round(1.25 * cache_creation)``.
+
+    A billing-cost figure, NOT a work-comparable measure: ``cache_read_input_tokens``
+    sums context re-reads across turns, so a long agent that re-reads its context
+    many times accumulates large cache_read that reflects API billing rather than
+    independent work performed.
+    """
+    return (
+        four_fields.get('input_tokens', 0)
+        + four_fields.get('output_tokens', 0)
+        + round(four_fields.get('cache_read_input_tokens', 0) * BILLING_WEIGHT_CACHE_READ)
+        + round(four_fields.get('cache_creation_input_tokens', 0) * BILLING_WEIGHT_CACHE_CREATION)
+    )
+
+
 def _extract_text_payload(content: object) -> str:
     """Best-effort flattening of a tool_result content payload to a single string."""
     if isinstance(content, str):
@@ -1251,8 +1409,17 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
     subagent_calls_attributed = 0
     main_phases_attributed_set: set[str] = set()
 
+    # Per-phase four-field usage view (input/output/cache_read/cache_creation).
+    # Filled from BOTH the parent orchestrator turns (this walk) and every
+    # discovered subagent transcript (the walk below). The four fields exist only
+    # in raw `message.usage` dicts — never in the single-figure <usage> tag.
+    per_phase_four_fields: dict[str, dict[str, int]] = {}
+
+    def _four_field_bucket(phase_name: str) -> dict[str, int]:
+        return per_phase_four_fields.setdefault(phase_name, dict.fromkeys(USAGE_FOUR_FIELDS, 0))
+
     try:
-        with open(transcript_path, encoding='utf-8') as f:
+        with open(transcript_path, encoding='utf-8', errors='replace') as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -1270,15 +1437,13 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
                         if windows:
                             timestamp = entry.get('timestamp') if isinstance(entry, dict) else None
                             if isinstance(timestamp, str):
-                                try:
-                                    ts = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                                except (ValueError, TypeError):
-                                    ts = None
-                                if ts is not None:
-                                    for phase_name, start_dt, end_dt in reversed(windows):
-                                        if start_dt <= ts <= end_dt:
-                                            main_phases_attributed_set.add(phase_name)
-                                            break
+                                parent_phase = _window_for_timestamp(timestamp, windows)
+                                if parent_phase is not None:
+                                    main_phases_attributed_set.add(parent_phase)
+                                    # (d) Add the parent orchestrator turn's four
+                                    # usage fields to the same per-phase buckets
+                                    # the subagent walk fills.
+                                    _add_usage_four_fields(usage, _four_field_bucket(parent_phase))
 
                 # Subagent <usage> attribution: walk tool_result blocks (and any
                 # other text content as a safety net) for <usage>...</usage>.
@@ -1313,27 +1478,45 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             'message': f'Cannot read transcript: {transcript_path}',
         }
 
-    # Subagent transcript walk: confirms transcripts were found and walked
-    # (per-message subagent main-context attribution removed along with the
-    # broken input/output token representation).
+    # (a)+(b)+(c) Subagent transcript walk: discover transcripts anchored to the
+    # resolved parent transcript location (closing the worktree-vs-main slug gap),
+    # sum the four `message.usage` fields across each whole transcript, and
+    # attribute that whole-transcript sum to the single phase window containing
+    # the transcript's spawn/first-message timestamp (latest-window-wins on a tie).
     subagent_transcripts_walked = 0
     if windows:
-        for _sub_path in _resolve_subagent_transcripts(session_id):
+        for sub_path in _resolve_subagent_transcripts(session_id, transcript_path):
             subagent_transcripts_walked += 1
+            sub_fields, sub_ts = _sum_subagent_transcript(sub_path)
+            sub_phase = _window_for_timestamp(sub_ts, windows)
+            if sub_phase is None:
+                continue
+            bucket = _four_field_bucket(sub_phase)
+            for field in USAGE_FOUR_FIELDS:
+                bucket[field] += sub_fields.get(field, 0)
 
     # Update metrics with enriched per-phase subagent totals.
     data = read_metrics_raw(plan_id)
     data['session_message_count'] = message_count
     data['updated'] = now_utc_iso()
 
+    phases_state = data.setdefault('phases', {})
+
     if per_phase_subagent:
-        phases_state = data.setdefault('phases', {})
         for phase_name, totals in per_phase_subagent.items():
             phase_row = phases_state.setdefault(phase_name, {})
             phase_row['subagent_total_tokens'] = totals['total_tokens']
             phase_row['subagent_tool_uses'] = totals['tool_uses']
             phase_row['subagent_duration_ms'] = totals['duration_ms']
             phase_row['subagent_samples'] = totals['samples']
+
+    # (e) Persist the four-field usage view plus the billing-weighted total per
+    # phase. `total_tokens` is left untouched (existing generation-tokens figure).
+    for phase_name, four_fields in per_phase_four_fields.items():
+        phase_row = phases_state.setdefault(phase_name, {})
+        for field in USAGE_FOUR_FIELDS:
+            phase_row[field] = four_fields.get(field, 0)
+        phase_row['billing_weighted_total'] = _billing_weighted_total(four_fields)
 
     write_metrics(plan_id, data)
 
@@ -1346,6 +1529,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         'subagent_calls_attributed': subagent_calls_attributed,
         'main_phases_attributed': len(main_phases_attributed_set),
         'subagent_transcripts_walked': subagent_transcripts_walked,
+        'four_field_phases_attributed': len(per_phase_four_fields),
     }
 
 

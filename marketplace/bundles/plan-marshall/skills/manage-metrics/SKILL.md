@@ -289,15 +289,20 @@ dispatch_boundary_file: work/metrics-dispatch-boundaries-5-execute.toon
 
 ### enrich
 
-Parse JSONL session transcript to attribute subagent `<usage>` totals to
-the phase whose timestamp window contains each `Task` tool call. Searches
-the host platform's session-transcript directory for JSONL files matching
-the `session_id` and walks `tool_result` content for embedded
-`<usage>...</usage>` blocks.
+Parse JSONL session transcripts to attribute token usage per phase. `enrich`
+performs two complementary walks against the host platform's
+session-transcript directory:
 
-Subagent totals are attributed per-phase via the `start_time` / `end_time`
-recorded in `work/metrics.toon`. Subagent calls outside any recorded phase
-window are ignored.
+1. **Parent-transcript `<usage>`-tag walk** — searches for the JSONL file
+   matching `session_id` and walks `tool_result` content for embedded
+   `<usage>...</usage>` return tags, attributing each tag's single-figure
+   totals to the phase whose timestamp window contains the `Task` tool call.
+2. **Subagent-transcript walk** — discovers every subagent transcript
+   (`{project_dir}/{parent_session_id}/subagents/agent-*.jsonl`) and sums the
+   four raw `message.usage` fields across each whole transcript.
+
+All attribution uses the `start_time` / `end_time` windows recorded in
+`work/metrics.toon`. Usage outside any recorded phase window is ignored.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enrich \
@@ -314,15 +319,47 @@ subagent_phases_attributed: 3
 subagent_calls_attributed: 8
 main_phases_attributed: 6
 subagent_transcripts_walked: 4
+four_field_phases_attributed: 5
 ```
 
+**Four-field usage view + billing-weighted total**: The four distinct Claude
+API usage fields — `input_tokens`, `output_tokens`, `cache_read_input_tokens`,
+and `cache_creation_input_tokens` — live only in the raw `message.usage` dicts
+inside the transcripts; the single-figure `<usage>` return tag carries no
+input/output split and no cache fields. `enrich` accumulates these four fields
+per phase from BOTH the parent orchestrator turns AND every discovered subagent
+transcript, then records a `billing_weighted_total` per phase computed as
+`input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`. The
+weighted total is a **billing-cost figure, NOT a work-comparable measure** —
+`cache_read_input_tokens` sums context re-reads across turns, so a long agent
+that re-reads its context many times accumulates large `cache_read` that
+reflects API billing rather than independent work performed.
+
+**Whole-transcript attribution**: Each subagent transcript is summed as a whole
+and attributed to the single phase window containing its spawn/first-message
+timestamp (latest-window-wins on a boundary tie). Transcripts are NOT split by
+slug boundaries — the whole transcript is attributed to the one phase that
+spawned it.
+
+**Slug-gap robustness**: Subagent discovery is anchored to the *resolved parent
+transcript location* (`{parent_transcript_path.parent}/{session_id}/subagents`)
+rather than re-derived from the current git root. Phase-5 pins cwd to the plan's
+worktree, so subagent transcripts produced during phase-5+ live under a
+worktree-derived project-dir slug, while `enrich` (run at finalize) may resolve
+a main-checkout git root; re-deriving the slug from the git root would look
+under the wrong directory and silently return `[]`, zeroing every field. The
+direct-session-file fallback branch retains the legacy cwd-slug path.
+
 The per-phase rows in `work/metrics.toon` gain `subagent_total_tokens`,
-`subagent_tool_uses`, `subagent_duration_ms`, and `subagent_samples` fields
-— see [data-format.md](standards/data-format.md). When the orchestrator
-called `accumulate-agent-usage` for the same agent dispatches the on-disk
-totals are independent of `enrich`'s per-phase subagent fields, so
-double-counting does not occur in the closed-phase row (`total_tokens`),
-which is filled from the accumulator at `end-phase` time.
+`subagent_tool_uses`, `subagent_duration_ms`, and `subagent_samples` (from the
+`<usage>`-tag walk) plus `input_tokens`, `output_tokens`,
+`cache_read_input_tokens`, `cache_creation_input_tokens`, and
+`billing_weighted_total` (from the four-field walks) — see
+[data-format.md](standards/data-format.md). The existing `total_tokens` field
+is left untouched. When the orchestrator called `accumulate-agent-usage` for
+the same agent dispatches the on-disk totals are independent of `enrich`'s
+per-phase subagent fields, so double-counting does not occur in the closed-phase
+row (`total_tokens`), which is filled from the accumulator at `end-phase` time.
 
 ## Storage
 
@@ -467,6 +504,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enri
 - Wall-clock timing: bash timestamps via start-phase/end-phase
 - Token data: Task agent `<usage>` tags (total_tokens, duration_ms, tool_uses)
 - JSONL enrichment: host-platform session transcripts (per-phase subagent `<usage>` attribution)
+- Four-field usage view: raw `message.usage` dicts in the parent and subagent transcripts (input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens), plus the derived `billing_weighted_total`, attributed per phase by `enrich`
 
 ## Standards
 
