@@ -38,6 +38,7 @@ plan_id: {plan_id}
 
 phase_5:
   early_terminate: false
+  envelope_count: 1
   verification_steps[N]:
     - quality-gate
     - module-tests
@@ -65,6 +66,7 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 | `manifest_version` | int | Schema version (currently `1`) |
 | `plan_id` | string | Plan identifier (echo) |
 | `phase_5.early_terminate` | bool | If `true`, Phase 5 transitions directly to Phase 6 without running tasks (analysis-only plans with empty affected_files) |
+| `phase_5.envelope_count` | int | Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Written by `compose` from the optional `--envelope-count` input; defaults to `1` (a single budget-bounded envelope greedily drives the task loop) when the input is absent. A manifest composed before this field existed has no `phase_5.envelope_count` key, and every reader interprets an absent value as the same `1` default — so reads stay backward-compatible. |
 | `phase_5.verification_steps` | list[string] | Ordered list of Phase 5 verification step IDs (e.g., `quality-gate`, `module-tests`, `coverage`). Empty list means no verification needed (e.g., docs-only plans) |
 | `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `commit-push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `adr-propose`, `branch-cleanup`, `archive-plan`, `record-metrics`, `lessons-integration`. CI completion is a dispatcher-resolved precondition declared via `requires: [ci-complete]` on consumer step frontmatters (see `phase-6-finalize/SKILL.md` Step 3 § "Precondition resolution") — it is not itself a step in the canonical set. |
 | `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms` (default `0`), and an ISO-8601 `timestamp`. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
@@ -90,7 +92,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   [--affected-files-count {N}] \
   [--phase-5-steps {step1,step2,...}] \
   [--phase-6-steps {step1,step2,...}] \
-  [--commit-and-push {true|false}]
+  [--commit-and-push {true|false}] \
+  [--envelope-count {N}]
 ```
 
 **Parameters**:
@@ -103,6 +106,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs. The composer prefers `marshal.json::plan.phase-5-execute.verification_steps` (the phase-aware list-field — phase-5 reads `verification_steps`, every other phase reads `steps`; see [decision-rules.md](standards/decision-rules.md) § "Phase-aware step source"), falling back to this CSV only when no marshal.json is present. The IDs may be the legacy bare role-file forms (`default:quality_check`, …) or the parameterized canonical-verify form `default:verify:{canonical}` (e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`), whose matrix role is derived from the trailing canonical segment (see [decision-rules.md](standards/decision-rules.md) § "Role derivation for canonical-verify steps"). The decision matrix selects a subset, then the generic footprint pre-filter (§ "Generic footprint pre-filter") drops any footprint-gated whole-tree canonical (`integration` / `e2e`) that the live footprint does not exercise.
 - `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `commit-push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
 - `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `commit-push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
+- `--envelope-count` (optional, default `1`): Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Persisted into the manifest's `phase_5.envelope_count`. When omitted, defaults to `1` (a single budget-bounded envelope greedily drives the task loop until the queue is empty or a TASK-boundary re-dispatch point fires). A non-positive value is clamped to `1`. The field is written under every decision-matrix rule (including `early_terminate`), so the `phase_5` block always carries it.
 
 **Output** (TOON):
 ```toon
@@ -114,6 +118,7 @@ manifest_version: 1
 phase_5:
   early_terminate: false
   verification_steps_count: 2
+  envelope_count: 1
 phase_6:
   steps_count: 6
 rule_fired: surgical_tech_debt
@@ -291,7 +296,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps]` | Compose and write execution.toon |
+| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
 | `validate` | `--plan-id [--phase-5-steps] [--phase-6-steps]` | Validate manifest schema + step IDs |
@@ -335,7 +340,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --scope-estimate {none|surgical|single_module|multi_module|broad} \
   [--recipe-key KEY] [--affected-files-count N] \
   [--phase-5-steps LIST] [--phase-6-steps LIST] \
-  [--commit-and-push {true|false}]
+  [--commit-and-push {true|false}] [--envelope-count N]
 ```
 
 ### read
@@ -438,7 +443,7 @@ After the seven-row matrix, the `ceremony_finalize_selection` and `execution_tie
 
 | Client | Operation | Purpose |
 |--------|-----------|---------|
-| `phase-5-execute` | read | Read `phase_5.early_terminate` and `phase_5.verification_steps` to drive verification dispatch |
+| `phase-5-execute` | read | Read `phase_5.early_terminate`, `phase_5.envelope_count`, and `phase_5.verification_steps` to drive envelope and verification dispatch (an absent `envelope_count` is treated as `1`) |
 | `phase-6-finalize` | read | Read `phase_6.steps` to drive finalize-step dispatch loop |
 | `plan-retrospective` | read | Cross-check manifest assumptions against end-of-execute diff |
 

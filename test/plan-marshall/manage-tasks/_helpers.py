@@ -180,6 +180,9 @@ def _update_ns(
     profile=None,
     skills=None,
     deliverable=None,
+    cost_size=None,
+    predicted_cost_tokens=None,
+    envelope_id=None,
 ):
     return Namespace(
         plan_id=plan_id,
@@ -192,6 +195,9 @@ def _update_ns(
         profile=profile,
         skills=skills,
         deliverable=deliverable,
+        cost_size=cost_size,
+        predicted_cost_tokens=predicted_cost_tokens,
+        envelope_id=envelope_id,
     )
 
 

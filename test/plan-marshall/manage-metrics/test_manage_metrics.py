@@ -1768,9 +1768,10 @@ _NEW_TERMINATION_CAUSES_WITH_PHASE = [
 class TestDispatchTerminationCausesEnum:
     """Structural assertions on the DISPATCH_TERMINATION_CAUSES tuple."""
 
-    def test_enum_contains_exactly_ten_values(self):
-        """The enum extends from the legacy 5 to exactly 10 entries — no more, no less."""
-        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 10
+    def test_enum_contains_exactly_eleven_values(self):
+        """The enum extends to exactly 11 entries — the legacy 5, the phase-6/phase-4
+        extension (5), plus the budget_yield phase-5 dispatch-loop signal."""
+        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 11
 
     def test_enum_preserves_legacy_five_values(self):
         """The legacy 5 entries remain present so prior callers do not break."""
@@ -1792,6 +1793,15 @@ class TestDispatchTerminationCausesEnum:
         """The two phase-4-plan outcomes are present in the extended enum."""
         phase4 = {'task_batch_complete', 'agent_returned'}
         assert phase4.issubset(set(manage_metrics.DISPATCH_TERMINATION_CAUSES))
+
+    def test_enum_contains_budget_yield_cause(self):
+        """The phase-5 budget-bounded dispatch loop's yield signal is present."""
+        assert 'budget_yield' in manage_metrics.DISPATCH_TERMINATION_CAUSES
+
+    def test_enum_has_no_duplicate_values(self):
+        """Every termination cause is distinct — budget_yield is additive, not a rename."""
+        causes = manage_metrics.DISPATCH_TERMINATION_CAUSES
+        assert len(causes) == len(set(causes))
 
 
 class TestRecordDispatchBoundaryAcceptsNewCauses:
@@ -1877,6 +1887,65 @@ class TestRecordDispatchBoundaryAcceptsNewCauses:
         content = artifact.read_text(encoding='utf-8')
         assert ',task_batch_complete,' in content
         assert ',agent_returned,' in content
+        data_lines = [
+            line for line in content.splitlines()
+            if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
+        ]
+        assert len(data_lines) == 2
+
+
+class TestRecordDispatchBoundaryAcceptsBudgetYield:
+    """budget_yield is the phase-5 budget-bounded dispatch loop's yield signal.
+
+    The phase-5-execute envelope yields to the orchestrator at a TASK boundary
+    when the per-task budget reserve is exhausted; the orchestrator records that
+    yield via record-dispatch-boundary with termination_cause=budget_yield. The
+    cause lands in the 5-execute artifact file.
+    """
+
+    def test_budget_yield_records_row_to_phase_5_artifact(self, plan_context):
+        """budget_yield is accepted and recorded into the 5-execute boundary artifact."""
+        plan_id = 'rdb-budget-yield'
+        pdir = plan_context.plan_dir_for(plan_id)
+        (pdir / 'status.json').write_text('{}', encoding='utf-8')
+        result = cmd_record_dispatch_boundary(
+            _ns_record_dispatch_boundary(
+                plan_id,
+                '5-execute',
+                termination_cause='budget_yield',
+                total_tokens=119000,
+                tool_uses=42,
+                duration_ms=300000,
+            )
+        )
+
+        assert result['status'] == 'success', result
+        assert result['termination_cause'] == 'budget_yield'
+        assert result['phase'] == '5-execute'
+        assert result['total_tokens'] == 119000
+        assert result['rows_recorded'] == 1
+
+        artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+        assert artifact.exists(), f'expected {artifact} to be created'
+        content = artifact.read_text(encoding='utf-8')
+        assert 'phase: 5-execute' in content
+        assert ',budget_yield,119000,42,300000' in content
+
+    def test_budget_yield_appends_alongside_other_phase_5_causes(self, plan_context):
+        """budget_yield rows coexist with other 5-execute causes in the same artifact."""
+        plan_id = 'rdb-budget-yield-mixed'
+        pdir = plan_context.plan_dir_for(plan_id)
+        (pdir / 'status.json').write_text('{}', encoding='utf-8')
+        for cause in ('budget_yield', 'clean_exit_queue_empty'):
+            result = cmd_record_dispatch_boundary(
+                _ns_record_dispatch_boundary(plan_id, '5-execute', termination_cause=cause)
+            )
+            assert result['status'] == 'success'
+
+        artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+        content = artifact.read_text(encoding='utf-8')
+        assert ',budget_yield,' in content
+        assert ',clean_exit_queue_empty,' in content
         data_lines = [
             line for line in content.splitlines()
             if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))

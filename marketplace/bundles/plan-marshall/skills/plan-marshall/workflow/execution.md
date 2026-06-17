@@ -146,16 +146,17 @@ Task: plan-marshall:{target}
     workflow: plan-marshall:execute-task/SKILL.md
     WORKTREE: {worktree_path}
     task_number: {N}
+    envelope_id: {E}
 ```
 
-Forward `task_number: {N}` as the per-task runtime input (and `iteration: {I}` where the re-queued-verification-task path applies). The dispatched subagent **inherits the orchestrator's pinned cwd** (the worktree root pinned at phase-5 entry by `prepare_execute.py`, per ADR-002) — it does NOT start at the repo root and does NOT need a worktree path forwarded for `.plan/` resolution, which is cwd-relative; the `WORKTREE` prompt-body field is the never-edit-main-checkout salience reminder, not a path-routing mechanism. This refutes the "a subagent starts at repo root and cannot resolve the moved plan state" worry. See [`../../phase-5-execute/SKILL.md`](../../phase-5-execute/SKILL.md) § "Dispatch Protocol (cwd-Pinned Inheritance)" for the canonical contract — it is not restated here.
+Forward `task_number: {N}` as the per-task runtime input, `envelope_id: {E}` as the assigned envelope-group key (the executor runs only tasks whose `envelope_id` equals `{E}`, then yields), and `iteration: {I}` where the re-queued-verification-task path applies. The dispatched subagent **inherits the orchestrator's pinned cwd** (the worktree root pinned at phase-5 entry by `prepare_execute.py`, per ADR-002) — it does NOT start at the repo root and does NOT need a worktree path forwarded for `.plan/` resolution, which is cwd-relative; the `WORKTREE` prompt-body field is the never-edit-main-checkout salience reminder, not a path-routing mechanism. This refutes the "a subagent starts at repo root and cannot resolve the moved plan state" worry. See [`../../phase-5-execute/SKILL.md`](../../phase-5-execute/SKILL.md) § "Dispatch Protocol (cwd-Pinned Inheritance)" for the canonical contract — it is not restated here.
 
 Inside that single envelope, for each task:
 1. Read task details via `manage-tasks next --plan-id {plan_id}`
 2. Load `execute-task` in-context as a `Skill:` (leaf-legal in-context skill loading per `dev-agent-behavior-rules` — NOT a per-task `Task:` subagent dispatch; the new `Task:` block above is the orchestrator-to-execute-envelope dispatch, not a per-task subagent spawn) and run the profile-appropriate workflow
 3. Mark step/task complete via `manage-tasks finalize-step --plan-id {plan_id} --task-number {task_number} --step {step_number} --outcome done`
 
-The dispatch unit is budget-bounded — neither per-task nor per-deliverable: one envelope runs as many tasks as the per-task budget reserve permits (bundling several small deliverables into one envelope, possibly spanning a single large deliverable across several envelopes), then yields at a TASK boundary on the budget sentinel / `triage_required` / `baseline_drift`, and the orchestrator re-dispatches a fresh envelope to resume the loop until all tasks are done.
+The dispatch unit is the **execution envelope pre-computed at plan time** — neither per-task nor per-deliverable. phase-4-plan's bin-packer (`manage-tasks pack-envelopes`) grouped tasks into envelopes (in `depends_on` order, under `per_envelope_budget_tokens`), stamped each task with an `envelope_id`, and recorded `envelope_count` in the manifest. **The orchestrator drives exactly `envelope_count` phase-5-execute dispatches — one per envelope group — passing each its assigned `envelope_id`.** Each dispatched executor runs only the tasks whose `envelope_id` matches its group and yields at a TASK boundary when its group is exhausted (the next pending task belongs to a different envelope → `budget_yield`), or on `triage_required` / `baseline_drift`. The orchestrator re-dispatches the next envelope group to resume the loop until all tasks are done. There is no runtime cost-summing or budget read inside the envelope — the harness cannot self-measure mid-turn, so the continue-vs-yield decision was fully pre-computed at plan time and the executor only reads its `envelope_id` group.
 
 ### After execution-context returns
 
@@ -171,12 +172,13 @@ audit trail that `plan-retrospective` correlates with `[OUTCOME]`-log
 coverage gaps to detect agent-initiated re-dispatch.
 
 **Termination-cause classification** — the orchestrator MUST classify every
-return into exactly one of the five values below. The detection rules apply
+return into exactly one of the seven values below. The detection rules apply
 to the agent's terminal payload (text + structured TOON return):
 
 | Cause | Detection rule |
 |-------|----------------|
-| `task_complete_returned_verbatim` | The agent returned the bare `task_complete` payload from `execute-task` verbatim, without wrapping it in a phase-5-execute terminal payload. (Implies the agent skipped the loop's bookkeeping after a single task.) |
+| `task_complete_returned_verbatim` | The agent returned the bare `task_complete` payload from `execute-task` verbatim, without wrapping it in a phase-5-execute terminal payload — AND no `budget_yield` decision-log entry / wrapped `budget_yield` payload is present. (Implies the agent skipped the loop's bookkeeping after a single task.) A return that DOES carry the `budget_yield` discriminator (wrapped terminal TOON with `budget_yield: true` AND a `budget_yield` decision-log entry) is the legitimate `budget_yield` cause below, NOT this drift. |
+| `budget_yield` | The agent yielded because its assigned `envelope_id` group is exhausted (the next pending task belongs to a different envelope) after completing ≥1 task — returns a wrapped phase-5-execute terminal payload with `tasks_remaining > 0` and `budget_yield: true`, AND a `budget_yield` decision-log entry exists naming the assigned and next `envelope_id`. This is a LEGITIMATE plan-time-bin-packed yield (the bin-packer pre-computed the grouping), distinct from `task_complete_returned_verbatim`. The orchestrator re-dispatches the next envelope group. |
 | `voluntary_checkpoint` | The agent emitted any of "Returning control to orchestrator", "progress checkpoint", "partial-completion handoff", or returned a non-error payload while pending tasks remain in the queue. **See "B7 — voluntary_checkpoint no-progress reclassification" below for the deterministic predicate that reclassifies a sub-class of voluntary_checkpoint returns as `error`.** |
 | `harness_cancellation` | The dispatch ended with a host-platform cancellation marker (timeout, context-window limit, etc.). |
 | `error` | The agent returned a structured error payload via the skill's Error Handling section (including the pending-task-drift fatal error), EXCLUDING the `error: baseline_drift` discriminator below. |
@@ -191,7 +193,7 @@ order:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
-  --plan-id {plan_id} --phase 5-execute --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|harness_cancellation|error|clean_exit_queue_empty} \
+  --plan-id {plan_id} --phase 5-execute --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty} \
   --total-tokens {n} --tool-uses {n} --duration-ms {n}
 ```
 
@@ -358,7 +360,13 @@ display_detail: "drift loop cap exceeded after 3 consecutive recoveries"
 plan_id: {plan_id}
 ```
 
-The counter resets to zero on any phase-5-execute return that is NOT `baseline_drift` (success, voluntary_checkpoint, error, harness_cancellation, clean_exit_queue_empty all reset it).
+The counter resets to zero on any phase-5-execute return that is NOT `baseline_drift` (success, voluntary_checkpoint, budget_yield, error, harness_cancellation, clean_exit_queue_empty all reset it).
+
+### Envelope-group re-dispatch (budget_yield)
+
+**Trigger**: the just-returned phase-5-execute dispatch is classified `termination-cause == budget_yield` (a wrapped terminal payload with `budget_yield: true`, `tasks_remaining > 0`, and a matching `budget_yield` decision-log entry). This is the legitimate plan-time-bin-packed yield — the executor exhausted its assigned `envelope_id` group and the next pending task belongs to a later envelope.
+
+**Handling**: the orchestrator simply re-dispatches the next envelope group — increment the assigned `envelope_id` to the next group and re-dispatch the phase-5-execute envelope (per the dispatch block above, forwarding `envelope_id: {E+1}`). The in-flight task state is already persisted, so resumption is lossless. The orchestrator drives exactly `envelope_count` (from the manifest) such dispatches in total; when the final envelope group runs to a `clean_exit_queue_empty` exit, the **Boundary-call fence** fires the phase transition. `budget_yield` never transitions to finalize while pending work remains — it always re-dispatches the next group.
 
 **No `loop_back` field**: this branch deliberately does NOT introduce a `loop_back` input on the phase-2-refine dispatch envelope. The orchestrator's existing phase-6-finalize → phase-5-execute loop-back routing is unrelated and remains the single owner of that field-shape. Drift recovery uses standard `set-phase` + dispatch, which is structurally simpler.
 

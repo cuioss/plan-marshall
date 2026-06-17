@@ -124,6 +124,9 @@ For `verification` profile tasks, steps contain verification commands instead of
 | `current_step` | integer | Yes | Current step number for execution |
 | `priority` | string | No | Execution priority (fix tasks) |
 | `finding` | object | No | Original finding details (fix tasks only) |
+| `cost_size` | string | No | Predicted T-shirt cost size (`S`/`M`/`L`/`XL`), stamped by phase-4-plan from the cost-sizing rubric (see Cost-Sizing Fields below) |
+| `predicted_cost_tokens` | integer | No | Predicted token cost for the task, stamped alongside `cost_size` (see Cost-Sizing Fields below) |
+| `envelope_id` | integer | No | Bin-packer envelope-group identifier assigned by `manage-tasks pack-envelopes` (see Cost-Sizing Fields below) |
 
 ## Task ID Format
 
@@ -261,6 +264,26 @@ finding:
   line: 42
   message: "cannot find symbol: class RedisTemplate"
 ```
+
+## Cost-Sizing Fields
+
+Three optional fields carry the plan-time cost prediction and envelope grouping used by the budget-bounded phase-5-execute task loop. They are stamped during phase-4-plan (`cost_size`, `predicted_cost_tokens`) and the bin-packing pass (`envelope_id`); they are absent on tasks created before sizing runs, and the `next` subcommand surfaces them as `null` in that case.
+
+```toon
+cost_size: M
+predicted_cost_tokens: 60000
+envelope_id: 2
+```
+
+| Field | Type | Producer | Description |
+|-------|------|----------|-------------|
+| `cost_size` | string | phase-4-plan (`derive-cost-size`) | T-shirt label `S`/`M`/`L`/`XL` |
+| `predicted_cost_tokens` | integer | phase-4-plan (`derive-cost-size`) | Predicted token magnitude for the task |
+| `envelope_id` | integer | bin-packer (`pack-envelopes`) | Group identifier binding the task to one budget envelope |
+
+**Write path.** `derive-cost-size` and `pack-envelopes` are pure compute verbs — they emit the derived values but never mutate a task record. The single persistence path for all three fields is the `update` subcommand's cost-field flags: `--cost-size`, `--predicted-cost-tokens`, and `--envelope-id`. phase-4-plan stamps `cost_size`/`predicted_cost_tokens` via `update --cost-size … --predicted-cost-tokens …` (Step 6) and stamps `envelope_id` via `update --envelope-id …` (Step 7a). Validation at the write boundary: `--cost-size` must be one of `S`/`M`/`L`/`XL`, `--predicted-cost-tokens` must be non-negative, and `--envelope-id` must be a positive (1-based) integer. The persisted values round-trip back out through the `next` subcommand.
+
+The size label vocabulary, the signal weights, the score thresholds, and the size→token table are owned by the central rubric — see [`../../phase-4-plan/standards/cost-sizing.md`](../../phase-4-plan/standards/cost-sizing.md). This contract does not restate the size-to-token mapping table; it only declares the schema fields that carry the rubric's output.
 
 ## Domain and Profile
 

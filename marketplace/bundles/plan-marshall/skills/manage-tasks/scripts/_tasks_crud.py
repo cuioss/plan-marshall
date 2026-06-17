@@ -59,6 +59,9 @@ from plan_logging import log_entry  # type: ignore[import-not-found]
 _PENDING_DIR_NAME = 'pending-tasks'
 _SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 
+#: The four valid T-shirt cost sizes (see phase-4-plan/standards/cost-sizing.md).
+_VALID_COST_SIZES = ('S', 'M', 'L', 'XL')
+
 
 def _get_pending_dir(plan_id: str):
     """Return the script-owned scratch directory for pending task definitions."""
@@ -680,6 +683,26 @@ def cmd_update(args) -> dict:
         except ValueError:
             return output_error('Deliverable must be a positive integer')
 
+    # Cost-field write-back. These three fields are derived by the pure compute
+    # verbs (derive-cost-size, pack-envelopes) and persisted onto the task
+    # record here so phase-5-execute can read them via `next` (which surfaces
+    # them through .get()). The compute verbs stay pure — this is the only write
+    # path. See phase-4-plan/standards/cost-sizing.md.
+    if getattr(args, 'cost_size', None) is not None:
+        if args.cost_size not in _VALID_COST_SIZES:
+            return output_error(f'Invalid cost-size: {args.cost_size}. Must be one of {list(_VALID_COST_SIZES)}')
+        task['cost_size'] = args.cost_size
+    if getattr(args, 'predicted_cost_tokens', None) is not None:
+        if args.predicted_cost_tokens < 0:
+            return output_error(
+                f'predicted-cost-tokens must be non-negative, got {args.predicted_cost_tokens}'
+            )
+        task['predicted_cost_tokens'] = args.predicted_cost_tokens
+    if getattr(args, 'envelope_id', None) is not None:
+        if args.envelope_id < 1:
+            return output_error(f'envelope-id must be a positive integer (1-based), got {args.envelope_id}')
+        task['envelope_id'] = args.envelope_id
+
     # Filename uses TASK-NNN format - doesn't change when title changes
     new_content = format_task_file(task)
     atomic_write_file(filepath, new_content)
@@ -695,6 +718,9 @@ def cmd_update(args) -> dict:
             'profile': task.get('profile'),
             'skills': task.get('skills', []),
             'status': task['status'],
+            'cost_size': task.get('cost_size'),
+            'predicted_cost_tokens': task.get('predicted_cost_tokens'),
+            'envelope_id': task.get('envelope_id'),
         },
     }
 

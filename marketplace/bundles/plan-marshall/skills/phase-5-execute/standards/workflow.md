@@ -174,32 +174,28 @@ When all tasks in phase complete:
 - Multiple valid approaches exist
 - User explicitly requested confirmation
 
-## Deterministic Exit Clause (Token-Budget Sentinel)
+## Deterministic Exit Clause (Envelope-Group Read)
 
-The execute-loop's continue-vs-yield decision is governed by exactly one deterministic clause — no per-task heuristics, no intuition-based yield. The clause is:
+The execute-loop's continue-vs-yield decision is **pre-computed at plan time** by phase-4-plan's bin-packer (`manage-tasks pack-envelopes`) — no per-task heuristics, no intuition-based yield, and crucially NO runtime cost decision. **Harness reality (the WHY):** a running subagent cannot measure its own context-window usage mid-turn, so a runtime `remaining_budget` comparand has no source; only the orchestrator sees post-return `<usage>`. The bin-packer therefore groups tasks (in `depends_on` order, accumulating each task's `predicted_cost_tokens` under `per_envelope_budget_tokens`) and stamps each task with an `envelope_id`. The executor only READS that grouping. The clause is:
 
-> **If `remaining_budget > N`: continue to the next task. Else: yield.**
+> **If the next pending task's `envelope_id` equals the assigned group: continue to it. Else (different envelope, or queue empty): yield.**
 
-Where `N` is the per-task budget reserve read from `marshal.json`'s `plan.phase-5-execute.per_task_budget_reserve_tokens` slot via `manage-config plan phase-5-execute get --field per_task_budget_reserve_tokens`. The read returns the human-friendly value (e.g. `"50K"`); parse it to the integer `N` via `sensible_number.parse_sensible_int`. The clause runs once after each task completes — between the closing `manage-tasks finalize-step` call (which fires the canonical `[OUTCOME]`) and the next `manage-tasks next` call. There is no intermediate decision point.
+This is a pure equality check over the `envelope_id` surfaced on the `manage-tasks next` result dict — NO cost summing, NO threshold read, NO `remaining_budget`, NO self-measurement. The orchestrator dispatches exactly `envelope_count` (from the manifest) phase-5-execute envelopes, one per group, passing each its assigned `envelope_id`. The clause runs once after each task completes — between the closing `manage-tasks finalize-step` call (which fires the canonical `[OUTCOME]`) and the next `manage-tasks next` call. There is no intermediate decision point and no runtime budget read.
 
-**Budget items consumed per task** (the sentinel's accounting model):
-
-1. **`execute-task` in-context skill load** — the per-task `Skill:` load of `execute-task` within the single phase-5-execute envelope (NOT a subagent dispatch). Largest cost per task; includes the skill body plus the standards it loads on entry.
-2. **Auto-injected `--project-dir` verify step** — `plan-marshall:execute-task:inject_project_dir` rewrites each `task.verification.commands[N]` to forward the worktree path when the plan resolves to a worktree. The rewritten command consumes additional executor + build-system context that the budget model MUST account for.
-
-**Fallback when the knob is absent**: `N = 50000` tokens. The fallback exists so plans that have not yet migrated to the manifest-driven model still observe a deterministic yield boundary rather than running until the host platform forces a `harness_cancellation`.
+**Envelope-group model** (replaces the prior per-task budget accounting): the budget was applied ONCE at plan time by the bin-packer; the executor runs only the tasks whose `envelope_id` matches its assigned group. `per_envelope_budget_tokens` is a PLAN-TIME input to the packer (deliverable 3/4), not a runtime comparand. There is no `manage-config get` of any budget key inside the loop.
 
 ### Terminal outcomes (cross-reference)
 
-The sentinel governs continue-vs-yield only; every exit from the loop is still one of the three terminal outcomes documented in `SKILL.md` § "Forbidden: agent-initiated checkpoints" and `phase-5-execute` § "Loop-to-completion contract":
+The envelope-group read governs continue-vs-yield only; every exit from the loop is still one of the three terminal outcomes documented in `SKILL.md` § "Forbidden: agent-initiated checkpoints" and `phase-5-execute` § "Loop-to-completion contract", plus the `budget_yield` group-exhausted yield:
 
 1. All pending tasks complete and the phase transitions to `6-finalize`.
 2. A fatal error captured via the **Error Handling** section (including the pending-task drift error).
 3. A triage-driven `blocked` outcome that the skill itself acknowledges via `manage-tasks` status updates.
+4. **`budget_yield` (group-exhausted)** — the next pending task's `envelope_id` differs from the assigned group after completing ≥1 task. The executor logs a `budget_yield` decision (naming the assigned and next `envelope_id`) and returns a wrapped terminal TOON carrying `budget_yield: true` with `tasks_remaining > 0` — never the bare `task_complete` echo. The orchestrator classifies this as `termination_cause: budget_yield` and re-dispatches the next envelope group.
 
-When the sentinel says "yield", the agent still MUST exit via one of the three terminal paths above — yielding does NOT mean "return a partial-completion checkpoint". That path is explicitly forbidden. The orchestrator re-dispatches a fresh `phase-5-execute` envelope that resumes the task loop, running as many tasks as the per-task budget reserve permits — which bundles several small deliverables into one envelope and may span a single large deliverable across several envelopes (the dispatch unit is budget-bounded, explicitly NEITHER per-task NOR per-deliverable, and per-task `execute-task` is an in-context `Skill:` load, not a `Task:` dispatch); the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
+When the clause says "yield", the agent exits via the `budget_yield` path above — a wrapped, logged terminal return — NOT a partial-completion checkpoint (that path is explicitly forbidden). The orchestrator re-dispatches the next `envelope_id` group; the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
 
-**Audit diagnostic ledger**: when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), compare the work-log entries against the `phase-5-execute` budget-bounded dispatch shape — the `execution-context-{level}` dispatcher adds a small fixed cost per dispatch (skill-load + Worktree Header echo); the trace-shape difference is the first thing to inspect when budget accounting drifts.
+**Audit diagnostic ledger**: when investigating throughput or calibration questions, compare each envelope's per-dispatch ACTUAL tokens (the orchestrator's post-return `<usage>`) against the SUM of `predicted_cost_tokens` for the tasks in that envelope — a systematic over/under-prediction is the signal that the `cost_size_token_table` magnitudes need recalibration. The orchestrator owns that feedback loop because only it sees the post-return token counts.
 
 ## Pre-Implemented Work
 

@@ -7,7 +7,8 @@ new subcommand. These six tests pin the contract:
 
   (a) first invocation creates the artifact file with one row,
   (b) subsequent invocations append rows in order with monotonic timestamps,
-  (c) all five --termination-cause values are accepted,
+  (c) every documented --termination-cause value is accepted (parametrized over
+      the live DISPATCH_TERMINATION_CAUSES tuple, including budget_yield),
   (d) any other value rejected with non-zero exit before any file write,
   (e) missing required flags cause non-zero exit before any file write,
   (f) the artifact's TOON layout is parseable by the parse_toon helper.
@@ -172,13 +173,17 @@ def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps(p
 
 
 # =============================================================================
-# (c) All five --termination-cause values are accepted
+# (c) Every documented --termination-cause value is accepted
 # =============================================================================
 
 
 @pytest.mark.parametrize('cause', list(DISPATCH_TERMINATION_CAUSES))
-def test_all_five_termination_causes_accepted(plan_context, cause):
-    """Each member of the documented termination-cause enum is accepted as-is."""
+def test_all_termination_causes_accepted(plan_context, cause):
+    """Each member of the documented termination-cause enum is accepted as-is.
+
+    Parametrized over the live DISPATCH_TERMINATION_CAUSES tuple, so a newly
+    added cause (e.g. budget_yield) is automatically exercised on the happy path.
+    """
     # plan_id slugs use kebab-case; map underscores → hyphens for the slug.
     plan_id = f'disp-cause-{cause.replace("_", "-")}'
     plan_dir = plan_context.plan_dir_for(plan_id)
@@ -333,6 +338,66 @@ def test_dispatch_termination_causes_does_not_contain_unknown():
     """The live tuple no longer contains the legacy `unknown` fallback value."""
     assert 'unknown' not in DISPATCH_TERMINATION_CAUSES
     assert 'clean_exit_queue_empty' in DISPATCH_TERMINATION_CAUSES
+
+
+# =============================================================================
+# (i) budget_yield — the phase-5 budget-bounded dispatch loop's yield signal
+#
+#     The phase-5-execute envelope yields to the orchestrator at a TASK
+#     boundary when the per-task budget reserve is exhausted; the orchestrator
+#     records that yield with termination_cause=budget_yield. This block pins
+#     both the enum membership and the recorder's acceptance of the value.
+# =============================================================================
+
+
+def test_dispatch_termination_causes_contains_budget_yield():
+    """The live tuple includes the budget_yield phase-5 dispatch-loop signal."""
+    assert 'budget_yield' in DISPATCH_TERMINATION_CAUSES
+
+
+def test_budget_yield_cause_accepted_and_recorded(plan_context):
+    """budget_yield records a single data row carrying the cause verbatim."""
+    plan_id = 'disp-budget-yield'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_status_json(plan_dir)
+    result = cmd_record_dispatch_boundary(
+        _ns(
+            plan_id,
+            phase='5-execute',
+            termination_cause='budget_yield',
+            total_tokens=119000,
+            tool_uses=42,
+            duration_ms=300000,
+        )
+    )
+    assert result['status'] == 'success'
+    assert result['termination_cause'] == 'budget_yield'
+
+    path = _boundary_path(plan_dir, '5-execute')
+    content = path.read_text(encoding='utf-8')
+    rows = _data_rows(content)
+    assert len(rows) == 1
+    assert ',budget_yield,119000,42,300000' in rows[0]
+
+
+def test_budget_yield_subprocess_accepted_by_argparse(plan_context):
+    """End-to-end: argparse accepts budget_yield (it is a member of the choices)."""
+    plan_dir = plan_context.plan_dir_for('disp-budget-yield-sub')
+    _seed_status_json(plan_dir)
+    result = run_script(
+        SCRIPT_PATH,
+        'record-dispatch-boundary',
+        '--plan-id',
+        'disp-budget-yield-sub',
+        '--phase',
+        '5-execute',
+        '--termination-cause',
+        'budget_yield',
+    )
+    assert result.returncode == 0, (
+        f'budget_yield MUST be accepted by argparse: {result.stderr}'
+    )
+    assert _boundary_path(plan_dir, '5-execute').exists()
 
 
 # =============================================================================
