@@ -27,7 +27,16 @@ every `manage-architecture:architecture {sub}` call. No other input is consulted
 |--------|-------------|------------|
 | **information lookup** | `find`, `which-module`, `files`, `module`, `modules`, `info`, `overview`, `topology`, `graph`, `commands` | Orientation / navigation: "where is X / which module owns this path / what files / project shape". The structured-query alternative to `Glob`/`Grep`/raw-bash exploration (`token-management.adoc` §4). |
 | **build lookup** | `resolve`, `derive-verification` | Resolving the canonical build command + the verification step set per module (`build-management.adoc`). |
-| **discovery** | everything else (`discover`, `enrich`, `crawl-*`, …) | One-time architecture CONSTRUCTION, not a per-plan lookup. Reported as `discovery_calls` but **excluded** from the ratio. |
+| **discovery** | everything else (`discover`, `enrich`, `crawl-*`, …) | One-time architecture CONSTRUCTION, not a per-plan lookup. Counted (and **broken out per verb** — `discover`/`enrich`/`crawl`/`other`) but **excluded** from the ratio. |
+
+> **Discovery is mostly setup-time / ad-hoc.** `discover`/`enrich`/`crawl-*` run
+> during `/marshall-steward` architecture construction or manual setup — **outside**
+> plan execution — so they land in the global logs, not a plan's
+> `logs/script-execution.log`. A plan's per-plan discovery breakdown is therefore
+> usually **all-zero**; the corpus-wide discovery volume (e.g. `enrich 88×`) is
+> surfaced by the `global-log-analysis` check (high-frequency-caller / error rows),
+> not here. The per-plan and corpus breakdown exist for the rare plan that runs
+> in-plan discovery and to make the otherwise-lumped count legible.
 
 ## Per-plan computation
 
@@ -35,13 +44,15 @@ every `manage-architecture:architecture {sub}` call. No other input is consulted
 |----------|------------|
 | `info_lookups` | count of information-lookup calls |
 | `build_lookups` | count of build-lookup calls |
-| `discovery_calls` | count of discovery calls (excluded from the ratio) |
+| `discovery_calls` | total count of discovery calls (excluded from the ratio) |
+| `discovery_breakdown` | the discovery total split per verb: `discover=N;enrich=M;crawl=K;other=J` |
 | `ratio` | `info_lookups / build_lookups`, or `n/a` when `build_lookups == 0` (no defined ratio; the plan cannot be build-dominated) |
 
 ## Cross-plan computation + the flag
 
 Corpus aggregates: `corpus_info_lookups`, `corpus_build_lookups`,
-`corpus_discovery_calls`, `corpus_info_build_ratio`. The thresholds are derived
+`corpus_discovery_calls`, `corpus_discovery` (the per-verb discovery breakdown
+summed across the corpus), `corpus_info_build_ratio`. The thresholds are derived
 from the LIVE corpus (never hard-coded), over the plans that ran at least one
 build lookup: `median_build_lookups` (the build-volume floor) and `ratio_p25`
 (the bottom-quartile ratio cut).
@@ -60,12 +71,13 @@ plans_in_corpus: P
 corpus_info_lookups: I
 corpus_build_lookups: B
 corpus_discovery_calls: D
+corpus_discovery: discover=…;enrich=…;crawl=…;other=…
 corpus_info_build_ratio: R | n/a
 median_build_lookups: M
 ratio_p25: Q
 median_ratio: MR
 genuine_signal_count: G
-rows[P]{plan_id,change_type,info_lookups,build_lookups,discovery_calls,total_arch,ratio,flags,severity}
+rows[P]{plan_id,change_type,info_lookups,build_lookups,discovery_calls,discovery_breakdown,total_arch,ratio,flags,severity}
 ```
 
 ## How the orchestrator interprets the rows

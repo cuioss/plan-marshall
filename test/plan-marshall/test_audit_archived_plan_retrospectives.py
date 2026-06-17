@@ -5378,3 +5378,35 @@ class TestArchitectureLookupRatio:
         assert 'corpus_info_lookups: 0' in block
         assert 'corpus_build_lookups: 1' in block
         assert 'genuine_signal_count: 0' in block
+
+    def test_discovery_breakdown_per_verb(self, tmp_path: Path):
+        # discovery (setup-time) calls are broken out per verb: discover / enrich /
+        # crawl / other. `derived` is not info/build/discover/enrich/crawl -> other.
+        inputs = _write_sbm_plan(
+            tmp_path, 'p-disc',
+            sel_lines=[
+                _sbm_call('2026-06-01T10:00:00', _ARCH, 'discover'),
+                _sbm_call('2026-06-01T10:00:01', _ARCH, 'enrich'),
+                _sbm_call('2026-06-01T10:00:02', _ARCH, 'enrich'),
+                _sbm_call('2026-06-01T10:00:03', _ARCH, 'crawl_module_derived'),
+                _sbm_call('2026-06-01T10:00:04', _ARCH, 'crawl-module-derived'),
+                _sbm_call('2026-06-01T10:00:05', _ARCH, 'derived'),
+            ],
+        )
+
+        row = audit._architecture_lookup_ratio_plan(inputs)
+
+        assert row['discovery'] == {'discover': 1, 'enrich': 2, 'crawl': 2, 'other': 1}
+        assert row['discovery_calls'] == 6
+        assert row['info_lookups'] == 0
+        assert row['build_lookups'] == 0
+
+        result = audit.cross_architecture_lookup_ratio([inputs])
+        assert result['corpus_discovery'] == {
+            'discover': 1, 'enrich': 2, 'crawl': 2, 'other': 1
+        }
+
+        block = audit.emit_architecture_lookup_ratio_block(result)
+        assert 'corpus_discovery: discover=1;enrich=2;crawl=2;other=1' in block
+        # the per-row discovery_breakdown column carries the same split
+        assert 'discover=1;enrich=2;crawl=2;other=1' in block

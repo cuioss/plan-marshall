@@ -4058,7 +4058,14 @@ def _architecture_lookup_ratio_plan(inputs: PlanInputs) -> dict[str, Any]:
     to an all-zero row rather than raising.
     """
     sel = inputs.plan_dir / "logs" / "script-execution.log"
-    info = build = discovery = 0
+    info = build = 0
+    # Discovery (one-time construction) is broken out per verb so the otherwise-
+    # lumped count is legible. NOTE: discover/enrich/crawl are mostly SETUP-TIME /
+    # ad-hoc calls (marshall-steward, manual) that run OUTSIDE plan execution, so a
+    # plan's per-plan discovery breakdown is usually all-zero — the corpus-wide
+    # setup volume lives in global-log-analysis (high-frequency-caller). See the
+    # sub-doc.
+    disc = {"discover": 0, "enrich": 0, "crawl": 0, "other": 0}
     if sel.is_file():
         try:
             text = sel.read_text(encoding="utf-8", errors="replace")
@@ -4073,8 +4080,15 @@ def _architecture_lookup_ratio_plan(inputs: PlanInputs) -> dict[str, Any]:
                 info += 1
             elif sub in _ALR_BUILD_SUBS:
                 build += 1
+            elif sub.startswith("discover"):
+                disc["discover"] += 1
+            elif sub.startswith("enrich"):
+                disc["enrich"] += 1
+            elif "crawl" in sub:
+                disc["crawl"] += 1
             else:
-                discovery += 1
+                disc["other"] += 1
+    discovery = disc["discover"] + disc["enrich"] + disc["crawl"] + disc["other"]
     # ratio = information lookups per build lookup; None when no build lookup ran
     # (a plan with zero build lookups has no defined ratio and cannot be flagged).
     ratio = (info / build) if build else None
@@ -4084,6 +4098,7 @@ def _architecture_lookup_ratio_plan(inputs: PlanInputs) -> dict[str, Any]:
         "info_lookups": info,
         "build_lookups": build,
         "discovery_calls": discovery,
+        "discovery": disc,
         "total_arch": info + build + discovery,
         "ratio": ratio,
     }
@@ -4115,6 +4130,10 @@ def cross_architecture_lookup_ratio(all_inputs: list[PlanInputs]) -> dict[str, A
     total_info = sum(r["info_lookups"] for r in rows)
     total_build = sum(r["build_lookups"] for r in rows)
     total_discovery = sum(r["discovery_calls"] for r in rows)
+    corpus_discovery = {
+        k: sum(r["discovery"][k] for r in rows)
+        for k in ("discover", "enrich", "crawl", "other")
+    }
 
     # Corpus thresholds over the plans that actually ran a build lookup — a plan with
     # zero build lookups has no ratio and cannot be build-dominated.
@@ -4148,6 +4167,7 @@ def cross_architecture_lookup_ratio(all_inputs: list[PlanInputs]) -> dict[str, A
         "corpus_info_lookups": total_info,
         "corpus_build_lookups": total_build,
         "corpus_discovery_calls": total_discovery,
+        "corpus_discovery": corpus_discovery,
         "corpus_info_build_ratio": corpus_ratio,
         "median_build_lookups": median_build,
         "ratio_p25": ratio_p25,
@@ -4173,20 +4193,31 @@ def emit_architecture_lookup_ratio_block(result: dict[str, Any]) -> str:
     for r in rows:
         r["flags_str"] = ";".join(r["flags"])
         r["ratio_str"] = f"{r['ratio']:.2f}" if r["ratio"] is not None else "n/a"
+        d = r["discovery"]
+        r["discovery_breakdown"] = (
+            f"discover={d['discover']};enrich={d['enrich']};"
+            f"crawl={d['crawl']};other={d['other']}"
+        )
     rows, genuine_signal_count = _severity_summary(rows, _alr_genuine)
 
     cr = result["corpus_info_build_ratio"]
+    cd = result["corpus_discovery"]
     out = [
         "check: architecture-lookup-ratio",
         "status: success",
         # INFORMATION-LOOKUP = orientation/navigation verbs (find/which-module/files/
         # module/info/overview/...); BUILD-LOOKUP = resolve/derive-verification.
-        # DISCOVERY (discover/enrich/crawl) is one-time setup — reported, excluded from
-        # the ratio. A low ratio may mean "no navigation needed" — see the sub-doc.
+        # DISCOVERY (discover/enrich/crawl) is one-time setup — reported (now broken out
+        # per verb), excluded from the ratio. Per-plan discovery is usually all-zero:
+        # these are setup-time/ad-hoc calls outside plan execution, so the corpus-wide
+        # discovery volume lives in global-log-analysis, not here. A low ratio may mean
+        # "no navigation needed" — see the sub-doc.
         f"plans_in_corpus: {result['plans_in_corpus']}",
         f"corpus_info_lookups: {result['corpus_info_lookups']}",
         f"corpus_build_lookups: {result['corpus_build_lookups']}",
         f"corpus_discovery_calls: {result['corpus_discovery_calls']}",
+        f"corpus_discovery: discover={cd['discover']};enrich={cd['enrich']};"
+        f"crawl={cd['crawl']};other={cd['other']}",
         (
             f"corpus_info_build_ratio: {cr:.3f}"
             if cr is not None
@@ -4197,7 +4228,7 @@ def emit_architecture_lookup_ratio_block(result: dict[str, Any]) -> str:
         f"median_ratio: {result['median_ratio']:.3f}",
         f"genuine_signal_count: {genuine_signal_count}",
         f"rows[{len(rows)}]{{plan_id,change_type,info_lookups,build_lookups,"
-        f"discovery_calls,total_arch,ratio,flags,severity}}:",
+        f"discovery_calls,discovery_breakdown,total_arch,ratio,flags,severity}}:",
     ]
     for r in rows:
         out.append(
@@ -4210,6 +4241,7 @@ def emit_architecture_lookup_ratio_block(result: dict[str, Any]) -> str:
                     r["info_lookups"],
                     r["build_lookups"],
                     r["discovery_calls"],
+                    r["discovery_breakdown"],
                     r["total_arch"],
                     r["ratio_str"],
                     r["flags_str"],
