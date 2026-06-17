@@ -64,16 +64,20 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 
 **Purpose:** Stage gate-blocking Sonar issues into the per-type finding store, then let the LLM consumer drive fix-vs-suppress decisions from the stored findings.
 
-**Producer-side flow:** `sonar.py fetch-and-store` is the only callable surface. It fetches issues via the REST client, applies the `sonar-rules.json` pre-filter (drops issues already documented as suppressable via NOSONAR / test-acceptable rules), and writes one `sonar-issue` finding per surviving issue via `manage-findings add`. Severity is derived from the Sonar severity (BLOCKER/CRITICAL/MAJOR → error, MINOR → warning, INFO → info), the rule key is captured in the finding's `rule` field, and the project key is captured in `module`.
+**Producer-side flow:** `sonar.py fetch-and-store` is the only callable surface and the **single authority on PR-scoped new-code issue enumeration**. Before enumerating it performs a **synchronous bounded in-Python CE-readiness wait** — it polls the Compute-Engine analysis-task state (via `/api/ce/component`, PR-scoped when `--pr` is supplied) until the task has settled (`SUCCESS`/`FAILED`/`CANCELED` with an empty queue) or the wait budget expires. The wait reuses the `ci_base.poll_until(...)` bounded-polling framework (the same framework that replaced blocking shell sleeps for `checks wait`); it is NOT a shell polling loop. The budget resolves from `plan.phase-6-finalize.sonar_ce_wait_timeout_seconds` (default 600, the direct sibling of `checks_wait_timeout_seconds`), overridable by an explicit `--ce-wait-timeout` flag. After CE settles it fetches the PR-scoped new-code issues (`pullRequest` + `inNewCodePeriod=true` + unresolved), applies the `sonar-rules.json` pre-filter (drops issues already documented as suppressable via NOSONAR / test-acceptable rules), and writes one `sonar-issue` finding per surviving issue via `manage-findings add`. Severity is derived from the Sonar severity (BLOCKER/CRITICAL/MAJOR → error, MINOR → warning, INFO → info), the rule key is captured in the finding's `rule` field, and the project key is captured in `module`.
+
+**Verified count + undecidable discriminator:** the returned contract carries a verified `new_code_issue_count` plus a `count_status` discriminator (`confirmed` | `undecidable`). On a confirmed CE-settled run the count is the real PR-scoped new-code total and a reported `0` is a **confirmed PR-scoped zero**. When the CE wait times out (analysis still processing) OR a REST/auth failure blocks confirmation, the contract carries `new_code_issue_count: null`, `count_status: undecidable`, and a `count_status_reason` — **never a false `0`**.
+
+**Scan-summary marker:** every fetch also writes one attestation row to `artifacts/findings/sonar-scan-summary.jsonl` — written unconditionally, including when `new_code_issue_count == 0` and on `undecidable` — so an absent file can never be confused with "not checked." The marker lives in the same archive-surviving findings directory as `pr-comment.jsonl` (resolved via the shared `_findings_core.get_findings_dir`) and is read by [`phase-6-finalize/workflow/sonar-roundtrip.md`](../phase-6-finalize/workflow/sonar-roundtrip.md) at its success gate. The full row schema is documented in the [Scan-Summary Marker](#scan-summary-marker-sonar-scan-summaryjsonl) section below.
 
 **Steps:**
 
 1. **Fetch & Store**:
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch-and-store \
-     --plan-id {plan_id} --project {project_key} [--pr {pr_number}] [--severities BLOCKER,CRITICAL] [--types BUG,VULNERABILITY]
+     --plan-id {plan_id} --project {project_key} [--pr {pr_number}] [--severities BLOCKER,CRITICAL] [--types BUG,VULNERABILITY] [--ce-wait-timeout {secs}]
    ```
-   Output reports `count_fetched`, `count_skipped_suppressable`, `count_stored`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_suppressable; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`).
+   Output reports the verified `new_code_issue_count` and `count_status` (`confirmed` | `undecidable`, with `count_status_reason` on `undecidable`), the pre-filter counters `count_fetched` / `count_skipped_suppressable` / `count_stored`, the `scan_summary_path` of the written attestation row, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_suppressable; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`).
 
 2. **Query Stored Findings**:
    ```bash
@@ -165,15 +169,33 @@ Script: `plan-marshall:workflow-integration-sonar:sonar_rest` → `sonar_rest.py
 
 ### sonar.py fetch-and-store
 
-**Purpose:** Producer-side flow — fetch gate-blocking issues via the REST client, apply the pre-filter, and persist one `sonar-issue` finding per surviving issue.
+**Purpose:** Producer-side flow and single authority on PR-scoped new-code issue enumeration — perform a synchronous bounded CE-readiness wait, fetch the PR-scoped new-code issues via the REST client, apply the pre-filter, persist one `sonar-issue` finding per surviving issue, and write the verified-scan attestation marker.
 
 **Usage:**
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch-and-store \
-  --plan-id {plan_id} --project {project_key} [--pr {pr}] [--severities ...] [--types ...]
+  --plan-id {plan_id} --project {project_key} [--pr {pr}] [--severities ...] [--types ...] [--ce-wait-timeout {secs}]
 ```
 
-**Output:** TOON with counters (`count_fetched`, `count_skipped_suppressable`, `count_stored`), the list of stored finding hash_ids, and `producer_mismatch_hash_id` when applicable.
+**Output:** TOON with the verified `new_code_issue_count` and `count_status` discriminator (`confirmed` | `undecidable`, plus `count_status_reason` on `undecidable`), the pre-filter counters (`count_fetched`, `count_skipped_suppressable`, `count_stored`), the list of stored finding hash_ids, the `scan_summary_path` of the written attestation row, and `producer_mismatch_hash_id` when applicable. A `confirmed` `0` is a confirmed PR-scoped zero; a CE-timeout or auth/REST failure yields `count_status: undecidable` with `new_code_issue_count: null` — never an inferred `0`.
+
+### Scan-Summary Marker (sonar-scan-summary.jsonl)
+
+Every `fetch-and-store` run appends one attestation row to `artifacts/findings/sonar-scan-summary.jsonl` (resolved via the shared `_findings_core.get_findings_dir`, so it lives in and survives `manage-status archive` exactly like `pr-comment.jsonl`). The row is written **unconditionally** — including when `new_code_issue_count == 0` and when `count_status == undecidable` — so a verified zero is a positive on-disk fact and an absent file unambiguously means "not checked." This is a **distinct artifact kind** from `sonar-issue.jsonl` (a producer-written attestation file, not a finding store managed by the `manage-findings` add/resolve verbs), and is read by [`phase-6-finalize/workflow/sonar-roundtrip.md`](../phase-6-finalize/workflow/sonar-roundtrip.md) at its success gate (which requires `count_status == confirmed`).
+
+Row fields (written by `sonar.py:_write_scan_summary`):
+
+| Field | Type | Always present | Description |
+|-------|------|:--------------:|-------------|
+| `count_status` | string | yes | `confirmed` (CE settled in budget) or `undecidable` (CE timeout or REST/auth failure) |
+| `new_code_issue_count` | int \| null | yes | Verified PR-scoped new-code total on `confirmed`; `null` on `undecidable` — never a false `0` |
+| `count_status_reason` | string | no | Human-readable reason; emitted **only** on `undecidable` (omitted entirely on `confirmed`) |
+| `pr` | string \| null | yes | PR number the fetch was scoped to (`null` for a non-PR / branch fetch) |
+| `project` | string | yes | Sonar project key the fetch enumerated |
+| `scanned_sha` | string | yes | The worktree HEAD SHA the scan attests to; the empty string `""` when the SHA cannot be resolved (not a git tree / git unavailable) — the row is still written |
+| `ts` | string | yes | ISO-8601 UTC timestamp of the fetch |
+
+**Write-even-at-count==0 guarantee:** the row is appended on every `fetch-and-store`, so a `confirmed` `new_code_issue_count: 0` is a positive on-disk attestation of a verified zero. **Survives-archive guarantee:** the file resolves through `_findings_core.get_findings_dir`, so it lives in and survives `manage-status archive` exactly like `pr-comment.jsonl`. Distinct artifact kind from `sonar-issue.jsonl`: this is a producer-written attestation file (append-only, not managed by the `manage-findings` add/resolve verbs). See [`manage-findings/standards/jsonl-format.md`](../manage-findings/standards/jsonl-format.md) § "Producer-Written Attestation Files" for the artifacts/findings/ inventory entry.
 
 ## Issue Classification
 
@@ -225,7 +247,7 @@ The canonical argparse surface for the two entry-point scripts this skill regist
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch-and-store \
-  --plan-id PLAN_ID --project PROJECT [--pr PR] [--severities SEVERITIES] [--types TYPES]
+  --plan-id PLAN_ID --project PROJECT [--pr PR] [--severities SEVERITIES] [--types TYPES] [--ce-wait-timeout CE_WAIT_TIMEOUT]
 ```
 
 ### sonar_rest — search

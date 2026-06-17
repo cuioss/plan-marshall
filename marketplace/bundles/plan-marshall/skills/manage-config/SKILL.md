@@ -567,7 +567,15 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 | `loop_back_without_asking` | `false` | Auto-re-enter on a finalize loop_back outcome. |
 | `final_merge_without_asking` | `false` | Merge the PR after CI passes without prompting the operator. |
 
-**Access shape.** Read/write each knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate` or `plan phase-6-finalize get --field finalize_without_asking`. See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
+**Sonar roundtrip knobs (under `phase-6-finalize`):**
+
+| Field | Type | Default | Meaning |
+|-------|------|---------|---------|
+| `sonar_touched_file_cleanup` | enum(`new_code_only`\|`touched_files_zero`) | `new_code_only` | Cleanup-scope for the Sonar roundtrip success criterion. `new_code_only` (lean default) anchors success on new-code issues == 0; `touched_files_zero` also sweeps pre-existing issues on touched files. Validated by `validate_sonar_touched_file_cleanup`. |
+| `sonar_do_transition` | bool | `false` | Gate for the server-side SonarCloud dismissal path. `false` routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression; `true` re-enables `sonar_rest transition` dismissal. Consumed by triage Step 3c as the fall-through gate. |
+| `sonar_ce_wait_timeout_seconds` | int | `600` | Budget (seconds) for the synchronous in-Python CE-readiness wait in `sonar.py fetch-and-store` — sibling of `checks_wait_timeout_seconds`; overridable by `--ce-wait-timeout`. |
+
+**Access shape.** Read/write each knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate`, `plan phase-6-finalize get --field finalize_without_asking`, or `plan phase-6-finalize get --field sonar_ce_wait_timeout_seconds`. See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
 
 ### Build-Queue Settings
 

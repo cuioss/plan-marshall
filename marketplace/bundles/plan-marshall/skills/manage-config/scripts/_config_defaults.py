@@ -392,6 +392,26 @@ OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS = {
     'plan-marshall:plan-retrospective': 'Capture a structured retrospective of the completed plan',
 }
 
+# Valid values for phase-6-finalize.sonar_touched_file_cleanup — enum controlling
+# which surface the Sonar roundtrip's success criterion covers.
+#   - 'new_code_only':      success requires only new-code issues == 0 (default, lean)
+#   - 'touched_files_zero': success additionally sweeps pre-existing issues on touched files
+VALID_SONAR_TOUCHED_FILE_CLEANUP = ('new_code_only', 'touched_files_zero')
+
+
+def validate_sonar_touched_file_cleanup(value: str) -> None:
+    """Validate that `sonar_touched_file_cleanup` is one of the allowed enum values.
+
+    Raises:
+        ValueError: If ``value`` is not in :data:`VALID_SONAR_TOUCHED_FILE_CLEANUP`.
+    """
+    if value not in VALID_SONAR_TOUCHED_FILE_CLEANUP:
+        raise ValueError(
+            f"Invalid sonar_touched_file_cleanup '{value}'. "
+            f"Allowed: {list(VALID_SONAR_TOUCHED_FILE_CLEANUP)}"
+        )
+
+
 DEFAULT_PLAN_FINALIZE = {
     'max_iterations': 3,
     'review_bot_buffer_seconds': 180,
@@ -430,6 +450,27 @@ DEFAULT_PLAN_FINALIZE = {
     # runners without hiding a genuinely stuck pipeline behind an excessive
     # ceiling.
     'checks_wait_timeout_seconds': 600,
+    # Sonar roundtrip cleanup-scope enum (new_code_only|touched_files_zero),
+    # validated by validate_sonar_touched_file_cleanup. `new_code_only` (the lean
+    # default) anchors the sonar-roundtrip success criterion on new-code issues
+    # == 0; `touched_files_zero` extends the success criterion to also sweep
+    # pre-existing issues on the files the plan touched. Read via
+    # `manage-config plan phase-6-finalize get --field sonar_touched_file_cleanup`.
+    'sonar_touched_file_cleanup': 'new_code_only',
+    # Gate for the server-side SonarCloud dismissal path. `False` (default) routes
+    # FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression
+    # (@SuppressWarnings / // NOSONAR); `True` re-enables the server-side
+    # `sonar_rest transition` dismissal for teams preferring SonarCloud-state
+    # dispositions. Consumed by triage Step 3c as the fall-through gate. Read via
+    # `manage-config plan phase-6-finalize get --field sonar_do_transition`.
+    'sonar_do_transition': False,
+    # Budget (seconds) for the synchronous in-Python CE-readiness wait performed
+    # by `sonar.py fetch-and-store` before enumerating new-code issues — the
+    # direct sibling of `checks_wait_timeout_seconds` (both are bounded-wait
+    # budgets owned by phase-6-finalize). 600s mirrors the CI-completion wait
+    # default. An explicit `--ce-wait-timeout` flag overrides it. Read via
+    # `manage-config plan phase-6-finalize get --field sonar_ce_wait_timeout_seconds`.
+    'sonar_ce_wait_timeout_seconds': 600,
     # Threshold gating the pre-rebase auto-proceed decision in branch-cleanup.md,
     # orthogonal to `plan.phase-6-finalize.final_merge_without_asking` (which gates
     # the post-CI merge). The

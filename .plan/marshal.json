@@ -59,6 +59,9 @@
       "qgate": "auto",
       "simplify": "auto",
       "checks_wait_timeout_seconds": 600,
+      "sonar_touched_file_cleanup": "new_code_only",
+      "sonar_do_transition": false,
+      "sonar_ce_wait_timeout_seconds": 600,
       "auto_rebase_threshold": "no_overlap_only",
       "drop_review_on_scope_gate": false,
       "steps": [

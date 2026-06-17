@@ -356,3 +356,146 @@ class TestFinalizeStepDescriptionDrift:
                 f'{self._READABILITY_BOUND}-char readability bound — '
                 f'length={len(text)}, text={text!r}'
             )
+
+
+class TestSonarConfigKnobsDefaults:
+    """The three Sonar roundtrip knobs added under ``plan.phase-6-finalize``:
+
+    - ``sonar_touched_file_cleanup`` — an ENUM (NOT a bool) controlling which
+      surface the sonar-roundtrip success criterion covers. Allowed values are
+      ``'new_code_only'`` (the lean default — success requires only new-code
+      issues == 0) and ``'touched_files_zero'`` (also sweeps pre-existing
+      issues on touched files). Validated by
+      ``validate_sonar_touched_file_cleanup`` against
+      ``VALID_SONAR_TOUCHED_FILE_CLEANUP``.
+    - ``sonar_do_transition`` — bool gating the server-side SonarCloud
+      dismissal path. ``False`` (default) routes dispositions through in-code
+      suppression; ``True`` re-enables ``sonar_rest transition``.
+    - ``sonar_ce_wait_timeout_seconds`` — int budget (seconds) for the
+      synchronous CE-readiness wait performed before enumerating new-code
+      issues. Defaults to ``600``, mirroring ``checks_wait_timeout_seconds``.
+
+    Each knob is a flat ``plan.phase-6-finalize`` field; the tests assert the
+    ``get_default_config()`` runtime contract, agreement with the
+    ``DEFAULT_PLAN_FINALIZE`` module constant (no drift), and fresh-project
+    seeding so every downstream consumer reads a populated config rather than
+    applying its own silent fallback.
+    """
+
+    def test_touched_file_cleanup_default_is_new_code_only(self) -> None:
+        """``get_default_config()`` MUST expose
+        ``plan.phase-6-finalize.sonar_touched_file_cleanup == 'new_code_only'``
+        — the lean default that anchors success on new-code issues == 0."""
+        cfg = _config_defaults.get_default_config()
+        assert (
+            cfg['plan']['phase-6-finalize']['sonar_touched_file_cleanup']
+            == 'new_code_only'
+        ), (
+            'get_default_config()["plan"]["phase-6-finalize"]'
+            '["sonar_touched_file_cleanup"] must default to "new_code_only"'
+        )
+
+    def test_touched_file_cleanup_finalize_block_matches(self) -> None:
+        """The ``DEFAULT_PLAN_FINALIZE`` module constant MUST agree with the
+        value exposed by ``get_default_config()`` — same physical default,
+        no drift."""
+        assert (
+            _config_defaults.DEFAULT_PLAN_FINALIZE['sonar_touched_file_cleanup']
+            == 'new_code_only'
+        )
+
+    def test_touched_file_cleanup_default_is_a_valid_enum_value(self) -> None:
+        """The default value MUST be a member of
+        ``VALID_SONAR_TOUCHED_FILE_CLEANUP`` and MUST pass
+        ``validate_sonar_touched_file_cleanup`` without raising — the default
+        can never be an out-of-enum value."""
+        default = _config_defaults.DEFAULT_PLAN_FINALIZE[
+            'sonar_touched_file_cleanup'
+        ]
+        assert default in _config_defaults.VALID_SONAR_TOUCHED_FILE_CLEANUP, (
+            'sonar_touched_file_cleanup default must be a member of '
+            'VALID_SONAR_TOUCHED_FILE_CLEANUP'
+        )
+        # Must not raise.
+        _config_defaults.validate_sonar_touched_file_cleanup(default)
+
+    def test_touched_file_cleanup_validator_rejects_unknown(self) -> None:
+        """``validate_sonar_touched_file_cleanup`` MUST raise ``ValueError``
+        for a value outside the allowed enum — a bool-shaped value (the
+        original task-description guess) is exactly the kind of input the
+        enum validator must reject."""
+        import pytest
+
+        with pytest.raises(ValueError):
+            _config_defaults.validate_sonar_touched_file_cleanup('true')
+
+    def test_do_transition_default_is_false(self) -> None:
+        """``get_default_config()`` MUST expose
+        ``plan.phase-6-finalize.sonar_do_transition == False`` — in-code
+        suppression is the default disposition path."""
+        cfg = _config_defaults.get_default_config()
+        assert (
+            cfg['plan']['phase-6-finalize']['sonar_do_transition'] is False
+        ), (
+            'get_default_config()["plan"]["phase-6-finalize"]'
+            '["sonar_do_transition"] must default to False'
+        )
+
+    def test_do_transition_finalize_block_matches(self) -> None:
+        """The ``DEFAULT_PLAN_FINALIZE`` module constant MUST agree with the
+        value exposed by ``get_default_config()`` — same physical default,
+        no drift."""
+        assert (
+            _config_defaults.DEFAULT_PLAN_FINALIZE['sonar_do_transition']
+            is False
+        )
+
+    def test_ce_wait_timeout_default_is_600(self) -> None:
+        """``get_default_config()`` MUST expose
+        ``plan.phase-6-finalize.sonar_ce_wait_timeout_seconds == 600`` —
+        mirroring the ``checks_wait_timeout_seconds`` CI-completion default."""
+        cfg = _config_defaults.get_default_config()
+        assert (
+            cfg['plan']['phase-6-finalize']['sonar_ce_wait_timeout_seconds']
+            == 600
+        ), (
+            'get_default_config()["plan"]["phase-6-finalize"]'
+            '["sonar_ce_wait_timeout_seconds"] must default to 600'
+        )
+
+    def test_ce_wait_timeout_finalize_block_matches(self) -> None:
+        """The ``DEFAULT_PLAN_FINALIZE`` module constant MUST agree with the
+        value exposed by ``get_default_config()`` — same physical default,
+        no drift."""
+        assert (
+            _config_defaults.DEFAULT_PLAN_FINALIZE[
+                'sonar_ce_wait_timeout_seconds'
+            ]
+            == 600
+        )
+
+    def test_fresh_project_seeds_all_three_knobs(self) -> None:
+        """A fresh project bootstrap (calling ``get_default_config()`` without
+        any prior marshal.json) MUST seed all three Sonar knobs explicitly
+        under ``plan.phase-6-finalize`` — the keys being absent would force
+        every downstream consumer to apply its own silent fallback, the exact
+        bug pattern these tests guard against. Each seeded value also matches
+        the module-level ``DEFAULT_PLAN_FINALIZE`` constant."""
+        cfg = _config_defaults.get_default_config()
+        finalize = cfg['plan']['phase-6-finalize']
+        for key in (
+            'sonar_touched_file_cleanup',
+            'sonar_do_transition',
+            'sonar_ce_wait_timeout_seconds',
+        ):
+            assert key in finalize, (
+                f'Fresh-project bootstrap must seed {key} explicitly in '
+                'plan.phase-6-finalize'
+            )
+            assert (
+                finalize[key]
+                == _config_defaults.DEFAULT_PLAN_FINALIZE[key]
+            ), (
+                f'Fresh-project {key} value must match the '
+                'DEFAULT_PLAN_FINALIZE constant'
+            )

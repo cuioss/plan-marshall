@@ -10,7 +10,8 @@ All finding-related JSONL files live under a single subdirectory:
 .plan/plans/{plan_id}/artifacts/findings/
 ├── {type}.jsonl             # one file per finding type (bug, improvement, sonar-issue, …)
 ├── qgate-{phase}.jsonl      # per-phase Q-Gate findings
-└── assessments.jsonl        # component assessments
+├── assessments.jsonl        # component assessments
+└── sonar-scan-summary.jsonl # producer-written verified-scan attestation (NOT a finding store)
 ```
 
 | File | Scope | Purpose |
@@ -18,6 +19,7 @@ All finding-related JSONL files live under a single subdirectory:
 | `findings/{type}.jsonl` | Plan | Per-type plan findings — one file per value of the `type` field |
 | `findings/qgate-{phase}.jsonl` | Phase | Per-phase verification findings, not promotable |
 | `findings/assessments.jsonl` | Plan | Component assessments (certainty/confidence) |
+| `findings/sonar-scan-summary.jsonl` | Plan | Producer-written verified-scan attestation rows — NOT managed by the `manage-findings` add/resolve verbs (see [Producer-Written Attestation Files](#producer-written-attestation-files)) |
 
 ### Per-Type Splitting
 
@@ -170,6 +172,28 @@ Each line in `findings/qgate-{phase}.jsonl` is a JSON object:
 | `iteration` | int | Verification cycle number (1 = first build attempt, 2 = after fixes) |
 
 Q-Gate findings do NOT have `promoted`/`promoted_to` fields — they are not promotable.
+
+## Producer-Written Attestation Files
+
+Some files under `artifacts/findings/` are **producer-written attestation files**, not finding stores. They share the directory (so they survive `manage-status archive` exactly like the per-type finding files) but are append-only artifacts a producer script writes directly — they are NOT created, mutated, or resolved through the `manage-findings` `add` / `resolve` / `promote` verbs, carry no `hash_id` / `resolution` / `promoted` fields, and do not participate in the per-phase blocking partition.
+
+| File | Producer | Write contract |
+|------|----------|----------------|
+| `findings/sonar-scan-summary.jsonl` | `workflow-integration-sonar:sonar fetch-and-store` (`sonar.py:_write_scan_summary`) | One attestation row appended per `fetch-and-store` run — written **unconditionally**, including when `new_code_issue_count == 0` and on `count_status == undecidable`, so an absent file unambiguously means "not checked" and a `confirmed` zero is a positive on-disk fact. Read at the success gate of [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md). |
+
+### `sonar-scan-summary.jsonl` row schema
+
+Each line is a JSON object written by `sonar.py:_write_scan_summary`. This is a **distinct artifact kind** from `findings/sonar-issue.jsonl` (the latter is a `manage-findings`-managed per-type finding store; this is a producer-written attestation file). The full producer contract — CE-readiness wait, the verified-count + undecidable discriminator, and the consumer success gate — lives in [`workflow-integration-sonar/SKILL.md`](../../workflow-integration-sonar/SKILL.md) § "Scan-Summary Marker (sonar-scan-summary.jsonl)"; do NOT restate it here.
+
+| Field | Type | Always present | Description |
+|-------|------|:--------------:|-------------|
+| `count_status` | string | yes | `confirmed` (CE settled in budget) or `undecidable` (CE timeout or REST/auth failure) |
+| `new_code_issue_count` | int \| null | yes | Verified PR-scoped new-code total on `confirmed`; `null` on `undecidable` |
+| `count_status_reason` | string | no | Human-readable reason; emitted **only** on `undecidable` |
+| `pr` | string \| null | yes | PR number the fetch was scoped to (`null` for a non-PR / branch fetch) |
+| `project` | string | yes | Sonar project key the fetch enumerated |
+| `scanned_sha` | string | yes | Worktree HEAD SHA the scan attests to; `""` when the SHA cannot be resolved |
+| `ts` | string | yes | ISO-8601 UTC timestamp of the fetch |
 
 ## Hash ID Generation
 

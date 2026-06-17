@@ -8,6 +8,7 @@ finding per surviving issue via ``manage-findings add``.
 """
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -28,6 +29,8 @@ _spec.loader.exec_module(sonar_mod)
 _is_suppressable = sonar_mod._is_suppressable
 _map_severity = sonar_mod._map_severity
 cmd_fetch_and_store = sonar_mod.cmd_fetch_and_store
+_wait_for_ce_ready = sonar_mod._wait_for_ce_ready
+_resolve_ce_wait_timeout = sonar_mod._resolve_ce_wait_timeout
 
 # Importing sonar.py (above) runs its module-level ``register_subcommands({'fetch-and-store'})``
 # call, which extends the shared ci_base subcommand registry. ``extract_routing_args`` is the
@@ -115,7 +118,9 @@ class TestFetchAndStore:
         issues_payload = [_issue()]
         plan_context.plan_dir_for('sonar-stage-1')
 
-        with patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
             result = cmd_fetch_and_store(_make_args('sonar-stage-1'))
 
@@ -149,7 +154,9 @@ class TestFetchAndStore:
         issues_payload = [_issue(type_='CODE_SMELL', severity='MINOR', line=1, rule=rule, message='m')]
         plan_context.plan_dir_for('sonar-stage-skip')
 
-        with patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
             result = cmd_fetch_and_store(_make_args('sonar-stage-skip'))
 
@@ -160,7 +167,9 @@ class TestFetchAndStore:
     def test_fetch_and_store_propagates_provider_error(self, plan_context):
         plan_context.plan_dir_for('sonar-stage-err')
 
-        with patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'error', 'message': 'HTTP 401'}
             result = cmd_fetch_and_store(_make_args('sonar-stage-err'))
 
@@ -183,7 +192,9 @@ class TestFetchAndStore:
         ]
         plan_context.plan_dir_for('sonar-stage-mismatch')
 
-        with patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
             with patch('_findings_core.add_finding') as mock_add:
                 def _side_effect(**kwargs):
@@ -207,6 +218,288 @@ class TestFetchAndStore:
         assert qf['title'].startswith('(producer-mismatch)')
         assert qf['source'] == 'qgate'
         assert qf['type'] == 'sonar-issue'
+
+
+# =============================================================================
+# Scan-summary marker helper
+# =============================================================================
+
+
+def _read_scan_summary_rows(plan_id):
+    """Read every attestation row from the plan's sonar-scan-summary.jsonl.
+
+    Resolves the marker via the SAME shared findings-dir resolver the producer
+    uses (``_findings_core.get_findings_dir``), so the test reads back exactly
+    where ``_write_scan_summary`` wrote. Returns ``[]`` when the file is absent.
+    """
+    from _findings_core import get_findings_dir  # type: ignore[import-not-found]
+
+    marker_path = get_findings_dir(plan_id) / 'sonar-scan-summary.jsonl'
+    if not marker_path.exists():
+        return []
+    rows = []
+    for line in marker_path.read_text(encoding='utf-8').splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+    return rows
+
+
+# =============================================================================
+# CE-readiness wait contract (bounded wait is mocked — no wall-clock sleep)
+# =============================================================================
+
+
+class TestWaitForCeReady:
+    """The synchronous bounded CE-readiness wait gates the count on a settled
+    analysis. ``poll_until`` is mocked so the unit test never sleeps on the
+    wall clock; the assertions are on the count_status discriminator the wait
+    derives from the poll outcome (settled / timed-out / REST-error).
+    """
+
+    def test_ce_settled_reports_confirmed(self):
+        # poll_until returns a non-timed-out, non-error result → confirmed.
+        with patch('sonar_mod.poll_until') as mock_poll:
+            mock_poll.return_value = {
+                'timed_out': False,
+                'last_data': {'ce_state': 'SUCCESS', 'queue_length': 0},
+            }
+            result = _wait_for_ce_ready('com.example:proj', None, timeout=600)
+
+        assert result['count_status'] == 'confirmed'
+        assert 'count_status_reason' not in result
+
+    def test_ce_timeout_reports_undecidable_with_reason(self):
+        # poll_until reports timed_out → undecidable, reason names the budget
+        # and the last observed CE state, never a false confirmed.
+        with patch('sonar_mod.poll_until') as mock_poll:
+            mock_poll.return_value = {
+                'timed_out': True,
+                'last_data': {'ce_state': 'IN_PROGRESS', 'queue_length': 2},
+            }
+            result = _wait_for_ce_ready('com.example:proj', None, timeout=300)
+
+        assert result['count_status'] == 'undecidable'
+        assert '300s' in result['count_status_reason']
+        assert 'IN_PROGRESS' in result['count_status_reason']
+
+    def test_ce_rest_error_reports_undecidable(self):
+        # poll_until propagates a REST/auth failure → undecidable.
+        with patch('sonar_mod.poll_until') as mock_poll:
+            mock_poll.return_value = {
+                'timed_out': False,
+                'error': 'Sonar API error: HTTP 401',
+                'last_data': {},
+            }
+            result = _wait_for_ce_ready('com.example:proj', None, timeout=600)
+
+        assert result['count_status'] == 'undecidable'
+        assert 'HTTP 401' in result['count_status_reason']
+
+    def test_timeout_budget_forwarded_to_poll_until(self):
+        # The resolved budget must reach poll_until's ``timeout`` kwarg — the
+        # wait is bounded by the configured budget, not the framework default.
+        with patch('sonar_mod.poll_until') as mock_poll:
+            mock_poll.return_value = {'timed_out': False, 'last_data': {}}
+            _wait_for_ce_ready('com.example:proj', None, timeout=123)
+
+        assert mock_poll.call_args.kwargs['timeout'] == 123
+
+
+class TestResolveCeWaitTimeout:
+    """The CE-wait budget resolution order: explicit flag wins, then config,
+    then the conservative 600s fallback (never raises)."""
+
+    def test_explicit_flag_wins(self):
+        args = _make_args('p')
+        args.ce_wait_timeout = 42
+        assert _resolve_ce_wait_timeout(args) == 42
+
+    def test_missing_attribute_falls_back_to_default(self):
+        # _make_args produces no ce_wait_timeout attribute; with no initialized
+        # config the resolver returns the conservative 600s fallback.
+        assert _resolve_ce_wait_timeout(_make_args('p')) == 600
+
+
+# =============================================================================
+# Verified count + undecidable state + unconditional marker write
+# =============================================================================
+
+
+class TestVerifiedCount:
+    """fetch-and-store reports a verified new_code_issue_count with a
+    confirmed/undecidable discriminator, and ALWAYS writes one scan-summary
+    attestation row (including at count==0 and on undecidable)."""
+
+    def test_confirmed_count_matches_fetched_issues(self, plan_context):
+        plan_context.plan_dir_for('sonar-count-confirmed')
+        issues_payload = [_issue(), _issue(key='ISSUE-2', file='src/Other.java')]
+
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
+            mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
+            result = cmd_fetch_and_store(_make_args('sonar-count-confirmed'))
+
+        assert result['count_status'] == 'confirmed'
+        assert result['new_code_issue_count'] == 2
+
+    def test_confirmed_zero_is_a_real_zero_not_undecidable(self, plan_context):
+        # An empty PR-scoped new-code result against a settled CE is a CONFIRMED
+        # zero, never undecidable — the core defect this contract guards against.
+        plan_context.plan_dir_for('sonar-count-zero')
+
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
+            mock_fetch.return_value = {'status': 'success', 'issues': []}
+            result = cmd_fetch_and_store(_make_args('sonar-count-zero'))
+
+        assert result['count_status'] == 'confirmed'
+        assert result['new_code_issue_count'] == 0
+
+    def test_confirmed_zero_writes_marker_row(self, plan_context):
+        # The attestation marker is written even at count==0 so a verified zero
+        # is a positive on-disk fact (an absent file means "not checked").
+        plan_context.plan_dir_for('sonar-marker-zero')
+
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
+            mock_fetch.return_value = {'status': 'success', 'issues': []}
+            result = cmd_fetch_and_store(_make_args('sonar-marker-zero'))
+
+        rows = _read_scan_summary_rows('sonar-marker-zero')
+        assert len(rows) == 1
+        assert rows[0]['count_status'] == 'confirmed'
+        assert rows[0]['new_code_issue_count'] == 0
+        assert result['scan_summary_path'].endswith('sonar-scan-summary.jsonl')
+
+    def test_ce_timeout_reports_undecidable_null_count_and_writes_marker(self, plan_context):
+        # CE never settled within budget → new_code_issue_count is null,
+        # count_status undecidable, _fetch_issues is NEVER called, and the
+        # undecidable marker row is still written.
+        plan_context.plan_dir_for('sonar-undecidable-timeout')
+
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {
+                'count_status': 'undecidable',
+                'count_status_reason': 'CE analysis not DONE within 600s',
+            }
+            result = cmd_fetch_and_store(_make_args('sonar-undecidable-timeout'))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['new_code_issue_count'] is None
+        assert 'not DONE' in result['count_status_reason']
+        mock_fetch.assert_not_called()
+
+        rows = _read_scan_summary_rows('sonar-undecidable-timeout')
+        assert len(rows) == 1
+        assert rows[0]['count_status'] == 'undecidable'
+        assert rows[0]['new_code_issue_count'] is None
+        assert rows[0]['count_status_reason'] == 'CE analysis not DONE within 600s'
+
+    def test_fetch_rest_failure_reports_undecidable_and_writes_marker(self, plan_context):
+        # A REST/auth failure during the issue fetch (after CE settled) is
+        # undecidable with a null count, never a false 0, and writes a marker.
+        plan_context.plan_dir_for('sonar-undecidable-fetch')
+
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
+            mock_fetch.return_value = {'status': 'error', 'message': 'Sonar API error: HTTP 401'}
+            result = cmd_fetch_and_store(_make_args('sonar-undecidable-fetch'))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['new_code_issue_count'] is None
+        assert result['count_status_reason'] == 'Sonar API error: HTTP 401'
+
+        rows = _read_scan_summary_rows('sonar-undecidable-fetch')
+        assert len(rows) == 1
+        assert rows[0]['count_status'] == 'undecidable'
+        assert rows[0]['new_code_issue_count'] is None
+
+    def test_confirmed_run_writes_count_in_marker(self, plan_context):
+        # A confirmed non-zero run records the real count in the marker row.
+        plan_context.plan_dir_for('sonar-marker-count')
+
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
+            mock_fetch.return_value = {'status': 'success', 'issues': [_issue()]}
+            cmd_fetch_and_store(_make_args('sonar-marker-count'))
+
+        rows = _read_scan_summary_rows('sonar-marker-count')
+        assert len(rows) == 1
+        assert rows[0]['count_status'] == 'confirmed'
+        assert rows[0]['new_code_issue_count'] == 1
+
+
+# =============================================================================
+# PR scoping — --pr forwarded to BOTH the CE lookup and the issue query
+# =============================================================================
+
+
+class TestPrScoping:
+    """A supplied --pr must scope BOTH the CE-readiness lookup and the new-code
+    issue enumeration, and surface on the marker row, so the count is a
+    confirmed PR-scoped count rather than a whole-project one."""
+
+    def test_pr_forwarded_to_ce_wait_and_issue_query(self, plan_context):
+        plan_context.plan_dir_for('sonar-pr-scope')
+
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
+            mock_fetch.return_value = {'status': 'success', 'issues': []}
+            result = cmd_fetch_and_store(_make_args('sonar-pr-scope', pr='123'))
+
+        # CE-readiness wait received the pr (2nd positional arg).
+        assert mock_wait.call_args.args[1] == '123'
+        # Issue fetch received the pr (2nd positional arg).
+        assert mock_fetch.call_args.args[1] == '123'
+        assert result['pull_request'] == '123'
+
+    def test_pr_recorded_on_marker_row(self, plan_context):
+        plan_context.plan_dir_for('sonar-pr-marker')
+
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
+            mock_fetch.return_value = {'status': 'success', 'issues': []}
+            cmd_fetch_and_store(_make_args('sonar-pr-marker', pr='456'))
+
+        rows = _read_scan_summary_rows('sonar-pr-marker')
+        assert rows[0]['pr'] == '456'
+
+    def test_pr_forwarded_to_ce_wait_on_undecidable_path(self, plan_context):
+        # Even when CE is undecidable, the pr must have reached the CE lookup
+        # and be recorded on the undecidable marker row.
+        plan_context.plan_dir_for('sonar-pr-undecidable')
+
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait:
+            mock_wait.return_value = {
+                'count_status': 'undecidable',
+                'count_status_reason': 'CE analysis not DONE within 600s',
+            }
+            cmd_fetch_and_store(_make_args('sonar-pr-undecidable', pr='789'))
+
+        assert mock_wait.call_args.args[1] == '789'
+        rows = _read_scan_summary_rows('sonar-pr-undecidable')
+        assert rows[0]['pr'] == '789'
+
+    def test_no_pr_reports_none(self, plan_context):
+        plan_context.plan_dir_for('sonar-no-pr')
+
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
+            mock_fetch.return_value = {'status': 'success', 'issues': []}
+            result = cmd_fetch_and_store(_make_args('sonar-no-pr'))
+
+        assert result['pull_request'] == 'none'
+        rows = _read_scan_summary_rows('sonar-no-pr')
+        assert rows[0]['pr'] is None
 
 
 # =============================================================================
