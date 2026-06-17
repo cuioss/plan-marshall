@@ -119,6 +119,26 @@ def _add_phase_subparser(
         phase_rm_step = phase_sub.add_parser('remove-step', help='Remove step from list', allow_abbrev=False)
         phase_rm_step.add_argument('--step', required=True, help='Step reference to remove')
 
+        # One-stop step verb: `step get` returns the complete nested param object
+        # for a step id in a single call; `step set` writes one step-owned param.
+        # Both operate on the marshal.json keyed-map step structure.
+        phase_step = phase_sub.add_parser(
+            'step', help='Get/set a step\'s nested param object (keyed-map)', allow_abbrev=False
+        )
+        step_sub = phase_step.add_subparsers(dest='step_verb', required=True, help='Step operation')
+
+        step_get = step_sub.add_parser(
+            'get', help='Get the complete nested param object for a step', allow_abbrev=False
+        )
+        step_get.add_argument('--step-id', required=True, help='Step id (e.g., default:sonar-roundtrip)')
+
+        step_set = step_sub.add_parser(
+            'set', help='Set one step-owned param into a step\'s nested object', allow_abbrev=False
+        )
+        step_set.add_argument('--step-id', required=True, help='Step id (e.g., default:branch-cleanup)')
+        step_set.add_argument('--param', required=True, help='Param key (e.g., pr_merge_strategy)')
+        step_set.add_argument('--value', required=True, help='Param value')
+
     if has_domain_steps:
         phase_set_ds = phase_sub.add_parser(
             'set-domain-step', help='Enable/disable domain verification step', allow_abbrev=False

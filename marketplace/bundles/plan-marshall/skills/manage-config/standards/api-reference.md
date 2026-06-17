@@ -170,8 +170,8 @@ Manage phase-specific plan configuration. Each phase has its own sub-noun.
 |----------|-------|-------------|
 | `phase-1-init` | `get`, `set` | Init phase (e.g., `branch_strategy`) |
 | `phase-2-refine` | `get`, `set` | Refine phase (e.g., `compatibility`) |
-| `phase-5-execute` | `get`, `set`, `set-max-iterations`, `set-steps`, `add-step`, `remove-step`, `set-step`, `set-domain-step`, `set-domain-step-agent` | Execute phase |
-| `phase-6-finalize` | `get`, `set`, `set-max-iterations`, `set-steps`, `add-step`, `remove-step` | Finalize phase (e.g., `pr_merge_strategy`) |
+| `phase-5-execute` | `get`, `set`, `set-max-iterations`, `set-steps`, `add-step`, `remove-step`, `step get`, `step set`, `set-step`, `set-domain-step`, `set-domain-step-agent` | Execute phase |
+| `phase-6-finalize` | `get`, `set`, `set-max-iterations`, `set-steps`, `add-step`, `remove-step`, `step get`, `step set` | Finalize phase (step-owned params nest under their step in the `steps` map) |
 
 ### Basic get/set pattern
 
@@ -202,21 +202,31 @@ manage-config plan phase-5-execute set-domain-step-agent \
 ### phase-6-finalize additional verbs
 
 ```bash
-# Set PR merge strategy (squash, merge, rebase; default: squash)
-manage-config plan phase-6-finalize set \
-  --field pr_merge_strategy --value squash
-
 # Set maximum finalize iterations
 manage-config plan phase-6-finalize set-max-iterations --value 5
-
-# Enable/disable a finalize step
-manage-config plan phase-6-finalize set-step \
-  --step 2_create_pr --enabled false
 ```
+
+### One-stop step verb (`step get` / `step set`) — keyed-map step params
+
+Step-owned params nest under their owning step in the id-keyed `steps` map (`pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold` under `default:branch-cleanup`; `review_bot_buffer_seconds` under `default:automated-review`; the prefix-stripped sonar params under `default:sonar-roundtrip`). They are read/written via the one-stop `step` verb against the marshal.json keyed map (the compose-time default + wizard global-config write target), NOT via flat `get --field` / `set --field`.
+
+```bash
+# Get a step's complete nested param object in a single call
+manage-config plan phase-6-finalize step get --step-id default:branch-cleanup
+# → { "phase": "phase-6-finalize", "step_id": "default:branch-cleanup",
+#     "params": { "pr_merge_strategy": "squash", "final_merge_without_asking": false,
+#                 "auto_rebase_threshold": "no_overlap_only" } }
+
+# Set one step-owned param into the step's nested object (value-coerced)
+manage-config plan phase-6-finalize step set \
+  --step-id default:branch-cleanup --param pr_merge_strategy --value rebase
+```
+
+`step get` returns `{phase, step_id, params}` (the complete param object); `step set` writes one param and returns the updated `params`. An absent `--step-id` (not a key in the map) is an explicit `step_not_found` error. The same verb shape applies to `phase-5-execute` (its verify steps own no params, so `step get` returns `{}`). For the plan-local runtime read (per-plan overridable, from the manifest snapshot rather than marshal.json) use `manage-execution-manifest step-params get`/`step-params set`.
 
 ### Order-driven step verbs (phase-5-execute, phase-6-finalize)
 
-`set-steps` and `add-step` on these two phases derive each step's effective order exclusively from the step's authoritative `order` field (frontmatter for built-in standards / project-local `SKILL.md`, return-dict key for extension-contributed steps). The resulting list is persisted sorted ascending by that order.
+`set-steps`, `add-step`, and `remove-step` on these two phases operate on the id-keyed `steps` / `verification_steps` map's keys — preserving insertion order (= execution order) and any existing per-step params. `set-steps` and `add-step` derive each step's effective order exclusively from the step's authoritative `order` field (frontmatter for built-in standards / project-local `SKILL.md`, return-dict key for extension-contributed steps); the resulting map is persisted with keys ordered ascending by that order.
 
 Error responses surfaced by `set-steps` and `add-step`:
 
@@ -237,7 +247,7 @@ manage-config plan phase-5-execute get --field max_iterations
 
 ## Noun: finalize-steps
 
-Write the `phase-6-finalize` step list from a named preset. `apply-preset` surgically writes the preset's step list into `plan.phase-6-finalize.steps` while preserving every other phase-6 knob (`max_iterations`, `pr_merge_strategy`, `auto_rebase_threshold`, …). Step enumeration stays on the `plan phase-6-finalize list-finalize-steps` surface; this noun only writes presets. The persisted list is sorted ascending by each step's resolved `order` (see [Order-driven step verbs](#order-driven-step-verbs-phase-5-execute-phase-6-finalize)).
+Write the `phase-6-finalize` step list from a named preset. `apply-preset` surgically writes the preset's steps into the `plan.phase-6-finalize.steps` keyed map — carrying over any existing per-step params for steps the preset keeps and seeding `{}` for newly-introduced steps — while preserving every flat phase-6 knob (`max_iterations`, the ceremony gates, …). Step enumeration stays on the `plan phase-6-finalize list-finalize-steps` surface; this noun only writes presets. The persisted map keys are sorted ascending by each step's resolved `order` (see [Order-driven step verbs](#order-driven-step-verbs-phase-5-execute-phase-6-finalize)).
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|

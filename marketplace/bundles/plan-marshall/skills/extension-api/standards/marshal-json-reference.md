@@ -25,15 +25,15 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `plan.phase-3-outline.plan_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-4-plan.execute_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-5-execute.commit_and_push` | User config | phase-5-execute, phase-6-finalize | - |
-| `plan.phase-5-execute.steps` | Built-in + `provides_verify_steps()` | phase-4-plan, phase-5-execute | [ext-point-verify-steps.md](ext-point-verify-steps.md) |
+| `plan.phase-5-execute.verification_steps` (id-keyed map) | Built-in + `provides_verify_steps()` | phase-4-plan, phase-5-execute | [ext-point-verify-steps.md](ext-point-verify-steps.md) |
 | `plan.phase-5-execute.max_iterations` | User config | phase-5-execute | - |
-| `plan.phase-6-finalize.steps` | Built-in + `provides_finalize_steps()` | phase-6-finalize | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) |
+| `plan.phase-6-finalize.steps` (id-keyed map; step-owned params nest under each step) | Built-in + `provides_finalize_steps()` | phase-6-finalize | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) |
 | `plan.phase-6-finalize.max_iterations` | User config | phase-6-finalize (loop-back ceiling) | - |
-| `plan.phase-6-finalize.checks_wait_timeout_seconds` | User config | tools-integration-ci (CI-completion polling timeout) | - |
+| `plan.phase-6-finalize.checks_wait_timeout_seconds` (flat phase-level) | User config | tools-integration-ci (CI-completion polling timeout) | - |
 
 ## Run-at-all Gates and Finalize Automation Knobs (marshal.json)
 
-The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs under their owning phase — `deep_lane` / `escalation` under `plan.phase-1-init`, `revalidation` under `plan.phase-2-refine`, `qgate` under `plan.phase-3-outline`, and the finalize gates (`self_review` / `qgate` / `simplify`) plus the three automation knobs under `plan.phase-6-finalize`. Read at runtime via `manage-config plan <phase> get --field <knob>`. See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs" for the full schema.
+The lifecycle run-at-all gates and the two flat finalize automation knobs are flat phase-local knobs under their owning phase — `deep_lane` / `escalation` under `plan.phase-1-init`, `revalidation` under `plan.phase-2-refine`, `qgate` under `plan.phase-3-outline`, and the finalize gates (`self_review` / `qgate` / `simplify`) plus the two flat automation knobs (`finalize_without_asking` / `loop_back_without_asking`) under `plan.phase-6-finalize`. Read at runtime via `manage-config plan <phase> get --field <knob>`. (`final_merge_without_asking` is NOT flat — it is a step-owned param of `default:branch-cleanup`; see the step-owned param rows below.) See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs" for the full schema.
 
 | Path | Set By | Used By | Extension Point Doc |
 |------|--------|---------|---------------------|
@@ -46,7 +46,8 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 | `plan.phase-6-finalize.simplify` | User config | manage-execution-manifest (finalize selection) | - |
 | `plan.phase-6-finalize.finalize_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
-| `plan.phase-6-finalize.final_merge_without_asking` | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |
+| `plan.phase-6-finalize.steps['default:branch-cleanup'].final_merge_without_asking` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |
+| `plan.phase-6-finalize.steps['default:automated-review'].review_bot_buffer_seconds` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | phase-6-finalize / workflow-pr-doctor (review-bot comment wait) | - |
 
 ## Project Configuration (marshal.json)
 

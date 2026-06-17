@@ -97,6 +97,25 @@ def test_validate_happy_path(plan_context):
     assert result['phase_6_unknown_steps_count'] == 0
 
 
+def test_validate_succeeds_on_manifest_with_step_params_block(plan_context):
+    """validate succeeds against a composed manifest carrying the step_params snapshot.
+
+    The composer now writes a step_params block into both phase sections. validate
+    operates on the verification_steps / steps lists and is agnostic to the
+    step_params snapshot — its presence must not trip validation.
+    """
+    cmd_compose(_compose_ns(plan_id='val-step-params'))
+    # the composed manifest carries step_params under both phases
+    manifest = _mem.read_manifest('val-step-params')
+    assert manifest is not None
+    assert 'step_params' in manifest['phase_5']
+    assert 'step_params' in manifest['phase_6']
+
+    result = cmd_validate(_validate_ns(plan_id='val-step-params'))
+    assert result is not None and result['status'] == 'success'
+    assert result['valid'] is True
+
+
 def test_validate_missing_manifest_returns_none(plan_context, capsys):
     result = cmd_validate(_validate_ns(plan_id='val-missing'))
     assert result is None

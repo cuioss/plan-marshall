@@ -170,11 +170,15 @@ def test_init_includes_verification_in_phase_5_execute(plan_context):
     assert 'phase-6-verify' not in plan, 'Should NOT have plan.phase-6-verify section'
     execute = plan['phase-5-execute']
     assert execute['max_iterations'] == 5
-    assert execute['verification_steps'] == [
+    # verification_steps is an id-keyed map; key insertion order is the execution
+    # order and each value is the empty param object (verify steps own no params).
+    assert isinstance(execute['verification_steps'], dict)
+    assert list(execute['verification_steps'].keys()) == [
         'default:verify:quality-gate',
         'default:verify:module-tests',
         'default:verify:coverage',
     ]
+    assert all(params == {} for params in execute['verification_steps'].values())
 
 
 def test_init_includes_phase_6_finalize(plan_context):
@@ -188,8 +192,9 @@ def test_init_includes_phase_6_finalize(plan_context):
     assert 'phase-6-finalize' in plan, 'Should have plan.phase-6-finalize section'
     finalize = plan['phase-6-finalize']
     assert finalize['max_iterations'] == 3
-    assert 'steps' in finalize, 'Should have steps list'
-    assert isinstance(finalize['steps'], list)
+    assert 'steps' in finalize, 'Should have steps map'
+    # steps is an id-keyed map; membership checks operate on keys.
+    assert isinstance(finalize['steps'], dict)
     assert 'default:commit-push' in finalize['steps']
     assert 'default:record-metrics' in finalize['steps']
     assert 'default:archive-plan' in finalize['steps']
@@ -197,10 +202,12 @@ def test_init_includes_phase_6_finalize(plan_context):
     # plan directory, so nothing may run after it), and record-metrics must precede it
     # so metrics.md is written before the directory moves. The optional
     # print-phase-breakdown summary step legitimately runs between them — it reads
-    # metrics.md and writes into the plan dir before archive captures it.
-    record_idx = finalize['steps'].index('default:record-metrics')
-    archive_idx = finalize['steps'].index('default:archive-plan')
-    assert archive_idx == len(finalize['steps']) - 1, 'default:archive-plan must be the final finalize step'
+    # metrics.md and writes into the plan dir before archive captures it. Key
+    # insertion order is the execution order.
+    step_ids = list(finalize['steps'].keys())
+    record_idx = step_ids.index('default:record-metrics')
+    archive_idx = step_ids.index('default:archive-plan')
+    assert archive_idx == len(step_ids) - 1, 'default:archive-plan must be the final finalize step'
     assert record_idx < archive_idx, 'default:record-metrics must precede default:archive-plan'
     assert '1_commit_push' not in finalize, 'Old boolean keys should not exist'
 

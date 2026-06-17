@@ -107,7 +107,8 @@ def test_apply_preset_local_writes_local_steps(plan_context):
     assert result['steps_count'] == len(FinalizeStepPresets.LOCAL)
 
     section = _read_finalize_section(plan_context.fixture_dir)
-    assert section['steps'] == FinalizeStepPresets.LOCAL
+    # steps is an id-keyed map; key insertion order is the execution order.
+    assert list(section['steps'].keys()) == FinalizeStepPresets.LOCAL
 
 
 def test_apply_preset_standard_writes_standard_steps(plan_context):
@@ -117,7 +118,7 @@ def test_apply_preset_standard_writes_standard_steps(plan_context):
 
     assert result['status'] == 'success'
     section = _read_finalize_section(plan_context.fixture_dir)
-    assert section['steps'] == FinalizeStepPresets.STANDARD
+    assert list(section['steps'].keys()) == FinalizeStepPresets.STANDARD
 
 
 def test_apply_preset_full_writes_full_steps_sorted(plan_context):
@@ -128,11 +129,11 @@ def test_apply_preset_full_writes_full_steps_sorted(plan_context):
     assert result['status'] == 'success'
     assert result['steps_count'] == len(FinalizeStepPresets.FULL)
     section = _read_finalize_section(plan_context.fixture_dir)
-    # The persisted list is the FULL preset sorted ascending by frontmatter
-    # order — same membership, ascending order (plan-retrospective before
-    # archive-plan), not the literal constant order.
-    assert section['steps'] == _FULL_SORTED
-    assert set(section['steps']) == set(FinalizeStepPresets.FULL)
+    # The persisted keyed map's keys are the FULL preset sorted ascending by
+    # frontmatter order — same membership, ascending order (plan-retrospective
+    # before archive-plan), not the literal constant order.
+    assert list(section['steps'].keys()) == _FULL_SORTED
+    assert set(section['steps'].keys()) == set(FinalizeStepPresets.FULL)
 
 
 # =============================================================================
@@ -143,18 +144,22 @@ def test_apply_preset_full_writes_full_steps_sorted(plan_context):
 def test_apply_preset_preserves_sibling_phase6_knobs(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
-    # Sanity: the fixture carries non-step knobs we expect to survive.
+    # Sanity: the fixture carries a flat phase-level knob and a nested step param
+    # we expect to survive. review_bot_buffer_seconds now nests under
+    # default:automated-review inside the keyed-map steps structure.
     before = _read_finalize_section(plan_context.fixture_dir)
     assert before['max_iterations'] == 3
-    assert before['review_bot_buffer_seconds'] == 300
+    assert before['steps']['default:automated-review']['review_bot_buffer_seconds'] == 300
 
     cmd_finalize_steps_apply_preset(Namespace(preset='standard'))
 
     after = _read_finalize_section(plan_context.fixture_dir)
-    assert after['steps'] == FinalizeStepPresets.STANDARD
-    # Sibling knobs untouched by the steps write.
+    assert list(after['steps'].keys()) == FinalizeStepPresets.STANDARD
+    # Flat phase-level knob untouched by the steps write.
     assert after['max_iterations'] == 3
-    assert after['review_bot_buffer_seconds'] == 300
+    # The nested step param is preserved across the keyed-map rewrite (the
+    # writer carries over existing per-step params for steps the preset keeps).
+    assert after['steps']['default:automated-review']['review_bot_buffer_seconds'] == 300
 
 
 # =============================================================================
@@ -172,7 +177,7 @@ def test_apply_preset_is_idempotent(plan_context):
     second = _read_finalize_section(plan_context.fixture_dir)
 
     assert first == second
-    assert second['steps'] == _FULL_SORTED
+    assert list(second['steps'].keys()) == _FULL_SORTED
 
 
 def test_apply_preset_overwrites_previous_preset(plan_context):
@@ -182,8 +187,8 @@ def test_apply_preset_overwrites_previous_preset(plan_context):
     cmd_finalize_steps_apply_preset(Namespace(preset='local'))
 
     section = _read_finalize_section(plan_context.fixture_dir)
-    # No residue from FULL — the steps list is exactly LOCAL.
-    assert section['steps'] == FinalizeStepPresets.LOCAL
+    # No residue from FULL — the steps map keys are exactly LOCAL.
+    assert list(section['steps'].keys()) == FinalizeStepPresets.LOCAL
 
 
 # =============================================================================
@@ -217,7 +222,7 @@ def test_apply_preset_uppercase_alias_succeeds(plan_context):
 
     assert result['status'] == 'success'
     section = _read_finalize_section(plan_context.fixture_dir)
-    assert section['steps'] == _FULL_SORTED
+    assert list(section['steps'].keys()) == _FULL_SORTED
 
 
 # =============================================================================
@@ -242,8 +247,8 @@ def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context
     result = cmd_finalize_steps_apply_preset(Namespace(preset='full'))
     assert result['status'] == 'success'
 
-    persisted = _read_finalize_section(plan_context.fixture_dir)['steps']
-    resolved, err = _resolve_step_orders(persisted, 'phase-6-finalize')
+    persisted_ids = list(_read_finalize_section(plan_context.fixture_dir)['steps'].keys())
+    resolved, err = _resolve_step_orders(persisted_ids, 'phase-6-finalize')
     assert err is None
     orders = [order for _, order in resolved]
     assert orders == sorted(orders), (
@@ -252,10 +257,10 @@ def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context
     # Concretely: plan-retrospective (995) precedes record-metrics (998),
     # which precedes archive-plan (1000) — record-metrics is the last
     # token-accounting step, after retrospective and before the read-only tail.
-    assert persisted.index('plan-marshall:plan-retrospective') < persisted.index(
+    assert persisted_ids.index('plan-marshall:plan-retrospective') < persisted_ids.index(
         'default:record-metrics'
     )
-    assert persisted.index('default:record-metrics') < persisted.index(
+    assert persisted_ids.index('default:record-metrics') < persisted_ids.index(
         'default:archive-plan'
     )
 

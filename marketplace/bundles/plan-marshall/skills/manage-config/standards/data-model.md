@@ -63,33 +63,39 @@ JSON structure and field definitions for project configuration.
         "XL": "260K"
       },
       "per_envelope_budget_tokens": "400K",
-      "verification_steps": [
-        "default:verify:quality-gate",
-        "default:verify:module-tests",
-        "default:verify:coverage"
-      ]
+      "verification_steps": {
+        "default:verify:quality-gate": {},
+        "default:verify:module-tests": {},
+        "default:verify:coverage": {}
+      }
     },
     "phase-6-finalize": {
       "max_iterations": 3,
-      "review_bot_buffer_seconds": 180,
-      "pr_merge_strategy": "squash",
       "checks_wait_timeout_seconds": 600,
-      "sonar_touched_file_cleanup": "new_code_only",
-      "sonar_do_transition": false,
-      "sonar_ce_wait_timeout_seconds": 600,
-      "auto_rebase_threshold": "no_overlap_only",
       "drop_review_on_scope_gate": false,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "final_merge_without_asking": false,
       "self_review": "auto",
       "qgate": "auto",
       "simplify": "auto",
-      "steps": [
-        "default:commit-push", "default:create-pr", "default:automated-review",
-        "default:sonar-roundtrip", "default:lessons-capture",
-        "default:branch-cleanup", "default:record-metrics", "default:archive-plan"
-      ]
+      "steps": {
+        "default:commit-push": {},
+        "default:create-pr": {},
+        "default:automated-review": { "review_bot_buffer_seconds": 180 },
+        "default:sonar-roundtrip": {
+          "touched_file_cleanup": "new_code_only",
+          "do_transition": false,
+          "ce_wait_timeout_seconds": 600
+        },
+        "default:lessons-capture": {},
+        "default:branch-cleanup": {
+          "pr_merge_strategy": "squash",
+          "final_merge_without_asking": false,
+          "auto_rebase_threshold": "no_overlap_only"
+        },
+        "default:record-metrics": {},
+        "default:archive-plan": {}
+      }
     }
   },
   "build": {
@@ -359,7 +365,7 @@ These fields live directly under `plan`, outside any phase block.
 
 ### phase-5-execute
 
-Execute phase with integrated verification pipeline. Contains the `commit_and_push` boolean, iteration limits, and a flat ordered `verification_steps` list for verification.
+Execute phase with integrated verification pipeline. Contains the `commit_and_push` boolean, iteration limits, and an id-keyed `verification_steps` map for verification. `verification_steps` is a step-id-keyed map: each key is a verify step id, each value is that step's nested param object. Verification steps own no params, so every value is the empty object `{}`. Key insertion order is the execution order — the keyed-map shape (not a flat list) is the single on-disk schema; readers iterate `.keys()` for the ordered step ids.
 
 ```json
 {
@@ -378,11 +384,11 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
         "XL": "260K"
       },
       "per_envelope_budget_tokens": "400K",
-      "verification_steps": [
-        "default:verify:quality-gate",
-        "default:verify:module-tests",
-        "default:verify:coverage"
-      ]
+      "verification_steps": {
+        "default:verify:quality-gate": {},
+        "default:verify:module-tests": {},
+        "default:verify:coverage": {}
+      }
     }
   }
 }
@@ -402,19 +408,23 @@ Both `verification_steps` and `per_deliverable_build` reference verify steps by 
 
 #### Verification Steps
 
-The `verification_steps` list contains an ordered sequence of verification step references. Two types:
+The `verification_steps` map is an id-keyed map of verification step references (key insertion order = execution order); each value is the step's nested param object (`{}` for verify steps, which own no params). Two key types:
 
 - **Built-in steps** (`default:verify:{canonical}`): the parameterized canonical-verify step — e.g. `default:verify:quality-gate` (run quality-gate), `default:verify:module-tests` (run full test suite), `default:verify:coverage` (coverage threshold).
 - **Extension steps** (colon notation): Fully-qualified skill references from domain bundles (e.g., `my-bundle:my-verify-step`)
 
-Built-in steps are always first in the default list. Extension steps are appended by `skill-domains configure` from `provides_verify_steps()` in each domain's `extension.py`. See [extension-contract.md](../../extension-api/standards/extension-contract.md) for the complete contract.
+Built-in step keys are always first in the default map. Extension step keys are appended by `skill-domains configure` from `provides_verify_steps()` in each domain's `extension.py`. See [extension-contract.md](../../extension-api/standards/extension-contract.md) for the complete contract.
 
-Managed via:
+Managed via (the step-list verbs operate on the keyed map's keys, preserving insertion order and any existing per-step params):
 - `plan phase-5-execute set-steps --steps default:verify:quality-gate,default:verify:module-tests`
 - `plan phase-5-execute add-step --step my-bundle:my-verify-step`
 - `plan phase-5-execute remove-step --step default:verify:quality-gate`
+- `plan phase-5-execute step get --step-id default:verify:quality-gate` (returns the step's complete nested param object in one call)
+- `plan phase-5-execute step set --step-id {id} --param {k} --value {v}` (writes one step-owned param into the keyed map — the compose-time default + wizard global-config write target)
 - `plan phase-5-execute set --field per_deliverable_build --value default:verify:compile,default:verify:module-tests` (comma-separated list; empty value disables the focused build)
 - `plan phase-5-execute remove-field --field steps` (delete an arbitrary persisted key under the phase section — e.g. removing the legacy `steps` key; see [remove-field](#remove-field) below)
+
+The keyed map (`marshal.json`) is the **compose-time default + wizard global-config write target**. The **plan-local runtime source** is the execution manifest: the composer snapshots each selected step's resolved params into the manifest body at compose time, and phase-5/6 runtime consumers read params via `manage-execution-manifest step-params get` (plan-local, per-plan overridable via `step-params set`), NOT from `marshal.json`. See [manage-execution-manifest/standards/manifest-schema.md](../../manage-execution-manifest/standards/manifest-schema.md) § `step_params`.
 
 #### remove-field
 
@@ -432,62 +442,96 @@ plan phase-5-execute remove-field --field steps
 
 ### phase-6-finalize
 
-Finalize pipeline with numbered boolean steps.
+Finalize pipeline with an id-keyed `steps` map. `steps` is a step-id-keyed map: each key is a finalize step id, each value is that step's nested param object (`{}` when the step owns no params). Step-owned params (`review_bot_buffer_seconds` under `default:automated-review`; `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds` under `default:sonar-roundtrip`; `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold` under `default:branch-cleanup`) nest under their owning step. Key insertion order is the execution order. Phase-level knobs that have no single owning step (`checks_wait_timeout_seconds`, `max_iterations`, the ceremony gates, the automation knobs) stay flat siblings of `steps`.
 
 ```json
 {
   "plan": {
     "phase-6-finalize": {
       "max_iterations": 3,
-      "review_bot_buffer_seconds": 180,
-      "pr_merge_strategy": "squash",
       "checks_wait_timeout_seconds": 600,
-      "sonar_touched_file_cleanup": "new_code_only",
-      "sonar_do_transition": false,
-      "sonar_ce_wait_timeout_seconds": 600,
-      "auto_rebase_threshold": "no_overlap_only",
       "drop_review_on_scope_gate": false,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "final_merge_without_asking": false,
       "self_review": "auto",
       "qgate": "auto",
       "simplify": "auto",
-      "steps": [
-        "default:commit-push", "default:create-pr", "default:automated-review",
-        "default:sonar-roundtrip", "default:lessons-capture",
-        "default:branch-cleanup", "default:record-metrics", "default:archive-plan"
-      ]
+      "steps": {
+        "default:commit-push": {},
+        "default:create-pr": {},
+        "default:automated-review": { "review_bot_buffer_seconds": 180 },
+        "default:sonar-roundtrip": {
+          "touched_file_cleanup": "new_code_only",
+          "do_transition": false,
+          "ce_wait_timeout_seconds": 600
+        },
+        "default:lessons-capture": {},
+        "default:branch-cleanup": {
+          "pr_merge_strategy": "squash",
+          "final_merge_without_asking": false,
+          "auto_rebase_threshold": "no_overlap_only"
+        },
+        "default:record-metrics": {},
+        "default:archive-plan": {}
+      }
     }
   }
 }
 ```
 
+**Flat phase-level fields** (no single owning step):
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `max_iterations` | int | 3 | Maximum finalize-verify-finalize loops |
-| `review_bot_buffer_seconds` | int | 180 | Max seconds to wait after CI for new review-bot comments to arrive (used as `--timeout` for `pr wait-for-comments`; the polling subcommand exits as soon as a new comment is posted, so this is a ceiling, not a fixed delay) |
-| `pr_merge_strategy` | string | "squash" | squash, merge, rebase — the merge method the branch-cleanup step passes to `pr merge` |
-| `checks_wait_timeout_seconds` | int | 600 | Default timeout (seconds) for the CI-completion polling commands consumed by `ci_base.py` (`ci checks wait`, `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two `issue wait-for-*` polls). An explicit `--timeout` CLI flag always wins; the 600s fallback covers callers running outside a plan-marshall project. This is a finalize wait-policy, owned by phase-6-finalize. |
-| `sonar_touched_file_cleanup` | enum(`new_code_only`\|`touched_files_zero`) | "new_code_only" | Cleanup-scope for the Sonar roundtrip success criterion. `new_code_only` (default, lean) anchors success on new-code issues == 0; `touched_files_zero` extends the success criterion to also sweep pre-existing issues on the files the plan touched. Consumed by `sonar-roundtrip.md` at the success gate. Validated by `validate_sonar_touched_file_cleanup`. |
-| `sonar_do_transition` | bool | false | Gate for the server-side SonarCloud dismissal path. `false` (default) routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression (`@SuppressWarnings` / `// NOSONAR`); `true` re-enables the server-side `sonar_rest transition` dismissal. Consumed by triage Step 3c as the fall-through gate for rule classes that cannot be suppressed in-code. |
-| `sonar_ce_wait_timeout_seconds` | int | 600 | Budget (seconds) for the synchronous in-Python CE-readiness wait performed by `sonar.py fetch-and-store` before enumerating new-code issues — the direct sibling of `checks_wait_timeout_seconds`. An explicit `--ce-wait-timeout` flag overrides it. A finalize wait-policy, owned by phase-6-finalize. |
-| `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `final_merge_without_asking`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
+| `checks_wait_timeout_seconds` | int | 600 | Default timeout (seconds) for the CI-completion polling commands consumed by `ci_base.py` (`ci checks wait`, `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two `issue wait-for-*` polls). An explicit `--timeout` CLI flag always wins; the 600s fallback covers callers running outside a plan-marshall project. This is a cross-step finalize wait-policy with no single owning step, so it **stays flat** (phase-level). |
 | `drop_review_on_scope_gate` | bool | false | Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter. `false` (default) keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans. |
 | `finalize_without_asking` | bool | true | Forward auto-continuation: auto-continue into finalize after execute completes. `true` (default) skips the gate. |
 | `loop_back_without_asking` | bool | false | Reverse auto-continuation: auto-re-enter execute on a `phase-6-finalize` `loop_back` outcome. `false` (default) halts at every loop_back and returns control to the user; `true` opts into the full unattended cycle, capped by `max_iterations`. |
-| `final_merge_without_asking` | bool | false | Whether to merge the PR after CI passes without prompting the operator. `true` merges under the unified `manage-locks:merge_lock` cross-plan mutex (acquired by the branch-cleanup Pre-Merge Gate); `false` (default) prompts the operator before merging. |
 | `self_review` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the pre-submission structural + cognitive self-review (canonical step `default:pre-submission-self-review`). `always` overrides the manifest composer's `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | `qgate` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the finalize blocking-findings re-capture (`pre-push-quality-gate`). **Highest-risk gate** — `never` can mask real build/test failures and push a red tree. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | `simplify` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the holistic post-implementation simplification sweep (`finalize-step-simplify`). `always` forces the step in even when the composer's `simplify_inactive` pre-filter would drop it; `never` removes it; `auto` (the default) defers to that pre-filter. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | — (pre-push-quality-gate activation) | derived | — | The `default:pre-push-quality-gate` finalize step's activation is **derived from `build.map`** — no dedicated config key. The manifest composer activates the step when the live footprint touches any `glob` registered in `build.map`; an absent build_map or no footprint match leaves the step inactive. |
-| `steps` | list | (see below) | Ordered list of step references to execute — persisted sorted ascending by each step's authoritative `order` value |
+| `steps` | map | (see below) | Id-keyed map of step references to execute (key insertion order = execution order), persisted sorted ascending by each step's authoritative `order` value. Each value is the step's nested param object. |
+
+**Step-owned params (nested under their owning step in the `steps` map):**
+
+`default:automated-review`:
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `review_bot_buffer_seconds` | int | 180 | Max seconds to wait after CI for new review-bot comments to arrive (used as `--timeout` for `pr wait-for-comments`; the polling subcommand exits as soon as a new comment is posted, so this is a ceiling, not a fixed delay). |
+
+`default:sonar-roundtrip` (the `sonar_` prefix is dropped within the scoped object):
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `touched_file_cleanup` | enum(`new_code_only`\|`touched_files_zero`) | "new_code_only" | Cleanup-scope for the Sonar roundtrip success criterion. `new_code_only` (default, lean) anchors success on new-code issues == 0; `touched_files_zero` extends the success criterion to also sweep pre-existing issues on the files the plan touched. Consumed by `sonar-roundtrip.md` at the success gate. Validated by `validate_sonar_touched_file_cleanup`. |
+| `do_transition` | bool | false | Gate for the server-side SonarCloud dismissal path. `false` (default) routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression (`@SuppressWarnings` / `// NOSONAR`); `true` re-enables the server-side `sonar_rest transition` dismissal. Consumed by triage Step 3c as the fall-through gate for rule classes that cannot be suppressed in-code. |
+| `ce_wait_timeout_seconds` | int | 600 | Budget (seconds) for the synchronous in-Python CE-readiness wait performed by `sonar.py fetch-and-store` before enumerating new-code issues — the direct sibling of the flat `checks_wait_timeout_seconds`. An explicit `--ce-wait-timeout` flag overrides it. |
+
+`default:branch-cleanup`:
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `pr_merge_strategy` | string | "squash" | squash, merge, rebase — the merge method the branch-cleanup step passes to `pr merge`. |
+| `final_merge_without_asking` | bool | false | Whether to merge the PR after CI passes without prompting the operator. `true` merges under the unified `manage-locks:merge_lock` cross-plan mutex (acquired by the branch-cleanup Pre-Merge Gate); `false` (default) prompts the operator before merging. |
+| `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `final_merge_without_asking`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
+
+**Two-tier source for step params**: the `steps` keyed map in `marshal.json` is the **compose-time default + wizard global-config write target** (read/written via `step get` / `step set`). The **plan-local runtime source** is the execution manifest — the composer snapshots each selected step's resolved params into the manifest body at compose time, and phase-5/6 runtime consumers read params via `manage-execution-manifest step-params get` (plan-local, per-plan overridable via `step-params set`), NOT from `marshal.json`. See [manage-execution-manifest/standards/manifest-schema.md](../../manage-execution-manifest/standards/manifest-schema.md) § `step_params`.
+
+Managed via (the step-list verbs operate on the keyed map's keys, preserving insertion order and existing per-step params):
+- `plan phase-6-finalize set-steps --steps default:commit-push,default:create-pr,…`
+- `plan phase-6-finalize add-step --step my-bundle:my-finalize-step`
+- `plan phase-6-finalize remove-step --step default:sonar-roundtrip`
+- `plan phase-6-finalize step get --step-id default:branch-cleanup` (returns the step's complete nested param object in one call)
+- `plan phase-6-finalize step set --step-id default:branch-cleanup --param pr_merge_strategy --value rebase` (writes one step-owned param into the keyed map — the global-config write target)
 
 Default steps: `default:commit-push`, `default:create-pr`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 
 ### Run-at-all gates and finalize automation knobs (phase-local)
 
-The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`, `qgate` under `phase-3-outline`, and `self_review` / `qgate` / `simplify` plus the three automation knobs (`finalize_without_asking` / `loop_back_without_asking` / `final_merge_without_asking`) under `phase-6-finalize`. Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
+The lifecycle run-at-all gates and the two flat finalize automation knobs are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`, `qgate` under `phase-3-outline`, and `self_review` / `qgate` / `simplify` plus the two flat automation knobs (`finalize_without_asking` / `loop_back_without_asking`) under `phase-6-finalize`. (`final_merge_without_asking` is NOT flat — it is a step-owned param nested under the `default:branch-cleanup` step in the `steps` map; see the per-step param sub-tables above.) Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
 
 The three `phase-6-finalize` gates map one-to-one to finalize steps and are consumed by the manifest composer's finalize selection post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection" for the gate→step map and the `automated-review` carve-out. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, `revalidation` by the refine revalidation pass, and `phase-3-outline.qgate` by the planning-time Q-Gate dispatch.
 

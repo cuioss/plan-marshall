@@ -985,6 +985,13 @@ MARSHAL_KEY_SYSTEM = 'system'
 MARSHAL_KEY_PLAN = 'plan'
 
 # Default schema for marshal.json
+#
+# ``verification_steps`` (phase-5-execute) and ``steps`` (phase-6-finalize) are
+# id-keyed maps: each key is a step id, each value is that step's nested param
+# object (``{}`` when the step owns no params). Key insertion order is the
+# execution order. Step-owned params nest under their owning step — here
+# ``review_bot_buffer_seconds`` nests under ``default:automated-review`` rather
+# than living as a flat sibling of ``steps``.
 MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
     MARSHAL_KEY_SKILL_DOMAINS: {'system': {}},
     MARSHAL_KEY_SYSTEM: {'retention': {}},
@@ -994,20 +1001,22 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
         'phase-5-execute': {
             'commit_and_push': True,
             'max_iterations': 5,
-            'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+            'verification_steps': {
+                'default:verify:quality-gate': {},
+                'default:verify:module-tests': {},
+            },
         },
         'phase-6-finalize': {
             'max_iterations': 3,
-            'review_bot_buffer_seconds': 300,
-            'steps': [
-                'commit_push',
-                'create_pr',
-                'automated_review',
-                'sonar_roundtrip',
-                'lessons_capture',
-                'branch_cleanup',
-                'archive',
-            ],
+            'steps': {
+                'default:commit-push': {},
+                'default:create-pr': {},
+                'default:automated-review': {'review_bot_buffer_seconds': 300},
+                'default:sonar-roundtrip': {},
+                'default:lessons-capture': {},
+                'default:branch-cleanup': {},
+                'default:archive-plan': {},
+            },
         },
     },
 }

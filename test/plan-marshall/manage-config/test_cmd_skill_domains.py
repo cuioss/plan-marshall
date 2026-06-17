@@ -269,21 +269,23 @@ def test_skill_domains_detect_runs(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -313,21 +315,23 @@ def test_skill_domains_detect_no_overwrite(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -403,21 +407,23 @@ def test_get_available_uses_discovery(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -465,21 +471,23 @@ def test_configure_domains(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -498,6 +506,50 @@ def test_configure_domains(plan_context, monkeypatch):
     assert 'javascript' in updated['skill_domains']
 
 
+def test_configure_seeds_verification_steps_as_keyed_map(plan_context, monkeypatch):
+    """configure seeds plan.phase-5-execute.verification_steps as the id-keyed map.
+
+    The producer writes the built-in verify steps (plus any extension verify steps)
+    as an id-keyed map of empty param objects — NOT a flat list. Key insertion
+    order (built-ins first) is the execution order, and each verify step owns no
+    params so every value is the empty object. This is the keyed-map shape the
+    manifest composer's keyed-map-only reader consumes.
+    """
+    from _config_defaults import BUILT_IN_VERIFY_STEPS
+
+    config = {
+        'skill_domains': {},
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_and_push': True,
+                'max_iterations': 5,
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
+            },
+            'phase-6-finalize': {'max_iterations': 3, 'steps': {}},
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+
+    result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
+    assert result['status'] == 'success'
+
+    updated = json.loads(marshal_path.read_text())
+    verification_steps = updated['plan']['phase-5-execute']['verification_steps']
+    # keyed map (dict), not a flat list
+    assert isinstance(verification_steps, dict)
+    # built-in verify steps lead the insertion order; each maps to empty params
+    built_in_keys = list(verification_steps.keys())[: len(BUILT_IN_VERIFY_STEPS)]
+    assert built_in_keys == list(BUILT_IN_VERIFY_STEPS)
+    assert all(params == {} for params in verification_steps.values())
+
+
 def test_configure_always_adds_system(plan_context, monkeypatch):
     """Test configure always adds system domain even with empty selection."""
     config = {
@@ -509,21 +561,23 @@ def test_configure_always_adds_system(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -575,21 +629,23 @@ def test_get_available_works_without_skill_domains(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -612,21 +668,23 @@ def test_configure_works_without_skill_domains(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -654,21 +712,23 @@ def test_list_requires_skill_domains(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -942,21 +1002,23 @@ def test_configure_preserves_project_skills(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -1011,21 +1073,23 @@ def test_configure_preserves_build_map_and_active_profiles(plan_context, monkeyp
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -1070,21 +1134,23 @@ def test_configure_drops_project_skills_for_removed_domains(plan_context, monkey
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }
@@ -1117,21 +1183,23 @@ def test_get_nested_includes_project_skills(plan_context, monkeypatch):
             'phase-5-execute': {
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:record-metrics',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:record-metrics': {},
+                    'default:archive-plan': {},
+                },
             },
         },
     }

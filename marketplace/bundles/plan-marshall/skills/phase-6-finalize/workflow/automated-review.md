@@ -58,7 +58,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
   --pr-number {pr_number} --timeout {review_bot_buffer_seconds}
 ```
 
-`{review_bot_buffer_seconds}` is sourced from the `phase-6-finalize.review_bot_buffer_seconds` config (default: 180; max-wait ceiling, not a fixed delay). The polling subcommand exits as soon as a new review-bot comment is posted.
+`{review_bot_buffer_seconds}` is the `default:automated-review` step's `review_bot_buffer_seconds` param, read from the plan-local execution-manifest step-params snapshot in a single one-stop call: `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id automated-review` (then read `review_bot_buffer_seconds` off the returned `params` object; default: 180; max-wait ceiling, not a fixed delay). The polling subcommand exits as soon as a new review-bot comment is posted.
 
 | Script Output | Action |
 |--------------|--------|

@@ -15,11 +15,19 @@ phase_5:
   verification_steps[N]:
     - <step-id>
     ...
+  step_params:
+    <step-id>: { <param>: <value>, ... }
+    ...
 phase_6:
   steps[N]:
     - <step-id>
     ...
+  step_params:
+    <step-id>: { <param>: <value>, ... }
+    ...
 ```
+
+The in-manifest `verification_steps` / `steps` arrays carry the ordered step-id list (a `list[str]`); the sibling `step_params` map carries each selected step's resolved per-step params alongside it, keyed by the same (bare) step id.
 
 `<step-id>` notation:
 
@@ -33,6 +41,16 @@ phase_6:
   finalize steps registered via the
   `plan-marshall:extension-api/standards/ext-point-execution-context-workflow`
   contract.
+
+## `step_params` — per-step param snapshot + per-plan override
+
+`phase_5.step_params` and `phase_6.step_params` are id-keyed maps (one entry per SELECTED step, keyed by the bare in-manifest step id) carrying each step's resolved per-step param object. They implement the **plan-local tier** of the two-tier source model:
+
+- **Compose-time snapshot** — `compose` reads each selected step's param object from the marshal.json keyed map (`plan.phase-{5,6}-{execute,finalize}.{verification_steps,steps}['{step}']`) and snapshots it into the manifest body. The snapshot is taken at the same write time as the step list (the write-time-snapshot model). marshal.json is the compose-time default; the manifest is the plan-local runtime source.
+- **Per-plan override** — `manage-execution-manifest step-params set --step-id {id} --param {k} --value {v}` writes an override into the manifest's `step_params` for that step. A subsequent `step-params get` returns the overridden value — the manifest value wins over the marshal.json default for the remainder of the plan.
+- **Runtime read** — phase-5/6 consumers read params via `manage-execution-manifest step-params get --phase {5-execute|6-finalize} --step-id {id}`, returning `{phase, step_id, params}`. This replaces per-field `manage-config get --field {sonar_*|review_bot_buffer_seconds|pr_merge_strategy|…}` reads of step-owned params.
+
+A step with no marshal-side params (e.g. a verify step) snapshots as the empty object `{}`. Only steps that survive selection into the manifest step list are snapshotted.
 
 ## Default phase-6 step set
 

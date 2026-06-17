@@ -158,6 +158,74 @@ def _resolve_step_orders(
     return resolved, None
 
 
+def _steps_map(raw) -> dict:
+    """Return the keyed-map step structure as a fresh ordered dict.
+
+    The on-disk schema for ``verification_steps`` / ``steps`` is an id-keyed map
+    (``{step_id: {param: value, ...}, ...}``); key insertion order is the
+    execution order. This normaliser returns a shallow copy so callers can mutate
+    it without touching the loaded config. A ``None`` value (key absent) yields an
+    empty dict.
+
+    Args:
+        raw: The value read from ``section[list_key]`` — expected to be a dict in
+            the keyed-map schema, or ``None`` when the key is absent.
+
+    Returns:
+        A new dict mapping step id -> nested param object, in insertion order.
+    """
+    if not raw:
+        return {}
+    return dict(raw)
+
+
+def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config: dict) -> dict:
+    """Handle the one-stop ``step get`` / ``step set`` verb.
+
+    ``step get --step-id {id}`` returns the complete nested param object for a
+    step in a single call; ``step set --step-id {id} --param {k} --value {v}``
+    writes one step-owned param into the step's nested object (value-coerced).
+    Both operate on the keyed-map step structure under the phase's list key. An
+    absent step id is an explicit error.
+
+    Args:
+        args: Parsed arguments carrying ``step_verb``, ``step_id``, and (for set)
+            ``param`` / ``value``.
+        phase_section: Phase key (e.g., ``'phase-6-finalize'``).
+        section: The defaults-merged phase section.
+        plan_config: The mutable ``config['plan']`` subtree.
+        config: The full loaded config (persisted on a successful set).
+    """
+    list_key = LIST_STEP_KEYS[phase_section]
+    step_id = args.step_id
+    steps = _steps_map(section.get(list_key))
+
+    if args.step_verb == 'get':
+        if step_id not in steps:
+            return error_exit(f"Step '{step_id}' not found in {phase_section}")
+        return success_exit(
+            {'phase': phase_section, 'step_id': step_id, 'params': steps[step_id]}
+        )
+
+    if args.step_verb == 'set':
+        if step_id not in steps:
+            return error_exit(f"Step '{step_id}' not found in {phase_section}")
+        param = args.param
+        value = _coerce_value(args.value)
+        params = dict(steps[step_id])
+        params[param] = value
+        steps[step_id] = params
+        section[list_key] = steps
+        plan_config[phase_section] = section
+        config['plan'] = plan_config
+        save_config(config)
+        return success_exit(
+            {'phase': phase_section, 'step_id': step_id, 'params': params}
+        )
+
+    return error_exit(f"Unknown step verb '{args.step_verb}'")
+
+
 def cmd_phase(args, phase_section: str) -> dict:
     """Handle phase-based plan sub-nouns.
 
@@ -214,6 +282,13 @@ def cmd_phase(args, phase_section: str) -> dict:
         save_config(config)
         return success_exit({'phase': phase_section, key: value})
 
+    elif args.verb == 'step' and phase_section in LIST_STEP_PHASES:
+        # One-stop step verb: `step get` / `step set` against the keyed-map step
+        # structure. `step get --step-id {id}` returns the complete nested param
+        # object for a step in a single call; `step set --step-id {id} --param {k}
+        # --value {v}` writes one step-owned param into the step's nested object.
+        return _cmd_step(args, phase_section, section, plan_config, config)
+
     elif args.verb == 'set-steps' and phase_section in LIST_STEP_PHASES:
         list_key = LIST_STEP_KEYS[phase_section]
         steps_str = args.steps  # comma-separated
@@ -225,44 +300,55 @@ def cmd_phase(args, phase_section: str) -> dict:
         if err is not None:
             return err
 
-        sorted_steps = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
-        section[list_key] = sorted_steps
+        existing = _steps_map(section.get(list_key))
+        sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
+        # Build the ordered keyed map, preserving any existing per-step params.
+        sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
+        section[list_key] = sorted_map
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit({'phase': phase_section, list_key: sorted_steps, 'count': len(sorted_steps)})
+        return success_exit(
+            {'phase': phase_section, list_key: sorted_map, 'count': len(sorted_map)}
+        )
 
     elif args.verb == 'add-step' and phase_section in LIST_STEP_PHASES:
         list_key = LIST_STEP_KEYS[phase_section]
         step = args.step
-        steps = list(section.get(list_key, []))
-        if step in steps:
+        existing = _steps_map(section.get(list_key))
+        if step in existing:
             return error_exit(f"Step '{step}' already exists in {phase_section}")
 
-        resolved, err = _resolve_step_orders(steps + [step], phase_section)
+        resolved, err = _resolve_step_orders(list(existing.keys()) + [step], phase_section)
         if err is not None:
             return err
 
-        sorted_steps = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
-        section[list_key] = sorted_steps
+        sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
+        # Preserve existing per-step params; the new key starts with empty params.
+        sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
+        section[list_key] = sorted_map
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit({'phase': phase_section, 'step': step, list_key: sorted_steps, 'count': len(sorted_steps)})
+        return success_exit(
+            {'phase': phase_section, 'step': step, list_key: sorted_map, 'count': len(sorted_map)}
+        )
 
     elif args.verb == 'remove-step' and phase_section in LIST_STEP_PHASES:
         list_key = LIST_STEP_KEYS[phase_section]
         step = args.step
-        steps = list(section.get(list_key, []))
-        if step not in steps:
+        existing = _steps_map(section.get(list_key))
+        if step not in existing:
             return error_exit(f"Step '{step}' not found in {phase_section}")
 
-        steps.remove(step)
-        section[list_key] = steps
+        del existing[step]
+        section[list_key] = existing
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit({'phase': phase_section, 'step': step, list_key: steps, 'count': len(steps)})
+        return success_exit(
+            {'phase': phase_section, 'step': step, list_key: existing, 'count': len(existing)}
+        )
 
     elif args.verb == 'remove-field':
         # Delete an arbitrary scalar/list key from the persisted phase section.

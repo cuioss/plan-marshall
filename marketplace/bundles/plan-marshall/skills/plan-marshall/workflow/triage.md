@@ -23,6 +23,7 @@ Skills the caller MUST forward in `skills[]`:
 - `plan-marshall:manage-tasks` — fix-task allocation
 - `plan-marshall:manage-architecture` — `which-module` for domain detection
 - `plan-marshall:manage-config` — extension resolution
+- `plan-marshall:manage-execution-manifest` — `step-params get` for the `default:sonar-roundtrip` `do_transition` gate
 - `plan-marshall:tools-integration-ci` — PR thread replies when `pr_number` is set
 
 Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand inside this workflow — they are NOT pre-loaded by the caller.
@@ -199,14 +200,14 @@ Cross-group feedback (TASK-N references) requires sequential action between grou
 
   **`sonar-issue` FALSE-POSITIVE / WON'T-FIX routing (in-code suppression is the default).** When `finding_type=sonar-issue` and the batched decision dispositions a finding as FALSE-POSITIVE or WON'T-FIX, route it through this SUPPRESS body **by default** rather than the server-side `sonar_rest transition` dismissal: apply the in-code annotation per the loaded `suppression.md` (`@SuppressWarnings("java:S{rule}")` / `// NOSONAR` / the domain's equivalent at `{finding.file_path}:{finding.line}`) and resolve the finding `suppressed` with the resolve call above. In-code suppression keeps the disposition git-versioned and reviewable on the PR diff, so it is the standing default.
 
-  - **Fall-through — rules that cannot be suppressed in-code.** Some Sonar rule classes have no in-code suppression form (e.g., project-level configuration findings, security-hotspot reviews that carry no annotatable source location). For such a finding the in-code path does not apply, and the disposition falls through to a config-gated branch. Read the gate (owned by `manage-config` — see [`../../manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) for the `sonar_do_transition` field; do not inline-copy its specification):
+  - **Fall-through — rules that cannot be suppressed in-code.** Some Sonar rule classes have no in-code suppression form (e.g., project-level configuration findings, security-hotspot reviews that carry no annotatable source location). For such a finding the in-code path does not apply, and the disposition falls through to a config-gated branch. Read the gate — the `do_transition` param nested under the `default:sonar-roundtrip` step — from the plan-local execution-manifest step-params snapshot in a single one-stop call (the `do_transition` param is owned by the `default:sonar-roundtrip` step; see [`../../manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) for its specification; do not inline-copy it). Read `do_transition` off the returned `params` object:
 
     ```bash
-    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-      plan phase-6-finalize get --field sonar_do_transition --audit-plan-id {plan_id}
+    python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+      step-params get --plan-id {plan_id} --phase 6-finalize --step-id default:sonar-roundtrip
     ```
 
-    - **`sonar_do_transition == true`** → perform the server-side dismissal via the canonical `sonar_rest transition` verb (FALSE-POSITIVE → `falsepositive`, WON'T-FIX → `wontfix`); see `workflow-integration-sonar` Canonical invocations → `sonar_rest — transition` for the authoritative argument surface:
+    - **`do_transition == true`** → perform the server-side dismissal via the canonical `sonar_rest transition` verb (FALSE-POSITIVE → `falsepositive`, WON'T-FIX → `wontfix`); see `workflow-integration-sonar` Canonical invocations → `sonar_rest — transition` for the authoritative argument surface:
 
       ```bash
       python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest transition \
@@ -217,9 +218,9 @@ Cross-group feedback (TASK-N references) requires sequential action between grou
 
       Then resolve the finding `suppressed` with the resolve call above (the server-side dismissal is the disposition mechanism; the store resolution still records `suppressed`).
 
-    - **`sonar_do_transition == false`** (default) → do NOT silently transition and do NOT silently drop the finding. Defer it to Step 4 via the AskUserQuestion deferral path (Step 3d), so the operator decides between leaving the issue open, enabling server-side transition, or accepting it. Push `{hash_id, rationale}` onto the deferred-questions list and continue.
+    - **`do_transition == false`** (default) → do NOT silently transition and do NOT silently drop the finding. Defer it to Step 4 via the AskUserQuestion deferral path (Step 3d), so the operator decides between leaving the issue open, enabling server-side transition, or accepting it. Push `{hash_id, rationale}` onto the deferred-questions list and continue.
 
-  Use only the documented call shapes — the `manage-config plan phase-6-finalize get` read, the canonical `sonar_rest transition` verb, and the `manage-findings resolve` call. Do not invent new `manage-*` verbs.
+  Use only the documented call shapes — the `manage-execution-manifest step-params get` read, the canonical `sonar_rest transition` verb, and the `manage-findings resolve` call. Do not invent new `manage-*` verbs.
 
 - **ACCEPT** — for `pr-comment` post a thread reply with rationale and resolve. For `sonar-issue` dismiss in Sonar with rationale (via `workflow-integration-sonar` dismissal surface). For `test-failure` / `lint-issue` no PR surface — accept is store-only. Then:
 

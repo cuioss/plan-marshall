@@ -3156,19 +3156,25 @@ def _write_full_marshal(
     """Write a marshal.json with the given phase-5/6 step lists.
 
     The phase-5 list is optional — when omitted, only ``phase-6-finalize.steps``
-    is populated. Both lists are written verbatim (prefixes preserved). No CI
-    provider is declared, so the bot-enforcement guard is a no-op for these
-    fixtures.
+    is populated. The id lists are converted to the id-keyed map schema
+    (``{step_id: {}, ...}`` — key insertion order is the execution order, empty
+    param objects), matching the live on-disk shape ``_read_marshal_phase_steps``
+    reads. Prefixes are preserved. No CI provider is declared, so the
+    bot-enforcement guard is a no-op for these fixtures.
     """
     marshal_path = fixture_dir / 'marshal.json'
-    plan_block: dict = {'phase-6-finalize': {'steps': phase_6_steps}}
+    plan_block: dict = {
+        'phase-6-finalize': {'steps': {step_id: {} for step_id in phase_6_steps}}
+    }
     if phase_5_steps is not None:
-        # phase-5-execute stores its verification step list under the
-        # ``verification_steps`` key (renamed from the generic ``steps``);
+        # phase-5-execute stores its verification step map under the
+        # ``verification_steps`` key (the keyed-map schema);
         # ``_read_marshal_phase_steps`` reads ``verification_steps`` for the
-        # phase-5 block via ``_marshal_steps_field``. Writing the renamed key
-        # here matches the live composer contract.
-        plan_block['phase-5-execute'] = {'verification_steps': phase_5_steps}
+        # phase-5 block. Writing the keyed map here matches the live composer
+        # contract.
+        plan_block['phase-5-execute'] = {
+            'verification_steps': {step_id: {} for step_id in phase_5_steps}
+        }
     data = {'plan': plan_block}
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
@@ -3263,6 +3269,69 @@ def test_csv_fallback_when_marshal_json_missing(plan_context):
     steps = manifest['phase_6']['steps']
     for expected in ('commit-push', 'create-pr', 'lessons-capture', 'archive-plan'):
         assert expected in steps
+
+
+def test_compose_snapshots_resolved_step_params_from_keyed_map(plan_context):
+    """compose snapshots each selected step's resolved params from the marshal keyed map.
+
+    Seeds a marshal.json whose phase-6-finalize steps map carries nested params
+    on default:branch-cleanup and default:sonar-roundtrip. The composer must
+    snapshot those resolved params into body.phase_6.step_params, keyed by the
+    bare in-manifest step id (the default: prefix is stripped at the boundary),
+    for every selected step. Steps with no marshal-side params snapshot as {}.
+    """
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    phase_6_map = {
+        'default:commit-push': {},
+        'default:create-pr': {},
+        'default:automated-review': {'review_bot_buffer_seconds': 240},
+        'default:sonar-roundtrip': {
+            'touched_file_cleanup': 'touched_files_zero',
+            'do_transition': True,
+            'ce_wait_timeout_seconds': 720,
+        },
+        'default:lessons-capture': {},
+        'default:branch-cleanup': {
+            'pr_merge_strategy': 'rebase',
+            'final_merge_without_asking': True,
+            'auto_rebase_threshold': 'no_overlap_only',
+        },
+        'default:record-metrics': {},
+        'default:archive-plan': {},
+    }
+    data = {'plan': {'phase-6-finalize': {'steps': phase_6_map}}}
+    marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='snapshot-params',
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=11,
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+
+    manifest = read_manifest('snapshot-params')
+    assert manifest is not None
+    step_params = manifest['phase_6']['step_params']
+    # the snapshot is keyed by the bare in-manifest step id (default: stripped)
+    # and carries the resolved nested params for selected steps
+    assert step_params['branch-cleanup'] == {
+        'pr_merge_strategy': 'rebase',
+        'final_merge_without_asking': True,
+        'auto_rebase_threshold': 'no_overlap_only',
+    }
+    assert step_params['sonar-roundtrip'] == {
+        'touched_file_cleanup': 'touched_files_zero',
+        'do_transition': True,
+        'ce_wait_timeout_seconds': 720,
+    }
+    assert step_params['automated-review'] == {'review_bot_buffer_seconds': 240}
+    # an ownerless selected step snapshots as the empty param object
+    assert step_params['commit-push'] == {}
+    # every in-manifest step has a snapshot entry
+    assert set(step_params.keys()) == set(manifest['phase_6']['steps'])
 
 
 # =============================================================================

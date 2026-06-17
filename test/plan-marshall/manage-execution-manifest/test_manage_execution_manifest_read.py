@@ -112,8 +112,28 @@ def test_read_returns_all_manifest_keys(plan_context):
     # phase_5 sub-keys.
     assert 'early_terminate' in result['phase_5']
     assert 'verification_steps' in result['phase_5']
+    # The composer snapshots each selected step's resolved params into the
+    # manifest body under step_params (keyed by the in-manifest step id).
+    assert 'step_params' in result['phase_5']
+    assert isinstance(result['phase_5']['step_params'], dict)
     # phase_6 sub-keys.
     assert 'steps' in result['phase_6']
+    assert 'step_params' in result['phase_6']
+    assert isinstance(result['phase_6']['step_params'], dict)
+
+
+def test_read_snapshots_step_params_for_each_selected_step(plan_context):
+    """The phase_5 step_params snapshot carries one entry per selected verify step."""
+    cmd_compose(_compose_ns(plan_id='io-read-snapshot'))
+    result = cmd_read(_read_ns(plan_id='io-read-snapshot'))
+    assert result is not None
+
+    verification_steps = result['phase_5']['verification_steps']
+    step_params = result['phase_5']['step_params']
+    # one snapshot entry per selected step; verify steps own no params (CSV path
+    # seeds empty param objects since no marshal.json keyed map is present)
+    assert set(step_params.keys()) == set(verification_steps)
+    assert all(params == {} for params in step_params.values())
 
 
 # =============================================================================

@@ -87,22 +87,26 @@ _cmd_effort_mod = _load_module(
 
 
 def test_default_plan_finalize_includes_final_merge_without_asking():
-    """DEFAULT_PLAN_FINALIZE must declare final_merge_without_asking with default False.
+    """final_merge_without_asking nests under default:branch-cleanup with default False.
 
-    The knob is a flat field under plan.phase-6-finalize — the ceremony_policy
-    block was dissolved and every automation knob distributed back into its
-    owning phase.
+    The knob is a step-owned param of `default:branch-cleanup` in the keyed-map
+    `steps` structure (no longer a flat sibling of `steps`). It is sourced from
+    _FINALIZE_STEP_PARAMS and folds into the step's nested param object.
     """
-    finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+    branch_cleanup = _config_defaults_mod._FINALIZE_STEP_PARAMS['default:branch-cleanup']
 
-    # homed in the phase block with the False default
-    assert 'final_merge_without_asking' in finalize, (
-        'final_merge_without_asking must be schema-registered in DEFAULT_PLAN_FINALIZE'
+    # homed in the branch-cleanup step's nested param object with the False default
+    assert 'final_merge_without_asking' in branch_cleanup, (
+        'final_merge_without_asking must nest under default:branch-cleanup in _FINALIZE_STEP_PARAMS'
     )
-    assert finalize['final_merge_without_asking'] is False, (
+    assert branch_cleanup['final_merge_without_asking'] is False, (
         'final_merge_without_asking default must be False '
         '(interactive-by-default: prompt the operator before the final merge; '
         'set True to merge without asking, serialized via the cross-plan merge-lock)'
+    )
+    # it is NOT a flat sibling of steps anymore
+    assert 'final_merge_without_asking' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE, (
+        'final_merge_without_asking must not survive as a flat phase-level knob'
     )
 
 
@@ -160,26 +164,28 @@ def test_validate_run_at_all_rejects_invalid_simplify_value():
 
 
 def test_default_plan_finalize_includes_auto_rebase_threshold():
-    """DEFAULT_PLAN_FINALIZE must declare auto_rebase_threshold with default 'no_overlap_only'."""
-    finalize_defaults = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+    """auto_rebase_threshold nests under default:branch-cleanup with default 'no_overlap_only'."""
+    branch_cleanup = _config_defaults_mod._FINALIZE_STEP_PARAMS['default:branch-cleanup']
 
-    assert 'auto_rebase_threshold' in finalize_defaults, (
-        'auto_rebase_threshold must be schema-registered in DEFAULT_PLAN_FINALIZE'
+    assert 'auto_rebase_threshold' in branch_cleanup, (
+        'auto_rebase_threshold must nest under default:branch-cleanup in _FINALIZE_STEP_PARAMS'
     )
-    assert finalize_defaults['auto_rebase_threshold'] == 'no_overlap_only', (
+    assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only', (
         "auto_rebase_threshold default must be 'no_overlap_only'"
     )
+    # not a flat sibling of steps anymore
+    assert 'auto_rebase_threshold' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
 
 def test_get_default_config_includes_auto_rebase_threshold():
-    """get_default_config() must surface plan.phase-6-finalize.auto_rebase_threshold == 'no_overlap_only'."""
+    """get_default_config() surfaces auto_rebase_threshold nested under default:branch-cleanup."""
     config = _config_defaults_mod.get_default_config()
 
-    finalize = config['plan']['phase-6-finalize']
-    assert 'auto_rebase_threshold' in finalize, (
-        'auto_rebase_threshold must round-trip through get_default_config()'
+    branch_cleanup = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+    assert 'auto_rebase_threshold' in branch_cleanup, (
+        'auto_rebase_threshold must round-trip through the keyed-map steps under default:branch-cleanup'
     )
-    assert finalize['auto_rebase_threshold'] == 'no_overlap_only'
+    assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only'
 
 
 def test_default_plan_execute_omits_retired_per_task_budget_reserve_tokens():
@@ -806,6 +812,112 @@ def test_get_default_config_seeds_whole_tree_gate_in_finalize_steps():
 
     steps = config['plan']['phase-6-finalize']['steps']
     assert 'default:finalize-step-whole-tree-gate' in steps
+
+
+# =============================================================================
+# Keyed-map step structure with nested params (D1 — this plan)
+# =============================================================================
+#
+# `plan.phase-6-finalize.steps` and `plan.phase-5-execute.verification_steps`
+# are id-keyed maps (not flat lists). Key insertion order is the execution
+# order. Step-owned params nest under their owning step's value object; steps
+# that own no params map to `{}`. The sonar params are prefix-stripped within
+# `default:sonar-roundtrip`. These regression tests pin the exact keyed-map
+# structure so any future shape drift is caught immediately.
+
+
+def test_default_plan_finalize_steps_is_id_keyed_map():
+    """DEFAULT_PLAN_FINALIZE['steps'] must be an id-keyed dict, not a flat list."""
+    steps = _config_defaults_mod.DEFAULT_PLAN_FINALIZE['steps']
+
+    assert isinstance(steps, dict), 'steps must be an id-keyed map, not a list'
+    # key insertion order preserves the BUILT_IN_FINALIZE_STEPS execution order
+    assert list(steps.keys()) == _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
+
+
+def test_default_plan_finalize_steps_nests_step_owned_params():
+    """Step-owned params nest under their owning finalize step; ownerless steps map to {}."""
+    steps = _config_defaults_mod.DEFAULT_PLAN_FINALIZE['steps']
+
+    # sonar params nest under default:sonar-roundtrip, prefix-stripped
+    sonar = steps['default:sonar-roundtrip']
+    assert sonar == {
+        'touched_file_cleanup': 'new_code_only',
+        'do_transition': False,
+        'ce_wait_timeout_seconds': 600,
+    }
+    # no sonar_-prefixed key survives inside the scoped object
+    assert not any(k.startswith('sonar_') for k in sonar)
+
+    # review buffer nests under default:automated-review
+    assert steps['default:automated-review'] == {'review_bot_buffer_seconds': 180}
+
+    # branch-cleanup params nest under default:branch-cleanup
+    assert steps['default:branch-cleanup'] == {
+        'pr_merge_strategy': 'squash',
+        'final_merge_without_asking': False,
+        'auto_rebase_threshold': 'no_overlap_only',
+    }
+
+    # a step that owns no params maps to the empty object
+    assert steps['default:create-pr'] == {}
+
+
+def test_default_plan_finalize_drops_flat_step_owned_knobs():
+    """No flat step-owned knob survives as a sibling of `steps`."""
+    finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+
+    for knob in (
+        'sonar_touched_file_cleanup',
+        'sonar_do_transition',
+        'sonar_ce_wait_timeout_seconds',
+        'review_bot_buffer_seconds',
+        'pr_merge_strategy',
+        'final_merge_without_asking',
+        'auto_rebase_threshold',
+    ):
+        assert knob not in finalize, f'flat step-owned knob {knob!r} must not survive'
+
+    # phase-level knobs stay flat
+    assert finalize['checks_wait_timeout_seconds'] == 600
+    assert finalize['max_iterations'] == 3
+    assert finalize['finalize_without_asking'] is True
+    for gate in ('self_review', 'qgate', 'simplify'):
+        assert finalize[gate] == 'auto'
+
+
+def test_default_plan_execute_verification_steps_is_empty_param_keyed_map():
+    """DEFAULT_PLAN_EXECUTE['verification_steps'] must be an id-keyed map of empty params."""
+    verification_steps = _config_defaults_mod.DEFAULT_PLAN_EXECUTE['verification_steps']
+
+    assert isinstance(verification_steps, dict), (
+        'verification_steps must be an id-keyed map, not a list'
+    )
+    # key insertion order preserves the BUILT_IN_VERIFY_STEPS execution order
+    assert list(verification_steps.keys()) == _config_defaults_mod.BUILT_IN_VERIFY_STEPS
+    # verification steps own no params — every value is the empty object
+    assert all(params == {} for params in verification_steps.values())
+
+
+def test_get_default_config_finalize_steps_keyed_map_shape():
+    """get_default_config() must surface the keyed-map finalize steps with nested params."""
+    config = _config_defaults_mod.get_default_config()
+
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert isinstance(steps, dict)
+    assert list(steps.keys()) == _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
+    assert steps['default:sonar-roundtrip']['touched_file_cleanup'] == 'new_code_only'
+    assert steps['default:branch-cleanup']['pr_merge_strategy'] == 'squash'
+
+
+def test_get_default_config_verification_steps_keyed_map_shape():
+    """get_default_config() must surface the keyed-map verification steps."""
+    config = _config_defaults_mod.get_default_config()
+
+    verification_steps = config['plan']['phase-5-execute']['verification_steps']
+    assert isinstance(verification_steps, dict)
+    assert list(verification_steps.keys()) == _config_defaults_mod.BUILT_IN_VERIFY_STEPS
+    assert all(params == {} for params in verification_steps.values())
 
 
 def test_default_plan_coverage_is_inherit_inherit():

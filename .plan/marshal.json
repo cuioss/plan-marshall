@@ -37,11 +37,11 @@
         "default:verify:compile",
         "default:verify:module-tests"
       ],
-      "verification_steps": [
-        "default:verify:quality-gate",
-        "default:verify:module-tests",
-        "default:verify:coverage"
-      ],
+      "verification_steps": {
+        "default:verify:quality-gate": {},
+        "default:verify:module-tests": {},
+        "default:verify:coverage": {}
+      },
       "effort": {
         "default": "level-4",
         "verification-feedback": "level-3"
@@ -56,40 +56,39 @@
     },
     "phase-6-finalize": {
       "max_iterations": 3,
-      "review_bot_buffer_seconds": 180,
-      "pr_merge_strategy": "squash",
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "final_merge_without_asking": true,
       "self_review": "auto",
       "qgate": "auto",
       "simplify": "auto",
       "checks_wait_timeout_seconds": 600,
-      "sonar_touched_file_cleanup": "new_code_only",
-      "sonar_do_transition": false,
-      "sonar_ce_wait_timeout_seconds": 600,
-      "auto_rebase_threshold": "no_overlap_only",
       "drop_review_on_scope_gate": false,
-      "steps": [
-        "default:pre-push-quality-gate",
-        "project:finalize-step-plugin-doctor",
-        "project:finalize-step-pre-submission-self-review",
-        "default:finalize-step-whole-tree-gate",
-        "default:commit-push",
-        "default:finalize-step-simplify",
-        "default:create-pr",
-        "default:ci-verify",
-        "default:automated-review",
-        "default:lessons-capture",
-        "default:branch-cleanup",
-        "project:finalize-step-deploy-target",
-        "project:finalize-step-sync-plugin-cache",
-        "plan-marshall:plan-retrospective",
-        "project:finalize-step-lessons-housekeeping",
-        "default:record-metrics",
-        "default:finalize-step-print-phase-breakdown",
-        "default:archive-plan"
-      ],
+      "steps": {
+        "default:pre-push-quality-gate": {},
+        "project:finalize-step-plugin-doctor": {},
+        "project:finalize-step-pre-submission-self-review": {},
+        "default:finalize-step-whole-tree-gate": {},
+        "default:commit-push": {},
+        "default:finalize-step-simplify": {},
+        "default:create-pr": {},
+        "default:ci-verify": {},
+        "default:automated-review": {
+          "review_bot_buffer_seconds": 180
+        },
+        "default:lessons-capture": {},
+        "default:branch-cleanup": {
+          "pr_merge_strategy": "squash",
+          "final_merge_without_asking": true,
+          "auto_rebase_threshold": "no_overlap_only"
+        },
+        "project:finalize-step-deploy-target": {},
+        "project:finalize-step-sync-plugin-cache": {},
+        "plan-marshall:plan-retrospective": {},
+        "project:finalize-step-lessons-housekeeping": {},
+        "default:record-metrics": {},
+        "default:finalize-step-print-phase-breakdown": {},
+        "default:archive-plan": {}
+      },
       "effort": {
         "default": "level-3",
         "verification-feedback": "level-3",

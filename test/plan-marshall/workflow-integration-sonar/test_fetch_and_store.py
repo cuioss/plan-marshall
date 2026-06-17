@@ -306,18 +306,70 @@ class TestWaitForCeReady:
 
 
 class TestResolveCeWaitTimeout:
-    """The CE-wait budget resolution order: explicit flag wins, then config,
-    then the conservative 600s fallback (never raises)."""
+    """The CE-wait budget resolution order: explicit flag wins, then the
+    manifest step-params snapshot, then the conservative 600s fallback (never
+    raises)."""
 
     def test_explicit_flag_wins(self):
         args = _make_args('p')
         args.ce_wait_timeout = 42
-        assert _resolve_ce_wait_timeout(args) == 42
+        # explicit flag wins even when the snapshot carries a different value
+        assert _resolve_ce_wait_timeout(args, {'ce_wait_timeout_seconds': 900}) == 42
 
     def test_missing_attribute_falls_back_to_default(self):
-        # _make_args produces no ce_wait_timeout attribute; with no initialized
-        # config the resolver returns the conservative 600s fallback.
+        # _make_args produces no ce_wait_timeout attribute; with no snapshot
+        # params the resolver returns the conservative 600s fallback.
         assert _resolve_ce_wait_timeout(_make_args('p')) == 600
+
+    def test_snapshot_param_resolves_when_no_explicit_flag(self):
+        # No explicit flag → the prefix-stripped ce_wait_timeout_seconds from the
+        # manifest step-params snapshot is used.
+        assert _resolve_ce_wait_timeout(_make_args('p'), {'ce_wait_timeout_seconds': 300}) == 300
+
+    def test_empty_snapshot_falls_back_to_default(self):
+        # An empty snapshot (no ce_wait_timeout_seconds) falls back to 600s.
+        assert _resolve_ce_wait_timeout(_make_args('p'), {}) == 600
+
+    def test_non_positive_snapshot_value_falls_back_to_default(self):
+        # A zero / negative snapshot value is ignored in favour of the fallback.
+        assert _resolve_ce_wait_timeout(_make_args('p'), {'ce_wait_timeout_seconds': 0}) == 600
+
+
+class TestReadManifestSonarParams:
+    """``_read_manifest_sonar_params`` reads the default:sonar-roundtrip step's
+    snapshotted params from the plan-local execution manifest (one-stop read),
+    falling back to an empty dict when the manifest is absent or malformed."""
+
+    def test_reads_snapshotted_params_from_manifest(self, plan_context):
+        from file_ops import get_plan_dir  # type: ignore[import-not-found]
+        from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+        plan_dir = get_plan_dir('sonar-snap')
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        manifest = {
+            'manifest_version': 1,
+            'plan_id': 'sonar-snap',
+            'phase_6': {
+                'steps': ['sonar-roundtrip'],
+                'step_params': {
+                    'sonar-roundtrip': {
+                        'touched_file_cleanup': 'touched_files_zero',
+                        'do_transition': True,
+                        'ce_wait_timeout_seconds': 720,
+                    }
+                },
+            },
+        }
+        (plan_dir / 'execution.toon').write_text(serialize_toon(manifest), encoding='utf-8')
+
+        params = sonar_mod._read_manifest_sonar_params('sonar-snap')
+        assert params['ce_wait_timeout_seconds'] == 720
+        assert params['touched_file_cleanup'] == 'touched_files_zero'
+        assert params['do_transition'] is True
+
+    def test_missing_manifest_returns_empty_dict(self, plan_context):
+        # no manifest composed for this plan → empty dict, no raise
+        assert sonar_mod._read_manifest_sonar_params('sonar-no-manifest') == {}
 
 
 # =============================================================================

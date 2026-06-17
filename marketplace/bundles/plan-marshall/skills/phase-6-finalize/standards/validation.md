@@ -11,7 +11,8 @@ Every `manage-*` script call in this document carries the following exit-code co
 
 - Accept `plan_id` parameter (never paths)
 - Read the per-plan execution manifest (`execution.toon`) for `phase_6.steps` — the authoritative step list
-- Read non-step configuration from `marshal.json`: `plan.phase-6-finalize.review_bot_buffer_seconds`, `plan.phase-6-finalize.max_iterations`, `plan.phase-1-init.branch_strategy`, `plan.phase-5-execute.commit_and_push`
+- Read `review_bot_buffer_seconds` from the plan-local manifest step-params snapshot via `manage-execution-manifest step-params get --phase 6-finalize --step-id automated-review` (it is a step-owned param of `default:automated-review`, no longer a flat phase-level field)
+- Read flat (phase-level) configuration from `marshal.json`: `plan.phase-6-finalize.max_iterations`, `plan.phase-1-init.branch_strategy`, `plan.phase-5-execute.commit_and_push`
 - Read context from references.json: `branch`, `base_branch`, `issue_url`, `build_system`
 
 ## Manifest Authority

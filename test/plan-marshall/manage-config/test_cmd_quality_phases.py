@@ -103,7 +103,10 @@ def test_execute_set_steps_single_canonical_verify_round_trips(plan_context):
     assert result['status'] == 'success'
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    assert config['plan']['phase-5-execute']['verification_steps'] == ['default:verify:quality-gate']
+    # verification_steps is an id-keyed map; the single step maps to empty params.
+    assert config['plan']['phase-5-execute']['verification_steps'] == {
+        'default:verify:quality-gate': {}
+    }
 
 
 def test_execute_set_steps_multiple_canonical_verify_succeeds_ordered_by_list_position(plan_context):
@@ -131,7 +134,8 @@ def test_execute_set_steps_multiple_canonical_verify_succeeds_ordered_by_list_po
     assert result['status'] == 'success'
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    assert config['plan']['phase-5-execute']['verification_steps'] == [
+    # Key insertion order is the execution order — list position is preserved.
+    assert list(config['plan']['phase-5-execute']['verification_steps'].keys()) == [
         'default:verify:quality-gate',
         'default:verify:module-tests',
     ]
@@ -159,7 +163,7 @@ def test_execute_set_steps_multiple_canonical_verify_preserves_reverse_list_orde
     assert result['status'] == 'success'
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    assert config['plan']['phase-5-execute']['verification_steps'] == [
+    assert list(config['plan']['phase-5-execute']['verification_steps'].keys()) == [
         'default:verify:coverage',
         'default:verify:module-tests',
         'default:verify:quality-gate',
@@ -196,8 +200,8 @@ def test_execute_add_step(plan_context, monkeypatch):
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     steps = config['plan']['phase-5-execute']['verification_steps']
     assert 'pm-documents:doc-verify' in steps
-    # Order 500 places it after the default built-ins (10, 20, 30)
-    assert steps[-1] == 'pm-documents:doc-verify'
+    # Order 500 places it after the default built-ins (10, 20, 30) — last key.
+    assert list(steps.keys())[-1] == 'pm-documents:doc-verify'
 
 
 def test_execute_remove_step(plan_context):
@@ -302,7 +306,7 @@ def test_finalize_set_steps(plan_context):
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     steps = config['plan']['phase-6-finalize']['steps']
-    assert steps == ['default:commit-push', 'default:create-pr', 'default:archive-plan']
+    assert list(steps.keys()) == ['default:commit-push', 'default:create-pr', 'default:archive-plan']
 
 
 def test_finalize_set_steps_empty_error(plan_context):
@@ -350,9 +354,10 @@ def test_finalize_add_step(plan_context, monkeypatch):
     steps = config['plan']['phase-6-finalize']['steps']
     assert 'pm-dev-java:java-post-pr' in steps
     # Order 75 sits between branch-cleanup (70) and record-metrics (990)
-    idx = steps.index('pm-dev-java:java-post-pr')
-    assert steps[idx - 1] == 'default:branch-cleanup'
-    assert steps[idx + 1] == 'default:record-metrics'
+    step_ids = list(steps.keys())
+    idx = step_ids.index('pm-dev-java:java-post-pr')
+    assert step_ids[idx - 1] == 'default:branch-cleanup'
+    assert step_ids[idx + 1] == 'default:record-metrics'
 
 
 def test_finalize_add_step_sorts_by_order(plan_context, monkeypatch):
@@ -389,8 +394,8 @@ def test_finalize_add_step_sorts_by_order(plan_context, monkeypatch):
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     steps = config['plan']['phase-6-finalize']['steps']
-    # Order 1 is lowest — custom step lands at index 0.
-    assert steps[0] == 'project:finalize-step-custom'
+    # Order 1 is lowest — custom step lands at the first key.
+    assert list(steps.keys())[0] == 'project:finalize-step-custom'
 
 
 def test_finalize_add_step_duplicate_error(plan_context):
@@ -474,7 +479,8 @@ def test_finalize_set_steps_sorts_by_order(plan_context):
     )
 
     assert result['status'] == 'success'
-    assert result['steps'] == [
+    # set-steps returns the keyed map; key insertion order is the execution order.
+    assert list(result['steps'].keys()) == [
         'default:commit-push',
         'default:create-pr',
         'default:record-metrics',
@@ -595,7 +601,9 @@ def test_execute_set_steps_round_trip_cache_layout(plan_context):
 
     assert result['status'] == 'success', f'Expected success (no missing_order) in cache layout, got {result}'
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    assert config['plan']['phase-5-execute']['verification_steps'] == ['default:verify:quality-gate']
+    assert config['plan']['phase-5-execute']['verification_steps'] == {
+        'default:verify:quality-gate': {}
+    }
 
 
 def test_execute_set_steps_round_trip_source_layout(plan_context):
@@ -626,7 +634,9 @@ def test_execute_set_steps_round_trip_source_layout(plan_context):
 
     assert result['status'] == 'success', f'Expected success (no missing_order) in source layout, got {result}'
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    assert config['plan']['phase-5-execute']['verification_steps'] == ['default:verify:quality-gate']
+    assert config['plan']['phase-5-execute']['verification_steps'] == {
+        'default:verify:quality-gate': {}
+    }
 
 
 # =============================================================================
@@ -885,6 +895,159 @@ def test_phase_2_refine_set_compatibility(plan_context):
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     assert config['plan']['phase-2-refine']['compatibility'] == 'deprecation'
+
+
+# =============================================================================
+# One-stop `step get` / `step set` verb (keyed-map step params)
+# =============================================================================
+
+
+def test_finalize_step_get_returns_complete_param_object(plan_context):
+    """`step get --step-id default:automated-review` returns the full nested param object in one call."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='get',
+            step_id='default:automated-review',
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['step_id'] == 'default:automated-review'
+    # the complete param object is returned in a single call
+    assert result['params'] == {'review_bot_buffer_seconds': 300}
+
+
+def test_finalize_step_get_returns_empty_params_for_ownerless_step(plan_context):
+    """`step get` returns the empty param object for a step that owns no params."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='get',
+            step_id='default:commit-push',
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['params'] == {}
+
+
+def test_finalize_step_get_absent_step_id_errors(plan_context):
+    """`step get` errors when the step id is absent from the keyed map."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='get',
+            step_id='default:nonexistent',
+        )
+    )
+
+    assert result['status'] == 'error'
+    assert 'default:nonexistent' in result['error']
+
+
+def test_finalize_step_set_writes_single_param_and_round_trips(plan_context):
+    """`step set` writes one step-owned param into the step's nested object and round-trips via get."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    set_result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='set',
+            step_id='default:automated-review',
+            param='review_bot_buffer_seconds',
+            value='240',
+        )
+    )
+
+    assert set_result['status'] == 'success'
+    # value is coerced (string -> int)
+    assert set_result['params']['review_bot_buffer_seconds'] == 240
+
+    # round-trips through step get
+    get_result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='get',
+            step_id='default:automated-review',
+        )
+    )
+    assert get_result['params']['review_bot_buffer_seconds'] == 240
+
+    # persisted on disk inside the keyed-map step structure
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    persisted = config['plan']['phase-6-finalize']['steps']['default:automated-review']
+    assert persisted['review_bot_buffer_seconds'] == 240
+
+
+def test_finalize_step_set_preserves_other_params(plan_context):
+    """`step set` writing one param leaves the step's other params untouched."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    # seed two params on the branch-cleanup step via two set calls
+    cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='set',
+            step_id='default:branch-cleanup',
+            param='pr_merge_strategy',
+            value='squash',
+        )
+    )
+    cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='set',
+            step_id='default:branch-cleanup',
+            param='final_merge_without_asking',
+            value='true',
+        )
+    )
+
+    get_result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='get',
+            step_id='default:branch-cleanup',
+        )
+    )
+
+    assert get_result['status'] == 'success'
+    assert get_result['params']['pr_merge_strategy'] == 'squash'
+    assert get_result['params']['final_merge_without_asking'] is True
+
+
+def test_finalize_step_set_absent_step_id_errors(plan_context):
+    """`step set` errors when the step id is absent from the keyed map."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='set',
+            step_id='default:nonexistent',
+            param='pr_merge_strategy',
+            value='merge',
+        )
+    )
+
+    assert result['status'] == 'error'
+    assert 'default:nonexistent' in result['error']
 
 
 # =============================================================================

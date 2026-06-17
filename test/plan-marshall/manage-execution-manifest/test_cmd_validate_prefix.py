@@ -107,14 +107,20 @@ def _write_full_marshal(
 ) -> None:
     """Write a marshal.json with the given phase-5/6 step lists (prefixes preserved).
 
-    The phase-5 list lands under ``phase-5-execute.verification_steps`` (the
-    renamed key) and the phase-6 list under ``phase-6-finalize.steps``. No CI
-    provider is declared, so the bot-enforcement guard is a no-op.
+    The phase-5 list lands under ``phase-5-execute.verification_steps`` and the
+    phase-6 list under ``phase-6-finalize.steps``, both in the clean-slate
+    keyed-map shape (``{step_id: {param: value, ...}, ...}``) the migrated
+    ``_read_marshal_phase_step_map`` requires. Each step gets an empty param
+    object; dict-comprehension over the input list preserves insertion order
+    (= execution order). No CI provider is declared, so the bot-enforcement guard
+    is a no-op.
     """
     marshal_path = fixture_dir / 'marshal.json'
-    plan_block: dict = {'phase-6-finalize': {'steps': phase_6_steps}}
+    plan_block: dict = {'phase-6-finalize': {'steps': {step_id: {} for step_id in phase_6_steps}}}
     if phase_5_steps is not None:
-        plan_block['phase-5-execute'] = {'verification_steps': phase_5_steps}
+        plan_block['phase-5-execute'] = {
+            'verification_steps': {step_id: {} for step_id in phase_5_steps}
+        }
     marshal_path.write_text(json.dumps({'plan': plan_block}), encoding='utf-8')
 
 

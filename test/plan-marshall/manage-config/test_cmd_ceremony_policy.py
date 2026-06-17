@@ -2,18 +2,23 @@
 """Regression tests for the retired ``ceremony-policy`` manage-config verb (D9).
 
 The ``ceremony-policy`` noun was retired from ``manage-config.py`` argparse and the
-``_cmd_ceremony_policy.py`` handler deleted. The three auto-continuation knobs the
-verb used to surface (``finalize_without_asking`` / ``loop_back_without_asking`` /
-``final_merge_without_asking``) are now flat fields under ``plan.phase-6-finalize``, read /
-written via the standard ``plan phase-6-finalize get/set --field <knob>`` access shape.
+``_cmd_ceremony_policy.py`` handler deleted. Two auto-continuation knobs the verb
+used to surface (``finalize_without_asking`` / ``loop_back_without_asking``) remain
+flat fields under ``plan.phase-6-finalize``, read / written via the standard
+``plan phase-6-finalize get/set --field <knob>`` access shape. The third
+(``final_merge_without_asking``) is now a step-owned param nested under
+``default:branch-cleanup`` in the keyed-map ``steps`` structure, read / written via
+the one-stop ``plan phase-6-finalize step get/set --step-id default:branch-cleanup``
+access shape.
 
 This module pins the post-retirement contract:
 
 1. ``manage-config ceremony-policy …`` is rejected by argparse (exit code 2) — the
    noun is gone from the ``subparsers`` choices.
 2. The deleted handler script is absent from disk.
-3. Each automation knob reads back through the new ``plan phase-6-finalize get``
-   path with its migrated default, and round-trips through ``set``.
+3. Each flat automation knob reads back through the new ``plan phase-6-finalize get``
+   path with its migrated default, and the step-owned knob reads back through the
+   ``step get`` path; all round-trip through their respective ``set`` shapes.
 """
 
 # ruff: noqa: I001, E402
@@ -57,11 +62,13 @@ _cmd_init_mod = _load_module('_cmd_init_for_verb_retirement_test', '_cmd_init.py
 # Import shared infrastructure (conftest.py sets up PYTHONPATH).
 import conftest  # noqa: E402, F401
 
-# The three auto-continuation knobs with their migrated (preserved) defaults.
+# The two flat auto-continuation knobs that remain phase-level fields, with
+# their migrated (preserved) defaults. final_merge_without_asking is NOT here —
+# it moved into the default:branch-cleanup step's nested param object and is
+# covered by the step-get tests below.
 _MIGRATED_KNOBS = (
     ('finalize_without_asking', True),
     ('loop_back_without_asking', False),
-    ('final_merge_without_asking', False),
 )
 
 
@@ -116,26 +123,52 @@ def test_each_automation_knob_reads_via_phase_get(plan_context):
         assert result['value'] is expected, f'{knob} default must be {expected}'
 
 
-def test_automation_knob_set_then_get_roundtrips(plan_context):
-    """``plan phase-6-finalize set --field final_merge_without_asking --value true`` round-trips.
+def test_final_merge_without_asking_reads_via_step_get(plan_context):
+    """final_merge_without_asking reads back via ``step get`` on default:branch-cleanup with its default.
 
-    Sets the knob to ``true`` (the non-default opt-in to merge without asking)
-    so the round-trip proves persistence against a value distinct from the
-    ``False`` default.
+    The knob moved out of the flat phase-level fields into the
+    default:branch-cleanup step's nested param object, so the fresh-config default
+    surfaces through the one-stop ``step get`` verb, not ``get --field``.
     """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # set then get
+    result = _cmd_quality_phases_mod.cmd_phase(
+        Namespace(verb='step', step_verb='get', step_id='default:branch-cleanup'),
+        'phase-6-finalize',
+    )
+
+    assert result['status'] == 'success'
+    assert result['params']['final_merge_without_asking'] is False
+
+
+def test_final_merge_without_asking_step_set_then_get_roundtrips(plan_context):
+    """``step set --step-id default:branch-cleanup --param final_merge_without_asking --value true`` round-trips.
+
+    Sets the knob to ``true`` (the non-default opt-in to merge without asking)
+    so the round-trip proves persistence against a value distinct from the
+    ``False`` default, via the one-stop step verb against the keyed map.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # set then get via the step verb
     set_result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(verb='set', field='final_merge_without_asking', value='true'), 'phase-6-finalize'
+        Namespace(
+            verb='step',
+            step_verb='set',
+            step_id='default:branch-cleanup',
+            param='final_merge_without_asking',
+            value='true',
+        ),
+        'phase-6-finalize',
     )
     get_result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(verb='get', field='final_merge_without_asking'), 'phase-6-finalize'
+        Namespace(verb='step', step_verb='get', step_id='default:branch-cleanup'),
+        'phase-6-finalize',
     )
 
     # bool coercion + persistence
     assert set_result['status'] == 'success'
-    assert get_result['value'] is True
+    assert get_result['params']['final_merge_without_asking'] is True
 
 
 def test_run_at_all_gate_set_then_get_roundtrips(plan_context):

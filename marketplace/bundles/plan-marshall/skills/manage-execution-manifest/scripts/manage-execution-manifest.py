@@ -235,12 +235,45 @@ def write_manifest(plan_id: str, manifest: dict[str, Any]) -> None:
     atomic_write_file(path, serialize_toon(manifest))
 
 
+def _normalize_step_params_block(manifest: dict[str, Any]) -> None:
+    """Coerce each ``step_params`` per-step value to ``{}`` when not a non-empty dict.
+
+    The manifest persists as TOON, and an empty param object (``{}``) round-trips
+    back from TOON as the empty string ``''`` on read. The step-params contract
+    requires an ownerless step to read back as ``{}`` (an empty param object), not
+    ``''``. This normalizes the read-side exposure for both phase sections in
+    place: any per-step value that is not a dict (notably the ``''`` produced by
+    the empty-dict TOON round-trip) becomes ``{}``. A step id MISSING from the
+    snapshot is left absent — only present-but-empty values normalize.
+    """
+    for section_key in ('phase_5', 'phase_6'):
+        section = manifest.get(section_key)
+        if not isinstance(section, dict):
+            continue
+        step_params = section.get('step_params')
+        if not isinstance(step_params, dict):
+            continue
+        section['step_params'] = {
+            step_id: (params if isinstance(params, dict) else {})
+            for step_id, params in step_params.items()
+        }
+
+
 def read_manifest(plan_id: str) -> dict[str, Any] | None:
-    """Read and parse the manifest, returning ``None`` if missing."""
+    """Read and parse the manifest, returning ``None`` if missing.
+
+    The parsed manifest is normalized at this read boundary so each
+    ``step_params`` per-step value is a dict (``{}`` for ownerless steps),
+    repairing the empty-dict→``''`` TOON round-trip. See
+    :func:`_normalize_step_params_block`.
+    """
     path = get_manifest_path(plan_id)
     if not path.exists():
         return None
-    return parse_toon(path.read_text(encoding='utf-8'))
+    manifest = parse_toon(path.read_text(encoding='utf-8'))
+    if isinstance(manifest, dict):
+        _normalize_step_params_block(manifest)
+    return manifest
 
 
 # =============================================================================
@@ -977,27 +1010,20 @@ def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> N
 # =============================================================================
 
 
-def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
-    """Read the configured step list for ``phase_key`` from marshal.json.
+def _read_marshal_phase_step_map(phase_key: str) -> dict[str, dict] | None:
+    """Read the id-keyed step MAP for ``phase_key`` from marshal.json.
 
     ``phase_key`` is the marshal.json key (e.g. ``'phase-5-execute'`` or
-    ``'phase-6-finalize'``). The list-field read under that key is
-    phase-aware: ``phase-5-execute`` reads ``verification_steps`` while
-    ``phase-6-finalize`` (and any other phase) reads ``steps``. Returns the
-    list of full step references as declared in marshal.json (prefixes
-    preserved), or ``None`` when the marshal file is missing, the keys are
-    absent, or the value is not a list.
+    ``'phase-6-finalize'``). The map-field read under that key is phase-aware:
+    ``phase-5-execute`` reads ``verification_steps`` while ``phase-6-finalize``
+    (and any other phase) reads ``steps``. The on-disk schema is an id-keyed
+    map (``{step_id: {param: value, ...}, ...}``); key insertion order is the
+    execution order and each value is that step's nested param object.
 
-    For backward compatibility with project marshal.json files that have not
-    yet migrated the phase-5 block to ``verification_steps``, the reader falls
-    back to the generic ``steps`` key when the phase-aware field is absent.
-
-    The composer prefers this source over the agent-supplied
-    ``--phase-{5,6}-steps`` CSV because marshal.json is the authoritative
-    project-level declaration: it preserves ``default:`` / ``project:`` /
-    ``bundle:skill`` prefixes that agent-built CSVs have historically
-    stripped, producing manifests with bare names the dispatcher then mis-
-    routed as built-in steps.
+    Returns the keyed map (step id -> param object) as declared in marshal.json
+    (prefixes preserved), or ``None`` when the marshal file is missing, the keys
+    are absent, or the value is not a dict. Clean-slate: there is NO list-shape
+    fallback — the keyed map is the single on-disk schema.
     """
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
@@ -1016,13 +1042,61 @@ def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
         return None
     field = 'verification_steps' if phase_key == 'phase-5-execute' else 'steps'
     steps = phase.get(field)
-    # Back-compat: a phase-5 block written before the verification_steps
-    # rename still carries the list under the generic ``steps`` key.
-    if steps is None and field != 'steps':
-        steps = phase.get('steps')
-    if not isinstance(steps, list):
+    if not isinstance(steps, dict):
         return None
-    return [s for s in steps if isinstance(s, str) and s]
+    return {
+        step_id: (params if isinstance(params, dict) else {})
+        for step_id, params in steps.items()
+        if isinstance(step_id, str) and step_id
+    }
+
+
+def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
+    """Read the ordered step-id list for ``phase_key`` from marshal.json.
+
+    Reads the id-keyed step map (see :func:`_read_marshal_phase_step_map`) and
+    returns ``list(map.keys())`` preserving insertion order (= execution order),
+    or ``None`` when the map is absent / malformed. Clean-slate: the list/
+    ``steps``-key dual-read fallback is removed — the keyed map is the single
+    on-disk schema.
+
+    The composer prefers this source over the agent-supplied
+    ``--phase-{5,6}-steps`` CSV because marshal.json is the authoritative
+    project-level declaration: it preserves ``default:`` / ``project:`` /
+    ``bundle:skill`` prefixes that agent-built CSVs have historically
+    stripped, producing manifests with bare names the dispatcher then mis-
+    routed as built-in steps.
+    """
+    step_map = _read_marshal_phase_step_map(phase_key)
+    if step_map is None:
+        return None
+    return list(step_map.keys())
+
+
+def _snapshot_step_params(final_step_ids: list[str], marshal_step_map: dict[str, dict] | None) -> dict[str, dict]:
+    """Snapshot the resolved per-step params for the FINAL selected steps.
+
+    ``final_step_ids`` is the composer's final in-manifest step-id list (bare
+    names — the ``default:`` prefix is stripped at the compose boundary).
+    ``marshal_step_map`` is the marshal.json id-keyed map (full refs preserved),
+    as returned by :func:`_read_marshal_phase_step_map`, or ``None`` when the
+    marshal file is absent (CSV-fallback path).
+
+    Returns a snapshot ``{step_id: params}`` keyed by the in-manifest (bare)
+    step id, carrying each selected step's resolved param object copied from the
+    marshal map. Only steps that survive into ``final_step_ids`` are snapshotted.
+    A step with no marshal-side entry (or when the marshal map is absent) gets an
+    empty param object. The marshal keys are matched against the bare in-manifest
+    ids via the same ``default:`` prefix-strip used at the compose boundary.
+    """
+    if not marshal_step_map:
+        return {step_id: {} for step_id in final_step_ids}
+    # Index the marshal map by its prefix-stripped key so a bare in-manifest id
+    # matches a ``default:``-prefixed marshal key.
+    bare_to_params: dict[str, dict] = {
+        _strip_default_prefix(key): params for key, params in marshal_step_map.items()
+    }
+    return {step_id: dict(bare_to_params.get(step_id, {})) for step_id in final_step_ids}
 
 
 def _resolve_footprint(plan_id: str) -> list[str]:
@@ -2319,6 +2393,10 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # See lesson reference in ``_read_marshal_phase_steps``.
     marshal_phase_5 = _read_marshal_phase_steps('phase-5-execute')
     marshal_phase_6 = _read_marshal_phase_steps('phase-6-finalize')
+    # Keyed-map reads carrying the per-step params — used at compose end to
+    # snapshot each selected step's resolved params into the manifest body.
+    marshal_phase_5_map = _read_marshal_phase_step_map('phase-5-execute')
+    marshal_phase_6_map = _read_marshal_phase_step_map('phase-6-finalize')
     phase_5_source = 'marshal.json' if marshal_phase_5 is not None else 'csv_fallback'
     phase_6_source = 'marshal.json' if marshal_phase_6 is not None else 'csv_fallback'
     if marshal_phase_5 is not None:
@@ -2574,6 +2652,19 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': may_mutate_diagnostic,
         }
 
+    # Snapshot the resolved per-step params for the FINAL selected steps into the
+    # manifest body (write-time snapshot — the same model that governs the step
+    # list). Phase-5/6 runtime consumers read params from this plan-local snapshot
+    # via the ``step-params get`` verb rather than re-reading marshal.json. Only
+    # the steps that survived selection are snapshotted; the in-manifest step ids
+    # are bare, matched against the (possibly ``default:``-prefixed) marshal keys.
+    body['phase_5']['step_params'] = _snapshot_step_params(
+        list(body['phase_5'].get('verification_steps', [])), marshal_phase_5_map
+    )
+    body['phase_6']['step_params'] = _snapshot_step_params(
+        list(body['phase_6'].get('steps', [])), marshal_phase_6_map
+    )
+
     manifest = {
         'manifest_version': MANIFEST_VERSION,
         'plan_id': plan_id,
@@ -2745,6 +2836,155 @@ def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
         'duration_ms': entry['duration_ms'],
         'timestamp': entry['timestamp'],
         'execution_log_count': len(execution_log),
+    }
+
+
+# =============================================================================
+# Plan-local step-params get/set (manifest snapshot reads + per-plan overrides)
+# =============================================================================
+
+# Maps the ``--phase`` record vocabulary (``5-execute`` / ``6-finalize``) to the
+# manifest body section key. step-params reuses VALID_RECORD_PHASES so the phase
+# argument is identical to record-step's.
+_PHASE_TO_BODY_SECTION = {'5-execute': 'phase_5', '6-finalize': 'phase_6'}
+
+
+def _coerce_param_value(raw: str) -> Any:
+    """Coerce a CLI string ``--value`` to bool / int / str for a step param.
+
+    Mirrors the lightweight coercion manage-config's ``step set`` applies so a
+    per-plan manifest override stores the same typed value the global keyed map
+    would. ``true``/``false`` (case-insensitive) → bool; an integer literal →
+    int; everything else stays a string.
+    """
+    lowered = raw.lower()
+    if lowered == 'true':
+        return True
+    if lowered == 'false':
+        return False
+    try:
+        return int(raw)
+    except ValueError:
+        return raw
+
+
+def cmd_step_params_get(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Return a step's snapshotted param object from the manifest (plan-local read).
+
+    Reads ``body[phase_section].step_params[step_id]`` from the persisted
+    manifest — a literal file read of the compose-time snapshot, never a
+    marshal.json read. An absent step id (or a manifest with no ``step_params``
+    section) is an explicit error.
+
+    The lookup is PREFIX-AGNOSTIC: the snapshot is keyed by the bare step id
+    (``_snapshot_step_params`` strips the ``default:`` prefix at compose time),
+    so the caller's ``--step-id`` is stripped here too before the dict lookup.
+    Both ``default:branch-cleanup`` and ``branch-cleanup`` therefore resolve to
+    the same bare-keyed entry, mirroring ``cmd_validate``'s membership test.
+    """
+    plan_id = require_valid_plan_id(args)
+
+    if args.phase not in VALID_RECORD_PHASES:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {args.phase!r}. Must be one of {list(VALID_RECORD_PHASES)}',
+        }
+
+    manifest = read_manifest(plan_id)
+    if manifest is None:
+        output_toon_error(
+            'file_not_found',
+            f'execution.toon not found for plan {plan_id}',
+            plan_id=plan_id,
+        )
+        return None
+
+    bare_step_id = _strip_default_prefix(args.step_id)
+    section = manifest.get(_PHASE_TO_BODY_SECTION[args.phase], {})
+    step_params = section.get('step_params', {}) if isinstance(section, dict) else {}
+    if not isinstance(step_params, dict) or bare_step_id not in step_params:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'step_not_found',
+            'message': f"Step '{args.step_id}' has no snapshotted params in phase {args.phase}",
+        }
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': args.phase,
+        'step_id': args.step_id,
+        'params': step_params[bare_step_id],
+    }
+
+
+def cmd_step_params_set(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Write a per-plan param override into the manifest's step_params snapshot.
+
+    Writes ``body[phase_section].step_params[step_id][param] = value`` into the
+    persisted manifest (value-coerced) — a plan-local override that wins over the
+    marshal.json compose-time default for subsequent ``step-params get`` reads.
+    Operates on the manifest only, never on marshal.json. An absent step id is an
+    explicit error (the override targets a snapshotted step, not a new one).
+
+    The lookup/write is PREFIX-AGNOSTIC: the snapshot is keyed by the bare step
+    id (``_snapshot_step_params`` strips the ``default:`` prefix at compose
+    time), so the caller's ``--step-id`` is stripped here too before the dict
+    lookup/write. Both ``default:branch-cleanup`` and ``branch-cleanup``
+    therefore resolve to the same bare-keyed entry, mirroring ``cmd_validate``.
+    """
+    plan_id = require_valid_plan_id(args)
+
+    if args.phase not in VALID_RECORD_PHASES:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {args.phase!r}. Must be one of {list(VALID_RECORD_PHASES)}',
+        }
+
+    manifest = read_manifest(plan_id)
+    if manifest is None:
+        output_toon_error(
+            'file_not_found',
+            f'execution.toon not found for plan {plan_id}',
+            plan_id=plan_id,
+        )
+        return None
+
+    bare_step_id = _strip_default_prefix(args.step_id)
+    section = manifest.get(_PHASE_TO_BODY_SECTION[args.phase])
+    if not isinstance(section, dict):
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_manifest',
+            'message': f'Manifest section {_PHASE_TO_BODY_SECTION[args.phase]!r} is missing or malformed',
+        }
+    step_params = section.get('step_params')
+    if not isinstance(step_params, dict) or bare_step_id not in step_params:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'step_not_found',
+            'message': f"Step '{args.step_id}' has no snapshotted params in phase {args.phase}",
+        }
+
+    params = dict(step_params[bare_step_id])
+    params[args.param] = _coerce_param_value(args.value)
+    step_params[bare_step_id] = params
+    section['step_params'] = step_params
+    write_manifest(plan_id, manifest)
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': args.phase,
+        'step_id': args.step_id,
+        'params': params,
     }
 
 
@@ -3269,6 +3509,33 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    # step-params get / step-params set — plan-local reads/overrides of the
+    # compose-time snapshot under body[phase].step_params.
+    step_params_parser = subparsers.add_parser(
+        'step-params',
+        help="Get/set a step's snapshotted params from the plan-local manifest",
+        allow_abbrev=False,
+    )
+    step_params_sub = step_params_parser.add_subparsers(
+        dest='step_params_verb', required=True, help='step-params operation'
+    )
+
+    sp_get = step_params_sub.add_parser(
+        'get', help='Get a step\'s snapshotted param object from the manifest', allow_abbrev=False
+    )
+    add_plan_id_arg(sp_get)
+    sp_get.add_argument('--phase', required=True, help='Phase: 5-execute or 6-finalize')
+    sp_get.add_argument('--step-id', required=True, help='Step id (e.g., default:sonar-roundtrip)')
+
+    sp_set = step_params_sub.add_parser(
+        'set', help='Write a per-plan param override into the manifest snapshot', allow_abbrev=False
+    )
+    add_plan_id_arg(sp_set)
+    sp_set.add_argument('--phase', required=True, help='Phase: 5-execute or 6-finalize')
+    sp_set.add_argument('--step-id', required=True, help='Step id (e.g., default:branch-cleanup)')
+    sp_set.add_argument('--param', required=True, help='Param key (e.g., pr_merge_strategy)')
+    sp_set.add_argument('--value', required=True, help='Param value (coerced bool/int/str)')
+
     return parser
 
 
@@ -3284,8 +3551,15 @@ def main() -> int:
         'validate': cmd_validate,
         'validate-loadable': cmd_validate_loadable,
     }
-    handler = handlers[args.command]
-    result = handler(args)
+    if args.command == 'step-params':
+        step_params_handlers = {
+            'get': cmd_step_params_get,
+            'set': cmd_step_params_set,
+        }
+        result = step_params_handlers[args.step_params_verb](args)
+    else:
+        handler = handlers[args.command]
+        result = handler(args)
     if result is not None:
         output_toon(result)
     return 0

@@ -112,37 +112,63 @@ def test_plan_phase_5_execute_get(plan_context, monkeypatch):
 
 
 def test_plan_phase_6_finalize_get(plan_context, monkeypatch):
-    """Test plan phase-6-finalize get returns config including pr_merge_strategy."""
+    """Test plan phase-6-finalize get returns config including the keyed-map steps."""
     create_marshal_json(plan_context.fixture_dir)
 
     result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field=None))
 
     assert result['status'] == 'success'
-    assert result['pr_merge_strategy'] == 'squash'
+    # steps is the id-keyed map; pr_merge_strategy is a nested param under
+    # default:branch-cleanup (the default config seeds it there).
+    assert 'default:branch-cleanup' in result['steps']
+    assert result['steps']['default:branch-cleanup']['pr_merge_strategy'] == 'squash'
 
 
-def test_plan_phase_6_finalize_get_field_pr_merge_strategy(plan_context, monkeypatch):
-    """Test plan phase-6-finalize get --field pr_merge_strategy."""
+def test_plan_phase_6_finalize_step_get_pr_merge_strategy(plan_context, monkeypatch):
+    """Test plan phase-6-finalize step get --step-id default:branch-cleanup yields pr_merge_strategy."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field='pr_merge_strategy'))
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='get',
+            step_id='default:branch-cleanup',
+        )
+    )
 
     assert result['status'] == 'success'
-    assert result['value'] == 'squash'
+    assert result['params']['pr_merge_strategy'] == 'squash'
 
 
-def test_plan_phase_6_finalize_set_pr_merge_strategy(plan_context, monkeypatch):
-    """Test plan phase-6-finalize set --field pr_merge_strategy --value rebase."""
+def test_plan_phase_6_finalize_step_set_pr_merge_strategy(plan_context, monkeypatch):
+    """Test plan phase-6-finalize step set writes pr_merge_strategy and round-trips via step get."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='set', field='pr_merge_strategy', value='rebase'))
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='set',
+            step_id='default:branch-cleanup',
+            param='pr_merge_strategy',
+            value='rebase',
+        )
+    )
 
     assert result['status'] == 'success'
-    assert result['value'] == 'rebase'
+    assert result['params']['pr_merge_strategy'] == 'rebase'
 
-    # Verify persisted
-    result2 = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field='pr_merge_strategy'))
-    assert result2['value'] == 'rebase'
+    # Verify persisted via step get
+    result2 = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='get',
+            step_id='default:branch-cleanup',
+        )
+    )
+    assert result2['params']['pr_merge_strategy'] == 'rebase'
 
 
 def test_resolve_domain_skills(plan_context, monkeypatch):

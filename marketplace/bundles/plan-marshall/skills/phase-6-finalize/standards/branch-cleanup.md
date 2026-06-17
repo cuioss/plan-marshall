@@ -32,7 +32,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 - **No improvisation**: Do not add git cleanup steps beyond what is explicitly documented in the execution sections below.
 - **Worktree removal is non-force**: Never pass `--force` to `git worktree remove`. Only clean worktrees may be removed. If the worktree has uncommitted changes, abort cleanup and surface the error — the user may still want to salvage the work.
 - **Failure leaves worktree in place**: On any plan abort or failure path, do NOT auto-remove the worktree. Worktree removal happens only during successful branch-cleanup.
-- **Confirmation gate is conditional on conflict severity**: The PR-mode `AskUserQuestion` confirmation gate is no longer mandatory on every `state == open` invocation. It is now driven by the **Conflict-Severity Classifier** section below, which dispatches `plan-marshall:workflow-integration-git:git-workflow baseline-reconcile --no-emit` to classify the rebase as `no_overlap`, `overlap_no_content_conflict`, or `overlap_with_content_conflict`. The classifier's safety properties: `baseline-reconcile --no-emit` is idempotent, performs only `fetch + diff + merge-tree` (with an internal `git merge` probe that is always aborted before any working-tree mutation persists — see the `auto_reconciled: false` downgrade path inside the script), and emits no Q-Gate findings under `--no-emit`. The auto-proceed threshold is tunable via `plan.phase-6-finalize.auto_rebase_threshold`, which is schema-registered in `DEFAULT_PLAN_FINALIZE` (`_config_defaults.py`) with default `no_overlap_only` (opt-in `auto_resolvable`; opt-out `never`). All other safety properties (`--force-with-lease` only, worktree-first removal, targeted ref prune) remain unchanged on every code path.
+- **Confirmation gate is conditional on conflict severity**: The PR-mode `AskUserQuestion` confirmation gate is no longer mandatory on every `state == open` invocation. It is now driven by the **Conflict-Severity Classifier** section below, which dispatches `plan-marshall:workflow-integration-git:git-workflow baseline-reconcile --no-emit` to classify the rebase as `no_overlap`, `overlap_no_content_conflict`, or `overlap_with_content_conflict`. The classifier's safety properties: `baseline-reconcile --no-emit` is idempotent, performs only `fetch + diff + merge-tree` (with an internal `git merge` probe that is always aborted before any working-tree mutation persists — see the `auto_reconciled: false` downgrade path inside the script), and emits no Q-Gate findings under `--no-emit`. The auto-proceed threshold is tunable via the `auto_rebase_threshold` param of the `default:branch-cleanup` step (read from the plan-local manifest step-params snapshot), schema-registered in `_FINALIZE_STEP_PARAMS['default:branch-cleanup']` (`_config_defaults.py`) with default `no_overlap_only` (opt-in `auto_resolvable`; opt-out `never`). All other safety properties (`--force-with-lease` only, worktree-first removal, targeted ref prune) remain unchanged on every code path.
 
 ## Worktree Awareness
 
@@ -99,18 +99,20 @@ This section dispatches the existing `baseline-reconcile` probe to classify the 
 
 #### Read the auto-proceed threshold
 
+The `auto_rebase_threshold`, `pr_merge_strategy`, and `final_merge_without_asking` params are all step-owned params of the `default:branch-cleanup` step. Read them from the plan-local execution-manifest step-params snapshot in a single one-stop call (the same `params` object is reused at the merge-strategy and pre-merge-gate reads below):
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field auto_rebase_threshold --audit-plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get --plan-id {plan_id} --phase 6-finalize --step-id branch-cleanup
 ```
 
-Extract `value` as `{threshold}`. Default: `no_overlap_only`. Accepted values:
+Read `auto_rebase_threshold` off the returned `params` object as `{threshold}`. Default: `no_overlap_only`. Accepted values:
 
 - `no_overlap_only` — auto-proceed only when classifier returns `classification: no_overlap`.
 - `auto_resolvable` — also auto-proceed when classifier returns `classification: overlap_no_content_conflict` AND `auto_reconciled: true`.
 - `never` — always prompt the user; skip the classifier entirely. This is the legacy opt-out for users who prefer the unconditional gate.
 
-The field's lifecycle: the default lives in `DEFAULT_PLAN_FINALIZE` (`_config_defaults.py`), is read at runtime via `manage-config plan phase-6-finalize get --field auto_rebase_threshold`, and is operator-visible in `.plan/marshal.json` (seeded by `manage-config init` / `sync-defaults`). This document is the authoritative description of the threshold's effect on the gate, not its storage — the schema row owns the default.
+The param's lifecycle: the default lives in `_FINALIZE_STEP_PARAMS['default:branch-cleanup']` (`_config_defaults.py`), is snapshotted into the manifest at compose time, is read at runtime via the manifest `step-params get` call above, and is operator-visible in `.plan/marshal.json` under the `default:branch-cleanup` step's nested param object (seeded by `manage-config init` / `sync-defaults`). This document is the authoritative description of the threshold's effect on the gate, not its storage — the schema row owns the default.
 
 #### Threshold-driven bypass (when `{threshold} == never`)
 
@@ -232,12 +234,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Read PR Merge Strategy
 
+Read `pr_merge_strategy` off the `default:branch-cleanup` step's param object — the same `params` object resolved by the one-stop `step-params get` call in the **Conflict-Severity Classifier** section above (re-issue the call if the value was not retained):
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field pr_merge_strategy --audit-plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get --plan-id {plan_id} --phase 6-finalize --step-id branch-cleanup
 ```
 
-Extract `value` as `{pr_merge_strategy}` (default: `squash`). Valid values: `squash`, `merge`, `rebase`.
+Extract `pr_merge_strategy` from the returned `params` object as `{pr_merge_strategy}` (default: `squash`). Valid values: `squash`, `merge`, `rebase`.
 
 ### Rebase Branch onto Base
 
@@ -309,12 +313,14 @@ The pre-merge gate fires after `ci wait` returns green on the rebased branch and
 
 #### Read the auto-merge gate
 
+Read `final_merge_without_asking` off the `default:branch-cleanup` step's param object — the same `params` object resolved by the one-stop `step-params get` call in the **Conflict-Severity Classifier** section above (re-issue the call if the value was not retained):
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field final_merge_without_asking
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get --plan-id {plan_id} --phase 6-finalize --step-id branch-cleanup
 ```
 
-Extract `value` as `{final_merge_without_asking}` (default: `false`). Valid values: `true`, `false`. The default is now `false` — interactive-by-default: the operator is prompted to confirm before the irreversible merge to `main`. `true` is the explicit opt-in to unattended auto-merge after CI, serialized across plans via the cross-plan merge-lock so concurrent plans can never race on the merge-to-main critical section. The read mechanism is a plain boolean — no tri-state, no back-compat normalization.
+Extract `final_merge_without_asking` from the returned `params` object as `{final_merge_without_asking}` (default: `false`). Valid values: `true`, `false`. The default is now `false` — interactive-by-default: the operator is prompted to confirm before the irreversible merge to `main`. `true` is the explicit opt-in to unattended auto-merge after CI, serialized across plans via the cross-plan merge-lock so concurrent plans can never race on the merge-to-main critical section. The read mechanism is a plain boolean — no tri-state, no back-compat normalization.
 
 #### Re-run the classifier against the current head
 
