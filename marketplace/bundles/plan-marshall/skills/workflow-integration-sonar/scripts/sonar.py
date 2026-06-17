@@ -2,23 +2,41 @@
 """
 Sonar workflow operations - producer-side fetch + pre-filter + per-finding store.
 
-Producer-side flow: ``fetch-and-store`` fetches gate-blocking Sonar issues,
+Producer-side flow: ``fetch-and-store`` is the single authority on new-code
+issue enumeration. It performs a synchronous bounded in-Python CE-readiness
+wait (poll the Compute-Engine task state until the PR analysis is DONE, or
+until the wait budget expires), then enumerates the PR-scoped new-code issues,
 applies the keyword pre-filter from ``standards/sonar-rules.json`` (drops
 issues already suppressable via NOSONAR / test-acceptable rules) and writes
 one ``sonar-issue`` finding per surviving issue via ``manage-findings add``
-(direct ``add_finding`` import). LLM consumers query via
-``manage-findings query --type sonar-issue`` — the script-side triage and
-triage-batch surfaces have been retired.
+(direct ``add_finding`` import).
+
+The returned contract carries a verified ``new_code_issue_count`` and a
+``count_status`` discriminator (``confirmed`` | ``undecidable``): a confirmed
+CE-DONE run reports the real PR-scoped count; a CE-still-processing-at-timeout
+or an auth/REST failure reports ``new_code_issue_count: null`` with
+``count_status: undecidable`` and a ``count_status_reason`` — NEVER a false
+``0``. Every fetch also writes one attestation row to
+``artifacts/findings/sonar-scan-summary.jsonl`` (written even at count==0 and
+on undecidable) so an absent file can never be confused with "not checked."
+
+LLM consumers query findings via ``manage-findings query --type sonar-issue``.
 
 Usage:
-    sonar.py fetch-and-store --plan-id <P> --project <key> [--pr <id>] [--severities <list>] [--types <list>]
+    sonar.py fetch-and-store --plan-id <P> --project <key> [--pr <id>] [--severities <list>] [--types <list>] [--ce-wait-timeout <secs>]
     sonar.py --help
 """
 
 import sys
+from datetime import UTC, datetime
 from typing import Any
 
-from ci_base import extract_routing_args, register_subcommands, set_default_cwd  # type: ignore[import-not-found]
+from ci_base import (  # type: ignore[import-not-found]
+    extract_routing_args,
+    poll_until,
+    register_subcommands,
+    set_default_cwd,
+)
 from triage_helpers import (  # type: ignore[import-not-found]
     create_workflow_cli,
     is_test_file,
@@ -47,6 +65,19 @@ SUPPRESSABLE_RULES: dict[str, str] = _RULES_CONFIG.get('suppressable_rules', {})
 SEVERITY_PRIORITY: dict[str, str] = _RULES_CONFIG.get('severity_priority', {})
 _TEST_ACCEPTABLE_RULES: set[str] = set(_RULES_CONFIG.get('test_acceptable_rules', []))
 _ALWAYS_FIX_TYPES: dict[str, str] = _RULES_CONFIG.get('always_fix_types', {})
+
+# CE-readiness wait defaults. The budget is resolved per-call from
+# ``plan.phase-6-finalize.sonar_ce_wait_timeout_seconds`` (default 600,
+# the direct sibling of ``checks_wait_timeout_seconds``), overridable by an
+# explicit ``--ce-wait-timeout`` flag. The poll interval mirrors the CI
+# poll cadence used by ``tools-integration-ci`` (DEFAULT_CI_INTERVAL = 30s).
+_CE_WAIT_DEFAULT_TIMEOUT = 600
+_CE_WAIT_INTERVAL = 30
+
+# CE task states that mean "analysis has settled" (the issue store on the
+# server is now consistent for the PR). PENDING / IN_PROGRESS mean the engine
+# is still processing and the issue set may be incomplete.
+_CE_DONE_STATES = {'SUCCESS', 'FAILED', 'CANCELED'}
 
 
 # ============================================================================
@@ -92,15 +123,208 @@ def _map_severity(sonar_severity: str) -> str | None:
 
 
 # ============================================================================
+# CE-READINESS WAIT (synchronous, bounded, in-Python — NOT a shell loop)
+# ============================================================================
+
+
+def _resolve_ce_wait_timeout(args) -> int:
+    """Resolve the CE-readiness wait budget in seconds.
+
+    Resolution order (first match wins):
+    1. Explicit ``--ce-wait-timeout`` flag (argparse-supplied, always wins).
+    2. ``plan.phase-6-finalize.sonar_ce_wait_timeout_seconds`` from marshal.json.
+    3. The conservative 600s fallback.
+
+    Never raises — a missing / malformed config falls back to 600s so the CLI
+    remains usable outside a plan-marshall project (mirrors ci_base's
+    ``_resolve_ci_timeout``).
+    """
+    explicit = getattr(args, 'ce_wait_timeout', None)
+    if isinstance(explicit, int) and explicit > 0:
+        return explicit
+
+    try:
+        from _config_core import is_initialized, load_config  # type: ignore[import-not-found]
+    except Exception:
+        return _CE_WAIT_DEFAULT_TIMEOUT
+    try:
+        if not is_initialized():
+            return _CE_WAIT_DEFAULT_TIMEOUT
+        cfg = load_config()
+        finalize_section = cfg.get('plan', {}).get('phase-6-finalize', {}) or {}
+        value = finalize_section.get('sonar_ce_wait_timeout_seconds')
+        if isinstance(value, int) and value > 0:
+            return value
+        return _CE_WAIT_DEFAULT_TIMEOUT
+    except Exception:
+        return _CE_WAIT_DEFAULT_TIMEOUT
+
+
+def _poll_ce_status(project: str, pr: str | None) -> tuple[bool, dict[str, Any]]:
+    """One CE-status poll against ``/api/ce/component`` (+ ``/api/ce/activity``).
+
+    Returns ``(ok, data)`` for the ``poll_until`` framework. ``ok`` is False on
+    a REST/auth failure (poll_until propagates the error immediately). On
+    success ``data`` carries ``ce_state`` (the current task status string) and
+    ``queue_length`` (number of still-queued tasks for the component).
+    """
+    from _providers_core import (  # type: ignore[import-not-found]
+        RestClientError,
+        get_authenticated_client,
+    )
+
+    client = get_authenticated_client('workflow-integration-sonar')
+    component_params: dict[str, str] = {'component': project}
+    if pr:
+        component_params['pullRequest'] = pr
+    try:
+        component = client.get('/api/ce/component', params=component_params)
+        client.close()
+    except RestClientError as e:
+        return False, {'error': f'Sonar API error: HTTP {e.status}'}
+
+    current = component.get('current', {}) or {}
+    queue = component.get('queue', []) or []
+    return True, {
+        'ce_state': (current.get('status', '') or '').upper(),
+        'queue_length': len(queue),
+    }
+
+
+def _wait_for_ce_ready(project: str, pr: str | None, timeout: int) -> dict[str, Any]:
+    """Synchronous bounded CE-readiness wait.
+
+    Polls ``/api/ce/component`` via the ``poll_until`` framework until the
+    component's current CE task reaches a settled state (SUCCESS / FAILED /
+    CANCELED) AND no tasks remain queued, or the budget expires.
+
+    Returns a dict carrying:
+    - ``count_status``: ``confirmed`` when CE settled in budget; ``undecidable``
+      when the wait timed out or a REST/auth failure occurred.
+    - ``count_status_reason``: human-readable reason, present only on
+      ``undecidable``.
+    """
+
+    def _check() -> tuple[bool, dict[str, Any]]:
+        return _poll_ce_status(project, pr)
+
+    def _is_ready(data: dict[str, Any]) -> bool:
+        return data.get('ce_state') in _CE_DONE_STATES and data.get('queue_length', 0) == 0
+
+    result = poll_until(_check, _is_ready, timeout=timeout, interval=_CE_WAIT_INTERVAL)
+
+    if result.get('error'):
+        return {
+            'count_status': 'undecidable',
+            'count_status_reason': f'CE-status poll failed: {result["error"]}',
+        }
+    if result.get('timed_out'):
+        last = result.get('last_data', {}) or {}
+        ce_state = last.get('ce_state') or 'unknown'
+        return {
+            'count_status': 'undecidable',
+            'count_status_reason': (
+                f'CE analysis not DONE within {timeout}s '
+                f'(last state={ce_state}, queue={last.get("queue_length", "?")})'
+            ),
+        }
+    return {'count_status': 'confirmed'}
+
+
+# ============================================================================
+# SCAN-SUMMARY MARKER (verified-scan attestation, D5 producer side)
+# ============================================================================
+
+
+def _resolve_scanned_sha() -> str:
+    """Best-effort resolve the worktree HEAD SHA the scan attests to.
+
+    Returns the empty string when the SHA cannot be resolved (not a git tree,
+    git unavailable) — the marker row is still written; ``scanned_sha`` is
+    simply blank.
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if out.returncode == 0:
+            return out.stdout.strip()
+    except Exception:
+        pass
+    return ''
+
+
+def _write_scan_summary(
+    plan_id: str,
+    project: str,
+    pr: str | None,
+    count_status: str,
+    new_code_issue_count: int | None,
+    count_status_reason: str | None,
+) -> str:
+    """Append one attestation row to ``artifacts/findings/sonar-scan-summary.jsonl``.
+
+    Written unconditionally for every fetch — including at count==0 and on
+    ``undecidable`` — so a verified zero is a positive on-disk fact and an
+    absent file unambiguously means "not checked." Reuses the shared
+    findings-dir resolver (``_findings_core.get_findings_dir``) so the file
+    lands in the same archive-surviving directory as ``pr-comment.jsonl``.
+
+    Returns the absolute path of the written file, or an empty string when a
+    filesystem failure (full disk, permission error) prevents the write — the
+    graceful-degradation path so the caller's verified-scan gate fails closed
+    instead of crashing the fetch.
+    """
+    import json
+
+    from _findings_core import get_findings_dir  # type: ignore[import-not-found]
+
+    row: dict[str, Any] = {
+        'count_status': count_status,
+        'new_code_issue_count': new_code_issue_count,
+        'pr': pr,
+        'project': project,
+        'scanned_sha': _resolve_scanned_sha(),
+        'ts': datetime.now(UTC).isoformat(),
+    }
+    if count_status_reason:
+        row['count_status_reason'] = count_status_reason
+
+    # Marker-write I/O failure (full disk, permission error) MUST degrade
+    # gracefully: returning '' signals "marker not written" so the
+    # sonar-roundtrip caller's verified-scan gate fails closed rather than
+    # crashing cmd_fetch_and_store with an unhandled exception (which the
+    # caller would misroute as "Sonar not configured").
+    try:
+        findings_dir = get_findings_dir(plan_id)
+        findings_dir.mkdir(parents=True, exist_ok=True)
+        marker_path = findings_dir / 'sonar-scan-summary.jsonl'
+        with marker_path.open('a', encoding='utf-8') as fh:
+            fh.write(json.dumps(row) + '\n')
+    except OSError:
+        return ''
+
+    return str(marker_path)
+
+
+# ============================================================================
 # FETCH-AND-STORE SUBCOMMAND (producer-side fetch + filter + store)
 # ============================================================================
 
 
 def _fetch_issues(project: str, pr: str | None, severities: str | None, types: str | None) -> dict[str, Any]:
-    """Fetch issues via the Sonar REST client and return the parsed dict.
+    """Fetch PR-scoped new-code issues via the Sonar REST client.
 
     Mirrors ``sonar_rest.cmd_search`` issue extraction so the producer-side
-    flow does not depend on a subprocess call into another skill script.
+    flow does not depend on a subprocess call into another skill script. When
+    ``pr`` is set the query is PR-decoration-scoped and ``inNewCodePeriod=true``
+    enumerates only the new-code issues, so a reported ``0`` is a confirmed
+    PR-scoped zero rather than an inferred one.
     """
     from _providers_core import (  # type: ignore[import-not-found]
         RestClientError,
@@ -111,6 +335,8 @@ def _fetch_issues(project: str, pr: str | None, severities: str | None, types: s
     params: dict[str, str] = {
         'projects': project,
         'ps': '500',
+        'inNewCodePeriod': 'true',
+        'resolved': 'false',
     }
     if pr:
         params['pullRequest'] = pr
@@ -145,12 +371,21 @@ def _fetch_issues(project: str, pr: str | None, severities: str | None, types: s
 
 
 def cmd_fetch_and_store(args):
-    """Producer-side: fetch + pre-filter + write one sonar-issue finding per surviving issue.
+    """Producer-side authority on PR-scoped new-code issue enumeration.
 
-    Always-on storage: every surviving (non-suppressable) Sonar issue becomes
-    a ``sonar-issue`` finding via ``add_finding``. ``count_fetched`` vs
-    ``count_stored`` mismatches are recorded as a ``qgate`` finding with title
-    prefix ``(producer-mismatch)``.
+    Flow:
+    1. Synchronous bounded CE-readiness wait (poll ``ce-status`` until DONE or
+       ``sonar_ce_wait_timeout_seconds`` expiry) — confirms the server's issue
+       set is consistent for the PR before enumerating.
+    2. Fetch the PR-scoped new-code issues and pre-filter the suppressable ones.
+    3. Write one ``sonar-issue`` finding per surviving issue.
+    4. Compute the verified ``new_code_issue_count`` and the ``count_status``
+       discriminator (``confirmed`` | ``undecidable``).
+    5. Write one ``sonar-scan-summary.jsonl`` attestation row (unconditional).
+
+    On CE-timeout OR auth/REST failure the returned dict carries
+    ``new_code_issue_count: null`` and ``count_status: undecidable`` with a
+    ``count_status_reason`` — NEVER a false ``0``.
     """
     from _findings_core import (  # type: ignore[import-not-found]
         add_finding,
@@ -161,8 +396,56 @@ def cmd_fetch_and_store(args):
     project: str = args.project
     pr: str | None = getattr(args, 'pr', None)
 
+    # 1. Synchronous CE-readiness wait — gate the count on a settled analysis.
+    ce_timeout = _resolve_ce_wait_timeout(args)
+    ce_result = _wait_for_ce_ready(project, pr, ce_timeout)
+
+    if ce_result['count_status'] == 'undecidable':
+        # CE never settled (timeout) or the poll failed (auth/REST). Do NOT
+        # enumerate — a count taken against an in-flight analysis would be
+        # unreliable. Report undecidable and write the attestation marker.
+        reason = ce_result.get('count_status_reason')
+        marker_path = _write_scan_summary(
+            plan_id=plan_id,
+            project=project,
+            pr=pr,
+            count_status='undecidable',
+            new_code_issue_count=None,
+            count_status_reason=reason,
+        )
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'project': project,
+            'pull_request': pr or 'none',
+            'count_fetched': 0,
+            'count_skipped_suppressable': 0,
+            'count_stored': 0,
+            'stored_hash_ids': [],
+            'producer_mismatch_hash_id': None,
+            'new_code_issue_count': None,
+            'count_status': 'undecidable',
+            'count_status_reason': reason,
+            'scan_summary_path': marker_path,
+        }
+
+    # 2. Fetch PR-scoped new-code issues.
     fetch_result = _fetch_issues(project, pr, getattr(args, 'severities', None), getattr(args, 'types', None))
     if fetch_result.get('status') != 'success':
+        # Auth/REST failure during fetch — undecidable, never a false 0.
+        reason = fetch_result.get('message', 'Sonar issue fetch failed')
+        marker_path = _write_scan_summary(
+            plan_id=plan_id,
+            project=project,
+            pr=pr,
+            count_status='undecidable',
+            new_code_issue_count=None,
+            count_status_reason=reason,
+        )
+        fetch_result['new_code_issue_count'] = None
+        fetch_result['count_status'] = 'undecidable'
+        fetch_result['count_status_reason'] = reason
+        fetch_result['scan_summary_path'] = marker_path
         return fetch_result
 
     raw_issues: list[dict[str, Any]] = fetch_result.get('issues', []) or []
@@ -249,6 +532,22 @@ def cmd_fetch_and_store(args):
         )
         qgate_hash = qgate_result.get('hash_id')
 
+    # 4. Verified count: the confirmed PR-scoped new-code issue total. The
+    #    authoritative count is over the fetched new-code issues (the REST
+    #    query already scopes to PR + inNewCodePeriod + unresolved), so a
+    #    reported 0 here is a confirmed PR-scoped zero.
+    new_code_issue_count = count_fetched
+
+    # 5. Write the verified-scan attestation marker (unconditional, even at 0).
+    marker_path = _write_scan_summary(
+        plan_id=plan_id,
+        project=project,
+        pr=pr,
+        count_status='confirmed',
+        new_code_issue_count=new_code_issue_count,
+        count_status_reason=None,
+    )
+
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -259,6 +558,9 @@ def cmd_fetch_and_store(args):
         'count_stored': count_stored,
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,
+        'new_code_issue_count': new_code_issue_count,
+        'count_status': 'confirmed',
+        'scan_summary_path': marker_path,
     }
 
 
@@ -286,18 +588,26 @@ def main():
 Examples:
   sonar.py fetch-and-store --plan-id EXAMPLE-PLAN --project com.example:project
   sonar.py fetch-and-store --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
+  sonar.py fetch-and-store --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --ce-wait-timeout 300
 """,
         subcommands=[
             {
                 'name': 'fetch-and-store',
-                'help': 'Producer-side: fetch + pre-filter + store one sonar-issue finding per surviving issue',
+                'help': 'Producer-side: CE-readiness wait + fetch + pre-filter + store one sonar-issue finding per surviving issue',
                 'handler': cmd_fetch_and_store,
                 'args': [
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
                     {'flags': ['--project'], 'required': True, 'help': 'SonarQube project key'},
-                    {'flags': ['--pr'], 'help': 'Pull request ID'},
+                    {'flags': ['--pr'], 'help': 'Pull request ID — scopes the CE-status lookup and new-code enumeration'},
                     {'flags': ['--severities'], 'help': 'Filter by severity (comma-separated)'},
                     {'flags': ['--types'], 'help': 'Filter by type (comma-separated)'},
+                    {
+                        'flags': ['--ce-wait-timeout'],
+                        'dest': 'ce_wait_timeout',
+                        'type': int,
+                        'help': 'Override the CE-readiness wait budget in seconds (default: '
+                        'plan.phase-6-finalize.sonar_ce_wait_timeout_seconds, else 600)',
+                    },
                 ],
             },
         ],

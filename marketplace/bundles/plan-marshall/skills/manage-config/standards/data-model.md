@@ -68,6 +68,9 @@ JSON structure and field definitions for project configuration.
       "review_bot_buffer_seconds": 180,
       "pr_merge_strategy": "squash",
       "checks_wait_timeout_seconds": 600,
+      "sonar_touched_file_cleanup": "new_code_only",
+      "sonar_do_transition": false,
+      "sonar_ce_wait_timeout_seconds": 600,
       "auto_rebase_threshold": "no_overlap_only",
       "drop_review_on_scope_gate": false,
       "finalize_without_asking": true,
@@ -426,6 +429,9 @@ Finalize pipeline with numbered boolean steps.
       "review_bot_buffer_seconds": 180,
       "pr_merge_strategy": "squash",
       "checks_wait_timeout_seconds": 600,
+      "sonar_touched_file_cleanup": "new_code_only",
+      "sonar_do_transition": false,
+      "sonar_ce_wait_timeout_seconds": 600,
       "auto_rebase_threshold": "no_overlap_only",
       "drop_review_on_scope_gate": false,
       "finalize_without_asking": true,
@@ -450,6 +456,9 @@ Finalize pipeline with numbered boolean steps.
 | `review_bot_buffer_seconds` | int | 180 | Max seconds to wait after CI for new review-bot comments to arrive (used as `--timeout` for `pr wait-for-comments`; the polling subcommand exits as soon as a new comment is posted, so this is a ceiling, not a fixed delay) |
 | `pr_merge_strategy` | string | "squash" | squash, merge, rebase — the merge method the branch-cleanup step passes to `pr merge` |
 | `checks_wait_timeout_seconds` | int | 600 | Default timeout (seconds) for the CI-completion polling commands consumed by `ci_base.py` (`ci checks wait`, `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two `issue wait-for-*` polls). An explicit `--timeout` CLI flag always wins; the 600s fallback covers callers running outside a plan-marshall project. This is a finalize wait-policy, owned by phase-6-finalize. |
+| `sonar_touched_file_cleanup` | enum(`new_code_only`\|`touched_files_zero`) | "new_code_only" | Cleanup-scope for the Sonar roundtrip success criterion. `new_code_only` (default, lean) anchors success on new-code issues == 0; `touched_files_zero` extends the success criterion to also sweep pre-existing issues on the files the plan touched. Consumed by `sonar-roundtrip.md` at the success gate. Validated by `validate_sonar_touched_file_cleanup`. |
+| `sonar_do_transition` | bool | false | Gate for the server-side SonarCloud dismissal path. `false` (default) routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression (`@SuppressWarnings` / `// NOSONAR`); `true` re-enables the server-side `sonar_rest transition` dismissal. Consumed by triage Step 3c as the fall-through gate for rule classes that cannot be suppressed in-code. |
+| `sonar_ce_wait_timeout_seconds` | int | 600 | Budget (seconds) for the synchronous in-Python CE-readiness wait performed by `sonar.py fetch-and-store` before enumerating new-code issues — the direct sibling of `checks_wait_timeout_seconds`. An explicit `--ce-wait-timeout` flag overrides it. A finalize wait-policy, owned by phase-6-finalize. |
 | `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `final_merge_without_asking`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
 | `drop_review_on_scope_gate` | bool | false | Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter. `false` (default) keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans. |
 | `finalize_without_asking` | bool | true | Forward auto-continuation: auto-continue into finalize after execute completes. `true` (default) skips the gate. |
