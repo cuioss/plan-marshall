@@ -301,6 +301,55 @@ def validate_per_deliverable_build(value: object) -> None:
         )
 
 
+# The exact key set the cost_size_token_table must carry — the four T-shirt
+# sizes the cost-sizing rubric (phase-4-plan/standards/cost-sizing.md) maps a
+# task to. The table value for each size is a human-friendly magnitude string
+# (e.g. "25K") parsed back to an int via sensible_number.parse_sensible_int.
+COST_SIZE_LABELS = ('S', 'M', 'L', 'XL')
+
+
+def validate_cost_size_token_table(value: object) -> None:
+    """Validate the ``cost_size_token_table`` size→token mapping.
+
+    ``cost_size_token_table`` maps each T-shirt size in
+    :data:`COST_SIZE_LABELS` (``S``/``M``/``L``/``XL``) to a predicted-token
+    magnitude. The keys must be exactly that set (no missing, no extra), and
+    every value must parse as a human-friendly sensible int (``"25K"`` →
+    25000) via :func:`sensible_number.parse_sensible_int`. The phase-4-plan
+    bin-packer reads this table to map a task's derived ``cost_size`` to its
+    ``predicted_cost_tokens``.
+
+    Raises:
+        ValueError: If ``value`` is not a dict, if its key set is not exactly
+            ``{S, M, L, XL}``, or if any value does not parse as a sensible
+            int.
+    """
+    from sensible_number import parse_sensible_int  # type: ignore[import-not-found]
+
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"Invalid cost_size_token_table {value!r}: expected a dict mapping "
+            f"{list(COST_SIZE_LABELS)} to token magnitudes."
+        )
+    keys = set(value.keys())
+    expected = set(COST_SIZE_LABELS)
+    if keys != expected:
+        missing = sorted(expected - keys)
+        extra = sorted(keys - expected)
+        raise ValueError(
+            f"Invalid cost_size_token_table keys {sorted(keys)}: expected exactly "
+            f"{list(COST_SIZE_LABELS)} (missing={missing}, extra={extra})."
+        )
+    for size, magnitude in value.items():
+        try:
+            parse_sensible_int(magnitude)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid cost_size_token_table value for '{size}': {magnitude!r} "
+                f"is not a parseable token magnitude ({exc})."
+            ) from exc
+
+
 DEFAULT_PLAN_EXECUTE = {
     # When true (the default), the execute loop commits per-deliverable on the
     # feature branch and phase-6-finalize pushes + opens a PR. When false, the
@@ -319,15 +368,26 @@ DEFAULT_PLAN_EXECUTE = {
     # whole-tree quality sweep stays once at end-of-phase. Use [] to disable the
     # per-deliverable build (the former 'off' enum value).
     'per_deliverable_build': ['default:verify:compile', 'default:verify:module-tests'],
-    # Per-task budget reserve gating the phase-5-execute continue-vs-yield
-    # sentinel. The `_tokens` suffix names the unit (tokens); the value is the
-    # human-friendly magnitude string "50K", parsed back to the int 50000 by the
-    # phase-5-execute consumer via `sensible_number.parse_sensible_int`.
-    # phase-5-execute reads this via
-    # `manage-config plan phase-5-execute get --field per_task_budget_reserve_tokens`;
-    # the workflow's documented fallback when the knob is absent is 50000.
-    # Registering it here makes the reserve operator-visible in marshal.json.
-    'per_task_budget_reserve_tokens': '50K',
+    # Size→token table mapping each T-shirt cost_size (S/M/L/XL) to a predicted
+    # token magnitude. Validated by validate_cost_size_token_table (keys exactly
+    # S/M/L/XL; every value parses via sensible_number.parse_sensible_int). The
+    # phase-4-plan bin-packer (_tasks_envelope.py, via manage-tasks pack-envelopes)
+    # reads this table at PLAN time to map a task's derived cost_size to its
+    # predicted_cost_tokens. The default magnitudes (S≈25K / M≈60K / L≈130K /
+    # XL≈260K) are calibrated to the forensic 134K–392K per-dispatch range and
+    # are the tunable defaults; raise/lower them in marshal.json to recalibrate
+    # the size model from observed post-return <usage>.
+    'cost_size_token_table': {'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K'},
+    # Per-envelope packing budget — the token ceiling the phase-4-plan bin-packer
+    # accumulates predicted_cost_tokens against before opening a new envelope
+    # group. The `_tokens` suffix names the unit (tokens); the value is the
+    # human-friendly magnitude string "400K", parsed to an int via
+    # sensible_number.parse_sensible_int. This is consumed at PLAN time by the
+    # bin-packer (manage-tasks pack-envelopes), NOT a runtime comparand — the
+    # continue-vs-yield decision is fully pre-computed into envelope_id groups at
+    # plan time. The 400K default leaves headroom below a typical context window.
+    # Registering it here makes the packing budget operator-visible in marshal.json.
+    'per_envelope_budget_tokens': '400K',
     'verification_steps': list(BUILT_IN_VERIFY_STEPS),
     # Per-phase effort default (seeded at init; balanced-preset baseline). The
     # phase-5-execute role group has the `default` (per-task implementation) and
@@ -556,6 +616,10 @@ def get_default_config() -> dict:
 
     system_domain = copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)
     validate_domain_invariants(system_domain)
+    # Self-validate the seeded phase-5-execute list/table defaults so a malformed
+    # default shape fails loud at seed time rather than at first read.
+    validate_per_deliverable_build(DEFAULT_PLAN_EXECUTE['per_deliverable_build'])
+    validate_cost_size_token_table(DEFAULT_PLAN_EXECUTE['cost_size_token_table'])
     config = {
         'providers': [],
         'project': copy.deepcopy(DEFAULT_PROJECT),

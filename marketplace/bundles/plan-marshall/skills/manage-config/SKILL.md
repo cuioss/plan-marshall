@@ -66,7 +66,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-d
 ```toon
 status: success
 added[3]:
-  - plan.phase-5-execute.per_task_budget_reserve_tokens
+  - plan.phase-5-execute.per_envelope_budget_tokens
   - plan.phase-6-finalize.auto_rebase_threshold
   - project.default_base_branch
 added_count: 3
@@ -166,13 +166,19 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 # Select the per-deliverable build — comma-separated list of default:verify:{canonical} step IDs (empty disables it)
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field per_deliverable_build --value default:verify:compile,default:verify:module-tests
+
+# Tune the per-envelope packing budget consumed at plan time by the bin-packer
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field per_envelope_budget_tokens --value 400K
 ```
 
-**phase-5-execute per-deliverable build field:**
+**phase-5-execute build + cost-sizing fields:**
 
 | Field | Type | Default | Semantics |
 |-------|------|---------|-----------|
 | `per_deliverable_build` | list[`default:verify:{canonical}`] | `[default:verify:compile, default:verify:module-tests]` | Canonical-verify rungs phase-5-execute runs at each per-deliverable chain-tail point (Step 10), module-scoped to the changed module. The default runs compile + scoped `module-tests`; `[]` disables the per-deliverable build (the end-of-phase sweep is the only build). The retired enum strings (`off` / `compile-only` / `compile+scoped-test` / `full`) are rejected with a migration error. Read by phase-5-execute per-deliverable. |
+| `cost_size_token_table` | dict[`S`/`M`/`L`/`XL` → magnitude] | `{S: 25K, M: 60K, L: 130K, XL: 260K}` | Size→token table mapping each T-shirt `cost_size` to a predicted-token magnitude. The phase-4-plan bin-packer (`manage-tasks pack-envelopes`) reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`. Keys must be exactly `S`/`M`/`L`/`XL`; each value parses via `sensible_number.parse_sensible_int`. Tune the magnitudes to recalibrate the cost model from observed post-return `<usage>`. Read via `manage-config plan phase-5-execute get --field cost_size_token_table`. |
+| `per_envelope_budget_tokens` | string (sensible int) | `"400K"` | Per-envelope packing budget — the token ceiling the phase-4-plan bin-packer accumulates `predicted_cost_tokens` against before opening a new envelope group. Consumed at PLAN time by the bin-packer, NOT a runtime comparand. The `_tokens` suffix names the unit; the value parses via `sensible_number.parse_sensible_int`. Read via `manage-config plan phase-5-execute get --field per_envelope_budget_tokens`. |
 
 **Symmetric auto-continuation knobs:** the forward (`finalize_without_asking`) and reverse (`loop_back_without_asking`) auto-continuation knobs, together with `final_merge_without_asking`, are flat knobs under `plan.phase-6-finalize` — read/written via the standard `manage-config plan phase-6-finalize get/set --field <knob>` access shape.
 
