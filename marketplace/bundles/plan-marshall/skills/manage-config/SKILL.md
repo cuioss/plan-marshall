@@ -53,10 +53,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-d
 
 - A key already present in the live config is preserved unchanged. "Present"
   means "key exists" — value comparison is NOT performed, so a user-set
-  `final_merge_without_asking: true` survives even when the default is `false`.
+  `final_merge_without_asking: true` (nested under `steps['default:branch-cleanup']`)
+  survives even when the default is `false`.
 - Nested dicts are merged recursively, so a deeply-nested missing sub-key
-  (e.g. `plan.phase-6-finalize.auto_rebase_threshold` when `phase-6-finalize`
-  exists but the sub-key does not) is added without disturbing siblings.
+  (e.g. the `auto_rebase_threshold` param under
+  `plan.phase-6-finalize.steps['default:branch-cleanup']` when that step's param
+  object exists but the param does not) is added without disturbing siblings.
 - Lists are atomic: a present list is kept verbatim; only an absent list key is
   seeded from defaults.
 - The merge is idempotent — re-running immediately produces an empty `added[]`.
@@ -67,7 +69,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-d
 status: success
 added[3]:
   - plan.phase-5-execute.per_envelope_budget_tokens
-  - plan.phase-6-finalize.auto_rebase_threshold
+  - plan.phase-6-finalize.steps.default:branch-cleanup.auto_rebase_threshold
   - project.default_base_branch
 added_count: 3
 ```
@@ -180,7 +182,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | `cost_size_token_table` | dict[`S`/`M`/`L`/`XL` → magnitude] | `{S: 25K, M: 60K, L: 130K, XL: 260K}` | Size→token table mapping each T-shirt `cost_size` to a predicted-token magnitude. The phase-4-plan bin-packer (`manage-tasks pack-envelopes`) reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`. Keys must be exactly `S`/`M`/`L`/`XL`; each value parses via `sensible_number.parse_sensible_int`. Tune the magnitudes to recalibrate the cost model from observed post-return `<usage>`. Read via `manage-config plan phase-5-execute get --field cost_size_token_table`. |
 | `per_envelope_budget_tokens` | string (sensible int) | `"400K"` | Per-envelope packing budget — the token ceiling the phase-4-plan bin-packer accumulates `predicted_cost_tokens` against before opening a new envelope group. Consumed at PLAN time by the bin-packer, NOT a runtime comparand. The `_tokens` suffix names the unit; the value parses via `sensible_number.parse_sensible_int`. Read via `manage-config plan phase-5-execute get --field per_envelope_budget_tokens`. |
 
-**Symmetric auto-continuation knobs:** the forward (`finalize_without_asking`) and reverse (`loop_back_without_asking`) auto-continuation knobs, together with `final_merge_without_asking`, are flat knobs under `plan.phase-6-finalize` — read/written via the standard `manage-config plan phase-6-finalize get/set --field <knob>` access shape.
+**Symmetric auto-continuation knobs:** the forward (`finalize_without_asking`) and reverse (`loop_back_without_asking`) auto-continuation knobs are flat knobs under `plan.phase-6-finalize` — read/written via the standard `manage-config plan phase-6-finalize get/set --field <knob>` access shape. (`final_merge_without_asking` is a step-owned param of `default:branch-cleanup`, read/written via the one-stop `step get`/`step set` verb — not a flat field.)
 
 ### Manage Verification Steps
 
@@ -266,7 +268,7 @@ The lifecycle run-at-all gates and automation knobs are flat knobs under their o
 | `qgate` (planning) | `plan.phase-3-outline` | `plan phase-3-outline get --field qgate` |
 | `finalize_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field finalize_without_asking` |
 | `loop_back_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field loop_back_without_asking` |
-| `final_merge_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field final_merge_without_asking` |
+| `final_merge_without_asking` | `plan.phase-6-finalize.steps['default:branch-cleanup']` (step-owned param) | `plan phase-6-finalize step get --step-id default:branch-cleanup` (read `final_merge_without_asking` off `params`) |
 | `self_review` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field self_review` |
 | `qgate` (finalize) | `plan.phase-6-finalize` | `plan phase-6-finalize get --field qgate` |
 | `simplify` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field simplify` |
@@ -454,7 +456,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
 | `project` | `get/set` (`default_base_branch`, `working_prefixes`) |
-| `plan` | `{phase} get/set` (incl. run-at-all gates + finalize automation knobs), set-steps, add-step, remove-step, set-max-iterations |
+| `plan` | `{phase} get/set` (incl. run-at-all gates + flat finalize automation knobs), `{phase} step get/set` (one-stop keyed-map step-param read/write), set-steps, add-step, remove-step, set-max-iterations |
 | `effort` | `read` (role/phase/`--default` resolver), `resolve-target` (`execution-context-{level}` variant name), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan --level` (surgical per-scope writer) |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `build-map` | `seed` (re-seed `build.map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `build.map`, fail-closed when absent), `drift` (read-only diff of persisted vs derived map: `in_sync` + per-domain added/removed globs) |
@@ -528,22 +530,36 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "commit_and_push": true,
       "max_iterations": 5,
       "per_deliverable_build": ["default:verify:compile", "default:verify:module-tests"],
-      "verification_steps": ["default:verify:quality-gate", "default:verify:module-tests", "default:verify:coverage"]
+      "verification_steps": {
+        "default:verify:quality-gate": {},
+        "default:verify:module-tests": {},
+        "default:verify:coverage": {}
+      }
     },
     "phase-6-finalize": {
       "max_iterations": 3,
-      "review_bot_buffer_seconds": 180,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "final_merge_without_asking": false,
       "self_review": "auto",
       "qgate": "auto",
       "simplify": "auto",
-      "steps": [
-        "commit_push", "create_pr", "automated_review",
-        "sonar_roundtrip", "lessons_capture",
-        "branch_cleanup", "archive"
-      ]
+      "steps": {
+        "default:commit-push": {},
+        "default:create-pr": {},
+        "default:automated-review": { "review_bot_buffer_seconds": 180 },
+        "default:sonar-roundtrip": {
+          "touched_file_cleanup": "new_code_only",
+          "do_transition": false,
+          "ce_wait_timeout_seconds": 600
+        },
+        "default:lessons-capture": {},
+        "default:branch-cleanup": {
+          "pr_merge_strategy": "squash",
+          "final_merge_without_asking": false,
+          "auto_rebase_threshold": "no_overlap_only"
+        },
+        "default:archive-plan": {}
+      }
     }
   }
 }
@@ -565,23 +581,28 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 | `qgate` | `phase-6-finalize` | Whether finalize re-captures blocking findings. **Highest-risk gate** — `never` can mask real build/test failures. |
 | `simplify` | `phase-6-finalize` | Whether the holistic post-implementation simplification sweep (`finalize-step-simplify`) runs. `always` forces it in even when the composer's `simplify_inactive` pre-filter would drop it; `never` skips it; `auto` defers to that pre-filter. |
 
-**Finalize automation knobs (boolean, under `phase-6-finalize`):**
+**Flat finalize automation knobs (boolean, under `phase-6-finalize`):**
 
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `finalize_without_asking` | `true` | Auto-continue into finalize after execute. |
 | `loop_back_without_asking` | `false` | Auto-re-enter on a finalize loop_back outcome. |
-| `final_merge_without_asking` | `false` | Merge the PR after CI passes without prompting the operator. |
 
-**Sonar roundtrip knobs (under `phase-6-finalize`):**
+(`final_merge_without_asking` is NOT flat — it is a step-owned param nested under the `default:branch-cleanup` step; see the step-owned param tables below.)
 
-| Field | Type | Default | Meaning |
+**Step-owned params (nested under their owning step in the `phase-6-finalize.steps` keyed map):**
+
+`default:sonar-roundtrip` (the `sonar_` prefix is dropped within the scoped object):
+
+| Param | Type | Default | Meaning |
 |-------|------|---------|---------|
-| `sonar_touched_file_cleanup` | enum(`new_code_only`\|`touched_files_zero`) | `new_code_only` | Cleanup-scope for the Sonar roundtrip success criterion. `new_code_only` (lean default) anchors success on new-code issues == 0; `touched_files_zero` also sweeps pre-existing issues on touched files. Validated by `validate_sonar_touched_file_cleanup`. |
-| `sonar_do_transition` | bool | `false` | Gate for the server-side SonarCloud dismissal path. `false` routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression; `true` re-enables `sonar_rest transition` dismissal. Consumed by triage Step 3c as the fall-through gate. |
-| `sonar_ce_wait_timeout_seconds` | int | `600` | Budget (seconds) for the synchronous in-Python CE-readiness wait in `sonar.py fetch-and-store` — sibling of `checks_wait_timeout_seconds`; overridable by `--ce-wait-timeout`. |
+| `touched_file_cleanup` | enum(`new_code_only`\|`touched_files_zero`) | `new_code_only` | Cleanup-scope for the Sonar roundtrip success criterion. `new_code_only` (lean default) anchors success on new-code issues == 0; `touched_files_zero` also sweeps pre-existing issues on touched files. Validated by `validate_sonar_touched_file_cleanup`. |
+| `do_transition` | bool | `false` | Gate for the server-side SonarCloud dismissal path. `false` routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression; `true` re-enables `sonar_rest transition` dismissal. Consumed by triage Step 3c as the fall-through gate. |
+| `ce_wait_timeout_seconds` | int | `600` | Budget (seconds) for the synchronous in-Python CE-readiness wait in `sonar.py fetch-and-store` — sibling of the flat `checks_wait_timeout_seconds`; overridable by `--ce-wait-timeout`. |
 
-**Access shape.** Read/write each knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate`, `plan phase-6-finalize get --field finalize_without_asking`, or `plan phase-6-finalize get --field sonar_ce_wait_timeout_seconds`. See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
+`default:automated-review`: `review_bot_buffer_seconds` (int, default `180`) — max-wait ceiling for `pr wait-for-comments`. `default:branch-cleanup`: `pr_merge_strategy` (default `squash`), `final_merge_without_asking` (bool, default `false`), `auto_rebase_threshold` (default `no_overlap_only`).
+
+**Access shape.** Read/write each FLAT knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate`, `plan phase-6-finalize get --field finalize_without_asking`. Read/write each STEP-OWNED param through the one-stop `plan phase-6-finalize step get/set --step-id {step} [--param {k} --value {v}]` verb against the marshal.json keyed map (the global-config default + wizard write target), or via the plan-local manifest snapshot `manage-execution-manifest step-params get/set` (the per-plan runtime read/override). See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
 
 ### Build-Queue Settings
 
@@ -874,6 +895,24 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan p
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-5-execute remove-step \
   --step STEP_REF
+```
+
+### plan phase-6-finalize step get / plan phase-5-execute step get
+
+Returns the complete nested param object for a step in a single call against the marshal.json keyed map.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step get \
+  --step-id STEP_ID
+```
+
+### plan phase-6-finalize step set / plan phase-5-execute step set
+
+Writes one step-owned param into the step's nested object (value-coerced).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step set \
+  --step-id STEP_ID --param PARAM --value VALUE
 ```
 
 ### ext-defaults get

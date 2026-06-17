@@ -73,46 +73,73 @@ def test_sync_defaults_empty_marshal_gains_all_defaults(plan_context):
     assert result['status'] == 'success'
     assert result['added_count'] > 0
     config = _read_marshal(plan_context.fixture_dir)
-    assert config['plan']['phase-6-finalize']['auto_rebase_threshold'] == 'no_overlap_only'
+    # auto_rebase_threshold nests under steps[default:branch-cleanup] (keyed map)
+    branch_cleanup = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+    assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only'
     assert config['project']['default_base_branch'] == 'main'
     # Top-level default keys are added
     assert 'plan' in result['added']
     assert 'project' in result['added']
 
 
-def test_sync_defaults_preserves_user_set_keys(plan_context):
-    """A user-set scalar survives the sync; missing siblings are added."""
-    # user pinned pr_merge_strategy to a non-default value
+def test_sync_defaults_preserves_user_set_nested_step_param(plan_context):
+    """A user-set nested step param survives the sync; missing siblings are added.
+
+    pr_merge_strategy is now a nested param under steps[default:branch-cleanup].
+    The deep-merge recurses into the keyed-map steps dict and the step's nested
+    param object, preserving the user override while adding missing siblings.
+    """
+    # user pinned pr_merge_strategy to a non-default value (nested under its step)
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'pr_merge_strategy': 'merge'}}},
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {'default:branch-cleanup': {'pr_merge_strategy': 'merge'}}
+                }
+            }
+        },
     )
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
-    finalize = config['plan']['phase-6-finalize']
+    branch_cleanup = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
     # User override preserved (default would be 'squash')
-    assert finalize['pr_merge_strategy'] == 'merge'
-    # Missing sibling added
-    assert finalize['auto_rebase_threshold'] == 'no_overlap_only'
+    assert branch_cleanup['pr_merge_strategy'] == 'merge'
+    # Missing nested sibling added
+    assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only'
     # The preserved key is NOT reported as added
-    assert 'plan.phase-6-finalize.pr_merge_strategy' not in result['added']
+    assert (
+        'plan.phase-6-finalize.steps.default:branch-cleanup.pr_merge_strategy'
+        not in result['added']
+    )
+    # The missing nested sibling IS reported as added
+    assert (
+        'plan.phase-6-finalize.steps.default:branch-cleanup.auto_rebase_threshold'
+        in result['added']
+    )
 
 
 def test_sync_defaults_preserves_user_set_true(plan_context):
     """A user-set True survives even though the default value is False.
 
-    The final_merge_without_asking knob is a flat field under plan.phase-6-finalize;
+    final_merge_without_asking is a nested param under steps[default:branch-cleanup];
     the deep-merge contract preserves a user override by key-existence (no value
     comparison), so an explicit True survives the False default and is not
     reported as added.
     """
-    # user explicitly opted into merge-without-asking (default is False)
+    # user explicitly opted into merge-without-asking (default is False), nested
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'final_merge_without_asking': True}}},
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {'default:branch-cleanup': {'final_merge_without_asking': True}}
+                }
+            }
+        },
     )
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
@@ -120,31 +147,50 @@ def test_sync_defaults_preserves_user_set_true(plan_context):
     # present means "key exists"; no value comparison, no re-add
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
-    assert config['plan']['phase-6-finalize']['final_merge_without_asking'] is True
-    assert 'plan.phase-6-finalize.final_merge_without_asking' not in result['added']
+    branch_cleanup = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+    assert branch_cleanup['final_merge_without_asking'] is True
+    assert (
+        'plan.phase-6-finalize.steps.default:branch-cleanup.final_merge_without_asking'
+        not in result['added']
+    )
 
 
-def test_sync_defaults_adds_deeply_nested_missing_key(plan_context):
-    """A missing nested sub-key is added when its parent dict already exists."""
-    # phase-6-finalize exists but lacks auto_rebase_threshold
+def test_sync_defaults_adds_deeply_nested_missing_step_param(plan_context):
+    """A missing nested step param is added when its owning step dict already exists."""
+    # the branch-cleanup step exists but lacks auto_rebase_threshold
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'max_iterations': 3}}},
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {'default:branch-cleanup': {'pr_merge_strategy': 'squash'}}
+                }
+            }
+        },
     )
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
-    finalize = config['plan']['phase-6-finalize']
-    assert finalize['max_iterations'] == 3
-    assert finalize['auto_rebase_threshold'] == 'no_overlap_only'
-    assert 'plan.phase-6-finalize.auto_rebase_threshold' in result['added']
+    branch_cleanup = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+    assert branch_cleanup['pr_merge_strategy'] == 'squash'
+    assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only'
+    assert (
+        'plan.phase-6-finalize.steps.default:branch-cleanup.auto_rebase_threshold'
+        in result['added']
+    )
 
 
-def test_sync_defaults_lists_are_atomic(plan_context):
-    """A user's list value is kept verbatim even when the default list differs."""
-    # user pruned the finalize steps list to a single step
+def test_sync_defaults_list_steps_are_atomic(plan_context):
+    """A user's list-shaped steps value is kept verbatim (lists are atomic).
+
+    Although the schema default is now a keyed map, the deep-merge treats a
+    user-supplied list value as atomic (no dict recursion against a list), so a
+    user who pruned steps to a flat list keeps it verbatim and the keyed-map
+    default does not overwrite it.
+    """
+    # user pruned the finalize steps to a single-element list
     _write_marshal(
         plan_context.fixture_dir,
         {'plan': {'phase-6-finalize': {'steps': ['default:commit-push']}}},
@@ -152,7 +198,7 @@ def test_sync_defaults_lists_are_atomic(plan_context):
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
-    # list preserved verbatim (not merged element-wise)
+    # list preserved verbatim (atomic — not merged against the keyed-map default)
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     assert config['plan']['phase-6-finalize']['steps'] == ['default:commit-push']

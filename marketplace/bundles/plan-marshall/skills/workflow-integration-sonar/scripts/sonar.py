@@ -66,13 +66,53 @@ SEVERITY_PRIORITY: dict[str, str] = _RULES_CONFIG.get('severity_priority', {})
 _TEST_ACCEPTABLE_RULES: set[str] = set(_RULES_CONFIG.get('test_acceptable_rules', []))
 _ALWAYS_FIX_TYPES: dict[str, str] = _RULES_CONFIG.get('always_fix_types', {})
 
-# CE-readiness wait defaults. The budget is resolved per-call from
-# ``plan.phase-6-finalize.sonar_ce_wait_timeout_seconds`` (default 600,
-# the direct sibling of ``checks_wait_timeout_seconds``), overridable by an
-# explicit ``--ce-wait-timeout`` flag. The poll interval mirrors the CI
-# poll cadence used by ``tools-integration-ci`` (DEFAULT_CI_INTERVAL = 30s).
+# CE-readiness wait defaults. The budget is resolved per-call from the
+# plan-local manifest step-params snapshot for ``default:sonar-roundtrip`` (the
+# prefix-stripped ``ce_wait_timeout_seconds`` param; default 600, the direct
+# sibling of ``checks_wait_timeout_seconds``), overridable by an explicit
+# ``--ce-wait-timeout`` flag. The poll interval mirrors the CI poll cadence used
+# by ``tools-integration-ci`` (DEFAULT_CI_INTERVAL = 30s).
 _CE_WAIT_DEFAULT_TIMEOUT = 600
 _CE_WAIT_INTERVAL = 30
+
+# In-manifest (bare) step id for the Sonar roundtrip step. The composer strips
+# the ``default:`` prefix at the compose boundary, so the manifest snapshot is
+# keyed by the bare name.
+_SONAR_ROUNDTRIP_STEP_ID = 'sonar-roundtrip'
+
+
+def _read_manifest_sonar_params(plan_id: str) -> dict[str, Any]:
+    """Read the ``default:sonar-roundtrip`` step's snapshotted params from the manifest.
+
+    Reads the plan-local execution manifest (``.plan/local/plans/{plan_id}/
+    execution.toon``) and returns the prefix-stripped param object snapshotted
+    under ``phase_6.step_params['sonar-roundtrip']`` — the single one-stop read
+    for the Sonar roundtrip's ``touched_file_cleanup`` / ``do_transition`` /
+    ``ce_wait_timeout_seconds`` params. Returns an empty dict when the manifest is
+    missing, malformed, or carries no snapshot for the step. Never raises — a
+    missing manifest falls back to defaults so the CLI stays usable outside a
+    composed plan.
+    """
+    try:
+        from file_ops import get_plan_dir  # type: ignore[import-not-found]
+        from toon_parser import parse_toon  # type: ignore[import-not-found]
+    except Exception:
+        return {}
+    try:
+        manifest_path = get_plan_dir(plan_id) / 'execution.toon'
+        if not manifest_path.exists():
+            return {}
+        manifest = parse_toon(manifest_path.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+    if not isinstance(manifest, dict):
+        return {}
+    phase_6 = manifest.get('phase_6', {})
+    step_params = phase_6.get('step_params', {}) if isinstance(phase_6, dict) else {}
+    if not isinstance(step_params, dict):
+        return {}
+    params = step_params.get(_SONAR_ROUNDTRIP_STEP_ID, {})
+    return params if isinstance(params, dict) else {}
 
 # CE task states that mean "analysis has settled" (the issue store on the
 # server is now consistent for the PR). PENDING / IN_PROGRESS mean the engine
@@ -127,37 +167,29 @@ def _map_severity(sonar_severity: str) -> str | None:
 # ============================================================================
 
 
-def _resolve_ce_wait_timeout(args) -> int:
+def _resolve_ce_wait_timeout(args, sonar_params: dict[str, Any] | None = None) -> int:
     """Resolve the CE-readiness wait budget in seconds.
 
     Resolution order (first match wins):
     1. Explicit ``--ce-wait-timeout`` flag (argparse-supplied, always wins).
-    2. ``plan.phase-6-finalize.sonar_ce_wait_timeout_seconds`` from marshal.json.
+    2. The prefix-stripped ``ce_wait_timeout_seconds`` param from the plan-local
+       manifest step-params snapshot for ``default:sonar-roundtrip`` (read once
+       by the caller and passed in via ``sonar_params``).
     3. The conservative 600s fallback.
 
-    Never raises — a missing / malformed config falls back to 600s so the CLI
-    remains usable outside a plan-marshall project (mirrors ci_base's
+    Never raises — a missing / malformed snapshot falls back to 600s so the CLI
+    remains usable outside a composed plan (mirrors ci_base's
     ``_resolve_ci_timeout``).
     """
     explicit = getattr(args, 'ce_wait_timeout', None)
     if isinstance(explicit, int) and explicit > 0:
         return explicit
 
-    try:
-        from _config_core import is_initialized, load_config  # type: ignore[import-not-found]
-    except Exception:
-        return _CE_WAIT_DEFAULT_TIMEOUT
-    try:
-        if not is_initialized():
-            return _CE_WAIT_DEFAULT_TIMEOUT
-        cfg = load_config()
-        finalize_section = cfg.get('plan', {}).get('phase-6-finalize', {}) or {}
-        value = finalize_section.get('sonar_ce_wait_timeout_seconds')
-        if isinstance(value, int) and value > 0:
-            return value
-        return _CE_WAIT_DEFAULT_TIMEOUT
-    except Exception:
-        return _CE_WAIT_DEFAULT_TIMEOUT
+    params = sonar_params or {}
+    value = params.get('ce_wait_timeout_seconds')
+    if isinstance(value, int) and value > 0:
+        return value
+    return _CE_WAIT_DEFAULT_TIMEOUT
 
 
 def _poll_ce_status(project: str, pr: str | None) -> tuple[bool, dict[str, Any]]:
@@ -375,7 +407,7 @@ def cmd_fetch_and_store(args):
 
     Flow:
     1. Synchronous bounded CE-readiness wait (poll ``ce-status`` until DONE or
-       ``sonar_ce_wait_timeout_seconds`` expiry) — confirms the server's issue
+       ``ce_wait_timeout_seconds`` expiry) — confirms the server's issue
        set is consistent for the PR before enumerating.
     2. Fetch the PR-scoped new-code issues and pre-filter the suppressable ones.
     3. Write one ``sonar-issue`` finding per surviving issue.
@@ -396,8 +428,12 @@ def cmd_fetch_and_store(args):
     project: str = args.project
     pr: str | None = getattr(args, 'pr', None)
 
+    # Read the default:sonar-roundtrip step's params from the plan-local manifest
+    # snapshot in a single one-stop call.
+    sonar_params = _read_manifest_sonar_params(plan_id)
+
     # 1. Synchronous CE-readiness wait — gate the count on a settled analysis.
-    ce_timeout = _resolve_ce_wait_timeout(args)
+    ce_timeout = _resolve_ce_wait_timeout(args, sonar_params)
     ce_result = _wait_for_ce_ready(project, pr, ce_timeout)
 
     if ce_result['count_status'] == 'undecidable':
@@ -605,8 +641,9 @@ Examples:
                         'flags': ['--ce-wait-timeout'],
                         'dest': 'ce_wait_timeout',
                         'type': int,
-                        'help': 'Override the CE-readiness wait budget in seconds (default: '
-                        'plan.phase-6-finalize.sonar_ce_wait_timeout_seconds, else 600)',
+                        'help': 'Override the CE-readiness wait budget in seconds (default: the '
+                        'manifest step-params snapshot ce_wait_timeout_seconds for '
+                        'default:sonar-roundtrip, else 600)',
                     },
                 ],
             },

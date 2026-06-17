@@ -96,14 +96,21 @@ def cmd_finalize_steps_apply_preset(args) -> dict:
     resolved, err = _resolve_step_orders(steps, _PHASE_SECTION)
     if err is not None:
         return err
-    sorted_steps = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
-    phase_entry['steps'] = sorted_steps
+    sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
+    # `steps` is an id-keyed map (step_id -> nested param object). Preserve any
+    # existing per-step params for steps the preset keeps, and seed empty params
+    # for newly-introduced steps. Key insertion order is the execution order.
+    existing = phase_entry.get('steps')
+    existing_params = existing if isinstance(existing, dict) else {}
+    phase_entry['steps'] = {
+        step_id: existing_params.get(step_id, {}) for step_id in sorted_ids
+    }
 
     save_config(config)
 
     return success_exit(
         {
             'preset': args.preset,
-            'steps_count': len(sorted_steps),
+            'steps_count': len(sorted_ids),
         }
     )

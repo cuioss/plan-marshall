@@ -99,11 +99,12 @@ Task: plan-marshall:{target}
   prompt: |
     name: verification-feedback
     plan_id: {plan_id}
-    skills[5]:
+    skills[6]:
     - plan-marshall:manage-findings
     - plan-marshall:manage-tasks
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
+    - plan-marshall:manage-execution-manifest
     - plan-marshall:workflow-integration-sonar
     workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
 
@@ -199,7 +200,7 @@ Take the last (most recent) JSONL row as the verified-scan attestation for this 
 
 - **Confirmed non-zero after triage (Branch B)** — `count_status == confirmed` AND `new_code_issue_count > 0` after the triage dispatch and any loop-back iterations have run (gate stayed red after max loop-back iterations). Proceed to "Mark Step Complete" Branch B.
 
-**`sonar_touched_file_cleanup` knob** — the success criterion's scope is governed by `plan.phase-6-finalize.sonar_touched_file_cleanup` (read via `manage-config plan phase-6-finalize get --field sonar_touched_file_cleanup`). Under the default `new_code_only` the criterion is the confirmed PR-scoped new-code zero described above. Under `touched_files_zero` the criterion extends to pre-existing issues on touched files — the producer's enumeration (D2) widens accordingly and the same `count_status == confirmed AND new_code_issue_count == 0` predicate then attests the wider set; the marker-read logic here is unchanged.
+**`touched_file_cleanup` knob** — the success criterion's scope is governed by the `default:sonar-roundtrip` step's `touched_file_cleanup` param, read from the plan-local execution-manifest step-params snapshot in a single one-stop call: `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id sonar-roundtrip` (then read `touched_file_cleanup` off the returned `params` object). Under the default `new_code_only` the criterion is the confirmed PR-scoped new-code zero described above. Under `touched_files_zero` the criterion extends to pre-existing issues on touched files — the producer's enumeration (D2) widens accordingly and the same `count_status == confirmed AND new_code_issue_count == 0` predicate then attests the wider set; the marker-read logic here is unchanged. The same one-stop `step-params get` call also yields the step's `do_transition` and `ce_wait_timeout_seconds` params, so no flat `plan.phase-6-finalize.sonar_*` reads remain.
 
 ## Mark Step Complete
 

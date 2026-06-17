@@ -326,9 +326,11 @@ AskUserQuestion:
       multiSelect: false
 ```
 
+`pr_merge_strategy` is a step-owned param of the `default:branch-cleanup` step in the keyed-map `steps` structure. The wizard writes it to the marshal.json keyed map (the global-config default) via the one-stop `step set` verb:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set --field pr_merge_strategy --value {squash|merge|rebase}
+  plan phase-6-finalize step set --step-id default:branch-cleanup --param pr_merge_strategy --value {squash|merge|rebase}
 ```
 
 **Max iterations**: Ask user for verification iterations (default 5) and finalize iterations (default 3):

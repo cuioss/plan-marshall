@@ -43,7 +43,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 The bulk of project configuration. Canonical schema and field reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
-`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, and `system` sections. Each phase block holds fields specific to that phase, including the run-at-all gates and the three auto-continuation knobs, each homed under the phase whose decision it governs. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_and_push`, `per_deliverable_build`, `max_iterations`, `review_bot_buffer_seconds`, `pr_merge_strategy`, the `plan.phase-6-finalize.*` auto-continuation knobs, `auto_rebase_threshold`, `drop_review_on_scope_gate`, `open_in_ide`, the `system.retention.*` knobs, `plan.phase-6-finalize.checks_wait_timeout_seconds`, `plan.phase-6-finalize.sonar_touched_file_cleanup`, `plan.phase-6-finalize.sonar_do_transition`, the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, and `system` sections. Each phase block holds fields specific to that phase, including the run-at-all gates and the flat auto-continuation knobs, each homed under the phase whose decision it governs. The phase-5/6 `verification_steps` / `steps` are id-keyed maps; step-owned parameters nest under their owning step's value (see <<step-configuration>>). The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_and_push`, `per_deliverable_build`, `cost_size_token_table`, `per_envelope_budget_tokens`, `max_iterations`, the flat `plan.phase-6-finalize.*` auto-continuation knobs, `drop_review_on_scope_gate`, `open_in_ide`, the `system.retention.*` knobs, the flat `plan.phase-6-finalize.checks_wait_timeout_seconds`, the step-owned params nested under `plan.phase-6-finalize.steps` — `review_bot_buffer_seconds`, `pr_merge_strategy`, `final_merge_without_asking`, `auto_rebase_threshold`, `touched_file_cleanup`, `do_transition`, `ce_wait_timeout_seconds` — the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
 [#effort-and-models]
 === Effort and model selection
@@ -117,7 +117,7 @@ See the canonical per-key reference in link:../../marketplace/bundles/plan-marsh
 [#step-configuration]
 === Step configuration (verify + finalize pipelines)
 
-`plan.phase-5-execute.verification_steps` and `plan.phase-6-finalize.steps` are flat ordered lists of step identifiers that run sequentially during their phase. Each step ID resolves to one of three sources:
+`plan.phase-5-execute.verification_steps` and `plan.phase-6-finalize.steps` are id-keyed maps of step identifiers (the key insertion order is the execution order). Each value is that step's nested parameter object: step-owned params (e.g. `pr_merge_strategy` under `default:branch-cleanup`, `review_bot_buffer_seconds` under `default:automated-review`, the prefix-stripped sonar params under `default:sonar-roundtrip`) nest under their owning step's value; verify steps and ownerless finalize steps map to the empty object `{}`. Each step ID resolves to one of three sources:
 
 [cols="1,3", options="header"]
 |===
@@ -133,9 +133,16 @@ See the canonical per-key reference in link:../../marketplace/bundles/plan-marsh
 | Contributed by an installed bundle via `provides_verify_steps()` (phase-5) or `provides_finalize_steps()` (phase-6). The bundle's `extension.py` declares them; the wizard appends them in domain-defined order.
 |===
 
-Order is significant — phase-5 runs verify steps in list order until one fails; phase-6 runs finalize steps in list order until the pipeline completes or a `loop_back` outcome resets it. Configure via `/marshall-steward` → Configuration, or the ordered-list verbs `manage-config plan phase-N set-steps --steps …` / `add-step` / `remove-step` (these persist under `verification_steps` for phase-5-execute and `steps` for phase-6-finalize).
+Order is significant — phase-5 runs verify steps in key order until one fails; phase-6 runs finalize steps in key order until the pipeline completes or a `loop_back` outcome resets it. Configure the step list via `/marshall-steward` → Configuration, or the step-list verbs `manage-config plan phase-N set-steps --steps …` / `add-step` / `remove-step` (these operate on the keyed map's keys, preserving insertion order and any existing per-step params, persisting under `verification_steps` for phase-5-execute and `steps` for phase-6-finalize).
 
-Reference: `data-model.md` §§ phase-5-execute / phase-6-finalize; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-verify-steps.md[`ext-point-verify-steps.md`]; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-steps.md[`ext-point-finalize-steps.md`].
+==== Step parameters (two-tier source)
+
+Step-owned parameters live in a two-tier source model:
+
+* **Global default (marshal.json keyed map)** — read/written with the one-stop `step` verb: `manage-config plan phase-6-finalize step get --step-id default:branch-cleanup` returns the step's complete nested parameter object in one call; `manage-config plan phase-6-finalize step set --step-id default:branch-cleanup --param pr_merge_strategy --value rebase` writes one parameter. This is the compose-time default and the `/marshall-steward` wizard's write target.
+* **Plan-local runtime (execution manifest snapshot)** — at plan-compose time the composer snapshots each selected step's resolved parameters into the per-plan execution manifest. The phase-5/6 runtime consumers read parameters from this plan-local snapshot via `manage-execution-manifest step-params get --phase {5-execute|6-finalize} --step-id {id}`, and a per-plan override is written with `manage-execution-manifest step-params set` (the manifest value then wins over the global default for that plan).
+
+Reference: `data-model.md` §§ phase-5-execute / phase-6-finalize; link:../../marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/manifest-schema.md[`manifest-schema.md`] § `step_params`; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-verify-steps.md[`ext-point-verify-steps.md`]; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-steps.md[`ext-point-finalize-steps.md`].
 
 [#per-envelope-packing-budget]
 === Per-envelope packing budget and the cost-size token table
@@ -184,10 +191,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 |===
 | Config key | Default | What it controls
 
-| `plan.phase-6-finalize.pr_merge_strategy` | `squash` | The merge method the branch-cleanup step passes to `pr merge` — `squash`, `merge`, or `rebase`.
-| `plan.phase-6-finalize.auto_rebase_threshold` | `no_overlap_only` | Gates the pre-merge auto-rebase decision. `no_overlap_only` lets the auto-rebase proceed only when it would touch a disjoint file set; any overlap defers to the operator.
-| `plan.phase-6-finalize.drop_review_on_scope_gate` | `false` | Escape hatch for the manifest composer's scope-gating pre-filter. `false` keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans.
+| `steps['default:branch-cleanup'].pr_merge_strategy` | `squash` | Step-owned param of `default:branch-cleanup`. The merge method the branch-cleanup step passes to `pr merge` — `squash`, `merge`, or `rebase`. Read/written via `step get` / `step set` (see <<step-configuration>> § Step parameters).
+| `steps['default:branch-cleanup'].auto_rebase_threshold` | `no_overlap_only` | Step-owned param of `default:branch-cleanup`. Gates the pre-merge auto-rebase decision. `no_overlap_only` lets the auto-rebase proceed only when it would touch a disjoint file set; any overlap defers to the operator.
+| `plan.phase-6-finalize.drop_review_on_scope_gate` | `false` | Flat phase-level escape hatch for the manifest composer's scope-gating pre-filter. `false` keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans.
 |===
+
+NOTE: `pr_merge_strategy` and `auto_rebase_threshold` are nested under the `default:branch-cleanup` step in the `plan.phase-6-finalize.steps` keyed map, not flat phase-level fields. Read the whole param object in one call with `manage-config plan phase-6-finalize step get --step-id default:branch-cleanup`.
 
 NOTE: The `default:pre-push-quality-gate` finalize step has no dedicated activation key. Its activation is *derived from* `build.map` (see <<build-map>>): the step activates whenever a changed path matches a glob registered in the build_map.
 
@@ -209,8 +218,8 @@ Top-level `system.retention` knobs plus the finalize CI-wait policy that project
 | `system.retention.archived_plans_days` | `5` | Days to keep archived plans before cleanup.
 | `system.retention.lessons_superseded_days` | `0` | Days to keep superseded lessons before removal (`0` = remove immediately).
 | `system.retention.temp_on_maintenance` | `true` | Whether the maintenance pass clears `.plan/temp/`.
-| `plan.phase-6-finalize.checks_wait_timeout_seconds` | `600` | Default ceiling (seconds) the CI-completion polling commands wait for run completion. Overridden by an explicit `--timeout` flag when supplied. A finalize wait-policy owned by phase-6-finalize.
-| `plan.phase-6-finalize.sonar_ce_wait_timeout_seconds` | `600` | Budget (seconds) for the synchronous CE-readiness wait `sonar.py fetch-and-store` performs before enumerating new-code issues — the direct sibling of `checks_wait_timeout_seconds`. Overridden by an explicit `--ce-wait-timeout` flag. A finalize wait-policy owned by phase-6-finalize.
+| `plan.phase-6-finalize.checks_wait_timeout_seconds` | `600` | Flat phase-level ceiling (seconds) the CI-completion polling commands wait for run completion. Overridden by an explicit `--timeout` flag when supplied. A cross-step finalize wait-policy with no single owning step, so it stays flat.
+| `steps['default:sonar-roundtrip'].ce_wait_timeout_seconds` | `600` | Step-owned param of `default:sonar-roundtrip` (prefix-stripped from the old `sonar_ce_wait_timeout_seconds`). Budget (seconds) for the synchronous CE-readiness wait `sonar.py fetch-and-store` performs before enumerating new-code issues — the direct sibling of the flat `checks_wait_timeout_seconds`. Overridden by an explicit `--ce-wait-timeout` flag. Read via `step get` / the manifest `step-params get` (see <<step-configuration>> § Step parameters).
 |===
 
 [#project-branch-naming]

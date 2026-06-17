@@ -450,6 +450,75 @@ class TestCheckSeedMode:
         cmd_validate_loadable(_validate_loadable_ns('vl-seed-key', check_seed=True))
         assert seen == ['phase-6-finalize']
 
+    def test_check_seed_reads_keyed_map_keys_from_real_marshal(self, plan_context):
+        """--check-seed reads ordered step ids from the keyed-map marshal.json (real read).
+
+        Exercises _read_marshal_phase_steps against an actual on-disk marshal.json
+        carrying the id-keyed steps map (not a monkeypatched list). The reader must
+        return the map's keys in insertion order, so an ascending keyed map passes
+        the seed-order guard.
+        """
+        import json
+
+        marshal_path = plan_context.fixture_dir / 'marshal.json'
+        # keyed-map steps with ascending frontmatter order; key insertion order
+        # is the execution order. branch-cleanup carries nested params (ignored by
+        # the seed-order guard, which only inspects ordering).
+        data = {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        'default:commit-push': {},
+                        'default:create-pr': {},
+                        'project:finalize-step-deploy-target': {},
+                        'project:finalize-step-sync-plugin-cache': {},
+                    }
+                }
+            }
+        }
+        marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-seed-real-map', check_seed=True))
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['step_count'] == 4
+
+    def test_read_marshal_phase_steps_returns_keyed_map_keys(self, plan_context):
+        """_read_marshal_phase_steps returns the keyed map's keys in insertion order."""
+        import json
+
+        marshal_path = plan_context.fixture_dir / 'marshal.json'
+        data = {
+            'plan': {
+                'phase-5-execute': {
+                    'verification_steps': {
+                        'default:verify:quality-gate': {},
+                        'default:verify:module-tests': {},
+                        'default:verify:coverage': {},
+                    }
+                }
+            }
+        }
+        marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+        steps = _mem._read_marshal_phase_steps('phase-5-execute')
+        assert steps == [
+            'default:verify:quality-gate',
+            'default:verify:module-tests',
+            'default:verify:coverage',
+        ]
+
+    def test_read_marshal_phase_steps_rejects_list_shape(self, plan_context):
+        """_read_marshal_phase_steps returns None for the retired list shape (clean-slate)."""
+        import json
+
+        marshal_path = plan_context.fixture_dir / 'marshal.json'
+        # the legacy list shape is no longer a valid on-disk schema
+        data = {'plan': {'phase-6-finalize': {'steps': ['default:commit-push']}}}
+        marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+        assert _mem._read_marshal_phase_steps('phase-6-finalize') is None
+
     def test_check_seed_is_mutually_exclusive_with_step_id(self, plan_context):
         """Supplying both --step-id and --check-seed is an invalid_arguments error."""
         result = cmd_validate_loadable(

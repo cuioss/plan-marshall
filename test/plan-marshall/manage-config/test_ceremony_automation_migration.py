@@ -2,18 +2,22 @@
 """Distribution-contract tests for the three auto-continuation knobs (D9).
 
 When the ``ceremony_policy`` block was dissolved, the three auto-continuation knobs
-(``finalize_without_asking`` / ``loop_back_without_asking`` / ``final_merge_without_asking``)
-were distributed back into ``plan.phase-6-finalize`` — the phase whose decisions they
-govern. The former ``ceremony_policy.automation`` home and the dedicated
+were distributed out of ``ceremony_policy.automation``. Two
+(``finalize_without_asking`` / ``loop_back_without_asking``) became flat fields under
+``plan.phase-6-finalize`` — the phase whose decisions they govern. The third
+(``final_merge_without_asking``) is now a step-owned param nested under
+``default:branch-cleanup`` in the keyed-map ``steps`` structure, read via the one-stop
+``step get`` verb. The former ``ceremony_policy.automation`` home and the dedicated
 ``ceremony-policy`` read verb are both gone.
 
-Three orthogonal assertions per knob:
+Orthogonal assertions per knob:
 
-1. **Homed in plan.phase-6-finalize** — each knob reads back through the standard
-   ``plan phase-6-finalize get --field <knob>`` path with its migrated default.
+1. **Homed correctly** — the two flat knobs read back through the standard
+   ``plan phase-6-finalize get --field <knob>`` path; the step-owned knob reads back
+   through ``step get --step-id default:branch-cleanup``; each with its migrated default.
 2. **Old home is gone** — neither ``DEFAULT_CEREMONY_POLICY`` nor a top-level
-   ``ceremony_policy`` key survives in ``get_default_config()``; the knob lives in
-   ``DEFAULT_PLAN_FINALIZE``.
+   ``ceremony_policy`` key survives in ``get_default_config()``; the flat knobs live in
+   ``DEFAULT_PLAN_FINALIZE`` and the step-owned knob lives in ``_FINALIZE_STEP_PARAMS``.
 3. **Post-migration defaults are exact** — the distributed defaults match their intended
    post-migration values (forward auto-continue ``True``, reverse halt ``False``,
    final-merge-without-asking ``False``). The first two preserve the historical
@@ -65,14 +69,18 @@ _cmd_init = _load_module('_cmd_init_for_distribution', '_cmd_init.py')
 import conftest  # noqa: E402, F401
 
 
-# The three distributed knobs with their post-migration defaults. The first two preserve
-# their historical ceremony_policy values; final_merge_without_asking was deliberately
-# flipped True->False (lesson 2026-06-16-10-001).
+# The two flat auto-continuation knobs that remain phase-level fields, with their
+# post-migration defaults (preserved from the historical ceremony_policy values).
+# final_merge_without_asking is NOT here — it became a step-owned param nested under
+# default:branch-cleanup and is covered by the dedicated step-shape tests below
+# (its default was deliberately flipped True->False, lesson 2026-06-16-10-001).
 _MIGRATED_KNOBS = (
     ('finalize_without_asking', True),
     ('loop_back_without_asking', False),
-    ('final_merge_without_asking', False),
 )
+
+# The step-owned knob: (step_id, param, default).
+_STEP_OWNED_KNOB = ('default:branch-cleanup', 'final_merge_without_asking', False)
 
 
 def _hash_marshal(fixture_dir):
@@ -103,27 +111,67 @@ def test_each_knob_resolves_from_phase_6_finalize(plan_context):
     assert _hash_marshal(plan_context.fixture_dir) == before
 
 
+def test_final_merge_without_asking_resolves_via_step_get(plan_context):
+    """final_merge_without_asking reads back via ``step get`` on default:branch-cleanup, read-only."""
+    _cmd_init.cmd_init(Namespace(force=False))
+    before = _hash_marshal(plan_context.fixture_dir)
+
+    step_id, param, expected = _STEP_OWNED_KNOB
+    result = _cmd_quality_phases.cmd_phase(
+        Namespace(verb='step', step_verb='get', step_id=step_id), 'phase-6-finalize'
+    )
+
+    assert result['status'] == 'success'
+    assert result['step_id'] == step_id
+    assert result['params'][param] is expected, f'{param} default must be {expected}'
+
+    # The read path never mutates marshal.json
+    assert _hash_marshal(plan_context.fixture_dir) == before
+
+
 # =============================================================================
 # (2) Old ceremony_policy home is gone; knobs live in DEFAULT_PLAN_FINALIZE
 # =============================================================================
 
 
-def test_knobs_homed_in_default_plan_finalize():
-    """All three knobs must live in the loose DEFAULT_PLAN_FINALIZE block."""
+def test_flat_knobs_homed_in_default_plan_finalize():
+    """The two flat knobs must live in the loose DEFAULT_PLAN_FINALIZE block."""
     for knob, _ in _MIGRATED_KNOBS:
         assert knob in _config_defaults.DEFAULT_PLAN_FINALIZE, (
             f'{knob} must be schema-registered in DEFAULT_PLAN_FINALIZE'
         )
 
 
-def test_get_default_config_homes_knobs_under_phase_6_finalize():
-    """get_default_config() must carry the three knobs under plan.phase-6-finalize."""
+def test_step_owned_knob_homed_in_finalize_step_params():
+    """final_merge_without_asking must live in _FINALIZE_STEP_PARAMS under default:branch-cleanup."""
+    step_id, param, expected = _STEP_OWNED_KNOB
+    step_params = _config_defaults._FINALIZE_STEP_PARAMS[step_id]
+    assert param in step_params, (
+        f'{param} must nest under {step_id} in _FINALIZE_STEP_PARAMS'
+    )
+    assert step_params[param] is expected
+    # and it is NOT a flat sibling of steps
+    assert param not in _config_defaults.DEFAULT_PLAN_FINALIZE
+
+
+def test_get_default_config_homes_flat_knobs_under_phase_6_finalize():
+    """get_default_config() must carry the two flat knobs under plan.phase-6-finalize."""
     cfg = _config_defaults.get_default_config()
     finalize = cfg['plan']['phase-6-finalize']
     for knob, expected in _MIGRATED_KNOBS:
         assert finalize.get(knob) is expected, (
             f'plan.phase-6-finalize.{knob} must default to {expected}'
         )
+
+
+def test_get_default_config_homes_step_owned_knob_under_branch_cleanup():
+    """get_default_config() must nest final_merge_without_asking under default:branch-cleanup."""
+    cfg = _config_defaults.get_default_config()
+    step_id, param, expected = _STEP_OWNED_KNOB
+    branch_cleanup = cfg['plan']['phase-6-finalize']['steps'][step_id]
+    assert branch_cleanup.get(param) is expected, (
+        f'steps[{step_id}].{param} must default to {expected}'
+    )
 
 
 def test_ceremony_policy_block_is_dissolved():

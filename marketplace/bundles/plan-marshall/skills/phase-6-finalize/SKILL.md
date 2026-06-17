@@ -107,12 +107,13 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `phase-6-finalize.review_bot_buffer_seconds` | integer | Max seconds to wait after CI for new review-bot comments (used as `--timeout` for `pr wait-for-comments`; ceiling, not fixed delay; default: 180) |
 | `phase-6-finalize.max_iterations` | integer | Maximum finalize-verify loops (default: 3) |
 | `phase-6-finalize.loop_back_without_asking` | bool | Symmetric counterpart to `phase-6-finalize.finalize_without_asking`. When `true`, a `loop_back` outcome from any phase-6-finalize step (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX) auto-dispatches the execute pipeline inline and re-enters the finalize loop, capped by `max_iterations`. When `false` (default), the dispatcher halts and returns control to the user. Read at runtime via `manage-config plan phase-6-finalize get --field loop_back_without_asking`. See Step 3 § "Loop-back continuation" for the dispatch shape. |
 | `phase-5-execute.commit_and_push` | bool | When `true` (default), the unconditional per-deliverable commits made in phase-5 are pushed and a PR is created. When `false`, the run is local-only — the manifest's `commit_push_disabled` pre-filter strips `commit-push`, `pre-push-quality-gate`, and `pre-submission-self-review` so no push happens. |
 | `phase-6-finalize.finalize_without_asking` | bool | Forward-direction auto-continuation: when `true`, after `5-execute → 6-finalize` transition the orchestrator dispatches `phase-6-finalize` inline rather than halting and prompting the user. Read at runtime via `manage-config plan phase-6-finalize get --field finalize_without_asking`. The reverse-direction symmetric counterpart is `phase-6-finalize.loop_back_without_asking`. |
 | `phase-1-init.branch_strategy` | string | feature / direct |
+
+**Per-step params from the plan-local manifest snapshot.** Step-owned params (`review_bot_buffer_seconds` under `default:automated-review`; `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds` under `default:sonar-roundtrip`; `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold` under `default:branch-cleanup`) are NOT flat `marshal.json` fields. The dispatcher resolves each step's params via a single one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id {step_id}` call keyed by step id, reading the param object snapshotted into the plan-local manifest body at compose time (with per-plan overrides via `step-params set`). The owning step's standards/workflow doc performs that read at the point it needs the param; this skill does NOT read step params from `marshal.json`.
 
 A step is active if and only if it appears in `manifest.phase_6.steps`. Absent steps are NEVER executed. The order of steps in the manifest list is the execution order. The `plan.phase-6-finalize.steps` field in `marshal.json` is the *candidate set* — the input list `phase-4-plan` Step 8b passes to `manage-execution-manifest compose --phase-6-steps`. The manifest's `phase_6.steps` is the *resolved per-plan instance* of that candidate set and is the only authority this skill consults at dispatch time. The candidate set drives dispatch transitively; this skill itself never reads `marshal.json` for step selection.
 
@@ -390,7 +391,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init get --audit-plan-id {plan_id}
 ```
 
-Read the config blocks for `review_bot_buffer_seconds`, `max_iterations`, `commit_and_push`, and `branch_strategy`. **Do not** read the `steps` field from `marshal.json` here — that field is the candidate set consumed by `phase-4-plan` Step 8b, not by this skill. The manifest's `phase_6.steps` list is the only valid source for runtime dispatch.
+Read the flat config blocks for `max_iterations`, `commit_and_push`, and `branch_strategy` from `marshal.json`. The `review_bot_buffer_seconds` param is NOT flat — it is a step-owned param of `default:automated-review`, resolved at the point of use via the one-stop `manage-execution-manifest step-params get --phase 6-finalize --step-id automated-review` call (see the per-step-params convention above and `workflow/automated-review.md`). **Do not** read the `steps` field from `marshal.json` here — that field is the candidate set consumed by `phase-4-plan` Step 8b, not by this skill. The manifest's `phase_6.steps` list is the only valid source for runtime dispatch.
 
 Also read references context for branch and issue information:
 

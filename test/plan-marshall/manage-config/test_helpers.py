@@ -61,21 +61,27 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                 'phase-5-execute': {
                     'commit_and_push': True,
                     'max_iterations': 5,
-                    'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                    'verification_steps': {
+                        'default:verify:quality-gate': {},
+                        'default:verify:module-tests': {},
+                    },
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
+                    'steps': {
+                        'default:commit-push': {},
+                        'default:create-pr': {},
+                        'default:automated-review': {'review_bot_buffer_seconds': 300},
+                        'default:sonar-roundtrip': {},
+                        'default:lessons-capture': {},
+                        'default:branch-cleanup': {
+                            'pr_merge_strategy': 'squash',
+                            'final_merge_without_asking': False,
+                            'auto_rebase_threshold': 'no_overlap_only',
+                        },
+                        'default:record-metrics': {},
+                        'default:archive-plan': {},
+                    },
                 },
             },
             'providers': [
@@ -162,20 +168,22 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 'compatibility': 'breaking',
                 'commit_and_push': True,
                 'max_iterations': 5,
-                'verification_steps': ['default:verify:quality-gate', 'default:verify:module-tests'],
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
             },
             'phase-6-finalize': {
                 'max_iterations': 3,
-                'review_bot_buffer_seconds': 300,
-                'steps': [
-                    'default:commit-push',
-                    'default:create-pr',
-                    'default:automated-review',
-                    'default:sonar-roundtrip',
-                    'default:lessons-capture',
-                    'default:branch-cleanup',
-                    'default:archive-plan',
-                ],
+                'steps': {
+                    'default:commit-push': {},
+                    'default:create-pr': {},
+                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'default:sonar-roundtrip': {},
+                    'default:lessons-capture': {},
+                    'default:branch-cleanup': {},
+                    'default:archive-plan': {},
+                },
             },
         },
         'providers': [

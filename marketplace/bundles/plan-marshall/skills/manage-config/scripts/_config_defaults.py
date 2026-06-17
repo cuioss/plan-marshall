@@ -388,7 +388,13 @@ DEFAULT_PLAN_EXECUTE = {
     # plan time. The 400K default leaves headroom below a typical context window.
     # Registering it here makes the packing budget operator-visible in marshal.json.
     'per_envelope_budget_tokens': '400K',
-    'verification_steps': list(BUILT_IN_VERIFY_STEPS),
+    # Verification steps as an id-keyed map: each key is a built-in verify step
+    # id, each value is that step's nested param object. Verification steps own
+    # no params, so every value is the empty object `{}`. Key insertion order is
+    # the execution order. The keyed-map shape (not a flat list) is the single
+    # on-disk schema — readers iterate `.keys()` for the ordered step ids and
+    # read the per-step param object from the value.
+    'verification_steps': {step_id: {} for step_id in BUILT_IN_VERIFY_STEPS},
     # Per-phase effort default (seeded at init; balanced-preset baseline). The
     # phase-5-execute role group has the `default` (per-task implementation) and
     # `verification-feedback` (build-runner triage) subkeys, so the on-disk shape
@@ -452,38 +458,82 @@ OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS = {
     'plan-marshall:plan-retrospective': 'Capture a structured retrospective of the completed plan',
 }
 
-# Valid values for phase-6-finalize.sonar_touched_file_cleanup — enum controlling
-# which surface the Sonar roundtrip's success criterion covers.
+# Valid values for the `default:sonar-roundtrip` step's nested `touched_file_cleanup`
+# param — enum controlling which surface the Sonar roundtrip's success criterion
+# covers.
 #   - 'new_code_only':      success requires only new-code issues == 0 (default, lean)
 #   - 'touched_files_zero': success additionally sweeps pre-existing issues on touched files
 VALID_SONAR_TOUCHED_FILE_CLEANUP = ('new_code_only', 'touched_files_zero')
 
 
 def validate_sonar_touched_file_cleanup(value: str) -> None:
-    """Validate that `sonar_touched_file_cleanup` is one of the allowed enum values.
+    """Validate the `default:sonar-roundtrip` step's `touched_file_cleanup` param.
 
     Raises:
         ValueError: If ``value`` is not in :data:`VALID_SONAR_TOUCHED_FILE_CLEANUP`.
     """
     if value not in VALID_SONAR_TOUCHED_FILE_CLEANUP:
         raise ValueError(
-            f"Invalid sonar_touched_file_cleanup '{value}'. "
+            f"Invalid touched_file_cleanup '{value}'. "
             f"Allowed: {list(VALID_SONAR_TOUCHED_FILE_CLEANUP)}"
         )
 
 
+# Step-owned params nested under their owning finalize step in the keyed-map
+# `steps` structure. Each finalize step id that owns params maps to its nested
+# param object; every other step id maps to the empty object `{}` (built by the
+# comprehension in DEFAULT_PLAN_FINALIZE['steps']). The sonar params are
+# prefix-stripped within the step (`sonar_touched_file_cleanup` →
+# `touched_file_cleanup`, etc.) since the owning step already scopes them.
+# Phase-level knobs that have no single owning step (checks_wait_timeout_seconds,
+# max_iterations, the ceremony gates, effort, …) stay flat siblings of `steps`.
+_FINALIZE_STEP_PARAMS: dict[str, dict[str, object]] = {
+    'default:sonar-roundtrip': {
+        # touched_file_cleanup (new_code_only|touched_files_zero), validated by
+        # validate_sonar_touched_file_cleanup. `new_code_only` (the lean default)
+        # anchors the sonar-roundtrip success criterion on new-code issues == 0;
+        # `touched_files_zero` extends it to also sweep pre-existing issues on the
+        # files the plan touched.
+        'touched_file_cleanup': 'new_code_only',
+        # do_transition gates the server-side SonarCloud dismissal path. `False`
+        # (default) routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code
+        # suppression (@SuppressWarnings / // NOSONAR); `True` re-enables the
+        # server-side `sonar_rest transition` dismissal.
+        'do_transition': False,
+        # ce_wait_timeout_seconds — budget (seconds) for the synchronous in-Python
+        # CE-readiness wait performed by `sonar.py fetch-and-store` before
+        # enumerating new-code issues. 600s mirrors the CI-completion wait default.
+        'ce_wait_timeout_seconds': 600,
+    },
+    'default:automated-review': {
+        # review_bot_buffer_seconds — buffer before the automated-review bot
+        # comment poll, consumed by workflow-pr-doctor's `pr wait-for-comments`.
+        'review_bot_buffer_seconds': 180,
+    },
+    'default:branch-cleanup': {
+        # pr_merge_strategy — squash|merge|rebase merge strategy for the PR merge.
+        'pr_merge_strategy': 'squash',
+        # final_merge_without_asking gates the post-CI auto-merge.
+        'final_merge_without_asking': False,
+        # auto_rebase_threshold gates the pre-rebase auto-proceed decision.
+        # `no_overlap_only` permits the auto-rebase to proceed only when the
+        # rebase would touch a disjoint file set; any overlap defers to the operator.
+        'auto_rebase_threshold': 'no_overlap_only',
+    },
+}
+
+
 DEFAULT_PLAN_FINALIZE = {
     'max_iterations': 3,
-    'review_bot_buffer_seconds': 180,
-    'pr_merge_strategy': 'squash',
     # Automation knobs — once a finalize gate has run, proceed without asking?
     # finalize_without_asking gates the auto-continue from execute into the
     # finalize pipeline; loop_back_without_asking gates the auto-loop-back on a
-    # finalize-driven fix; final_merge_without_asking gates the post-CI auto-merge.
-    # Read via `manage-config plan phase-6-finalize get --field <knob>`.
+    # finalize-driven fix. (final_merge_without_asking, which gates the post-CI
+    # auto-merge, is now a step-owned param under `default:branch-cleanup` — see
+    # _FINALIZE_STEP_PARAMS.) Read via
+    # `manage-config plan phase-6-finalize get --field <knob>`.
     'finalize_without_asking': True,
     'loop_back_without_asking': False,
-    'final_merge_without_asking': False,
     # Finalize run-at-all gates (auto|always|never), consumed by the manifest
     # composer's finalize step-selection (manage-execution-manifest.py). Each
     # gate maps to exactly one finalize step: self_review ->
@@ -510,36 +560,6 @@ DEFAULT_PLAN_FINALIZE = {
     # runners without hiding a genuinely stuck pipeline behind an excessive
     # ceiling.
     'checks_wait_timeout_seconds': 600,
-    # Sonar roundtrip cleanup-scope enum (new_code_only|touched_files_zero),
-    # validated by validate_sonar_touched_file_cleanup. `new_code_only` (the lean
-    # default) anchors the sonar-roundtrip success criterion on new-code issues
-    # == 0; `touched_files_zero` extends the success criterion to also sweep
-    # pre-existing issues on the files the plan touched. Read via
-    # `manage-config plan phase-6-finalize get --field sonar_touched_file_cleanup`.
-    'sonar_touched_file_cleanup': 'new_code_only',
-    # Gate for the server-side SonarCloud dismissal path. `False` (default) routes
-    # FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression
-    # (@SuppressWarnings / // NOSONAR); `True` re-enables the server-side
-    # `sonar_rest transition` dismissal for teams preferring SonarCloud-state
-    # dispositions. Consumed by triage Step 3c as the fall-through gate. Read via
-    # `manage-config plan phase-6-finalize get --field sonar_do_transition`.
-    'sonar_do_transition': False,
-    # Budget (seconds) for the synchronous in-Python CE-readiness wait performed
-    # by `sonar.py fetch-and-store` before enumerating new-code issues — the
-    # direct sibling of `checks_wait_timeout_seconds` (both are bounded-wait
-    # budgets owned by phase-6-finalize). 600s mirrors the CI-completion wait
-    # default. An explicit `--ce-wait-timeout` flag overrides it. Read via
-    # `manage-config plan phase-6-finalize get --field sonar_ce_wait_timeout_seconds`.
-    'sonar_ce_wait_timeout_seconds': 600,
-    # Threshold gating the pre-rebase auto-proceed decision in branch-cleanup.md,
-    # orthogonal to `plan.phase-6-finalize.final_merge_without_asking` (which gates
-    # the post-CI merge). The
-    # value `no_overlap_only` permits the auto-rebase to proceed only when the
-    # rebase would touch a disjoint file set; any overlap defers to the operator.
-    # branch-cleanup.md reads this row via
-    # `manage-config plan phase-6-finalize get --field auto_rebase_threshold`,
-    # so registering it here makes the threshold operator-visible in marshal.json.
-    'auto_rebase_threshold': 'no_overlap_only',
     # Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter
     # (manage-execution-manifest.py). The implicit scope gate drops the three
     # non-guarded heavyweight phase-6 steps (plan-retrospective,
@@ -551,7 +571,20 @@ DEFAULT_PLAN_FINALIZE = {
     # scope-gated plans (the only path that suppresses the bot-review gate). The
     # default False keeps the bot-review invariant intact.
     'drop_review_on_scope_gate': False,
-    'steps': list(BUILT_IN_FINALIZE_STEPS),
+    # Finalize steps as an id-keyed map: each key is a built-in finalize step id,
+    # each value is that step's nested param object (`{}` when the step owns no
+    # params). Step-owned params (sonar params under `default:sonar-roundtrip`;
+    # `review_bot_buffer_seconds` under `default:automated-review`;
+    # `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`
+    # under `default:branch-cleanup`) fold under their owning step via
+    # _FINALIZE_STEP_PARAMS. Key insertion order is the execution order. The
+    # keyed-map shape (not a flat list) is the single on-disk schema — readers
+    # iterate `.keys()` for the ordered step ids and read the per-step param
+    # object from the value.
+    'steps': {
+        step_id: dict(_FINALIZE_STEP_PARAMS.get(step_id, {}))
+        for step_id in BUILT_IN_FINALIZE_STEPS
+    },
     # Per-phase effort default (seeded at init; balanced-preset baseline). The
     # phase-6-finalize role group has `default`, `verification-feedback`
     # (sonar / pr-comment / plugin-doctor / pr-state triage), and

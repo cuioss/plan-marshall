@@ -69,6 +69,8 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 | `phase_5.envelope_count` | int | Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Written by `compose` from the optional `--envelope-count` input; defaults to `1` (a single budget-bounded envelope greedily drives the task loop) when the input is absent. A manifest composed before this field existed has no `phase_5.envelope_count` key, and every reader interprets an absent value as the same `1` default — so reads stay backward-compatible. |
 | `phase_5.verification_steps` | list[string] | Ordered list of Phase 5 verification step IDs (e.g., `quality-gate`, `module-tests`, `coverage`). Empty list means no verification needed (e.g., docs-only plans) |
 | `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `commit-push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `adr-propose`, `branch-cleanup`, `archive-plan`, `record-metrics`, `lessons-integration`. CI completion is a dispatcher-resolved precondition declared via `requires: [ci-complete]` on consumer step frontmatters (see `phase-6-finalize/SKILL.md` Step 3 § "Precondition resolution") — it is not itself a step in the canonical set. |
+| `phase_5.step_params` | object | Per-step param snapshot for the selected Phase 5 verify steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time. Verify steps own no params, so values are typically `{}`. Read via `step-params get`; per-plan overridable via `step-params set`. |
+| `phase_6.step_params` | object | Per-step param snapshot for the selected Phase 6 finalize steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time (e.g. `branch-cleanup` carries `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`; `sonar-roundtrip` carries `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds`; `automated-review` carries `review_bot_buffer_seconds`). This is the **plan-local runtime source** that phase-5/6 consumers read via `step-params get` (per-plan overridable via `step-params set`), NOT the marshal.json keyed map (the compose-time default). |
 | `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms` (default `0`), and an ISO-8601 `timestamp`. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
 
 ---
@@ -80,6 +82,8 @@ Script: `plan-marshall:manage-execution-manifest:manage-execution-manifest`
 ### compose
 
 Compose and write the execution manifest from inputs gathered at the end of phase-4-plan.
+
+**Step-param snapshot.** In addition to the step lists, `compose` snapshots each SELECTED step's resolved param object — read from the marshal.json keyed map (`plan.phase-{5,6}-{execute,finalize}.{verification_steps,steps}`) — into the manifest body under `phase_5.step_params` / `phase_6.step_params`, keyed by the (bare) in-manifest step id. This is the write-time-snapshot model that already governs the step list: params are baked at compose time exactly like the step list, so the manifest is the plan-local runtime source while marshal.json stays the compose-time default. Only steps that survive selection are snapshotted; a step with no marshal-side param object snapshots as `{}`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
@@ -193,6 +197,36 @@ execution_log_count: 1
 
 On a missing manifest: `status: error`, `error: file_not_found`. On an invalid `--phase` / `--outcome` value: `status: error`, `error: invalid_phase` / `invalid_outcome`.
 
+### step-params get
+
+Return a step's snapshotted param object from the plan-local manifest — a literal file read of the compose-time snapshot under `body[phase].step_params[step_id]`, never a marshal.json read. The one-stop read that phase-5/6 runtime consumers use instead of per-field `manage-config get --field` reads of step-owned params.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get \
+  --plan-id {plan_id} \
+  --phase {5-execute|6-finalize} \
+  --step-id {step_id}
+```
+
+Returns `{phase, step_id, params}` (the complete snapshotted param object). An absent step id (no `step_params` entry) → `status: error`, `error: step_not_found`. A missing manifest → `error: file_not_found`; an invalid `--phase` → `error: invalid_phase`.
+
+### step-params set
+
+Write a per-plan param override into the manifest's `step_params` snapshot — a plan-local override that wins over the marshal.json compose-time default for subsequent `step-params get` reads. Operates on the persisted manifest only, never on marshal.json.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params set \
+  --plan-id {plan_id} \
+  --phase {5-execute|6-finalize} \
+  --step-id {step_id} \
+  --param {key} \
+  --value {value}
+```
+
+The value is coerced (`true`/`false` → bool; integer literal → int; else string), the param is merged into the step's param object (siblings preserved), and the updated `params` object is returned. An absent step id → `error: step_not_found`; a missing manifest → `error: file_not_found`; an invalid `--phase` → `error: invalid_phase`.
+
 ### validate
 
 Verify the manifest schema and that all step IDs exist in the candidate `marshal.json` set.
@@ -299,6 +333,8 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
+| `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
+| `step-params set` | `--plan-id --phase {5-execute\|6-finalize} --step-id --param --value` | Write a per-plan param override into the manifest snapshot |
 | `validate` | `--plan-id [--phase-5-steps] [--phase-6-steps]` | Validate manifest schema + step IDs |
 | `validate-loadable` | `--plan-id (--step-id ID \| --all)` | Verify standards file presence for built-in `phase_6.steps` entries |
 
@@ -317,8 +353,9 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `invalid_track` | --track not `simple` or `complex` |
 | `invalid_phase` | `record-step` --phase not `5-execute` or `6-finalize` |
 | `invalid_outcome` | `record-step` --outcome not `executed`, `skipped`, or `error` |
-| `invalid_manifest` | Manifest schema invalid or step IDs unknown |
+| `invalid_manifest` | Manifest schema invalid or step IDs unknown; or `step-params set` target section malformed |
 | `invalid_arguments` | `validate-loadable` invoked without exactly one of `--step-id` / `--all` |
+| `step_not_found` | `step-params get`/`set` `--step-id` has no snapshotted params in the manifest for the given phase |
 
 ---
 
@@ -379,6 +416,20 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 `--step-id` and `--all` are mutually exclusive; exactly one is required.
 
+### step-params get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest step-params get \
+  --plan-id PLAN_ID --phase {5-execute|6-finalize} --step-id STEP_ID
+```
+
+### step-params set
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest step-params set \
+  --plan-id PLAN_ID --phase {5-execute|6-finalize} --step-id STEP_ID --param PARAM --value VALUE
+```
+
 ---
 
 ## Decision Rules
@@ -435,16 +486,17 @@ After the seven-row matrix, the `ceremony_finalize_selection` and `execution_tie
 
 | Client | Operation | Purpose |
 |--------|-----------|---------|
-| `phase-4-plan` | compose | Emit manifest as terminal step before phase transition (Step 8b) |
-| `phase-5-execute` | record-step | Append a per-step execution-log row (outcome + token attribution) after each verification step dispatches |
-| `phase-6-finalize` | record-step | Append a per-step execution-log row (outcome + token attribution) after each finalize step dispatches |
+| `phase-4-plan` | compose | Emit manifest as terminal step before phase transition (Step 8b); the compose call also snapshots each selected step's resolved params into `phase_{5,6}.step_params` |
+| `phase-5-execute` | record-step, step-params set | Append a per-step execution-log row after each verification step dispatches; optionally write a per-plan step-param override |
+| `phase-6-finalize` | record-step, step-params set | Append a per-step execution-log row after each finalize step dispatches; optionally write a per-plan step-param override |
 
 ### Consumers
 
 | Client | Operation | Purpose |
 |--------|-----------|---------|
-| `phase-5-execute` | read | Read `phase_5.early_terminate`, `phase_5.envelope_count`, and `phase_5.verification_steps` to drive envelope and verification dispatch (an absent `envelope_count` is treated as `1`) |
-| `phase-6-finalize` | read | Read `phase_6.steps` to drive finalize-step dispatch loop |
+| `phase-5-execute` | read, step-params get | Read `phase_5.early_terminate`, `phase_5.envelope_count`, and `phase_5.verification_steps` to drive envelope and verification dispatch (an absent `envelope_count` is treated as `1`); read per-step params from the plan-local snapshot |
+| `phase-6-finalize` | read, step-params get | Read `phase_6.steps` to drive the finalize-step dispatch loop; read each step's params via the one-stop `step-params get` (review / branch-cleanup / sonar consumers) |
+| `workflow-integration-sonar` | step-params get | Read the `default:sonar-roundtrip` step's `ce_wait_timeout_seconds` / `touched_file_cleanup` / `do_transition` params from the plan-local snapshot |
 | `plan-retrospective` | read | Cross-check manifest assumptions against end-of-execute diff |
 
 ## Related

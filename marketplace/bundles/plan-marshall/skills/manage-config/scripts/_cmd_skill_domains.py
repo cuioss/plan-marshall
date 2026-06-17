@@ -846,13 +846,20 @@ def cmd_skill_domains(args) -> dict:
 
         config['skill_domains'] = skill_domains
 
-        # Persist verify steps to plan.phase-5-execute.verification_steps
-        # Build flat list: built-in steps + extension steps
+        # Persist verify steps to plan.phase-5-execute.verification_steps as an
+        # id-keyed map: built-in steps + extension steps, each keyed to its
+        # nested param object. Verification steps own no params, so every value
+        # is the empty object `{}`. Key insertion order (built-ins first, then
+        # extension steps in discovery order) is the execution order — this seeds
+        # the keyed-map shape that the manifest composer's keyed-map-only reader
+        # (`_read_marshal_phase_steps`, no list fallback) consumes.
         from _config_defaults import BUILT_IN_VERIFY_STEPS
 
         plan_config = config.get('plan', {})
         execute_section = plan_config.get('phase-5-execute', {})
-        execute_section['verification_steps'] = list(BUILT_IN_VERIFY_STEPS) + extension_verify_steps
+        execute_section['verification_steps'] = {
+            step_id: {} for step_id in list(BUILT_IN_VERIFY_STEPS) + extension_verify_steps
+        }
         plan_config['phase-5-execute'] = execute_section
         config['plan'] = plan_config
 

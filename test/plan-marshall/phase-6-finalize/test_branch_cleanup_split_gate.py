@@ -6,7 +6,8 @@ The gate-decision logic itself lives in workflow doc text
 so this suite pins:
 
 1. The config-knob plumbing (`auto_rebase_threshold` and `final_merge_without_asking`
-   are reachable through `manage-config plan phase-6-finalize get/set --field`
+   are step-owned params of `default:branch-cleanup`, reachable through
+   `manage-config plan phase-6-finalize step get/set --step-id default:branch-cleanup`
    with the documented default values).
 2. The doc-level invariants of the split-gate structure — two distinct
    sections in branch-cleanup.md, each routed by its own knob, including the
@@ -65,21 +66,22 @@ def _branch_cleanup_text() -> str:
 
 
 def test_auto_rebase_threshold_roundtrips_when_set(plan_context):
-    """auto_rebase_threshold is dynamically read (not schema-registered).
+    """auto_rebase_threshold is a step-owned param of default:branch-cleanup.
 
-    Calling get on a fresh marshal.json returns error (the field is absent
-    from DEFAULT_PLAN_FINALIZE on purpose — branch-cleanup.md documents the
-    `no_overlap_only` default as the workflow-level fallback). Once the
-    operator explicitly sets the field, it round-trips through get/set so
-    consumer projects opting into a non-default value are honoured.
+    A fresh marshal.json seeds the default `no_overlap_only` under the
+    default:branch-cleanup step, so `step get` surfaces it. Setting it via
+    `step set` round-trips through `step get` so consumer projects opting into a
+    non-default value are honoured.
     """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
     set_args = Namespace(
         noun='plan',
         sub_noun='phase-6-finalize',
-        verb='set',
-        field='auto_rebase_threshold',
+        verb='step',
+        step_verb='set',
+        step_id='default:branch-cleanup',
+        param='auto_rebase_threshold',
         value='auto_resolvable',
     )
     set_result = _cmd_quality_phases_mod.cmd_phase(set_args, 'phase-6-finalize')
@@ -88,44 +90,50 @@ def test_auto_rebase_threshold_roundtrips_when_set(plan_context):
     get_args = Namespace(
         noun='plan',
         sub_noun='phase-6-finalize',
-        verb='get',
-        field='auto_rebase_threshold',
+        verb='step',
+        step_verb='get',
+        step_id='default:branch-cleanup',
     )
     get_result = _cmd_quality_phases_mod.cmd_phase(get_args, 'phase-6-finalize')
 
     assert get_result['status'] == 'success'
-    assert get_result['value'] == 'auto_resolvable'
+    assert get_result['params']['auto_rebase_threshold'] == 'auto_resolvable'
 
 
 def test_final_merge_without_asking_default_is_false(plan_context):
     """Fresh marshal.json must surface final_merge_without_asking default False.
 
-    The knob is a flat field under plan.phase-6-finalize; the runtime read is
-    now `plan phase-6-finalize get --field final_merge_without_asking`.
+    The knob is a step-owned param of default:branch-cleanup; the runtime read is
+    now `plan phase-6-finalize step get --step-id default:branch-cleanup`.
     """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    args = Namespace(verb='get', field='final_merge_without_asking')
+    args = Namespace(verb='step', step_verb='get', step_id='default:branch-cleanup')
     result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-6-finalize')
 
     assert result['status'] == 'success'
-    assert result['value'] is False
+    assert result['params']['final_merge_without_asking'] is False
 
 
-def test_final_merge_without_asking_read_from_phase_6_finalize(plan_context):
-    """final_merge_without_asking reads through the standard phase get verb.
+def test_final_merge_without_asking_read_from_branch_cleanup_step(plan_context):
+    """final_merge_without_asking reads through the one-stop step get verb.
 
-    A fresh marshal.json (no live override) reads the canonical default from
-    the merged plan.phase-6-finalize block.
+    A fresh marshal.json (no live override) reads the canonical default from the
+    default:branch-cleanup step's nested param object.
     """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    # Read the whole phase-6-finalize block (no --field).
-    args = Namespace(verb='get', field=None)
+    # Read the full default:branch-cleanup param object.
+    args = Namespace(verb='step', step_verb='get', step_id='default:branch-cleanup')
     result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-6-finalize')
 
     assert result['status'] == 'success'
-    assert result['final_merge_without_asking'] is False
+    assert result['params']['final_merge_without_asking'] is False
+    # the param is NOT a flat sibling read anymore
+    flat = _cmd_quality_phases_mod.cmd_phase(
+        Namespace(verb='get', field='final_merge_without_asking'), 'phase-6-finalize'
+    )
+    assert flat['status'] == 'error'
 
 
 # ---- Doc-level invariants ----------------------------------------------------
