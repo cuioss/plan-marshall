@@ -152,9 +152,12 @@ def _resolve_subagent_transcripts(
         cwd_slug = _resolve_cwd().replace('/', '-')
         subagents_dir = projects / cwd_slug / session_id / 'subagents'
 
-    if not subagents_dir.is_dir():
+    try:
+        if not subagents_dir.is_dir():
+            return []
+        return sorted(p for p in subagents_dir.glob('agent-*.jsonl') if p.is_file())
+    except OSError:
         return []
-    return sorted(p for p in subagents_dir.glob('agent-*.jsonl') if p.is_file())
 
 
 def _accumulator_path(plan_id: str, phase: str) -> Path:
@@ -1282,7 +1285,7 @@ def _sum_subagent_transcript(path: Path) -> tuple[dict[str, int], str | None]:
     bucket: dict[str, int] = dict.fromkeys(USAGE_FOUR_FIELDS, 0)
     first_timestamp: str | None = None
     try:
-        with open(path, encoding='utf-8') as f:
+        with open(path, encoding='utf-8', errors='replace') as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -1416,7 +1419,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         return per_phase_four_fields.setdefault(phase_name, dict.fromkeys(USAGE_FOUR_FIELDS, 0))
 
     try:
-        with open(transcript_path, encoding='utf-8') as f:
+        with open(transcript_path, encoding='utf-8', errors='replace') as f:
             for line in f:
                 line = line.strip()
                 if not line:
