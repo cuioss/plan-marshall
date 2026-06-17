@@ -182,28 +182,130 @@ def test_get_default_config_includes_auto_rebase_threshold():
     assert finalize['auto_rebase_threshold'] == 'no_overlap_only'
 
 
-def test_default_plan_execute_includes_per_task_budget_reserve_tokens():
-    """DEFAULT_PLAN_EXECUTE must declare per_task_budget_reserve_tokens with default "50K"."""
+def test_default_plan_execute_omits_retired_per_task_budget_reserve_tokens():
+    """DEFAULT_PLAN_EXECUTE must NOT carry the retired per_task_budget_reserve_tokens key.
+
+    The reserve key gated a continue-vs-yield clause whose `remaining_budget`
+    input is harness-infeasible (a running subagent cannot measure its own
+    context use mid-turn). It is replaced (clean break) by the plan-time
+    bin-packing model — cost_size_token_table + per_envelope_budget_tokens — so a
+    surviving seed would re-introduce the unevaluable knob.
+    """
+    assert 'per_task_budget_reserve_tokens' not in _config_defaults_mod.DEFAULT_PLAN_EXECUTE
+
+
+def test_get_default_config_omits_retired_per_task_budget_reserve_tokens():
+    """get_default_config() must NOT surface plan.phase-5-execute.per_task_budget_reserve_tokens."""
+    config = _config_defaults_mod.get_default_config()
+
+    assert 'per_task_budget_reserve_tokens' not in config['plan']['phase-5-execute']
+
+
+_EXPECTED_COST_SIZE_TOKEN_TABLE = {'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K'}
+
+
+def test_default_plan_execute_includes_cost_size_token_table():
+    """DEFAULT_PLAN_EXECUTE must declare cost_size_token_table with the calibrated default."""
     execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
 
-    assert 'per_task_budget_reserve_tokens' in execute_defaults, (
-        'per_task_budget_reserve_tokens must be schema-registered in DEFAULT_PLAN_EXECUTE'
+    assert 'cost_size_token_table' in execute_defaults, (
+        'cost_size_token_table must be schema-registered in DEFAULT_PLAN_EXECUTE'
     )
-    assert execute_defaults['per_task_budget_reserve_tokens'] == '50K', (
-        'per_task_budget_reserve_tokens default must be the human-friendly "50K" '
-        '(phase-5-execute sentinel reserve)'
+    assert execute_defaults['cost_size_token_table'] == _EXPECTED_COST_SIZE_TOKEN_TABLE, (
+        'cost_size_token_table default must map S/M/L/XL to 25K/60K/130K/260K '
+        '(calibrated to the forensic 134K-392K per-dispatch range)'
     )
-    # The human-friendly string round-trips to the documented int via the shared parser.
-    assert parse_sensible_int(execute_defaults['per_task_budget_reserve_tokens']) == 50000
+    # Every magnitude round-trips through the shared parser to the documented int.
+    parsed = {k: parse_sensible_int(v) for k, v in execute_defaults['cost_size_token_table'].items()}
+    assert parsed == {'S': 25000, 'M': 60000, 'L': 130000, 'XL': 260000}
 
 
-def test_get_default_config_includes_per_task_budget_reserve_tokens():
-    """get_default_config() must surface plan.phase-5-execute.per_task_budget_reserve_tokens == "50K"."""
+def test_get_default_config_includes_cost_size_token_table():
+    """get_default_config() must surface plan.phase-5-execute.cost_size_token_table."""
     config = _config_defaults_mod.get_default_config()
 
     execute = config['plan']['phase-5-execute']
-    assert execute.get('per_task_budget_reserve_tokens') == '50K'
-    assert parse_sensible_int(execute['per_task_budget_reserve_tokens']) == 50000
+    assert execute.get('cost_size_token_table') == _EXPECTED_COST_SIZE_TOKEN_TABLE
+
+
+def test_default_plan_execute_includes_per_envelope_budget_tokens():
+    """DEFAULT_PLAN_EXECUTE must declare per_envelope_budget_tokens with default "400K"."""
+    execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
+
+    assert 'per_envelope_budget_tokens' in execute_defaults, (
+        'per_envelope_budget_tokens must be schema-registered in DEFAULT_PLAN_EXECUTE'
+    )
+    assert execute_defaults['per_envelope_budget_tokens'] == '400K', (
+        'per_envelope_budget_tokens default must be the human-friendly "400K" '
+        '(plan-time bin-packer packing budget)'
+    )
+    # The human-friendly string round-trips to the documented int via the shared parser.
+    assert parse_sensible_int(execute_defaults['per_envelope_budget_tokens']) == 400000
+
+
+def test_get_default_config_includes_per_envelope_budget_tokens():
+    """get_default_config() must surface plan.phase-5-execute.per_envelope_budget_tokens == "400K"."""
+    config = _config_defaults_mod.get_default_config()
+
+    execute = config['plan']['phase-5-execute']
+    assert execute.get('per_envelope_budget_tokens') == '400K'
+    assert parse_sensible_int(execute['per_envelope_budget_tokens']) == 400000
+
+
+def test_cost_size_labels_enumerates_the_four_tshirt_sizes():
+    """COST_SIZE_LABELS must enumerate exactly the four T-shirt sizes S/M/L/XL."""
+    assert _config_defaults_mod.COST_SIZE_LABELS == ('S', 'M', 'L', 'XL')
+    # the seeded default table keys must match the label set exactly
+    assert set(_config_defaults_mod.DEFAULT_PLAN_EXECUTE['cost_size_token_table'].keys()) == set(
+        _config_defaults_mod.COST_SIZE_LABELS
+    )
+
+
+def test_validate_cost_size_token_table_accepts_seeded_default():
+    """validate_cost_size_token_table must accept the seeded default table."""
+    _config_defaults_mod.validate_cost_size_token_table(
+        _config_defaults_mod.DEFAULT_PLAN_EXECUTE['cost_size_token_table']
+    )
+    # an explicit valid table with int-typed magnitudes is also accepted
+    _config_defaults_mod.validate_cost_size_token_table(
+        {'S': 25000, 'M': '60K', 'L': '130_000', 'XL': '260K'}
+    )
+
+
+def test_validate_cost_size_token_table_rejects_non_dict():
+    """validate_cost_size_token_table must reject a non-dict value."""
+    import pytest
+
+    with pytest.raises(ValueError, match='expected a dict'):
+        _config_defaults_mod.validate_cost_size_token_table(['25K', '60K'])
+
+
+def test_validate_cost_size_token_table_rejects_missing_key():
+    """validate_cost_size_token_table must reject a table missing one of S/M/L/XL."""
+    import pytest
+
+    with pytest.raises(ValueError, match='expected exactly'):
+        _config_defaults_mod.validate_cost_size_token_table({'S': '25K', 'M': '60K', 'L': '130K'})
+
+
+def test_validate_cost_size_token_table_rejects_extra_key():
+    """validate_cost_size_token_table must reject a table carrying an unexpected size key."""
+    import pytest
+
+    with pytest.raises(ValueError, match='expected exactly'):
+        _config_defaults_mod.validate_cost_size_token_table(
+            {'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '500K'}
+        )
+
+
+def test_validate_cost_size_token_table_rejects_unparseable_magnitude():
+    """validate_cost_size_token_table must reject a value that is not a sensible int."""
+    import pytest
+
+    with pytest.raises(ValueError, match='not a parseable token magnitude'):
+        _config_defaults_mod.validate_cost_size_token_table(
+            {'S': '25K', 'M': 'sixty-thousand', 'L': '130K', 'XL': '260K'}
+        )
 
 
 _EXPECTED_PER_DELIVERABLE_BUILD = ['default:verify:compile', 'default:verify:module-tests']

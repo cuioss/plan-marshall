@@ -64,6 +64,7 @@ DISPATCH_BOUNDARY_FILE_TEMPLATE = 'work/metrics-dispatch-boundaries-{phase}.toon
 DISPATCH_TERMINATION_CAUSES = (
     'voluntary_checkpoint',
     'task_complete_returned_verbatim',
+    'budget_yield',
     'harness_cancellation',
     'error',
     'clean_exit_queue_empty',
@@ -1670,9 +1671,10 @@ def main() -> int:
             'Append a TOON row to work/metrics-dispatch-boundaries-{phase}.toon '
             'capturing the termination cause of a phase Task dispatch '
             '(voluntary_checkpoint | task_complete_returned_verbatim | '
-            'harness_cancellation | error | clean_exit_queue_empty | '
-            'step_complete | blocked_user_review | blocked_session_restart | '
-            'task_batch_complete | agent_returned) and the '
+            'budget_yield | harness_cancellation | error | '
+            'clean_exit_queue_empty | step_complete | blocked_user_review | '
+            'blocked_session_restart | task_batch_complete | agent_returned) '
+            'and the '
             "dispatched agent's <usage> totals at the time of return. "
             '``clean_exit_queue_empty`` is the canonical value the '
             'orchestrator MUST use for a successful loop-exit (queue '

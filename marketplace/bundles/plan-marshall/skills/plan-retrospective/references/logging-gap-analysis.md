@@ -110,8 +110,8 @@ deliverable. When the precondition is absent, the rule emits no finding.
 
   - One `info`-severity finding with the per-cause distribution over the
     canonical value set (e.g. `"4 voluntary_checkpoint,
-    1 task_complete_returned_verbatim, 0 harness_cancellation, 0 error,
-    1 clean_exit_queue_empty"`).
+    1 task_complete_returned_verbatim, 2 budget_yield,
+    0 harness_cancellation, 0 error, 1 clean_exit_queue_empty"`).
   - A `warning`-severity finding when `unknown_count > 0` — any row
     carrying the literal `unknown` termination cause is legacy data from
     before the `clean_exit_queue_empty` migration (the recorder no longer
@@ -123,6 +123,15 @@ deliverable. When the precondition is absent, the rule emits no finding.
     + `task_complete_returned_verbatim` together account for more than
     50 % of recorded dispatches — agent-initiated re-dispatch is the
     failure mode lesson `2026-05-08-14-001` is meant to detect.
+    **`budget_yield` is EXCLUDED from this > 50 % count**: a `budget_yield`
+    row is a deterministic, legitimate plan-time-packed yield (the
+    plan-time bin-packer pre-computed the envelope grouping, and the yield
+    carries a logged `budget_yield` decision + a wrapped terminal payload),
+    NOT the agent-initiated-re-dispatch failure mode. Count only
+    `voluntary_checkpoint` + `task_complete_returned_verbatim` toward the
+    threshold; a high `budget_yield` share simply reflects how many
+    execution envelopes the bin-packer produced (one yield per envelope
+    boundary) and is expected for multi-envelope plans.
 
   Plans without the artifact skip the rule entirely.
 

@@ -56,7 +56,13 @@ JSON structure and field definitions for project configuration.
         "default:verify:compile",
         "default:verify:module-tests"
       ],
-      "per_task_budget_reserve_tokens": "50K",
+      "cost_size_token_table": {
+        "S": "25K",
+        "M": "60K",
+        "L": "130K",
+        "XL": "260K"
+      },
+      "per_envelope_budget_tokens": "400K",
       "verification_steps": [
         "default:verify:quality-gate",
         "default:verify:module-tests",
@@ -365,7 +371,13 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
         "default:verify:compile",
         "default:verify:module-tests"
       ],
-      "per_task_budget_reserve_tokens": "50K",
+      "cost_size_token_table": {
+        "S": "25K",
+        "M": "60K",
+        "L": "130K",
+        "XL": "260K"
+      },
+      "per_envelope_budget_tokens": "400K",
       "verification_steps": [
         "default:verify:quality-gate",
         "default:verify:module-tests",
@@ -381,7 +393,8 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
 | `commit_and_push` | bool | true | true=commit per-deliverable + push at finalize; false=local-only run (commit-push/push/PR steps stripped by the manifest `commit_push_disabled` pre-filter) |
 | `max_iterations` | int | 5 | Maximum verify-execute-verify loops |
 | `per_deliverable_build` | list[string] | `["default:verify:compile","default:verify:module-tests"]` | A list of `default:verify:{canonical}` step IDs — the canonical-verify rungs phase-5-execute runs for the changed module at each per-deliverable chain-tail point (Step 10). The default runs `compile` + the module's scoped `module-tests`. Set to `[]` to disable the focused build (the whole-tree sweep at end-of-phase remains the only build). Each entry must be a `default:verify:{canonical}` ID; the retired enum strings (`off` / `compile-only` / `compile+scoped-test` / `full`) are rejected with a migration error. |
-| `per_task_budget_reserve_tokens` | string | "50K" | Per-task budget **reserve** — the minimum context-window margin that must remain free before the budget-bounded task loop starts another task. Governs the continue-vs-yield sentinel. The `_tokens` suffix names the unit; the human-friendly value form (`"50K"`) is parsed to an int by `sensible_number.parse_sensible_int` in the phase-5-execute consumer. The workflow's documented fallback when the key is absent is `50000`. |
+| `cost_size_token_table` | dict | `{"S":"25K","M":"60K","L":"130K","XL":"260K"}` | Size→token table mapping each T-shirt `cost_size` (`S`/`M`/`L`/`XL`) to a predicted-token magnitude. The phase-4-plan bin-packer (`manage-tasks pack-envelopes`) reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`. Keys must be exactly `S`/`M`/`L`/`XL`; each value parses via `sensible_number.parse_sensible_int`. Validated by `validate_cost_size_token_table`. The default magnitudes are calibrated to the forensic 134K–392K per-dispatch range and are tunable to recalibrate the cost model. |
+| `per_envelope_budget_tokens` | string | "400K" | Per-envelope packing budget — the token ceiling the phase-4-plan bin-packer accumulates `predicted_cost_tokens` against before opening a new envelope group. Consumed at PLAN time by the bin-packer (`manage-tasks pack-envelopes`), NOT a runtime comparand. The `_tokens` suffix names the unit; the human-friendly value form (`"400K"`) parses to an int via `sensible_number.parse_sensible_int`. The 400K default leaves headroom below a typical context window. |
 
 #### Verify step ID scheme
 

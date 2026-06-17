@@ -43,7 +43,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 The bulk of project configuration. Canonical schema and field reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
-`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, and `system` sections. Each phase block holds fields specific to that phase, including the run-at-all gates and the three auto-continuation knobs, each homed under the phase whose decision it governs. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_and_push`, `per_deliverable_build`, `per_task_budget_reserve_tokens`, `max_iterations`, `review_bot_buffer_seconds`, `pr_merge_strategy`, the `plan.phase-6-finalize.*` auto-continuation knobs, `auto_rebase_threshold`, `drop_review_on_scope_gate`, `open_in_ide`, the `system.retention.*` knobs, `plan.phase-6-finalize.checks_wait_timeout_seconds`, `plan.phase-6-finalize.sonar_touched_file_cleanup`, `plan.phase-6-finalize.sonar_do_transition`, the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `skill_domains`, and `system` sections. Each phase block holds fields specific to that phase, including the run-at-all gates and the three auto-continuation knobs, each homed under the phase whose decision it governs. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `use_worktree`, `confidence_threshold`, `compatibility`, `simplicity`, `commit_and_push`, `per_deliverable_build`, `max_iterations`, `review_bot_buffer_seconds`, `pr_merge_strategy`, the `plan.phase-6-finalize.*` auto-continuation knobs, `auto_rebase_threshold`, `drop_review_on_scope_gate`, `open_in_ide`, the `system.retention.*` knobs, `plan.phase-6-finalize.checks_wait_timeout_seconds`, `plan.phase-6-finalize.sonar_touched_file_cleanup`, `plan.phase-6-finalize.sonar_do_transition`, the `project.*` branch-naming knobs, …) see the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
 [#effort-and-models]
 === Effort and model selection
@@ -137,19 +137,21 @@ Order is significant — phase-5 runs verify steps in list order until one fails
 
 Reference: `data-model.md` §§ phase-5-execute / phase-6-finalize; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-verify-steps.md[`ext-point-verify-steps.md`]; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-steps.md[`ext-point-finalize-steps.md`].
 
-[#per-task-budget-reserve]
-=== Per-task budget reserve
+[#per-envelope-packing-budget]
+=== Per-envelope packing budget and the cost-size token table
 
-`plan.phase-5-execute.per_task_budget_reserve_tokens` (default `"50K"`) is the per-task budget **reserve** — the minimum context-window margin that must remain free before the `phase-5-execute` task loop is allowed to start another task. It governs the loop's continue-vs-yield sentinel. The `_tokens` suffix names the unit; the human-friendly value form (`"50K"`) is parsed to the integer `50000` by the consumer via `sensible_number.parse_sensible_int`.
+The `phase-5-execute` dispatch model is **budget-bounded**, neither per-task nor per-deliverable. The continue-vs-yield decision is **pre-computed at plan time**: phase-4-plan derives each task's T-shirt `cost_size` and `predicted_cost_tokens`, then a deterministic bin-packer groups dependency-ordered tasks into execution envelopes. The executor runs only the tasks in its assigned envelope and yields when the group is exhausted — it performs no runtime cost measurement. Two knobs feed the plan-time packing:
 
-The dispatch model is **budget-bounded**, neither per-task nor per-deliverable. One `execution-context` envelope runs as many tasks as the reserve permits — so it bundles several small deliverables into one envelope and may span a single large deliverable across several envelopes — then yields, and the orchestrator re-dispatches a fresh envelope to resume the loop. The reserve is the operator-tunable knob for that granularity: raise it to make each envelope yield earlier (smaller dispatches), lower it to pack more tasks into each envelope.
+`plan.phase-5-execute.per_envelope_budget_tokens` (default `"400K"`) is the per-envelope packing budget — the token ceiling the bin-packer accumulates `predicted_cost_tokens` against before opening a new envelope group. It is consumed at PLAN time by the bin-packer (`manage-tasks pack-envelopes`), NOT a runtime comparand. The `_tokens` suffix names the unit; the human-friendly value form (`"400K"`) is parsed to an integer by `sensible_number.parse_sensible_int`. Raise it to pack more tasks into each envelope (fewer, larger dispatches), lower it to yield earlier (smaller dispatches). The 400K default leaves headroom below a typical context window.
+
+`plan.phase-5-execute.cost_size_token_table` (default `{S: 25K, M: 60K, L: 130K, XL: 260K}`) maps each T-shirt `cost_size` to a predicted-token magnitude. The bin-packer reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`. Keys must be exactly `S`/`M`/`L`/`XL`; each value parses via `sensible_number.parse_sensible_int`. The default magnitudes are calibrated to the forensic 134K–392K per-dispatch range; tune them to recalibrate the cost model from observed post-return `<usage>`.
 
 Set via:
 
 [source,bash]
 ----
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field per_task_budget_reserve_tokens --value 50K
+  plan phase-5-execute set --field per_envelope_budget_tokens --value 400K
 ----
 
 For the conceptual home of per-dispatch context isolation see xref:../concepts/token-management.adoc[Concepts › Token Management]. Canonical schema: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].

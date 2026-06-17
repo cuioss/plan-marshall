@@ -50,7 +50,7 @@ image::../resources/diagrams/context-isolation.svg[Side-by-side comparison of tw
 
 Net effect: a plan that would consume 30-50 K tokens (or overflow the window) in a single-context shape consumes ~6 K orchestrator-side in Plan Marshall, with each `execution-context-{level}` variant's larger context being independent — and never additive — because variants do not see each other's history. The 8-step dispatch lifecycle is described in xref:execution-context.adoc[Execution Context].
 
-The `phase-5-execute` task loop applies this isolation as a **budget-bounded** dispatch: one envelope runs as many tasks as the per-task budget reserve permits before yielding, and the reserve is operator-tunable — see xref:../user/configuration.adoc#per-task-budget-reserve[Configuration › Per-task budget reserve].
+The `phase-5-execute` task loop applies this isolation as a **budget-bounded** dispatch: tasks are grouped into execution envelopes at plan time by a deterministic bin-packer, and each envelope runs only the tasks in its assigned group before yielding. The per-envelope packing budget that governs the grouping is operator-tunable — see xref:../user/configuration.adoc#per-envelope-packing-budget[Configuration › Per-envelope packing budget].
 
 == Bonus side-effect — process compliance survives long sessions
 

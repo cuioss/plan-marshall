@@ -253,7 +253,7 @@ See `plan-retrospective` for the correlation logic.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id {plan_id} --phase {phase} \
-  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|harness_cancellation|error|clean_exit_queue_empty} \
+  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
 ```
 
@@ -262,6 +262,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 - `--termination-cause` — Why the dispatch ended. Required — missing or unrecognised values are rejected as script errors (there is no implicit fallback). One of:
   - `voluntary_checkpoint` — the agent emitted a "Returning control to orchestrator" / "progress checkpoint" line and stopped with pending work in the queue.
   - `task_complete_returned_verbatim` — the agent returned `execute-task`'s bare `task_complete` payload without wrapping it.
+  - `budget_yield` — the dispatch yielded because its assigned `envelope_id` group was exhausted (plan-time bin-packing) after completing ≥1 task — the wrapped terminal payload (`budget_yield: true`, `tasks_remaining > 0`) and the `budget_yield` decision-log entry distinguish it from `task_complete_returned_verbatim`.
   - `harness_cancellation` — the host platform cancelled the dispatch (timeout, context-window limit, etc.).
   - `error` — the dispatch raised a fatal error captured via the skill's Error Handling section.
   - `clean_exit_queue_empty` — canonical value for a clean exit where the loop drove to completion AND `manage-tasks loop-exit-guard` confirmed the pending queue is empty.
@@ -451,7 +452,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accu
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id PLAN_ID --phase PHASE \
-  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|harness_cancellation|error|clean_exit_queue_empty} \
+  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
 ```
 

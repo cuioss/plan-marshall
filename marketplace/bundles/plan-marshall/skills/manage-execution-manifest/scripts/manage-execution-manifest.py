@@ -59,6 +59,17 @@ from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-fo
 MANIFEST_FILENAME = 'execution.toon'
 MANIFEST_VERSION = 1
 
+# Default number of phase-5 execution envelopes the orchestrator dispatches when
+# the composer is not given an explicit ``--envelope-count``. ``1`` reproduces
+# the pre-existing single-envelope behaviour: one budget-bounded
+# ``execution-context`` envelope greedily drives the task loop until the queue
+# is empty or a TASK-boundary re-dispatch point fires (token-budget sentinel,
+# ``triage_required``, or ``baseline_drift``). The field is the orchestrator's
+# read-side signal for how many envelopes to plan for; a manifest composed
+# before this field existed simply has no ``phase_5.envelope_count`` key, and
+# every reader treats an absent value as this same default.
+DEFAULT_ENVELOPE_COUNT = 1
+
 VALID_CHANGE_TYPES = (
     'analysis',
     'feature',
@@ -2426,6 +2437,23 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         task_queue_active=task_queue_active,
     )
 
+    # Persist the phase-5 envelope count into the phase_5 block. This is the
+    # orchestrator's read-side signal for how many phase-5 execution-context
+    # envelopes to plan for. The value is an optional compose input
+    # (``--envelope-count``); when absent it defaults to ``DEFAULT_ENVELOPE_COUNT``
+    # (``1``), reproducing the single-envelope behaviour, so existing callers
+    # that omit the flag are unaffected and a manifest read back without the key
+    # is interpreted by every reader as this same default. A non-positive value
+    # is clamped to the default — the orchestrator must always dispatch at least
+    # one envelope. The field is written across every decision-matrix rule
+    # (including ``early_terminate``) so the phase_5 block always carries it.
+    raw_envelope_count = getattr(args, 'envelope_count', None)
+    if raw_envelope_count is None:
+        envelope_count = DEFAULT_ENVELOPE_COUNT
+    else:
+        envelope_count = max(1, int(raw_envelope_count))
+    body['phase_5']['envelope_count'] = envelope_count
+
     # execution_tier routing runs AFTER the seven-row matrix and BEFORE
     # the bot-enforcement guard. It walks plan tasks, classifies each
     # ``verification.commands`` entry via ``architecture resolve``, and
@@ -2583,6 +2611,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'phase_5': {
             'early_terminate': body['phase_5']['early_terminate'],
             'verification_steps_count': len(body['phase_5']['verification_steps']),
+            'envelope_count': body['phase_5']['envelope_count'],
         },
         'phase_6': {
             'steps_count': len(body['phase_6']['steps']),
@@ -3172,6 +3201,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     compose_parser.add_argument('--phase-5-steps', default=None, help='Comma-separated candidate Phase 5 step IDs')
     compose_parser.add_argument('--phase-6-steps', default=None, help='Comma-separated candidate Phase 6 step IDs')
+    compose_parser.add_argument(
+        '--envelope-count',
+        type=int,
+        default=None,
+        help='Number of phase-5 execution-context envelopes the orchestrator should plan for. '
+        'Optional; defaults to 1 (single budget-bounded envelope) when omitted. A non-positive '
+        'value is clamped to 1. Persisted into the manifest phase_5 block as envelope_count.',
+    )
     compose_parser.add_argument(
         '--commit-and-push',
         default=None,

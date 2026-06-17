@@ -31,6 +31,15 @@ Subcommands:
                      dispatch ``commit-push`` in phase-6-finalize. Returns
                      ``fresh``, ``stale``, or ``undecidable``; non-``fresh``
                      statuses are gate failures (fail-closed contract)
+  derive-cost-size - Deterministically derive a task's cost_size (S/M/L/XL) and
+                     predicted_cost_tokens from plan-time signals (step count,
+                     profile, skills count, distinct target-file count).
+                     Implements phase-4-plan/standards/cost-sizing.md
+  pack-envelopes   - Pack the plan's sized tasks (number order) into
+                     budget-bounded execution envelope groups under
+                     --per-envelope-budget-tokens, assigning each task an
+                     envelope_id. Consumes the predicted_cost_tokens stamped
+                     by derive-cost-size
 
 Output: TOON format for all operations.
 
@@ -71,6 +80,8 @@ IDs which did not exist in the inventory.
 
 import argparse
 
+from _cmd_cost import cmd_derive_cost_size
+from _cmd_envelope import cmd_pack_envelopes
 from _cmd_pre_commit_verify_freshness import cmd_pre_commit_verify_freshness
 from _cmd_qgate_mechanical import cmd_qgate_mechanical
 from _cmd_rename import cmd_rename_path
@@ -177,6 +188,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument('--profile', help='Task profile (arbitrary key from marshal.json)')
     p_update.add_argument('--skills', help='Skills list (comma-separated bundle:skill format)')
     p_update.add_argument('--deliverable', type=int, help='Deliverable number (single integer)')
+    # Cost-field write-back (the only persistence path for the T-shirt cost
+    # mechanism — the derive-cost-size / pack-envelopes compute verbs stay pure).
+    p_update.add_argument(
+        '--cost-size',
+        dest='cost_size',
+        default=None,
+        help='Persist the derived T-shirt cost size (one of S/M/L/XL) onto the task record',
+    )
+    p_update.add_argument(
+        '--predicted-cost-tokens',
+        dest='predicted_cost_tokens',
+        type=int,
+        default=None,
+        help='Persist the derived predicted token cost (non-negative integer) onto the task record',
+    )
+    p_update.add_argument(
+        '--envelope-id',
+        dest='envelope_id',
+        type=int,
+        default=None,
+        help='Persist the assigned execution envelope id (1-based positive integer) onto the task record',
+    )
 
     # remove
     p_remove = subparsers.add_parser('remove', help='Remove a task', allow_abbrev=False)
@@ -403,6 +436,68 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_plan_id_arg(p_freshness)
 
+    # derive-cost-size
+    p_cost = subparsers.add_parser(
+        'derive-cost-size',
+        help='Derive a task cost_size (S/M/L/XL) and predicted_cost_tokens from plan-time signals',
+        description=(
+            'Deterministically derive a task\'s T-shirt cost size and predicted '
+            'token cost from the plan-time signals already present on the task '
+            'record: --step-count (dominant), --profile, --skills-count, and '
+            '--target-file-count. Build count is excluded (builds are '
+            'token-cheap). The size->token table may be injected via --size-table '
+            '(JSON object S/M/L/XL -> magnitude); when omitted the canonical '
+            'rubric default is used. Emits {status, cost_size, '
+            'predicted_cost_tokens}. Implements '
+            'phase-4-plan/standards/cost-sizing.md.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    p_cost.add_argument('--step-count', dest='step_count', required=True, type=int, help='len(task.steps) (dominant)')
+    p_cost.add_argument('--profile', required=True, help='Task profile (implementation/module_testing/verification)')
+    p_cost.add_argument('--skills-count', dest='skills_count', required=True, type=int, help='len(task.skills)')
+    p_cost.add_argument(
+        '--target-file-count',
+        dest='target_file_count',
+        required=True,
+        type=int,
+        help='Count of distinct steps[].target values',
+    )
+    p_cost.add_argument(
+        '--size-table',
+        dest='size_table',
+        default=None,
+        help='Optional JSON object mapping S/M/L/XL to a token magnitude (default: rubric table)',
+    )
+
+    # pack-envelopes
+    p_envelope = subparsers.add_parser(
+        'pack-envelopes',
+        help='Pack the plan\'s sized tasks into budget-bounded execution envelope groups',
+        description=(
+            'Deterministically pack the plan\'s tasks (number order) into '
+            'execution envelope groups bounded by --per-envelope-budget-tokens. '
+            'Each task must already carry a predicted_cost_tokens magnitude '
+            '(stamped by derive-cost-size); the packer sums those values via '
+            'Next-Fit in task order and never re-derives a task\'s cost. A task '
+            'whose cost alone exceeds the budget lands alone in its envelope. '
+            'Emits {status, per_envelope_budget_tokens, envelope_count, '
+            'assignments_table, envelopes_table}. The size->token mapping is '
+            'owned by phase-4-plan/standards/cost-sizing.md.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(p_envelope)
+    p_envelope.add_argument(
+        '--per-envelope-budget-tokens',
+        dest='per_envelope_budget_tokens',
+        required=True,
+        type=int,
+        help='Per-envelope token ceiling (config: plan.phase-5-execute.per_envelope_budget_tokens)',
+    )
+
     return parser
 
 
@@ -427,6 +522,8 @@ COMMANDS = {
     'qgate-mechanical-checks': cmd_qgate_mechanical,
     'loop-exit-guard': cmd_loop_exit_guard,
     'pre-commit-verify-freshness': cmd_pre_commit_verify_freshness,
+    'derive-cost-size': cmd_derive_cost_size,
+    'pack-envelopes': cmd_pack_envelopes,
 }
 
 

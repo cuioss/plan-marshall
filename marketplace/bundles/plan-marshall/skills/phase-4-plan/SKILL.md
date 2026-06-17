@@ -587,6 +587,30 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 Parse the returned `commands[]` rows and write each row's `executable` into the task's `verification.commands` list (preserving order; one list entry per derived command). The deriver classifies each changed artifact via the `build_map` — the file-to-build contract the build-system-owned `BuildExtensionBase` subclasses (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) source through their declared `(pattern, role)` routes — and emits the architecture-resolved verification command set. The build-necessity decision itself is never re-derived inline here: whether a build applies to a task's changed set flows from the deriver consuming that build-extension-sourced `build_map`, and the centralized `manage-config build-decision` verb (over `should_execute_build`) owns the plan-footprint-level "is a build necessary?" verdict the finalize gates consult. The `build_class` names the canonical command directly — there is no indirection map between the class and the command it resolves. A changed set whose only role yields `none` (or whose paths are all documentation) derives no Python build — the deriver structurally cannot stamp a test command onto a docs-only task. The TOON-quoting rule for `verification.commands` (below) still governs how the derived commands are written. For the derive API contract and the build_class → command mapping, see [`manage-architecture` SKILL.md](../manage-architecture/SKILL.md) and [`manage-architecture/standards/resolve-command.md` § "Build-class → verification command"](../manage-architecture/standards/resolve-command.md#build-class--verification-command); for the centralized build-decision verb, see [`manage-config` SKILL.md](../manage-config/SKILL.md) § `build-decision` — do NOT inline-copy the mapping table or the decision table here.
 
+**Cost prediction**: Stamp each task's `cost_size` + `predicted_cost_tokens` from the deterministic cost-sizing deriver at plan time — the sibling of the `verification.commands` deriver-stamp above, run from the same point where every input signal is already known. This stamp is **deterministic — no LLM estimation**. Build count is excluded as an input (builds are token-cheap, ~100 tokens/build); the size predicts **TOKENS, not wall-clock time**. For each task, compute the four plan-time signals from the task record and call `derive-cost-size`:
+
+- `--step-count` = `len(task.steps)` (dominant signal)
+- `--profile` = `task.profile` (`implementation` / `module_testing` / `verification`)
+- `--skills-count` = `len(task.skills)`
+- `--target-file-count` = count of **distinct** `steps[].target` values
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  derive-cost-size --step-count {step_count} --profile {profile} \
+  --skills-count {skills_count} --target-file-count {target_file_count} \
+  --size-table {cost_size_token_table_json}
+```
+
+Pass `--size-table` as the JSON object the config knob `plan.phase-5-execute.cost_size_token_table` holds (read once at phase entry alongside the other loop-invariant inputs) so the deriver maps the size to the operator-tunable `predicted_cost_tokens` magnitude; omit `--size-table` to fall back to the rubric default. Parse `cost_size` + `predicted_cost_tokens` from the returned TOON, then **persist both onto the task record via the `manage-tasks update` write-back verb** — `derive-cost-size` is pure and never writes, so the values land on disk only through the `update` cost-field flags. Run this once per task AFTER `batch-add` has created the `TASK-NNN.json` files (so the task number to target exists):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
+  --plan-id {plan_id} --task-number {task_number} \
+  --cost-size {cost_size} --predicted-cost-tokens {predicted_cost_tokens}
+```
+
+See [`manage-tasks` SKILL.md § "Canonical invocations" → `update`](../manage-tasks/SKILL.md) for the cost-field write-back contract and validation rules. The deriver is the deterministic default; the planner **consults** the legible rubric `phase-4-plan/standards/cost-sizing.md` (D1) — the single source of truth for the signals, weights, score thresholds, size→token table, and worked examples — to apply judgment (treat a task as one size larger) when a task's true token cost diverges from the mechanical step-count proxy (e.g. few steps but unusually large target files). Do NOT inline-copy the rubric's weight/threshold/token table here. The stamped `predicted_cost_tokens` is consumed by the bin-packer (Step 7a) and the stamped `cost_size`/`predicted_cost_tokens`/`envelope_id` are surfaced via `manage-tasks next` and read by the phase-5-execute envelope-group executor. See [`phase-4-plan/standards/cost-sizing.md`](standards/cost-sizing.md) for the rubric (signals, weights, thresholds, size→token table, and the deriver cross-reference) — it is the legible owner of the `derive-cost-size` model.
+
 ### Step 7: Determine Execution Order
 
 Compute parallel execution groups:
@@ -602,6 +626,37 @@ execution_order:
 - Tasks with no `depends_on` go in first group
 - Tasks depending on same prior tasks can run in parallel
 - Sequential dependencies remain sequential
+
+### Step 7a: Pack Tasks into Execution Envelopes
+
+**Purpose**: Pre-compute the phase-5-execute continue-vs-yield decision at plan time. After every task carries a stamped `predicted_cost_tokens` (Step 6 cost prediction) and the execution order is fixed (Step 7), run the deterministic bin-packer to group tasks into budget-bounded **execution envelopes** and stamp each task's `envelope_id`. The phase-5-execute executor then performs NO runtime cost computation — it runs only the tasks whose `envelope_id` matches its assigned group and yields when that group is exhausted (a countable membership check). This step runs after Step 7 (execution order, which establishes `depends_on` ordering) and before Step 7b (manifest compose).
+
+**Read the per-envelope budget** from config (read once at phase entry alongside the other loop-invariant inputs):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute get --field per_envelope_budget_tokens
+```
+
+Parse the magnitude string `value` (e.g. `"400K"`) and convert it to an integer via `sensible_number.parse_sensible_int` to obtain `{per_envelope_budget_tokens}`.
+
+**Run the bin-packer** — it reads the plan's tasks in number order, sums each task's pre-stamped `predicted_cost_tokens` (Next-Fit in task order, honouring the `depends_on`-derived ordering the tasks were created in), and assigns each a 1-based `envelope_id`. A single task whose own `predicted_cost_tokens` exceeds the budget lands alone in its envelope (the rubric's legitimate ~1-per-envelope XL case). The packer never re-derives a cost:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  pack-envelopes --plan-id {plan_id} --per-envelope-budget-tokens {per_envelope_budget_tokens}
+```
+
+Parse `envelope_count` and the `assignments_table` (one `{number, predicted_cost_tokens, envelope_id}` row per task) from the returned TOON. **Persist each returned `envelope_id` back onto its task record via the `manage-tasks update` write-back verb** — `pack-envelopes` is pure and never writes, so the assignment lands on disk only through the `update --envelope-id` flag. Run one `update` per `assignments_table` row so phase-5-execute can read `envelope_id` from `manage-tasks next`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
+  --plan-id {plan_id} --task-number {number} --envelope-id {envelope_id}
+```
+
+See [`manage-tasks` SKILL.md § "Canonical invocations" → `update`](../manage-tasks/SKILL.md) for the cost-field write-back contract. Cache `envelope_count` for Step 7b (manifest compose).
+
+The packer's Next-Fit-in-task-order contract, the lone-oversized-task own-group rule, and the `assignments_table` / `envelopes_table` output shape are owned by [`manage-tasks` SKILL.md § "Canonical invocations" → `pack-envelopes`](../manage-tasks/SKILL.md); the size→token mapping that produced each `predicted_cost_tokens` is owned by [`phase-4-plan/standards/cost-sizing.md`](standards/cost-sizing.md). Do NOT inline-copy the packing algorithm or the token table here.
 
 ### Step 7b: Compose Execution Manifest
 
@@ -672,6 +727,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --phase-6-steps "{p6_csv}" \
   [--commit-and-push {commit_and_push}]
 ```
+
+**Envelope count**: After the `compose` call succeeds, record `{envelope_count}` — the value cached from Step 7a (`pack-envelopes`), the number of execution envelope groups the bin-packer produced — into the composed manifest. Recording it tells the phase-5-execute orchestrator exactly how many envelope dispatches to drive (one `execution-context` dispatch per `envelope_id` group), so the orchestrator reads `envelope_count` from the manifest rather than re-running the packer. The manifest `envelope_count` field is owned by [`manage-execution-manifest` SKILL.md](../manage-execution-manifest/SKILL.md) (the consumer is the phase-5-execute budget-bounded task loop, which reads `envelope_count` on phase entry); use the manifest skill's canonical write surface for the field — do NOT raw-edit `execution.toon`.
 
 **Validate** (immediately after compose, before Q-Gate):
 
