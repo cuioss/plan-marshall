@@ -40,14 +40,23 @@ There is no internal soft-timeout, polling cap, or partial-progress checkpoint i
 
 ### Producer: stage Sonar issues as findings (entry-point)
 
-Call the producer-side fetch-and-store subcommand once. It pulls Sonar issues for the project (optionally scoped to the active PR), applies pre-filters (severity floor, file scope, dismissed-status filter), and writes one `sonar-issue` finding per surviving issue into the per-plan findings store.
+**Resolve the active PR number first.** The producer fetch MUST be PR-decoration-scoped so its `new_code_issue_count` is a confirmed PR-scoped new-code total (see `workflow-integration-sonar/SKILL.md` § "sonar.py fetch-and-store" — `--pr` is what makes the enumeration the single authority on PR-scoped new-code issues). Resolve the PR for the worktree branch via the same `ci pr view` surface the rest of finalize uses:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+  --plan-id {plan_id} pr view
+```
+
+Read `pr_number` from the TOON output. If `ci pr view` returns `status: error` (no PR exists for the branch yet), there is no PR-scoped new-code surface to attest — proceed directly to "Mark Step Complete" Branch C with `Sonar not configured` (no PR scope, nothing to gate).
+
+Then call the producer-side fetch-and-store subcommand once. It performs a synchronous bounded CE-readiness wait, fetches the PR-scoped new-code issues, applies pre-filters (severity floor, file scope, dismissed-status filter), writes one `sonar-issue` finding per surviving issue into the per-plan findings store, and writes one attestation row to the `sonar-scan-summary.jsonl` marker — see `workflow-integration-sonar/SKILL.md` § "Workflow 1: Fetch & Store Issues (Producer-Side)" for the producer contract (CE-wait, verified count, marker artifact); do not inline-copy its decision tables here.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar \
-  fetch-and-store --plan-id {plan_id} --project {sonar_project_key}
+  fetch-and-store --plan-id {plan_id} --project {sonar_project_key} --pr {pr_number}
 ```
 
-`--project {sonar_project_key}` is required by the `fetch-and-store` argparse surface — it is the SonarQube/SonarCloud project key (e.g. `com.example:project`). Resolve `{sonar_project_key}` from the Sonar provider configuration via the `workflow-integration-sonar` skill (the project key stored alongside the Sonar credentials/host for this repository). The `sonar` notation auto-resolves the worktree via `--plan-id {plan_id}` and does NOT accept a `--project-dir` routing flag; `{plan_id}` is the only worktree-binding flag this producer takes.
+`--project {sonar_project_key}` is required by the `fetch-and-store` argparse surface — it is the SonarQube/SonarCloud project key (e.g. `com.example:project`). Resolve `{sonar_project_key}` from the Sonar provider configuration via the `workflow-integration-sonar` skill (the project key stored alongside the Sonar credentials/host for this repository). `--pr {pr_number}` threads the resolved PR into the producer's CE-status lookup and new-code enumeration, so a reported `0` is a confirmed PR-scoped zero rather than an unscoped total. The `sonar` notation auto-resolves the worktree via `--plan-id {plan_id}` and does NOT accept a `--project-dir` routing flag; `{plan_id}` is the only worktree-binding flag this producer takes.
 
 The producer is the ONLY surface that fetches and stores `sonar-issue` findings. This document does not classify, decide, or act on issues inline — every consumer-side action below reads from the findings store via `manage-findings list`.
 
@@ -60,7 +69,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
   --plan-id {plan_id} --type sonar-issue --resolution pending
 ```
 
-If the result's `findings` list is empty, the gate is clean — proceed directly to "Handle findings (loop-back)" with `loop_back_needed = false`, then "Mark Step Complete" Branch A (`quality gate passed`).
+If the result's `findings` list is empty, there is nothing to triage — proceed directly to "Handle findings (loop-back)" with `loop_back_needed = false`, then to the "Verified-Scan Marker Gate" below. An empty findings store does NOT by itself prove a clean pass: the terminal success criterion is still the confirmed PR-scoped new-code zero read from the marker (the producer may have stored zero findings because it could not confirm the count — `count_status == undecidable`), so the marker gate is what decides Branch A vs the fail-closed path.
 
 ### Dispatch the per-finding triage core
 
@@ -171,6 +180,27 @@ The check is the structural enforcer of "no unresolved sonar-issue findings at t
 
 **Single-invariant verb, not the composite `capture`**: `findings-check` evaluates the blocking-findings invariant in isolation via [`_handshake_commands.cmd_findings_check`](../../plan-marshall/scripts/_handshake_commands.py), reusing the `pending_findings_blocking_count` capture and its `BlockingFindingsPresent` → structured-error translation. It writes no handshake row and never evaluates `phase_steps_complete`, so the mid-pipeline gate works where the composite `capture` would short-circuit on `phase_steps_incomplete`.
 
+## Verified-Scan Marker Gate (success criterion)
+
+The success condition for this step is **a confirmed PR-scoped new-code issue count of zero after triage** — NOT "the Sonar quality gate reported passed." The gate verdict can report green while new-code issues remain (CE lag, PR-scoping gaps), so the terminal clean pass is anchored on the producer's verified count, read from the `sonar-scan-summary.jsonl` marker the producer wrote during the fetch above.
+
+After the producer fetch and the triage dispatch have resolved all pending `sonar-issue` findings (and the Phase Boundary Re-Capture gate above returned `status: success`), read the **latest** attestation row from the verified-scan marker. The marker lives in the archive-surviving findings directory; its row schema (`count_status`, `new_code_issue_count`, `count_status_reason`, `pr`, `project`, `scanned_sha`, `ts`) is owned by `workflow-integration-sonar/SKILL.md` § "Scan-Summary Marker (sonar-scan-summary.jsonl)" — do not restate it here.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
+  --plan-id {plan_id} --file artifacts/findings/sonar-scan-summary.jsonl
+```
+
+Take the last (most recent) JSONL row as the verified-scan attestation for this run. Evaluate the success criterion:
+
+- **Clean pass (Branch A)** — the row exists AND `count_status == confirmed` AND `new_code_issue_count == 0`. Only this combination satisfies the new-code-zero success criterion. Proceed to "Mark Step Complete" Branch A.
+
+- **Fail closed (undecidable or absent marker)** — `count_status == undecidable` (the producer's CE wait timed out or an auth/REST failure blocked confirmation), OR the marker file is absent / carries no row (`manage-files read` returns a not-found / empty result). An undecidable result MUST NOT be treated as a clean pass — an absent marker means "not checked," not "checked, zero issues." Fail closed: mark the step `failed` (`mark-step-done … --outcome failed --display-detail "sonar new-code count {undecidable|marker absent}"`), mirroring the `findings-check` `query_failed` fail-closed handling above. The `--outcome failed` record does NOT take `--head-at-completion`; on the next Phase 6 entry the resumability check sees `outcome=failed` and retries this step from scratch. The dispatcher halts the pipeline; the operator re-runs finalize once CE has settled, and the read-only check re-evaluates on re-entry.
+
+- **Confirmed non-zero after triage (Branch B)** — `count_status == confirmed` AND `new_code_issue_count > 0` after the triage dispatch and any loop-back iterations have run (gate stayed red after max loop-back iterations). Proceed to "Mark Step Complete" Branch B.
+
+**`sonar_touched_file_cleanup` knob** — the success criterion's scope is governed by `plan.phase-6-finalize.sonar_touched_file_cleanup` (read via `manage-config plan phase-6-finalize get --field sonar_touched_file_cleanup`). Under the default `new_code_only` the criterion is the confirmed PR-scoped new-code zero described above. Under `touched_files_zero` the criterion extends to pre-existing issues on touched files — the producer's enumeration (D2) widens accordingly and the same `count_status == confirmed AND new_code_issue_count == 0` predicate then attests the wider set; the marker-read logic here is unchanged.
+
 ## Mark Step Complete
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Mark done only on the terminal pass that returns clean (or on a skip); loop-back iterations do not terminate the step.
@@ -179,7 +209,7 @@ Before returning control to the finalize pipeline, record that this step ran on 
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the Sonar quality gate result. The payload differs by branch:
 
-**Branch A — quality gate passed** (terminal Sonar pass returns clean — every finding closed as SUPPRESS / ACCEPT, or the query was empty from the start). Resolve the worktree HEAD before marking done:
+**Branch A — new-code count confirmed zero** (terminal Sonar pass returns clean — the verified-scan marker gate above reported `count_status == confirmed AND new_code_issue_count == 0` after every finding was closed as SUPPRESS / ACCEPT or the query was empty from the start). Resolve the worktree HEAD before marking done:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -190,11 +220,11 @@ Capture stdout as `{sha}` and forward via `--head-at-completion`:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
-  --display-detail "quality gate passed" \
+  --display-detail "new-code issues: 0 (confirmed)" \
   --head-at-completion {sha}
 ```
 
-**Branch B — quality gate failed** (gate stayed red after max loop-back iterations; the step still marks `done` because the handshake records that the workflow executed — remediation is deferred to human follow-up). Resolve the worktree HEAD before marking done:
+**Branch B — new-code count confirmed non-zero** (the verified-scan marker gate reported `count_status == confirmed AND new_code_issue_count > 0` after max loop-back iterations; the step still marks `done` because the handshake records that the workflow executed — remediation is deferred to human follow-up). Resolve the worktree HEAD before marking done:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -205,7 +235,7 @@ Capture stdout as `{sha}` and forward via `--head-at-completion`:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
-  --display-detail "quality gate failed" \
+  --display-detail "new-code issues remain (confirmed)" \
   --head-at-completion {sha}
 ```
 
@@ -252,11 +282,15 @@ Note: there is no "config disabled" branch — when the manifest excludes `sonar
 
 ```toon
 status: success | error | loop_back
-display_detail: "<{N} issues, {fixed} fixed, {suppressed} suppressed, {accepted} accepted>"
+display_detail: "<new-code issues: {new_code_issue_count} ({count_status}); {fixed} fixed, {suppressed} suppressed, {accepted} accepted>"
+new_code_issue_count: {N | null}
+count_status: confirmed | undecidable
 issues_fetched: {N}
 issues_fixed: {N}
 issues_suppressed: {N}
 issues_accepted: {N}
 ```
+
+`new_code_issue_count` and `count_status` are read from the latest `sonar-scan-summary.jsonl` marker row (the verified-scan attestation written by the producer); they are the source of the success verdict — `status: success` requires `count_status == confirmed AND new_code_issue_count == 0`, and a `count_status == undecidable` (or absent marker) yields `status: error` (fail closed). The disposition counters (`issues_fixed` / `issues_suppressed` / `issues_accepted`) report how the fetched findings were triaged on the way to that verdict.
 
 Orchestrator workflow — the LLM core is delegated to `verification-feedback` (`producer=sonar`) via the internal sub-dispatch. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. On `loop_back`, the calling step re-fires on the next phase entry per the HEAD-dependent resumability rules above.
