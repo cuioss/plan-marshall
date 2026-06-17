@@ -252,6 +252,7 @@ def _normalize_step_params_block(manifest: dict[str, Any]) -> None:
             continue
         step_params = section.get('step_params')
         if not isinstance(step_params, dict):
+            section['step_params'] = {}
             continue
         section['step_params'] = {
             step_id: (params if isinstance(params, dict) else {})
