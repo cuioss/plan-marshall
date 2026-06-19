@@ -12,7 +12,7 @@ bootstrap state is needed before the executor/config system is available,
 so it uses its own lightweight caching mechanism.
 
 Usage:
-    python3 bootstrap_plugin.py get-root [--refresh]
+    python3 bootstrap_plugin.py get-root [--target claude|opencode] [--refresh]
     python3 bootstrap_plugin.py resolve --bundle <bundle> --path <path>
 
 Subcommands:
@@ -23,15 +23,18 @@ Output (TOON format):
     get-root:
         plugin_root	/Users/user/.claude/plugins/cache/plan-marshall
         source	cached|detected
+        target	claude|opencode
 
     resolve:
         resolved_path	/Users/user/.claude/plugins/cache/plan-marshall/plan-marshall/1.0.0/skills/...
 
 Environment:
     PLAN_BASE_DIR   Override the plan-marshall base directory (for testing)
+    OPENCODE_CONFIG_DIR   Override the OpenCode config directory (for opencode target)
 """
 
 import argparse
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -94,54 +97,148 @@ def write_state(state: dict[str, str]) -> None:
     state_file.write_text('\n'.join(lines) + '\n')
 
 
-def detect_plugin_root() -> Path | None:
-    """
-    Detect the plugin root by searching for the marker file.
+def read_runtime_target(cwd: str | None = None) -> str:
+    """Read ``runtime.target`` from the nearest ``.plan/marshal.json``.
 
-    Searches in ~/.claude/plugins/cache/ for directories containing
-    a bundle with our marker file.
+    Walks up from ``cwd`` (or ``Path.cwd()``) to find the nearest
+    ``.plan/marshal.json``, then extracts ``runtime.target``.
 
     Returns:
-        Path to plugin root, or None if not found
+        Target string (``"claude"`` or ``"opencode"``), or ``"claude"``
+        as fallback when the file is absent or malformed.
     """
+    import json as _json
+
+    start = Path(cwd).resolve() if cwd else Path.cwd().resolve()
+    for parent in [start, *start.parents]:
+        candidate = parent / '.plan' / 'marshal.json'
+        if candidate.is_file():
+            try:
+                data = _json.loads(candidate.read_text(encoding='utf-8'))
+                if isinstance(data, dict):
+                    runtime = data.get('runtime')
+                    if isinstance(runtime, dict):
+                        target = runtime.get('target')
+                        if isinstance(target, str) and target:
+                            return target
+            except (OSError, ValueError):
+                pass
+            return 'claude'
+    return 'claude'
+
+
+def detect_plugin_root(target: str | None = None) -> Path | None:
+    """
+    Detect the plugin root for the given target.
+
+    For ``claude``: searches in ``~/.claude/plugins/cache/`` for
+    directories containing a bundle with our marker file.
+
+    For ``opencode``: walks the seven OpenCode discovery roots in
+    priority order, returning the first root that contains at least
+    one ``{PLUGIN_NAME}-*`` skill directory. Mirrors the 7-root
+    resolver in ``tools-script-executor/scripts/generate_executor.py``.
+
+    When ``target`` is ``None``, auto-detects by reading
+    ``runtime.target`` from the nearest ``.plan/marshal.json``.
+
+    Args:
+        target: Runtime target (``"claude"`` or ``"opencode"``).
+
+    Returns:
+        Path to plugin root, or ``None`` if not found.
+    """
+    if target is None:
+        target = read_runtime_target()
+
+    if target == 'opencode':
+        return _detect_opencode_root()
+
+    return _detect_claude_root()
+
+
+def _detect_claude_root() -> Path | None:
+    """Detect the plugin root in the Claude plugin cache."""
     cache_base = Path.home() / '.claude' / 'plugins' / 'cache'
 
     if not cache_base.exists():
         return None
 
-    # Search for plugin directories containing our marker
     for plugin_dir in cache_base.iterdir():
         if not plugin_dir.is_dir():
             continue
 
-        # Check each bundle directory for the marker
         for bundle_dir in plugin_dir.iterdir():
             if not bundle_dir.is_dir():
                 continue
 
-            # Check versioned directories
             for version_dir in bundle_dir.iterdir():
                 if not version_dir.is_dir():
                     continue
 
                 marker_path = version_dir / MARKER_FILE
                 if marker_path.exists():
-                    # Found a valid bundle, return the plugin root
                     return plugin_dir
 
     return None
 
 
-def get_plugin_root(refresh: bool = False) -> tuple[Path | None, str]:
+def _detect_opencode_root() -> Path | None:
+    """Walk the seven OpenCode discovery roots for plan-marshall skills.
+
+    Returns the first root that contains at least one directory matching
+    ``{PLUGIN_NAME}-*``.
+    """
+    try:
+        home = Path.home()
+    except (OSError, RuntimeError):
+        return None
+
+    env_config = os.environ.get('OPENCODE_CONFIG_DIR', '')
+    roots: list[str] = [
+        str(Path(env_config) / 'skills') if env_config else '',
+        '.opencode/skills',
+        '.claude/skills',
+        '.agents/skills',
+        str(home / '.config' / 'opencode' / 'skills'),
+        str(home / '.claude' / 'skills'),
+        str(home / '.agents' / 'skills'),
+    ]
+
+    marker_prefix = f'{PLUGIN_NAME}-'
+
+    for root in roots:
+        if not root:
+            continue
+        try:
+            root_path = Path(root).resolve()
+            if not root_path.is_dir():
+                continue
+            for entry in root_path.iterdir():
+                if entry.is_dir() and entry.name.startswith(marker_prefix):
+                    return root_path
+        except (OSError, ValueError):
+            continue
+
+    return None
+
+
+def get_plugin_root(refresh: bool = False, target: str | None = None) -> tuple[Path | None, str]:
     """
     Get the plugin root, using cache if available.
 
     Args:
         refresh: Force re-detection even if cached
+        target: Runtime target (``"claude"`` or ``"opencode"``).
+            When ``None``, auto-detects from ``marshal.json``.
 
     Returns:
-        Tuple of (plugin_root_path, source) where source is 'cached' or 'detected'
+        Tuple of (plugin_root_path, source) where source is ``'cached'``,
+        ``'detected'``, or ``'not_found'``.
     """
+    if target is None:
+        target = read_runtime_target()
+
     if not refresh:
         state = read_state()
         if 'plugin_root' in state:
@@ -151,11 +248,12 @@ def get_plugin_root(refresh: bool = False) -> tuple[Path | None, str]:
                 return cached_path, 'cached'
 
     # Detect plugin root
-    plugin_root = detect_plugin_root()
+    plugin_root = detect_plugin_root(target=target)
     if plugin_root:
         # Cache for future use
         state = read_state()
         state['plugin_root'] = str(plugin_root)
+        state['target'] = target
         state['detected_at'] = datetime.now(UTC).isoformat()
         write_state(state)
         return plugin_root, 'detected'
@@ -192,15 +290,27 @@ def resolve_bundle_path(plugin_root: Path, bundle: str, relative_path: str) -> P
 
 def cmd_get_root(args: argparse.Namespace) -> dict:
     """Handle the 'get-root' subcommand."""
-    plugin_root, source = get_plugin_root(refresh=args.refresh)
+    plugin_root, source = get_plugin_root(refresh=args.refresh, target=args.target)
 
     if plugin_root:
-        return {'status': 'success', 'plugin_root': str(plugin_root), 'source': source}
+        return {
+            'status': 'success',
+            'plugin_root': str(plugin_root),
+            'source': source,
+            'target': args.target or read_runtime_target(),
+        }
     else:
+        target_hint = args.target or read_runtime_target()
+        hint = (
+            'Ensure plan-marshall plugin is installed via Claude Code'
+            if target_hint == 'claude'
+            else 'Ensure plan-marshall skills are deployed to an OpenCode discovery root'
+        )
         return {
             'status': 'error',
             'error': 'Plugin root not found',
-            'hint': 'Ensure plan-marshall plugin is installed via Claude Code',
+            'target': target_hint,
+            'hint': hint,
         }
 
 
@@ -222,6 +332,15 @@ def cmd_resolve(args: argparse.Namespace) -> dict:
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Bootstrap script for plugin root detection', allow_abbrev=False)
+    parser.add_argument(
+        '--target',
+        choices=('claude', 'opencode'),
+        default=None,
+        help=(
+            'Runtime target. Auto-detected from .plan/marshal.json when omitted. '
+            'Use "opencode" for OpenCode discovery roots.'
+        ),
+    )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # get-root subcommand
