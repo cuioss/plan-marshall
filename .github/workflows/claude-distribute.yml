@@ -27,6 +27,11 @@ jobs:
             dist_tag_prefix: claude
             publish_dir: target/claude
             generator_target_flag: claude
+          - target_name: opencode
+            branch_name: dist-opencode
+            dist_tag_prefix: opencode
+            publish_dir: target/opencode
+            generator_target_flag: opencode
     steps:
       - name: Generate Release Bot Token
         id: release-token
