@@ -317,7 +317,6 @@ def _resolve_md_components(bundle_dir: Path, plugin_config: dict, key: str, fall
 def _generate_opencode_json(
     output_dir: Path,
     agent_index: dict[str, dict[str, str]],
-    project_root: Path | None = None,
 ) -> Path:
     """Write ``opencode.json`` with the provider config and per-agent stubs.
 
@@ -326,13 +325,13 @@ def _generate_opencode_json(
     already embedded in each ``agent/{name}.md`` frontmatter; the project
     config keeps the agent map populated for discovery.
 
-    When ``project_root`` points at a directory containing ``AGENTS.md``,
-    the file is copied into ``output_dir`` alongside ``opencode.json`` so
-    the ``instructions: ["AGENTS.md"]`` reference resolves at runtime.
+    ``instructions`` is deliberately omitted — the distributed plugin is
+    a skill/agent/command bundle consumed by downstream projects, not a
+    standalone project root. Project-level instructions (``AGENTS.md``)
+    belong to each downstream project, not to the plugin artifact.
     """
     config: dict = {
         '$schema': 'https://opencode.ai/config.json',
-        'instructions': ['AGENTS.md'],
         'skills': {
             'paths': ['./skill'],
         },
@@ -344,13 +343,6 @@ def _generate_opencode_json(
     config_path = output_dir / 'opencode.json'
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
-
-    if project_root is not None:
-        agents_src = project_root / 'AGENTS.md'
-        if agents_src.is_file():
-            agents_dst = output_dir / 'AGENTS.md'
-            shutil.copy2(agents_src, agents_dst)
-
     return config_path
 
 
@@ -416,8 +408,7 @@ def emit_bundles(
         for command_md in _resolve_md_components(bundle_dir, plugin_config, 'commands', 'commands'):
             _emit_command(bundle_name, command_md, output_dir, rules, transform_body, written)
 
-    project_root = marketplace_dir.resolve().parent.parent
-    written.append(_generate_opencode_json(output_dir, agent_index, project_root=project_root))
+    written.append(_generate_opencode_json(output_dir, agent_index))
     return written
 
 
