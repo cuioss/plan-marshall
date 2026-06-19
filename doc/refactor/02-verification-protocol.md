@@ -58,7 +58,7 @@ python3 marketplace/targets/generate.py --target opencode --output target/openco
 | 1.1c | `ls target/opencode/skill/ \| head -20` | Directories named `{bundle}-{skill}` (e.g. `plan-marshall-phase-1-init`) | FAIL — wrong naming convention |
 | 1.1d | `ls target/opencode/agent/ \| head -20` | Agent files present | PASS if agents exist; NOTIFY if empty |
 | 1.1e | `python3 -c "import json; d=json.load(open('target/opencode/opencode.json')); print(d.keys())"` | JSON has expected top-level keys | FAIL — invalid manifest |
-| 1.1f | `grep -r '^Skill:' target/opencode/skill/plan-marshall-phase-1-init/SKILL.md \| head -5` | Zero matches (Skill: directives rewritten) | FAIL — body transforms not applied |
+| 1.1f | `grep -r '^Skill:' target/opencode/skill/plan-marshall-phase-1-init/SKILL.md \| head -5` | Zero matches (Skill: directives rewritten) | FAIL — body transforms not applied. Note: as of 2026-06-19, `OpenCodeTarget.generate()` neglected to pass `body_transformer` to `emit_bundles`; fixed in commit 252692c8. Re-generate to verify. |
 | 1.1g | Regenerate idempotence: run generate again, then `diff -r target/opencode/ target/opencode-2/ \|\| echo "identical"` | No diffs (excluding timestamps/metadata) | FAIL — non-idempotent emission |
 
 ### 1.2 Deploy to OpenCode with singular→plural rename
@@ -92,7 +92,7 @@ cp -r "$STAGE"/commands/* ~/.config/opencode/commands/
 | 1.2b | `ls ~/.config/opencode/agents/ \| head -10` | Agent files present | FAIL — agent deploy failed |
 | 1.2c | `ls ~/.config/opencode/skills/plan-marshall-phase-1-init/SKILL.md 2>/dev/null \|\| echo "not found"` | Skill script is discoverable | FAIL — singular→plural rename may have missed |
 | 1.2d | `opencode --list-skills 2>&1 \|\| opencode skill list 2>&1 \|\| ls ~/.config/opencode/skills/` | Deployed skills visible in OpenCode's discovery | FAIL — OpenCode does not discover the deployed skills |
-| 1.2e | Namespace format: `ls ~/.config/opencode/skills/ \| grep -c -- '--'` | Zero consecutive `--` in names | FAIL — namespacing creates `--` which must not happen |
+| 1.2e | Namespace format: `ls ~/.config/opencode/skills/ \| grep -c -- '--'` | Zero consecutive `--` in names | FAIL — names contain `--` which OpenCode may not resolve |
 
 ### 1.3 Initialize a plan with `--target opencode`
 
@@ -109,8 +109,8 @@ python3 /path/to/plan-marshall/.plan/execute-script.py \
 |-------|----------------|------|------|
 | 1.3a | Exit code | `0` | FAIL — initial-setup failed |
 | 1.3b | `python3 -c "import json; print(json.load(open('.plan/marshal.json'))['runtime']['target'])"` | `opencode` | FAIL — target not recorded |
-| 1.3c | `ls .plan/execute-script.py 2>/dev/null \|\| echo "not found"` | File exists | FAIL — executor not generated |
-| 1.3d | `head -5 .plan/execute-script.py` | Contains OpenCode 7-root resolver (comments referencing OPENCODE_CONFIG_DIR or 7-root walk) | FAIL — Claude resolver generated instead |
+| 1.3c | `ls .plan/execute-script.py 2>/dev/null \|\| echo "not found"` | File exists | NOTE — executor is a separate artefact from `initial-setup`. Run `/marshall-steward` or `tools-script-executor:generate_executor` after `initial-setup`. |
+| 1.3d | `head -5 .plan/execute-script.py` | Contains OpenCode 7-root resolver (comments referencing OPENCODE_CONFIG_DIR or 7-root walk) | FAIL — Claude resolver generated instead. Regenerate executor after bootstrap changes land. |
 
 ---
 
@@ -129,12 +129,12 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:phase-6-finalize 
   --plan-id test-001 --phase phase-6-finalize --role default
 ```
 
-| Check | What to observe | Pass | Fail |
-|-------|----------------|------|------|
-| 2.1a | Subagent dispatches via `task` tool | OpenCode creates a sub-agent | FAIL — investigate OpenCode task tool availability |
-| 2.1b | Subagent calls `question` tool | User sees a prompt in the terminal | FAIL — record whether question tool is available to subagents |
-| 2.1c | Answer propagates to parent | Parent agent receives the user's input | FAIL — investigate answer propagation mechanism |
-| 2.1d | Logged result | `subagent_ask_user_question: PASS or FAIL with notes` | Document subagent_type used and result |
+| Check | What to observe | Pass | Fail | Human? |
+|-------|----------------|------|------|--------|
+| 2.1a | Subagent dispatches via `task` tool | OpenCode creates a sub-agent | FAIL — investigate OpenCode task tool availability | HUMAN |
+| 2.1b | Subagent calls `question` tool | User sees a prompt in the terminal | FAIL — record whether question tool is available to subagents | HUMAN |
+| 2.1c | Answer propagates to parent | Parent agent receives the user's input | FAIL — investigate answer propagation mechanism | HUMAN |
+| 2.1d | Logged result | `subagent_ask_user_question: PASS or FAIL with notes` | Document subagent_type used and result | HUMAN |
 
 **Remediation if FAIL**: Add `inline_only: true` to the affected step kinds (e.g. `phase-6-finalize` confirmation steps) so the orchestrator runs them in-context instead of dispatching. Update the runtime contract document.
 
@@ -151,12 +151,12 @@ python3 .plan/execute-script.py plan-marshall:execution-context-level-3:executio
   --plan-id test-001 --phase phase-4-plan
 ```
 
-| Check | What to observe | Pass | Fail |
-|-------|----------------|------|------|
-| 2.2a | Dispatch succeeds | OpenCode creates a sub-agent for the workflow task | FAIL — OpenCode may not support Task-style dispatch |
-| 2.2b | Workflow doc in prompt body | The workflow instructions are passed to the subagent | FAIL — document how OpenCode passes task prompts |
-| 2.2c | TOON return | Sub-agent returns structured output that the parent can parse | FAIL — OpenCode subagent returns different format |
-| 2.2d | `level-N` variant resolution | The specific `-level-3` variant is used, not a default | FAIL — effort variants not resolved |
+| Check | What to observe | Pass | Fail | Human? |
+|-------|----------------|------|------|--------|
+| 2.2a | Dispatch succeeds | OpenCode creates a sub-agent for the workflow task | FAIL — OpenCode may not support Task-style dispatch | HUMAN |
+| 2.2b | Workflow doc in prompt body | The workflow instructions are passed to the subagent | FAIL — document how OpenCode passes task prompts | HUMAN |
+| 2.2c | TOON return | Sub-agent returns structured output that the parent can parse | FAIL — OpenCode subagent returns different format | HUMAN |
+| 2.2d | `level-N` variant resolution | The specific `-level-3` variant is used, not a default | FAIL — effort variants not resolved | HUMAN |
 
 **Remediation if FAIL**: Document the divergence in the runtime contract. Consider a script-based fallback where the orchestrator runs the workflow inline instead of dispatching.
 
@@ -170,12 +170,12 @@ python3 .plan/execute-script.py plan-marshall:execution-context-level-3:executio
 3. Start an OpenCode session and trigger a step that should load the referenced skill
 4. Observe whether OpenCode's `skill` tool recognises the namespaced name
 
-| Check | What to observe | Pass | Fail |
-|-------|----------------|------|------|
-| 2.3a | Rewrite in deployed SKILL.md | Line reads `Call the \`skill\` tool with \`{ name: "{bundle}-{skill}" }\`` | FAIL — emitter transform not firing |
-| 2.3b | `skill` tool loads the target | OpenCode resolves `{bundle}-{skill}` to a known skill | FAIL — OpenCode may use different name resolution |
-| 2.3c | The loaded skill's instructions are followed | LLM acts on the skill content | FAIL — OpenCode's skill tool is advisory only |
-| 2.3d | Skill: lines that were references in prose (backtick) | These are unaffected by the rewrite | PASS if unchanged; FAIL if falsely rewritten |
+| Check | What to observe | Pass | Fail | Human? |
+|-------|----------------|------|------|--------|
+| 2.3a | Rewrite in deployed SKILL.md | Line reads `Call the \`skill\` tool with \`{ name: "{bundle}-{skill}" }\`` | FAIL — emitter transform not firing | — |
+| 2.3b | `skill` tool loads the target | OpenCode resolves `{bundle}-{skill}` to a known skill | FAIL — OpenCode may use different name resolution | HUMAN |
+| 2.3c | The loaded skill's instructions are followed | LLM acts on the skill content | FAIL — OpenCode's skill tool is advisory only | HUMAN |
+| 2.3d | Skill: lines that were references in prose (backtick) | These are unaffected by the rewrite | PASS if unchanged; FAIL if falsely rewritten | — |
 
 **Remediation if FAIL**: Adjust the body transform spec in `marketplace/targets/opencode/transforms.md`. Possibly add a third transform for OpenCode's name resolution format, or document that OpenCode's `skill` tool is LLM-driven and does not guarantee skill loading.
 
@@ -240,12 +240,12 @@ python3 /path/to/plan-marshall/.plan/execute-script.py \
   --plan-id smoke-1 --request-dir . --project-dir .
 ```
 
-| Check | What to observe | Pass | Fail |
-|-------|----------------|------|------|
-| 3.1a | Phase transitions | Steps execute in order: init → refine → outline | FAIL — orchestrator ordering broken |
-| 3.1b | `session capture` no-op | Log shows no-op with alternative suggestion, does not abort | FAIL — no-op not handled gracefully |
-| 3.1c | Outline produced | `solution_outline.md` written with deliverables | FAIL — outline phase not working |
-| 3.1d | Plan metadata | `manage-status` shows expected plan state | FAIL — plan state machine not working |
+| Check | What to observe | Pass | Fail | Human? |
+|-------|----------------|------|------|--------|
+| 3.1a | Phase transitions | Steps execute in order: init → refine → outline | FAIL — orchestrator ordering broken | HUMAN |
+| 3.1b | `session capture` no-op | Log shows no-op with alternative suggestion, does not abort | FAIL — no-op not handled gracefully | — |
+| 3.1c | Outline produced | `solution_outline.md` written with deliverables | FAIL — outline phase not working | HUMAN |
+| 3.1d | Plan metadata | `manage-status` shows expected plan state | FAIL — plan state machine not working | — |
 
 ### 3.2 Execute → finalize sweep
 
@@ -261,12 +261,12 @@ python3 .plan/execute-script.py \
   --plan-id smoke-1 --phase phase-6-finalize
 ```
 
-| Check | What to observe | Pass | Fail |
-|-------|----------------|------|------|
-| 3.2a | Execute phase completes | All tasks run without abort | FAIL — execute phase broken |
-| 3.2b | Finalize prompt works | If finalize prompts for confirmation, user sees and can answer | FAIL — prompt not working (see 2.1) |
-| 3.2c | Archived plan | Plan is archived after finalize | FAIL — archiving not working |
-| 3.2d | No hard errors logged | `manage-status` shows no error state | FAIL — unexpected errors |
+| Check | What to observe | Pass | Fail | Human? |
+|-------|----------------|------|------|--------|
+| 3.2a | Execute phase completes | All tasks run without abort | FAIL — execute phase broken | HUMAN |
+| 3.2b | Finalize prompt works | If finalize prompts for confirmation, user sees and can answer | FAIL — prompt not working (see 2.1) | HUMAN |
+| 3.2c | Archived plan | Plan is archived after finalize | FAIL — archiving not working | HUMAN |
+| 3.2d | No hard errors logged | `manage-status` shows no error state | FAIL — unexpected errors | — |
 
 ### 3.3 By-reference triage path
 
@@ -278,11 +278,11 @@ python3 .plan/execute-script.py \
   --plan-id smoke-1 --phase phase-6-finalize --role verification-feedback
 ```
 
-| Check | What to observe | Pass | Fail |
-|-------|----------------|------|------|
-| 3.3a | `manage-findings` loads | No "skill not found" error | FAIL — skill loading broken |
-| 3.3b | Findings store queried | Returns existing findings or empty set | FAIL — data access broken |
-| 3.3c | TOON returned | Structured response back to caller | FAIL — TOON contract broken |
+| Check | What to observe | Pass | Fail | Human? |
+|-------|----------------|------|------|--------|
+| 3.3a | `manage-findings` loads | No "skill not found" error | FAIL — skill loading broken | HUMAN |
+| 3.3b | Findings store queried | Returns existing findings or empty set | FAIL — data access broken | HUMAN |
+| 3.3c | TOON returned | Structured response back to caller | FAIL — TOON contract broken | HUMAN |
 
 ### 3.4 Token capture no-op
 

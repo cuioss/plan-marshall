@@ -26,8 +26,10 @@ support is theoretical.
    [04](04-developer-workflow-sync-opencode.md); until that ships, stage manually —
    singular→plural rename into `~/.config/opencode/` or an `OPENCODE_CONFIG_DIR`).
 3. Initialize a plan with `--target opencode` and confirm `marshal.json` carries
-   `runtime.target: opencode` and the OpenCode-resolver `.plan/execute-script.py` was
-   generated.
+   `runtime.target: opencode`. The OpenCode-resolver `.plan/execute-script.py` is a
+   separate artefact: `project initial-setup` only creates `.plan/` and seeds
+   `marshal.json`. To generate the executor, run `/marshall-steward` or invoke
+   `tools-script-executor:generate_executor` directly.
 
 ## Accepted risks to confirm (from the original design)
 
