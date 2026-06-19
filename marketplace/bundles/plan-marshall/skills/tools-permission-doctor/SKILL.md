@@ -22,6 +22,7 @@ Read-only permission analysis for host-platform settings. Detects redundant perm
 - All commands use `python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor {command} {args}`
 - Use `tools-permission-fix` for any write operations
 - User-approved permissions must be excluded from suspicious reports
+- On non-Claude targets (e.g. OpenCode), prefer `platform-runtime permission analyze --checks redundant,suspicious,missing-steps --scope {scope}` instead of the direct doctor scripts. The runtime delegates to the platform-specific settings path.
 
 ## What This Skill Provides
 
