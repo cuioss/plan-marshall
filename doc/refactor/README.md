@@ -54,9 +54,9 @@ assumed. The next-step documents below reflect the *current* reality, not the ol
 
 | # | Workstream | Status going in | Document |
 |---|------------|-----------------|----------|
-| 01 | Finish portability gaps | platform-runtime is built; a handful of call sites and one bootstrap script still bypass it | [01-finish-portability.md](01-finish-portability.md) |
-| 02 | Validate the OpenCode runtime live | every OpenCode operation is coded but **never run in a live OpenCode session** | [02-validate-opencode-runtime.md](02-validate-opencode-runtime.md) |
-| 03 | Add the OpenCode distribution target | one matrix entry + an OpenCode-generation CI gate | [03-distribution-opencode-target.md](03-distribution-opencode-target.md) |
+| 01 | Finish portability gaps | tasks 1-3 done (bootstrap, phase-5, plan-retrospective). Task 4 partial (permission tools SKILL.md updated, scripts not migrated). Tasks 5-7 open. | [01-finish-portability.md](01-finish-portability.md) |
+| 02 | Validate the OpenCode runtime live | section 0 (prereqs) and 1 (setup) automated: 21 PASS / 1 NOTE. Sections 2-3 require interactive OpenCode session. Section 4 CI gate exists. | [02-validate-opencode-runtime.md](02-validate-opencode-runtime.md) |
+| 03 | Add the OpenCode distribution target | matrix entry added to `claude-distribute.yml`. CI gate `opencode-generate-check.yml` created. | [03-distribution-opencode-target.md](03-distribution-opencode-target.md) |
 | 04 | OpenCode developer inner loop | `sync-opencode` deploy skill does not exist yet | [04-developer-workflow-sync-opencode.md](04-developer-workflow-sync-opencode.md) |
 | 05 | OpenCode user + developer documentation | write once the runtime is validated | [05-opencode-documentation.md](05-opencode-documentation.md) |
 

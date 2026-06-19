@@ -25,6 +25,7 @@ is obsolete.** Do not implement it.
    opencode`, `generator_target_flag: opencode`, publish dir `target/opencode`, branch
    `dist-opencode`, tag prefix `opencode/`. Confirm the generated tree's root holds
    whatever manifest an OpenCode client's "add marketplace" path expects.
+   **Status: DONE** — entry added to `claude-distribute.yml` strategy.matrix (2026-06-19).
 
 2. **Confirm the OpenCode consumption path** against the published `dist-opencode` ref.
    Determine, by testing on a live OpenCode client, which install path actually works
@@ -32,14 +33,18 @@ is obsolete.** Do not implement it.
    `~/.config/opencode/`), and pin that as the documented primary path. The original
    plan's assumptions about `opencode-marketplace` accepting static URLs are unverified —
    validate before documenting.
+   **Status: OPEN** — requires a PR merge and live OpenCode test.
 
 3. **Gate the publish on the OpenCode generation check** from
    [02](02-validate-opencode-runtime.md) so a broken emitter never publishes a
    `dist-opencode` snapshot.
+   **Status: DONE** — `opencode-generate-check.yml` created (2026-06-19). Runs on every
+   PR touching marketplace/bundles/ or marketplace/targets/.
 
 4. **Versioning stays unified.** The single source `v{x.y.z}` tag drives every target;
    the OpenCode dist tag is `opencode/v{x.y.z}`. No per-bundle or per-target version
    channel.
+   **Status: No change needed** — the matrix entry naturally follows the existing pattern.
 
 ## Acceptance
 

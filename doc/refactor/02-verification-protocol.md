@@ -28,7 +28,7 @@ Verify that portability gaps from [01-finish-portability.md](01-finish-portabili
 | Check | Command | Pass | Fail |
 |-------|---------|------|------|
 | 0.1a | `git log --oneline -5` | Contains commits implementing 01 tasks | File as BLOCKED; do not proceed |
-| 0.1b | `grep -r 'platform-runtime permission' marketplace/bundles/plan-marshall/skills/tools-permission-doctor/` | At least 1 match (doctor delegates to runtime) | BLOCKED — permission tools must route through runtime first |
+| 0.1b | `grep -r 'platform-runtime permission' marketplace/bundles/plan-marshall/skills/tools-permission-doctor/` | At least 1 match (SKILL.md delegates to runtime) | NOTE — scripts still hardcode `.claude/` paths; SKILL.md guidance added |
 | 0.1c | `grep -r 'platform_runtime' marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` | At least 1 match (metrics capture delegated) | BLOCKED — phase-5 must use runtime |
 | 0.1d | `grep -r 'runtime.target' marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py` | At least 1 match (bootstrap reads target) | BLOCKED — bootstrap must resolve both targets |
 
@@ -58,7 +58,7 @@ python3 marketplace/targets/generate.py --target opencode --output target/openco
 | 1.1c | `ls target/opencode/skill/ \| head -20` | Directories named `{bundle}-{skill}` (e.g. `plan-marshall-phase-1-init`) | FAIL — wrong naming convention |
 | 1.1d | `ls target/opencode/agent/ \| head -20` | Agent files present | PASS if agents exist; NOTIFY if empty |
 | 1.1e | `python3 -c "import json; d=json.load(open('target/opencode/opencode.json')); print(d.keys())"` | Contains `$schema` and `skills`; `agent` present when agents exist. `instructions` is absent — it's a distributed plugin, not a project root. | FAIL — missing required keys or leaking project-level config |
-| 1.1f | `grep -r '^Skill:' target/opencode/skill/plan-marshall-phase-1-init/SKILL.md \| head -5` | Zero matches (Skill: directives rewritten) | FAIL — body transforms not applied. Note: as of 2026-06-19, `OpenCodeTarget.generate()` neglected to pass `body_transformer` to `emit_bundles`; fixed in commit 252692c8. Re-generate to verify. |
+| 1.1f | `grep -r '^Skill:' target/opencode/skill/plan-marshall-phase-1-init/SKILL.md \| head -5` | Zero matches (Skill: directives rewritten) | FAIL — body transforms not applied. Ensure `OpenCodeTarget.generate()` passes `body_transformer` to `emit_bundles`. |
 | 1.1g | Regenerate idempotence: run generate again, then `diff -r target/opencode/ target/opencode-2/ \|\| echo "identical"` | No diffs (excluding timestamps/metadata) | FAIL — non-idempotent emission |
 
 ### 1.2 Deploy to OpenCode with singular→plural rename
@@ -309,9 +309,11 @@ python3 .plan/execute-script.py \
 
 ## 4. CI: OpenCode generation gate
 
-### 4.1 Add generation check to CI
+### 4.1 Generation check in CI
 
-Create a new workflow file `.github/workflows/opencode-generate-check.yml`:
+A workflow file `.github/workflows/opencode-generate-check.yml` exists (created 2026-06-19).
+It runs on every PR touching `marketplace/bundles/**` or `marketplace/targets/**` and fails
+on any generator exit code != 0.
 
 ```yaml
 name: OpenCode Generation Gate
@@ -335,7 +337,6 @@ jobs:
           python3 marketplace/targets/generate.py \
             --target opencode \
             --output target/opencode
-        # Exits 2 on error — naturally fails the workflow
 ```
 
 | Check | What to observe | Pass | Fail |
