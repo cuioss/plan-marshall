@@ -977,6 +977,17 @@ Before invoking `manage-status transition --completed 5-execute` (see **Phase Tr
 
    The `--force` escape is a deliberate safety valve for triage-driven aborts (the user has already decided the pending tasks are out-of-scope, or that the stale-freshness signal is being addressed elsewhere) — never invoke it programmatically from inside the loop.
 
+### Step 4.5: Capture Session Token (Once per phase)
+
+At phase start, capture the runtime session token so downstream metrics operations can reference it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+  session capture --plan-id {plan_id}
+```
+
+On Claude Code the runtime reads the stored `session_id` from the `SessionStart` hook. On OpenCode it returns `no-op` (no platform session id available) — the phase proceeds normally and uses manual `--total-tokens` for metrics.
+
 ### Step 13: Log Phase Completion (When phase completes)
 
 Substitute `{N}` with the count of tasks marked `done` during this phase entry and `{M}` with the total task count from the plan, then emit the canonical phase-exit `[STATUS]` line:
@@ -1095,7 +1106,16 @@ The packing already encodes the budget decision, so the two short-circuits above
 
 ## Phase Transition
 
-When transitioning from execute phase to finalize:
+When transitioning from execute phase to finalize, first record phase metrics through the platform runtime:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+  metrics capture --plan-id {plan_id} --phase 5-execute
+```
+
+On Claude Code the runtime reads the stored `session_id` and captures token usage from the transcript. On OpenCode it returns `no-op` — the phase still transitions and accepts manual `--total-tokens` when available.
+
+Then update the phase status:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
