@@ -68,9 +68,6 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 norecursedirs = ["fixtures", "__pycache__", ".git"]
 addopts = ["-v", "--tb=short"]
-markers = [
-    "whole_tree_sweep: whole-tree grep-sweep guard tests re-run by the phase-6 whole-tree-gate F2 facet with the full marketplace/ scan root (select via -m whole_tree_sweep)",
-]
 
 [tool.coverage.run]
 source = ["marketplace/bundles"]

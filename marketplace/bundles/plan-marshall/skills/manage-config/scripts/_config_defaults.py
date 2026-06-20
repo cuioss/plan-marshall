@@ -415,7 +415,6 @@ DEFAULT_PLAN_EXECUTE = {
 # Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
 BUILT_IN_FINALIZE_STEPS = [
     'default:pre-push-quality-gate',
-    'default:finalize-step-whole-tree-gate',
     'default:commit-push',
     'default:finalize-step-simplify',
     'default:create-pr',
@@ -441,7 +440,6 @@ OPTIONAL_BUNDLE_FINALIZE_STEPS = [
 BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:pre-push-quality-gate': 'Run quality-gate per affected bundle as the last gate before push',
     'default:finalize-step-simplify': 'Holistic post-implementation simplification sweep — collapse accidental complexity introduced across the plan diff',
-    'default:finalize-step-whole-tree-gate': 'Whole-tree completeness gate for clean-slate/breaking plans — greps the entire marketplace tree (not the diff) for surviving references to symbols/contracts the plan deleted and flags request-mandate items absent from the diff; runs pre-commit so a survivor BLOCKS the push',
     'default:commit-push': 'Commit and push changes',
     'default:create-pr': 'Create pull request',
     'default:ci-verify': 'Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (requires: [ci-complete] in consume-failures mode)',

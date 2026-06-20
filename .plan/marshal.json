@@ -58,20 +58,16 @@
       "max_iterations": 3,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "self_review": "auto",
       "qgate": "auto",
-      "simplify": "auto",
       "checks_wait_timeout_seconds": 600,
-      "drop_review_on_scope_gate": false,
       "steps": {
-        "default:pre-push-quality-gate": {},
-        "project:finalize-step-plugin-doctor": {},
-        "project:finalize-step-pre-submission-self-review": {},
-        "default:finalize-step-whole-tree-gate": {},
-        "default:commit-push": {},
-        "default:finalize-step-simplify": {},
-        "default:create-pr": {},
-        "default:ci-verify": {},
+        "default:pre-push-quality-gate": null,
+        "project:finalize-step-plugin-doctor": null,
+        "project:finalize-step-pre-submission-self-review": null,
+        "default:commit-push": null,
+        "default:finalize-step-simplify": null,
+        "default:create-pr": null,
+        "default:ci-verify": null,
         "default:automated-review": {
           "review_bot_buffer_seconds": 180
         },
@@ -82,19 +78,22 @@
           "final_merge_without_asking": true,
           "auto_rebase_threshold": "no_overlap_only"
         },
-        "project:finalize-step-deploy-target": {},
-        "project:finalize-step-sync-plugin-cache": {},
-        "plan-marshall:plan-retrospective": {},
-        "project:finalize-step-lessons-housekeeping": {},
-        "default:record-metrics": {},
-        "default:finalize-step-print-phase-breakdown": {},
-        "default:archive-plan": {}
+        "project:finalize-step-deploy-target": null,
+        "project:finalize-step-sync-plugin-cache": null,
+        "plan-marshall:plan-retrospective": null,
+        "project:finalize-step-lessons-housekeeping": null,
+        "default:record-metrics": null,
+        "default:finalize-step-print-phase-breakdown": null,
+        "default:archive-plan": null
       },
       "effort": {
         "default": "level-3",
         "verification-feedback": "level-3",
         "post-run-review": "level-4"
-      }
+      },
+      "self_review": "auto",
+      "simplify": "auto",
+      "drop_review_on_scope_gate": false
     }
   },
   "build": {
