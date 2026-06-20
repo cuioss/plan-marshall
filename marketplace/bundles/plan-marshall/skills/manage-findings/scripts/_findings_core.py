@@ -52,6 +52,9 @@ SEVERITIES = FINDING_SEVERITIES
 RESOLUTIONS = VALID_RESOLUTIONS
 CERTAINTY_VALUES = VALID_CERTAINTIES
 
+# Valid kind discriminator values for pr-comment findings.
+PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
+
 
 # --- Path Helpers ---
 
@@ -155,6 +158,9 @@ def add_finding(
     if severity and severity not in SEVERITIES:
         return {'status': 'error', 'message': f'Invalid severity: {severity}. Must be one of {SEVERITIES}'}
 
+    if kind and kind not in PR_COMMENT_KINDS:
+        return {'status': 'error', 'message': f'Invalid kind: {kind}. Must be one of {PR_COMMENT_KINDS}'}
+
     hash_id = generate_hash_id()
     record: dict[str, Any] = {
         'hash_id': hash_id,
@@ -254,9 +260,9 @@ def query_findings_unified(
 
     Returns the union of:
     - the per-PLAN findings (via `query_findings`, honouring the same
-      type/resolution/promoted/file_pattern filters), and
+      type/resolution/promoted/file_pattern/author/kind filters), and
     - the PENDING Q-Gate findings across every phase in `QGATE_PHASES`, with the
-      same `finding_type` / `file_pattern` filters applied for parity.
+      same `finding_type` / `file_pattern` / `author` / `kind` filters applied for parity.
 
     Only Q-Gate records whose `resolution == 'pending'` are merged — resolved
     Q-Gate findings are never surfaced through this read. The per-plan slice keeps

@@ -205,13 +205,30 @@ def test_query_findings_unified_carries_author_and_kind(plan_context):
 
 
 def test_query_findings_unified_filters_by_author(plan_context):
-    """The unified read narrows the plan slice by author."""
+    """The unified read narrows both plan and Q-Gate slices by author."""
     add_finding('store-prc-unified-auth', 'pr-comment', 'From alice', 'd', author='alice', kind='inline')
     add_finding('store-prc-unified-auth', 'pr-comment', 'From bob', 'd', author='bob', kind='inline')
 
     unified = query_findings_unified('store-prc-unified-auth', author='alice')
     assert unified['plan_count'] == 1
     assert unified['findings'][0]['title'] == 'From alice'
+
+
+def test_query_findings_unified_filters_qgate_by_author(plan_context):
+    """The unified read excludes Q-Gate findings that do not match the author filter."""
+    # Q-Gate findings do not carry author; author filter must exclude them from the result.
+    add_qgate_finding(
+        'store-qgate-auth-filter', '2-refine', 'qgate', 'pr-comment',
+        'Q-Gate finding without author', 'detail',
+    )
+    add_finding('store-qgate-auth-filter', 'pr-comment', 'Plan finding alice', 'd', author='alice')
+
+    unified = query_findings_unified('store-qgate-auth-filter', author='alice')
+    assert unified['plan_count'] == 1
+    assert unified['qgate_count'] == 0
+    titles = [f['title'] for f in unified['findings']]
+    assert 'Plan finding alice' in titles
+    assert 'Q-Gate finding without author' not in titles
 
 
 # =============================================================================

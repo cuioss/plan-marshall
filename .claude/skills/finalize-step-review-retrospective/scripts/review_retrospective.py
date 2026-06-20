@@ -205,6 +205,8 @@ def _read_pr_comment_findings(plan_id: str) -> list[dict[str, Any]]:
     from _findings_core import query_findings  # type: ignore[import-not-found]
 
     result = query_findings(plan_id, finding_type='pr-comment')
+    if result.get('status') == 'error':
+        raise RuntimeError(result.get('message') or 'Failed to query findings')
     findings: list[dict[str, Any]] = result.get('findings', [])
     return findings
 
@@ -221,12 +223,19 @@ def main(argv: list[str]) -> int:
     parser.add_argument('--plan-id', required=True, help='Plan identifier.')
     args = parser.parse_args(argv)
 
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+    try:
+        from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
-    records = _read_pr_comment_findings(args.plan_id)
-    result = aggregate(records)
-    sys.stdout.write(serialize_toon(result) + '\n')
-    return 0
+        records = _read_pr_comment_findings(args.plan_id)
+        result = aggregate(records)
+        sys.stdout.write(serialize_toon(result) + '\n')
+        return 0
+    except Exception as e:
+        import json
+
+        error_result = {'status': 'error', 'message': str(e)}
+        sys.stdout.write(json.dumps(error_result) + '\n')
+        return 0
 
 
 if __name__ == '__main__':
