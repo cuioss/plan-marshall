@@ -7,6 +7,7 @@ pre-push-quality-gate, bot-enforcement guard, placement validation, and
 marshal.json source-of-truth) plus the relevant CLI plumbing tests.
 """
 
+import contextlib
 import importlib.util
 import json
 from argparse import Namespace
@@ -55,6 +56,18 @@ _resolve_may_mutate_worktree_steps = _mem._resolve_may_mutate_worktree_steps
 # running executor. The handler is wrapped in try/except so failures are
 # already silent, but we replace it with a no-op for clarity and speed.
 _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
+
+
+@contextlib.contextmanager
+def _capture_decision_log():
+    """Capture ``_emit_decision_log`` calls; yield the (plan_id, message) list."""
+    captured: list[tuple[str, str]] = []
+    original = _mem._emit_decision_log
+    _mem._emit_decision_log = lambda pid, msg: captured.append((pid, msg))
+    try:
+        yield captured
+    finally:
+        _mem._emit_decision_log = original
 
 
 # =============================================================================
@@ -3071,14 +3084,7 @@ class TestMayMutatePlacement:
             ['finalize-step-simplify', 'commit-push', 'create-pr', 'lessons-capture']
         )
 
-        captured: list[tuple[str, str]] = []
-        original_emit = _mem._emit_decision_log
-
-        def _capture(pid, message):
-            captured.append((pid, message))
-
-        _mem._emit_decision_log = _capture
-        try:
+        with _capture_decision_log() as captured:
             result = cmd_compose(
                 _compose_ns(
                     plan_id=plan_id,
@@ -3087,8 +3093,6 @@ class TestMayMutatePlacement:
                     phase_6_steps=candidates,
                 )
             )
-        finally:
-            _mem._emit_decision_log = original_emit
 
         assert result is not None
         assert result['status'] == 'success', f'expected success, got {result!r}'
@@ -3122,14 +3126,7 @@ class TestMayMutatePlacement:
             ]
         )
 
-        captured: list[tuple[str, str]] = []
-        original_emit = _mem._emit_decision_log
-
-        def _capture(pid, message):
-            captured.append((pid, message))
-
-        _mem._emit_decision_log = _capture
-        try:
+        with _capture_decision_log() as captured:
             result = cmd_compose(
                 _compose_ns(
                     plan_id=plan_id,
@@ -3138,8 +3135,6 @@ class TestMayMutatePlacement:
                     phase_6_steps=candidates,
                 )
             )
-        finally:
-            _mem._emit_decision_log = original_emit
 
         assert result is not None
         assert result['status'] == 'success', f'expected success, got {result!r}'
@@ -3191,14 +3186,7 @@ class TestMayMutatePlacement:
             ['finalize-step-simplify', 'create-pr', 'lessons-capture']
         )
 
-        captured: list[tuple[str, str]] = []
-        original_emit = _mem._emit_decision_log
-
-        def _capture(pid, message):
-            captured.append((pid, message))
-
-        _mem._emit_decision_log = _capture
-        try:
+        with _capture_decision_log() as captured:
             result = cmd_compose(
                 _compose_ns(
                     plan_id=plan_id,
@@ -3208,8 +3196,6 @@ class TestMayMutatePlacement:
                     commit_and_push='false',
                 )
             )
-        finally:
-            _mem._emit_decision_log = original_emit
 
         assert result is not None
         assert result['status'] == 'success', f'expected success, got {result!r}'
