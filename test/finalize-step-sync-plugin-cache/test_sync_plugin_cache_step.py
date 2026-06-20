@@ -108,7 +108,9 @@ def test_sync_plugin_cache_is_not_a_built_in_default():
     """Per the relocation, sync-plugin-cache is project-local, not a default."""
     assert 'default:sync-plugin-cache' not in cd.BUILT_IN_FINALIZE_STEPS
     assert 'default:sync-plugin-cache' not in cd.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
-    assert 'default:sync-plugin-cache' not in cd.DEFAULT_PLAN_FINALIZE['steps']
+    # DEFAULT_PLAN_FINALIZE['steps'] is a lazy None placeholder; the seeded map is
+    # built by _seed_finalize_steps() (keyed by BUILT_IN_FINALIZE_STEPS).
+    assert 'default:sync-plugin-cache' not in cd._seed_finalize_steps()
 
 
 def test_no_bundled_standards_doc_for_sync_plugin_cache():
