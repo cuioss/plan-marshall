@@ -2016,6 +2016,7 @@ def _reorder_may_mutate_after_commit_push(
     if commit_push_index is None:
         return phase_6_steps, []
 
+    offending_indices: list[int] = []
     offending_steps: list[str] = []
     reordered_names: list[str] = []
     for index, step in enumerate(phase_6_steps):
@@ -2023,16 +2024,17 @@ def _reorder_may_mutate_after_commit_push(
             break
         bare = _strip_default_prefix(step)
         if bare in may_mutate:
+            offending_indices.append(index)
             offending_steps.append(step)
             reordered_names.append(bare)
 
     if not offending_steps:
         return phase_6_steps, []
 
-    # Remove the offending steps (preserving the remaining order) and re-insert
-    # them immediately after ``commit-push`` in their original relative order.
-    offending_set = set(offending_steps)
-    remaining = [s for s in phase_6_steps if s not in offending_set]
+    # Remove the offending steps by index (not by value) so that any occurrence
+    # of the same step name after ``commit-push`` is preserved.
+    offending_index_set = set(offending_indices)
+    remaining = [s for i, s in enumerate(phase_6_steps) if i not in offending_index_set]
     insert_at = next(
         i for i, s in enumerate(remaining) if s in {'commit-push', 'default:commit-push'}
     ) + 1

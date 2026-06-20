@@ -348,7 +348,7 @@ When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-revie
 
 **Decision log line** (emitted once per reordered step):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) may_mutate_placement auto-reorder — moved {bare} to index {N} (after commit-push at index {M})
 ```
 
