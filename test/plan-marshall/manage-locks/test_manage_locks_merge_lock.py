@@ -226,7 +226,14 @@ class TestNoDoubleMerge:
         via the CLI entry point. EXACTLY ONE returns ``status: success/acquired``;
         every other returns ``status: blocked``. Two plans never both hold the
         lock. This is the make-or-break no-double-merge property and MUST run
-        under genuine process-level contention, not sequential calls."""
+        under genuine process-level contention, not sequential calls.
+
+        Runs under ``PLAN_BASE_DIR`` isolation (no contention for the real
+        ``.plan/merge.lock``) and is stable under ``pytest-xdist`` ``-n auto`` with
+        widened load-sensitive margins (``--timeout 30`` inner wait budget,
+        ``timeout=90`` outer subprocess kill budget, outer > inner) — matching the
+        hardened sibling reclamation races — so a legitimately-waiting subprocess
+        is never killed mid-wait on a contended host."""
         base = isolated_base['base']
         n = 8
         # Each contender's plan dir is live, so a held lock is NEVER reclaimed —
@@ -243,9 +250,9 @@ class TestNoDoubleMerge:
                 '--plan-id',
                 f'race-{i}',
                 '--timeout',
-                '8',
+                '30',
                 env_overrides=env_overrides,
-                timeout=60,
+                timeout=90,
             )
 
         with ThreadPoolExecutor(max_workers=n) as pool:
