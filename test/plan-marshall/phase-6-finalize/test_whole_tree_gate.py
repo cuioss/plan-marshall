@@ -223,6 +223,271 @@ class TestExtractDeletedIdentifiers:
 
 
 # ===========================================================================
+# extract_deleted_identifiers — declared-symbol anchoring (Python hunks)
+# ===========================================================================
+
+
+class TestExtractDeletedIdentifiersDeclaredSymbol:
+    """Python removed lines extract DECLARED symbols only, not every token.
+
+    The headline precision fix: for a ``.py`` hunk, extraction is anchored to
+    ``def``/``class``/module-level-assignment declarations rather than every
+    identifier-shaped token. Docstring words, prose, dict-key string values, and
+    indented locals on deleted Python lines are NOT collected.
+    """
+
+    @staticmethod
+    def _py_diff(body: str, *, path: str = 'marketplace/skills/x/scripts/m.py') -> str:
+        """Wrap ``body`` (already ``-``/``+``/space-prefixed lines) in a Python
+        unified-diff header so the extractor routes the hunk through the
+        declared-symbol pass."""
+        return (
+            f'diff --git a/{path} b/{path}\n'
+            f'--- a/{path}\n'
+            f'+++ b/{path}\n'
+            '@@ -1,5 +1,1 @@\n'
+            f'{body}'
+        )
+
+    def test_def_on_deleted_python_line_is_extracted(self):
+        # Arrange
+        diff = self._py_diff('-def deleted_handler(arg):\n')
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert
+        assert 'deleted_handler' in identifiers
+
+    def test_async_def_on_deleted_python_line_is_extracted(self):
+        diff = self._py_diff('-    async def fetch_remote_widget(self):\n')
+
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        assert 'fetch_remote_widget' in identifiers
+
+    def test_class_on_deleted_python_line_is_extracted(self):
+        diff = self._py_diff('-class DeletedAnalyzer(BaseAnalyzer):\n')
+
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        assert 'DeletedAnalyzer' in identifiers
+
+    def test_module_level_assignment_is_extracted(self):
+        diff = self._py_diff('-FIXTURE_CORPUS = build_corpus()\n')
+
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        assert 'FIXTURE_CORPUS' in identifiers
+
+    def test_annotated_module_level_assignment_is_extracted(self):
+        diff = self._py_diff('-DEFAULT_LIMIT: int = 50\n')
+
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        assert 'DEFAULT_LIMIT' in identifiers
+
+    def test_prose_tokens_on_deleted_python_line_are_not_extracted(self):
+        # Arrange — a deleted docstring/comment line of ordinary prose. None of
+        # these words are declared symbols, so none are collected.
+        diff = self._py_diff(
+            '-    """This helper computes the widget total across all items."""\n'
+        )
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert — declared-symbol anchoring drops every prose word.
+        assert identifiers == []
+
+    def test_dict_key_string_value_on_deleted_line_is_not_extracted(self):
+        # Arrange — a deleted dict literal entry. The key string and value are
+        # not declared symbols.
+        diff = self._py_diff("-        'compatibility_description': resolved_value,\n")
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert — neither the string key nor the value is a declaration.
+        assert 'compatibility_description' not in identifiers
+        assert 'resolved_value' not in identifiers
+
+    def test_indented_local_assignment_is_not_extracted(self):
+        # Arrange — an indented (in-function) assignment is a local, not an
+        # importable module-level symbol, so the module-assign anchor (column 0)
+        # does not match it.
+        diff = self._py_diff('-        local_temp = intermediate * 2\n')
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert
+        assert 'local_temp' not in identifiers
+
+    def test_comparison_is_not_mistaken_for_assignment(self):
+        # Arrange — a module-level comparison expression must not be read as a
+        # name binding ('==' is not an assignment).
+        diff = self._py_diff('-ENABLED == other_flag\n')
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert — no false 'ENABLED' declaration.
+        assert 'ENABLED' not in identifiers
+
+    def test_deleted_python_file_collects_declarations_not_docstring_words(self):
+        # Arrange — a realistic clean-slate deletion: a def, a class, a constant,
+        # surrounded by a docstring and a local. Only the three declarations are
+        # collected; the docstring words and the local are not.
+        diff = self._py_diff(
+            '-"""Module docstring with several ordinary descriptive words here."""\n'
+            '-ANALYZER_TABLE = {}\n'
+            '-class WidgetParser:\n'
+            '-    def parse_everything(self):\n'
+            '-        scratch_local = compute()\n'
+        )
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert — exactly the three declared symbols, nothing from prose/locals.
+        assert set(identifiers) == {
+            'ANALYZER_TABLE',
+            'WidgetParser',
+            'parse_everything',
+        }
+
+    def test_python_file_body_does_not_flood_with_prose(self):
+        # Arrange — the flood regression. A deleted .py file whose body is mostly
+        # docstring/comment prose plus a single declaration must yield ONLY the
+        # declaration, collapsing from the prose-flood scale to one symbol.
+        prose_lines = ''.join(
+            f'-# narrative comment line number {i} describing legacy behaviour\n'
+            for i in range(40)
+        )
+        diff = self._py_diff(prose_lines + '-def the_only_real_symbol():\n')
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert — the 40 prose lines contribute nothing; only the def remains.
+        assert identifiers == ['the_only_real_symbol']
+
+    def test_python_added_declaration_is_subtracted(self):
+        # Arrange — a symbol declared on a removed line AND re-declared on an
+        # added line of the same Python hunk was moved, not deleted, so the
+        # added/context subtraction (second pass) drops it.
+        diff = self._py_diff(
+            '-def moved_function():\n'
+            '+def moved_function(extra_arg):\n'
+        )
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert
+        assert 'moved_function' not in identifiers
+
+    def test_non_python_hunk_still_uses_coarse_identifier_pass(self):
+        # Arrange — a deleted markdown line must still extract via the coarse
+        # fallback (declared-symbol anchoring is Python-only).
+        diff = (
+            'diff --git a/marketplace/skills/x/SKILL.md b/marketplace/skills/x/SKILL.md\n'
+            '--- a/marketplace/skills/x/SKILL.md\n'
+            '+++ b/marketplace/skills/x/SKILL.md\n'
+            '@@ -1,1 +1,1 @@\n'
+            '-The deleted_contract_token routes the request elsewhere.\n'
+        )
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert — the coarse pass still surfaces the snake_case token.
+        assert 'deleted_contract_token' in identifiers
+
+    def test_dev_null_new_side_uses_old_python_path_for_routing(self):
+        # Arrange — a whole-file Python deletion has '+++ /dev/null'; routing
+        # must fall back to the '---' old path's .py suffix so the hunk is still
+        # treated as Python (declared-symbol anchored).
+        diff = (
+            'diff --git a/marketplace/skills/x/scripts/gone.py b/marketplace/skills/x/scripts/gone.py\n'
+            '--- a/marketplace/skills/x/scripts/gone.py\n'
+            '+++ /dev/null\n'
+            '@@ -1,2 +0,0 @@\n'
+            '-"""Docstring prose that must not flood the candidate set at all."""\n'
+            '-def survivor_target():\n'
+        )
+
+        # Act
+        identifiers = gate.extract_deleted_identifiers(diff)
+
+        # Assert — only the declared symbol; the docstring prose is dropped.
+        assert identifiers == ['survivor_target']
+
+
+# ===========================================================================
+# Compound / hyphenated contract-value discipline (regression pin)
+# ===========================================================================
+
+
+class TestCompoundHyphenatedTokenDiscipline:
+    """Pin the known limitation that motivates the workflow-doc grep discipline.
+
+    A deleted/renamed HYPHENATED contract value (a routing discriminator such as
+    ``verification-failure``) is not a declared symbol and its constituent words
+    are individually legitimate. The declared-symbol-anchored extractor therefore
+    does NOT surface a surviving compound-token reference — but a direct grep for
+    the whole hyphenated token does. This regression keeps deliverable 2's Step 2
+    discipline note load-bearing: if a future change made the symbol sweep claim
+    to cover compound contract values, the asymmetry asserted here would break.
+    """
+
+    def test_symbol_sweep_misses_hyphenated_survivor_direct_grep_finds_it(self, tmp_path):
+        # Arrange — a Python hunk that renames a hyphenated contract value. The
+        # old value 'verification-failure' is referenced (a string literal), but
+        # it is not a declared symbol, so the declared-symbol extractor yields
+        # nothing for it.
+        py_diff = TestExtractDeletedIdentifiersDeclaredSymbol._py_diff(
+            "-    finding_type = 'verification-failure'\n"
+            "+    finding_type = 'test-failure'\n"
+        )
+        deleted = gate.extract_deleted_identifiers(py_diff)
+
+        # The compound contract value is NOT among the extracted declared symbols.
+        assert 'verification-failure' not in deleted
+
+        # A survivor of the old value lingers in a consumer doc.
+        root = _make_marketplace_tree(
+            tmp_path,
+            {
+                'bundles/plan-marshall/skills/x/standards/triage.md':
+                    'Route a verification-failure finding to the fix branch.\n',
+            },
+        )
+
+        # Act — the symbol sweep (driven by the extracted declared symbols) finds
+        # no survivor for the compound value...
+        sweep = gate.sweep_survivors(root, deleted)
+        sweep_idents = {row['identifier'] for row in sweep}
+
+        # ...but a direct grep for the whole hyphenated token does.
+        survivor_doc = (
+            root
+            / 'marketplace'
+            / 'bundles'
+            / 'plan-marshall'
+            / 'skills'
+            / 'x'
+            / 'standards'
+            / 'triage.md'
+        ).read_text(encoding='utf-8')
+
+        # Assert — the asymmetry the discipline note exists to cover.
+        assert 'verification-failure' not in sweep_idents
+        assert 'verification-failure' in survivor_doc
+
+
+# ===========================================================================
 # sweep_survivors  (the whole-tree survivor sweep — mandated criterion #1)
 # ===========================================================================
 

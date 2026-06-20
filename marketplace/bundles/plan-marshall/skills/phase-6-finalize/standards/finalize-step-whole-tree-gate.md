@@ -69,13 +69,16 @@ For each `survivors[]` row, classify it as a **genuine omission** (a deleted sym
 
 On any genuine survivor, unresolved mandate gap, or failed facet, the gate FAILs: do NOT mark the step done, and return a structured `blocked` payload to the orchestrator so the failure routes through the standard finalize triage loop (the same fix-task / suppress / accept branch the other finalize gates use).
 
+**Compound / hyphenated contract-value discipline.** The surfacer's deleted-identifier extraction is anchored to *declared symbols* (Python `def`/`class`/module-level assignment) and otherwise to whitespace-and-word-level identifier tokens — so a deleted or renamed **compound / hyphenated contract value** (a routing discriminator such as `verification-failure`, an enum member, or a dash-bearing config key) is NOT a declared symbol, and its constituent words are individually legitimate everywhere in the tree. The survivor sweep alone is therefore UNRELIABLE for this class: it will report clean even when a consumer doc still carries the old whole compound token. Whenever the plan deletes or renames a compound/hyphenated contract value, the cognitive pass MUST also grep directly for the **whole hyphenated token** across `marketplace/` before trusting a clean sweep result — a `git -C {worktree_path} grep -n -- 'verification-failure'`-style direct search for the literal token, classifying each hit the same way as a `survivors[]` row. A clean survivor sweep does not discharge this obligation; only the direct whole-token grep does.
+
 ### Step 3: Terminate
 
 When zero genuine survivors and zero unresolved mandate gaps remain, capture `git -C {worktree_path} rev-parse HEAD` and mark the step done:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step finalize-step-whole-tree-gate --outcome done
+  --plan-id {plan_id} --phase 6-finalize --step finalize-step-whole-tree-gate --outcome done \
+  --display-detail "whole-tree gate clean: 0 survivors"
 ```
 
 ## Error Handling

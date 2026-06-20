@@ -28,7 +28,11 @@ Surfacing checks:
    with word-boundary anchoring and report every surviving reference as a
    ``survivors[]{file,line,identifier}`` row. The sweep excludes
    ``.plan/archived-plans/**``, ``__pycache__`` byte-compiled output, and
-   vendored snapshot directories.
+   vendored snapshot directories. Deleted-identifier extraction is anchored to
+   DECLARED symbols for Python hunks (``def``/``class``/module-level
+   assignment) rather than every identifier-shaped token, so a clean-slate
+   ``.py`` deletion surfaces only the file's importable symbols, not its prose
+   and docstrings; non-Python hunks fall back to the coarse identifier-regex.
 2. **Intent-vs-diff scope check** (always runs) — extract the request's
    enumerated mandate targets (named files / symbols / contracts in
    ``request.md``) and flag any that have zero representation in the diff's
@@ -141,8 +145,33 @@ _IDENTIFIER_STOPWORDS: frozenset[str] = frozenset(
 
 #: Matches code-symbol identifiers in a removed diff line: snake_case,
 #: camelCase, PascalCase, and dotted/dashed compound names of meaningful
-#: length. Word-boundary anchored.
+#: length. Word-boundary anchored. Used as the coarse fallback pass for
+#: non-Python removed lines.
 _IDENTIFIER_RE = re.compile(r'\b([A-Za-z_][A-Za-z0-9_]{2,}(?:[.-][A-Za-z0-9_]+)*)\b')
+
+#: Declared-symbol patterns for Python removed lines. Anchoring extraction to
+#: DECLARED symbols — function/class definitions and module-level
+#: name-binding assignments — is the root-cause fix for the survivor-sweep
+#: flood: on a clean-slate ``.py`` deletion the coarse ``_IDENTIFIER_RE`` pass
+#: harvests every docstring word, dict-key value, and prose token as a "deleted
+#: identifier", whereas only the file's declared symbols are things other code
+#: could import or call. A deleted docstring word is not a symbol whose dangling
+#: references the gate should hunt.
+
+#: ``def NAME`` / ``async def NAME`` — a deleted function or method declaration.
+_PY_DEF_RE = re.compile(r'^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(')
+
+#: ``class NAME`` — a deleted class declaration (with or without bases).
+_PY_CLASS_RE = re.compile(r'^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)\s*[(:]')
+
+#: Module-level (column-0, unindented) name binding: ``NAME = ...`` or an
+#: annotated ``NAME: TYPE = ...``. Anchored to column 0 so locals inside a
+#: deleted function body — which are not importable symbols — are excluded.
+#: ``==`` / ``!=`` / ``<=`` / ``>=`` comparisons are ruled out by requiring a
+#: single ``=`` not immediately followed by ``=``.
+_PY_MODULE_ASSIGN_RE = re.compile(
+    r'^([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=]+)?=(?!=)'
+)
 
 #: Matches a repo-relative file path token inside request prose (a path with a
 #: known source/doc suffix). Used by the mandate extractor.
@@ -448,6 +477,9 @@ def _line_identifiers(line: str) -> set[str]:
     ``_MIN_IDENTIFIER_LEN`` length floor, and the ``_IDENTIFIER_STOPWORDS`` set —
     so a token that survives this filter on a removed line is comparable against
     the same filter on an added/context line.
+
+    This is the fallback extractor for non-Python (or unknown-suffix) lines.
+    Python lines route through :func:`_python_declared_symbols` instead.
     """
     tokens: set[str] = set()
     for match in _IDENTIFIER_RE.finditer(line):
@@ -458,6 +490,48 @@ def _line_identifiers(line: str) -> set[str]:
             continue
         tokens.add(token)
     return tokens
+
+
+def _python_declared_symbols(line: str) -> set[str]:
+    """Return the DECLARED symbols on a single Python source line.
+
+    Matches only ``def NAME`` / ``async def NAME``, ``class NAME``, and
+    module-level (column-0) ``NAME = ...`` / ``NAME: TYPE = ...`` bindings — the
+    symbols other code could import or call. A deleted docstring word, a deleted
+    dict-key string value, an indented local assignment inside a deleted function
+    body, and ordinary prose are all NOT declared symbols and are excluded.
+
+    This is the precision fix at the heart of the plan: anchoring extraction to
+    declared symbols (rather than every identifier-shaped token) is what stops a
+    clean-slate ``.py`` deletion from flooding the survivor sweep with the deleted
+    file's entire prose/body. The same ``_MIN_IDENTIFIER_LEN`` floor and
+    ``_IDENTIFIER_STOPWORDS`` set are still applied so the two passes stay
+    comparable for the added/context-line subtraction in
+    :func:`extract_deleted_identifiers`.
+    """
+    symbols: set[str] = set()
+    for pattern in (_PY_DEF_RE, _PY_CLASS_RE, _PY_MODULE_ASSIGN_RE):
+        match = pattern.match(line)
+        if match is not None:
+            symbols.add(match.group(1))
+    return {
+        token
+        for token in symbols
+        if len(token) >= _MIN_IDENTIFIER_LEN and token not in _IDENTIFIER_STOPWORDS
+    }
+
+
+def _is_python_path(path: str) -> bool:
+    """Return True when a diff-header path token names a Python source file.
+
+    The path may carry the unified-diff ``a/`` / ``b/`` prefix or a trailing
+    tab-separated timestamp (``+++ b/foo.py\\t2024-...``); both are tolerated.
+    The literal ``/dev/null`` (added/removed-file sentinel) is not Python.
+    """
+    token = path.strip().split('\t', 1)[0].strip()
+    if token in ('', '/dev/null'):
+        return False
+    return token.endswith('.py')
 
 
 def extract_deleted_identifiers(diff_text: str) -> list[str]:
@@ -478,24 +552,47 @@ def extract_deleted_identifiers(diff_text: str) -> list[str]:
     ``_IDENTIFIER_RE`` yet recur unchanged throughout the tree. Subtracting the
     added/context token set is the cheap in-diff signal that a candidate is not
     a genuine removal.
+
+    Per-line extraction is **suffix-routed**: while a hunk belongs to a Python
+    file (the file's ``+++``/``---`` header named a ``.py`` path), removed/added/
+    context lines are extracted via :func:`_python_declared_symbols` so only
+    DECLARED symbols (``def``/``class``/module-level assignment) are collected.
+    For non-Python hunks — and for bare diff fragments that carry no file header
+    — extraction falls back to the coarse :func:`_line_identifiers` pass. This is
+    the precision anchor that stops a clean-slate ``.py`` deletion from harvesting
+    the deleted file's prose/body as phantom deleted identifiers.
     """
     removed_tokens: set[str] = set()
     retained_tokens: set[str] = set()
+    # Suffix routing: True while inside a hunk whose file is Python. Defaults to
+    # False so a header-less diff fragment routes through the coarse fallback
+    # (preserving extraction for snippets that never declare a file suffix).
+    current_is_python = False
     for raw in diff_text.splitlines():
         if raw.startswith('---') or raw.startswith('+++'):
-            # Unified-diff file headers, not content lines.
+            # File-pair headers: a hunk is treated as Python when EITHER the old
+            # ('---') or new ('+++') side names a '.py' path. OR-combining the
+            # two sides (rather than letting the later '+++' overwrite) keeps a
+            # whole-file Python DELETION ('+++ /dev/null') routed through the
+            # declared-symbol pass — the deletion case the gate most cares about.
+            current_is_python = current_is_python or _is_python_path(raw[3:])
             continue
-        if raw.startswith('@@') or raw.startswith('diff '):
-            # Hunk header / diff-command line — carries no content tokens.
+        if raw.startswith('diff '):
+            # New file pair begins — reset the suffix until its header lands.
+            current_is_python = False
             continue
+        if raw.startswith('@@'):
+            # Hunk header — carries no content tokens; suffix already set.
+            continue
+        extractor = _python_declared_symbols if current_is_python else _line_identifiers
         if raw.startswith('-'):
-            removed_tokens |= _line_identifiers(raw[1:])
+            removed_tokens |= extractor(raw[1:])
         elif raw.startswith('+'):
-            retained_tokens |= _line_identifiers(raw[1:])
+            retained_tokens |= extractor(raw[1:])
         elif raw.startswith(' '):
             # Context (unchanged) line: the leading space is stripped; the
             # surrounding retained content is treated as a retained token source.
-            retained_tokens |= _line_identifiers(raw[1:])
+            retained_tokens |= extractor(raw[1:])
         else:
             # git metadata lines (index, old/new/deleted/new-file mode,
             # rename/copy from/to, similarity index, "Binary files", the
