@@ -72,6 +72,15 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 Do not extrapolate `status get`, `manage_status get`, or `manage-status:status` — none of those exist. The canonical script notation is the 3-part form `plan-marshall:manage-status:manage-status` (the third segment matches the on-disk script filename `manage-status.py`), and the only read verb is `read`. The full canonical-forms entry for `manage-status` (covering `read`, `metadata --get --field`, `transition`, `get-worktree-path`, `change-type-heuristic`, and friends) lives in [`dev-agent-behavior-rules/standards/argument-naming.md`](../dev-agent-behavior-rules/standards/argument-naming.md#manage--scripts) — that table is the regression guard against the invented-verb drift that motivated this entry (see lesson `2026-05-14-00-001`). Future maintainers editing this workflow MUST cross-check any new `manage-status` call against that table before committing.
 
+Capture the runtime session token for downstream metrics:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+  session capture --plan-id {plan_id}
+```
+
+On Claude Code the runtime reads the stored `session_id`. On OpenCode it returns `no-op` (no platform session id available) — the retrospective proceeds normally.
+
 Log start:
 
 ```bash
@@ -290,6 +299,15 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons rest
 This detection note is the per-plan counterpart of the corpus-wide tooling: `manage-lessons list-stalled` (see [`../manage-lessons/SKILL.md`](../manage-lessons/SKILL.md) § `list-stalled`) scans every plan for the same signal, and the `Action: cleanup` stalled-lesson restore pass (see [`../plan-marshall/workflow/planning.md`](../plan-marshall/workflow/planning.md) § "Action: cleanup" → "Stalled-lesson-sourced-plan restore") restores them in bulk. Keep this addition thin — it is a detection-and-prompt note, not a new script-backed aspect in the Step 3 table.
 
 ### Step 6: Mode-Specific Termination
+
+Before terminating, record phase metrics through the platform runtime:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+  metrics capture --plan-id {plan_id} --phase retrospective
+```
+
+On Claude Code the runtime reads the stored `session_id` and captures token usage from the transcript. On OpenCode it returns `no-op` — the retrospective still completes and accepts manual `--total-tokens` when available.
 
 **Finalize-step mode**: emit the `mark-step-done` handshake so the `phase_steps_complete` invariant is satisfied:
 

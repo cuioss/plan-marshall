@@ -324,10 +324,14 @@ def _generate_opencode_json(
     permission overrides at the project level. Per-agent permissions are
     already embedded in each ``agent/{name}.md`` frontmatter; the project
     config keeps the agent map populated for discovery.
+
+    ``instructions`` is deliberately omitted — the distributed plugin is
+    a skill/agent/command bundle consumed by downstream projects, not a
+    standalone project root. Project-level instructions (``AGENTS.md``)
+    belong to each downstream project, not to the plugin artifact.
     """
     config: dict = {
         '$schema': 'https://opencode.ai/config.json',
-        'instructions': ['AGENTS.md'],
         'skills': {
             'paths': ['./skill'],
         },

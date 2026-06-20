@@ -17,35 +17,25 @@ The `platform-runtime` skill itself is the sanctioned home for per-platform code
 | `platform-runtime` API (15 ops, both runtimes) | **Done** — `opencode_runtime.py` implements every operation. |
 | Target-aware executor (`tools-script-executor`) | **Done** — Claude-cache resolver + OpenCode 7-root resolver, switched on `runtime.target`. |
 | `phase-1-init`, `phase-6-finalize` session handling | **Done** — both reference the `session capture` contract. |
-| `phase-5-execute` token capture | **Gap** — no `session capture` / `metrics capture` / `platform_runtime` reference in the body; still its own token-extraction path. |
-| `plan-retrospective` token capture | **Gap** — same as phase-5. |
-| `marshall-steward` bootstrap (`bootstrap_plugin.py`) | **Gap** — `detect_plugin_root()` hardcodes `~/.claude/plugins/cache/`; no OpenCode-root discovery, no `runtime.target` read. |
-| `tools-permission-doctor` / `tools-permission-fix` / `workflow-permission-web` | **Likely gap** — no `platform-runtime permission …` delegation found in their scripts; settings I/O appears direct. Needs an explicit audit. |
+| `phase-5-execute` token capture | **Done** — `session capture` at phase start (line 985), `metrics capture --phase 5-execute` at phase transition (line 1112). |
+| `plan-retrospective` token capture | **Done** — `session capture` at start (line 78), `metrics capture --phase retrospective` before mode-specific termination (line 306). |
+| `marshall-steward` bootstrap (`bootstrap_plugin.py`) | **Done** — `read_runtime_target()` reads from arg/marshal.json/default; `_detect_opencode_root()` walks 7 roots; `--target` CLI flag added. |
+| `tools-permission-doctor` / `tools-permission-fix` / `workflow-permission-web` | **Partial** — SKILL.md guidance updated (prose note to prefer `platform-runtime permission`), but scripts (`permission_common.py`) still hardcode `.claude/settings.json` paths. OpenCode runtime stubs return no-op. |
 | `tools-input-validation` session_id rule | **Needs audit** — confirm whether `session_id` validation branches on `runtime.target` (Claude UUID vs OpenCode shape) or still assumes UUID. |
-| `marshal.json` `runtime.target` field | **Needs confirm** — `project initial-setup` accepts `--target`; confirm the field is actually written into the init-time `marshal.json` and defaults to `claude`. |
+| `marshal.json` `runtime.target` field | **Done** — `project initial-setup --target opencode` writes `"runtime": {"target": "opencode"}`. Confirmed in validation session. |
 
 ## Tasks
 
 Each task: audit → migrate the call site to `platform-runtime` → test on both targets.
 
-1. **`phase-5-execute` — capture via runtime.** Replace the local token-extraction with
-   `session capture` at phase start and `platform-runtime metrics capture --phase
-   5-execute`. On Claude the runtime reads the stored `session_id`; on OpenCode it
-   returns `no-op` and the phase proceeds with manual `--total-tokens`.
+1. **`phase-5-execute` — capture via runtime.**
+   **Status: DONE** — `session capture` at phase start, `metrics capture --phase 5-execute` at phase transition.
 
-2. **`plan-retrospective` — capture via runtime.** Same treatment: `session capture` at
-   start, `metrics capture --phase retrospective`; replace any transcript-walking with
-   the runtime call; permission-prompt analysis routes through `permission analyze
-   --checks suspicious`.
+2. **`plan-retrospective` — capture via runtime.**
+   **Status: DONE** — `session capture` at start, `metrics capture --phase retrospective` before termination.
 
-3. **`bootstrap_plugin.py` — multi-platform path resolution.** Teach
-   `detect_plugin_root()` to read `runtime.target` (arg → `marshal.json` → default
-   `claude`) and walk the matching root list: the single Claude cache root, or the seven
-   OpenCode discovery roots (`$OPENCODE_CONFIG_DIR/skills`, `.opencode/skills`,
-   `.claude/skills`, `.agents/skills`, `~/.config/opencode/skills`, `~/.claude/skills`,
-   `~/.agents/skills`). Convert the match to an absolute path before invoking
-   (anomalyco/opencode#9077). This mirrors the resolver already shipped in
-   `generate_executor.py`.
+3. **`bootstrap_plugin.py` — multi-platform path resolution.**
+   **Status: DONE** — `read_runtime_target()`, `_detect_opencode_root()` (7-root walk), `--target` CLI arg.
 
 4. **Permission tools — delegate to the runtime.** Audit `tools-permission-doctor`,
    `tools-permission-fix`, and `workflow-permission-web`. Where they read/write
@@ -53,19 +43,35 @@ Each task: audit → migrate the call site to `platform-runtime` → test on bot
    / `permission fix` / `permission web-analyze` / `permission web-apply`. The Claude-
    specific anti-pattern lists and settings shapes live in `claude_runtime.py`, not in
    the skill body.
+   **Status: PARTIAL** — SKILL.md guidance updated (2026-06-19). Scripts still hardcode
+   `.claude/` paths. OpenCode runtime stubs return no-op. Full migration remains.
 
 5. **`tools-input-validation` — target-specific `session_id`.** Branch the `session_id`
    rule on `runtime.target`: Claude validates the UUID shape; OpenCode validates its
    documented shape (or accepts an opaque string if none is documented).
+   **Status: OPEN**
 
 6. **Confirm the `marshal.json` template.** Verify a fresh `project initial-setup` writes
    `runtime.target` (defaulting to `claude`, `opencode` when `--target opencode`). Add it
    to the template if missing.
+   **Status: DONE** — Confirmed in validation session. `project initial-setup --target opencode`
+   writes `"target": "opencode"` into marshal.json.
 
 7. **Final audit grep.** Grep `marketplace/bundles/*/skills/*/SKILL.md` (excluding
    `skills/platform-runtime/**`) for remaining behavioural `.claude/` / `~/.claude`
    references — writes, reads, hook installation. Each remaining hit must be a
    `platform-runtime` call site or a `references/{topic}.md` pointer.
+   **Status: OPEN**
+
+## Additional findings from OpenCode validation (2026-06-19)
+
+- **Body transformer not wired**: `OpenCodeTarget.generate()` did not pass `body_transformer`
+  to `emit_bundles`. All `Skill:` directives survived raw. Fixed in
+  `marketplace/targets/opencode/target.py`.
+- **AGENTS.md leaked into distributed output**: `opencode.json` hardcoded
+  `instructions: ["AGENTS.md"]` but the emitted tree is a distributable plugin, not a
+  project root. Removed — instructions are the downstream project's concern.
+- **Multiple doc/refactor documents stale**: Updated to reflect completion status.
 
 ## Acceptance
 
