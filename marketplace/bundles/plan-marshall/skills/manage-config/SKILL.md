@@ -271,9 +271,10 @@ The lifecycle run-at-all gates and automation knobs are flat knobs under their o
 | `finalize_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field finalize_without_asking` |
 | `loop_back_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field loop_back_without_asking` |
 | `final_merge_without_asking` | `plan.phase-6-finalize.steps['default:branch-cleanup']` (step-owned param) | `plan phase-6-finalize step get --step-id default:branch-cleanup` (read `final_merge_without_asking` off `params`) |
-| `self_review` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field self_review` |
+| `self_review` | `plan.phase-6-finalize.steps['project:finalize-step-pre-submission-self-review']` (step-owned param) | `plan phase-6-finalize step get --step-id project:finalize-step-pre-submission-self-review` (read `self_review` off `params`) |
 | `qgate` (finalize) | `plan.phase-6-finalize` | `plan phase-6-finalize get --field qgate` |
-| `simplify` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field simplify` |
+| `simplify` | `plan.phase-6-finalize.steps['default:finalize-step-simplify']` (step-owned param) | `plan phase-6-finalize step get --step-id default:finalize-step-simplify` (read `simplify` off `params`) |
+| `drop_review_on_scope_gate` | `plan.phase-6-finalize.steps['project:finalize-step-pre-submission-self-review']` (step-owned param) | `plan phase-6-finalize step get --step-id project:finalize-step-pre-submission-self-review` (read `drop_review_on_scope_gate` off `params`) |
 
 ### Read an automation knob
 
@@ -605,6 +606,8 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 `default:automated-review`: `review_bot_buffer_seconds` (int, default `180`) — max-wait ceiling for `pr wait-for-comments`. `default:branch-cleanup`: `pr_merge_strategy` (default `squash`), `final_merge_without_asking` (bool, default `false`), `auto_rebase_threshold` (default `no_overlap_only`).
 
 **Access shape.** Read/write each FLAT knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate`, `plan phase-6-finalize get --field finalize_without_asking`. Read/write each STEP-OWNED param through the one-stop `plan phase-6-finalize step get/set --step-id {step} [--param {k} --value {v}]` verb against the marshal.json keyed map (the global-config default + wizard write target), or via the plan-local manifest snapshot `manage-execution-manifest step-params get/set` (the per-plan runtime read/override). See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
+
+**Default source.** The `Default` column above is not held in any centralized constant. Each param-owning step declares its params self-describingly in the `configurable:` block of its body-doc frontmatter; the finalize-step defaults seed (`get_default_config()`) materializes them by delegating each built-in step id through the `plan-marshall:extension-api:configurable_contract` parser (`resolve_step_defaults_optional`, ownerless steps → `null`). The parser is the single fail-loud source of truth for a valid step-param declaration — see [`extension-api` SKILL.md § Configurable step-param contract](../extension-api/SKILL.md#configurable-step-param-contract).
 
 ### Build-Queue Settings
 

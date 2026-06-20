@@ -99,7 +99,7 @@ Activated unconditionally per lesson `2026-04-29-23-002`. Cross-checks marketpla
 
 ### Phase-6 finalize step termination
 
-Four rules guarding `mark-step-done` invocations. Source: phase-6 finalize-orchestration contract (silent-failure surface).
+Five rules guarding phase-6 finalize-step declarations. Source: phase-6 finalize-orchestration contract (silent-failure surface) and the step-param configurable contract.
 
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|
@@ -107,6 +107,7 @@ Four rules guarding `mark-step-done` invocations. Source: phase-6 finalize-orche
 | `MARK_STEP_DONE_MISSING_PHASE` | structural | same | Phase-6 finalize-orchestration contract — without `--phase`, the step termination is routed to the wrong phase record. |
 | `MARK_STEP_DONE_MISSING_OUTCOME` | structural | same | Phase-6 finalize-orchestration contract — without `--outcome`, the step cannot be terminated unambiguously. |
 | `finalize-step-token-mismatch` | structural | `_analyze_finalize_step_token.py::scan_finalize_step_token` (via `doctor-marketplace.py::cmd_quality_gate`) | Phase-6 finalize-orchestration contract — a finalize-step skill's documented `mark-step-done --step <token>` (under `--phase 6-finalize`) must equal the skill's manifest step_id (`{bundle}:{skill}` for `OPTIONAL_BUNDLE_FINALIZE_STEPS` members; `project:{name}` for `.claude/skills/finalize-step-*`). A drifted token mis-keys `phase_steps`, so the `phase_steps_complete` handshake reports the step missing and the halt-and-retry recovery loops forever. |
+| `step-configurable-contract` | structural | `_analyze_step_configurable_contract.py::scan_step_configurable_contract` (via `doctor-marketplace.py::cmd_quality_gate`) | Step-param configurable contract — a finalize-step body doc whose `configurable:` frontmatter block is present but malformed (missing a required sub-field key/default/description, wrong type, empty description, duplicate key, or any block that fails the central D1 parser) silently breaks `manage-config` / `manage-execution-manifest` default resolution. Validation is delegated to the single-source-of-truth parser `extension-api/scripts/configurable_contract.py`; ownerless docs (no `configurable:` block) are skipped. |
 
 ### Script-safety rules
 

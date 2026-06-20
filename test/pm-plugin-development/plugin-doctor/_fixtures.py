@@ -59,7 +59,21 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import MARKETPLACE_ROOT, load_script_module
+
+# Source text of the real configurable-contract parser, materialized into the
+# step-configurable-contract fixture's scratch tree so the analyzer's dynamic
+# import (``_load_contract_parser``) resolves. The parser imports
+# ``marketplace_bundles`` / ``toon_parser`` at module top, both on the test
+# PYTHONPATH, and neither is called during a ``parse_configurable(path)`` scan.
+_CONFIGURABLE_CONTRACT_SRC = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'extension-api'
+    / 'scripts'
+    / 'configurable_contract.py'
+).read_text(encoding='utf-8')
 
 # ---------------------------------------------------------------------------
 # Analyzer module loading — load every analyzer entry point once via the shared
@@ -84,6 +98,7 @@ _alis = _load('_analyze_lesson_id_in_skill_prose.py', '_alis_fixtures')
 _aatd = _load('_analyze_allowed_tools_drift.py', '_aatd_fixtures')
 _asdrc = _load('_analyze_self_declared_rule_compliance.py', '_asdrc_fixtures')
 _afst = _load('_analyze_finalize_step_token.py', '_afst_fixtures')
+_ascc = _load('_analyze_step_configurable_contract.py', '_ascc_fixtures')
 _aroe = _load('_analyze_role_field.py', '_aroe_fixtures')
 _advd = _load('_analyze_declared_vs_disk.py', '_advd_fixtures')
 _apj = _load('_analyze_plugin_json.py', '_apj_fixtures')
@@ -426,6 +441,28 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 'plan-marshall:manage-status:manage-status mark-step-done \\\n'
                 '  --plan-id PLAN_ID --phase 6-finalize --step plan-retrospective\n'
                 '```\n'
+            ),
+        },
+    )
+    # step-configurable-contract: a built-in phase-6-finalize body doc whose
+    # ``configurable:`` block is present but malformed (an entry missing its
+    # required ``description`` sub-field) fires. The scratch tree carries the
+    # real contract parser so the analyzer's dynamic import resolves; the
+    # scratch root IS the bundles root the scanner walks.
+    corpus['step-configurable-contract'] = FixtureSpec(
+        analyzer=_ascc.scan_step_configurable_contract,
+        files={
+            'plan-marshall/skills/extension-api/scripts/configurable_contract.py': (
+                _CONFIGURABLE_CONTRACT_SRC
+            ),
+            'plan-marshall/skills/phase-6-finalize/workflow/sonar-roundtrip.md': (
+                '---\n'
+                'name: sonar-roundtrip\n'
+                'order: 80\n'
+                'configurable:\n'
+                '  - key: touched_file_cleanup\n'
+                '    default: new_code_only\n'  # missing required description
+                '---\n\n# Sonar Roundtrip\n'
             ),
         },
     )

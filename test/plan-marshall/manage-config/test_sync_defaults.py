@@ -229,3 +229,119 @@ def test_sync_defaults_reports_added_paths_sorted(plan_context):
     assert result['status'] == 'success'
     assert result['added'] == sorted(result['added'])
     assert result['added_count'] == len(result['added'])
+
+
+# =============================================================================
+# Empty-{} suppression on sync (ownerless steps back-fill as null, never {})
+# =============================================================================
+#
+# An ownerless steps / verification_steps entry now defaults to None. The
+# deep-merge back-fills a missing step id with None (a non-dict atomic value,
+# never {}), and preserves a step id already present — whether its on-disk value
+# is the new None or a legacy {} — untouched. The merge therefore writes no {}
+# for ownerless steps and is idempotent against both shapes.
+
+
+def test_sync_defaults_backfills_ownerless_verify_step_as_null_not_empty_dict(plan_context):
+    """Syncing an empty marshal.json back-fills ownerless verify steps as None, never {}."""
+    _write_marshal(plan_context.fixture_dir, {})
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    verification_steps = config['plan']['phase-5-execute']['verification_steps']
+    # ownerless verify steps are back-filled as None — no noisy empty {} object
+    assert all(value is None for value in verification_steps.values()), (
+        f'ownerless verify steps must back-fill as None, got {verification_steps!r}'
+    )
+    assert not any(value == {} for value in verification_steps.values())
+
+
+def test_sync_defaults_backfills_ownerless_finalize_step_as_null_not_empty_dict(plan_context):
+    """Syncing an empty marshal.json back-fills ownerless finalize steps as None, never {}.
+
+    Param-owning steps (sonar-roundtrip / automated-review / branch-cleanup) keep
+    their nested param object; the remaining ownerless steps back-fill as None.
+    """
+    _write_marshal(plan_context.fixture_dir, {})
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+
+    param_owning = {
+        'default:sonar-roundtrip',
+        'default:automated-review',
+        'default:branch-cleanup',
+        # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
+        'default:finalize-step-simplify',
+    }
+    for step_id, value in steps.items():
+        if step_id in param_owning:
+            assert isinstance(value, dict) and value, (
+                f'param-owning step {step_id!r} must back-fill its nested dict'
+            )
+        else:
+            assert value is None, (
+                f'ownerless step {step_id!r} must back-fill as None, got {value!r}'
+            )
+    # no ownerless step serialized as an empty {} object
+    assert not any(value == {} for value in steps.values())
+
+
+def test_sync_defaults_preserves_legacy_empty_dict_step_untouched(plan_context):
+    """A step id already present on-disk as a legacy {} is preserved untouched (no None rewrite).
+
+    The deep-merge preserves a present key by key-existence (no value coercion),
+    so a pre-existing legacy {} survives the sync verbatim. The read path coerces
+    both the legacy {} and the new None back to {}, so the two shapes read
+    identically.
+    """
+    # a marshal.json whose finalize steps map carries a legacy empty {} for an
+    # ownerless step
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {'default:create-pr': {}}
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # the pre-existing legacy {} key is preserved verbatim (present-key, no rewrite)
+    assert steps['default:create-pr'] == {}
+    # the preserved key is NOT reported as added
+    assert 'plan.phase-6-finalize.steps.default:create-pr' not in result['added']
+
+
+def test_sync_defaults_is_idempotent_against_ownerless_steps(plan_context):
+    """A second sync adds nothing — the ownerless-step back-fill is idempotent.
+
+    The first sync back-fills ownerless steps as None; the second observes the
+    step ids already present (as None) and re-adds nothing, proving the merge is
+    stable against the no-{} ownerless shape it just wrote.
+    """
+    _write_marshal(plan_context.fixture_dir, {})
+    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    assert first['status'] == 'success'
+
+    # second run observes the back-filled None values and adds nothing
+    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert second['status'] == 'success'
+    assert second['added'] == []
+    assert second['added_count'] == 0
+    # the ownerless verify steps remain None after the idempotent re-sync
+    config = _read_marshal(plan_context.fixture_dir)
+    verification_steps = config['plan']['phase-5-execute']['verification_steps']
+    assert all(value is None for value in verification_steps.values())

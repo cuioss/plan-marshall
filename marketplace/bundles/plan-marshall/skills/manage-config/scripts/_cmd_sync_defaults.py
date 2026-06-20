@@ -31,6 +31,16 @@ def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str
       ``live``, the user's value is kept verbatim; if absent, the default is
       copied in.
 
+    Ownerless-step interaction: an ownerless ``steps`` / ``verification_steps``
+    entry now defaults to ``None`` (no noisy empty ``{}``). Because ``None`` is a
+    non-dict atomic value, a step id absent from ``live`` is back-filled with
+    ``None`` (never ``{}``), and a step id already present — whether its on-disk
+    value is the new ``None`` or a legacy ``{}`` — is preserved untouched. The
+    merge therefore writes no ``{}`` for ownerless steps and is idempotent
+    against both the new no-``{}`` shape and a pre-existing legacy ``{}`` shape;
+    the read path coerces all of {absent, ``null``, ``{}``, TOON-``''``} to an
+    empty dict, so the two on-disk shapes read identically.
+
     Args:
         live: The live config subtree (mutated in place).
         defaults: The default config subtree to merge from.

@@ -195,6 +195,7 @@ For understanding the complete system architecture, reference these documents:
 |--------|------|---------|
 | `extension_base.py` | Library | ExtensionBase ABC, canonical commands, profile patterns |
 | `extension_discovery.py` | Library + CLI | Extension discovery, loading, aggregation, config defaults |
+| `configurable_contract.py` | Library + CLI | Fail-loud parser for the step-owned `configurable` frontmatter contract (see [Configurable step-param contract](#configurable-step-param-contract)) |
 | `_build_discover.py` | Library | Module discovery, path building, README detection |
 | `_module_aggregation.py` | Library | Virtual module splitting (depends on plan_logging) |
 
@@ -272,6 +273,85 @@ from _build_parse import (
     partition_issues,
 )
 ```
+
+---
+
+## Configurable step-param contract
+
+A param-owning finalize step declares its step-owned params **self-describingly**
+in the `---`-fenced YAML frontmatter of its own body doc, under a `configurable:`
+block. `configurable_contract.py` is the single fail-loud reader of that
+declaration; `manage-config` and `manage-execution-manifest` consume it as the
+canonical default/description source for step-owned params.
+
+### Declaration shape
+
+```yaml
+---
+name: sonar-roundtrip
+order: 80
+configurable:
+  - key: touched_file_cleanup
+    default: new_code_only
+    description: Which surface the Sonar roundtrip success criterion covers.
+  - key: do_transition
+    default: false
+    description: Gate the server-side SonarCloud dismissal path.
+  - key: ce_wait_timeout_seconds
+    default: 600
+    description: Budget (seconds) for the synchronous CE-readiness wait.
+---
+```
+
+Each entry MUST carry exactly the three mandatory sub-fields:
+
+| Sub-field | Type | Rule |
+|-----------|------|------|
+| `key` | str | The param key (`snake_case`, scoped within the owning step) |
+| `default` | any JSON scalar | The seeded default value (string, int, float, bool, or null) |
+| `description` | non-empty str | Human-readable description of what the param controls |
+
+### Addressing scheme
+
+A param is addressed as `{step_id}.{param_key}` — e.g.
+`default:sonar-roundtrip.touched_file_cleanup`. The step id carries its prefix
+(`default:` for built-in steps, `project:` for project-local steps); param keys
+stay `snake_case` with no camelCase variant.
+
+### Declaration placement
+
+The body doc that declares a step's `configurable:` block is the step's
+canonical body doc, resolved by `resolve_step_doc_path(step_id)`:
+
+| Step kind | Body doc |
+|-----------|----------|
+| Built-in `default:` | `phase-6-finalize/workflow/{name}.md`, falling back to `phase-6-finalize/standards/{name}.md` |
+| `project:` | `.claude/skills/{name}/SKILL.md` |
+
+The placement contract and its enforcement (a param-owning step MUST declare a
+well-formed block; missing/malformed declarations fail loud) are owned centrally
+by the `plugin-doctor` `step-configurable-contract` rule — see that rule for the
+authoritative enforcement body. This skill does not restate the enforcement
+rules; it owns only the parser and the declaration shape above.
+
+### Public API
+
+```python
+from configurable_contract import parse_configurable, resolve_step_defaults
+
+# Parse a step body doc's configurable block to the full schema.
+schema = parse_configurable(step_doc_path)
+# -> {"touched_file_cleanup": {"default": "new_code_only", "description": "..."}, ...}
+
+# Resolve a step id to just its param defaults (resolves the body-doc path first).
+defaults = resolve_step_defaults('default:sonar-roundtrip')
+# -> {"touched_file_cleanup": "new_code_only", "do_transition": False, ...}
+```
+
+Both functions raise `ValueError` (fail loud, no silent fallback) on every
+malformed-declaration case: file not found, no frontmatter, no `configurable:`
+block, an empty block, an entry missing any of `key`/`default`/`description`, a
+non-string `key`/`description`, an empty `description`, or a duplicate `key`.
 
 ---
 
@@ -370,7 +450,7 @@ class Extension(ExtensionBase):
 
 ## Canonical invocations
 
-The canonical argparse surface for the skill's CLI entry-point, `extension_discovery.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for the skill's CLI entry-points, `extension_discovery.py` and `configurable_contract.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### apply-config-defaults
 
@@ -380,4 +460,18 @@ python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery 
 ```
 
 `--project-dir` and `--plan-id` are mutually exclusive.
+
+### configurable_contract — parse
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:configurable_contract parse \
+  --path PATH
+```
+
+### configurable_contract — resolve
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:configurable_contract resolve \
+  --step-id STEP_ID
+```
 

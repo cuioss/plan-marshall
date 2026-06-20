@@ -164,19 +164,46 @@ def _steps_map(raw) -> dict:
     The on-disk schema for ``verification_steps`` / ``steps`` is an id-keyed map
     (``{step_id: {param: value, ...}, ...}``); key insertion order is the
     execution order. This normaliser returns a shallow copy so callers can mutate
-    it without touching the loaded config. A ``None`` value (key absent) yields an
-    empty dict.
+    it without touching the loaded config. A falsy top-level value (the key
+    absent / ``None``) yields an empty dict.
+
+    Per-step values are coerced: an ownerless step now seeds as ``None``
+    (serialized as ``null``), but a legacy ``{}`` and a TOON round-tripped ``''``
+    are also possible on-disk shapes. Every per-step value that is not a
+    non-empty dict (i.e. ``None`` / ``{}`` / ``''`` / any non-dict) is coerced to
+    an empty dict, so ``_cmd_step get`` returns ``{}`` for an ownerless step
+    regardless of its on-disk representation. A param-owning step keeps its
+    nested object.
 
     Args:
         raw: The value read from ``section[list_key]`` — expected to be a dict in
             the keyed-map schema, or ``None`` when the key is absent.
 
     Returns:
-        A new dict mapping step id -> nested param object, in insertion order.
+        A new dict mapping step id -> nested param object (``{}`` for ownerless
+        steps), in insertion order.
     """
     if not raw:
         return {}
-    return dict(raw)
+    return {
+        step_id: (value if isinstance(value, dict) else {})
+        for step_id, value in raw.items()
+    }
+
+
+def _collapse_ownerless_steps(steps: dict) -> dict:
+    """Return a copy of the keyed-map with ownerless steps collapsed to ``None``.
+
+    The write-side mirror of :func:`_steps_map`'s per-step coercion: an ownerless
+    step (its param value is an empty dict ``{}``) is written as ``None``
+    (serialized as ``null`` by :func:`save_config`) so marshal.json never carries
+    a noisy empty ``{}`` object. A param-owning step keeps its nested object.
+    Applied right before persisting any mutated keyed-map (``step set`` /
+    ``set-steps`` / ``add-step`` / ``remove-step``), so every config-write path is
+    consistent with the no-empty-``{}`` contract; the read path
+    (:func:`_steps_map`) coerces ``null`` / ``{}`` / ``''`` back to ``{}``.
+    """
+    return {step_id: (params if params else None) for step_id, params in steps.items()}
 
 
 def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config: dict) -> dict:
@@ -215,7 +242,7 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
         params = dict(steps[step_id])
         params[param] = value
         steps[step_id] = params
-        section[list_key] = steps
+        section[list_key] = _collapse_ownerless_steps(steps)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -313,7 +340,8 @@ def cmd_phase(args, phase_section: str) -> dict:
         sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
         # Build the ordered keyed map, preserving any existing per-step params.
         sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
-        section[list_key] = sorted_map
+        # Persist with ownerless steps collapsed to `null` (no empty `{}`).
+        section[list_key] = _collapse_ownerless_steps(sorted_map)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -335,7 +363,8 @@ def cmd_phase(args, phase_section: str) -> dict:
         sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
         # Preserve existing per-step params; the new key starts with empty params.
         sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
-        section[list_key] = sorted_map
+        # Persist with ownerless steps collapsed to `null` (no empty `{}`).
+        section[list_key] = _collapse_ownerless_steps(sorted_map)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -351,7 +380,8 @@ def cmd_phase(args, phase_section: str) -> dict:
             return error_exit(f"Step '{step}' not found in {phase_section}")
 
         del existing[step]
-        section[list_key] = existing
+        # Persist with ownerless steps collapsed to `null` (no empty `{}`).
+        section[list_key] = _collapse_ownerless_steps(existing)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)

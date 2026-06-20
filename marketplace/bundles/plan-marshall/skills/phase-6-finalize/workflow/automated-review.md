@@ -4,6 +4,10 @@ description: CI automated review
 order: 30
 requires: [ci-complete]
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+configurable:
+  - key: review_bot_buffer_seconds
+    default: 180
+    description: Buffer (seconds) before the automated-review bot comment poll, consumed by the pr wait-for-comments wait.
 ---
 
 # Automated Review

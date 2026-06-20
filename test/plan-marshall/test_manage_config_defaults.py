@@ -129,11 +129,13 @@ class TestFinalMergeWithoutAskingDefault:
         )
 
     def test_finalize_block_default_matches(self) -> None:
-        """The ``_FINALIZE_STEP_PARAMS`` module constant MUST agree with the
-        value exposed by ``get_default_config()`` — they are the same
-        physical default and must never drift."""
+        """The parser-resolved default MUST agree with the value exposed by
+        ``get_default_config()`` — both derive from the same `configurable:`
+        declaration and must never drift."""
+        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+
         assert (
-            _config_defaults._FINALIZE_STEP_PARAMS['default:branch-cleanup'][
+            resolve_step_defaults('default:branch-cleanup')[
                 'final_merge_without_asking'
             ]
             is False
@@ -154,9 +156,11 @@ class TestFinalMergeWithoutAskingDefault:
             'Fresh-project bootstrap must seed final_merge_without_asking '
             'explicitly under steps[default:branch-cleanup]'
         )
+        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+
         assert (
             branch_cleanup['final_merge_without_asking']
-            == _config_defaults._FINALIZE_STEP_PARAMS['default:branch-cleanup'][
+            == resolve_step_defaults('default:branch-cleanup')[
                 'final_merge_without_asking'
             ]
         )
@@ -388,9 +392,9 @@ class TestSonarConfigKnobsDefaults:
 
     Each knob is a step-owned param under ``default:sonar-roundtrip``; the tests
     assert the ``get_default_config()`` runtime contract, agreement with the
-    ``_FINALIZE_STEP_PARAMS`` module constant (no drift), and fresh-project
-    seeding so every downstream consumer reads a populated config rather than
-    applying its own silent fallback.
+    parser-resolved default (``configurable_contract.resolve_step_defaults`` — no
+    drift), and fresh-project seeding so every downstream consumer reads a
+    populated config rather than applying its own silent fallback.
     """
 
     @staticmethod
@@ -408,11 +412,12 @@ class TestSonarConfigKnobsDefaults:
         )
 
     def test_touched_file_cleanup_finalize_block_matches(self) -> None:
-        """The ``_FINALIZE_STEP_PARAMS`` module constant MUST agree with the
-        value exposed by ``get_default_config()`` — same physical default,
-        no drift."""
+        """The parser-resolved default MUST agree with the value exposed by
+        ``get_default_config()`` — same physical default, no drift."""
+        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+
         assert (
-            _config_defaults._FINALIZE_STEP_PARAMS['default:sonar-roundtrip'][
+            resolve_step_defaults('default:sonar-roundtrip')[
                 'touched_file_cleanup'
             ]
             == 'new_code_only'
@@ -423,7 +428,9 @@ class TestSonarConfigKnobsDefaults:
         ``VALID_SONAR_TOUCHED_FILE_CLEANUP`` and MUST pass
         ``validate_sonar_touched_file_cleanup`` without raising — the default
         can never be an out-of-enum value."""
-        default = _config_defaults._FINALIZE_STEP_PARAMS['default:sonar-roundtrip'][
+        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+
+        default = resolve_step_defaults('default:sonar-roundtrip')[
             'touched_file_cleanup'
         ]
         assert default in _config_defaults.VALID_SONAR_TOUCHED_FILE_CLEANUP, (
@@ -453,11 +460,12 @@ class TestSonarConfigKnobsDefaults:
         )
 
     def test_do_transition_finalize_block_matches(self) -> None:
-        """The ``_FINALIZE_STEP_PARAMS`` module constant MUST agree with the
-        value exposed by ``get_default_config()`` — same physical default,
-        no drift."""
+        """The parser-resolved default MUST agree with the value exposed by
+        ``get_default_config()`` — same physical default, no drift."""
+        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+
         assert (
-            _config_defaults._FINALIZE_STEP_PARAMS['default:sonar-roundtrip'][
+            resolve_step_defaults('default:sonar-roundtrip')[
                 'do_transition'
             ]
             is False
@@ -474,11 +482,12 @@ class TestSonarConfigKnobsDefaults:
         )
 
     def test_ce_wait_timeout_finalize_block_matches(self) -> None:
-        """The ``_FINALIZE_STEP_PARAMS`` module constant MUST agree with the
-        value exposed by ``get_default_config()`` — same physical default,
-        no drift."""
+        """The parser-resolved default MUST agree with the value exposed by
+        ``get_default_config()`` — same physical default, no drift."""
+        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+
         assert (
-            _config_defaults._FINALIZE_STEP_PARAMS['default:sonar-roundtrip'][
+            resolve_step_defaults('default:sonar-roundtrip')[
                 'ce_wait_timeout_seconds'
             ]
             == 600
@@ -490,20 +499,21 @@ class TestSonarConfigKnobsDefaults:
         prefix-stripped, under ``default:sonar-roundtrip`` — the keys being
         absent would force every downstream consumer to apply its own silent
         fallback, the exact bug pattern these tests guard against. Each seeded
-        value also matches the module-level ``_FINALIZE_STEP_PARAMS`` constant,
-        and no flat ``sonar_``-prefixed sibling of ``steps`` survives."""
+        value also matches the parser-resolved default, and no flat
+        ``sonar_``-prefixed sibling of ``steps`` survives."""
+        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+
         cfg = _config_defaults.get_default_config()
         finalize = cfg['plan']['phase-6-finalize']
         sonar = self._sonar_params(cfg)
-        expected = _config_defaults._FINALIZE_STEP_PARAMS['default:sonar-roundtrip']
+        expected = resolve_step_defaults('default:sonar-roundtrip')
         for key in ('touched_file_cleanup', 'do_transition', 'ce_wait_timeout_seconds'):
             assert key in sonar, (
                 f'Fresh-project bootstrap must seed {key} explicitly under '
                 'steps[default:sonar-roundtrip]'
             )
             assert sonar[key] == expected[key], (
-                f'Fresh-project {key} value must match the '
-                '_FINALIZE_STEP_PARAMS constant'
+                f'Fresh-project {key} value must match the parser-resolved default'
             )
         # no flat sonar_-prefixed knob survives as a sibling of steps
         for flat in (

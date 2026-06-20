@@ -210,6 +210,8 @@ manage-config plan phase-6-finalize set-max-iterations --value 5
 
 Step-owned params nest under their owning step in the id-keyed `steps` map (`pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold` under `default:branch-cleanup`; `review_bot_buffer_seconds` under `default:automated-review`; the prefix-stripped sonar params under `default:sonar-roundtrip`). They are read/written via the one-stop `step` verb against the marshal.json keyed map (the compose-time default + wizard global-config write target), NOT via flat `get --field` / `set --field`.
 
+Their **default values** are not held in any centralized constant: each param-owning step declares its params self-describingly in the `configurable:` block of its body-doc frontmatter, and the finalize-step defaults seed (`get_default_config()`) materializes them by delegating each built-in step id through `plan-marshall:extension-api:configurable_contract` (`resolve_step_defaults_optional`). The parser is the single fail-loud source of truth for what a valid step-param declaration looks like — see [`extension-api` SKILL.md § Configurable step-param contract](../../extension-api/SKILL.md#configurable-step-param-contract).
+
 ```bash
 # Get a step's complete nested param object in a single call
 manage-config plan phase-6-finalize step get --step-id default:branch-cleanup

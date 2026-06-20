@@ -17,7 +17,8 @@ Orthogonal assertions per knob:
    through ``step get --step-id default:branch-cleanup``; each with its migrated default.
 2. **Old home is gone** — neither ``DEFAULT_CEREMONY_POLICY`` nor a top-level
    ``ceremony_policy`` key survives in ``get_default_config()``; the flat knobs live in
-   ``DEFAULT_PLAN_FINALIZE`` and the step-owned knob lives in ``_FINALIZE_STEP_PARAMS``.
+   ``DEFAULT_PLAN_FINALIZE`` and the step-owned knob is declared in its step's
+   ``configurable:`` frontmatter (resolved via the ``configurable_contract`` parser).
 3. **Post-migration defaults are exact** — the distributed defaults match their intended
    post-migration values (forward auto-continue ``True``, reverse halt ``False``,
    final-merge-without-asking ``False``). The first two preserve the historical
@@ -142,14 +143,20 @@ def test_flat_knobs_homed_in_default_plan_finalize():
         )
 
 
-def test_step_owned_knob_homed_in_finalize_step_params():
-    """final_merge_without_asking must live in _FINALIZE_STEP_PARAMS under default:branch-cleanup."""
+def test_step_owned_knob_homed_in_configurable_declaration():
+    """final_merge_without_asking must resolve under default:branch-cleanup via the parser."""
+    from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+
     step_id, param, expected = _STEP_OWNED_KNOB
-    step_params = _config_defaults._FINALIZE_STEP_PARAMS[step_id]
+    step_params = resolve_step_defaults(step_id)
     assert param in step_params, (
-        f'{param} must nest under {step_id} in _FINALIZE_STEP_PARAMS'
+        f"{param} must be declared under {step_id}'s configurable: frontmatter"
     )
     assert step_params[param] is expected
+    # the centralized constant is gone
+    assert not hasattr(_config_defaults, '_FINALIZE_STEP_PARAMS'), (
+        '_FINALIZE_STEP_PARAMS must be deleted — params resolve via the parser'
+    )
     # and it is NOT a flat sibling of steps
     assert param not in _config_defaults.DEFAULT_PLAN_FINALIZE
 

@@ -2,6 +2,10 @@
 name: default:finalize-step-simplify
 description: Domain-agnostic phase-6 cognitive simplification pass — reviews the plan's changeset against the minimum-viable-code anti-patterns and deletes surplus structure directly in the worktree
 order: 11
+configurable:
+  - key: simplify
+    default: auto
+    description: Run-at-all gate (auto|always|never) for the holistic post-implementation simplification sweep — auto defers to the simplify_inactive pre-filter; always forces the step in; never forces it out.
 ---
 
 # Finalize Step: simplify

@@ -4,6 +4,16 @@ description: Sonar analysis roundtrip
 order: 40
 requires: [ci-complete]
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+configurable:
+  - key: touched_file_cleanup
+    default: new_code_only
+    description: Which surface the Sonar roundtrip success criterion covers — new_code_only anchors on new-code issues == 0; touched_files_zero also sweeps pre-existing issues on the files the plan touched.
+  - key: do_transition
+    default: false
+    description: Gate the server-side SonarCloud dismissal path — false routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression; true re-enables the server-side transition dismissal.
+  - key: ce_wait_timeout_seconds
+    default: 600
+    description: Budget (seconds) for the synchronous in-Python CE-readiness wait performed before enumerating new-code issues.
 ---
 
 # Sonar Roundtrip

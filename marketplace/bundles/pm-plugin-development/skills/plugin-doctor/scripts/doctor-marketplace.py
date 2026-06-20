@@ -69,6 +69,7 @@ from _analyze_simplicity import scan_simplicity
 from _analyze_skill_mode import analyze_skill_mode
 from _analyze_skill_notation import analyze_skill_notation
 from _analyze_skill_relative_temp_path import analyze_skill_relative_temp_path
+from _analyze_step_configurable_contract import scan_step_configurable_contract
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
     analyze_unique_fixture_basenames,
@@ -924,6 +925,13 @@ def cmd_quality_gate(args) -> dict:
                                     its fully-qualified manifest step_id, else the
                                     recorded phase_steps key drifts and the
                                     phase_steps_complete handshake loops forever)
+      - scan_step_configurable_contract (step-configurable-contract: a finalize-step
+                                    body doc whose ``configurable:`` frontmatter
+                                    block is present but malformed — missing a
+                                    required sub-field (key/default/description),
+                                    wrong type, empty description, duplicate key,
+                                    or any declaration that fails the central D1
+                                    contract parser; ownerless docs are skipped)
 
     Note: ``analyze_bash_chain_shapes_in_skills`` and
     ``analyze_tmp_redirect_in_skills`` are NOT included in quality-gate because
@@ -1106,6 +1114,22 @@ def cmd_quality_gate(args) -> dict:
     all_issues.extend(finalize_step_token_findings)
     rule_summaries.append(
         {'rule': 'scan_finalize_step_token', 'findings': len(finalize_step_token_findings)}
+    )
+
+    # step-configurable-contract — flags a finalize-step body doc whose
+    # ``configurable:`` frontmatter block is present but malformed (missing a
+    # required sub-field, wrong type, empty description, duplicate key, or any
+    # declaration that fails the D1 contract parser). Validation is delegated to
+    # the central parser (extension-api/scripts/configurable_contract.py), the
+    # single source of truth for the declaration schema. Ownerless docs (no
+    # ``configurable:`` block) are silently skipped. Scans the built-in
+    # phase-6-finalize body docs plus the project-local
+    # .claude/skills/finalize-step-*/SKILL.md tree (derived internally). Findings
+    # carry absolute file paths, so _scoped's path filter applies uniformly.
+    step_configurable_findings = _scoped(scan_step_configurable_contract(marketplace_root))
+    all_issues.extend(step_configurable_findings)
+    rule_summaries.append(
+        {'rule': 'scan_step_configurable_contract', 'findings': len(step_configurable_findings)}
     )
 
     role_field_findings = _scoped(analyze_role_field(marketplace_root))

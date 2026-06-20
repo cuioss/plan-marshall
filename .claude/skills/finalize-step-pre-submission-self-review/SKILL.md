@@ -5,6 +5,13 @@ user-invocable: false
 mode: workflow
 allowed-tools: Bash, Read, Task
 order: 7
+configurable:
+  - key: self_review
+    default: auto
+    description: Run-at-all gate (auto|always|never) for the pre-submission self-review step — auto defers to the decision machinery; always/never force the step in/out.
+  - key: drop_review_on_scope_gate
+    default: false
+    description: Escape hatch for the manifest composer's scope_gated_finalize pre-filter — false keeps the bot-review invariant intact; true additionally drops automated-review on scope-gated (surgical / single_module) plans.
 ---
 
 # Finalize Step: pre-submission-self-review

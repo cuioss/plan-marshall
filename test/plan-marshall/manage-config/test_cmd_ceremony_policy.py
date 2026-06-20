@@ -172,16 +172,52 @@ def test_final_merge_without_asking_step_set_then_get_roundtrips(plan_context):
 
 
 def test_run_at_all_gate_set_then_get_roundtrips(plan_context):
-    """``plan phase-6-finalize set --field self_review --value always`` round-trips."""
+    """``plan phase-6-finalize set --field qgate --value always`` round-trips.
+
+    ``qgate`` is the one finalize run-at-all gate that stays a flat phase-level
+    sibling, so the flat ``set --field`` / ``get --field`` round-trip applies to
+    it. The two folded gates (``simplify`` / ``self_review``) moved under their
+    owning finalize step and are exercised via the one-stop ``step`` verb, not
+    the flat-field path.
+    """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
     set_result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(verb='set', field='self_review', value='always'), 'phase-6-finalize'
+        Namespace(verb='set', field='qgate', value='always'), 'phase-6-finalize'
     )
     get_result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(verb='get', field='self_review'), 'phase-6-finalize'
+        Namespace(verb='get', field='qgate'), 'phase-6-finalize'
     )
 
     assert set_result['status'] == 'success'
     assert set_result['value'] == 'always'
     assert get_result['value'] == 'always'
+
+
+def test_simplify_gate_step_set_then_get_roundtrips(plan_context):
+    """``step set --step-id default:finalize-step-simplify --param simplify`` round-trips.
+
+    The folded ``simplify`` gate is reached through the one-stop ``step`` verb
+    against its owning built-in finalize step, mirroring the other step-owned
+    knobs (e.g. ``final_merge_without_asking`` under ``default:branch-cleanup``).
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    set_result = _cmd_quality_phases_mod.cmd_phase(
+        Namespace(
+            verb='step',
+            step_verb='set',
+            step_id='default:finalize-step-simplify',
+            param='simplify',
+            value='always',
+        ),
+        'phase-6-finalize',
+    )
+    get_result = _cmd_quality_phases_mod.cmd_phase(
+        Namespace(verb='step', step_verb='get', step_id='default:finalize-step-simplify'),
+        'phase-6-finalize',
+    )
+
+    assert set_result['status'] == 'success'
+    assert set_result['params']['simplify'] == 'always'
+    assert get_result['params']['simplify'] == 'always'
