@@ -76,7 +76,7 @@ data-driven transforms, consolidated registration) are [07](07-target-extensibil
 |---|-----------|:--------:|-------------|---------|
 | 1 | Permission tooling | High | `platform-runtime` | Claude settings paths hardcoded; OpenCode ops are fake-success stubs |
 | 2 | Metrics / transcript enrichment | High | `platform-runtime` (read) + stays (storage) | `manage-metrics` is a Claude-transcript engine; runtime reads, manage-metrics aggregates |
-| 3 | `session_id` validation | Medium | stays (target-keyed) | Claude UUID regex, no target branch (two copies); shape sourced from runtime/resolver |
+| 3 | `session_id` validation | Low | stays-agnostic + Gap 2 | shared validator already opaque (prose-only fix); the strict-UUID regex is the metrics engine's and folds into Gap 2 |
 | 4 | Project-local skill / step resolution | High | `platform-runtime` | `.claude/skills/` hardcoded with no target branch; breaks `project:` steps on OpenCode |
 | 5 | Bundle / plugin-cache discovery | Medium | `platform-runtime` | `extension_discovery` + shared `marketplace_paths` constants are Claude-only |
 | 6 | Body-text tool-name transforms | Medium | OpenCode build target | `AskUserQuestion` (313×), `Task:`, `Skill: <entry>` not rewritten for OpenCode |
@@ -115,6 +115,14 @@ op must return honest `no-op` with `reason`/`alternative`, not hollow success.
 permission backend for real *or* convert every stub to honest `no-op`; rewrite the three
 SKILL bodies to call `platform-runtime permission …`; test both targets.
 
+**Draw the boundary at intent, not the DSL ([principles §1](principles.md)).** The permission
+ops must take and return *semantic* permission intent — "allow the executor", "allow web domain
+X", normalized findings — **not** the Claude permission-string grammar (`Skill()`, `Bash()`,
+`WebFetch()`, the `permissions.{allow,deny,ask}` schema). That grammar is a Claude *format*;
+it must be rendered and parsed entirely inside `claude_runtime.py`. A `permission configure
+--permissions "Bash(...)"` contract would still leak the format even though it routes through
+the runtime — so the contract itself changes, not just the I/O site.
+
 ## Gap 2 — Metrics / transcript enrichment is a Claude-transcript engine
 
 This is larger than the two call sites first identified. The engine itself is Claude-coupled:
@@ -130,23 +138,41 @@ and `plan-retrospective/SKILL.md:210` (Aspect 13 chat-history). On OpenCode none
 exists; `metrics capture` already no-ops, but `enrich` / subagent-token attribution is
 entirely Claude-specific.
 
-**Required:** make transcript resolution + JSONL parsing a `platform-runtime` concern
-(it owns session/transcript and answers `no-op` on OpenCode), and have `manage-metrics enrich`
-degrade gracefully (the SKILL bodies already say "on `transcript_not_found`, skip enrich" —
-the engine must actually return that on OpenCode rather than resolving a Claude path).
+**Required — the boundary is the token *format*, not the file path
+([principles §1](principles.md)).** The platform-runtime op returns **normalized token
+categories** (`{input, output, cache_read, cache_creation, total}`) for a (plan, phase) or
+session. Everything Claude-shaped — the `~/.claude/projects/.../{session_id}.jsonl` layout, the
+`subagents/agent-*.jsonl` discovery, the `<usage>` tag, the `message.usage` four-field parse,
+the `SESSION_ID_RE` shape, and the Anthropic cache-pricing weights — lives **only** inside
+`claude_runtime.py`. `manage-metrics` receives normalized numbers and keeps its
+storage/aggregation role; it never parses a transcript and never sees a Claude format.
 
-## Gap 3 — `session_id` validation is Claude-only (two copies)
+Explicitly reject the half-measure of "the runtime returns the transcript *path* and
+`manage-metrics` parses it" — that leaves the Claude JSONL/`message.usage` format in core and
+fails the switch-targets test. On OpenCode the op returns `no-op` (no transcript), and the
+enrich step degrades gracefully (`transcript_not_found` → skip) — driven by the `no-op`, not by
+the engine resolving a Claude path.
 
-`tools-input-validation/scripts/input_validation.py:92-99` (`validate_session_id`) hardcodes
-`SESSION_ID_RE` to the Claude UUID shape and enforces it via argparse
-`type=validate_session_id` (`add_session_id_arg`). A **second** copy of the same assumption
-lives at `manage-metrics.py:142`. Neither branches on `runtime.target`.
+## Gap 3 — `session_id`: one validator is already fine, one regex is the metrics engine's
 
-**Required:** branch the rule on target — Claude validates the UUID; OpenCode accepts its
-documented shape, or an opaque non-empty string when none is documented. The OpenCode shape
-is unknown until [02](02-validate-opencode-runtime.md) runs, so the near-term move is a
-permissive non-empty fallback, tightened after 02. Consolidate the two copies onto the one
-validator.
+The two `SESSION_ID_RE` copies are **not** equivalent — the meticulous check corrected an
+earlier mis-reading:
+
+- `tools-input-validation/scripts/input_validation.py:45` is **already target-agnostic**:
+  `SESSION_ID_RE = ^[A-Za-z0-9_-]{1,128}$` — an opaque non-empty token, not a Claude UUID. The
+  only coupling is prose: the `validate_session_id` docstring and the `--session-id` argparse
+  help say "Claude Code UUID-shape token." This is `stays-agnostic` — just neutralize the
+  wording. No `runtime.target` branch is needed; an opaque-token contract is already correct
+  cross-target.
+- `manage-metrics/scripts/manage-metrics.py:79` is the **strict** Claude UUID
+  (`[0-9a-f]{8}-…-[0-9a-f]{12}`), used at `:142` only to drive Claude transcript discovery — so
+  it is **part of Gap 2** and moves into `claude_runtime.py` with the transcript engine, not
+  into a shared validator.
+
+**Required:** reword the `input_validation.py` docstring/help to "opaque session token (the
+target runtime supplies it)"; remove the strict UUID regex from `manage-metrics` as part of the
+Gap 2 extraction. Do **not** add a `runtime.target` branch to the shared validator — that would
+re-introduce target enumeration where an opaque-token contract already suffices.
 
 ## Gap 4 — Project-local skill / finalize-step resolution is `.claude/skills/`-hardcoded
 
@@ -266,8 +292,9 @@ or authoring tool.
 
 - Permission tooling: Claude settings I/O in `claude_runtime.py`; SKILL bodies call
   `platform-runtime permission …`; OpenCode ops write for real or return honest `no-op`.
-- Transcript enrichment, `session_id` validation, project-local-skill resolution, and
-  bundle/extension discovery are all target-aware.
+- Metrics returns normalized token categories (the transcript JSONL / `message.usage` format
+  stays in `claude_runtime`); project-local-skill resolution and bundle/extension discovery are
+  target-aware; the shared `session_id` validator is an opaque-token contract.
 - Body-text tool-name divergences (`AskUserQuestion`, `Task:`, `Skill: <entry>`) have a
   recorded `transforms.md` disposition.
 - Terminal-title/hook no-op path confirmed on OpenCode.

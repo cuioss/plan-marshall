@@ -58,6 +58,10 @@ build-target *data* (per-target permission emission), not core code.
 
 Destination: transcript resolution + parse → PR-behavior; the metrics **storage/aggregation**
 layer is identical across targets and stays-agnostic (`manage-metrics` keeps it).
+**Boundary ([principles §1](principles.md)):** the op returns **normalized token categories**
+(`{input, output, cache_read, cache_creation, total}`); the `<usage>`/`message.usage` format,
+JSONL schema, and Anthropic cache weights never cross into core. "Return the transcript path,
+core parses it" is a relocated coupling, not an abstraction.
 
 ### A3. Hooks, terminal-title, statusline (incl. a target-shaped interface)
 | Evidence | Coupling |
@@ -200,8 +204,10 @@ all `extension.py` (shared Extension API); `script-shared` build/extension/query
 executor surface and `marshal.json` are target-agnostic by design. Env vars throughout are
 `PLAN_*`/`PLAN_MARSHALL_*`, never `CLAUDE_CODE_*` (outside platform-runtime).
 
-`input_validation.py` `SESSION_ID_RE` is permissive (`^[A-Za-z0-9_-]{1,128}$`) — only its
-"Claude Code UUID" docstring/help is prose-coupling; the validator stays-agnostic, keyed on target.
+`input_validation.py:45` `SESSION_ID_RE` is permissive (`^[A-Za-z0-9_-]{1,128}$`) — an opaque
+token, not a Claude UUID; only its "Claude Code UUID" docstring/help is prose-coupling. (The
+*strict* UUID `SESSION_ID_RE` at `manage-metrics.py:79` is the transcript engine's and folds
+into A2, not a shared validator — see [01](01-finish-portability.md) Gap 3.)
 
 ## G. sanctioned-ok (Claude-specific by design — no action)
 

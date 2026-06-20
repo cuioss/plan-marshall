@@ -27,6 +27,25 @@ Concretely, adding target `X` should be exactly:
 
 Nothing else. No general skill body, no shared script, and no other target may need editing.
 
+## Contracts are semantic — the data-format rule
+
+A registry + ABC only delivers cheap targets if the **contract carries normalized data**, never
+the target's wire/API format ([principles §1](principles.md)). This is the difference between a
+real abstraction and a relocated coupling:
+
+- A `Runtime` op takes and returns *semantic* values — normalized token categories, web domains,
+  resolved roots, a phase/status state — not Claude's `message.usage` shape, permission-DSL
+  strings (`Bash(...)`), transcript JSONL, or hook-event names.
+- The format lives **inside** the concrete `*_runtime`. The headline example is metrics:
+  `claude_runtime` parses the transcript and applies Anthropic cache weights, but the op returns
+  `{input, output, cache_read, cache_creation, total}` — so a third target implements the same
+  contract by returning the same normalized shape from its own source, and `manage-metrics` is
+  untouched. Returning "the transcript path" instead would be a relocated coupling, not an
+  abstraction.
+
+When auditing a proposed op, apply the switch-targets test: if the data crossing the boundary
+would change shape on a different target, the format is leaking — normalize the contract.
+
 ## Seam audit
 
 ### Already N-target-shaped (keep)

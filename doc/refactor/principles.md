@@ -4,14 +4,33 @@ These rules apply to all clusters. They are non-negotiable constraints, not sugg
 
 ---
 
-## 1. Goal-Based API
+## 1. Goal-Based API — semantic in, normalized out
 
-Platform-runtime operations must express **intent**, not mechanism.
+Platform-runtime operations express **intent**, and they carry **normalized data in both
+directions**. The target's wire/API format — settings-file shape, permission-string grammar,
+transcript JSON, token-usage fields, hook-event names — must never cross the boundary, as an
+argument *or* as a return value. The format lives only inside the concrete `*_runtime`
+implementation.
 
-**Good:** `permission configure --scope project --permissions "Bash(...)"`
-**Bad:** `patch-claude-settings --file .claude/settings.local.json`
+**The call says what, not how:**
 
-The caller says what it wants (allow these scripts). The runtime decides how (patch settings file, update opencode.json, etc.).
+- Good: `permission allow-web --domain docs.oracle.com` / `permission allow-scripts --executor`
+- Bad: `patch-claude-settings --file .claude/settings.local.json`
+- Also bad: `permission configure --permissions "Bash(python3 …)"` — `Bash(...)` is the Claude
+  permission-DSL *format*; passing it through a "goal-based" call still leaks the format. The
+  caller states intent (allow the executor, allow a web domain); the runtime renders the
+  `Bash(...)` / `WebFetch(...)` string itself.
+
+**The return carries normalized data, not the wire format:**
+
+- Good: `metrics capture` returns normalized token categories
+  (`{input, output, cache_read, cache_creation, total}`).
+- Bad: returning — or having the caller parse — Claude's `<usage>` tag, the `message.usage`
+  four-field shape, or the transcript JSONL. The Anthropic cache-pricing weights and the JSONL
+  schema stay inside `claude_runtime`; `manage-metrics` only ever sees normalized numbers.
+
+The test: if you switched targets, would the data crossing this boundary change shape? If yes,
+the format is leaking — push it inside the implementation and normalize the contract.
 
 ---
 
