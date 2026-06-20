@@ -55,7 +55,7 @@ old assumptions):
 | 05 | OpenCode user + developer documentation | Write once the runtime is validated | [05-opencode-documentation.md](05-opencode-documentation.md) |
 | 06 | Execution-context cross-target mapping | Reference + one open task: OpenCode variant emitter (concrete model-per-level is already mappable via the existing `model_map`) | [06-execution-context-cross-target.md](06-execution-context-cross-target.md) |
 | 07 | Target extensibility (optimise for further targets) | Generalise the seams so target #3 is cheap: target-opaque `install-hook`, target-neutral ABC contracts, data-driven body transforms, consolidated registration | [07-target-extensibility.md](07-target-extensibility.md) |
-| 08 | Claude-coupling candidate inventory | Reference — the exhaustive `file:line` registry from a read-everything audit of ~880 files; the evidence base behind 01's gap classes and 07's seam fixes | [08-claude-coupling-inventory.md](08-claude-coupling-inventory.md) |
+| 08 | Claude-coupling candidate inventory | Reference — the exhaustive `file:line` registry from a two-pass read-everything audit (~880 files, all 17 slices char-by-char in pass 2); evidence base behind 01's gaps and 07's seams. Pass 2 validated the four-home model end-to-end (no candidate needed a home beyond the four) | [08-claude-coupling-inventory.md](08-claude-coupling-inventory.md) |
 
 ## Sequencing
 

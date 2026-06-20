@@ -237,6 +237,7 @@ classed as a target-specific skill — §I.)
 | `plan-marshall/skills/ext-self-review-plan-marshall/scripts/__pycache__/self_review.cpython-314.pyc` | stale `.pyc`, real skill is under `pm-plugin-development/` — delete. **Divergence:** the empty skill is still listed active in the available-skills header despite having no source |
 | `doctor-skill-knowledge.md:13` ("Rule 9/10a/11"); `doctor-skills.md:101` (`domain-extension-api:validate_manifest`) | doc-drift bugs (rules are now named; stale notation) — fix in passing |
 | `plugin-doctor/references/rule-catalog.md:236` ("PM-Workflow Rules" heading), `:252` ("seven" vs 8 rows); `commands-guide.md:23` ("9 Anti-Bloat" with uncodified names); `skills-guide.md:94`, `metadata-guide.md` (stale counts / bundle-root `plugin.json`) | doc-drift in plugin-doctor reference docs (pm-workflow bundle absorbed; stale counts) — fix in passing |
+| `script-shared/SKILL.md:28` (stale `parents[6]` resolution prose); `plan-marshall-plugin/standards/doctor-plan-marshall.md:1` ("PM-Workflow Workflow" naming); `phase-6-finalize/SKILL.md:159,1291` (dispatch table says `standards/lessons-capture.md`, file is `workflow/lessons-capture.md`) | doc/path drift surfaced by pass-2 full reads — fix in passing |
 
 ## I. Target-specific skill candidates (gated 4th home)
 
@@ -251,6 +252,8 @@ Confirmed by pass 2 (full-read):
 | `plan-marshall/commands/tools-fix-intellij-diagnostics.md` | IDE/MCP-bound (`mcp__ide__getDiagnostics`) + Java/maven toolchain; whole workflow N/A without an IDE-MCP host; no-op elsewhere | `targets: [claude]` |
 | `marshall-steward` terminal-title **wizard** — `references/menu-terminal-title.md` + the `menu-healthcheck.md:189-231` Step-6b twin + the `menu-configuration.md` Terminal-Title branch + the `SKILL.md:417-441` session-restart prose | a whole interactive Claude hook/statusline setup workflow that names every Claude hook event + `CLAUDE_CODE_*` env + `.claude/settings.local.json` and composes the session-cache path itself; OpenCode no-ops all of it. SPLIT: only these surfaces scope to claude; the rest of steward stays agnostic. The underlying `install-hook` op stays in platform-runtime | `targets: [claude]` |
 | `pm-plugin-development/skills/plan-marshall-plugin/scripts/wrapper-tangle-scan.py` + `references/wrapper-tangle.md` | hardcodes plan-marshall's own CI-wrapper source paths; meaningful only in the plan-marshall meta-repo | meta-repo-only |
+| `plan-marshall/references/hook-authoring-guide.md` | wholly a how-to-author guide for Claude's hook-delivery channel (JSON `terminalSequence` envelope, `/dev/tty`, `$CLAUDE_CODE_SESSION_ID`); no agnostic content (the agnostic emit path it references already lives behind platform-runtime) | `targets: [claude]` reference |
+| `plan-retrospective/.../permission-prompt-analysis.md` | the whole retrospective aspect is the Claude settings/permission model (`~/.claude/settings.json`, allow/deny/ask, `defaultMode`) | `targets: [claude]` reference |
 | (future) `opencode-marketplace-install`, Cursor-rules authoring | exist only on those targets | `targets: [opencode]` / `[cursor]` |
 
 **Rejected by pass 2 (NOT target-specific — they normalize):**
@@ -269,14 +272,32 @@ normalize into the runtime/build-target homes (§A, §C). Only target-bound *cap
 each returned `coverage: N / N`. `platform-runtime/**` internals and `.claude-plugin` manifests
 were read and classified sanctioned-ok rather than excluded.
 
-**Pass 2** (four-home re-classification, char-by-char full reads — no grep/sampling) — completed
-the 8 highest-signal slices: pm-dev-java(+cui), pm-dev-oci+documents, pm-requirements,
-core-misc+platform-runtime, tools-*, manage-group-B, plugin-doctor, pm-plugin-development-rest.
-These **confirmed** pass 1, added §A5 and the §I verdicts/corrections above, and found no new
-home for any candidate beyond the four. The remaining 9 slices (frontend+python, both phase
-groups, manage-config, extension-api+manifest, manage-group-A, workflow+build, foundation-shared,
-lifecycle+retrospective) are characterized by pass 1; a pass-2 full read of them is the only
-outstanding audit work and is expected to be confirmatory (re-classify into the four homes).
+**Pass 2 — COMPLETE** (four-home re-classification, char-by-char full reads — no grep/sampling).
+All 17 partition slices were full-read across the whole `marketplace/bundles/**` tree. Every
+slice **confirmed** pass 1, and — the headline result — **no candidate needed a home beyond the
+four**. The placement model holds end-to-end.
+
+Pass-2 verdicts (the "which home / is it target-specific" questions):
+
+- **IDE launch** (`manage-files` `detect_ide`/`cmd_open_in_ide`) → **platform-runtime-behavior**,
+  not target-specific and not build-target: it keys off host OS/editor signals
+  (`__CFBundleIdentifier`/`TERM_PROGRAM`/`sys.platform`), never on the assistant target.
+- **plugin-doctor** → make **target-aware** (agnostic engine + Claude rule-pack), not a 4th-home case.
+- **authoring tools** (`plugin-create`/`maintain`/`architecture`) → **build-target** vocabulary, not 4th-home.
+- **`tools-sync-agents-file`** → **stays-agnostic** (cross-assistant bridge).
+- **target-specific (4th home) confirmed:** `tools-fix-intellij-diagnostics`, the marshall-steward
+  terminal-title wizard (split), `wrapper-tangle-scan.py` (meta-repo), and
+  `plan-marshall/references/hook-authoring-guide.md` + `plan-retrospective/.../permission-prompt-analysis.md`
+  (whole Claude hook/settings how-to references).
+
+Pass-2 net-new items (all fit existing homes):
+
+- `phase-5-execute/standards/operations.md:68` `mcp__sonarqube__*` tool name → build-target (route via the sonar/CI abstraction).
+- `phase-1-init/.../inject_project_dir.py` rewrites the executor command-DSL string → platform-runtime-layout (format dependency).
+- `plan-retrospective/scripts/extract-chat-signal.py` + `references/chat-history-analysis.md` parse raw Claude session JSONL → platform-runtime-behavior (the A2 transcript-format leak; consume normalized signal, not raw transcript).
+- **CORRECTION:** `workflow-integration-git/scripts/git-workflow.py` does **not** emit the `Co-Authored-By: Claude` trailer — only `SKILL.md:134,170` does (build-target); the script carries a comment only (prose-neutralize).
+- **CORRECTION:** the `frontend-design` skill pointer (pm-dev-frontend README/css/javascript) is **not** target-specific — only the "Anthropic ships" attribution is prose-neutralize.
+- The `ext-triage-*/pr-comment-disposition.md` `AskUserQuestion` block is byte-identical across all domains → neutralize uniformly (one build-target vocab decision).
 
 ## Related
 
