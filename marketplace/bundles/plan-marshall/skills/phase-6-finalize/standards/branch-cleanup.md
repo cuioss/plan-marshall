@@ -12,6 +12,9 @@ configurable:
   - key: auto_rebase_threshold
     default: no_overlap_only
     description: Gate the pre-rebase auto-proceed decision — no_overlap_only permits auto-rebase only when the rebase would touch a disjoint file set; any overlap defers to the operator.
+  - key: merge_queue_wait_budget_seconds
+    default: 1800
+    description: Bound (in seconds, ~30 min) the Pre-Merge Gate FIFO merge-queue poll loop — caps how long branch-cleanup waits for its turn at the head of the merge queue before falling back to the last-resort AskUserQuestion.
 ---
 
 # Branch Cleanup
@@ -356,44 +359,75 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ##### Acquire the cross-plan merge-lock (auto path only)
 
-The auto path is ALWAYS lock-coordinated: because auto-merge serializes through the unified merge-lock, concurrent plans can never race on the merge-to-main critical section, which is precisely what makes opt-in auto-merge safe under concurrency. BEFORE the merge, acquire the lock. `acquire` is BLOCKING — the poll loop lives inside the Python script (`time.sleep`), NOT a Bash loop — and `--timeout 300` sets the 5-minute Pre-Merge Gate window (the file primitive's own default is the shorter 30s used by `integrate_into_main`'s inner mutex). Call it with a Bash tool timeout of ~360000ms (6 minutes) to cover the 5-minute internal poll plus margin (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock acquire`):
+The auto path is ALWAYS lock-coordinated: because auto-merge serializes through the unified merge-lock, concurrent plans can never race on the merge-to-main critical section, which is precisely what makes opt-in auto-merge safe under concurrency. BEFORE the merge, this plan takes its turn at the head of the FIFO merge queue. `acquire` is **non-blocking for the queue case** — it FIFO-enqueues `--plan-id` into `merge-queue.json` (idempotently, preserving FIFO position on re-poll), admits ONLY the FIFO-front plan, and returns an `admission` discriminator; the poll/backoff wait is the consumer's job here, NOT an internal `time.sleep` inside the script (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock acquire`). `acquire` returns IMMEDIATELY — the `--timeout` flag is a legacy compatibility no-op (default `0`) and drives no internal backoff. The consumer paces successive polls by issuing a SINGLE standalone `sleep {interval}` Bash call between `acquire` invocations — one command, never a Bash `for`/`while`/`until` loop.
+
+###### Read the wait budget
+
+Read `merge_queue_wait_budget_seconds` off the `default:branch-cleanup` step's param object — the same `params` object resolved by the one-stop `step-params get` call in the **Conflict-Severity Classifier** section above (re-issue the call if the value was not retained):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get --plan-id {plan_id} --phase 6-finalize --step-id branch-cleanup
+```
+
+Extract `merge_queue_wait_budget_seconds` from the returned `params` object as `{wait_budget}` (default: `1800`, ~30 minutes). This caps the wall-clock time the FIFO poll loop waits for admission before falling back to the last-resort `AskUserQuestion`.
+
+###### FIFO poll/backoff loop
+
+Record the wall-clock start time. Then re-poll `merge_lock acquire` until the plan is admitted at the FIFO front or the `{wait_budget}` is exhausted. Each poll is a SINGLE Bash command — there is NO `for`/`while`/`until` shell loop. `acquire` returns immediately (it does not wait internally), so the model issues one `acquire` Bash call per poll iteration, evaluates the `admission` discriminator, and — when still blocked and within budget — paces the next poll with a SINGLE standalone `sleep {interval}` Bash call (one command, e.g. `sleep 30`) before re-issuing `acquire`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
-  --plan-id {plan_id} --timeout 300
+  --plan-id {plan_id}
 ```
 
-**Bash tool timeout**: 360000ms (6-minute safety net for the 5-minute internal poll window).
+**Bash tool timeout**: the `acquire` poll returns immediately, so the default Bash timeout suffices; the inter-poll pacing is the separate standalone `sleep {interval}` call.
 
-Parse the TOON output:
+Parse the TOON output and branch on the `admission` discriminator:
 
-- `status: success` (`action: acquired`) → this plan holds the merge-lock (the lock file was created via `O_EXCL`, or a dead holder's lock was reclaimed with `reclaimed: true`). Proceed to **Merge PR (if not yet merged)** below.
-- `status: blocked` → the poll window elapsed while a LIVE holder held the lock. The script returns `blocking_plan_id` (and `poll_window_seconds`) and does NOT issue `AskUserQuestion` — the orchestrator owns the escalation. `blocked` is distinct from a hard `status: error` (a resolution failure), which must be surfaced verbatim and aborted, NOT routed to the escalation prompt. Issue:
+- **`status: success`, `admission: admitted`** (`action: acquired`, or `action: already_held` on a reentrant self-holder re-acquire) → this plan is the FIFO front and holds the `O_EXCL` lock (created via `O_EXCL`, or a dead holder's lock reclaimed with `reclaimed: true`). Exit the poll loop and proceed to **Merge PR (if not yet merged)** below.
+- **`status: blocked`, `admission: blocked`** → this plan is not yet the FIFO front, or is the front but a FOREIGN live holder still holds the lock. The script returns `blocking_plan_id` and `waiting_count` (NOT a hard error). Check the elapsed wall-clock time against `{wait_budget}`:
+  - **Elapsed < `{wait_budget}`** → pace the next poll with a single standalone `sleep {interval}` Bash call (one command, e.g. `sleep 30`), then re-issue the single `merge_lock acquire --plan-id {plan_id}` Bash call above (the next poll). The FIFO position is preserved across polls, so re-polling never loses the plan's place in line.
+  - **Elapsed ≥ `{wait_budget}`** → the budget is exhausted; the poll loop ends and the last-resort `AskUserQuestion` escalation below fires.
+- **`status: error`** (a resolution failure, distinct from `admission: blocked`) → STOP and surface the stderr verbatim per the **Exit-code convention** at the top of this document. Do NOT route a hard error to the escalation prompt — a broken lock primitive is a different signal than queue contention.
 
-  ```
-  AskUserQuestion:
-    questions:
-      - question: "Another plan ({blocking_plan_id}) is holding the merge-lock. Wait and retry, or skip this merge?"
-        header: "Branch Cleanup — Merge-lock contention"
-        description: |
-          **Blocking plan**: {blocking_plan_id}
-          **This plan**: {plan_id}
+Optionally log each `admission: blocked` poll for grep-ability during a run:
 
-          The unified merge-lock serializes the merge-to-main critical
-          section. {blocking_plan_id} acquired it first and has not yet
-          released. The 5-minute poll window elapsed without the lock
-          freeing.
-        options:
-          - label: "Wait and retry"
-            description: "Re-run merge-lock acquire (another 5-minute poll window)"
-          - label: "Skip merge"
-            description: "Defer merge; exit cleanly so finalize can be re-entered later"
-        multiSelect: false
-  ```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: merge-queue poll blocked behind {blocking_plan_id} (waiting_count={waiting_count}), re-polling within budget"
+```
 
-  On **Wait and retry**, re-run the `merge_lock acquire` call above. On **Skip merge**, set `{merge_consent} = deferred` and follow the same skip path as the interactive "No, skip merge" branch.
+###### Budget-exhaustion escalation (last resort)
 
-Then proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the auto-merge fallback path remains active on a branch-protection error.
+Only when the FIFO poll loop exhausts `{wait_budget}` without admission does the escalation fire. Surface the FIFO-front `blocking_plan_id` from the final `admission: blocked` poll:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Another plan ({blocking_plan_id}) is at the front of the merge queue. Keep waiting, or skip this merge?"
+      header: "Branch Cleanup — Merge-queue wait budget exhausted"
+      description: |
+        **Front-of-queue plan**: {blocking_plan_id}
+        **This plan**: {plan_id}
+        **Wait budget**: {wait_budget}s (exhausted)
+
+        The unified merge-lock serializes the merge-to-main critical
+        section behind a FIFO admission queue. {blocking_plan_id} is ahead
+        of this plan (or holds the lock) and has not yet released. The
+        {wait_budget}-second FIFO poll budget elapsed without this plan
+        reaching the front.
+      options:
+        - label: "Wait and retry"
+          description: "Re-enter the FIFO poll loop for another {wait_budget}-second budget"
+        - label: "Skip merge"
+          description: "Defer merge; exit cleanly so finalize can be re-entered later"
+      multiSelect: false
+```
+
+On **Wait and retry**, reset the wall-clock start time and re-enter the **FIFO poll/backoff loop** above (a fresh `{wait_budget}` window; the plan kept its FIFO position throughout). On **Skip merge**, set `{merge_consent} = deferred` and follow the same skip path as the interactive "No, skip merge" branch.
+
+Once `admission: admitted` is reached, proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the auto-merge fallback path remains active on a branch-protection error.
 
 > **Sync note**: the merge-lock is the unified `plan-marshall:manage-locks:merge_lock` primitive (the file-based `O_EXCL` mutex). After this plan merges, the `finalize-step-sync-plugin-cache` step syncs the plugin cache and regenerates the executor against main (after the cache sync), so the notation resolves.
 

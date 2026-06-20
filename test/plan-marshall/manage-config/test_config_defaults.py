@@ -227,6 +227,39 @@ def test_get_default_config_includes_auto_rebase_threshold():
     assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only'
 
 
+def test_default_plan_finalize_includes_merge_queue_wait_budget_seconds():
+    """merge_queue_wait_budget_seconds nests under default:branch-cleanup with default 1800.
+
+    The knob is a step-owned param of `default:branch-cleanup`, declared in that
+    step's `configurable:` body-doc frontmatter (PR #716 removed the centralized
+    _FINALIZE_STEP_PARAMS) and surfaced through get_default_config() via
+    resolve_step_defaults_optional. It bounds (in seconds, ~30 min) the Pre-Merge
+    Gate FIFO merge-queue poll loop before the last-resort AskUserQuestion.
+    """
+    config = _config_defaults_mod.get_default_config()
+    branch_cleanup = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+
+    assert 'merge_queue_wait_budget_seconds' in branch_cleanup, (
+        'merge_queue_wait_budget_seconds must nest under default:branch-cleanup in the seeded steps map'
+    )
+    assert branch_cleanup['merge_queue_wait_budget_seconds'] == 1800, (
+        'merge_queue_wait_budget_seconds default must be 1800 (~30 min, the merge-queue wait budget)'
+    )
+    # not a flat sibling of steps anymore
+    assert 'merge_queue_wait_budget_seconds' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+
+
+def test_get_default_config_includes_merge_queue_wait_budget_seconds():
+    """get_default_config() surfaces merge_queue_wait_budget_seconds nested under default:branch-cleanup."""
+    config = _config_defaults_mod.get_default_config()
+
+    branch_cleanup = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+    assert 'merge_queue_wait_budget_seconds' in branch_cleanup, (
+        'merge_queue_wait_budget_seconds must round-trip through the keyed-map steps under default:branch-cleanup'
+    )
+    assert branch_cleanup['merge_queue_wait_budget_seconds'] == 1800
+
+
 def test_default_plan_execute_omits_retired_per_task_budget_reserve_tokens():
     """DEFAULT_PLAN_EXECUTE must NOT carry the retired per_task_budget_reserve_tokens key.
 
@@ -903,6 +936,7 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
         'pr_merge_strategy': 'squash',
         'final_merge_without_asking': False,
         'auto_rebase_threshold': 'no_overlap_only',
+        'merge_queue_wait_budget_seconds': 1800,
     }
 
     # a step that owns no params seeds as None (serialized as null) — no noisy
@@ -955,6 +989,7 @@ def test_default_plan_finalize_drops_flat_step_owned_knobs():
         'pr_merge_strategy',
         'final_merge_without_asking',
         'auto_rebase_threshold',
+        'merge_queue_wait_budget_seconds',
     ):
         assert knob not in finalize, f'flat step-owned knob {knob!r} must not survive'
 

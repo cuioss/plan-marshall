@@ -122,7 +122,7 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     cross-session shared state MUST route through this function rather than
     re-implementing git-common-dir resolution. The bounded exception set is
     exactly: ``merge.lock``, ``run-configuration.json``, ``lessons-learned``,
-    ``build-queue.json``.
+    ``build-queue.json``, ``merge-queue.json``.
 
     Resolution precedence:
 
