@@ -7,6 +7,7 @@ pre-push-quality-gate, bot-enforcement guard, placement validation, and
 marshal.json source-of-truth) plus the relevant CLI plumbing tests.
 """
 
+import contextlib
 import importlib.util
 import json
 from argparse import Namespace
@@ -55,6 +56,18 @@ _resolve_may_mutate_worktree_steps = _mem._resolve_may_mutate_worktree_steps
 # running executor. The handler is wrapped in try/except so failures are
 # already silent, but we replace it with a no-op for clarity and speed.
 _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
+
+
+@contextlib.contextmanager
+def _capture_decision_log():
+    """Capture ``_emit_decision_log`` calls; yield the (plan_id, message) list."""
+    captured: list[tuple[str, str]] = []
+    original = _mem._emit_decision_log
+    _mem._emit_decision_log = lambda pid, msg: captured.append((pid, msg))
+    try:
+        yield captured
+    finally:
+        _mem._emit_decision_log = original
 
 
 # =============================================================================
@@ -3007,21 +3020,24 @@ class TestAutomatedReviewPlacement:
 # Compose-time MAY_MUTATE placement validator — finalize-step-simplify after
 # commit-push (Deliverable 1 reorder + Deliverable 2 guard)
 #
-# Deliverable 1 moved ``finalize-step-simplify`` to a later index than
-# ``commit-push`` in ``DEFAULT_PHASE_6_STEPS`` so the step's may-mutate edits land
-# on a worktree that ``commit-push`` already flushed clean. Deliverable 2 added
-# ``_validate_may_mutate_placement`` (importing the MAY_MUTATE set from its single
-# owner ``manage-status/_cmd_mark_step.py``) to reject any composed manifest where
-# a MAY_MUTATE member precedes ``commit-push``.
+# The default phase-6 step list places ``finalize-step-simplify`` at a later index
+# than ``commit-push`` so the step's may-mutate edits land on a worktree that
+# ``commit-push`` already flushed clean. ``_reorder_may_mutate_after_commit_push``
+# (importing the MAY_MUTATE set from its single owner
+# ``manage-status/_cmd_mark_step.py``) deterministically moves any MAY_MUTATE member
+# that precedes ``commit-push`` to the first position after ``commit-push`` rather
+# than rejecting the manifest — the corrected ordering is written into the
+# plan-scoped ``execution.toon`` only (``marshal.json`` is never touched).
 #
-# These tests defend both halves from the regression angle:
-#   1. The positive ordering assertion fails if the Deliverable 1 reorder is
-#      reverted (simplify back ahead of commit-push) — the composer would then
-#      either emit an out-of-order manifest OR be rejected by the Deliverable 2
-#      validator, both of which break the assertions below.
-#   2. The negative assertions mirror ``TestAutomatedReviewPlacement``: a candidate
-#      CSV that deliberately orders ``finalize-step-simplify`` before
-#      ``commit-push`` is rejected with ``may_mutate_placement_violation``.
+# These tests defend the contract from the regression angle:
+#   1. The positive ordering assertion fails if the default reorder is reverted
+#      (simplify back ahead of commit-push without the auto-reorder firing) — the
+#      composer must always emit a manifest whose ``finalize-step-simplify`` follows
+#      ``commit-push``.
+#   2. The auto-reorder assertions: a candidate CSV that deliberately orders
+#      ``finalize-step-simplify`` (and other MAY_MUTATE steps) before ``commit-push``
+#      composes SUCCESSFULLY with the offending step(s) moved after ``commit-push``,
+#      a decision-log entry emitted per reordered step, and the manifest persisted.
 # =============================================================================
 
 
@@ -3057,33 +3073,83 @@ class TestMayMutatePlacement:
         may_mutate = _resolve_may_mutate_worktree_steps()
         assert 'finalize-step-simplify' in may_mutate
 
-    def test_compose_rejects_simplify_before_commit_push(self, plan_context):
-        # Negative case (mirrors TestAutomatedReviewPlacement): an explicit
-        # candidate CSV that orders finalize-step-simplify BEFORE commit-push.
-        # Row 7 (default) preserves candidate ordering verbatim, so the
-        # misordering survives to the validator, which rejects it.
+    def test_compose_reorders_simplify_after_commit_push(self, plan_context):
+        # Auto-reorder case: an explicit candidate CSV that orders
+        # finalize-step-simplify BEFORE commit-push. Row 7 (default) preserves
+        # candidate ordering verbatim, so the misordering survives to the
+        # reorder, which moves finalize-step-simplify after commit-push and
+        # composes SUCCESSFULLY (rather than rejecting).
         plan_id = 'may-mutate-simplify-before'
         candidates = ','.join(
             ['finalize-step-simplify', 'commit-push', 'create-pr', 'lessons-capture']
         )
 
-        result = cmd_compose(
-            _compose_ns(
-                plan_id=plan_id,
-                change_type='feature',
-                affected_files_count=5,
-                phase_6_steps=candidates,
+        with _capture_decision_log() as captured:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    affected_files_count=5,
+                    phase_6_steps=candidates,
+                )
             )
-        )
 
         assert result is not None
-        assert result['status'] == 'error', f'expected error status, got {result!r}'
-        assert result['error'] == 'may_mutate_placement_violation'
-        # Diagnostic names the offending step and the commit-push anchor.
-        assert 'finalize-step-simplify' in result['message']
-        assert 'commit-push' in result['message']
-        # No manifest is persisted on rejection.
-        assert read_manifest(plan_id) is None
+        assert result['status'] == 'success', f'expected success, got {result!r}'
+        # The manifest IS persisted with the corrected ordering.
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert steps.index('finalize-step-simplify') > steps.index('commit-push')
+        # A decision-log entry naming the reordered step was emitted.
+        reorder_entries = [
+            (pid, msg)
+            for pid, msg in captured
+            if 'auto-reorder' in msg and 'finalize-step-simplify' in msg
+        ]
+        assert len(reorder_entries) == 1, f'expected one reorder entry, got {captured!r}'
+
+    def test_compose_reorders_multiple_may_mutate_after_commit_push(self, plan_context):
+        # Multiple MAY_MUTATE steps preceding commit-push are all moved after it,
+        # preserving their relative order, with one decision-log entry per step.
+        # ``sonar-roundtrip`` and ``finalize-step-simplify`` are used (rather than
+        # ``automated-review``) so the reorder is exercised in isolation from the
+        # automated-review-specific bot-enforcement / placement guards.
+        plan_id = 'may-mutate-multi-before'
+        candidates = ','.join(
+            [
+                'sonar-roundtrip',
+                'finalize-step-simplify',
+                'commit-push',
+                'create-pr',
+                'lessons-capture',
+            ]
+        )
+
+        with _capture_decision_log() as captured:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    affected_files_count=5,
+                    phase_6_steps=candidates,
+                )
+            )
+
+        assert result is not None
+        assert result['status'] == 'success', f'expected success, got {result!r}'
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        commit_idx = steps.index('commit-push')
+        # Both MAY_MUTATE steps land after commit-push...
+        assert steps.index('sonar-roundtrip') > commit_idx
+        assert steps.index('finalize-step-simplify') > commit_idx
+        # ...preserving their original relative order (sonar-roundtrip first).
+        assert steps.index('sonar-roundtrip') < steps.index('finalize-step-simplify')
+        # One reorder decision-log entry per moved step.
+        reorder_entries = [(pid, msg) for pid, msg in captured if 'auto-reorder' in msg]
+        assert len(reorder_entries) == 2, f'expected two reorder entries, got {captured!r}'
 
     def test_compose_accepts_simplify_after_commit_push_explicit_candidates(self, plan_context):
         # Symmetric positive case: the SAME candidate set with the two steps in
@@ -3112,28 +3178,33 @@ class TestMayMutatePlacement:
 
     def test_compose_inert_when_commit_push_absent(self, plan_context):
         # Carve-out: a no-push plan (commit_and_push=false drops commit-push) has
-        # nothing to order against, so the validator is a no-op even though
-        # finalize-step-simplify would otherwise be present. The compose succeeds.
+        # nothing to order against, so the auto-reorder is a no-op even though
+        # finalize-step-simplify would otherwise be present. The compose succeeds
+        # and no reorder decision-log entry is emitted.
         plan_id = 'may-mutate-no-commit-push'
         candidates = ','.join(
             ['finalize-step-simplify', 'create-pr', 'lessons-capture']
         )
 
-        result = cmd_compose(
-            _compose_ns(
-                plan_id=plan_id,
-                change_type='feature',
-                affected_files_count=5,
-                phase_6_steps=candidates,
-                commit_and_push='false',
+        with _capture_decision_log() as captured:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    affected_files_count=5,
+                    phase_6_steps=candidates,
+                    commit_and_push='false',
+                )
             )
-        )
 
         assert result is not None
         assert result['status'] == 'success', f'expected success, got {result!r}'
         manifest = read_manifest(plan_id)
         assert manifest is not None
         assert 'commit-push' not in manifest['phase_6']['steps']
+        # Carve-out: no auto-reorder decision-log entry on the no-commit-push path.
+        reorder_entries = [(pid, msg) for pid, msg in captured if 'auto-reorder' in msg]
+        assert not reorder_entries, f'expected no reorder entry, got {captured!r}'
 
 
 # =============================================================================
