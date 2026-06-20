@@ -1654,6 +1654,50 @@ class TestDetectOrdinalReferences:
         out = _detect_ordinal_references(added, tmp_path)
         assert len(out) == 1
 
+    def test_multiple_lists_same_ordinal_resolves_by_proximity(self, tmp_path: Path):
+        # Two separate ordered-list blocks both contain ordinals 1 and 2.
+        # A reference to 'item 1' on line 10 (near the second block) must resolve
+        # to the second block, not the first, even though both contain ordinal 1.
+        body = (
+            '1. Alpha\n'      # line 1  — block A
+            '2. Beta\n'       # line 2  — block A
+            '\n'
+            'Some text here.\n'  # line 4  — separator
+            '\n'
+            '1. Gamma\n'      # line 6  — block B
+            '2. Delta\n'      # line 7  — block B
+            '\n'
+            'See item 1 for details.\n'  # line 9 — reference
+        )
+        rel = self._write_md(tmp_path, body)
+        # Diff touched block B (line 6) and the reference line (line 9).
+        added = [(rel, 6, '1. Gamma'), (rel, 9, 'See item 1 for details.')]
+        out = _detect_ordinal_references(added, tmp_path)
+        # Must surface exactly one candidate, resolving to block B (list_line=6).
+        assert len(out) == 1
+        assert out[0]['list_line'] == 6
+
+    def test_separator_blank_after_list_does_not_keep_block_open(self, tmp_path: Path):
+        # A blank line followed by non-list content must close the list block.
+        # Touching only that trailing blank line must NOT surface the block's
+        # ordinal references as candidates (the block is untouched aside from
+        # the closing blank, which is not part of the block).
+        body = (
+            '1. First item\n'   # line 1
+            '2. Second item\n'  # line 2
+            '\n'                # line 3 — separator blank (closes block)
+            'Not a list item.\n'  # line 4
+            '\n'
+            'See item 2 for more.\n'  # line 6 — reference
+        )
+        rel = self._write_md(tmp_path, body)
+        # Diff touches only the separator blank (line 3) and the reference (line 6).
+        # Since line 3 is NOT inside the block (it closes the block), the block
+        # is untouched — no candidate should surface.
+        added = [(rel, 3, ''), (rel, 6, 'See item 2 for more.')]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert out == []
+
 
 # =============================================================================
 # Test: _iter_changed_line_pairs (Facet 3 diff walk)

@@ -1450,7 +1450,10 @@ def _ordered_list_blocks(post_image: list[str]) -> list[dict[str, Any]]:
     """
     blocks: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
-    for idx, line in enumerate(post_image, start=1):
+    n_lines = len(post_image)
+    for i in range(n_lines):
+        idx = i + 1  # 1-based line number
+        line = post_image[i]
         m = _ORDERED_LIST_ITEM.match(line)
         if m is not None:
             ordinal = int(m.group('n'))
@@ -1464,7 +1467,16 @@ def _ordered_list_blocks(post_image: list[str]) -> list[dict[str, Any]]:
             # immediately followed by another item line; treat it as part of the
             # block by recording the line but not closing the block yet.
             if current is not None:
-                current['lines'].add(idx)
+                next_item = next(
+                    (post_image[j] for j in range(i + 1, n_lines)
+                     if post_image[j].strip() != ''),
+                    None,
+                )
+                if next_item is not None and _ORDERED_LIST_ITEM.match(next_item):
+                    current['lines'].add(idx)
+                else:
+                    blocks.append(current)
+                    current = None
             continue
         if current is not None:
             blocks.append(current)
@@ -1542,11 +1554,16 @@ def _record_ordinal_reference(
     fallback). A reference whose ordinal resolves to no ordered-list block, or
     to a block the diff did not touch, surfaces nothing.
     """
-    target = next((b for b in blocks if ordinal in b['items']), None)
-    if target is None:
+    matches = [b for b in blocks if ordinal in b['items']]
+    if not matches:
         return
-    if not (target['lines'] & added_lines):
+    touched_matches = [b for b in matches if (b['lines'] & added_lines)]
+    if not touched_matches:
         return
+    target = min(
+        touched_matches,
+        key=lambda b: abs(b['items'].get(ordinal, b['start']) - lineno),
+    )
     key = (md_path, lineno, ordinal)
     if key in seen:
         return
