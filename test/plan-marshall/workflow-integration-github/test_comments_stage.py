@@ -465,6 +465,254 @@ class TestCommentsStage:
 
 
 # =============================================================================
+# First-class author / kind fields on stored pr-comment findings
+# =============================================================================
+
+
+class TestCommentsStageAuthorKindFields:
+    """Every stored pr-comment finding carries first-class, queryable ``author``
+    and ``kind`` fields.
+
+    Deliverable 2 promotes reviewer identity (``author``) and comment structure
+    (``kind``) to indexed top-level finding fields (see manage-findings
+    ``standards/jsonl-format.md``), distinct from the human-readable
+    ``author:`` / ``kind:`` lines inside the ``detail`` blob. The producer
+    sources ``author`` from the GitHub comment author login and ``kind`` from
+    the provider-supplied structure discriminator — one of the three values
+    ``inline`` / ``review_body`` / ``issue_comment``.
+    """
+
+    def test_stored_finding_author_equals_comment_author_login(self, plan_context):
+        """The stored finding's first-class ``author`` equals the comment author login."""
+        comments = [
+            {
+                'id': 'C1',
+                'kind': 'inline',
+                'author': 'coderabbitai',
+                'body': 'This null dereference needs a guard before the call.',
+                'path': 'src/Main.java',
+                'line': 42,
+                'thread_id': 'PRRT_a',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-author-field')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_comments_stage(_stage_make_args(130, 'gh-pr-author-field'))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1
+
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        q = query_findings('gh-pr-author-field', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        stored = q['findings'][0]
+        # First-class queryable field — not merely a line inside detail.
+        assert stored['author'] == 'coderabbitai'
+
+    @pytest.mark.parametrize(
+        'kind',
+        [
+            pytest.param('inline', id='inline'),
+            pytest.param('review_body', id='review_body'),
+            pytest.param('issue_comment', id='issue_comment'),
+        ],
+    )
+    def test_stored_finding_kind_equals_structure_discriminator(self, kind, plan_context):
+        """The stored finding's first-class ``kind`` equals the provider structure discriminator.
+
+        Covers the three discriminator values the producer emits: ``inline``,
+        ``review_body``, and ``issue_comment``.
+        """
+        # review_body / issue_comment kinds carry no thread_id and (per the
+        # provider) no path/line, mirroring the real GraphQL fallback shape.
+        is_inline = kind == 'inline'
+        comments = [
+            {
+                'id': 'K1',
+                'kind': kind,
+                'author': 'gemini-code-assist',
+                'body': 'A substantive review point about error propagation here.',
+                'path': 'src/Worker.java' if is_inline else '',
+                'line': 17 if is_inline else 0,
+                'thread_id': 'PRRT_k' if is_inline else '',
+            },
+        ]
+
+        # plan_id must match ^[a-z][a-z0-9-]*$ — slugify the kind (no underscores).
+        plan_id = f'gh-pr-kind-{kind.replace("_", "-")}'
+        plan_context.plan_dir_for(plan_id)
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_comments_stage(_stage_make_args(131, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1
+
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        q = query_findings(plan_id, finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        stored = q['findings'][0]
+        # First-class queryable field — equals the provider structure discriminator.
+        assert stored['kind'] == kind
+        # author is likewise first-class for the same finding.
+        assert stored['author'] == 'gemini-code-assist'
+
+    def test_stored_finding_is_queryable_by_first_class_kind(self, plan_context):
+        """The first-class ``kind`` field is an indexed query filter, not just stored.
+
+        A ``query_findings(..., kind=...)`` call must return only the findings
+        whose stored ``kind`` matches — proving the field is queryable, the
+        property that distinguishes it from the detail-blob line.
+        """
+        comments = [
+            {
+                'id': 'Q1',
+                'kind': 'inline',
+                'author': 'reviewer',
+                'body': 'Inline comment about a concrete code line.',
+                'path': 'src/A.java',
+                'line': 5,
+                'thread_id': 'PRRT_q1',
+            },
+            {
+                'id': 'Q2',
+                'kind': 'review_body',
+                'author': 'reviewer',
+                'body': 'Overall review summary raising a design concern.',
+                'path': '',
+                'line': 0,
+                'thread_id': '',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-kind-query')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_comments_stage(_stage_make_args(132, 'gh-pr-kind-query'))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 2
+
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        inline_only = query_findings('gh-pr-kind-query', finding_type='pr-comment', kind='inline')
+        assert inline_only['filtered_count'] == 1
+        assert inline_only['findings'][0]['kind'] == 'inline'
+
+        review_only = query_findings('gh-pr-kind-query', finding_type='pr-comment', kind='review_body')
+        assert review_only['filtered_count'] == 1
+        assert review_only['findings'][0]['kind'] == 'review_body'
+
+    def test_stored_finding_is_queryable_by_first_class_author(self, plan_context):
+        """The first-class ``author`` field is an indexed query filter.
+
+        Distinct authors on the same PR must be separable via
+        ``query_findings(..., author=...)`` — the attribution use case the
+        review retrospective relies on.
+        """
+        comments = [
+            {
+                'id': 'A1',
+                'kind': 'inline',
+                'author': 'coderabbitai',
+                'body': 'Bot-flagged: potential resource leak on this path.',
+                'path': 'src/A.java',
+                'line': 5,
+                'thread_id': 'PRRT_a1',
+            },
+            {
+                'id': 'A2',
+                'kind': 'inline',
+                'author': 'human-reviewer',
+                'body': 'Please rename this variable for clarity.',
+                'path': 'src/B.java',
+                'line': 9,
+                'thread_id': 'PRRT_a2',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-author-query')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_comments_stage(_stage_make_args(133, 'gh-pr-author-query'))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 2
+
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        bot_only = query_findings('gh-pr-author-query', finding_type='pr-comment', author='coderabbitai')
+        assert bot_only['filtered_count'] == 1
+        assert bot_only['findings'][0]['author'] == 'coderabbitai'
+
+        human_only = query_findings('gh-pr-author-query', finding_type='pr-comment', author='human-reviewer')
+        assert human_only['filtered_count'] == 1
+        assert human_only['findings'][0]['author'] == 'human-reviewer'
+
+    def test_missing_author_defaults_to_unknown(self, plan_context):
+        """A comment with no author login stores ``author='unknown'`` (producer fallback)."""
+        comments = [
+            {
+                'id': 'U1',
+                'kind': 'inline',
+                'author': '',
+                'body': 'Substantive comment from an unattributed source.',
+                'path': 'src/A.java',
+                'line': 5,
+                'thread_id': 'PRRT_u1',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-author-unknown')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_comments_stage(_stage_make_args(134, 'gh-pr-author-unknown'))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1
+
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        q = query_findings('gh-pr-author-unknown', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        assert q['findings'][0]['author'] == 'unknown'
+
+
+# =============================================================================
 # CLI plumbing — main() and --project-dir
 # =============================================================================
 

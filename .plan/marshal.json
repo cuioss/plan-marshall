@@ -75,6 +75,7 @@
         "default:automated-review": {
           "review_bot_buffer_seconds": 180
         },
+        "project:finalize-step-review-retrospective": {},
         "default:lessons-capture": {},
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",

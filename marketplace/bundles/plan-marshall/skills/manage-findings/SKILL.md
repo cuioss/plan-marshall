@@ -284,7 +284,7 @@ restating the command inline.
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
   --plan-id PLAN_ID --type TYPE --title TEXT --detail TEXT \
   [--file-path PATH] [--line N] [--component COMPONENT] [--module MODULE] \
-  [--rule RULE] [--severity SEVERITY]
+  [--rule RULE] [--severity SEVERITY] [--author AUTHOR] [--kind KIND]
 ```
 
 ### list
@@ -293,7 +293,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ad
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
   --plan-id PLAN_ID \
   [--type TYPE_CSV] [--resolution RESOLUTION] [--promoted {true|false}] \
-  [--file-pattern PATTERN] [--include-qgate]
+  [--file-pattern PATTERN] [--include-qgate] [--author AUTHOR] [--kind KIND]
 ```
 
 ### get

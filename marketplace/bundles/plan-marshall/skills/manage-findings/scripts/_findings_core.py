@@ -145,6 +145,8 @@ def add_finding(
     module: str | None = None,
     rule: str | None = None,
     severity: str | None = None,
+    author: str | None = None,
+    kind: str | None = None,
 ) -> dict[str, Any]:
     """Add a finding record."""
     if finding_type not in FINDING_TYPES:
@@ -178,6 +180,10 @@ def add_finding(
         record['rule'] = rule
     if severity:
         record['severity'] = severity
+    if author:
+        record['author'] = author
+    if kind:
+        record['kind'] = kind
 
     append_jsonl(get_findings_path(plan_id, finding_type), record)
 
@@ -202,6 +208,8 @@ def query_findings(
     resolution: str | None = None,
     promoted: bool | None = None,
     file_pattern: str | None = None,
+    author: str | None = None,
+    kind: str | None = None,
 ) -> dict[str, Any]:
     """Query findings across all per-type files, merging results.
 
@@ -217,7 +225,7 @@ def query_findings(
     type_filter = {t.strip() for t in finding_type.split(',')} if finding_type else None
     filtered = _filter_records(
         records,
-        exact_filters={'resolution': resolution},
+        exact_filters={'resolution': resolution, 'author': author, 'kind': kind},
         type_filter=type_filter,
         file_pattern=file_pattern,
         promoted=promoted,
@@ -239,6 +247,8 @@ def query_findings_unified(
     resolution: str | None = None,
     promoted: bool | None = None,
     file_pattern: str | None = None,
+    author: str | None = None,
+    kind: str | None = None,
 ) -> dict[str, Any]:
     """Query the per-plan findings store merged with pending per-phase Q-Gate findings.
 
@@ -262,6 +272,8 @@ def query_findings_unified(
         resolution=resolution,
         promoted=promoted,
         file_pattern=file_pattern,
+        author=author,
+        kind=kind,
     )
     plan_findings = plan_result['findings']
 
@@ -275,6 +287,7 @@ def query_findings_unified(
         qgate_findings.extend(
             _filter_records(
                 records,
+                exact_filters={'author': author, 'kind': kind},
                 type_filter=type_filter,
                 file_pattern=file_pattern,
             )
