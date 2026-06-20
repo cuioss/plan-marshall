@@ -39,7 +39,10 @@ from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
 from _build_queue_slot import BuildQueueTimeout, build_queue_slot  # noqa: E402
 from _build_result import DirectCommandResult  # noqa: E402
 from _build_shared import cmd_run_common  # noqa: E402
+from file_ops import get_marshal_path, read_json  # type: ignore[import-not-found]  # noqa: E402
 from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+
+from pathlib import Path  # noqa: E402
 
 # Error type emitted when the build queue is saturated past max_retries.
 ERROR_QUEUE_SATURATED = 'queue_saturated'
@@ -100,6 +103,51 @@ def default_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[li
     return cmd_parts, command_str
 
 
+def _resolve_marshal_path(project_dir: str) -> Path:
+    """Resolve marshal.json honouring ``project_dir`` (the resolved tree).
+
+    The override is read in-process BEFORE the build subprocess is spawned, so
+    ``get_marshal_path()``'s cwd walk-up is not guaranteed to land on the build's
+    tree. Walk up from ``project_dir`` to the nearest ancestor carrying a
+    ``.plan/marshal.json`` so a worktree's marshal.json is honoured (NOT main's);
+    fall back to ``get_marshal_path()`` (cwd walk-up) when no such ancestor exists.
+    """
+    try:
+        root = Path(project_dir).resolve()
+    except (OSError, ValueError):
+        return get_marshal_path()
+    for candidate in (root, *root.parents):
+        marshal = candidate / '.plan' / 'marshal.json'
+        if marshal.is_file():
+            return marshal
+    return get_marshal_path()
+
+
+def _read_require_wrapper_override(tool_name: str, project_dir: str, default: bool) -> bool:
+    """Read ``build.{tool_name}.require_wrapper`` from marshal.json.
+
+    Mirrors ``_build_queue_slot._resolve_max_retries``'s graceful degradation: a
+    missing file, missing ``build`` block, missing ``build.{tool_name}`` block,
+    missing ``require_wrapper`` key, or a non-bool value all degrade to
+    ``default`` (the per-build-system static ``ExecuteConfig.require_wrapper``).
+    This is the operator escape valve a consumer repo lacking a checked-in
+    wrapper sets to ``false`` WITHOUT editing marketplace code.
+    """
+    config = read_json(_resolve_marshal_path(project_dir), default={})
+    if not isinstance(config, dict):
+        return default
+    build = config.get('build')
+    if not isinstance(build, dict):
+        return default
+    block = build.get(tool_name)
+    if not isinstance(block, dict):
+        return default
+    raw = block.get('require_wrapper')
+    if not isinstance(raw, bool):
+        return default
+    return raw
+
+
 @dataclass(frozen=True)
 class ExecuteConfig:
     """Configuration for a build system's execution layer."""
@@ -140,6 +188,14 @@ class ExecuteConfig:
     If set, overrides the default detect_wrapper logic. Useful for tools
     like npm that don't have wrappers, or Python where FileNotFoundError
     needs early detection."""
+
+    require_wrapper: bool = False
+    """When True, a build whose project provides a wrapper concept MUST find
+    that wrapper; the factory's ``_resolve_wrapper`` raises ``FileNotFoundError``
+    rather than falling back to ``system_fallback``. Default False preserves the
+    historical system-fallback behaviour. Per-build-system static default;
+    overridable per build system in marshal.json via
+    ``build.{tool_name}.require_wrapper``."""
 
     parser_needs_command: bool = False
     """If True, passes the command string as second arg to parser_fn."""
@@ -185,10 +241,24 @@ def create_execute_handlers(
         Tuple of (execute_direct, cmd_run) functions.
     """
 
-    def _resolve_wrapper(project_dir: str = '.') -> str:
+    def _resolve_wrapper(project_dir: str = '.', require_wrapper: bool = False) -> str:
+        # npm-style configs keep their custom resolve_fn (no wrapper concept,
+        # returns 'npm' unconditionally) — the gate never applies to them.
         if config.wrapper_resolve_fn:
             return config.wrapper_resolve_fn(project_dir)
-        wrapper = _detect_wrapper(project_dir, config.unix_wrapper, config.windows_wrapper, config.system_fallback)
+        # When require_wrapper is True, pass None as system_fallback so detection
+        # never resolves to a PATH binary — a missing wrapper returns falsy and
+        # the gate below raises instead of falling through to system mvn/gradle.
+        wrapper = _detect_wrapper(
+            project_dir,
+            config.unix_wrapper,
+            config.windows_wrapper,
+            None if require_wrapper else config.system_fallback,
+        )
+        if require_wrapper and not wrapper:
+            raise FileNotFoundError(
+                f'No {config.tool_name} wrapper found ({config.unix_wrapper} or {config.windows_wrapper})'
+            )
         return wrapper or config.system_fallback
 
     def execute_direct(
@@ -199,8 +269,9 @@ def create_execute_handlers(
         env_vars: dict[str, str] | None = None,
         working_dir: str | None = None,
     ) -> DirectCommandResult:
+        effective_require = _read_require_wrapper_override(config.tool_name, project_dir, config.require_wrapper)
         try:
-            wrapper = _resolve_wrapper(project_dir)
+            wrapper = _resolve_wrapper(project_dir, effective_require)
         except FileNotFoundError as e:
             return {
                 'status': 'error',
