@@ -97,8 +97,7 @@ _CONFIG = ExecuteConfig(
     default_timeout=DEFAULT_BUILD_TIMEOUT,
     wrapper_resolve_fn=_npm_wrapper_resolve_fn,
     # npm has no wrapper concept (_npm_wrapper_resolve_fn returns 'npm'
-    # unconditionally), so the require_wrapper gate is N-A and stays off.
-    require_wrapper=False,
+    # unconditionally), so the require_wrapper gate is N-A (default False).
     parser_needs_command=True,
     supports_env_vars=True,
     supports_working_dir=True,

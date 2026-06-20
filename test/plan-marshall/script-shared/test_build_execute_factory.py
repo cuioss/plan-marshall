@@ -580,13 +580,11 @@ class TestFactoryCmdRunPlanIdAbsentPassthrough:
 def _no_marshal(monkeypatch: pytest.MonkeyPatch):
     """Force the override read to find no marshal.json so the static default wins.
 
-    Both ``_resolve_marshal_path`` (project_dir walk-up) and the
-    ``get_marshal_path`` fallback are pointed at a non-existent path, so
+    ``_resolve_marshal_path`` is pointed at a non-existent path, so
     ``_read_require_wrapper_override`` always returns the passed default. Gate
     tests that want the static ``ExecuteConfig.require_wrapper`` to drive the
     behaviour install this first.
     """
-    monkeypatch.setattr(factory, 'get_marshal_path', lambda: factory.Path('/nonexistent/.plan/marshal.json'))
     monkeypatch.setattr(
         factory, '_resolve_marshal_path', lambda _project_dir: factory.Path('/nonexistent/.plan/marshal.json')
     )
