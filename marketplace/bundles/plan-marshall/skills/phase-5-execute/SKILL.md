@@ -529,7 +529,7 @@ For each step in task's `steps[]` array:
 2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `execution-context`, the subagent inherits the pinned cwd per the **Dispatch Protocol** section above; pass `plan_id` as the structured input and optionally embed the reminder header.
 3. Mark step complete via `manage-tasks:finalize-step`
 
-**Infeasible deliverable — report, never silently substitute**: when a step's declared deliverable turns out to be infeasible during execution — the target cannot be cleanly built as the task specifies (the required surface does not exist, a precondition the deliverable assumed is false, or building the named artifact is structurally impossible as scoped) — the agent MUST report the infeasibility back through the gate and MUST NOT silently substitute a different, weaker deliverable under the same name. Mark the task `blocked` with an infeasibility reason and route the structured failure into the established failure surface: the `blocked` task flows into the **Step 11 (Triage Verification Failure)** path exactly as a `no_changes_detected` / `verification_mismatch` block does, and the leaf returns the `triage_required` signal to the orchestrator carrying the infeasibility reason. Narrowing the deliverable into a buildable-but-valueless artifact under the original name — so the step "passes" while delivering none of the declared value — is prohibited; the infeasibility is a real failure and belongs on the triage surface, not hidden behind a substituted deliverable.
+**Infeasible deliverable — report, never silently substitute**: when a step's declared deliverable turns out to be infeasible during execution — the target cannot be cleanly built as the task specifies (the required surface does not exist, a precondition the deliverable assumed is false, or building the named artifact is structurally impossible as scoped) — the agent MUST report the infeasibility back through the gate and MUST NOT silently substitute a different, weaker deliverable under the same name. Mark the task `infeasible` — a first-class terminal status — via `manage-tasks update --status infeasible`, and have the leaf return a structured `status: infeasible` TOON carrying an `infeasibility_reason` field naming why the deliverable cannot be built as scoped. The `infeasible` task flows into the **Step 11 (Triage Verification Failure)** path, where the dedicated "For infeasible blocks" sub-section routes it to a planning-level gate decision (drop / re-scope / abort) rather than the `verification-feedback` code-fix loop. Narrowing the deliverable into a buildable-but-valueless artifact under the original name — so the step "passes" while delivering none of the declared value — is prohibited; the infeasibility is a real failure and belongs on the triage surface, not hidden behind a substituted deliverable. `infeasible` is terminal: it is resolved by the gate decision, never by resuming the same task.
 
 ### Step 6.5: Scope-Creep Guard (per-task)
 
@@ -747,7 +747,7 @@ The mid-execute per-deliverable build is **focused** by design: it runs the `per
 **Applies when**:
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`, OR
-- A task was marked `blocked` with an infeasibility reason per Step 6 ("Infeasible deliverable — report, never silently substitute")
+- A task was marked `infeasible` per Step 6 ("Infeasible deliverable — report, never silently substitute") — the leaf returned `status: infeasible` with an `infeasibility_reason`; this routes to the dedicated "For infeasible blocks" sub-section below, NOT the `verification-feedback` code-fix loop
 
 The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md). This per-task body is a leaf and does NOT dispatch it — the leaf persists the findings and returns a `triage_required` signal; the main-context orchestrator dispatches `verification-feedback` under `--phase phase-5-execute --role verification-feedback` with `producer=build-runner` (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) and the canonical contract in [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md)).
 
@@ -796,6 +796,15 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 After the test-contract task completes, the standard verification path resumes — the test-contract task itself MUST produce a green test run; if it does not, that is a real failure and goes through standard triage.
 
 **Rationale and boundary documentation**: see [`../phase-4-plan/standards/breaking-refactor-task-split.md`](../phase-4-plan/standards/breaking-refactor-task-split.md) for the full contract spanning phase-4-plan task allocation and this phase-5-execute exception.
+
+**For infeasible blocks**: The leaf returned `status: infeasible` with an `infeasibility_reason` — the declared deliverable cannot be built as scoped. This is a **planning decision, NOT a fixable code failure**: it is explicitly NOT routed through `verification-feedback` (there is no test/lint/build finding to FIX, SUPPRESS, or ACCEPT). The orchestrator's handling:
+
+1. **Mark the task `infeasible` in the ledger** (the leaf has already done this via `manage-tasks update --status infeasible`; the orchestrator confirms the terminal status is recorded). Because `infeasible` is a terminal state the loop-exit guard does NOT count, it never re-enters the task loop.
+2. **Raise `AskUserQuestion`** surfacing the `infeasibility_reason` and offering exactly three gate-level options:
+   - **(a) Drop the task** — accept that this deliverable will not be built; remove it from the active scope and continue with the remaining queue.
+   - **(b) Re-scope via a new task** — create a replacement task with a buildable, value-preserving deliverable that supersedes the infeasible one; the new task enters the queue.
+   - **(c) Abort the plan** — the infeasible deliverable is load-bearing for the whole plan; stop and return control for re-planning.
+3. **Record the chosen option to `decision.log`** and act on it. Do NOT dispatch `verification-feedback` on this path — the AskUserQuestion gate is the resolution mechanism.
 
 **For `no_changes_detected` blocks**: The implementation task produced no file changes. Triage options:
 - **RETRY** → reset task to `pending` for re-execution
@@ -1138,17 +1147,18 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Output
 
-phase-5-execute returns on three terminal paths (queue empty → transition; fatal error; triage `blocked`). The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+phase-5-execute returns on four terminal paths (queue empty → transition; fatal error; triage `blocked`; deliverable `infeasible`). The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
 
 ```toon
-status: success | error | blocked
+status: success | error | blocked | infeasible
 display_detail: "<{tasks_completed} tasks complete, {tasks_remaining} remaining>"
 plan_id: {plan_id}
 tasks_completed: {N}
 tasks_remaining: {N}
+infeasibility_reason: {required when status=infeasible — why the declared deliverable cannot be built as scoped}
 ```
 
-`display_detail` shape on success: `"{tasks_completed} tasks complete, {tasks_remaining} remaining"` (e.g. `"7 tasks complete, 0 remaining"`). On `blocked`: `"{task_number} blocked: {short reason}"`. On error: short error label from § Error Handling. All values are ≤80 chars, ASCII, no trailing period.
+`display_detail` shape on success: `"{tasks_completed} tasks complete, {tasks_remaining} remaining"` (e.g. `"7 tasks complete, 0 remaining"`). On `blocked`: `"{task_number} blocked: {short reason}"`. On `infeasible`: `"{task_number} infeasible: {short reason}"`. On error: short error label from § Error Handling. All values are ≤80 chars, ASCII, no trailing period. The `infeasible` return carries `infeasibility_reason`; the orchestrator routes it to the Step 11 "For infeasible blocks" planning gate (drop / re-scope / abort via AskUserQuestion), NOT the `verification-feedback` code-fix loop.
 
 ---
 

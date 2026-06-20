@@ -183,7 +183,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument('--title', help='New title')
     p_update.add_argument('--description', help='New description')
     p_update.add_argument('--depends-on', nargs='*', help='Update dependencies (TASK-N references or "none" to clear)')
-    p_update.add_argument('--status', help='New status (pending/in_progress/done/blocked)')
+    p_update.add_argument('--status', help='New status (pending/in_progress/done/blocked/infeasible)')
     add_domain_arg(p_update, required=False)
     p_update.add_argument('--profile', help='Task profile (arbitrary key from marshal.json)')
     p_update.add_argument('--skills', help='Skills list (comma-separated bundle:skill format)')
@@ -237,7 +237,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_plan_id_arg(p_list)
     p_list.add_argument(
-        '--status', choices=['pending', 'in_progress', 'done', 'blocked', 'all'], default='all', help='Filter by status'
+        '--status',
+        choices=['pending', 'in_progress', 'done', 'blocked', 'infeasible', 'all'],
+        default='all',
+        help='Filter by status',
     )
     p_list.add_argument('--deliverable', type=int, help='Filter by deliverable number')
     p_list.add_argument('--ready', action='store_true', help='Only show tasks with no unmet dependencies')

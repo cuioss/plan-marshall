@@ -12,11 +12,13 @@ from _helpers import (
     _add_ns,
     _finalize_step_ns,
     _list_ns,
+    _update_ns,
     add_basic_task,
     build_task_toon,
     cmd_add,
     cmd_finalize_step,
     cmd_list,
+    cmd_update,
 )
 
 
@@ -61,6 +63,32 @@ def test_list_filter_by_status(plan_context):
     assert result['status'] == 'success'
     assert len(result['tasks_table']) == 1
     assert result['tasks_table'][0]['title'] == 'Second'
+
+
+def test_list_filter_by_status_infeasible(plan_context):
+    """List --status infeasible returns only the infeasible-marked tasks."""
+    add_basic_task(plan_id='list-infeasible', title='First', deliverable=1, steps=['src/main/java/File.java'])
+    add_basic_task(plan_id='list-infeasible', title='Second', deliverable=2, steps=['src/main/java/File.java'])
+    cmd_update(_update_ns(plan_id='list-infeasible', number=2, status='infeasible'))
+
+    result = cmd_list(_list_ns(plan_id='list-infeasible', status='infeasible'))
+
+    assert result['status'] == 'success'
+    assert len(result['tasks_table']) == 1
+    assert result['tasks_table'][0]['title'] == 'Second'
+    assert result['tasks_table'][0]['status'] == 'infeasible'
+
+
+def test_list_counts_include_infeasible(plan_context):
+    """List counts surface an infeasible tally alongside the other terminal states."""
+    add_basic_task(plan_id='list-inf-count', title='First', deliverable=1, steps=['src/main/java/File.java'])
+    add_basic_task(plan_id='list-inf-count', title='Second', deliverable=2, steps=['src/main/java/File.java'])
+    cmd_update(_update_ns(plan_id='list-inf-count', number=1, status='infeasible'))
+
+    result = cmd_list(_list_ns(plan_id='list-inf-count'))
+
+    assert result['counts']['infeasible'] == 1
+    assert result['counts']['pending'] == 1
 
 
 def test_list_filter_by_deliverable(plan_context):

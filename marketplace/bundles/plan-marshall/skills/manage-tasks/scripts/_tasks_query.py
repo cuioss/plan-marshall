@@ -67,6 +67,7 @@ def cmd_list(args) -> dict:
     done_count = sum(1 for _, t in all_tasks if t.get('status') == 'done')
     failed_count = sum(1 for _, t in all_tasks if t.get('status') == 'failed')
     blocked = sum(1 for _, t in all_tasks if t.get('status') == 'blocked')
+    infeasible = sum(1 for _, t in all_tasks if t.get('status') == 'infeasible')
 
     # Build table data
     table = []
@@ -95,6 +96,7 @@ def cmd_list(args) -> dict:
             'done': done_count,
             'failed': failed_count,
             'blocked': blocked,
+            'infeasible': infeasible,
         },
         'tasks_table': table,
     }

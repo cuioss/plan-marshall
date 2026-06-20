@@ -62,6 +62,43 @@ def test_update_depends_on(plan_context):
     assert 'TASK-6' in get_result['task']['depends_on']
 
 
+@pytest.mark.parametrize('status', ['pending', 'in_progress', 'done', 'blocked', 'infeasible'])
+def test_update_accepts_each_valid_status(plan_context, status):
+    """update --status accepts every member of the status enum, including infeasible."""
+    add_basic_task(
+        plan_id=f'upd-status-{status}', title='Task', deliverable=1, steps=['src/main/java/File.java']
+    )
+
+    result = cmd_update(_update_ns(plan_id=f'upd-status-{status}', number=1, status=status))
+
+    assert result['status'] == 'success'
+
+    get_result = cmd_read(_read_ns(plan_id=f'upd-status-{status}', number=1))
+    assert get_result['task']['status'] == status
+
+
+def test_update_status_infeasible_persists(plan_context):
+    """update --status infeasible is a first-class terminal status that round-trips."""
+    add_basic_task(plan_id='upd-infeasible', title='Task', deliverable=1, steps=['src/main/java/File.java'])
+
+    result = cmd_update(_update_ns(plan_id='upd-infeasible', number=1, status='infeasible'))
+
+    assert result['status'] == 'success'
+
+    get_result = cmd_read(_read_ns(plan_id='upd-infeasible', number=1))
+    assert get_result['task']['status'] == 'infeasible'
+
+
+def test_update_rejects_invalid_status(plan_context):
+    """update --status rejects a status outside the enum and names the valid set."""
+    add_basic_task(plan_id='upd-bad-status', title='Task', deliverable=1, steps=['src/main/java/File.java'])
+
+    result = cmd_update(_update_ns(plan_id='upd-bad-status', number=1, status='bogus'))
+
+    assert result['status'] == 'error'
+    assert 'infeasible' in result['message']
+
+
 def test_update_clear_depends_on(plan_context):
     """Update depends_on to none clears dependencies."""
     toon = build_task_toon(

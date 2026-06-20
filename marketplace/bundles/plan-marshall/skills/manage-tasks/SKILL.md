@@ -42,7 +42,7 @@ Tasks are stored as `TASK-{NNN}.json`. Key fields for quick reference:
 | Field | Type | Description |
 |-------|------|-------------|
 | `title` | string | Task title |
-| `status` | enum | `pending`, `in_progress`, `done`, `blocked` |
+| `status` | enum | `pending`, `in_progress`, `done`, `blocked`, `infeasible` |
 | `domain` | string | Task domain (e.g., java, javascript) |
 | `profile` | string | Workflow profile (`implementation`, `module_testing`, `integration_testing`, `quality`, `verification`) |
 | `skills` | list | Pre-resolved domain skills (`{bundle}:{skill}` format) |
@@ -101,6 +101,7 @@ not in skill prose.
 | `done` | No — terminal success |
 | `failed` | No — terminal failure |
 | `blocked` | No — explicit triage outcome |
+| `infeasible` | No — terminal explicit-triage outcome (deliverable cannot be built as scoped) |
 
 Both `pending` and `in_progress` are unfinished terminal states by the
 broadened predicate. Either non-empty bucket forces `status: continue`.
@@ -669,7 +670,7 @@ blocked_tasks[2]{number,title,waiting_for}:
 
 ## Status Model
 
-**Task Status**: `pending` → `in_progress` → `done` | `failed` (or `blocked`)
+**Task Status**: `pending` → `in_progress` → `done` | `failed` (or `blocked` | `infeasible`)
 
 **Step Status**: `pending` → `in_progress` → `done` | `skipped` | `failed`
 
@@ -725,7 +726,7 @@ supplied the array is read from stdin.
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
   --plan-id PLAN_ID --task-number N \
   [--title TEXT] [--description TEXT] [--depends-on REFS ...] \
-  [--status {pending|in_progress|done|blocked}] \
+  [--status {pending|in_progress|done|blocked|infeasible}] \
   [--domain DOMAIN] [--profile PROFILE] [--skills CSV] [--deliverable N] \
   [--cost-size {S|M|L|XL}] [--predicted-cost-tokens N] [--envelope-id N]
 ```
@@ -755,7 +756,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks remove \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
   --plan-id PLAN_ID \
-  [--status {pending|in_progress|done|blocked|all}] \
+  [--status {pending|in_progress|done|blocked|infeasible|all}] \
   [--deliverable N] [--ready] [--domain DOMAIN] [--profile PROFILE]
 ```
 
