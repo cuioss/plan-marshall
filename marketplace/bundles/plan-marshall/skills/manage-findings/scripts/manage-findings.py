@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _findings_core import (
     CERTAINTY_VALUES,
     FINDING_TYPES,
+    PR_COMMENT_KINDS,
     QGATE_PHASES,
     QGATE_SOURCES,
     RESOLUTIONS,
@@ -60,9 +61,6 @@ from input_validation import (  # type: ignore[import-not-found]
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
-
-# Allowed pr-comment structure discriminators (the `kind` field).
-PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 
 
 def cmd_add(args: argparse.Namespace) -> dict:
