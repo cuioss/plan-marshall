@@ -161,6 +161,39 @@ if not isinstance(retention, dict):
 retention["logs_days"] = 7
 ```
 
+### Filesystem-Boundary I/O Guards
+
+A read or write that crosses the filesystem boundary can fail for reasons outside the program's control — a missing path, a permission denial, a vanished mount, a directory whose readability this process does not own, or bytes that are not valid in the declared encoding. Two guards belong on every such boundary, and both fail in a place the obvious `try` does not cover. The happy path passes the type checker and the well-formed-fixture test suite; the guards are what keep hostile filesystem state from crashing the program.
+
+**Glob / iterate guard.** Any `Path.glob` / `Path.iterdir` / `Path.rglob` over a directory whose readability this process does not control must be wrapped in `try`/`except OSError`, returning an empty result on failure. The subtlety: these return lazy iterators, so the `OSError` surfaces while the iterator is *consumed*, not at the call site — the `try` must enclose the consuming loop (or the `list(...)` that drains it), not merely the `.glob()` expression.
+
+```python
+def list_agent_logs(subagents_dir: Path) -> list[Path]:
+    try:
+        # OSError surfaces HERE, during iteration — not at the .glob() call.
+        return list(subagents_dir.glob("agent-*.jsonl"))
+    except OSError:
+        return []
+```
+
+**Text-read guard.** Any `open(..., encoding=...)` / `read_text(encoding=...)` reading externally-sourced or possibly-malformed text must pass `errors="replace"` (or an explicit decode strategy), so a decode failure degrades to replacement characters instead of crashing mid-read. Critically, a decode failure is **not** caught by `except OSError`: `UnicodeDecodeError` is a subclass of `ValueError`, not of `OSError`, and it is raised while the file is *read*, not when it is opened. Do not rely on an `except OSError` block to cover it. When both the I/O failure and the decode failure must be handled, catch them explicitly as a tuple.
+
+```python
+# Lossy-but-total decode: malformed bytes become U+FFFD instead of crashing.
+with path.open(encoding="utf-8", errors="replace") as handle:
+    for line in handle:
+        process(line)
+
+# If you must distinguish, catch BOTH classes — `except OSError` alone lets
+# UnicodeDecodeError (a ValueError) escape and crash the caller.
+try:
+    raw = path.read_text(encoding="utf-8")
+except (OSError, ValueError) as e:  # OSError: open/read failure; ValueError: decode failure
+    raise IngestError(f"Could not read {path}: {e}") from e
+```
+
+Chain with `from e` so the originating exception stays attached for debugging.
+
 ### Anti-Patterns to Avoid
 
 ```python
