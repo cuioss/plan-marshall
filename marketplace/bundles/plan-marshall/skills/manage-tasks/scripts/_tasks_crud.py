@@ -654,7 +654,7 @@ def cmd_update(args) -> dict:
             if dep.lower() != 'none':
                 depends_on.extend(parse_depends_on(dep))
         task['depends_on'] = depends_on
-    if args.status:
+    if args.status is not None:
         if args.status not in ('pending', 'in_progress', 'done', 'blocked', 'infeasible'):
             return output_error(
                 f'Invalid status: {args.status}. Must be pending, in_progress, done, blocked, or infeasible'
