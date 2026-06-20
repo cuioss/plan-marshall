@@ -453,11 +453,13 @@ def test_non_empty_verification_steps_still_resolves_fresh_with_matching_build(
 
     Confirms the fall-through path is the ORDINARY ledger gate (not a degraded
     branch): a code-only plan with a successful build for the current sha passes
-    on its own freshness proof, with no documentation_only reason attached.
+    on its own freshness proof, with no documentation_only reason attached. The
+    step list carries a build/test step (``module-tests``) so the lint-only
+    exemption does NOT fire — the gate must reach the ledger scan.
     """
     plan_dir = plan_context.plan_dir_for('freshness-code-fresh')
     _write_status(plan_dir)
-    _write_manifest(plan_dir, verification_steps=['quality-gate'])
+    _write_manifest(plan_dir, verification_steps=['quality-gate', 'module-tests'])
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
     _stub_ledger_path(monkeypatch, ledger_path)
@@ -465,7 +467,7 @@ def test_non_empty_verification_steps_still_resolves_fresh_with_matching_build(
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-code-fresh'))
 
     assert result['status'] == 'fresh', result
-    assert result.get('reason') != 'documentation_only'
+    assert result.get('reason') not in ('documentation_only', 'lint_only')
     assert result['worktree_sha'] == _CURRENT_SHA
 
 
@@ -545,3 +547,214 @@ def test_manifest_without_verification_steps_key_falls_through(
 
     assert result['status'] == 'stale', result
     assert result.get('reason') != 'documentation_only'
+
+
+# =============================================================================
+# lint_only exemption
+# =============================================================================
+#
+# A lint-only plan composes a NON-empty ``phase_5.verification_steps`` whose every
+# entry resolves (by trailing ``:``-segment) to a structural-lint role
+# (``quality-gate``) and none resolves to a build/test role. Structural lint never
+# stamps a ``kind=build`` ledger entry, so — exactly like a documentation-only
+# plan — such a plan legitimately runs no build and needs no freshness proof. The
+# gate must EXEMPT it (short-circuit to ``fresh`` / ``lint_only`` BEFORE the ledger
+# scan) rather than fail closed. The exemption fires ONLY when the list is
+# non-empty AND every step is a quality-gate step; any build/test step
+# (``module-tests``, ``coverage``, the bare ``verify`` alias) disables it and the
+# plan falls through to the ledger scan (regression coverage that mixed plans stay
+# gated).
+
+
+def test_lint_only_exempts_when_all_steps_are_quality_gate(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """All-``quality-gate`` steps -> fresh / lint_only.
+
+    The exemption short-circuits BEFORE the ledger scan, so the gate passes even
+    though no build proof exists. Fail-closed boundary values (``None`` sha,
+    missing ledger file) prove the short-circuit fires ahead of them.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-lint-only')
+    _write_status(plan_dir)
+    _write_manifest(plan_dir, verification_steps=['quality-gate'])
+    # Fail-closed boundary values — if the exemption did NOT short-circuit first,
+    # the None sha would force ``undecidable / head_unresolvable``.
+    _stub_worktree_sha(monkeypatch, None)
+    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-only'))
+
+    assert result['status'] == 'fresh', result
+    assert result['reason'] == 'lint_only'
+    assert result['plan_id'] == 'freshness-lint-only'
+    # No ledger fields — the short-circuit returns before the scan.
+    assert 'worktree_sha' not in result
+    assert 'ledger_path' not in result
+
+
+def test_lint_only_resolves_role_through_default_and_verify_prefixes(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """Prefixed step IDs resolve to ``quality-gate`` -> still lint_only.
+
+    ``verify:quality-gate`` and ``default:verify:quality-gate`` both resolve to
+    the ``quality-gate`` role via the trailing ``:``-segment, so a list mixing the
+    prefixed forms is still all-lint and the exemption fires.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-lint-prefixed')
+    _write_status(plan_dir)
+    _write_manifest(
+        plan_dir,
+        verification_steps=['verify:quality-gate', 'default:verify:quality-gate'],
+    )
+    _stub_worktree_sha(monkeypatch, None)
+    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-prefixed'))
+
+    assert result['status'] == 'fresh', result
+    assert result['reason'] == 'lint_only'
+
+
+def test_lint_only_exemption_ignores_stale_ledger(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """All-lint steps exempt even when the ledger would otherwise report stale.
+
+    A real worktree sha plus a ledger holding only a build for a DIFFERENT sha is
+    the canonical ``stale`` setup. The exemption must still win because it
+    precedes the ledger scan.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-lint-stale-ledger')
+    _write_status(plan_dir)
+    _write_manifest(plan_dir, verification_steps=['quality-gate'])
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(
+        Namespace(plan_id='freshness-lint-stale-ledger')
+    )
+
+    assert result['status'] == 'fresh', result
+    assert result['reason'] == 'lint_only'
+
+
+def test_lint_only_disabled_by_module_tests_step(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A ``module-tests`` step disables the lint-only exemption -> still gated.
+
+    Regression guard: a single build/test step among quality-gate steps means the
+    plan DOES run a build and must be gated by the ledger. With no matching build,
+    the gate falls through to the ledger scan and reports ``stale``.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-lint-plus-tests')
+    _write_status(plan_dir)
+    _write_manifest(
+        plan_dir, verification_steps=['quality-gate', 'verify:module-tests']
+    )
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-plus-tests'))
+
+    assert result['status'] == 'stale', result
+    assert result.get('reason') != 'lint_only'
+
+
+def test_lint_only_disabled_by_coverage_step(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A ``coverage`` step disables the lint-only exemption -> still gated.
+
+    Regression guard mirroring the ``module-tests`` case for the ``coverage``
+    build/test role.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-lint-plus-coverage')
+    _write_status(plan_dir)
+    _write_manifest(
+        plan_dir, verification_steps=['quality-gate', 'verify:coverage']
+    )
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(
+        Namespace(plan_id='freshness-lint-plus-coverage')
+    )
+
+    assert result['status'] == 'stale', result
+    assert result.get('reason') != 'lint_only'
+
+
+def test_lint_only_disabled_by_bare_verify_alias(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A bare ``verify`` step disables the lint-only exemption -> still gated.
+
+    The bare ``verify`` alias is a build/test role (it runs the full pipeline), so
+    a list containing it is NOT all-lint and the exemption must not fire.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-lint-plus-verify')
+    _write_status(plan_dir)
+    _write_manifest(plan_dir, verification_steps=['quality-gate', 'verify'])
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-plus-verify'))
+
+    assert result['status'] == 'stale', result
+    assert result.get('reason') != 'lint_only'
+
+
+def test_lint_only_not_triggered_by_empty_steps(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """Empty steps are documentation_only, NOT lint_only.
+
+    The lint-only predicate requires a NON-empty list; an empty list is the
+    documentation-only case and must short-circuit with ``reason:
+    documentation_only`` (the documentation-only branch precedes the lint-only
+    branch in the handler).
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-lint-empty')
+    _write_status(plan_dir)
+    _write_manifest(plan_dir, verification_steps=[])
+    _stub_worktree_sha(monkeypatch, None)
+    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-empty'))
+
+    assert result['status'] == 'fresh', result
+    assert result['reason'] == 'documentation_only'
+
+
+def test_lint_only_falls_through_to_ledger_scan_for_matching_build(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A mixed (lint + build) plan with a matching build still resolves fresh.
+
+    Confirms the disabled-exemption fall-through reaches the ORDINARY ledger gate:
+    a mixed plan with a successful build for the current sha passes on its own
+    freshness proof, with no lint_only reason attached.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-lint-mixed-fresh')
+    _write_status(plan_dir)
+    _write_manifest(
+        plan_dir, verification_steps=['quality-gate', 'verify:module-tests']
+    )
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(
+        Namespace(plan_id='freshness-lint-mixed-fresh')
+    )
+
+    assert result['status'] == 'fresh', result
+    assert result.get('reason') not in ('documentation_only', 'lint_only')
+    assert result['worktree_sha'] == _CURRENT_SHA
