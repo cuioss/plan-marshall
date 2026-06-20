@@ -59,6 +59,7 @@ assumed. The next-step documents below reflect the *current* reality, not the ol
 | 03 | Add the OpenCode distribution target | matrix entry added to `claude-distribute.yml`. CI gate `opencode-generate-check.yml` created. | [03-distribution-opencode-target.md](03-distribution-opencode-target.md) |
 | 04 | OpenCode developer inner loop | `sync-opencode` deploy skill does not exist yet | [04-developer-workflow-sync-opencode.md](04-developer-workflow-sync-opencode.md) |
 | 05 | OpenCode user + developer documentation | write once the runtime is validated | [05-opencode-documentation.md](05-opencode-documentation.md) |
+| 06 | Execution-context cross-target mapping | reference — known divergences and emitter gaps documented | [06-execution-context-cross-target.md](06-execution-context-cross-target.md) |
 
 ## Sequencing
 
