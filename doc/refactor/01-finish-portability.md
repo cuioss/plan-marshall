@@ -2,87 +2,334 @@
 
 ## Objective
 
-Route the last remaining Claude-specific call sites through `platform-runtime` so that
-nothing in a general skill body bypasses the abstraction before the runtime is validated
-on OpenCode (document [02](02-validate-opencode-runtime.md)).
+Route the last Claude-specific call sites in **general skill bodies and shared scripts**
+through `platform-runtime` (or a target-aware abstraction) so that nothing outside the
+sanctioned per-platform homes hardcodes `.claude/` behaviour before the runtime is
+validated on OpenCode ([02](02-validate-opencode-runtime.md)).
 
-The `platform-runtime` skill itself is the sanctioned home for per-platform code and is
-**out of scope** for any audit here — its `claude_runtime.py` / `claude_hook.py` /
-`opencode_runtime.py` contain `.claude/` paths and hook strings by design.
+`platform-runtime` itself is the sanctioned home for per-platform code and is **out of
+scope** — its `claude_runtime.py` / `claude_hook.py` / `opencode_runtime.py` contain
+`.claude/` paths and hook strings by design.
 
-## Current state (verified against the tree)
+This document groups the work into gap classes. The **exhaustive candidate registry** — every
+`file:line` from a read-everything audit of all ~880 files under `marketplace/bundles/**` — is
+[08-claude-coupling-inventory.md](08-claude-coupling-inventory.md); the gap classes below are
+its actionable summary. The audit *deepened* these classes rather than adding new ones: the
+permission **grammar** (not just paths) is Claude-specific (Gap 1); the metrics **`<usage>`/
+`message.usage`/cache-pricing format** (not just the path) is too (Gap 2); the shared
+`script-shared/marketplace_paths.py` foundation underlies the layout gaps (Gaps 4/5); and the
+tool-name vocabulary saturates `dev-agent-behavior-rules` — loaded by every agent (Gap 6). Two
+small standalone build-target items also surfaced: `recipe-doc-verify` hardcodes `CLAUDE.md`
+(OpenCode → `AGENTS.md`) and the git commit trailer hardcodes `Co-Authored-By: Claude`.
 
-| Item | State |
-|------|-------|
-| `platform-runtime` API (15 ops, both runtimes) | **Done** — `opencode_runtime.py` implements every operation. |
-| Target-aware executor (`tools-script-executor`) | **Done** — Claude-cache resolver + OpenCode 7-root resolver, switched on `runtime.target`. |
-| `phase-1-init`, `phase-6-finalize` session handling | **Done** — both reference the `session capture` contract. |
-| `phase-5-execute` token capture | **Done** — `session capture` at phase start (line 985), `metrics capture --phase 5-execute` at phase transition (line 1112). |
-| `plan-retrospective` token capture | **Done** — `session capture` at start (line 78), `metrics capture --phase retrospective` before mode-specific termination (line 306). |
-| `marshall-steward` bootstrap (`bootstrap_plugin.py`) | **Done** — `read_runtime_target()` reads from arg/marshal.json/default; `_detect_opencode_root()` walks 7 roots; `--target` CLI flag added. |
-| `tools-permission-doctor` / `tools-permission-fix` / `workflow-permission-web` | **Partial** — SKILL.md guidance updated (prose note to prefer `platform-runtime permission`), but scripts (`permission_common.py`) still hardcode `.claude/settings.json` paths. OpenCode runtime stubs return no-op. |
-| `tools-input-validation` session_id rule | **Needs audit** — confirm whether `session_id` validation branches on `runtime.target` (Claude UUID vs OpenCode shape) or still assumes UUID. |
-| `marshal.json` `runtime.target` field | **Done** — `project initial-setup --target opencode` writes `"runtime": {"target": "opencode"}`. Confirmed in validation session. |
+## Already landed (foundation — not open work)
 
-## Tasks
+- **Token capture via runtime** — `phase-5-execute/SKILL.md` and `plan-retrospective/SKILL.md`
+  call `platform-runtime session capture` + `metrics capture`. *(Capture is abstracted;
+  transcript enrichment behind the same skills is not — see Gap 2.)*
+- **Multi-platform bootstrap** — `marshall-steward/scripts/bootstrap_plugin.py`
+  (`read_runtime_target()`, `_detect_opencode_root()` 7-root walk, `--target`).
+- **`marshal.json` carries `runtime.target`** — `project initial-setup --target opencode`.
+- **OpenCode body transformer wired + AGENTS.md de-leaked** — `OpenCodeTarget.generate()`
+  passes a `body_transformer`; `opencode.json` no longer hardcodes `instructions`.
+- **Target-aware executor** — `tools-script-executor/scripts/generate_executor.py` already
+  searches a 7-root list including both `.claude/skills` and `~/.config/opencode/skills`
+  (this is the model the other resolvers in Gap 4 fail to follow).
+- **Model/effort switching is clean** — the level→model binding is centralized in
+  `variant_emitter.py` `LEVEL_TABLE` + `mapping.json::model_map`; shared scripts reference
+  *level names* (`level-1 … level-7`), not raw model ids. No model-name hardcoding exists in
+  core logic. (The lone exception is an authoring tool — see Gap 8.)
 
-Each task: audit → migrate the call site to `platform-runtime` → test on both targets.
+## Target placement model
 
-1. **`phase-5-execute` — capture via runtime.**
-   **Status: DONE** — `session capture` at phase start, `metrics capture --phase 5-execute` at phase transition.
+Not every Claude-specific aspect moves to the same place. "Move it out of the core" resolves
+to **four** destinations, chosen by *what kind* of coupling it is:
 
-2. **`plan-retrospective` — capture via runtime.**
-   **Status: DONE** — `session capture` at start, `metrics capture --phase retrospective` before termination.
+- **`platform-runtime`** — everything target-specific at runtime: behaviour / side-effects
+  (settings & permission I/O, transcript reading, hook installation, title rendering) **and**
+  filesystem-layout resolution (where project-local skills, the plugin cache, and bundles live
+  per target). `claude_runtime.py` owns the `.claude/` shapes and roots; `opencode_runtime.py`
+  owns its shapes/roots or honest `no-op`. This is the single home for "anything that differs
+  per target," per [principles §2](principles.md) (which already names "plugin paths"). The
+  cost — a subprocess hop on hot config/manifest paths — is mitigated by memoising the
+  resolved roots per process (the target does not change mid-run), so a `project:`-step or
+  config resolution pays the runtime call at most once.
+- **OpenCode build target** — emitted-**text vocabulary** (tool names in body prose) and
+  emitted-**frontmatter format** (e.g. `model: sonnet` vs. `model: anthropic/...`). Belongs in
+  `marketplace/targets/opencode/transforms.md` + `body_transforms.py` and the frontmatter
+  transform, or in target-neutral source rewording. Build-time, not runtime
+  ([principles §4/§5](principles.md)).
+- **Stays put (platform-agnostic)** — logic that is identical across targets stays where it is
+  and only *sources* the target-specific value from `platform-runtime`: metrics *storage* and
+  aggregation stay in `manage-metrics`; the `session_id` validator stays in
+  `tools-input-validation` as an opaque-token contract.
+- **Target-specific skill** *(gated 4th home)* — a whole skill/command that **exists only on
+  some targets**, shipped via a `targets:` frontmatter filter and simply *absent* elsewhere (no
+  runtime no-op). This is the home for capabilities with no analog on other targets — e.g.
+  `tools-fix-intellij-diagnostics` (IDE-MCP), a Claude harness-hook setup wizard, a future
+  `opencode-marketplace-install` flow. **Admission test — all three must hold:** (1) it is a
+  whole workflow/knowledge body, not reducible to a single `Runtime` op or a body/frontmatter
+  transform; (2) it is genuinely N/A on other targets, not merely hard to abstract; (3)
+  normalizing it would force a no-op op onto every other target or distort the shared ABC. It
+  does **not** excuse format dumping — metrics format still normalizes (Gap 2), permission
+  enforcement still uses semantic ops (Gap 1), tool-name vocab still becomes build-target data
+  (Gap 6). The distinction from `platform-runtime`: *differs per target* → runtime op;
+  *exists only on some targets* → target-specific skill. Mechanism in
+  [07](07-target-extensibility.md).
 
-3. **`bootstrap_plugin.py` — multi-platform path resolution.**
-   **Status: DONE** — `read_runtime_target()`, `_detect_opencode_root()` (7-root walk), `--target` CLI arg.
+These homes are **target-neutral by contract** — `claude_runtime.py` / OpenCode are named only
+as the current implementations. Per [principles §6](principles.md), no general skill, shared
+script, or ABC may enumerate targets. The gaps below migrate the *call sites*; the *seam shapes*
+that keep those homes open to a third target (target-opaque interfaces, data-driven transforms,
+consolidated registration, the `targets:` filter) are [07](07-target-extensibility.md).
 
-4. **Permission tools — delegate to the runtime.** Audit `tools-permission-doctor`,
-   `tools-permission-fix`, and `workflow-permission-web`. Where they read/write
-   `.claude/settings*.json` directly, replace with `platform-runtime permission analyze`
-   / `permission fix` / `permission web-analyze` / `permission web-apply`. The Claude-
-   specific anti-pattern lists and settings shapes live in `claude_runtime.py`, not in
-   the skill body.
-   **Status: PARTIAL** — SKILL.md guidance updated (2026-06-19). Scripts still hardcode
-   `.claude/` paths. OpenCode runtime stubs return no-op. Full migration remains.
+## Gap inventory at a glance
 
-5. **`tools-input-validation` — target-specific `session_id`.** Branch the `session_id`
-   rule on `runtime.target`: Claude validates the UUID shape; OpenCode validates its
-   documented shape (or accepts an opaque string if none is documented).
-   **Status: OPEN**
+| # | Subsystem | Severity | Destination | Essence |
+|---|-----------|:--------:|-------------|---------|
+| 1 | Permission tooling | High | `platform-runtime` | Claude settings paths hardcoded; OpenCode ops are fake-success stubs |
+| 2 | Metrics / transcript enrichment | High | `platform-runtime` (read) + stays (storage) | `manage-metrics` is a Claude-transcript engine; runtime reads, manage-metrics aggregates |
+| 3 | `session_id` validation | Low | stays-agnostic + Gap 2 | shared validator already opaque (prose-only fix); the strict-UUID regex is the metrics engine's and folds into Gap 2 |
+| 4 | Project-local skill / step resolution | High | `platform-runtime` | `.claude/skills/` hardcoded with no target branch; breaks `project:` steps on OpenCode |
+| 5 | Bundle / plugin-cache discovery | Medium | `platform-runtime` | `extension_discovery` + shared `marketplace_paths` constants are Claude-only |
+| 6 | Body-text tool-name transforms | Medium | OpenCode build target | `AskUserQuestion` (313×), `Task:`, `Skill: <entry>` not rewritten for OpenCode |
+| 7 | Terminal-title / hooks | Medium | `platform-runtime` | "platform-agnostic" composer is actually a target-shaped interface (`resolve_icon` keyed on Claude hook-events); compose from a neutral state |
+| 8 | Authoring / meta tools | Medium | `platform-runtime` + build target | `plugin-doctor`, `tools-marketplace-inventory` made target-aware (scan both layouts; target-aware frontmatter checks) |
 
-6. **Confirm the `marshal.json` template.** Verify a fresh `project initial-setup` writes
-   `runtime.target` (defaulting to `claude`, `opencode` when `--target opencode`). Add it
-   to the template if missing.
-   **Status: DONE** — Confirmed in validation session. `project initial-setup --target opencode`
-   writes `"target": "opencode"` into marshal.json.
+**Settled architectural decisions:**
 
-7. **Final audit grep.** Grep `marketplace/bundles/*/skills/*/SKILL.md` (excluding
-   `skills/platform-runtime/**`) for remaining behavioural `.claude/` / `~/.claude`
-   references — writes, reads, hook installation. Each remaining hit must be a
-   `platform-runtime` call site or a `references/{topic}.md` pointer.
-   **Status: OPEN**
+- **Layout resolution (Gaps 4-5) goes through `platform-runtime`**, not a shared path module —
+  one home for everything target-specific. The hot-path subprocess cost is mitigated by
+  per-process memoisation of the resolved roots.
+- **Authoring tools (Gap 8) are made target-aware**, not scoped out — `plugin-doctor` and
+  `tools-marketplace-inventory` scan both `.claude/skills/**` and the OpenCode layout, and
+  apply target-aware frontmatter checks (e.g. `model: anthropic/...` vs. `model: sonnet`).
+  This keeps OpenCode authoring viable.
 
-## Additional findings from OpenCode validation (2026-06-19)
+---
 
-- **Body transformer not wired**: `OpenCodeTarget.generate()` did not pass `body_transformer`
-  to `emit_bundles`. All `Skill:` directives survived raw. Fixed in
-  `marketplace/targets/opencode/target.py`.
-- **AGENTS.md leaked into distributed output**: `opencode.json` hardcoded
-  `instructions: ["AGENTS.md"]` but the emitted tree is a distributable plugin, not a
-  project root. Removed — instructions are the downstream project's concern.
-- **Multiple doc/refactor documents stale**: Updated to reflect completion status.
+## Gap 1 — Permission tooling is not portable on either side
+
+**Claude side hardcodes settings paths.** `tools-permission-doctor/scripts/permission_common.py:79-100`
+returns `Path.home()/'.claude'/'settings.json'`, `project_dir/'.claude'/'settings.local.json'`,
+etc. directly. Also `permission_doctor.py:54` (`.claude/commands/`),
+`permission_fix.py:71` (`Read(~/.claude/plugins/cache/**)`),
+`workflow-permission-web/scripts/permission_web.py:18,24,545-570` (settings.json args +
+help). The three SKILL bodies (`tools-permission-fix`, `tools-permission-doctor`,
+`workflow-permission-web`) instruct direct `--settings ~/.claude/settings.json` operations.
+
+**OpenCode side is fake success.** `opencode_runtime.py:144-334`
+(`permission_configure` / `_analyze` / `_fix` / `_ensure_wildcards` / `_ensure_steps` /
+`_web_analyze` / `_web_apply`) validate args and return `toon_success` with all effect
+counters `0` — they write nothing. Per [principles §3](principles.md) an unimplementable
+op must return honest `no-op` with `reason`/`alternative`, not hollow success.
+
+**Required:** move Claude settings I/O into `claude_runtime.py`; implement the OpenCode
+permission backend for real *or* convert every stub to honest `no-op`; rewrite the three
+SKILL bodies to call `platform-runtime permission …`; test both targets.
+
+**Draw the boundary at intent, not the DSL ([principles §1](principles.md)).** The permission
+ops must take and return *semantic* permission intent — "allow the executor", "allow web domain
+X", normalized findings — **not** the Claude permission-string grammar (`Skill()`, `Bash()`,
+`WebFetch()`, the `permissions.{allow,deny,ask}` schema). That grammar is a Claude *format*;
+it must be rendered and parsed entirely inside `claude_runtime.py`. A `permission configure
+--permissions "Bash(...)"` contract would still leak the format even though it routes through
+the runtime — so the contract itself changes, not just the I/O site.
+
+## Gap 2 — Metrics / transcript enrichment is a Claude-transcript engine
+
+This is larger than the two call sites first identified. The engine itself is Claude-coupled:
+
+- `manage-metrics/scripts/manage-metrics.py:152,1377` — `projects_dir = home/'.claude'/'projects'`.
+- `manage-metrics.py:1370-1423` — transcript discovery assumes the Claude layout
+  `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` and `…/{session_id}/subagents/agent-*.jsonl`,
+  then parses Claude transcript JSONL (`message.usage` fields).
+- `manage-metrics.py:142` — re-validates `SESSION_ID_RE` (Claude UUID shape).
+
+The call sites that feed it are `phase-6-finalize/SKILL.md:85` (`transcript_path` pattern)
+and `plan-retrospective/SKILL.md:210` (Aspect 13 chat-history). On OpenCode none of this
+exists; `metrics capture` already no-ops, but `enrich` / subagent-token attribution is
+entirely Claude-specific.
+
+**Required — the boundary is the token *format*, not the file path
+([principles §1](principles.md)).** The platform-runtime op returns **normalized token
+categories** (`{input, output, cache_read, cache_creation, total}`) for a (plan, phase) or
+session. Everything Claude-shaped — the `~/.claude/projects/.../{session_id}.jsonl` layout, the
+`subagents/agent-*.jsonl` discovery, the `<usage>` tag, the `message.usage` four-field parse,
+the `SESSION_ID_RE` shape, and the Anthropic cache-pricing weights — lives **only** inside
+`claude_runtime.py`. `manage-metrics` receives normalized numbers and keeps its
+storage/aggregation role; it never parses a transcript and never sees a Claude format.
+
+Explicitly reject the half-measure of "the runtime returns the transcript *path* and
+`manage-metrics` parses it" — that leaves the Claude JSONL/`message.usage` format in core and
+fails the switch-targets test. On OpenCode the op returns `no-op` (no transcript), and the
+enrich step degrades gracefully (`transcript_not_found` → skip) — driven by the `no-op`, not by
+the engine resolving a Claude path.
+
+## Gap 3 — `session_id`: one validator is already fine, one regex is the metrics engine's
+
+The two `SESSION_ID_RE` copies are **not** equivalent — the meticulous check corrected an
+earlier mis-reading:
+
+- `tools-input-validation/scripts/input_validation.py:45` is **already target-agnostic**:
+  `SESSION_ID_RE = ^[A-Za-z0-9_-]{1,128}$` — an opaque non-empty token, not a Claude UUID. The
+  only coupling is prose: the `validate_session_id` docstring and the `--session-id` argparse
+  help say "Claude Code UUID-shape token." This is `stays-agnostic` — just neutralize the
+  wording. No `runtime.target` branch is needed; an opaque-token contract is already correct
+  cross-target.
+- `manage-metrics/scripts/manage-metrics.py:79` is the **strict** Claude UUID
+  (`[0-9a-f]{8}-…-[0-9a-f]{12}`), used at `:142` only to drive Claude transcript discovery — so
+  it is **part of Gap 2** and moves into `claude_runtime.py` with the transcript engine, not
+  into a shared validator.
+
+**Required:** reword the `input_validation.py` docstring/help to "opaque session token (the
+target runtime supplies it)"; remove the strict UUID regex from `manage-metrics` as part of the
+Gap 2 extraction. Do **not** add a `runtime.target` branch to the shared validator — that would
+re-introduce target enumeration where an opaque-token contract already suffices.
+
+## Gap 4 — Project-local skill / finalize-step resolution is `.claude/skills/`-hardcoded
+
+The `project:`-prefixed skill mechanism (finalize-steps, recipes, verify-steps) resolves
+project-local skills, but every resolver outside the executor hardcodes `.claude/skills/`
+with **no** `runtime.target` branch:
+
+- `manage-config/scripts/_config_core.py:186-187` — `Path('.claude')/'skills'/skill/'SKILL.md'`.
+- `manage-config/scripts/_cmd_skill_domains.py:170,472`, `_cmd_skill_resolution.py:334,435`.
+- `manage-config/scripts/manage-config.py:219` (help) and `finalize_step_presets.py:40,46`
+  (preset prose) name the same `.claude/skills/` anchor.
+- `manage-execution-manifest/scripts/manage-execution-manifest.py:3102,3113` — `project:`
+  step → `.claude/skills/{bare}/SKILL.md`.
+- `marshall-steward/scripts/determine_mode.py:604,623,647` — finalize-step discovery under
+  `<project_root>/.claude/skills/`.
+- `build-pyproject/scripts/extension.py:105,115` — classifies `.claude/skills/*.py` as
+  production source. **This is a different bundle** — the coupling is not confined to
+  `manage-config`; any build/domain extension that reasons about project-local skills repeats it.
+- `script-shared/scripts/marketplace_paths.py:26` — `CLAUDE_DIR = '.claude'` constant.
+
+The complete set of `.py` files resolving `.claude/skills` (excluding `platform-runtime`)
+is the list above plus the two already-target-aware resolvers (`generate_executor.py`,
+`bootstrap_plugin.py`) and the Gap-8 authoring tools. The executor
+(`generate_executor.py:389-393,482-485`) already treats project-local skills as
+cross-target (both `.claude/skills` and `~/.config/opencode/skills`). These resolvers are
+inconsistent with that design — on OpenCode, `project:` finalize-steps and recipes silently
+fail to resolve.
+
+**Required:** add a `platform-runtime` layout-resolution operation that returns the
+project-local-skill root(s) for the active target (mirroring the executor's root list), and
+route every site above through it. Memoise the result per process so hot config/manifest
+paths pay the call once. Retire the bare `CLAUDE_DIR` constant as a project-local-skill anchor.
+
+## Gap 5 — Bundle / plugin-cache discovery is Claude-only
+
+- `extension-api/scripts/extension_discovery.py:29` — `Path.home()/'.claude'/'plugins'/'cache'/'plan-marshall'`.
+  The extension API discovers domain bundles only under the Claude plugin cache; on OpenCode
+  the deployed bundle lives under `~/.config/opencode/` (or the env-var dir).
+- `script-shared/scripts/marketplace_paths.py:27` — `PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'`
+  is the shared Claude-cache constant other scripts build on.
+- `manage-execution-manifest.py:835,857` reference the cache path in prose (lower priority).
+
+`bootstrap_plugin.py` and `generate_executor.py` already resolve both targets — these two are
+the remaining Claude-only discovery anchors.
+
+**Required:** route extension/bundle discovery through the same `platform-runtime`
+layout-resolution operation as Gap 4 (it already wraps the bootstrap root resolution), so
+domain-bundle extensions load on OpenCode. Retire `PLUGIN_CACHE_SUBPATH` as a standalone
+Claude-only anchor.
+
+## Gap 6 — Body-text tool-name transforms are incomplete
+
+The OpenCode body transform (`body_transforms.py`) rewrites only concrete `Skill:` directives
+and `/slash` commands. Claude tool names referenced in body prose are not rewritten:
+
+- **`AskUserQuestion`** — 313 references across skill/agent/command bodies (escalation
+  mechanism). OpenCode's equivalent is `question`/`ask`; the name is never rewritten.
+- **`Task:`** dispatch references — Claude tool name; OpenCode's is `task` (see
+  [06](06-execution-context-cross-target.md)).
+- **`Skill: <entry>`** placeholder loops — not rewritten because `<entry>` is a runtime
+  placeholder, not an identifier (06 item 2).
+
+**Required:** the source stays Claude-native; `AskUserQuestion` and `Task:` become per-target
+**rewrite data** applied by the shared transform engine ([07](07-target-extensibility.md)),
+with the build failing closed on any unmapped registered Claude idiom. `Task:` needs a
+careful, leaf-aware rule (06 item 3); `Skill: <entry>` is the one true source change — reword
+the placeholder prose (06 item 2). Do not introduce universal `{{ }}` templating
+([principles §5](principles.md)) or neutralise the source vocabulary.
+
+## Gap 7 — Terminal-title / hooks (verify, likely acceptable)
+
+`manage-terminal-title/scripts/manage_terminal_title.py` is *labelled* "pure platform-agnostic
+composition," but pass 2 ([08](08-claude-coupling-inventory.md) §A3) found its `resolve_icon`
+(lines 71-101) is keyed on Claude hook-event names (`Stop`/`Notification`/`PreToolUse`/`PostToolUse`)
+and tool names (`AskUserQuestion`, `Bash`) — a target-shaped interface, not a neutral one. The
+icon palette + its SKILL/architecture docs co-own that interface, and `manage-locks/merge_lock.py`
+duplicates the glyph vocabulary. `render-title` already no-ops on OpenCode, and `manage-status`
+persists only the bare state string.
+
+**Required:** the composer must take a **target-neutral state** (a phase/status enum), with the
+state→icon (event) mapping owned by `platform-runtime`; retire the Claude hook-event vocabulary
+from the "agnostic" composer and de-duplicate the lock glyphs. Confirm (during
+[02](02-validate-opencode-runtime.md)) the title/statusline path is genuinely no-op on OpenCode
+end-to-end. The `project_install_hook` *interface* encoding Claude's hook model is the related
+seam-shape fix in [07](07-target-extensibility.md).
+
+## Gap 8 — Authoring / meta tools: make target-aware
+
+`pm-plugin-development` tooling operates on the Claude component layout by nature, and is
+being made target-aware so OpenCode authoring stays viable:
+
+- `plugin-doctor/scripts/*` — scan `<repo>/.claude/skills/**` (project-local) and the plugin
+  cache; `_cmd_apply.py:48` emits frontmatter with a hardcoded `model: sonnet`.
+- `tools-marketplace-inventory/scripts/*` — `CLAUDE_DIR='.claude'`, `PLUGIN_CACHE_SUBPATH`,
+  `.claude/skills/` scanning (`scan-marketplace-inventory.py`, `_dep_index.py`).
+
+**Required:** (1) route their layout scanning through the Gap-4/5 `platform-runtime`
+layout-resolution operation so both `.claude/skills/**` and the OpenCode layout are covered;
+(2) make frontmatter checks/emission target-aware — `_cmd_apply.py:48` must emit the correct
+shape per target (`model: anthropic/...` + `mode: subagent` for OpenCode vs. `model: sonnet`
+for Claude), and doctor rules must accept both. Test on both targets.
+
+Pass 2 ([08](08-claude-coupling-inventory.md)) sharpened the shape: `plugin-doctor` is **not**
+a target-specific skill (an OpenCode author would lint OpenCode output) — split it into a
+target-agnostic linting **engine** (the structural/notation/bloat/prose rules — the bulk of the
+50+ analyzers stay-agnostic) plus a swappable **Claude rule-pack** (the tool/permission/model-DSL
+rules — `_KNOWN_TOOLS`, comma-vs-array, `agent-task-tool-prohibited`, `hardcoded-model-on-canonical`,
+the `target/claude/` literal at `_analyze_markdown.py:306`). `rule-provenance.md` (which already
+documents the project-vs-Anthropic-schema split) is the natural fork point. The `.claude/skills/**`
+resolver duplicated across 6+ analyzers collapses onto the one Gap-4 op.
+
+---
+
+## Closing audit
+
+After Gaps 1-8 are addressed, re-run:
+
+```bash
+grep -rnE '\.claude/|~/\.claude' marketplace/bundles --include='*.py' --include='*.md' \
+  | grep -v '/platform-runtime/' | grep -v '\.claude-plugin'
+```
+
+Every remaining hit must be one of: a `platform-runtime` call site (including the
+layout-resolution op), a `claude_runtime.py` internal, or a `references/{topic}.md` pointer.
+No behavioural Claude-path hardcode may remain in a general skill body, shared runtime script,
+or authoring tool.
 
 ## Acceptance
 
-- No behavioural `.claude/` reference remains in a general skill body (platform-runtime
-  excluded).
-- `phase-5-execute` and `plan-retrospective` capture tokens through `platform-runtime`.
-- `bootstrap_plugin.py` resolves on both targets.
-- Permission tools delegate all settings I/O to the runtime.
-- `marshal.json` carries `runtime.target`.
+- Permission tooling: Claude settings I/O in `claude_runtime.py`; SKILL bodies call
+  `platform-runtime permission …`; OpenCode ops write for real or return honest `no-op`.
+- Metrics returns normalized token categories (the transcript JSONL / `message.usage` format
+  stays in `claude_runtime`); project-local-skill resolution and bundle/extension discovery are
+  target-aware; the shared `session_id` validator is an opaque-token contract.
+- Body-text tool-name divergences (`AskUserQuestion`, `Task:`, `Skill: <entry>`) have a
+  recorded `transforms.md` disposition.
+- Terminal-title/hook no-op path confirmed on OpenCode.
+- Authoring tools (`plugin-doctor`, `tools-marketplace-inventory`) scan both layouts and apply
+  target-aware frontmatter checks.
+- The closing-audit grep returns only accepted hits.
 - `verify` passes on all bundles (Claude canary — no regression).
 
 ## Dependencies
 
-None beyond the landed baseline. This is the precondition for [02](02-validate-opencode-runtime.md).
+None beyond the landed baseline. This is the precondition for
+[02](02-validate-opencode-runtime.md): the live session must exercise the real
+`platform-runtime` path, not the current Claude-hardcoded one.

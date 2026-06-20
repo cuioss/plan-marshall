@@ -2,88 +2,39 @@
 
 ## Objective
 
-Document the known divergences between the Claude Code and OpenCode targets for the
-execution-context agent — what is correct, what differs by design, and what are known
-emitter gaps — so that future workstreams (02 validation, 05 documentation) have a
-single reference for the current state.
+Record how the `execution-context` dispatcher maps across the Claude Code and OpenCode
+targets — what is already correct, what diverges by design, and what is an unbuilt
+**emitter gap** (work the OpenCode target could do but does not yet). This is a reference
+for workstreams [01](01-finish-portability.md) and [02](02-validate-opencode-runtime.md);
+it also carries one concrete open task (the OpenCode variant emitter).
 
-## Status
-
-All items are **known and triaged** — no action required before 02 validation begins.
-This document is a reference, not a task list.
+The single source agent is `marketplace/bundles/plan-marshall/agents/execution-context.md`.
+Both targets derive their output from it.
 
 ---
 
-## One Generic Dispatcher
+## One generic dispatcher
 
-Both targets emit a single `execution-context.md` agent file. The OpenCode frontmatter
-uses `mode: subagent` with a `permission:` block (per-tool allow/deny) instead of
-Claude's `tools:` comma list and `forwards_tool_capabilities: true`. The prompt-body
-contract (five fields + workflow-specific inputs) and the six-step dispatch sequence
-are identical on both targets.
+Both targets emit a single `execution-context` agent. The prompt-body contract (five
+required fields plus workflow-specific inputs) and the six-step dispatch sequence are
+identical on both. The frontmatter differs by target: Claude uses a `tools:` comma list
+plus `forwards_tool_capabilities: true`; OpenCode uses `mode: subagent` with a
+per-tool `permission:` block.
 
-**Status**: Correct — no change needed.
+**Correct — no change needed.**
 
-## Level Variants (OpenCode: Deferred to Runtime)
-
-The Claude target emits 6-7 level-suffixed variant agent files (`execution-context-level-1`
-through `level-7`) with `model:` baked into frontmatter. The resolver picks which variant
-to dispatch based on `marshal.json` effort settings.
-
-The OpenCode target **does not** emit level variants. OpenCode has no `model:` field in
-agent frontmatter and no established level-variant dispatch mechanism. Model selection is
-deferred to OpenCode's native runtime — the same single `execution-context.md` agent is
-dispatched regardless of effort level. If OpenCode's runtime later gains a model-pinning
-equivalent, the emitter can be extended to produce variants at that point.
-
-This means the `manage-config effort resolve-target` resolver still works (it is a
-shared script), but on OpenCode it always returns the canonical agent name; the
-orchestrator dispatches `execution-context.md` unconditionally.
-
-**Status**: Deferred to runtime — known divergence, accepted.
-
-## Skill Loading (Known Emitter Gap)
-
-Step 2 of the dispatch sequence (Load Foundational Practices) is correctly transformed
-to the OpenCode `skill` tool syntax:
-
-```
-Call the `skill` tool with `{ name: "plan-marshall-dev-agent-behavior-rules" }` before continuing.
-```
-
-Step 3 (Load Caller-Specified Skills) still uses Claude's `Skill:` directive, which is
-not a valid OpenCode construct:
-
-```
-Skill: <entry>
-```
-
-This is a known emitter gap in `marketplace/targets/opencode/body_transforms.py` — the
-`Skill:` directive transformer only handles isolated directives, not the loop-body
-pattern used in agent files.
-
-**Status**: Known emitter gap — the loop-body pattern needs a dedicated transform rule.
-
-## `Task:` vs `task` Tool References (Known Emitter Gap)
-
-The leaf constraint in Step 5, the enforcement section, and the dispatch lifecycle
-description reference `Task:` dispatch — the Claude Code tool name. OpenCode's
-equivalent is the `task` tool. The agent body text in the OpenCode target should use
-`task` instead of `Task:`. This is a known emitter gap — the body transformer does not
-rewrite `Task:` references.
-
-**Status**: Known emitter gap — a `Task:` → `task` rewrite rule needs to be added to
-the body transformer.
-
-## Permissions vs Tools List
+## Permissions vs. tools list
 
 Claude frontmatter:
+
 ```yaml
 tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 forwards_tool_capabilities: true
 ```
 
-OpenCode frontmatter (correct):
+OpenCode frontmatter, produced by `transform_agent_frontmatter`
+(`marketplace/targets/opencode/frontmatter.py`) via `mapping.json::tool_permissions`:
+
 ```yaml
 mode: subagent
 permission:
@@ -96,27 +47,148 @@ permission:
   skill: allow
 ```
 
-The OpenCode `permission:` block covers all tools the dispatcher needs. Missing tools
-(e.g., `Write` is covered by `edit: allow`) are equivalent.
+`Write` maps to `edit`, so the set is equivalent. **Correct — no change needed.**
 
-**Status**: Correct — no change needed.
+## Level variants and model pinning (emitter gap, not a platform limitation)
+
+This is the section that was previously wrong and is the reason this document exists.
+
+**What Claude does.** The canonical agent declares
+`implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`
+and carries **no** `model:`/`effort:` (a canonical with those fields is rejected by
+`validate_canonical` in `marketplace/targets/claude/variant_emitter.py`). At build time the
+Claude variant emitter walks `LEVEL_TABLE` and writes the canonical plus seven
+`execution-context-level-1 … level-7` files, injecting `model:` and `effort:` per level:
+
+| Level | model | effort |
+|-------|-------|--------|
+| level-1 | haiku | — |
+| level-2 | sonnet | medium |
+| level-3 | sonnet | high |
+| level-4 | opus | medium |
+| level-5 | opus | high |
+| level-6 | opus | xhigh |
+| level-7 | fable | max |
+
+The resolver (`manage-config effort resolve-target`) picks which variant the orchestrator
+dispatches based on `marshal.json` effort settings.
+
+**What OpenCode does.** The OpenCode emitter (`marketplace/targets/opencode/emitter.py`,
+`_emit_agent`) writes **one** agent file per canonical source. It does not run any
+variant emitter — there is no OpenCode counterpart to `variant_emitter.py`. Because the
+canonical source carries no `model:`, the emitted OpenCode `execution-context` ends up
+with no model pinning either.
+
+**Why the previous "OpenCode has no `model:` field / deferred to runtime" framing was
+wrong.** OpenCode agents *do* support a `model:` field (`model: provider/model-id`, e.g.
+`anthropic/claude-opus-4-8`), and plan-marshall's OpenCode frontmatter transformer
+**already emits it**: `transform_agent_frontmatter` resolves a source `model` alias
+through `mapping.json::model_map` and writes `model: anthropic/<id>`
+(`frontmatter.py`, the `model_value` / `_resolve_model` path). `mapping.json::model_map`
+already lists the concrete ids (`opus → claude-opus-4-8`, `sonnet → claude-sonnet-4-6`,
+`haiku → claude-haiku-4-5-20251001`, `fable → claude-fable-5`) with a `supports_effort`
+array per alias. The user-invocable command wrapper emits a model the same way. The
+missing piece is therefore the **variant emission step on the OpenCode side**, not any
+OpenCode capability.
+
+**Configurable model-per-level is possible today.** The two tables needed already exist:
+`LEVEL_TABLE` (level → model alias + effort) and `mapping.json::model_map`
+(alias → concrete `provider/id` + `supports_effort`). An OpenCode variant emitter would
+iterate `LEVEL_TABLE`, resolve each alias through `model_map`, and emit
+`execution-context-level-N` files with a concrete `model:` line — reusing the same
+build-time tables the Claude target already uses. The model dimension is fully mappable.
+
+**The one real fidelity caveat is effort, not model.** `LEVEL_TABLE` distinguishes
+level-4/5/6 *only* by effort (all three are `opus`). OpenCode has no first-class `effort:`
+field, but it forwards unrecognised frontmatter keys to the provider, so a level's effort
+can be carried as a provider-passthrough option (`reasoningEffort`, or the Claude
+`thinking` / `budgetTokens` shape). Levels that differ by **model** (haiku / sonnet / opus /
+fable) are distinguishable from the model line alone; the opus-effort tiers need the
+passthrough option to stay distinct, or they collapse to a single agent.
+
+**Emitter gap with a bounded fix — see "Open work" below.**
+
+## Skill loading
+
+Step 2 of the dispatch sequence (load `dev-agent-behavior-rules`) uses a concrete
+`Skill: plan-marshall:dev-agent-behavior-rules` directive. The OpenCode body transform
+(`rewrite_skill_directives` in `marketplace/targets/opencode/body_transforms.py`) rewrites
+it to:
+
+```text
+Call the `skill` tool with `{ name: "plan-marshall-dev-agent-behavior-rules" }` before continuing.
+```
+
+**Step 2: correct.**
+
+Step 3 (load caller-specified skills) iterates `skills[]` and shows `Skill: <entry>`. This
+line is **not** rewritten. The reason is precise: the body transform is a per-line regex
+(`SKILL_DIRECTIVE_RE`) that matches a concrete `bundle:skill` identifier; `<entry>` is a
+runtime placeholder, not an identifier, so it cannot match — and even a matching transform
+would leave the surrounding "For each entry in `skills[]` …" prose Claude-specific. The fix
+is to reword that instructional prose so it reads target-neutrally (e.g. "load each entry
+with the platform's skill-loading mechanism"), **not** to add a regex rule for a
+placeholder.
+
+**Step 3: divergence — fix is prose, not a transform rule.**
+
+## `Task:` vs `task` tool references
+
+The dispatcher body references `Task:` (the Claude tool name) in its leaf constraint, its
+enforcement section, and its lifecycle description. OpenCode's equivalent tool is `task`.
+The body transformer does not rewrite these references.
+
+A blanket `Task:` → `task` rewrite is **risky for this specific agent**: its entire purpose
+is that it is a leaf that must *not* dispatch ("no `Task:` dispatch", "every plan-marshall
+`Task:` invocation"). These are descriptive references, and a careless substitution
+corrupts them. The divergence is real terminology drift; any remediation must be
+target-aware and must preserve the leaf-constraint prose.
+
+**Divergence — remediation must be careful, not a blanket rewrite.**
 
 ## Summary
 
-| Aspect | Claude | OpenCode | Status |
-|--------|--------|----------|--------|
+| Aspect | Claude | OpenCode | State |
+|--------|--------|----------|-------|
 | Agent format | `tools:` + `forwards_tool_capabilities` | `mode: subagent` + `permission:` | Correct |
-| Level variants | 6-7 model-pinned files | Single file, no model pinning | Deferred to runtime |
-| Skill load (step 2) | `Skill:` directive | `skill` tool | Correct |
-| Skill load (step 3) | `Skill: <entry>` | `Skill: <entry>` (not transformed) | Emitter gap |
-| `Task:` references | Correct | `Task:` not rewritten to `task` | Emitter gap |
-| Prompt-body contract | 5 fields + extras | 5 fields + extras | Correct |
-| TOON return contract | Same | Same | Correct |
-| `resolve-target` | Returns level variant name | Returns canonical name | Works, always canonical |
+| Permissions | tools list | `permission:` block (`Write`→`edit`) | Correct |
+| Level variants | 7 model+effort-pinned files via `variant_emitter.py` | single file, no variant emitter | Emitter gap (open) |
+| Model pinning | `model:` per variant | `model:` supported and already emitted *when present*; canonical carries none | Emitter gap (open) |
+| Effort pinning | `effort:` per variant | no native field; provider-passthrough only | Fidelity caveat |
+| Skill load (step 2) | `Skill:` directive | rewritten to `skill` tool | Correct |
+| Skill load (step 3) | `Skill: <entry>` placeholder + loop prose | not rewritten | Prose fix (open) |
+| `Task:` references | native tool name | not rewritten to `task` | Careful fix (open) |
+| Prompt-body / TOON contract | 5 fields + extras | identical | Correct |
+| `resolve-target` | returns level-variant name | returns canonical name (no variants emitted) | Follows the emitter gap |
+
+## Open work
+
+1. **OpenCode variant emitter.** Add an OpenCode counterpart to
+   `marketplace/targets/claude/variant_emitter.py` that, for any agent declaring
+   `implements: …ext-point-dynamic-level-executor`, emits `execution-context-level-N`
+   agent files with a concrete `model:` resolved from `LEVEL_TABLE` + `mapping.json::model_map`.
+   Decide how to express each level's effort (provider-passthrough `reasoningEffort` /
+   `thinking` budget) or document that opus-effort tiers collapse on OpenCode. This is the
+   prerequisite for verification check 2.2d in
+   [02-verification-protocol.md](02-verification-protocol.md) ("`level-N` variant
+   resolution").
+
+2. **Step-3 skill-load prose.** Reword the "For each entry in `skills[]` … `Skill: <entry>`"
+   block in `agents/execution-context.md` so the OpenCode body transform is unnecessary and
+   the instruction is target-neutral. (Source-side change; folds into
+   [01](01-finish-portability.md) prose cleanup.)
+
+3. **`Task:` terminology.** Decide a target-aware treatment for the dispatcher's `Task:`
+   references that preserves the leaf-constraint prose. Likely a deliberate
+   `transforms.md` spec change rather than a naive substitution.
 
 ## Related
 
-- [02 — Validate the OpenCode runtime](02-validate-opencode-runtime.md) — live validation of these divergences
-- [05 — OpenCode documentation](05-opencode-documentation.md) — user-facing docs for the OpenCode target
-- `marketplace/targets/opencode/` — emitter and transforms
-- `marketplace/bundles/plan-marshall/agents/execution-context.md` — canonical source agent
+- [01 — Finish portability gaps](01-finish-portability.md) — source-side prose items (2, 3)
+- [02 — Validate the OpenCode runtime](02-validate-opencode-runtime.md) and its
+  [verification protocol](02-verification-protocol.md) — live confirmation of the
+  `task`-dispatch and variant-resolution behaviour
+- `marketplace/targets/claude/variant_emitter.py` — the Claude variant emitter to mirror
+- `marketplace/targets/opencode/frontmatter.py`, `emitter.py`, `mapping.json` — the
+  OpenCode transform, emitter, and model map
+- `marketplace/bundles/plan-marshall/agents/execution-context.md` — the canonical source agent

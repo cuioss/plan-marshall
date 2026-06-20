@@ -11,6 +11,11 @@ once the runtime is proven.
 The original design recorded a set of **accepted risks** — behaviours assumed to work on
 OpenCode but never tested. This workstream confirms or escalates each one.
 
+The executable companion to this document is
+[02-verification-protocol.md](02-verification-protocol.md): it carries the exact commands,
+expected observations, and pass/fail criteria for every check named here. This document is
+the *why and what*; the protocol is the *how*.
+
 ## Why this is the highest-value remaining work
 
 The marketplace already *emits* OpenCode artifacts and the runtime already *answers*
@@ -55,12 +60,13 @@ support is theoretical.
 
 ## CI: OpenCode generation gate
 
-Independent of the live session, add a CI check that runs
-`python3 marketplace/targets/generate.py --target opencode --output target/opencode` on
-every PR and fails (exit 2) on any generation error — unmapped agent tool, invalid
-frontmatter, or a `user-invocable: true` skill missing a `description`. This guards the
-emitter even before the runtime is fully validated. (The Claude drift/equality gate
-already runs via `claude-distribute.yml`; this adds the OpenCode side.)
+The gate already exists (`.github/workflows/opencode-generate-check.yml`): it runs
+`generate.py --target opencode` on every PR touching `marketplace/bundles/**` or
+`marketplace/targets/**` and fails on any generator error — unmapped agent tool, invalid
+frontmatter, or a `user-invocable: true` skill missing a `description`. The remaining work
+is to confirm it actually fails on each of those error classes (the false-positive /
+false-negative checks in [02-verification-protocol.md](02-verification-protocol.md) §4.1),
+not just on the happy path.
 
 ## Acceptance
 
