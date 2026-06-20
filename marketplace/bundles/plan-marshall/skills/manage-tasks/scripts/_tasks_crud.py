@@ -655,8 +655,10 @@ def cmd_update(args) -> dict:
                 depends_on.extend(parse_depends_on(dep))
         task['depends_on'] = depends_on
     if args.status:
-        if args.status not in ('pending', 'in_progress', 'done', 'blocked'):
-            return output_error(f'Invalid status: {args.status}. Must be pending, in_progress, done, or blocked')
+        if args.status not in ('pending', 'in_progress', 'done', 'blocked', 'infeasible'):
+            return output_error(
+                f'Invalid status: {args.status}. Must be pending, in_progress, done, blocked, or infeasible'
+            )
         task['status'] = args.status
 
     # Handle new fields

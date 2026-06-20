@@ -111,7 +111,7 @@ For `verification` profile tasks, steps contain verification commands instead of
 |-------|------|----------|---------|
 | `number` | integer | Yes | Unique task identifier — immutable after creation |
 | `title` | string | Yes | Task title for display |
-| `status` | enum | Yes | Task status (see Status Values) |
+| `status` | enum | Yes | Task status — `pending`/`in_progress`/`done`/`blocked`/`infeasible` (see Status Values) |
 | `domain` | string | Yes | Single domain from deliverable (java, javascript, plan-marshall-plugin-dev) |
 | `profile` | string | Yes | Workflow profile (implementation, module_testing, integration_testing) |
 | `skills` | list | Yes | Domain skills pre-resolved during task creation (`{bundle}:{skill}`) |
@@ -147,7 +147,8 @@ Tasks use sequential numbering with zero-padded format:
 | `pending` | Task has not been started |
 | `in_progress` | Task is currently being worked on |
 | `done` | All steps completed, verification passed |
-| `blocked` | Cannot proceed due to dependency or issue |
+| `blocked` | Cannot proceed due to dependency or issue (recoverable — task may resume) |
+| `infeasible` | Terminal explicit-triage outcome — the declared deliverable cannot be built as scoped (required surface absent, an assumed precondition is false, or building the named artifact is structurally impossible). Resolved by a gate-level planning decision (drop / re-scope into a new task / abort), never by resuming the same task |
 
 ### Step Status
 
@@ -165,16 +166,24 @@ Tasks use sequential numbering with zero-padded format:
 ```
 pending ──► in_progress ──► done
    │             │
-   │             ▼
-   └──────► blocked
+   ├──────► blocked ◄──────┤
+   │             │
+   └──────► infeasible ◄───┘
 ```
+
+`infeasible` has incoming edges from both `pending` (pre-work discovery — the
+deliverable is recognised as unbuildable before any step runs) and `in_progress`
+(mid-execute discovery — the deliverable turns out to be unbuildable during
+execution), mirroring the `blocked` edges. Unlike `blocked`, `infeasible` is
+terminal: there is no edge back to `pending`/`in_progress`.
 
 | Current Status | Valid Transitions |
 |---------------|-------------------|
-| `pending` | `in_progress`, `blocked` |
-| `in_progress` | `done`, `blocked` |
+| `pending` | `in_progress`, `blocked`, `infeasible` |
+| `in_progress` | `done`, `blocked`, `infeasible` |
 | `blocked` | `pending`, `in_progress` |
 | `done` | (terminal) |
+| `infeasible` | (terminal) |
 
 ### Step State Machine
 

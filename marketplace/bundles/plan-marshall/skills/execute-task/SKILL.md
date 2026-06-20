@@ -37,6 +37,15 @@ Skill: plan-marshall:dev-agent-behavior-rules
 
 See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (never-edit-main-checkout invariant, `git -C` rule, dispatch header propagation).
 
+### Infeasible-deliverable contract
+
+When a planned deliverable turns out to be infeasible during execution — the target cannot be cleanly built as the task specifies (the required surface does not exist, an assumed precondition is false, or building the named artifact is structurally impossible as scoped) — the skill MUST treat this as a first-class terminal outcome, NOT improvise a weaker substitute:
+
+- **(a) Stop, mark, and report.** Stop work on the task, mark it `infeasible` via `manage-tasks update --status infeasible`, and return `status: infeasible` with a populated `infeasibility_reason` field naming why the deliverable cannot be built as scoped. The task flows into the phase-5-execute Step 11 triage surface (the same path a `blocked` task takes) so a gate-level planning decision — drop / re-scope into a new task / abort — resolves it. `infeasible` is terminal: it is never resolved by resuming the same task.
+- **(b) No silent substitution.** Narrowing the deliverable into a buildable-but-valueless artifact under the original name — so the step "passes" while delivering none of the declared value — is the PROHIBITED anti-pattern. It is a contract violation equivalent to silently abandoning a `blocked` task, NOT a permitted pivot. The infeasibility is a real failure and belongs on the triage surface, never hidden behind a substituted deliverable.
+- **(c) Exact-pattern-spec rule.** When a step specifies an explicit literal — a regex, an enum value, an exact constant, a literal string — that literal is a HARD copy-target. Copy it verbatim from the step; never approximate or reconstruct it from general knowledge. A literal that "looks right" but does not match the spec character-for-character is a defect, not an acceptable rendering.
+- **(d) Update-tests-not-implementation rule.** In a breaking redesign, failing tests are MIGRATION WORK: the design specification is the authority, and the tests must be brought into line with it. Preserving the old form to keep tests green inverts the redesign and is prohibited. Update the tests to assert the new specified behavior; do not soften the implementation back toward the legacy form merely to satisfy a stale test. (This is the per-task application of the Scope-Deviation Escalation guard below — when satisfying the spec as written feels structurally riskier than estimated, escalate via AskUserQuestion rather than silently keeping both surfaces.)
+
 ---
 
 ## Common Workflow
@@ -176,7 +185,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 Base output contract (profile-specific extensions noted in each section):
 
 ```toon
-status: success | error
+status: success | error | infeasible
 plan_id: {echo}
 task_number: {echo}
 execution_summary:
@@ -188,7 +197,10 @@ verification:
   command: "{cmd}"
 next_action: task_complete | requires_attention
 message: {error message if status=error}
+infeasibility_reason: {required when status=infeasible — why the declared deliverable cannot be built as scoped}
 ```
+
+`status: infeasible` is the terminal return for a deliverable that cannot be built as the task specifies (the required surface does not exist, an assumed precondition is false, or building the named artifact is structurally impossible as scoped). It is distinct from `error` (an execution failure that may be retried) — `infeasible` is a planning-level verdict resolved by a gate decision (drop / re-scope into a new task / abort), never by re-running the same task. When `status: infeasible`, the skill MUST have already marked the task `infeasible` via `manage-tasks update --status infeasible` and MUST populate `infeasibility_reason`. See the Infeasible-deliverable contract in the Enforcement section.
 
 ---
 

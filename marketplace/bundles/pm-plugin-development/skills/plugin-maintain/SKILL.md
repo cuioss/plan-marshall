@@ -27,6 +27,14 @@ Comprehensive maintenance automation for marketplace bundles. Consolidates updat
 - Git provides version control — no manual backup files needed; prompt user for risky changes
 - Each workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 
+### Lint-rule-authoring discipline (corpus-validation before static rule)
+
+Before encoding any doc/prose convention as a **blocking static lint rule** (a plugin-doctor rule that fails the quality-gate), apply this discipline:
+
+- **(a) Enumerate the corpus first.** Before writing the rule, enumerate every actual value the target field carries across the marketplace corpus — not a sample, the full set. A rule designed against an imagined value space, rather than the values that actually occur, mis-fires the moment it meets real data.
+- **(b) Textually-indistinguishable convention → checklist, not a rule.** If the defect pattern is textually indistinguishable from legitimate usage (a human needs context or judgment to tell a violation from a valid use), the convention belongs in a **review checklist / authoring standard**, NOT a blocking static rule. A static rule can only enforce what is mechanically separable; encoding a judgment-call convention as a hard rule guarantees false positives on legitimate content.
+- **(c) A false-positive flood is the kill signal.** When a deployed rule produces a flood of false positives, the correct response is to **REMOVE the rule** — do not downgrade it to advisory and leave it in place. An advisory rule that everyone learns to ignore is corpus noise that erodes trust in the whole gate; a rule that cannot cleanly distinguish violations from valid usage has failed its design test and must go.
+
 ## Overview
 
 This skill provides 5 maintenance workflows:
