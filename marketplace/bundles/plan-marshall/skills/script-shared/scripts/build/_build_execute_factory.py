@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 import json  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 from _build_execute import BuildCommandFn, CaptureStrategy, ScopeFn, execute_direct_base  # noqa: E402
 from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
@@ -41,8 +42,6 @@ from _build_result import DirectCommandResult  # noqa: E402
 from _build_shared import cmd_run_common  # noqa: E402
 from file_ops import get_marshal_path, read_json  # type: ignore[import-not-found]  # noqa: E402
 from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
-
-from pathlib import Path  # noqa: E402
 
 # Error type emitted when the build queue is saturated past max_retries.
 ERROR_QUEUE_SATURATED = 'queue_saturated'
