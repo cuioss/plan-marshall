@@ -124,9 +124,7 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
 
 
 def load_status_metadata(plan_dir: Path) -> dict[str, Any]:
-    """Load ``metadata`` from ``status.json`` (or return an empty dict on error).
-
-    Used solely to detect ``worktree_path`` so worktree-only invariants are
+    """Used solely to detect ``worktree_path`` so worktree-only invariants are
     expected for worktree plans.
     """
     json_path = plan_dir / 'status.json'
