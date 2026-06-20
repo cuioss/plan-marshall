@@ -1560,8 +1560,7 @@ _SCOPE_GATED_OVERRIDE_DROP = frozenset({'automated-review', 'default:automated-r
 # keyed map (folded there from their former flat-sibling location). ``qgate`` is
 # the one finalize run-at-all gate that stays a flat phase-level sibling.
 _SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
-_SELF_REVIEW_OWNER_STEP = 'project:finalize-step-pre-submission-self-review'
-_DROP_REVIEW_OWNER_STEP = 'project:finalize-step-pre-submission-self-review'
+_PRE_SUBMISSION_SELF_REVIEW_STEP = 'project:finalize-step-pre-submission-self-review'
 
 
 def _read_step_owned_knob(owner_step_id: str, knob: str) -> object | None:
@@ -1604,7 +1603,7 @@ def _read_drop_review_on_scope_gate() -> bool:
     additional ``automated-review`` suppression in the scope_gated_finalize
     pre-filter.
     """
-    return _read_step_owned_knob(_DROP_REVIEW_OWNER_STEP, 'drop_review_on_scope_gate') is True
+    return _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'drop_review_on_scope_gate') is True
 
 
 def _apply_scope_gated_finalize(
@@ -1781,7 +1780,7 @@ def _read_finalize_gates() -> dict[str, str]:
     simplify_value = _read_step_owned_knob(_SIMPLIFY_OWNER_STEP, 'simplify')
     if isinstance(simplify_value, str) and simplify_value:
         resolved['simplify'] = simplify_value
-    self_review_value = _read_step_owned_knob(_SELF_REVIEW_OWNER_STEP, 'self_review')
+    self_review_value = _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'self_review')
     if isinstance(self_review_value, str) and self_review_value:
         resolved['self_review'] = self_review_value
 
