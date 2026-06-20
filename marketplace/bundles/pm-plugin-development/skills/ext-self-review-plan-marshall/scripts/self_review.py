@@ -2,14 +2,14 @@
 """Deterministic candidate surfacing for the pre-submission-self-review finalize step.
 
 Reads the worktree's diff against the base branch, scans added lines in modified
-files, and emits seventeen candidate lists (regexes, user-facing strings, markdown
+files, and emits eighteen candidate lists (regexes, user-facing strings, markdown
 sections, symmetric-pair functions, flag-guard pairs, contract sources,
 schema-bearing files, keep-identifier markers, protected identifiers,
 producer-consumer pairs,
 source-of-truth duplicates, same-document normative directives, description-vs-body
 frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk
-touched claims, advertised-form help strings) as TOON for the LLM cognitive
-review pass to consume.
+touched claims, advertised-form help strings, same-document ordinal references) as
+TOON for the LLM cognitive review pass to consume.
 
 Storage: stateless — reads the worktree diff and derives the plan footprint
 live from the worktree (``compute-footprint``: ``{base}...HEAD`` ∪ porcelain).
@@ -205,6 +205,28 @@ _CARDINALITY_NOUNS = 'operations?|fields?|steps?|rules?|commands?'
 # ``5 rules``, ``nine checks`` are matched; a digit not adjacent to a noun is not.
 _COUNT_PROSE = re.compile(
     rf'(?i)\b(?:\d+|{_NUMBER_WORDS})\s+(?:{_CARDINALITY_NOUNS})\b'
+)
+
+# Same-document ordinal-reference detection.
+# An ordinal cross-reference inside a ``.md`` body — a textual pointer at a
+# numbered list item or step BY ITS POSITION. Three forms are recognized, each
+# capturing the referenced ordinal number in a named group ``n``:
+#   * ``item N`` / ``step N`` / ``point N`` (a form noun directly before a digit);
+#   * a bare parenthesized ordinal ``(N)`` (a digit alone inside parentheses).
+# These are the references that silently go stale when a numbered list is
+# reordered or has an item inserted — the cognitive review re-checks them
+# against the enclosing ordered-list block.
+_ORDINAL_NOUN_REFERENCE = re.compile(
+    r'(?i)\b(?:item|step|point)\s+(?P<n>\d+)\b'
+)
+_ORDINAL_PAREN_REFERENCE = re.compile(
+    r'(?<![\w.])\((?P<n>\d+)\)'
+)
+# An ordered-list item line in a ``.md`` body: optional leading indentation
+# followed by ``N.`` (a digit run, a literal dot, then whitespace). Group ``n``
+# captures the item's ordinal so the enclosing block can be located by number.
+_ORDERED_LIST_ITEM = re.compile(
+    r'^(?P<indent>\s*)(?P<n>\d+)\.\s'
 )
 
 # Near-identical-hunk touched-claim detection (Facet 3).
@@ -1412,6 +1434,134 @@ def _detect_count_prose(
     return out
 
 
+def _ordered_list_blocks(post_image: list[str]) -> list[dict[str, Any]]:
+    """Return every contiguous ordered-list block in a ``.md`` post-image.
+
+    A block is a maximal run of consecutive ``N.`` ordered-list item lines
+    (interruptions by a blank line or a non-item line close the block). Each
+    returned entry carries ``start`` (the 1-based post-image line of the block's
+    first item), ``items`` (a mapping from each item's ordinal number to its
+    1-based post-image line), and ``lines`` (the set of 1-based post-image lines
+    the block spans, used to test whether the diff touched the block).
+
+    The detector references blocks by the ordinal NUMBER appearing in an
+    ``item N`` reference, so a block whose first item is renumbered after an
+    insertion still resolves by the current item number present in the block.
+    """
+    blocks: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for idx, line in enumerate(post_image, start=1):
+        m = _ORDERED_LIST_ITEM.match(line)
+        if m is not None:
+            ordinal = int(m.group('n'))
+            if current is None:
+                current = {'start': idx, 'items': {}, 'lines': set()}
+            current['items'].setdefault(ordinal, idx)
+            current['lines'].add(idx)
+            continue
+        if line.strip() == '':
+            # A blank line within an ordered list is tolerated only when it is
+            # immediately followed by another item line; treat it as part of the
+            # block by recording the line but not closing the block yet.
+            if current is not None:
+                current['lines'].add(idx)
+            continue
+        if current is not None:
+            blocks.append(current)
+            current = None
+    if current is not None:
+        blocks.append(current)
+    return blocks
+
+
+def _detect_ordinal_references(
+    added: list[tuple[str, int, str]], project_dir: Path
+) -> list[dict[str, Any]]:
+    """Detect same-document ordinal cross-references into a touched ordered list.
+
+    Scans added ``.md`` lines for an ordinal reference — ``item N`` / ``step N``
+    / ``point N`` or a bare parenthesized ``(N)`` — that points at a numbered
+    list item BY ITS POSITION. The reference is surfaced as a candidate only
+    when, in the same document's post-image, the ordered-list block containing
+    item ``N`` was ITSELF touched by the diff (at least one of the block's lines
+    is among this file's added lines). That conjunction is the staleness signal:
+    inserting or reordering a numbered-list item shifts the ordinals its
+    positional cross-references point at, so any ordinal reference into a list
+    the same change just edited is a re-verification candidate.
+
+    Each entry carries ``file``, ``line`` (the reference's post-image line),
+    ``text`` (the truncated reference line), and ``list_line`` (the 1-based
+    post-image line of the referenced ordered-list block — the line of item
+    ``N`` when it resolves, else the block's first item line). Deduplicated per
+    ``(file, line, ordinal)``.
+    """
+    # Group added .md lines per file so each file's post-image is read once and
+    # the touched-line set is scoped to that file.
+    md_added_by_file: dict[str, list[tuple[int, str]]] = {}
+    for path, lineno, content in added:
+        if path.endswith('.md'):
+            md_added_by_file.setdefault(path, []).append((lineno, content))
+
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, int]] = set()
+    for md_path in sorted(md_added_by_file):
+        post_image = _read_post_image(project_dir, md_path)
+        if not post_image:
+            continue
+        blocks = _ordered_list_blocks(post_image)
+        added_lines = {ln for ln, _ in md_added_by_file[md_path]}
+
+        for lineno, content in md_added_by_file[md_path]:
+            for m in _ORDINAL_NOUN_REFERENCE.finditer(content):
+                _record_ordinal_reference(
+                    out, seen, blocks, added_lines, md_path, lineno, content, int(m.group('n'))
+                )
+            for m in _ORDINAL_PAREN_REFERENCE.finditer(content):
+                _record_ordinal_reference(
+                    out, seen, blocks, added_lines, md_path, lineno, content, int(m.group('n'))
+                )
+    return out
+
+
+def _record_ordinal_reference(
+    out: list[dict[str, Any]],
+    seen: set[tuple[str, int, int]],
+    blocks: list[dict[str, Any]],
+    added_lines: set[int],
+    md_path: str,
+    lineno: int,
+    content: str,
+    ordinal: int,
+) -> None:
+    """Surface one ordinal reference when its referenced list block was touched.
+
+    Resolves the ordered-list block containing item ``ordinal``; fires only when
+    that block's line span intersects ``added_lines`` (the diff touched the
+    list). Appends a deduplicated candidate to ``out`` carrying ``list_line``,
+    the post-image line of item ``ordinal`` (or the block's first item line as a
+    fallback). A reference whose ordinal resolves to no ordered-list block, or
+    to a block the diff did not touch, surfaces nothing.
+    """
+    target = next((b for b in blocks if ordinal in b['items']), None)
+    if target is None:
+        return
+    if not (target['lines'] & added_lines):
+        return
+    key = (md_path, lineno, ordinal)
+    if key in seen:
+        return
+    seen.add(key)
+    list_line = target['items'].get(ordinal, target['start'])
+    out.append(
+        {
+            'file': md_path,
+            'line': lineno,
+            'text': _truncate(content.strip(), 200),
+            'list_line': list_line,
+        }
+    )
+
+
 def _detect_touched_claims(
     pairs: list[tuple[str, int, str, str]],
 ) -> list[dict[str, Any]]:
@@ -1707,6 +1857,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     advertised_form_help_strings = _detect_advertised_form_help_strings(
         added, project_dir
     )
+    ordinal_references = _detect_ordinal_references(added, project_dir)
 
     output = {
         'status': 'success',
@@ -1731,11 +1882,12 @@ def _cmd_surface(args: argparse.Namespace) -> int:
             'count_prose': len(count_prose),
             'touched_claims': len(touched_claims),
             'advertised_form_help_strings': len(advertised_form_help_strings),
+            'ordinal_references': len(ordinal_references),
             # ``count_prose`` and ``advertised_form_help_strings`` are
             # review-anchor lists (like ``contract_sources`` and
             # ``schema_bearing_files``) and are excluded from ``total``; the
-            # line-level lists ``unguarded_boundaries`` and ``touched_claims``
-            # are included.
+            # line-level lists ``unguarded_boundaries``, ``touched_claims``, and
+            # ``ordinal_references`` flag a specific added line and are included.
             'total': (
                 len(regexes)
                 + len(user_facing)
@@ -1749,6 +1901,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
                 + len(description_vs_body)
                 + len(unguarded_boundaries)
                 + len(touched_claims)
+                + len(ordinal_references)
             ),
         },
         'regexes': regexes,
@@ -1768,6 +1921,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'count_prose': count_prose,
         'touched_claims': touched_claims,
         'advertised_form_help_strings': advertised_form_help_strings,
+        'ordinal_references': ordinal_references,
     }
     output_toon(output)
     return 0
@@ -1787,7 +1941,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_surface = sub.add_parser(
         'surface',
-        help='Emit seventeen candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers, protected identifiers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings) from the worktree diff as TOON.',
+        help='Emit eighteen candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers, protected identifiers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references) from the worktree diff as TOON.',
         allow_abbrev=False,
     )
     add_plan_id_arg(p_surface)
