@@ -103,9 +103,11 @@ def test_execute_set_steps_single_canonical_verify_round_trips(plan_context):
     assert result['status'] == 'success'
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    # verification_steps is an id-keyed map; the single step maps to empty params.
+    # verification_steps is an id-keyed map; an ownerless step persists as null
+    # (None), not a noisy empty {} object (empty-{} suppression). The read path
+    # coerces null back to {}.
     assert config['plan']['phase-5-execute']['verification_steps'] == {
-        'default:verify:quality-gate': {}
+        'default:verify:quality-gate': None
     }
 
 
@@ -601,8 +603,9 @@ def test_execute_set_steps_round_trip_cache_layout(plan_context):
 
     assert result['status'] == 'success', f'Expected success (no missing_order) in cache layout, got {result}'
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    # ownerless step persists as null (None), not an empty {} (empty-{} suppression)
     assert config['plan']['phase-5-execute']['verification_steps'] == {
-        'default:verify:quality-gate': {}
+        'default:verify:quality-gate': None
     }
 
 
@@ -634,8 +637,9 @@ def test_execute_set_steps_round_trip_source_layout(plan_context):
 
     assert result['status'] == 'success', f'Expected success (no missing_order) in source layout, got {result}'
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    # ownerless step persists as null (None), not an empty {} (empty-{} suppression)
     assert config['plan']['phase-5-execute']['verification_steps'] == {
-        'default:verify:quality-gate': {}
+        'default:verify:quality-gate': None
     }
 
 
@@ -1118,6 +1122,116 @@ def test_finalize_step_set_absent_step_id_errors(plan_context):
 
     assert result['status'] == 'error'
     assert 'default:nonexistent' in result['error']
+
+
+# =============================================================================
+# Step-folded run-at-all / escape-hatch knobs (simplify / self_review /
+# drop_review_on_scope_gate) live nested under their owning finalize step's param
+# map; qgate stays a flat phase-level sibling.
+# =============================================================================
+
+
+def _marshal_without_finalize_section() -> dict:
+    """A config whose plan.phase-6-finalize is absent → defaults supply the seed.
+
+    The defaults-merge in `cmd_plan` brings the parser-resolved step-owned params
+    (the finalize-step seed delegates to configurable_contract, including the
+    folded `simplify` / `self_review` / `drop_review_on_scope_gate` knobs) into the
+    resolved section, so the step-owned read path is exercised against the
+    canonical default shape.
+    """
+    return {
+        'skill_domains': {},
+        'system': {'retention': {'logs_days': 1, 'archived_plans_days': 5, 'temp_on_maintenance': True}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-3-outline': {},
+            'phase-4-plan': {},
+            'phase-5-execute': {},
+        },
+        'providers': [],
+    }
+
+
+def test_finalize_step_get_simplify_reads_from_owning_step_param_map(plan_context):
+    """`simplify` is read from its owning step `default:finalize-step-simplify`.
+
+    The knob folded out of its former flat-sibling location into the
+    simplify-step's nested param object; the default is `auto`.
+    """
+    create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='get',
+            step_id='default:finalize-step-simplify',
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['params']['simplify'] == 'auto'
+
+
+def test_finalize_step_set_simplify_round_trips_under_owning_step(plan_context):
+    """`step set` writes `simplify` into its owning step and round-trips on disk."""
+    create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
+
+    set_result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='set',
+            step_id='default:finalize-step-simplify',
+            param='simplify',
+            value='never',
+        )
+    )
+
+    assert set_result['status'] == 'success'
+    assert set_result['params']['simplify'] == 'never'
+
+    # Persisted nested under the owning step in the keyed map.
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    persisted = config['plan']['phase-6-finalize']['steps']['default:finalize-step-simplify']
+    assert persisted['simplify'] == 'never'
+
+
+def test_finalize_get_no_longer_surfaces_folded_knobs_as_flat_siblings(plan_context):
+    """`phase-6-finalize get` no longer carries the three folded knobs as flat fields.
+
+    `simplify`, `self_review`, and `drop_review_on_scope_gate` moved out of the
+    flat phase-level section into their owning step's nested param map. The flat
+    `get` payload must not surface them. `qgate` remains a flat sibling.
+    """
+    create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
+
+    result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field=None))
+
+    assert result['status'] == 'success'
+    assert 'simplify' not in result
+    assert 'self_review' not in result
+    assert 'drop_review_on_scope_gate' not in result
+    # qgate stays a flat phase-level sibling.
+    assert result['qgate'] == 'auto'
+
+
+def test_finalize_get_folded_knob_field_is_rejected(plan_context):
+    """`phase-6-finalize get --field simplify` errors — the flat field is gone.
+
+    The knob is no longer a flat phase-level field, so the scalar field read
+    must report it as unknown rather than returning a stale flat value.
+    """
+    create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
+
+    result = cmd_plan(
+        Namespace(sub_noun='phase-6-finalize', verb='get', field='simplify')
+    )
+
+    assert result['status'] == 'error'
+    assert 'simplify' in result['error']
 
 
 # =============================================================================

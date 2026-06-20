@@ -390,11 +390,14 @@ DEFAULT_PLAN_EXECUTE = {
     'per_envelope_budget_tokens': '400K',
     # Verification steps as an id-keyed map: each key is a built-in verify step
     # id, each value is that step's nested param object. Verification steps own
-    # no params, so every value is the empty object `{}`. Key insertion order is
-    # the execution order. The keyed-map shape (not a flat list) is the single
-    # on-disk schema — readers iterate `.keys()` for the ordered step ids and
-    # read the per-step param object from the value.
-    'verification_steps': {step_id: {} for step_id in BUILT_IN_VERIFY_STEPS},
+    # no params, so an ownerless step maps to `None` (serialized as `null`) — no
+    # noisy empty `{}` object is written. The read path coerces every absent /
+    # null / `{}` / TOON-`''` representation back to an empty dict. Key insertion
+    # order is the execution order. The keyed-map shape (not a flat list) is the
+    # single on-disk schema — readers iterate `.keys()` for the ordered step ids
+    # and read the per-step param object (coerced to `{}` for ownerless steps)
+    # from the value.
+    'verification_steps': dict.fromkeys(BUILT_IN_VERIFY_STEPS),
     # Per-phase effort default (seeded at init; balanced-preset baseline). The
     # phase-5-execute role group has the `default` (per-task implementation) and
     # `verification-feedback` (build-runner triage) subkeys, so the on-disk shape
@@ -479,48 +482,61 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
         )
 
 
-# Step-owned params nested under their owning finalize step in the keyed-map
-# `steps` structure. Each finalize step id that owns params maps to its nested
-# param object; every other step id maps to the empty object `{}` (built by the
-# comprehension in DEFAULT_PLAN_FINALIZE['steps']). The sonar params are
-# prefix-stripped within the step (`sonar_touched_file_cleanup` →
-# `touched_file_cleanup`, etc.) since the owning step already scopes them.
-# Phase-level knobs that have no single owning step (checks_wait_timeout_seconds,
-# max_iterations, the ceremony gates, effort, …) stay flat siblings of `steps`.
-_FINALIZE_STEP_PARAMS: dict[str, dict[str, object]] = {
-    'default:sonar-roundtrip': {
-        # touched_file_cleanup (new_code_only|touched_files_zero), validated by
-        # validate_sonar_touched_file_cleanup. `new_code_only` (the lean default)
-        # anchors the sonar-roundtrip success criterion on new-code issues == 0;
-        # `touched_files_zero` extends it to also sweep pre-existing issues on the
-        # files the plan touched.
-        'touched_file_cleanup': 'new_code_only',
-        # do_transition gates the server-side SonarCloud dismissal path. `False`
-        # (default) routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code
-        # suppression (@SuppressWarnings / // NOSONAR); `True` re-enables the
-        # server-side `sonar_rest transition` dismissal.
-        'do_transition': False,
-        # ce_wait_timeout_seconds — budget (seconds) for the synchronous in-Python
-        # CE-readiness wait performed by `sonar.py fetch-and-store` before
-        # enumerating new-code issues. 600s mirrors the CI-completion wait default.
-        'ce_wait_timeout_seconds': 600,
-    },
-    'default:automated-review': {
-        # review_bot_buffer_seconds — buffer before the automated-review bot
-        # comment poll, consumed by workflow-pr-doctor's `pr wait-for-comments`.
-        'review_bot_buffer_seconds': 180,
-    },
-    'default:branch-cleanup': {
-        # pr_merge_strategy — squash|merge|rebase merge strategy for the PR merge.
-        'pr_merge_strategy': 'squash',
-        # final_merge_without_asking gates the post-CI auto-merge.
-        'final_merge_without_asking': False,
-        # auto_rebase_threshold gates the pre-rebase auto-proceed decision.
-        # `no_overlap_only` permits the auto-rebase to proceed only when the
-        # rebase would touch a disjoint file set; any overlap defers to the operator.
-        'auto_rebase_threshold': 'no_overlap_only',
-    },
-}
+# Step-owned params are no longer held in a centralized constant. Each
+# param-owning finalize step declares its own params self-describingly in the
+# `configurable:` block of its body-doc frontmatter; the single fail-loud reader
+# is `extension-api/scripts/configurable_contract.py`. The finalize-step defaults
+# seed (`DEFAULT_PLAN_FINALIZE['steps']`) is built by delegating each built-in
+# step id through `configurable_contract.resolve_step_defaults_optional`, which
+# folds a param-owning step to its `{param_key: default}` map and an ownerless
+# step to `None` (serialized as `null`). The seed is computed lazily inside
+# `get_default_config()` rather than at module import so `_config_defaults.py`
+# does not take a hard module-import dependency on the cross-bundle parser
+# (mirroring the lazy `extension_discovery` import in manage-execution-manifest).
+#
+# Param ownership (for reference; the declarations themselves are authoritative):
+#   - default:sonar-roundtrip       → touched_file_cleanup, do_transition,
+#                                      ce_wait_timeout_seconds
+#   - default:automated-review      → review_bot_buffer_seconds
+#   - default:branch-cleanup        → pr_merge_strategy, final_merge_without_asking,
+#                                      auto_rebase_threshold
+#   - default:finalize-step-simplify → simplify (run-at-all gate)
+#   - project:finalize-step-pre-submission-self-review → self_review,
+#                                      drop_review_on_scope_gate (NOT a built-in
+#                                      step, so the seed does not include it; its
+#                                      defaults are supplied by the reader's
+#                                      default-merge when the project step is
+#                                      absent from marshal.json)
+# Phase-level knobs with no single owning step (checks_wait_timeout_seconds,
+# max_iterations, finalize_without_asking, loop_back_without_asking, qgate,
+# effort, …) stay flat siblings of `steps`.
+
+
+def _seed_finalize_steps() -> dict[str, object]:
+    """Build the finalize-step defaults seed via the configurable-contract parser.
+
+    Iterates :data:`BUILT_IN_FINALIZE_STEPS` in order, delegating each step id to
+    ``configurable_contract.resolve_step_defaults_optional``. A param-owning step
+    maps to its ``{param_key: default}`` object; an ownerless step maps to
+    ``None`` (serialized as ``null`` so no noisy empty ``{}`` is written). Key
+    insertion order is the execution order.
+
+    The cross-bundle parser is imported lazily here (not at module top level) so
+    importing ``_config_defaults`` never pulls in the extension-api parser — the
+    seed is only materialized when :func:`get_default_config` runs.
+
+    Returns:
+        The ordered keyed-map ``{step_id: {param_key: default} | None}``.
+    """
+    # Lazy import — executor sets PYTHONPATH for cross-skill imports.
+    from configurable_contract import (  # type: ignore[import-not-found]
+        resolve_step_defaults_optional,
+    )
+
+    return {
+        step_id: resolve_step_defaults_optional(step_id)
+        for step_id in BUILT_IN_FINALIZE_STEPS
+    }
 
 
 DEFAULT_PLAN_FINALIZE = {
@@ -529,23 +545,25 @@ DEFAULT_PLAN_FINALIZE = {
     # finalize_without_asking gates the auto-continue from execute into the
     # finalize pipeline; loop_back_without_asking gates the auto-loop-back on a
     # finalize-driven fix. (final_merge_without_asking, which gates the post-CI
-    # auto-merge, is now a step-owned param under `default:branch-cleanup` — see
-    # _FINALIZE_STEP_PARAMS.) Read via
+    # auto-merge, is a step-owned param under `default:branch-cleanup` — declared
+    # in that step's `configurable:` frontmatter and read via
+    # `configurable_contract.py`.) Read via
     # `manage-config plan phase-6-finalize get --field <knob>`.
     'finalize_without_asking': True,
     'loop_back_without_asking': False,
-    # Finalize run-at-all gates (auto|always|never), consumed by the manifest
-    # composer's finalize step-selection (manage-execution-manifest.py). Each
-    # gate maps to exactly one finalize step: self_review ->
-    # pre-submission-self-review; qgate -> pre-push-quality-gate
-    # (finalize blocking-findings re-capture); simplify ->
-    # finalize-step-simplify. `auto`
-    # (default) defers to the existing decision machinery; `always`/`never`
-    # force the step in/out. Read via
-    # `manage-config plan phase-6-finalize get --field <gate>`.
-    'self_review': 'auto',
+    # qgate is the one finalize run-at-all gate that stays a flat phase-level
+    # sibling (auto|always|never): it maps to pre-push-quality-gate (the finalize
+    # blocking-findings re-capture) but is consumed by the decision machinery as a
+    # phase-level run-at-all gate, not as a param the step body reads. `auto`
+    # (default) defers to the existing decision machinery; `always`/`never` force
+    # the step in/out. Read via
+    # `manage-config plan phase-6-finalize get --field qgate`. The two other
+    # run-at-all gates (`simplify`, `self_review`) and the
+    # `drop_review_on_scope_gate` escape hatch each own exactly one finalize step,
+    # so they fold into that step's nested param object under `steps` (declared in
+    # the owning step's `configurable:` frontmatter, read by
+    # `configurable_contract.py`) rather than remaining flat siblings.
     'qgate': 'auto',
-    'simplify': 'auto',
     # Default timeout (seconds) for the CI-completion polling commands consumed
     # by tools-integration-ci/scripts/ci_base.py (`ci checks wait`,
     # `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two
@@ -560,31 +578,30 @@ DEFAULT_PLAN_FINALIZE = {
     # runners without hiding a genuinely stuck pipeline behind an excessive
     # ceiling.
     'checks_wait_timeout_seconds': 600,
-    # Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter
-    # (manage-execution-manifest.py). The implicit scope gate drops the three
-    # non-guarded heavyweight phase-6 steps (plan-retrospective,
-    # pre-submission-self-review, plugin-doctor) on `surgical` plans and
-    # `plan-retrospective` on `single_module` plans, but NEVER drops
-    # `automated-review` — the bot-enforcement guard re-adds it on GitHub/GitLab
-    # plans, so an implicit drop would be a silently-undone no-op. Set this to
-    # True to explicitly opt into additionally dropping `automated-review` on
-    # scope-gated plans (the only path that suppresses the bot-review gate). The
-    # default False keeps the bot-review invariant intact.
-    'drop_review_on_scope_gate': False,
     # Finalize steps as an id-keyed map: each key is a built-in finalize step id,
-    # each value is that step's nested param object (`{}` when the step owns no
-    # params). Step-owned params (sonar params under `default:sonar-roundtrip`;
-    # `review_bot_buffer_seconds` under `default:automated-review`;
-    # `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`
-    # under `default:branch-cleanup`) fold under their owning step via
-    # _FINALIZE_STEP_PARAMS. Key insertion order is the execution order. The
-    # keyed-map shape (not a flat list) is the single on-disk schema — readers
-    # iterate `.keys()` for the ordered step ids and read the per-step param
-    # object from the value.
-    'steps': {
-        step_id: dict(_FINALIZE_STEP_PARAMS.get(step_id, {}))
-        for step_id in BUILT_IN_FINALIZE_STEPS
-    },
+    # each value is that step's nested param object — or `None` (serialized as
+    # `null`) for an ownerless step, so no noisy empty `{}` is written. Step-owned
+    # params (sonar params under `default:sonar-roundtrip`; `review_bot_buffer_seconds`
+    # under `default:automated-review`; `pr_merge_strategy` /
+    # `final_merge_without_asking` / `auto_rebase_threshold` under
+    # `default:branch-cleanup`; `simplify` under `default:finalize-step-simplify`)
+    # fold under their owning built-in step. Each step's params are now declared
+    # self-describingly in the step's body-doc `configurable:` frontmatter and read
+    # by `configurable_contract.py`; the `self_review` / `drop_review_on_scope_gate`
+    # knobs own the opt-in `project:finalize-step-pre-submission-self-review` step,
+    # which is NOT a built-in candidate (not in BUILT_IN_FINALIZE_STEPS /
+    # DEFAULT_PHASE_6_STEPS), so the default seed does NOT include it — a fresh
+    # project's candidate list is unchanged. Their defaults (`auto` / `False`) are
+    # supplied by the reader's default-merge when the project step is absent from
+    # marshal.json. Key insertion order is the execution order. The keyed-map shape
+    # (not a flat list) is the single on-disk schema — readers iterate `.keys()`
+    # for the ordered step ids and read the per-step param object (coerced to `{}`
+    # for ownerless steps) from the value.
+    #
+    # Seeded lazily by `_seed_finalize_steps()` inside `get_default_config()` (the
+    # parser delegation cannot run at module import without a hard cross-bundle
+    # dependency); this literal `None` placeholder is replaced there.
+    'steps': None,
     # Per-phase effort default (seeded at init; balanced-preset baseline). The
     # phase-6-finalize role group has `default`, `verification-feedback`
     # (sonar / pr-comment / plugin-doctor / pr-state triage), and
@@ -653,6 +670,12 @@ def get_default_config() -> dict:
     # default shape fails loud at seed time rather than at first read.
     validate_per_deliverable_build(DEFAULT_PLAN_EXECUTE['per_deliverable_build'])
     validate_cost_size_token_table(DEFAULT_PLAN_EXECUTE['cost_size_token_table'])
+    # Materialize the finalize-step defaults seed lazily via the configurable-
+    # contract parser (the `'steps': None` placeholder in DEFAULT_PLAN_FINALIZE is
+    # replaced here). Done after the deepcopy below so the module-level constant
+    # stays free of the cross-bundle parser dependency at import time.
+    finalize_section = copy.deepcopy(DEFAULT_PLAN_FINALIZE)
+    finalize_section['steps'] = _seed_finalize_steps()
     config = {
         'providers': [],
         'project': copy.deepcopy(DEFAULT_PROJECT),
@@ -672,7 +695,7 @@ def get_default_config() -> dict:
             'phase-3-outline': copy.deepcopy(DEFAULT_PLAN_OUTLINE),
             'phase-4-plan': copy.deepcopy(DEFAULT_PLAN_PLAN),
             'phase-5-execute': copy.deepcopy(DEFAULT_PLAN_EXECUTE),
-            'phase-6-finalize': copy.deepcopy(DEFAULT_PLAN_FINALIZE),
+            'phase-6-finalize': finalize_section,
         },
     }
     return config

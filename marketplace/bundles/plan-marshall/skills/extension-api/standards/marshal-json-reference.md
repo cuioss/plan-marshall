@@ -31,9 +31,62 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `plan.phase-6-finalize.max_iterations` | User config | phase-6-finalize (loop-back ceiling) | - |
 | `plan.phase-6-finalize.checks_wait_timeout_seconds` (flat phase-level) | User config | tools-integration-ci (CI-completion polling timeout) | - |
 
+## Canonical `steps` / `verification_steps` Shape (id-keyed map + nested params)
+
+`plan.phase-5-execute.verification_steps` and `plan.phase-6-finalize.steps` are **id-keyed maps**, not ordered string lists. Each key is a step id; its value is the step's nested param object. This is the canonical consumer schema every `.plan/marshal.json` MUST follow — it is the shape `init` seeds, `sync-defaults` back-fills, and the wizard writes.
+
+Three structural rules define the shape:
+
+1. **Keyed map, not a list.** The container is a JSON object whose keys are step ids (`default:commit_push`, `default:branch-cleanup`, a `project:` step, or a fully-qualified `bundle:skill` step). One-stop lookup by id replaces positional indexing into a list. Order is carried by the step's declared `order` value (sorted by `marshall-steward` at write time), not by key insertion order.
+2. **Step-owned params nest under their owning step.** A param consumed by exactly one step lives in that step's nested object — never as a flat phase-level sibling. Example: `final_merge_without_asking` is a param of `default:branch-cleanup`, so it nests under `steps['default:branch-cleanup']`, NOT under `phase-6-finalize` directly. Read/write step-owned params via the one-stop `manage-config plan {phase} step get/set --step-id {id}` verb (global default + wizard target) or `manage-execution-manifest step-params get/set` (per-plan runtime read/override).
+3. **No empty `{}` for ownerless steps.** A step that owns no params serializes with its value **omitted** — never as a noisy empty `{}` object. The read path coerces all absent/empty representations (key omitted, `null`, `{}`, or empty value) back to an empty param object, so consumers see a uniform `{}` regardless of how the step was written. Writers MUST emit the omitted form for ownerless steps.
+
+### Canonical shape (illustrative)
+
+```json
+{
+  "plan": {
+    "phase-5-execute": {
+      "verification_steps": {
+        "default:verify:quality-gate": {},
+        "default:verify:module-tests": {}
+      }
+    },
+    "phase-6-finalize": {
+      "steps": {
+        "default:commit_push": {},
+        "default:automated-review": {
+          "review_bot_buffer_seconds": 180
+        },
+        "default:sonar-roundtrip": {
+          "touched_file_cleanup": "new_code_only",
+          "do_transition": false,
+          "ce_wait_timeout_seconds": 600
+        },
+        "default:branch-cleanup": {
+          "pr_merge_strategy": "squash",
+          "final_merge_without_asking": false,
+          "auto_rebase_threshold": "no_overlap_only"
+        }
+      }
+    }
+  }
+}
+```
+
+Notes on the example:
+
+- `default:commit_push` and the two `verify:*` steps own no params, so their values are the omitted/empty form (rendered `{}` here only because JSON has no "omitted value within an object" literal — on disk an ownerless step's key may be absent entirely, and the read path treats absent and `{}` identically).
+- `default:automated-review`, `default:sonar-roundtrip`, and `default:branch-cleanup` own params, so each carries its nested param object. For `default:sonar-roundtrip` the `sonar_` prefix is dropped inside the scoped object.
+- Param **defaults** are NOT held in any centralized constant. Each param-owning step declares its own params (`key`, `default`, `description`) in the `configurable:` block of its body-doc frontmatter; the parser (`plan-marshall:extension-api:configurable_contract`) materializes them. See [`manage-config/SKILL.md` § Phase-Local Run-at-all Gates and Automation Knobs](../../manage-config/SKILL.md) and [`extension-api/SKILL.md` § Configurable step-param contract](../SKILL.md#configurable-step-param-contract).
+
+### Consumer-repo migration target
+
+Consumer `.plan/marshal.json` files (e.g. plan-marshall's own consumer repos) MUST adopt this keyed-map + nested-param + no-empty-`{}` shape. The migration is **additive**: rewrite the legacy `steps` / `verification_steps` list (or any keyed map that still serialized ownerless steps as `{}`) into the keyed map with ownerless steps omitted and step-owned params nested under their owning step. Preserve each repo's uncommitted changes; do not strip operator customizations. The migration target is the post-suppression shape above — no empty `{}` objects, every param nested under its owner.
+
 ## Run-at-all Gates and Finalize Automation Knobs (marshal.json)
 
-The lifecycle run-at-all gates and the two flat finalize automation knobs are flat phase-local knobs under their owning phase — `deep_lane` / `escalation` under `plan.phase-1-init`, `revalidation` under `plan.phase-2-refine`, `qgate` under `plan.phase-3-outline`, and the finalize gates (`self_review` / `qgate` / `simplify`) plus the two flat automation knobs (`finalize_without_asking` / `loop_back_without_asking`) under `plan.phase-6-finalize`. Read at runtime via `manage-config plan <phase> get --field <knob>`. (`final_merge_without_asking` is NOT flat — it is a step-owned param of `default:branch-cleanup`; see the step-owned param rows below.) See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs" for the full schema.
+The lifecycle run-at-all gates and the two flat finalize automation knobs are flat phase-local knobs under their owning phase — `deep_lane` / `escalation` under `plan.phase-1-init`, `revalidation` under `plan.phase-2-refine`, `qgate` under `plan.phase-3-outline`, and the finalize `qgate` gate plus the two flat automation knobs (`finalize_without_asking` / `loop_back_without_asking`) under `plan.phase-6-finalize`. Read the flat knobs at runtime via `manage-config plan <phase> get --field <knob>`. (Per rule 2 of the keyed-map section above, the finalize `self_review` and `simplify` gates and `final_merge_without_asking` / `drop_review_on_scope_gate` are NOT flat — they are step-owned params nested under their owning step; see the step-owned param rows below.) See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs" for the full schema.
 
 | Path | Set By | Used By | Extension Point Doc |
 |------|--------|---------|---------------------|
@@ -41,9 +94,10 @@ The lifecycle run-at-all gates and the two flat finalize automation knobs are fl
 | `plan.phase-1-init.escalation` | User config | phase-1-init escalation ratchet | - |
 | `plan.phase-2-refine.revalidation` | User config | light lane + deep refine | - |
 | `plan.phase-3-outline.qgate` | User config | deep-lane outline dispatch | - |
-| `plan.phase-6-finalize.self_review` | User config | manage-execution-manifest (finalize selection) | - |
+| `plan.phase-6-finalize.steps['project:finalize-step-pre-submission-self-review'].self_review` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (finalize selection) | - |
 | `plan.phase-6-finalize.qgate` | User config | manage-execution-manifest (finalize selection) | - |
-| `plan.phase-6-finalize.simplify` | User config | manage-execution-manifest (finalize selection) | - |
+| `plan.phase-6-finalize.steps['default:finalize-step-simplify'].simplify` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (finalize selection) | - |
+| `plan.phase-6-finalize.steps['project:finalize-step-pre-submission-self-review'].drop_review_on_scope_gate` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (scope-gated review drop) | - |
 | `plan.phase-6-finalize.finalize_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.steps['default:branch-cleanup'].final_merge_without_asking` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |
@@ -90,3 +144,35 @@ is the single source of truth — orphan subdirectories are ignored.
 ## Credential Storage
 
 Credentials are stored separately in `.plan/credentials/` (not in marshal.json). See [ext-point-provider.md](ext-point-provider.md) for the discovery and storage convention.
+
+## Config-contract sweep coverage
+
+The `configurable` step-param contract (each param-owning step declares its own `key` / `default` / `description`, materialized by `plan-marshall:extension-api:configurable_contract`) was rolled out for the **phase-6-finalize step-owned params**. This section surveys the remaining centralized-default clusters, id-keyed param maps, and default/description splits across `marketplace/bundles/**` and classifies each for contract adoption. The survey is analysis-only — none of these surfaces are mutated by this plan; the table records the rollout direction without expanding scope.
+
+Classification key:
+
+- **adopt-now** — a genuine step-owned param cluster with a default/description split that the `configurable` contract directly fits; a future migration candidate.
+- **adopt-later** — could be expressed via a self-describing contract eventually, but lacks a step owner today or would need a contract extension; defer until a step-owner emerges.
+- **not-a-fit** — phase-level / project-level / cross-plan config that is NOT a step-owned param; the contract does not apply by construction.
+
+| Cluster (source) | Kind | Classification | Rationale |
+|------------------|------|----------------|-----------|
+| `DEFAULT_PLAN_FINALIZE['steps'][*]` step-owned params (`_config_defaults.py`) | id-keyed map + nested params | **adopted** | Already migrated by this plan — each finalize step declares its params via the `configurable` contract; `_FINALIZE_STEP_PARAMS` deleted. |
+| `DEFAULT_PLAN_INIT` knobs — `deep_lane`, `escalation`, `init_without_asking`, `branch_strategy`, `use_worktree`, `effort` (`_config_defaults.py`) | flat phase knobs | **not-a-fit** | Phase-level run-at-all gates and lifecycle knobs consumed by the init lane router / orchestrator — no single owning step, decision-machinery inputs not step-body params. |
+| `DEFAULT_PLAN_REFINE` knobs — `confidence_threshold`, `compatibility`, `simplicity`, `revalidation`, `effort` (`_config_defaults.py`) | flat phase knobs | **not-a-fit** | Phase-level refine knobs / run-at-all gate; consumed by the light-lane + deep-refine pass, not by a step body. |
+| `DEFAULT_PLAN_OUTLINE` knobs — `plan_without_asking`, `qgate`, `effort` (`_config_defaults.py`) | flat phase knobs | **not-a-fit** | Phase-level outline knobs / run-at-all gate; `qgate` is decision machinery, deliberately kept flat. |
+| `DEFAULT_PLAN_PLAN` knobs — `execute_without_asking`, `effort` (`_config_defaults.py`) | flat phase knobs | **not-a-fit** | Phase-level orchestrator gates; no step owner. |
+| `DEFAULT_PLAN_EXECUTE.cost_size_token_table` (`_config_defaults.py`) | size→token map with a dedicated validator (`validate_cost_size_token_table`) | **adopt-later** | A self-describing default+validator cluster, but it is phase-wide bin-packer tuning consumed by `pack-envelopes`, not owned by any single execute step; defer until/unless a step-owner surfaces. |
+| `DEFAULT_PLAN_EXECUTE.per_envelope_budget_tokens` (`_config_defaults.py`) | flat phase scalar | **not-a-fit** | Phase-level bin-packer budget consumed by `pack-envelopes`; not a step-body param. |
+| `DEFAULT_PLAN_EXECUTE.per_deliverable_build` (`_config_defaults.py`) | list of `default:verify:{canonical}` ids + prefix validator | **adopt-later** | Has a self-describing validator (`validate_per_deliverable_build`), but the value is a phase-level verify-step list, not a step-owned param object; revisit if verify steps gain owned params. |
+| `BUILT_IN_VERIFY_STEPS` + `BUILT_IN_VERIFY_STEP_DESCRIPTIONS` (`_config_defaults.py`) | parallel id-list + id→description map (default/description split) | **adopt-later** | A textbook default/description split, but verify steps are currently param-less (their value is `{}`); the `configurable` contract becomes worthwhile only once a verify step declares owned params. |
+| `BUILT_IN_FINALIZE_STEP_DESCRIPTIONS` / `OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS` (`_config_defaults.py`) | id→description maps | **adopt-now** | Finalize steps already declare params via the contract; folding their human-readable descriptions into the same per-step `configurable` block would complete the self-describing model and remove the last centralized description map. |
+| `DEFAULT_BUILD_QUEUE` — `max_slots`, `max_retries`, `upper_limit_seconds` (`_config_defaults.py`) | flat `build.queue` block | **not-a-fit** | Project-wide, cross-plan build-queue resource under top-level `build.*` (peer to `build.map`); not a plan step param. |
+| `build.map` (`classify_globs()` / `classify_build_class()`) | seeded write-once glob→build-class map | **not-a-fit** | Project architecture data, not a step-owned param; consumed by architecture derive-verification. |
+| `DEFAULT_SYSTEM_RETENTION` / `DEFAULT_PROJECT` / `DEFAULT_SYSTEM_DOMAIN` (`_config_defaults.py`) | system/project config blocks | **not-a-fit** | Project- and system-scoped config (skill domains, retention, base branch); no step owner. |
+| `BUILD_SYSTEM_DEFAULTS` (`_config_defaults.py`) | build-system detection defaults | **not-a-fit** | Build-system abstraction defaults, not plan step params. |
+| run-configuration.json `commands.{tool}:{cmd}.timeout_seconds` / `{tool}.acceptable_warnings` | learned/user build knobs | **not-a-fit** | Build-execution tuning in `run-configuration.json`, outside the plan step model. |
+| `manage-locks` queue / mutex tunables | lock-primitive constants | **not-a-fit** | Cross-session coordination primitives, not plan config. |
+| `manage-metrics` accumulator / boundary knobs | metrics-pipeline constants | **not-a-fit** | Internal metrics-pipeline constants, not user-facing step params. |
+
+**Rollout direction:** the only **adopt-now** surface is the finalize-step description maps (fold descriptions into the per-step `configurable` block alongside the already-migrated params). The two **adopt-later** surfaces (`cost_size_token_table`, the verify-step default/description split) become contract candidates only if/when a step owner emerges for them. Every other cluster is **not-a-fit** by construction — phase-level gates, project/system config, build-queue/architecture data, and pipeline-internal constants are not step-owned params. These observations are NOT folded into this plan; lean scope keeps this plan to the finalize-step contract.

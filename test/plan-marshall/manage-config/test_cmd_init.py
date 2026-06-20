@@ -171,14 +171,17 @@ def test_init_includes_verification_in_phase_5_execute(plan_context):
     execute = plan['phase-5-execute']
     assert execute['max_iterations'] == 5
     # verification_steps is an id-keyed map; key insertion order is the execution
-    # order and each value is the empty param object (verify steps own no params).
+    # order. Verify steps own no params, so an ownerless step persists as null
+    # (None), NOT a noisy empty {} object (empty-{} suppression). The read path
+    # coerces null back to {}.
     assert isinstance(execute['verification_steps'], dict)
     assert list(execute['verification_steps'].keys()) == [
         'default:verify:quality-gate',
         'default:verify:module-tests',
         'default:verify:coverage',
     ]
-    assert all(params == {} for params in execute['verification_steps'].values())
+    assert all(params is None for params in execute['verification_steps'].values())
+    assert not any(params == {} for params in execute['verification_steps'].values())
 
 
 def test_init_includes_phase_6_finalize(plan_context):

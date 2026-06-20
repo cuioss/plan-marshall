@@ -2,6 +2,10 @@
 name: default:finalize-step-simplify
 description: Domain-agnostic phase-6 cognitive simplification pass — reviews the plan's changeset against the minimum-viable-code anti-patterns and deletes surplus structure directly in the worktree
 order: 11
+configurable:
+  - key: simplify
+    default: auto
+    description: Run-at-all gate (auto|always|never) for the holistic post-implementation simplification sweep — auto defers to the simplify_inactive pre-filter; always forces the step in; never forces it out.
 ---
 
 # Finalize Step: simplify
@@ -24,7 +28,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 Two independent composition-time surfaces decide whether `finalize-step-simplify` lands in `manifest.phase_6.steps` (both owned by `manage-execution-manifest` — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md)):
 
 1. **The `simplify_inactive` pre-filter** — drops the step when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`. This is the change-shape gate: a pure-analysis / verification / enhancement plan, or a plan that touched zero files, has no surplus structure worth a holistic sweep.
-2. **The `plan.phase-6-finalize.simplify` run-at-all gate** (`auto` default | `always` | `never`, read via `manage-config plan phase-6-finalize get --field simplify`) — the operator override applied by the finalize-selection post-matrix transform. `auto` defers to the `simplify_inactive` pre-filter (historical behaviour); `always` forces the step in even when the pre-filter would have dropped it; `never` removes it unconditionally. The config contract (field definition, default, validation via `validate_run_at_all`) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize; this step is the consumer.
+2. **The `plan.phase-6-finalize.simplify` run-at-all gate** (`auto` default | `always` | `never`, read via `manage-config plan phase-6-finalize step get --step-id default:finalize-step-simplify`, reading `params.simplify`) — the operator override applied by the finalize-selection post-matrix transform. `auto` defers to the `simplify_inactive` pre-filter (historical behaviour); `always` forces the step in even when the pre-filter would have dropped it; `never` removes it unconditionally. The config contract (field definition, default, validation via `validate_run_at_all`) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize; this step is the consumer.
 
 **Visible skip-reason**: whenever the step is skipped, the composer emits a decision-log line to the plan's `logs/decision.log` that names which surface fired, so the omission is observable rather than silent:
 

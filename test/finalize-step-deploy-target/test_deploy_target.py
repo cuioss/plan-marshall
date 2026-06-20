@@ -97,7 +97,9 @@ def test_deploy_target_is_not_a_built_in_default():
     """Per the relocation, deploy-target is a project-local step, not a default."""
     assert 'default:deploy-target' not in cd.BUILT_IN_FINALIZE_STEPS
     assert 'default:deploy-target' not in cd.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
-    assert 'default:deploy-target' not in cd.DEFAULT_PLAN_FINALIZE['steps']
+    # DEFAULT_PLAN_FINALIZE['steps'] is a lazy None placeholder; the seeded map is
+    # built by _seed_finalize_steps() (keyed by BUILT_IN_FINALIZE_STEPS).
+    assert 'default:deploy-target' not in cd._seed_finalize_steps()
 
 
 def test_no_bundled_standards_doc_for_deploy_target():

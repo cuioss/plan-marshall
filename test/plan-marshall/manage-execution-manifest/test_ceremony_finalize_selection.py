@@ -13,12 +13,15 @@ The transform applies the three ``plan.phase-6-finalize`` run-at-all gates
 The transform NEVER touches ``automated-review`` — the bot-review invariant
 (``bot_enforcement_guard``) is orthogonal and preserved.
 
-The gates are flat phase-local knobs read directly from
-``plan.phase-6-finalize.<gate>`` — the ``ceremony_policy`` block (and its
-condition-scoped ``overrides[]`` rows) was dissolved, and every gate distributed
-back into its owning phase block. The internal transform name retains the
-``ceremony_finalize`` prefix for continuity, but the configuration home is the
-flat ``plan.phase-6-finalize`` section.
+Configuration homes differ by gate. ``qgate`` stays a flat phase-local knob read
+directly from ``plan.phase-6-finalize.qgate``. The other two gates fold under
+their owning finalize step's nested param object in
+``plan.phase-6-finalize.steps``: ``simplify`` →
+``default:finalize-step-simplify``; ``self_review`` →
+``project:finalize-step-pre-submission-self-review`` (which also owns the
+``drop_review_on_scope_gate`` escape hatch). The ``ceremony_policy`` block (and
+its condition-scoped ``overrides[]`` rows) was dissolved; the internal transform
+name retains the ``ceremony_finalize`` prefix for continuity.
 """
 
 import importlib.util
@@ -115,17 +118,74 @@ def _compose_ns(
     )
 
 
+# Owning finalize step id for each step-folded knob. ``qgate`` is absent here
+# because it stays a flat phase-level sibling (no owning step).
+_GATE_OWNER_STEP = {
+    'simplify': 'default:finalize-step-simplify',
+    'self_review': 'project:finalize-step-pre-submission-self-review',
+    'drop_review_on_scope_gate': 'project:finalize-step-pre-submission-self-review',
+}
+
+
 def _seed_marshal(
-    finalize_gates: dict[str, str] | None = None,
+    finalize_gates: dict[str, object] | None = None,
     ci_provider: str | None = None,
+    candidates: list[str] | None = None,
 ) -> Path:
-    """Write a marshal.json carrying the flat ``plan.phase-6-finalize`` gates."""
+    """Write a marshal.json carrying the phase-6-finalize gates at their homes.
+
+    ``qgate`` stays a flat field under ``plan.phase-6-finalize``. ``simplify`` /
+    ``self_review`` / ``drop_review_on_scope_gate`` fold under their owning
+    finalize step's nested param object in ``plan.phase-6-finalize.steps`` (the
+    id-keyed map the new reader consumes via ``_read_step_owned_knob``).
+
+    Because the composer treats a marshal.json ``steps`` map as the AUTHORITATIVE
+    phase-6 candidate list (preferred over the ``--phase-6-steps`` CSV), the
+    ``steps`` map written here must carry the FULL candidate set — every candidate
+    becomes a key, and the folded knobs nest onto their owning steps. ``candidates``
+    defaults to the standard ceremony candidate set used by ``_compose_ns``; tests
+    that compose with a custom candidate list pass the matching list here so the
+    seeded ``steps`` map and the composed candidate list stay in sync.
+    """
     from file_ops import get_marshal_path  # type: ignore[import-not-found]
+
+    if candidates is None:
+        candidates = _phase_6_with_ceremony_steps().split(',')
+
+    def _strip_default(step_id: str) -> str:
+        return step_id[len('default:') :] if step_id.startswith('default:') else step_id
 
     phase_6: dict = {}
     if finalize_gates is not None:
-        # The gates are flat fields under plan.phase-6-finalize.
-        phase_6.update(finalize_gates)
+        # Resolve each step-folded gate to its owning step's FULL-prefixed id and
+        # collect the nested knob params. ``qgate`` (ownerless) stays a flat
+        # sibling. A gate whose owner is absent from the candidate list is a no-op
+        # (mirrors the runtime: an absent step owns no params to read).
+        owned_params: dict[str, dict] = {}
+        stripped_candidates = {_strip_default(c) for c in candidates}
+        for gate, value in finalize_gates.items():
+            owner = _GATE_OWNER_STEP.get(gate)
+            if owner is None:
+                phase_6[gate] = value
+                continue
+            if _strip_default(owner) not in stripped_candidates:
+                continue
+            owned_params.setdefault(owner, {})[gate] = value
+
+        # Build the FULL candidate keyed-map IN ORDER so the composer's candidate
+        # list AND its execution order are unchanged. A candidate that owns nested
+        # knobs is written under the owner's FULL-prefixed key at the same
+        # position (the composer strips ``default:`` at intake, so the candidate
+        # list is unaffected); every other candidate seeds as None (ownerless).
+        owner_by_stripped = {_strip_default(o): o for o in owned_params}
+        steps: dict[str, dict | None] = {}
+        for candidate in candidates:
+            owner_key = owner_by_stripped.get(_strip_default(candidate))
+            if owner_key is not None:
+                steps[owner_key] = owned_params[owner_key]
+            else:
+                steps[candidate] = None
+        phase_6['steps'] = steps
 
     # Pre-push-quality-gate activation derives from build.map globs
     # (D7/D8). The `**/*.py` build_map glob matches the stubbed footprint so the
@@ -276,7 +336,9 @@ class TestCeremonyFinalizeNever:
         # Candidate set EXCLUDES self_review; never self_review is a no-op.
         candidates = [s for s in _phase_6_with_ceremony_steps().split(',')
                       if s != 'project:finalize-step-pre-submission-self-review']
-        _seed_marshal(finalize_gates={'self_review': 'never'})
+        # The seeded steps map IS the candidate list, so it must match the
+        # composed candidate set (self_review owner excluded).
+        _seed_marshal(finalize_gates={'self_review': 'never'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -395,21 +457,27 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
     after the canonical insertion form was generalized to ``default:``.
     """
 
-    def _generic_candidates(self) -> str:
-        steps = list(DEFAULT_PHASE_6_STEPS) + [
+    def _generic_candidates(self) -> list[str]:
+        # The generic consuming-project self-review form, plus the fixed
+        # self_review knob-owner step. The ``self_review`` gate value is read from
+        # the fixed ``project:finalize-step-pre-submission-self-review`` owner
+        # (regardless of which self-review CANDIDATE form is listed), so the owner
+        # must be present in the seeded steps map for the gate to be active.
+        return list(DEFAULT_PHASE_6_STEPS) + [
             'pre-push-quality-gate',
             'default:pre-submission-self-review',
+            'project:finalize-step-pre-submission-self-review',
         ]
-        return ','.join(steps)
 
     def test_never_drops_generic_default_form(self, plan_context):
-        _seed_marshal(finalize_gates={'self_review': 'never'})
+        candidates = self._generic_candidates()
+        _seed_marshal(finalize_gates={'self_review': 'never'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
             _compose_ns(
                 plan_id='ceremony-never-generic',
-                phase_6_steps=self._generic_candidates(),
+                phase_6_steps=','.join(candidates),
             )
         )
 
@@ -419,13 +487,14 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
         assert 'pre-submission-self-review' not in _bare(_manifest_phase_6_steps(result))
 
     def test_always_does_not_duplicate_generic_default_form(self, plan_context):
-        _seed_marshal(finalize_gates={'self_review': 'always'})
+        candidates = self._generic_candidates()
+        _seed_marshal(finalize_gates={'self_review': 'always'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
             _compose_ns(
                 plan_id='ceremony-always-generic',
-                phase_6_steps=self._generic_candidates(),
+                phase_6_steps=','.join(candidates),
             )
         )
 

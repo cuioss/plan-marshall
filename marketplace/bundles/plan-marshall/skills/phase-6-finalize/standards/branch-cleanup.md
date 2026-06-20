@@ -2,6 +2,16 @@
 name: default:branch-cleanup
 description: Branch cleanup — adapts to PR mode or local-only based on create-pr step presence
 order: 70
+configurable:
+  - key: pr_merge_strategy
+    default: squash
+    description: Merge strategy (squash|merge|rebase) used when merging the plan's PR.
+  - key: final_merge_without_asking
+    default: false
+    description: Gate the post-CI auto-merge — false prompts before merging; true merges automatically once CI is green.
+  - key: auto_rebase_threshold
+    default: no_overlap_only
+    description: Gate the pre-rebase auto-proceed decision — no_overlap_only permits auto-rebase only when the rebase would touch a disjoint file set; any overlap defers to the operator.
 ---
 
 # Branch Cleanup
@@ -32,7 +42,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 - **No improvisation**: Do not add git cleanup steps beyond what is explicitly documented in the execution sections below.
 - **Worktree removal is non-force**: Never pass `--force` to `git worktree remove`. Only clean worktrees may be removed. If the worktree has uncommitted changes, abort cleanup and surface the error — the user may still want to salvage the work.
 - **Failure leaves worktree in place**: On any plan abort or failure path, do NOT auto-remove the worktree. Worktree removal happens only during successful branch-cleanup.
-- **Confirmation gate is conditional on conflict severity**: The PR-mode `AskUserQuestion` confirmation gate is no longer mandatory on every `state == open` invocation. It is now driven by the **Conflict-Severity Classifier** section below, which dispatches `plan-marshall:workflow-integration-git:git-workflow baseline-reconcile --no-emit` to classify the rebase as `no_overlap`, `overlap_no_content_conflict`, or `overlap_with_content_conflict`. The classifier's safety properties: `baseline-reconcile --no-emit` is idempotent, performs only `fetch + diff + merge-tree` (with an internal `git merge` probe that is always aborted before any working-tree mutation persists — see the `auto_reconciled: false` downgrade path inside the script), and emits no Q-Gate findings under `--no-emit`. The auto-proceed threshold is tunable via the `auto_rebase_threshold` param of the `default:branch-cleanup` step (read from the plan-local manifest step-params snapshot), schema-registered in `_FINALIZE_STEP_PARAMS['default:branch-cleanup']` (`_config_defaults.py`) with default `no_overlap_only` (opt-in `auto_resolvable`; opt-out `never`). All other safety properties (`--force-with-lease` only, worktree-first removal, targeted ref prune) remain unchanged on every code path.
+- **Confirmation gate is conditional on conflict severity**: The PR-mode `AskUserQuestion` confirmation gate is no longer mandatory on every `state == open` invocation. It is now driven by the **Conflict-Severity Classifier** section below, which dispatches `plan-marshall:workflow-integration-git:git-workflow baseline-reconcile --no-emit` to classify the rebase as `no_overlap`, `overlap_no_content_conflict`, or `overlap_with_content_conflict`. The classifier's safety properties: `baseline-reconcile --no-emit` is idempotent, performs only `fetch + diff + merge-tree` (with an internal `git merge` probe that is always aborted before any working-tree mutation persists — see the `auto_reconciled: false` downgrade path inside the script), and emits no Q-Gate findings under `--no-emit`. The auto-proceed threshold is tunable via the `auto_rebase_threshold` param of the `default:branch-cleanup` step (read from the plan-local manifest step-params snapshot), declared in this step's `configurable:` frontmatter with default `no_overlap_only` (opt-in `auto_resolvable`; opt-out `never`) and resolved by the `plan-marshall:extension-api:configurable_contract` parser. All other safety properties (`--force-with-lease` only, worktree-first removal, targeted ref prune) remain unchanged on every code path.
 
 ## Worktree Awareness
 
@@ -112,7 +122,7 @@ Read `auto_rebase_threshold` off the returned `params` object as `{threshold}`. 
 - `auto_resolvable` — also auto-proceed when classifier returns `classification: overlap_no_content_conflict` AND `auto_reconciled: true`.
 - `never` — always prompt the user; skip the classifier entirely. This is the legacy opt-out for users who prefer the unconditional gate.
 
-The param's lifecycle: the default lives in `_FINALIZE_STEP_PARAMS['default:branch-cleanup']` (`_config_defaults.py`), is snapshotted into the manifest at compose time, is read at runtime via the manifest `step-params get` call above, and is operator-visible in `.plan/marshal.json` under the `default:branch-cleanup` step's nested param object (seeded by `manage-config init` / `sync-defaults`). This document is the authoritative description of the threshold's effect on the gate, not its storage — the schema row owns the default.
+The param's lifecycle: the default is declared in this step's `configurable:` frontmatter (resolved by the `plan-marshall:extension-api:configurable_contract` parser, which the `get_default_config()` finalize-step seed delegates to), is snapshotted into the manifest at compose time, is read at runtime via the manifest `step-params get` call above, and is operator-visible in `.plan/marshal.json` under the `default:branch-cleanup` step's nested param object (seeded by `manage-config init` / `sync-defaults`). This document is the authoritative description of the threshold's effect on the gate, not its storage — the `configurable:` declaration owns the default.
 
 #### Threshold-driven bypass (when `{threshold} == never`)
 

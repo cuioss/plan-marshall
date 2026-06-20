@@ -228,11 +228,47 @@ def get_manifest_path(plan_id: str) -> Path:
     return get_plan_dir(plan_id) / MANIFEST_FILENAME
 
 
+def _denormalize_step_params_for_write(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of ``manifest`` with ownerless ``step_params`` collapsed to ``null``.
+
+    The write-side mirror of :func:`_normalize_step_params_block`: an ownerless
+    step (its param value is an empty dict ``{}`` or ``None``) is written as
+    ``None`` (serialized as ``null``) so the manifest TOON never carries a noisy
+    empty ``{}`` block — regardless of which write path produced the in-memory
+    manifest (compose snapshot, or a ``step-params set`` round-trip that read the
+    normalized ``{}`` back). A param-owning step keeps its nested object. The
+    input ``manifest`` is never mutated; only the ``phase_5`` / ``phase_6``
+    sections that actually carry a ``step_params`` block are shallow-copied.
+    """
+    out = dict(manifest)
+    for section_key in ('phase_5', 'phase_6'):
+        section = out.get(section_key)
+        if not isinstance(section, dict):
+            continue
+        step_params = section.get('step_params')
+        if not isinstance(step_params, dict):
+            continue
+        collapsed = {
+            step_id: (params if isinstance(params, dict) and params else None)
+            for step_id, params in step_params.items()
+        }
+        section_copy = dict(section)
+        section_copy['step_params'] = collapsed
+        out[section_key] = section_copy
+    return out
+
+
 def write_manifest(plan_id: str, manifest: dict[str, Any]) -> None:
-    """Atomically write the manifest as TOON to its plan path."""
+    """Atomically write the manifest as TOON to its plan path.
+
+    Ownerless ``step_params`` entries are collapsed to ``null`` at the write
+    boundary (:func:`_denormalize_step_params_for_write`) so no empty ``{}``
+    block is ever serialized, keeping every manifest-write path (compose +
+    ``step-params set``) consistent with the no-empty-``{}`` contract.
+    """
     path = get_manifest_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_file(path, serialize_toon(manifest))
+    atomic_write_file(path, serialize_toon(_denormalize_step_params_for_write(manifest)))
 
 
 def _normalize_step_params_block(manifest: dict[str, Any]) -> None:
@@ -1074,7 +1110,9 @@ def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     return list(step_map.keys())
 
 
-def _snapshot_step_params(final_step_ids: list[str], marshal_step_map: dict[str, dict] | None) -> dict[str, dict]:
+def _snapshot_step_params(
+    final_step_ids: list[str], marshal_step_map: dict[str, dict] | None
+) -> dict[str, dict | None]:
     """Snapshot the resolved per-step params for the FINAL selected steps.
 
     ``final_step_ids`` is the composer's final in-manifest step-id list (bare
@@ -1086,18 +1124,28 @@ def _snapshot_step_params(final_step_ids: list[str], marshal_step_map: dict[str,
     Returns a snapshot ``{step_id: params}`` keyed by the in-manifest (bare)
     step id, carrying each selected step's resolved param object copied from the
     marshal map. Only steps that survive into ``final_step_ids`` are snapshotted.
-    A step with no marshal-side entry (or when the marshal map is absent) gets an
-    empty param object. The marshal keys are matched against the bare in-manifest
-    ids via the same ``default:`` prefix-strip used at the compose boundary.
+    An OWNERLESS step (no marshal-side entry, an empty param object, or when the
+    marshal map is absent) snapshots as ``None`` (serialized as ``null``) — no
+    noisy empty ``{}`` block is written to the manifest. The read boundary
+    (:func:`_normalize_step_params_block`) coerces every ``null`` / ``{}`` /
+    TOON-``''`` value back to an empty dict, so ownerless steps read back as
+    ``{}``. The marshal keys are matched against the bare in-manifest ids via the
+    same ``default:`` prefix-strip used at the compose boundary.
     """
     if not marshal_step_map:
-        return {step_id: {} for step_id in final_step_ids}
+        return dict.fromkeys(final_step_ids)
     # Index the marshal map by its prefix-stripped key so a bare in-manifest id
     # matches a ``default:``-prefixed marshal key.
     bare_to_params: dict[str, dict] = {
         _strip_default_prefix(key): params for key, params in marshal_step_map.items()
     }
-    return {step_id: dict(bare_to_params.get(step_id, {})) for step_id in final_step_ids}
+    # A param-owning step snapshots its nested object; an ownerless step (no
+    # marshal entry or an empty param object) snapshots as ``None`` so the
+    # manifest carries no empty ``{}``.
+    return {
+        step_id: (dict(params) if (params := bare_to_params.get(step_id)) else None)
+        for step_id in final_step_ids
+    }
 
 
 def _resolve_footprint(plan_id: str) -> list[str]:
@@ -1506,27 +1554,56 @@ _SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
 _SCOPE_GATED_OVERRIDE_DROP = frozenset({'automated-review', 'default:automated-review'})
 
 
-def _read_drop_review_on_scope_gate() -> bool:
-    """Read ``plan.phase-6-finalize.drop_review_on_scope_gate`` from marshal.json.
+# Owning finalize step ids for the step-folded run-at-all / escape-hatch knobs.
+# The three knobs that each map to exactly one finalize step are stored nested
+# under their owning step's param object in marshal.json's ``phase-6-finalize.steps``
+# keyed map (folded there from their former flat-sibling location). ``qgate`` is
+# the one finalize run-at-all gate that stays a flat phase-level sibling.
+_SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
+_PRE_SUBMISSION_SELF_REVIEW_STEP = 'project:finalize-step-pre-submission-self-review'
 
-    Returns ``False`` when the file is missing, the keys are absent, or the
-    value is not a boolean ``True``. The escape hatch defaults to off: only an
-    explicit ``true`` in marshal.json activates the additional
-    ``automated-review`` suppression in the scope_gated_finalize pre-filter.
+
+def _read_step_owned_knob(owner_step_id: str, knob: str) -> object | None:
+    """Read a step-owned knob from ``phase-6-finalize.steps`` in marshal.json.
+
+    The step-folded knobs (``simplify`` / ``self_review`` /
+    ``drop_review_on_scope_gate``) live nested under their owning finalize step's
+    param object in the ``phase-6-finalize.steps`` keyed map. This reads
+    ``steps[owner_step_id][knob]`` via :func:`_read_marshal_phase_step_map` (which
+    preserves the full ``default:`` / ``project:`` step-id prefixes), returning
+    ``None`` when the marshal file is missing, the owning step is absent from the
+    map, or the knob is absent from the step's param object. The caller supplies
+    the canonical default for the ``None`` case.
+
+    Args:
+        owner_step_id: The full-prefixed finalize step id that owns the knob.
+        knob: The param key to read from the owning step's nested param object.
+
+    Returns:
+        The knob's value, or ``None`` when it cannot be resolved.
     """
-    marshal_path = get_marshal_path()
-    if marshal_path is None or not marshal_path.exists():
-        return False
-    data = read_json(marshal_path, default={})
-    if not isinstance(data, dict):
-        return False
-    plan = data.get('plan')
-    if not isinstance(plan, dict):
-        return False
-    phase_6 = plan.get('phase-6-finalize')
-    if not isinstance(phase_6, dict):
-        return False
-    return phase_6.get('drop_review_on_scope_gate') is True
+    step_map = _read_marshal_phase_step_map('phase-6-finalize')
+    if not step_map:
+        return None
+    params = step_map.get(owner_step_id)
+    if not isinstance(params, dict):
+        return None
+    return params.get(knob)
+
+
+def _read_drop_review_on_scope_gate() -> bool:
+    """Read ``drop_review_on_scope_gate`` from its owning finalize step's params.
+
+    The knob is folded under
+    ``phase-6-finalize.steps['project:finalize-step-pre-submission-self-review']
+    .drop_review_on_scope_gate`` in marshal.json (its former flat-sibling
+    location is gone). Returns ``False`` when the file is missing, the owning step
+    is absent, the knob is absent, or the value is not a boolean ``True``. The
+    escape hatch defaults to off: only an explicit ``true`` activates the
+    additional ``automated-review`` suppression in the scope_gated_finalize
+    pre-filter.
+    """
+    return _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'drop_review_on_scope_gate') is True
 
 
 def _apply_scope_gated_finalize(
@@ -1665,12 +1742,17 @@ _CEREMONY_FINALIZE_DEFAULT = 'auto'
 def _read_finalize_gates() -> dict[str, str]:
     """Resolve the three ``plan.phase-6-finalize`` run-at-all gate values.
 
-    Reads ``marshal.json``'s ``plan.phase-6-finalize`` block directly (the
-    composer reads marshal.json straight through, like the planning-lane
-    router), merging the canonical ``auto`` default under any absent gate. Each
-    gate (``self_review`` / ``qgate`` / ``simplify``) is a
-    flat phase-local knob — read via
-    ``manage-config plan phase-6-finalize get --field <gate>``.
+    Each gate reads from its canonical home and merges the ``auto`` default
+    under an absent value:
+
+    - ``qgate`` stays a flat phase-local knob, read from
+      ``plan.phase-6-finalize.qgate`` directly (it is consumed as a phase-level
+      run-at-all gate, not a param the owning step body reads).
+    - ``simplify`` and ``self_review`` are folded under their owning finalize
+      step's nested param object in ``phase-6-finalize.steps`` (``simplify`` →
+      ``default:finalize-step-simplify``; ``self_review`` →
+      ``project:finalize-step-pre-submission-self-review``). They are read via
+      :func:`_read_step_owned_knob`.
 
     Returns a ``{gate: value}`` dict for the three finalize gates; values are
     always one of the configured values (or the ``auto`` default). The caller
@@ -1678,26 +1760,29 @@ def _read_finalize_gates() -> dict[str, str]:
     """
     resolved: dict[str, str] = dict.fromkeys(_CEREMONY_FINALIZE_GATES, _CEREMONY_FINALIZE_DEFAULT)
 
+    # qgate stays a flat phase-level sibling.
     marshal_path = get_marshal_path()
-    if marshal_path is None or not marshal_path.exists():
-        return resolved
-    try:
-        data = read_json(marshal_path, default={})
-    except (OSError, json.JSONDecodeError):
-        return resolved
-    if not isinstance(data, dict):
-        return resolved
-    plan_block = data.get('plan')
-    if not isinstance(plan_block, dict):
-        return resolved
-    finalize = plan_block.get('phase-6-finalize')
-    if not isinstance(finalize, dict):
-        return resolved
+    if marshal_path is not None and marshal_path.exists():
+        try:
+            data = read_json(marshal_path, default={})
+        except (OSError, ValueError):
+            data = {}
+        if isinstance(data, dict):
+            plan_block = data.get('plan')
+            if isinstance(plan_block, dict):
+                finalize = plan_block.get('phase-6-finalize')
+                if isinstance(finalize, dict):
+                    qgate_value = finalize.get('qgate')
+                    if isinstance(qgate_value, str) and qgate_value:
+                        resolved['qgate'] = qgate_value
 
-    for gate in _CEREMONY_FINALIZE_GATES:
-        value = finalize.get(gate)
-        if isinstance(value, str) and value:
-            resolved[gate] = value
+    # simplify / self_review are folded under their owning step's param object.
+    simplify_value = _read_step_owned_knob(_SIMPLIFY_OWNER_STEP, 'simplify')
+    if isinstance(simplify_value, str) and simplify_value:
+        resolved['simplify'] = simplify_value
+    self_review_value = _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'self_review')
+    if isinstance(self_review_value, str) and self_review_value:
+        resolved['self_review'] = self_review_value
 
     return resolved
 
