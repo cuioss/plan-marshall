@@ -153,18 +153,21 @@ class TestInitArchivedMode:
         assert synthetic_root not in bundle_path.parents
 
     def test_falls_back_to_synthetic_tmp_when_archived_plan_path_missing(self):
+        # The synthetic fallback root is keyed on plan_id
+        # (<tmp>/plan-retrospective/plan-<plan_id>), so a fixed plan_id makes
+        # the synthetic path shared state across test runs — a leftover from
+        # an interrupted run or a concurrent xdist worker collides on the same
+        # directory. Use a per-invocation-unique plan_id so each run resolves
+        # to its own synthetic root, removing the shared-state collision and
+        # the pre-clean step it forced.
+        import uuid
+
+        plan_id = f'archived-fallback-{uuid.uuid4().hex}'
         # resolve the synthetic root because resolve_bundle_path now
         # returns canonical absolute paths; on macOS tempfile.gettempdir()
         # is /var/folders/... while .resolve() canonicalizes to
         # /private/var/folders/...
-        plan_id = 'archived-fallback'
         synthetic_root = (Path(tempfile.gettempdir()) / 'plan-retrospective' / f'plan-{plan_id}').resolve()
-        # Pre-clean any leftover from a prior run so the assertions are
-        # deterministic.
-        if synthetic_root.exists():
-            import shutil
-
-            shutil.rmtree(synthetic_root)
 
         result = run_script(
             SCRIPT_PATH,
@@ -182,7 +185,7 @@ class TestInitArchivedMode:
             assert bundle_path == synthetic_root / 'work' / 'retro-fragments.toon'
             assert bundle_path.exists()
         finally:
-            # Cleanup the synthetic dir so subsequent runs start clean.
+            # Cleanup this invocation's unique synthetic dir.
             if synthetic_root.exists():
                 import shutil
 
