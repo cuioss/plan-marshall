@@ -24,7 +24,7 @@ in [07](07-target-extensibility.md).
 | stays-agnostic (source target value from runtime) | CI/git/build ops, metrics storage/aggregation, validators, `.plan/` executor, credentials | — |
 | target-specific skill (`targets:`-scoped) | whole capabilities that exist only on some targets — IDE-MCP command, Claude harness-hook wizard, future OpenCode/Cursor flows | Small |
 | prose-neutralize | "Claude Code" naming, host-permission-UI rationale, per-target doc tables | Medium |
-| sanctioned-ok (no action) | `.claude-plugin`/`marketplace.json` manifests, `platform-runtime` internals | — |
+| sanctioned-ok (no action) | `.claude-plugin`/`marketplace.json` manifests; the `claude_runtime.py`/`claude_hook.py` concrete impl + env-overridable resolver models (`generate_executor.py`, `bootstrap_plugin.py`). **Not** the `Runtime`/`TargetBase` ABCs, the router, or `manage-terminal-title` — those are active seam work (§D, §A3, §07) | — |
 | cleanup byproducts | stale `.pyc`, doc-drift bugs | Incidental |
 
 ---
@@ -48,6 +48,7 @@ Destination: paths → PR-layout; settings I/O → PR-behavior; the permission *
 build-target *data* (per-target permission emission), not core code.
 
 ### A2. Metrics / transcript engine (path, layout, **and** API format)
+
 | Evidence | Coupling |
 |----------|----------|
 | `manage-metrics/scripts/manage-metrics.py:152,1377` | `~/.claude/projects` home |
@@ -65,6 +66,7 @@ JSONL schema, and Anthropic cache weights never cross into core. "Return the tra
 core parses it" is a relocated coupling, not an abstraction.
 
 ### A3. Hooks, terminal-title, statusline (incl. a target-shaped interface)
+
 | Evidence | Coupling |
 |----------|----------|
 | `manage-terminal-title/scripts/manage_terminal_title.py:71-101,95-98` | **mislabeled "platform-agnostic"**: `resolve_icon` keyed on Claude hook-event names (`Stop/Notification/PreToolUse/...`) + tool names (`AskUserQuestion`, `Bash`) — a §6 target-shaped interface |
@@ -78,6 +80,7 @@ runtime op; `manage-terminal-title` should compose from a target-neutral state, 
 event names.
 
 ### A4. Host-IDE launch (per-host, not per-target — but same relocation)
+
 | Evidence | Coupling |
 |----------|----------|
 | `manage-files/scripts/manage-files.py:106-107,127-163,246-325` | `detect_ide` / `cmd_open_in_ide` launch VS Code/Cursor/JetBrains via `TERM_PROGRAM`/`__CFBundleIdentifier` inside core file CRUD |
@@ -85,6 +88,7 @@ event names.
 Destination: PR-behavior (a runtime side-effect), though it keys on host editor, not the Claude target.
 
 ### A5. Further format-leak families (surfaced by pass-2 full reads)
+
 | Evidence | Coupling |
 |----------|----------|
 | `manage-metrics/SKILL.md:21,326-337`, `standards/data-format.md:64,70-77`, `manage-metrics.py:720-739` | the A2 leak is wider than the parser — the **docs and the renderer** also carry the Claude four-field / `<usage>` / billing-weight vocabulary. The normalized-token boundary must reach the doc + render surfaces too |
@@ -114,6 +118,7 @@ The highest-count cluster: every resolver outside the executor hardcodes `.claud
 | `tools-script-executor/scripts/generate_executor.py:331-373` | `discover_local_scripts` hardcodes `.claude/skills` (asymmetry — the *embedded resolver* in the same file IS target-aware) |
 
 ### B2. Bundle / plugin-cache discovery (the shared foundation)
+
 | Evidence | Coupling |
 |----------|----------|
 | `script-shared/scripts/marketplace_paths.py:26-27` | `CLAUDE_DIR='.claude'`, `PLUGIN_CACHE_SUBPATH='plugins/cache/plan-marshall'` constants |
@@ -148,6 +153,7 @@ settled decision in [07](07-target-extensibility.md)); `dev-agent-behavior-rules
 highest-leverage fix because every agent loads it.
 
 ### C2. Level → model table (concrete aliases + Claude env var)
+
 | Evidence | Coupling |
 |----------|----------|
 | `plan-marshall/standards/effort-levels.md:15-31` | `haiku/sonnet/opus/fable`, `claude-opus-4-8`, `CLAUDE_CODE_SUBAGENT_MODEL` |
@@ -161,6 +167,7 @@ Destination: build-target data (level-N naming is the correct abstraction; the c
 see [06](06-execution-context-cross-target.md)).
 
 ### C3. Claude-specific filenames & emitted strings
+
 | Evidence | Coupling |
 |----------|----------|
 | `pm-documents/skills/recipe-doc-verify/SKILL.md:55,118,122,207` | hardcodes `CLAUDE.md` as the doc-drift-check target (OpenCode → `AGENTS.md`) |

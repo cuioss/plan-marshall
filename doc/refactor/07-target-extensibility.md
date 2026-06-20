@@ -21,8 +21,10 @@ Concretely, adding target `X` should be exactly:
 
 1. `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/x_runtime.py` —
    subclass `Runtime`, implement each op or decline via `no-op`. Declares X's layout roots.
-2. `marketplace/targets/x/` — subclass `TargetBase`, plus `mapping.json` (+ transform config)
-   declaring X's tool permissions, model map, body-transform rules, and frontmatter shape.
+2. `marketplace/targets/x/` — subclass `TargetBase`, plus a single `mapping.json` declaring X's
+   `tool_permissions`, `model_map`, the body-transform rules (`directive_rewrites`,
+   `tool_name_rewrites`, `slash_rewrites`), and frontmatter shape. `mapping.json` is the one
+   canonical per-target config artifact — no separate transform file.
 3. Register X once on each side (the runtime `_REGISTRY`, the build `TARGET_REGISTRY`).
 
 Nothing else. No general skill body, no shared script, and no other target may need editing.
@@ -79,9 +81,10 @@ move per-target behaviour notes into the concrete `*_runtime` classes.
 **3. Body transforms are per-target code, not data.** `marketplace/targets/opencode/body_transforms.py`
 hardcodes the rewrite strings (`Skill:` → skill-tool call, `/slash`). A new target must write a
 whole new module. **Required:** a shared transform engine that reads per-target rewrite rules
-(extend `mapping.json`, or a sibling `transforms.json`) — `directive_rewrites`,
-`tool_name_rewrites`, `slash_rewrites`. Each target supplies data; the engine is shared.
-Fold the existing `transforms.md` spec into the shared engine's contract. (This is the
+from the target's `mapping.json` (the single canonical config artifact from the cost-to-add
+contract above) — `directive_rewrites`, `tool_name_rewrites`, `slash_rewrites`. Each target
+supplies data; the engine is shared. Fold the existing `transforms.md` spec into the shared
+engine's contract. (This is the
 mechanism behind [01](01-finish-portability.md) Gap 6 — `AskUserQuestion`/`Task:`/`Skill:`.)
 
 **4. Registration is scattered.** Adding a runtime target touches `_REGISTRY`, two imports,

@@ -303,7 +303,7 @@ resolver duplicated across 6+ analyzers collapses onto the one Gap-4 op.
 
 After Gaps 1-8 are addressed, re-run:
 
-```
+```bash
 grep -rnE '\.claude/|~/\.claude' marketplace/bundles --include='*.py' --include='*.md' \
   | grep -v '/platform-runtime/' | grep -v '\.claude-plugin'
 ```

@@ -115,7 +115,7 @@ Step 2 of the dispatch sequence (load `dev-agent-behavior-rules`) uses a concret
 (`rewrite_skill_directives` in `marketplace/targets/opencode/body_transforms.py`) rewrites
 it to:
 
-```
+```text
 Call the `skill` tool with `{ name: "plan-marshall-dev-agent-behavior-rules" }` before continuing.
 ```
 
