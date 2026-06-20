@@ -192,17 +192,6 @@ def _read_verification_steps(plan_id: str) -> list | None:
     return verification_steps
 
 
-def _role_of(step_id: str) -> str:
-    """Resolve a phase-5 step ID to its role (the trailing ``:``-segment).
-
-    Step IDs are role-suffixed and optionally ``default:``-prefixed, e.g.
-    ``verify:quality-gate`` and ``default:verify:quality-gate`` both resolve to
-    ``quality-gate``; ``verify:module-tests`` resolves to ``module-tests``. A
-    bare step ID with no ``:`` resolves to itself.
-    """
-    return step_id.rsplit(':', 1)[-1]
-
-
 def _is_lint_only(plan_id: str) -> bool:
     """Return True when every phase-5 step is structural lint and none builds.
 
@@ -211,6 +200,11 @@ def _is_lint_only(plan_id: str) -> bool:
     resolves to a build/test role. Structural lint never stamps a
     ``kind=build`` ledger entry, so — like a documentation-only plan — such a
     plan legitimately runs no build and needs no freshness proof.
+
+    Step IDs are role-suffixed and optionally ``default:``-prefixed, e.g.
+    ``verify:quality-gate`` and ``default:verify:quality-gate`` both resolve to
+    ``quality-gate`` via the trailing ``:``-segment. A bare step ID with no
+    ``:`` resolves to itself.
 
     Mirrors ``_is_documentation_only``'s manifest-read discipline: reads
     ``execution.toon`` inside the manage-tasks sys.path island and degrades to
@@ -224,7 +218,7 @@ def _is_lint_only(plan_id: str) -> bool:
     if not verification_steps:
         return False
     return all(
-        isinstance(step, str) and _role_of(step) in _LINT_ONLY_ROLES
+        isinstance(step, str) and step.rsplit(':', 1)[-1] in _LINT_ONLY_ROLES
         for step in verification_steps
     )
 
