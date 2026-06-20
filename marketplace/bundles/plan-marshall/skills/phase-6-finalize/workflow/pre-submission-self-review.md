@@ -1,6 +1,6 @@
 ---
 name: default:pre-submission-self-review
-description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check) before commit-push
+description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check) before commit-push
 order: 7
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
@@ -18,13 +18,13 @@ Every `manage-*` script call in this document carries the following exit-code co
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
-The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below). Step 1 (deterministic surface) and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the twelve LLM cognitive checks) run in the dispatched envelope under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). On any finding the LLM returns, the step hard-fails and halts the phase, mirroring the gating-step convention established by `pre-push-quality-gate`.
+The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below). Step 1 (deterministic surface) and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the thirteen LLM cognitive checks) run in the dispatched envelope under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). On any finding the LLM returns, the step hard-fails and halts the phase, mirroring the gating-step convention established by `pre-push-quality-gate`.
 
 This document carries NO step-activation logic. Activation is controlled by the manifest composer in `manage-execution-manifest/scripts/manage-execution-manifest.py` via the `pre_submission_self_review_inactive` pre-filter (see `manage-execution-manifest/standards/decision-rules.md`). The composer drops the step when `commit_and_push == false` (transitively, via `commit_push_disabled`) OR the plan's live footprint is empty. When the dispatcher runs this step the executor always runs to completion: a clean run records `outcome=done`; a non-empty findings list records `outcome=failed` and halts the phase.
 
 ## Domain-Aware Candidate Surfacing
 
-The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the seventeen candidate sub-lists below as TOON. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
+The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the eighteen candidate sub-lists below as TOON. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
 
 ## Inputs (inline step — Step 1)
 
@@ -37,7 +37,7 @@ The deterministic surfacer is pluggable via the `ext-self-review-{domain}` exten
 |-------------------|:--------:|-------------|
 | `plan_id` | Yes | Plan identifier. |
 | `WORKTREE` | Yes | Repo-relative working-directory path. |
-| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the seventeen candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
+| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the eighteen candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
 
 | `candidates` sub-list | Schema | Purpose |
 |-----------------------|--------|---------|
@@ -57,6 +57,7 @@ The deterministic surfacer is pluggable via the `ext-self-review-{domain}` exten
 | `unguarded_boundaries[N]{file,line,boundary,guarded}` | Added `subprocess.*` / file-I/O calls with no `check=True` and no enclosing `try/except` in the same function | Lone-unguarded-boundary check (check #10) |
 | `count_prose[N]{file,line,text}` | Count-prose (a digit or number word adjacent to a cardinality noun) in every `SKILL.md` of a modified file's skill directory | Stale-count-prose re-check (check #11) |
 | `touched_claims[N]{file,line,text}` | The `+` line of a `-`/`+` hunk pair differing by exactly one token | Touched-claim whole-line re-check (check #12) |
+| `ordinal_references[N]{file,line,text,list_line}` | Added same-document ordinal references (`item N` / `step N` / bare `(N)`) pointing into an ordered-list block the same diff touched; `list_line` is the post-image line of the referenced item | Same-document ordinal-reference re-check (check #13) |
 
 Skills the caller MUST forward in `skills[]`: none (the workflow reads files with the `Read` tool and emits no script calls).
 
@@ -80,7 +81,7 @@ Capture `{cov_scope}` and `{cov_instruction}` (when absent, treat as `inherit`).
 
 ### Step 1: Deterministic surface (inline)
 
-Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the seventeen candidate sub-lists in a single TOON document on stdout.
+Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the eighteen candidate sub-lists in a single TOON document on stdout.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -102,7 +103,7 @@ Capture the helper's TOON output as `{candidates_toon}` for forwarding to the co
 
 ### Step 1b: Candidate-count gate (inline vs dispatch) — B5
 
-Parse the candidate sub-lists from `{candidates_toon}` and read `total_candidates` from the surfacer's `counts.total` field, which sums the twelve line-level heuristic lists (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`). The review-anchor lists (`contract_sources`, `schema_bearing_files`, `count_prose`, `advertised_form_help_strings`) and the derived `protected_identifiers` index are excluded from `total_candidates` for the same reason they are excluded from `counts.total` (see the surfacing skill's § Output note).
+Parse the candidate sub-lists from `{candidates_toon}` and read `total_candidates` from the surfacer's `counts.total` field, which sums the thirteen line-level heuristic lists (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`). The review-anchor lists (`contract_sources`, `schema_bearing_files`, `count_prose`, `advertised_form_help_strings`) and the derived `protected_identifiers` index are excluded from `total_candidates` for the same reason they are excluded from `counts.total` (see the surfacing skill's § Output note).
 
 Evaluate the gate, with the threshold `{gate}` indexed by `{cov_scope}` (`inherit`/`change-set` → `5`; `artifact` → `8`; `component`/`module`/`overall` → `12`). The `inherit` path preserves the `<= 5` threshold verbatim:
 
@@ -163,7 +164,7 @@ Task: plan-marshall:{target}
     WORKTREE: {worktree_path}
 ```
 
-The dispatched workflow body executes Step 2a (cross-reference setup) followed by Step 3 (twelve cognitive checks).
+The dispatched workflow body executes Step 2a (cross-reference setup) followed by Step 3 (thirteen cognitive checks).
 
 #### Step 2a: Cross-reference setup (in-context — MUST run before any check)
 
@@ -171,19 +172,19 @@ Before scanning the line-level candidate lists, load the contract sources surfac
 
 1. For every entry in `candidates.contract_sources`, read every path listed in the `sources` field. These are the `SKILL.md` and `standards/*.md` files governing the changed code. Read them in full — not excerpts.
 2. For every entry in `candidates.schema_bearing_files`, read the file. These are nearby markdown documents that declare a fenced JSON or TOON schema; they govern the post-image of any hunk that touches the same schema.
-3. Hold the loaded contract content in working memory for the rest of the cognitive phase. The twelve checks below cross-reference hunks against this content; do not re-discover contracts on demand.
+3. Hold the loaded contract content in working memory for the rest of the cognitive phase. The thirteen checks below cross-reference hunks against this content; do not re-discover contracts on demand.
 
-### Step 3: Apply twelve checks (in-context)
+### Step 3: Apply thirteen checks (in-context)
 
 For each non-empty candidate list, apply the corresponding cognitive check to the surfaced items only — never expand the review to candidates the helper did not surface.
 
-> **Coverage contract**: the per-candidate lens depth is governed by the coverage instruction resolved in Step 0 (`{cov_instruction}`). The surface-only rule above caps the scope to what the surfacer surfaced at every rung — never widen the candidate set past it. The thoroughness rung sets the depth: `inherit`/`T1`/`T2` → run the twelve checks below as today (face-value per candidate); `T3`+ → additionally trace each surfaced candidate's siblings and cross-references before adjudicating it (the contract cross-references in Step 2a already supply the anchors). `inherit/inherit` reproduces today's behavior bit-for-bit. See the two-dial scope × thoroughness contract in [`../../dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) and the gather/expand/consume obligation in [`../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md`](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md).
+> **Coverage contract**: the per-candidate lens depth is governed by the coverage instruction resolved in Step 0 (`{cov_instruction}`). The surface-only rule above caps the scope to what the surfacer surfaced at every rung — never widen the candidate set past it. The thoroughness rung sets the depth: `inherit`/`T1`/`T2` → run the thirteen checks below as today (face-value per candidate); `T3`+ → additionally trace each surfaced candidate's siblings and cross-references before adjudicating it (the contract cross-references in Step 2a already supply the anchors). `inherit/inherit` reproduces today's behavior bit-for-bit. See the two-dial scope × thoroughness contract in [`../../dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) and the gather/expand/consume obligation in [`../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md`](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md).
 
 #### Present-state grounding precondition (gates contract_drift and its variants on confirmed absence)
 
-The "absence-class" checks — contract drift (check 5) and its three variant labels near-identical-hunk (check 12 → `touched_claim_unverified`), count-prose (check 11 → `stale_count_prose`), and unguarded-boundary (check 10 → `unguarded_boundary`) — adjudicate a candidate by claiming that some flagged content is *missing*, *stale*, or *drifted* relative to the current contract. Each of these checks operates on a surfaced hunk or sibling line rather than on the live file, so it can fire a false positive when the flagged content is *already present and correct in the current worktree doc state* — for example, a contract source whose schema the diff actually updated to agree with the code, a count-prose number the same change already corrected, or a touched-claim line whose surviving claims are all still accurate in the saved file. The surfaced candidate is a snapshot of the diff, not proof that the defect survives in the committed-to-disk document.
+The "absence-class" checks — contract drift (check 5) and its variant labels near-identical-hunk (check 12 → `touched_claim_unverified`), count-prose (check 11 → `stale_count_prose`), unguarded-boundary (check 10 → `unguarded_boundary`), and ordinal-reference (check 13 → `ordinal_reference_stale`) — adjudicate a candidate by claiming that some flagged content is *missing*, *stale*, or *drifted* relative to the current contract. Each of these checks operates on a surfaced hunk or sibling line rather than on the live file, so it can fire a false positive when the flagged content is *already present and correct in the current worktree doc state* — for example, a contract source whose schema the diff actually updated to agree with the code, a count-prose number the same change already corrected, or a touched-claim line whose surviving claims are all still accurate in the saved file. The surfaced candidate is a snapshot of the diff, not proof that the defect survives in the committed-to-disk document.
 
-**Precondition (MUST run before recording any finding from check 5, 10, 11, or 12)**: before emitting a finding whose defect class is `contract_drift`, `touched_claim_unverified`, `stale_count_prose`, or `unguarded_boundary`, re-read the flagged content from the CURRENT worktree file state (use the `Read` tool against the file path under the pinned cwd / `WORKTREE`) and confirm the defect is genuinely present in the live document. Emit the finding ONLY when the flagged content is confirmed absent, stale, or unguarded in the current file state — i.e. the contract source still disagrees with the live code, the count-prose number still mismatches the live count, or the boundary call is still unguarded on disk. When the current file state already reflects the corrected content (the flagged drift/staleness/gap is no longer present on disk), the candidate is a stale diff-snapshot artefact — record NO finding. This grounding step is the single guard that prevents these four checks from emitting false-positive findings against content that already exists, corrected, in the file.
+**Precondition (MUST run before recording any finding from check 5, 10, 11, 12, or 13)**: before emitting a finding whose defect class is `contract_drift`, `touched_claim_unverified`, `stale_count_prose`, `unguarded_boundary`, or `ordinal_reference_stale`, re-read the flagged content from the CURRENT worktree file state (use the `Read` tool against the file path under the pinned cwd / `WORKTREE`) and confirm the defect is genuinely present in the live document. Emit the finding ONLY when the flagged content is confirmed absent, stale, or unguarded in the current file state — i.e. the contract source still disagrees with the live code, the count-prose number still mismatches the live count, or the boundary call is still unguarded on disk. When the current file state already reflects the corrected content (the flagged drift/staleness/gap is no longer present on disk), the candidate is a stale diff-snapshot artefact — record NO finding. This grounding step is the single guard that prevents these four checks from emitting false-positive findings against content that already exists, corrected, in the file.
 
 1. **Symmetric pair test-coverage check** — for each `symmetric_pairs` entry, search the test directory for a test that exercises BOTH `name` and `partner` and asserts the post-state of the partner without first invoking `name` in the same test. A symmetric pair where one half is silently skipped is the canonical defect class. Defect → record finding `{file, line, defect_class: symmetric_pair_uncovered, rationale: <which half is unexercised and why it matters>}`.
 
@@ -223,6 +224,8 @@ The "absence-class" checks — contract drift (check 5) and its three variant la
 
 12. **Touched-claim whole-line re-check** — for each `touched_claims` entry, the helper has surfaced the `+` line of a near-identical hunk pair that differs from its `-` predecessor by exactly one token. The single-token swap is the obvious edit; the risk is that the REST of the line still carries a claim that the swap invalidated. Read the surfaced `+` line and verify every OTHER claim it makes (a count, a name, a reference, a condition) is still correct after the swap — not just the swapped token. When a surviving claim on the line is now wrong because of the swap, it is a defect. Defect → record finding `{file, line, defect_class: touched_claim_unverified, rationale: <the swapped token, and the surviving claim on the line that the swap invalidated>}` — but ONLY after the **Present-state grounding precondition** above confirms the invalidated claim survives in the CURRENT worktree file state (re-read the surfaced line in the live document with the `Read` tool; when the current file already carries the corrected line, record NO finding). When the rest of the line remains correct, record no finding.
 
+13. **Same-document ordinal-reference re-check** — for each `ordinal_references` entry, the helper has surfaced an added same-document ordinal reference (`item N` / `step N` / bare `(N)`, on `line`) that points into an ordered-list block the same diff touched (the referenced item's post-image line is `list_line`). Inserting, deleting, or reordering a numbered-list item renumbers every later item, but an ordinal reference elsewhere in the same document is a hard-coded position the edit does NOT update — so it silently retargets to whatever item now occupies the old ordinal, or dangles past the end of the list. Read the referenced ordered-list block in the CURRENT worktree document and confirm the item now sitting at ordinal `N` is the item the reference intends. When the ordinal now resolves to the wrong item (or past the list end), it is a defect. Defect → record finding `{file, line, defect_class: ordinal_reference_stale, rationale: <the ordinal reference, the item it now resolves to, and the item it was meant to name>}` — but ONLY after the **Present-state grounding precondition** above confirms the mis-resolution survives in the CURRENT worktree file state (re-read both the reference line and the referenced list in the live document with the `Read` tool; when the current file already re-points the reference, or it was rephrased to a content anchor, record NO finding). Prefer recommending a content-anchored rephrase ("see the X step") over a renumbered ordinal so a future renumber cannot re-strand it. When the ordinal still resolves to its intended item, record no finding.
+
 ### Dispatched-envelope output (returned from Steps 2–3 to Step 4)
 
 ```toon
@@ -235,7 +238,7 @@ findings[N]{file,line,defect_class,rationale}:
 `status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome failed` per the gating-step convention. Empty `findings` → caller marks `--outcome done`.
 
 `display_detail` shape:
-- Empty `findings` → `"self-review clean: {N} candidates examined"` where `{N}` is the surfacer's `counts.total` (the twelve line-level heuristic lists: `regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`).
+- Empty `findings` → `"self-review clean: {N} candidates examined"` where `{N}` is the surfacer's `counts.total` (the thirteen line-level heuristic lists: `regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`).
 - Non-empty `findings` → `"self-review found {K} issues"`.
 
 ### Step 4: Mark Step Complete (inline)
