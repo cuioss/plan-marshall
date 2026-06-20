@@ -742,6 +742,8 @@ The mid-execute per-deliverable build is **focused** by design: it runs the `per
 
 4. **On non-zero exit** — route the failure through the **existing Step 11 per-task triage path**: persist each failing finding to the Q-Gate store (`manage-findings qgate add`) and return the `triage_required` signal to the orchestrator. Do NOT invent a new triage surface — reuse the Step 11 contract verbatim (`producer=build-runner`, `finding_type=test-failure`).
 
+> **Guideline — file-relocation lint gap.** When a deliverable RELOCATES a file (moves it from one path/module to another), the focused module-scoped per-deliverable build above can MISS lint/structural findings that only surface in a whole-tree sweep: a moved file implicates BOTH its old and new module, but a module-scoped gate sees only one of them. Sequence a relocation deliverable so the whole-tree verify runs AFTER the move completes, and NEVER skip the orchestrator whole-tree gate (Step 11c, Execute-Exit Verify Gate) on a plan that relocates files. The module-scoped per-deliverable build is NOT a substitute for the whole-tree gate on relocations.
+
 ### Step 11: Triage Verification Failure
 
 **Applies when**:
