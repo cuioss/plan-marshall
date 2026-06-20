@@ -116,6 +116,30 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-ro
   --plan-id {plan_id}
 ```
 
+**Resume-time metrics boundary reconciliation (stamp a half-stamped boundary).** After the cwd re-anchor preflight and `get-routing-context`, BEFORE reading the workflow doc and dispatching the resolved action, reconcile the metrics phase boundary into the current phase. `manage-status transition` and `manage-metrics phase-boundary` are two independent operations that must both fire at a phase boundary; if the prior session's phase skill self-transitioned the status, the resuming orchestrator's transition is a no-op and the paired `phase-boundary` call is skipped along with it, silently dropping a whole phase's token/duration attribution. Run the deterministic detector first — derive `{prev_phase}` as the phase immediately preceding `current_phase` in canonical order (`1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-finalize`); for `1-init` there is no prev, so omit `--prev-phase`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics boundary-status \
+  --plan-id {plan_id} --next-phase {current_phase} [--prev-phase {prev_phase}]
+```
+
+(See `manage-metrics` Canonical invocations → `boundary-status`.) Branch on `classification`:
+
+- **`missing`** — the boundary is half-stamped. Stamp it explicitly even though the status transition already happened, then log a `[STATUS]` reconciliation decision:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
+    --plan-id {plan_id} --prev-phase {prev_phase} --next-phase {current_phase}
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level INFO \
+    --message "[STATUS] (plan-marshall:plan-marshall) Resume reconciliation: stamped missing metrics boundary {prev_phase} -> {current_phase}"
+  ```
+
+- **`stamped` or `not_applicable`** — proceed unchanged to the routing table below; no stamp needed.
+
 | Current Phase | Workflow Document | Action |
 |---------------|-------------------|--------|
 | 1-init | `Read workflow/planning.md` | `init` |

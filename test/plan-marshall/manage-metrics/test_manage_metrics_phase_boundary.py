@@ -28,6 +28,7 @@ _spec.loader.exec_module(manage_metrics)
 cmd_phase_boundary = manage_metrics.cmd_phase_boundary
 cmd_start_phase = manage_metrics.cmd_start_phase
 cmd_end_phase = manage_metrics.cmd_end_phase
+cmd_boundary_status = manage_metrics.cmd_boundary_status
 
 
 # =============================================================================
@@ -133,6 +134,16 @@ def _ns_end_phase(
         retrospective_tokens=retrospective_tokens,
         command='end-phase',
         func=cmd_end_phase,
+    )
+
+
+def _ns_boundary_status(plan_id, next_phase, prev_phase=None):
+    return Namespace(
+        plan_id=plan_id,
+        prev_phase=prev_phase,
+        next_phase=next_phase,
+        command='boundary-status',
+        func=cmd_boundary_status,
     )
 
 
@@ -602,3 +613,197 @@ def test_retrospective_tokens_absent_when_not_forwarded(plan_context):
     content = (plan_context.plan_dir_for('retro-absent') / 'work' / 'metrics.toon').read_text()
     block = _phase_block(content, '6-finalize')
     assert _field(block, 'retrospective_tokens') is None
+
+
+# =============================================================================
+# boundary-status — resume-time half-stamped boundary detection (read-only)
+# =============================================================================
+#
+# `boundary-status` is the detection half of cross-session boundary
+# reconciliation. It reads work/metrics.toon and classifies the boundary into
+# --next-phase as one of: stamped / missing / not_applicable. It MUST perform
+# ZERO mutation of metrics.toon — the orchestrator reacts to a `missing` verdict
+# by issuing an explicit `phase-boundary` call.
+
+
+# -----------------------------------------------------------------------------
+# missing: half-stamped boundary (the case the verb exists to detect)
+# -----------------------------------------------------------------------------
+
+
+def test_boundary_status_missing_when_next_phase_has_no_start(plan_context):
+    """next phase has no start_time → classification 'missing' on next.start_time.
+
+    The prior session self-transitioned the status but skipped the paired
+    phase-boundary, so the resuming phase has no start_time yet. With no
+    --prev-phase, only the "current phase has no start" condition is evaluated.
+    """
+    # 1-init started + closed, but 2-refine never opened.
+    cmd_start_phase(_ns_start_phase('bs-missing-next', '1-init'))
+    cmd_phase_boundary(_ns_boundary('bs-missing-next', prev_phase='1-init', next_phase='2-refine'))
+
+    # On resume, the orchestrator is about to enter 3-outline, which has no start.
+    result = cmd_boundary_status(_ns_boundary_status('bs-missing-next', next_phase='3-outline'))
+
+    assert result['status'] == 'success'
+    assert result['classification'] == 'missing'
+    assert result['next_phase'] == '3-outline'
+    assert result['prev_phase'] == '-'
+    assert result['missing_fields'] == '3-outline.start_time'
+
+
+def test_boundary_status_missing_when_prev_started_but_not_ended(plan_context):
+    """prev has start_time but no end_time → 'missing' on prev.end_time.
+
+    The prior session opened the prev phase and self-transitioned away without
+    the paired phase-boundary closing it — the canonical half-stamped state.
+    """
+    # 1-init opened, but never closed (no phase-boundary), and 2-refine opened.
+    cmd_start_phase(_ns_start_phase('bs-missing-prev', '1-init'))
+    cmd_start_phase(_ns_start_phase('bs-missing-prev', '2-refine'))
+
+    result = cmd_boundary_status(
+        _ns_boundary_status('bs-missing-prev', prev_phase='1-init', next_phase='2-refine')
+    )
+
+    assert result['status'] == 'success'
+    assert result['classification'] == 'missing'
+    assert result['prev_phase'] == '1-init'
+    assert result['next_phase'] == '2-refine'
+    assert result['missing_fields'] == '1-init.end_time'
+
+
+def test_boundary_status_missing_reports_both_offending_fields(plan_context):
+    """prev unclosed AND next unopened → both fields listed in missing_fields."""
+    # 1-init opened, never closed; 2-refine never opened.
+    cmd_start_phase(_ns_start_phase('bs-missing-both', '1-init'))
+
+    result = cmd_boundary_status(
+        _ns_boundary_status('bs-missing-both', prev_phase='1-init', next_phase='2-refine')
+    )
+
+    assert result['status'] == 'success'
+    assert result['classification'] == 'missing'
+    fields = result['missing_fields'].split(',')
+    assert '1-init.end_time' in fields
+    assert '2-refine.start_time' in fields
+
+
+# -----------------------------------------------------------------------------
+# stamped: complete boundary left unchanged
+# -----------------------------------------------------------------------------
+
+
+def test_boundary_status_stamped_when_boundary_complete(plan_context):
+    """prev has start+end AND next has start → classification 'stamped'."""
+    # 1-init opened+closed (phase-boundary writes 1-init.end_time + 2-refine.start_time).
+    cmd_start_phase(_ns_start_phase('bs-stamped', '1-init'))
+    cmd_phase_boundary(_ns_boundary('bs-stamped', prev_phase='1-init', next_phase='2-refine'))
+
+    result = cmd_boundary_status(
+        _ns_boundary_status('bs-stamped', prev_phase='1-init', next_phase='2-refine')
+    )
+
+    assert result['status'] == 'success'
+    assert result['classification'] == 'stamped'
+    assert result['prev_phase'] == '1-init'
+    assert result['next_phase'] == '2-refine'
+    # No missing_fields on a stamped verdict.
+    assert 'missing_fields' not in result
+
+
+def test_boundary_status_stamped_when_prev_omitted_and_next_has_start(plan_context):
+    """--prev-phase omitted + next has start_time → classification 'stamped'."""
+    cmd_start_phase(_ns_start_phase('bs-stamped-noprev', '3-outline'))
+
+    result = cmd_boundary_status(_ns_boundary_status('bs-stamped-noprev', next_phase='3-outline'))
+
+    assert result['status'] == 'success'
+    assert result['classification'] == 'stamped'
+    assert result['prev_phase'] == '-'
+    assert result['next_phase'] == '3-outline'
+
+
+def test_boundary_status_leaves_metrics_unchanged(plan_context):
+    """boundary-status performs ZERO mutation of metrics.toon (read-only)."""
+    cmd_start_phase(_ns_start_phase('bs-readonly', '1-init'))
+    cmd_phase_boundary(_ns_boundary('bs-readonly', prev_phase='1-init', next_phase='2-refine'))
+
+    metrics_file = plan_context.plan_dir_for('bs-readonly') / 'work' / 'metrics.toon'
+    before = metrics_file.read_text()
+
+    # Run the detector across several boundary shapes — none may mutate the file.
+    cmd_boundary_status(_ns_boundary_status('bs-readonly', prev_phase='1-init', next_phase='2-refine'))
+    cmd_boundary_status(_ns_boundary_status('bs-readonly', next_phase='3-outline'))
+    cmd_boundary_status(_ns_boundary_status('bs-readonly', prev_phase='2-refine', next_phase='3-outline'))
+
+    after = metrics_file.read_text()
+    assert before == after
+
+
+# -----------------------------------------------------------------------------
+# not_applicable: prev phase never started — nothing to reconcile
+# -----------------------------------------------------------------------------
+
+
+def test_boundary_status_not_applicable_when_prev_phase_never_started(plan_context):
+    """--prev-phase supplied but it has no metrics row → 'not_applicable'.
+
+    Covers the request's 'neither start nor end recorded' path for the prev
+    side: the prev phase never ran, so there is no boundary to reconcile.
+    """
+    # Only 2-refine started; 1-init has no row at all.
+    cmd_start_phase(_ns_start_phase('bs-na', '2-refine'))
+
+    result = cmd_boundary_status(
+        _ns_boundary_status('bs-na', prev_phase='1-init', next_phase='2-refine')
+    )
+
+    assert result['status'] == 'success'
+    assert result['classification'] == 'not_applicable'
+    assert result['prev_phase'] == '1-init'
+    assert result['next_phase'] == '2-refine'
+    # not_applicable carries a reason, never missing_fields.
+    assert 'missing_fields' not in result
+
+
+def test_boundary_status_prev_omitted_never_yields_not_applicable(plan_context):
+    """When --prev-phase is omitted, not_applicable never applies — only the
+    'next has no start' condition is evaluated, yielding 'missing'."""
+    # Empty metrics: 3-outline has no start_time, no prev supplied.
+    result = cmd_boundary_status(_ns_boundary_status('bs-noprev-na', next_phase='3-outline'))
+
+    assert result['status'] == 'success'
+    assert result['classification'] == 'missing'
+    assert result['missing_fields'] == '3-outline.start_time'
+
+
+# -----------------------------------------------------------------------------
+# invalid input rejection
+# -----------------------------------------------------------------------------
+
+
+def test_boundary_status_invalid_next_phase_rejected(plan_context):
+    """Invalid next-phase name returns invalid_phase error (no mutation)."""
+    result = cmd_boundary_status(_ns_boundary_status('bs-bad-next', next_phase='nope'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_phase'
+    assert 'next_phase' in result['message']
+
+
+def test_boundary_status_invalid_prev_phase_rejected(plan_context):
+    """Invalid prev-phase name returns invalid_phase error (no mutation)."""
+    result = cmd_boundary_status(
+        _ns_boundary_status('bs-bad-prev', prev_phase='nope', next_phase='2-refine')
+    )
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_phase'
+    assert 'prev_phase' in result['message']
+
+
+def test_boundary_status_plan_not_found_when_unseeded(plan_context):
+    """Guard fires: an unseeded plan returns plan_not_found before classification."""
+    plan_id = _register_unseeded('bs-unseeded')
+    result = cmd_boundary_status(_ns_boundary_status(plan_id, next_phase='2-refine'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_not_found'

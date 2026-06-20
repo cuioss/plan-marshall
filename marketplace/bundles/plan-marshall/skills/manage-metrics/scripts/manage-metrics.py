@@ -1036,6 +1036,118 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
     return result
 
 
+def cmd_boundary_status(args: argparse.Namespace) -> dict:
+    """Classify a metrics phase boundary as stamped / missing / not_applicable.
+
+    Read-only resume-time detector. On cross-session re-entry the orchestrator
+    calls this BEFORE dispatching the current phase to decide whether a missing
+    `phase-boundary` must be stamped: if the prior session's phase skill
+    self-transitioned the status, the resuming orchestrator's `manage-status
+    transition` is a no-op and the paired `phase-boundary` call is skipped along
+    with it, silently dropping a whole phase's token/duration attribution. This
+    verb is the deterministic detection half of that reconciliation; it performs
+    ZERO mutation of `work/metrics.toon`.
+
+    Inputs:
+        --next-phase  (required): the phase being entered on resume.
+        --prev-phase  (optional): the phase that should have been closed before
+            entering `--next-phase`. When omitted, only the "current phase has no
+            start" condition is evaluated against `--next-phase`.
+
+    Classification (computed from the persisted metrics.toon rows — the same
+    `start_time` / `end_time` fields `end-phase` writes):
+        - ``not_applicable``: a `--prev-phase` was supplied but that phase has no
+            row at all (it never started) — there is no boundary to reconcile.
+            When `--prev-phase` is omitted this classification never applies.
+        - ``missing``: the boundary is half-stamped — the prev phase has a
+            `start_time` but no `end_time`, OR the next phase has no `start_time`.
+        - ``stamped``: the boundary is complete — when `--prev-phase` is supplied
+            it has both `start_time` and `end_time` AND the next phase has a
+            `start_time`; when `--prev-phase` is omitted the next phase has a
+            `start_time`.
+
+    Returns a TOON verdict carrying the classification, the offending field(s),
+    and the prev/next phase names. The orchestrator prose reacts to `missing` by
+    issuing an explicit `phase-boundary --prev-phase {prev} --next-phase {next}`
+    call even though the status transition already happened.
+    """
+    plan_id = require_valid_plan_id(args)
+    prev_phase = args.prev_phase
+    next_phase = args.next_phase
+
+    if next_phase not in PHASE_NAMES:
+        return {
+            'status': 'error',
+            'error': 'invalid_phase',
+            'message': f'Invalid next_phase: {next_phase}. Must be one of: {", ".join(PHASE_NAMES)}',
+        }
+    if prev_phase is not None and prev_phase not in PHASE_NAMES:
+        return {
+            'status': 'error',
+            'error': 'invalid_phase',
+            'message': f'Invalid prev_phase: {prev_phase}. Must be one of: {", ".join(PHASE_NAMES)}',
+        }
+
+    guard_error = _guard_plan_exists(plan_id)
+    if guard_error is not None:
+        return guard_error
+
+    try:
+        data = read_metrics_raw(plan_id)
+    except OSError as exc:
+        return {
+            'status': 'error',
+            'error': 'read_failed',
+            'message': f'Failed to read metrics file: {exc}',
+        }
+    phases = data.get('phases', {})
+
+    prev_data = phases.get(prev_phase) if prev_phase is not None else None
+    next_data = phases.get(next_phase, {})
+
+    next_has_start = bool(next_data.get('start_time'))
+
+    # not_applicable: a prev phase was requested but it never started — nothing
+    # to reconcile on the prev side.
+    if prev_phase is not None and not prev_data:
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'prev_phase': prev_phase,
+            'next_phase': next_phase,
+            'classification': 'not_applicable',
+            'reason': 'prev phase has no metrics row (never started)',
+        }
+
+    # Collect the offending half-stamped fields.
+    missing_fields: list[str] = []
+    if prev_data is not None:
+        if prev_data.get('start_time') and not prev_data.get('end_time'):
+            missing_fields.append(f'{prev_phase}.end_time')
+    if not next_has_start:
+        missing_fields.append(f'{next_phase}.start_time')
+
+    if missing_fields:
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'prev_phase': prev_phase if prev_phase is not None else '-',
+            'next_phase': next_phase,
+            'classification': 'missing',
+            'missing_fields': ','.join(missing_fields),
+            'reason': 'half-stamped boundary — stamp the missing phase-boundary on resume',
+        }
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'prev_phase': prev_phase if prev_phase is not None else '-',
+        'next_phase': next_phase,
+        'classification': 'stamped',
+        'reason': 'boundary fully recorded — proceed unchanged',
+    }
+
+
 def cmd_accumulate_agent_usage(args: argparse.Namespace) -> dict:
     """Persist running per-phase totals of subagent <usage> data.
 
@@ -1630,6 +1742,32 @@ def main() -> int:
         help='Tokens attributable to the plan-retrospective dispatch within the closing phase window (recorded as the retrospective_tokens sub-field; default-absent)',
     )
     pb.set_defaults(func=cmd_phase_boundary)
+
+    # boundary-status (read-only resume-time half-stamped-boundary detector)
+    bs = subparsers.add_parser(
+        'boundary-status',
+        help='Classify a phase boundary as stamped / missing / not_applicable (read-only)',
+        description=(
+            'Read-only resume-time detector for a half-stamped metrics phase '
+            'boundary. Reads work/metrics.toon and classifies the boundary into '
+            '--next-phase as one of: stamped (prev has start+end AND next has a '
+            'start), missing (prev has a start but no end, OR next has no start), '
+            'or not_applicable (a --prev-phase was supplied but never started). '
+            'Performs ZERO mutation — it is the detection half of resume-time '
+            'boundary reconciliation. The orchestrator calls it on cross-session '
+            'resume before dispatching the current phase; on a missing verdict it '
+            'stamps the boundary via `phase-boundary` even when the status '
+            'transition already happened. Supply --prev-phase + --next-phase for '
+            'a full boundary check, or --next-phase alone to check only the '
+            '"current phase has no start" condition.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(bs)
+    bs.add_argument('--prev-phase', default=None, help='Phase that should have been closed (optional)')
+    bs.add_argument('--next-phase', required=True, help='Phase being entered on resume')
+    bs.set_defaults(func=cmd_boundary_status)
 
     # accumulate-agent-usage
     acc = subparsers.add_parser(

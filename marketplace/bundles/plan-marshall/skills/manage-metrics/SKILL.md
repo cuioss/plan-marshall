@@ -198,6 +198,73 @@ whenever the caller knows the exact `prev → next` transition.
 `work/metrics-accumulator-{prev_phase}.toon` if the file exists. Explicit
 flags always override accumulator values.
 
+### boundary-status
+
+**Read-only.** Classify a metrics phase boundary as `stamped`, `missing`, or
+`not_applicable` — the detection half of resume-time boundary reconciliation.
+On cross-session resume the orchestrator calls this BEFORE dispatching the
+current phase: if the prior session's phase skill self-transitioned the status,
+the resuming orchestrator's `manage-status transition` is a no-op and the paired
+`phase-boundary` call is skipped along with it, silently dropping a whole phase's
+token/duration attribution. `boundary-status` inspects `work/metrics.toon` and
+reports whether the boundary is half-stamped so the orchestrator can stamp the
+missing `phase-boundary` even though the transition already happened. The verb
+performs **zero mutation** — `work/metrics.toon` is byte-identical before and
+after the call.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics boundary-status \
+  --plan-id {plan_id} --next-phase {next} [--prev-phase {prev}]
+```
+
+**Parameters:**
+- `--next-phase` — phase being entered on resume (required; must be a valid phase name).
+- `--prev-phase` — phase that should have been closed before entering `--next-phase`
+  (optional; must be a valid phase name). Supply it for a full boundary check;
+  omit it to check only the "current phase has no start" condition against
+  `--next-phase`.
+
+**Classification** (computed from the `start_time` / `end_time` fields that
+`end-phase` writes):
+- `not_applicable` — a `--prev-phase` was supplied but that phase has no row at
+  all (it never started); there is no boundary to reconcile. Never applies when
+  `--prev-phase` is omitted.
+- `missing` — the boundary is half-stamped: the prev phase has a `start_time` but
+  no `end_time`, OR the next phase has no `start_time`. The offending field(s) are
+  named in `missing_fields`.
+- `stamped` — the boundary is complete; proceed unchanged.
+
+**Output (missing):**
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+prev_phase: 4-plan
+next_phase: 5-execute
+classification: missing
+missing_fields: 4-plan.end_time,5-execute.start_time
+reason: half-stamped boundary — stamp the missing phase-boundary on resume
+```
+
+**Output (stamped):**
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+prev_phase: 4-plan
+next_phase: 5-execute
+classification: stamped
+reason: boundary fully recorded — proceed unchanged
+```
+
+**Output (not_applicable):**
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+prev_phase: 4-plan
+next_phase: 5-execute
+classification: not_applicable
+reason: prev phase has no metrics row (never started)
+```
+
 ### accumulate-agent-usage
 
 Persist running per-phase totals of subagent `<usage>` data to disk. Designed
@@ -439,6 +506,13 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phas
   [--total-tokens N] [--duration-ms N] [--tool-uses N] [--retrospective-tokens N]
 ```
 
+### boundary-status
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics boundary-status \
+  --plan-id PLAN_ID --next-phase PHASE [--prev-phase PHASE]
+```
+
 ### accumulate-agent-usage
 
 ```bash
@@ -477,7 +551,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enri
 | Error Code | Cause |
 |------------|-------|
 | `invalid_plan_id` | plan_id format invalid |
-| `invalid_phase` | Phase name not in valid set (start-phase, end-phase, phase-boundary, accumulate-agent-usage) |
+| `invalid_phase` | Phase name not in valid set (start-phase, end-phase, phase-boundary, boundary-status, accumulate-agent-usage) |
 | `no_data` | No metrics collected yet (generate) |
 | `write_failed` | File system permission denied |
 | `session_not_found` | JSONL file not found for session_id (enrich) |
@@ -488,7 +562,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enri
 
 | Client | Operation | Purpose |
 |--------|-----------|---------|
-| `plan-marshall:plan-marshall` orchestrator | start-phase, end-phase, phase-boundary | Record phase timing at boundaries |
+| `plan-marshall:plan-marshall` orchestrator | start-phase, end-phase, phase-boundary, boundary-status | Record phase timing at boundaries; reconcile a half-stamped boundary on cross-session resume (boundary-status → conditional phase-boundary) |
 | `plan-marshall:phase-5-execute` SKILL.md | accumulate-agent-usage | Persist per-task agent `<usage>` totals after each `execute-task` return |
 | `plan-marshall:phase-6-finalize` SKILL.md | accumulate-agent-usage | Persist per-step agent `<usage>` totals after each Task-agent return; forwards `--retrospective-tokens` for the opt-in retrospective step (producer side of the `retrospective_tokens` attribution) |
 | Phase agents (via Task tool) | end-phase (with token args) | Pass `<usage>` tag data after agent completion (alternative to accumulator path) |

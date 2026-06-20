@@ -49,6 +49,25 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phas
   --plan-id {plan_id} --prev-phase {prev_phase} --next-phase 3-outline
 ```
 
+**Resume entry shape (already transitioned, boundary never stamped)**: a third
+recognized entry — distinct from entry-via-refine and direct-entry — is a
+cross-session resume where the prior session's phase skill already
+self-transitioned the status into `3-outline`, so the fused boundary call above
+would be the first to *also* stamp metrics, but a no-op transition path may have
+skipped it. Before relying on the fused call, reconcile via `boundary-status`;
+when it returns `missing`, stamp the boundary explicitly rather than skipping it
+because the status was already advanced:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics boundary-status \
+  --plan-id {plan_id} --prev-phase {prev_phase} --next-phase 3-outline
+```
+
+(See `manage-metrics` Canonical invocations → `boundary-status`.) On
+`classification: missing`, issue the `phase-boundary --prev-phase {prev_phase}
+--next-phase 3-outline` call above and log a `[STATUS]` reconciliation decision;
+on `stamped` / `not_applicable`, proceed unchanged.
+
 **Phase handshake** (direct-entry variant): capture the just-closed phase:
 
 ```bash
@@ -182,6 +201,18 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phas
   --tool-uses {sum of tool_uses from all agent <usage> tags} \
   --duration-ms {sum of duration_ms from all agent <usage> tags}
 ```
+
+**Resume-reconciliation guard at this boundary**: when the orchestrator reaches
+this `3-outline → 4-plan` transition on a cross-session resume where the
+transition was already advanced by the prior session (so the fused call above is
+the first to *also* stamp metrics), reconcile via `boundary-status --prev-phase
+3-outline --next-phase 4-plan` before relying on the fused call. On
+`classification: missing`, issue the `phase-boundary --prev-phase 3-outline
+--next-phase 4-plan` call above (omitting the `<usage>` flags when no in-cycle
+dispatch totals are available) and log a `[STATUS]` reconciliation decision; on
+`stamped` / `not_applicable`, the in-cycle fused call already covers the
+boundary — proceed unchanged. See `manage-metrics` Canonical invocations →
+`boundary-status`.
 
 **Phase handshake**: Capture invariants for the just-completed phase:
 

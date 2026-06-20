@@ -65,6 +65,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 The preflight is **idempotent**: a session already cwd-pinned inside the worktree resolves `current` (the verb's on-disk probe finds the plan dir on the current checkout), so there is no double-`cd`. It runs from the main checkout using main's present executor — main's `.plan/execute-script.py` stays present and untouched throughout phase-5+ (per PR-558, the executor is per-tree derived state generated into the worktree at move-in, never removed from main).
 
+**Resume-time metrics boundary reconciliation (after re-anchor, before phase work).** A cross-session resume into a phase-5+ phase may find the prior session's metrics boundary half-stamped: `manage-status transition` and `manage-metrics phase-boundary` are two independent operations, and if the prior session self-transitioned the status, the resuming orchestrator's transition is a no-op that skips the paired `phase-boundary` call along with it — silently dropping the previous phase's token/duration attribution. Once cwd is re-anchored above, the direct-entry metrics block for the resolved phase (`5-execute` or `6-finalize`, below) carries the `boundary-status` → conditional `phase-boundary` reconciliation; follow that block's reconciliation guard so a resume into any phase-5+ phase that finds the prior boundary half-stamped records it before dispatching the current phase. See `manage-metrics` Canonical invocations → `boundary-status`.
+
 ---
 
 ## Execute Phase (DUMB LOOP Pattern)
@@ -91,6 +93,23 @@ previously active phase and start `5-execute` in one step:
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute
 ```
+
+**Resume reconciliation (already transitioned, boundary never stamped)**: when a
+prior session self-transitioned the status into `5-execute`, the resuming
+orchestrator's `manage-status transition` is a no-op and the paired fused
+`phase-boundary` call above may have been skipped along with it — dropping the
+`4-plan` token/duration attribution. Before relying on the fused call above,
+reconcile via `boundary-status`; on `classification: missing`, issue the
+`phase-boundary --prev-phase 4-plan --next-phase 5-execute` call above and log a
+`[STATUS]` reconciliation decision; on `stamped` / `not_applicable`, proceed
+unchanged:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics boundary-status \
+  --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute
+```
+
+(See `manage-metrics` Canonical invocations → `boundary-status`.)
 
 **Phase handshake** (direct-entry variant): capture the just-closed `4-plan` phase before continuing. When entering after the planning workflow already captured `4-plan`, this is idempotent — `capture` upserts the row.
 
@@ -442,6 +461,23 @@ use a fused boundary call to close the previously active phase and start
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase {prev_phase} --next-phase 6-finalize
 ```
+
+**Resume reconciliation (already transitioned, boundary never stamped)**: when a
+prior session self-transitioned the status into `6-finalize`, the resuming
+orchestrator's `manage-status transition` is a no-op and the paired fused
+`phase-boundary` call above may have been skipped along with it — dropping the
+`{prev_phase}` token/duration attribution. Before relying on the fused call
+above, reconcile via `boundary-status`; on `classification: missing`, issue the
+`phase-boundary --prev-phase {prev_phase} --next-phase 6-finalize` call above and
+log a `[STATUS]` reconciliation decision; on `stamped` / `not_applicable`,
+proceed unchanged:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics boundary-status \
+  --plan-id {plan_id} --prev-phase {prev_phase} --next-phase 6-finalize
+```
+
+(See `manage-metrics` Canonical invocations → `boundary-status`.)
 
 **Phase handshake** (direct-entry variant): capture the just-closed `{prev_phase}` phase. When entering after the execute workflow already captured `5-execute`, this is idempotent — `capture` upserts the row.
 
