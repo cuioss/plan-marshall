@@ -43,7 +43,7 @@ small standalone build-target items also surfaced: `recipe-doc-verify` hardcodes
 ## Target placement model
 
 Not every Claude-specific aspect moves to the same place. "Move it out of the core" resolves
-to **three** destinations, chosen by *what kind* of coupling it is:
+to **four** destinations, chosen by *what kind* of coupling it is:
 
 - **`platform-runtime`** — everything target-specific at runtime: behaviour / side-effects
   (settings & permission I/O, transcript reading, hook installation, title rendering) **and**
@@ -60,15 +60,28 @@ to **three** destinations, chosen by *what kind* of coupling it is:
   transform, or in target-neutral source rewording. Build-time, not runtime
   ([principles §4/§5](principles.md)).
 - **Stays put (platform-agnostic)** — logic that is identical across targets stays where it is
-  and only *sources* the target-specific bit from `platform-runtime`: metrics *storage* and
-  aggregation stay in `manage-metrics`; `session_id` validation stays in `tools-input-validation`
-  but keys its shape on the target.
+  and only *sources* the target-specific value from `platform-runtime`: metrics *storage* and
+  aggregation stay in `manage-metrics`; the `session_id` validator stays in
+  `tools-input-validation` as an opaque-token contract.
+- **Target-specific skill** *(gated 4th home)* — a whole skill/command that **exists only on
+  some targets**, shipped via a `targets:` frontmatter filter and simply *absent* elsewhere (no
+  runtime no-op). This is the home for capabilities with no analog on other targets — e.g.
+  `tools-fix-intellij-diagnostics` (IDE-MCP), a Claude harness-hook setup wizard, a future
+  `opencode-marketplace-install` flow. **Admission test — all three must hold:** (1) it is a
+  whole workflow/knowledge body, not reducible to a single `Runtime` op or a body/frontmatter
+  transform; (2) it is genuinely N/A on other targets, not merely hard to abstract; (3)
+  normalizing it would force a no-op op onto every other target or distort the shared ABC. It
+  does **not** excuse format dumping — metrics format still normalizes (Gap 2), permission
+  enforcement still uses semantic ops (Gap 1), tool-name vocab still becomes build-target data
+  (Gap 6). The distinction from `platform-runtime`: *differs per target* → runtime op;
+  *exists only on some targets* → target-specific skill. Mechanism in
+  [07](07-target-extensibility.md).
 
-These three homes are **target-neutral by contract** — `claude_runtime.py` / OpenCode are named
-only as the current implementations. Per [principles §6](principles.md), no general skill,
-shared script, or ABC may enumerate targets. The gaps below migrate the *call sites*; the
-*seam shapes* that keep those homes open to a third target (target-opaque interfaces,
-data-driven transforms, consolidated registration) are [07](07-target-extensibility.md).
+These homes are **target-neutral by contract** — `claude_runtime.py` / OpenCode are named only
+as the current implementations. Per [principles §6](principles.md), no general skill, shared
+script, or ABC may enumerate targets. The gaps below migrate the *call sites*; the *seam shapes*
+that keep those homes open to a third target (target-opaque interfaces, data-driven transforms,
+consolidated registration, the `targets:` filter) are [07](07-target-extensibility.md).
 
 ## Gap inventory at a glance
 

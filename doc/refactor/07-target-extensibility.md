@@ -98,6 +98,18 @@ plus a single `_DEFAULT_TARGET` constant, so "add a target" is one obvious edit 
   The composer must take a target-neutral state, not Claude event strings — the event→icon
   mapping is a `platform-runtime` concern (audit class A3).
 
+**6. No mechanism for target-specific skills (the gated 4th home).** Some capabilities exist on
+only one target and have no analog elsewhere (`tools-fix-intellij-diagnostics` IDE-MCP; a Claude
+harness-hook setup wizard; a future `opencode-marketplace-install` flow). Today they are
+mislabeled "sanctioned-ok" and ship to every target. **Required:** add a `targets:` frontmatter
+field (e.g. `targets: [claude]`); the build target emits a skill/command only when the current
+target is listed (absent `targets:` ⇒ all targets, the normal case). On a non-matching target
+the component is simply *absent* — no runtime no-op for a capability that does not exist there.
+This is what makes the differs-vs-exists distinction ([principles §6](principles.md)) real, and
+it extends the cost-to-add contract: a new target MAY also bring its own `targets:`-scoped
+skills. The admission test (whole workflow, genuinely N/A elsewhere, no-format-dumping) lives in
+[01](01-finish-portability.md)'s placement model.
+
 ## Settled decision — source vocabulary
 
 Source stays **Claude-native**; cross-target rewriting is **data + a shared engine**, not a

@@ -22,8 +22,9 @@ in [07](07-target-extensibility.md).
 | `platform-runtime` (behaviour + layout) | settings/permission I/O, transcript read, hooks/title, project-local & cache layout resolution | Largest |
 | OpenCode build target (transforms + data) | tool-name vocab, frontmatter shape, level→model table, permission DSL, `CLAUDE.md` filename, commit trailer | Large |
 | stays-agnostic (source target value from runtime) | CI/git/build ops, metrics storage/aggregation, validators, `.plan/` executor, credentials | — |
+| target-specific skill (`targets:`-scoped) | whole capabilities that exist only on some targets — IDE-MCP command, Claude harness-hook wizard, future OpenCode/Cursor flows | Small |
 | prose-neutralize | "Claude Code" naming, host-permission-UI rationale, per-target doc tables | Medium |
-| sanctioned-ok (no action) | `.claude-plugin`/`marketplace.json` manifests, `platform-runtime` internals, IDE-MCP command | — |
+| sanctioned-ok (no action) | `.claude-plugin`/`marketplace.json` manifests, `platform-runtime` internals | — |
 | cleanup byproducts | stale `.pyc`, doc-drift bugs | Incidental |
 
 ---
@@ -213,9 +214,10 @@ into A2, not a shared validator — see [01](01-finish-portability.md) Gap 3.)
 
 `.claude-plugin/plugin.json` + `marketplace/.claude-plugin/marketplace.json` (the canonical
 source-of-truth format the build target consumes); all `platform-runtime/scripts/{claude_runtime,
-claude_hook,opencode_runtime}.py` internals; `tools-fix-intellij-diagnostics` (IDE/MCP-bound
-command); `generate_executor.py` + `bootstrap_plugin.py` target-aware resolvers (the **models to
-reuse**); `_invariants.py:134` (a deliberate anti-coupling note).
+claude_hook,opencode_runtime}.py` internals; `generate_executor.py` + `bootstrap_plugin.py`
+target-aware resolvers (the **models to reuse**); `_invariants.py:134` (a deliberate
+anti-coupling note). (`tools-fix-intellij-diagnostics` was previously listed here; it is better
+classed as a target-specific skill — §I.)
 
 ## H. cleanup byproducts (incidental, not coupling)
 
@@ -224,6 +226,23 @@ reuse**); `_invariants.py:134` (a deliberate anti-coupling note).
 | `skills/manage-worktree/scripts/__pycache__/manage-worktree.cpython-314.pyc` | stale `.pyc`, no source — delete (skill relocated) |
 | `skills/ext-self-review-plan-marshall/scripts/__pycache__/self_review.cpython-314.pyc` | stale `.pyc`, real skill is under `pm-plugin-development/` — delete |
 | `doctor-skill-knowledge.md:13` ("Rule 9/10a/11"); `doctor-skills.md:101` (`domain-extension-api:validate_manifest`) | doc-drift bugs (rules are now named; stale notation) — fix in passing |
+
+## I. Target-specific skill candidates (gated 4th home)
+
+Capabilities that exist only on some targets and pass the [01](01-finish-portability.md)
+placement-model admission test — give them a `targets:` frontmatter scope and let them be absent
+elsewhere, rather than shipping everywhere or forcing a runtime no-op.
+
+| Candidate | Why target-specific | Scope |
+|-----------|---------------------|-------|
+| `plan-marshall/commands/tools-fix-intellij-diagnostics.md` | IDE/MCP-bound (`mcp__ide__getDiagnostics`); no analog without an IDE-MCP host | `targets: [claude]` |
+| `marshall-steward` harness-config / terminal-title wizard menus (`references/menu-terminal-title.md`, `menu-healthcheck.md`) | interactive Claude hook/statusline setup — a whole wizard, not a single runtime op (the underlying `install-hook` op stays in platform-runtime; the *menu* is the target-specific surface) | `targets: [claude]` |
+| `plan-marshall/commands/tools-sync-agents-file.md` | derives `agents.md` from `CLAUDE.md` (Claude-source doc convention) | `targets: [claude]` (assess) |
+| (future) `opencode-marketplace-install`, Cursor-rules authoring | exist only on those targets | `targets: [opencode]` / `[cursor]` |
+
+**Guard:** this list is short by design. The admission test keeps format-coupling out — the
+permission *model* knowledge, metrics *format*, and tool-name *vocab* do NOT come here; they
+normalize into the runtime/build-target homes (§A, §C). Only target-bound *capabilities* qualify.
 
 ## Coverage
 

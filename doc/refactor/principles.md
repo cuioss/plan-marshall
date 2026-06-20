@@ -126,6 +126,18 @@ Anti-patterns (a new target must never require these):
 A target declines any capability it lacks via the [No-Op Policy](#3-no-op-policy) — it never
 fakes success and never blocks a workflow.
 
+**Differs-per-target vs. exists-only-on-some-targets.** A capability that exists everywhere but
+behaves differently belongs behind a `Runtime` op (uniform contract, per-target impl). A
+capability that exists only on some targets — no analog elsewhere — belongs in a
+**target-specific skill**, shipped via a `targets:` frontmatter filter and simply *absent* on
+other targets (cleaner than a runtime no-op for a capability the other target does not have at
+all). This gated fourth home is admitted only when the capability is a whole workflow/knowledge
+body (not a single op or a transform), is genuinely N/A elsewhere, and would otherwise force a
+no-op op onto every other target. It must never be used to dodge normalization — format-coupling
+(metrics shape, permission DSL, tool-name vocab) still normalizes into the runtime/build-target
+homes; the target-specific skill is for target-bound *capabilities*, not the per-target
+*rendering* of a shared one.
+
 See [07-target-extensibility.md](07-target-extensibility.md) for the seam audit and the
 structural work to reach this bar.
 
