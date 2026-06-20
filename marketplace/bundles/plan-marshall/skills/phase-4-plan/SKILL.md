@@ -64,6 +64,7 @@ The task-creation loop (Steps 5 + 6) iterates per deliverable — but the *input
 - The architecture topology (read via `manage-architecture overview` at phase entry).
 - The per-deliverable skill resolutions (resolved via `architecture module --module {D.module}` for each distinct module before the per-deliverable iteration begins — one query per unique module, cached; not re-queried per deliverable or per profile).
 - The execution manifest composition inputs (the manifest is composed once at Step 7b — not per-deliverable).
+- The relevant ADR summaries for the plan's declared module(s), read once via the `manage-adr scan` progressive-disclosure surface (NOT per-deliverable or per-profile). Run `manage-adr scan --affects {module}` (and/or `--tag {topic}`) for each declared module and load the returned `summary` fields into context so task derivation aligns with established architectural decisions and surfaces superseded/deprecated ADRs as constraints. This mirrors the phase-3-outline hook verbatim in shape — see `marketplace/bundles/plan-marshall/skills/manage-adr/SKILL.md` for the scan subcommand contract (do not restate it) and [`../phase-3-outline/standards/outline-workflow-detail.md` § ADR consultation](../phase-3-outline/standards/outline-workflow-detail.md#adr-consultation-loop-invariant-input) for the consultation procedure.
 
 **Prohibited actions:**
 - Never re-read loop-invariant inputs inside the task-creation loop body — re-reading inside the loop is envelope-cost waste; all invariant inputs must be resolved before the loop begins.
@@ -1097,6 +1098,7 @@ If deliverable metadata incomplete:
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lessons` - Record lessons on issues (add)
 - `plan-marshall:manage-execution-manifest:manage-execution-manifest` - Compose / validate the per-plan execution manifest in Step 7b (compose, validate)
+- `plan-marshall:manage-adr:manage-adr` - Read-only ADR scan (`scan --affects {module}`) consumed as a loop-invariant input at phase entry so task derivation aligns with established architectural decisions
 
 **Consumed By**:
 - `plan-marshall:phase-5-execute` skill - Reads tasks and executes them
