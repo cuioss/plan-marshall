@@ -186,6 +186,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ### Manage Verification Steps
 
+> **Keyed step-map fields reject `set --field`.** The phase's ordered step-map field — `verification_steps` for `phase-5-execute` and `steps` for `phase-6-finalize` — is a structured keyed map, NOT a scalar. The scalar `set --field` verb rejects these two fields with a structured error (`Field '{field}' is a keyed step-map and cannot be set via 'set --field'. Use: set-steps, add-step, remove-step, or step set.`) and mutates nothing. Use the keyed-map verbs below (`set-steps` / `add-step` / `remove-step`) to manage the step list, and `step get`/`step set` to read or write a step's nested params. Only genuine scalar fields (e.g. `commit_and_push`, `max_iterations`, `finalize_without_asking`) are settable via `set --field`.
+
 `set-steps` and `add-step` resolve each step's `order` from its authoritative source (frontmatter on built-in standards docs, frontmatter on project-local `SKILL.md` for `project:` steps, return-dict `order` field for extension-contributed skills) and persist the steps list sorted ascending by that value. They return `error: missing_order` or `error: order_collision` when a step has no declared order or two steps share the same value — fix the offending step's authoritative source.
 
 ```bash
@@ -869,6 +871,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan {
   --field FIELD --value VALUE
 ```
 
+The scalar `set` verb rejects the keyed step-map field of `phase-5-execute`
+(`--field verification_steps`) and `phase-6-finalize` (`--field steps`) with a
+structured error and no mutation — those fields are keyed step-maps, not
+scalars. Use `set-steps` / `add-step` / `remove-step` to manage the step list
+and `step get` / `step set` for a step's nested params.
+
 ### plan phase-5-execute set-max-iterations / plan phase-6-finalize set-max-iterations
 
 ```bash
@@ -1125,6 +1133,7 @@ Returns a `build` / `not_necessary` verdict for `COMMAND` against `PLAN_ID`'s li
 | `invalid_domain` | Domain not in skill_domains | Check domain name or run `/marshall-steward` |
 | `skill_domains not configured` | No domains in marshal.json | Run `/marshall-steward` |
 | `invalid_field` | Unknown field for phase/noun | Check field reference table above |
+| keyed step-map `set --field` rejection | `set --field verification_steps` (phase-5-execute) or `set --field steps` (phase-6-finalize) — those fields are keyed step-maps, not scalars | Use `set-steps` / `add-step` / `remove-step`, or `step set` for a step's nested params |
 | `skill_not_found` | Skill not in domain defaults/optionals | Check with `validate --domain --skill` |
 
 ---
