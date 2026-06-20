@@ -680,6 +680,13 @@ class TestReadRequireWrapperOverride:
         project_dir = self._write_marshal(tmp_path, {'maven': {'require_wrapper': False}})
         assert factory._read_require_wrapper_override('maven', project_dir, default=True) is False
 
+    def test_reads_pyproject_key(self, tmp_path):
+        # pyproject builds map config.tool_name 'python' -> 'pyproject' before
+        # the override lookup, so the documented build.pyproject.require_wrapper
+        # key is the one read (CodeRabbit finding 75ab08).
+        project_dir = self._write_marshal(tmp_path, {'pyproject': {'require_wrapper': False}})
+        assert factory._read_require_wrapper_override('pyproject', project_dir, default=True) is False
+
     def test_missing_tool_block_returns_default(self, tmp_path):
         project_dir = self._write_marshal(tmp_path, {'gradle': {'require_wrapper': False}})
         assert factory._read_require_wrapper_override('maven', project_dir, default=True) is True

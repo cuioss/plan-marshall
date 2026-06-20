@@ -268,7 +268,12 @@ def create_execute_handlers(
         env_vars: dict[str, str] | None = None,
         working_dir: str | None = None,
     ) -> DirectCommandResult:
-        effective_require = _read_require_wrapper_override(config.tool_name, project_dir, config.require_wrapper)
+        # config.tool_name is 'python' for pyproject builds, but the documented
+        # marshal.json override key is build.pyproject.require_wrapper. Map
+        # 'python' -> 'pyproject' so the override lookup matches the documented
+        # config structure (CodeRabbit finding 75ab08).
+        override_tool = 'pyproject' if config.tool_name == 'python' else config.tool_name
+        effective_require = _read_require_wrapper_override(override_tool, project_dir, config.require_wrapper)
         try:
             wrapper = _resolve_wrapper(project_dir, effective_require)
         except FileNotFoundError as e:
