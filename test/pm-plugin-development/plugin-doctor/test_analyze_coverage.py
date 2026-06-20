@@ -35,3 +35,18 @@ def test_inline_tools_and_allowed_tools_field_names_are_equivalent():
     assert tools_result == ['Read', 'Write', 'Edit']
     assert allowed_tools_result == ['Read', 'Write', 'Edit']
     assert tools_result == allowed_tools_result
+
+
+def test_yaml_list_tools_and_allowed_tools_field_names_are_equivalent():
+    # Arrange
+    tools_frontmatter = 'tools:\n  - Read\n  - Write\n  - Edit'
+    allowed_tools_frontmatter = 'allowed-tools:\n  - Read\n  - Write\n  - Edit'
+
+    # Act
+    tools_result = parse_declared_tools(tools_frontmatter)
+    allowed_tools_result = parse_declared_tools(allowed_tools_frontmatter)
+
+    # Assert
+    expected = ['Read', 'Write', 'Edit']
+    assert tools_result == expected
+    assert allowed_tools_result == expected
