@@ -84,6 +84,16 @@ event names.
 
 Destination: PR-behavior (a runtime side-effect), though it keys on host editor, not the Claude target.
 
+### A5. Further format-leak families (surfaced by pass-2 full reads)
+| Evidence | Coupling |
+|----------|----------|
+| `manage-metrics/SKILL.md:21,326-337`, `standards/data-format.md:64,70-77`, `manage-metrics.py:720-739` | the A2 leak is wider than the parser — the **docs and the renderer** also carry the Claude four-field / `<usage>` / billing-weight vocabulary. The normalized-token boundary must reach the doc + render surfaces too |
+| `manage-architecture/scripts/_cmd_client.py:110-120` + `standards/resolve-command.md:14,57-59` | `_BASH_CEILING_SECONDS=600` bakes the Claude Bash-tool 600s timeout ceiling into core; `execution_tier` (per_task/orchestrator) routing is *derived* from it. The ceiling is a per-target runtime fact → it should come from the runtime |
+| `manage-providers/scripts/_cred_ensure_denied.py:19-80` | emits Claude `permissions.deny` DSL (`Read(~/.plan-marshall-credentials/**)`, `Bash(cat …)`) into the host settings file — same class as the A1 permission-DSL leak (the SKILL prose is already neutralized to "host platform", the emitted rule strings are not) |
+| `manage-locks/scripts/merge_lock.py:183-189,316-419` | duplicates the terminal-title glyph vocabulary (`⏳`/`🔒`) and reaches into the title-render surface — co-owns the A3 target-shaped interface |
+
+Destination: all PR-behavior (normalize the contract / source the value from the runtime), except the metrics docs which are prose-neutralize alongside the A2 code fix.
+
 ---
 
 ## B. platform-runtime — filesystem-layout resolution
@@ -224,8 +234,9 @@ classed as a target-specific skill — §I.)
 | Evidence | Action |
 |----------|--------|
 | `skills/manage-worktree/scripts/__pycache__/manage-worktree.cpython-314.pyc` | stale `.pyc`, no source — delete (skill relocated) |
-| `skills/ext-self-review-plan-marshall/scripts/__pycache__/self_review.cpython-314.pyc` | stale `.pyc`, real skill is under `pm-plugin-development/` — delete |
+| `plan-marshall/skills/ext-self-review-plan-marshall/scripts/__pycache__/self_review.cpython-314.pyc` | stale `.pyc`, real skill is under `pm-plugin-development/` — delete. **Divergence:** the empty skill is still listed active in the available-skills header despite having no source |
 | `doctor-skill-knowledge.md:13` ("Rule 9/10a/11"); `doctor-skills.md:101` (`domain-extension-api:validate_manifest`) | doc-drift bugs (rules are now named; stale notation) — fix in passing |
+| `plugin-doctor/references/rule-catalog.md:236` ("PM-Workflow Rules" heading), `:252` ("seven" vs 8 rows); `commands-guide.md:23` ("9 Anti-Bloat" with uncodified names); `skills-guide.md:94`, `metadata-guide.md` (stale counts / bundle-root `plugin.json`) | doc-drift in plugin-doctor reference docs (pm-workflow bundle absorbed; stale counts) — fix in passing |
 
 ## I. Target-specific skill candidates (gated 4th home)
 
@@ -233,22 +244,39 @@ Capabilities that exist only on some targets and pass the [01](01-finish-portabi
 placement-model admission test — give them a `targets:` frontmatter scope and let them be absent
 elsewhere, rather than shipping everywhere or forcing a runtime no-op.
 
+Confirmed by pass 2 (full-read):
+
 | Candidate | Why target-specific | Scope |
 |-----------|---------------------|-------|
-| `plan-marshall/commands/tools-fix-intellij-diagnostics.md` | IDE/MCP-bound (`mcp__ide__getDiagnostics`); no analog without an IDE-MCP host | `targets: [claude]` |
-| `marshall-steward` harness-config / terminal-title wizard menus (`references/menu-terminal-title.md`, `menu-healthcheck.md`) | interactive Claude hook/statusline setup — a whole wizard, not a single runtime op (the underlying `install-hook` op stays in platform-runtime; the *menu* is the target-specific surface) | `targets: [claude]` |
-| `plan-marshall/commands/tools-sync-agents-file.md` | derives `agents.md` from `CLAUDE.md` (Claude-source doc convention) | `targets: [claude]` (assess) |
+| `plan-marshall/commands/tools-fix-intellij-diagnostics.md` | IDE/MCP-bound (`mcp__ide__getDiagnostics`) + Java/maven toolchain; whole workflow N/A without an IDE-MCP host; no-op elsewhere | `targets: [claude]` |
+| `marshall-steward` terminal-title **wizard** — `references/menu-terminal-title.md` + the `menu-healthcheck.md:189-231` Step-6b twin + the `menu-configuration.md` Terminal-Title branch + the `SKILL.md:417-441` session-restart prose | a whole interactive Claude hook/statusline setup workflow that names every Claude hook event + `CLAUDE_CODE_*` env + `.claude/settings.local.json` and composes the session-cache path itself; OpenCode no-ops all of it. SPLIT: only these surfaces scope to claude; the rest of steward stays agnostic. The underlying `install-hook` op stays in platform-runtime | `targets: [claude]` |
+| `pm-plugin-development/skills/plan-marshall-plugin/scripts/wrapper-tangle-scan.py` + `references/wrapper-tangle.md` | hardcodes plan-marshall's own CI-wrapper source paths; meaningful only in the plan-marshall meta-repo | meta-repo-only |
 | (future) `opencode-marketplace-install`, Cursor-rules authoring | exist only on those targets | `targets: [opencode]` / `[cursor]` |
 
-**Guard:** this list is short by design. The admission test keeps format-coupling out — the
+**Rejected by pass 2 (NOT target-specific — they normalize):**
+
+- `tools-sync-agents-file` — **CORRECTION** (was listed here): it is the cross-assistant *bridge* that emits the OpenAI-spec `agents.md`; `CLAUDE.md` is merely an optional input source, not its reason to exist. It applies regardless of host target → `stays-agnostic`. Scoping it to claude would be normalization-dodging.
+- `plugin-doctor` — make **target-aware**, not Claude-only: an OpenCode author would lint OpenCode output. A target-agnostic linting engine + a swappable Claude rule-pack (the Claude tool/permission/model-DSL rules are build-target; `rule-provenance.md` is the natural fork point).
+- the plugin-**authoring** toolset (`plugin-create`/`plugin-maintain`/`plugin-architecture`) — the *capability* is target-aware-make; only the emitted/validated *vocabulary* is Claude-specific → build-target (`frontmatter-standards.md` densest).
+
+**Guard:** the list is short by design. The admission test keeps format-coupling out — the
 permission *model* knowledge, metrics *format*, and tool-name *vocab* do NOT come here; they
 normalize into the runtime/build-target homes (§A, §C). Only target-bound *capabilities* qualify.
 
 ## Coverage
 
-14 partition agents, every `.md`/`.py` under `marketplace/bundles/**` read in full; each
-returned `coverage: N / N`. `platform-runtime/**` internals and `.claude-plugin` manifests were
-read and classified sanctioned-ok rather than excluded.
+**Pass 1** — 14 partition agents, every `.md`/`.py` under `marketplace/bundles/**` read in full;
+each returned `coverage: N / N`. `platform-runtime/**` internals and `.claude-plugin` manifests
+were read and classified sanctioned-ok rather than excluded.
+
+**Pass 2** (four-home re-classification, char-by-char full reads — no grep/sampling) — completed
+the 8 highest-signal slices: pm-dev-java(+cui), pm-dev-oci+documents, pm-requirements,
+core-misc+platform-runtime, tools-*, manage-group-B, plugin-doctor, pm-plugin-development-rest.
+These **confirmed** pass 1, added §A5 and the §I verdicts/corrections above, and found no new
+home for any candidate beyond the four. The remaining 9 slices (frontend+python, both phase
+groups, manage-config, extension-api+manifest, manage-group-A, workflow+build, foundation-shared,
+lifecycle+retrospective) are characterized by pass 1; a pass-2 full read of them is the only
+outstanding audit work and is expected to be confirmatory (re-classify into the four homes).
 
 ## Related
 

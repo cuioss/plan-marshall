@@ -93,7 +93,7 @@ consolidated registration, the `targets:` filter) are [07](07-target-extensibili
 | 4 | Project-local skill / step resolution | High | `platform-runtime` | `.claude/skills/` hardcoded with no target branch; breaks `project:` steps on OpenCode |
 | 5 | Bundle / plugin-cache discovery | Medium | `platform-runtime` | `extension_discovery` + shared `marketplace_paths` constants are Claude-only |
 | 6 | Body-text tool-name transforms | Medium | OpenCode build target | `AskUserQuestion` (313×), `Task:`, `Skill: <entry>` not rewritten for OpenCode |
-| 7 | Terminal-title / hooks | Low | `platform-runtime` (already) | Pure composition is fine; verify the no-op path and event-name confinement |
+| 7 | Terminal-title / hooks | Medium | `platform-runtime` | "platform-agnostic" composer is actually a target-shaped interface (`resolve_icon` keyed on Claude hook-events); compose from a neutral state |
 | 8 | Authoring / meta tools | Medium | `platform-runtime` + build target | `plugin-doctor`, `tools-marketplace-inventory` made target-aware (scan both layouts; target-aware frontmatter checks) |
 
 **Settled architectural decisions:**
@@ -257,17 +257,20 @@ the placeholder prose (06 item 2). Do not introduce universal `{{ }}` templating
 
 ## Gap 7 — Terminal-title / hooks (verify, likely acceptable)
 
-`manage-terminal-title/scripts/manage_terminal_title.py` is a pure, platform-agnostic
-composition leaf. It consumes Claude hook event names (`UserPromptSubmit`, `SessionStart`,
-`PostToolUse` at lines 76-99,152-154), but these are supplied by `platform-runtime`
-(`claude_hook.py`), and `render-title` already no-ops on OpenCode. `manage-status` /
-`manage-locks` only persist the bare state string and delegate rendering.
+`manage-terminal-title/scripts/manage_terminal_title.py` is *labelled* "pure platform-agnostic
+composition," but pass 2 ([08](08-claude-coupling-inventory.md) §A3) found its `resolve_icon`
+(lines 71-101) is keyed on Claude hook-event names (`Stop`/`Notification`/`PreToolUse`/`PostToolUse`)
+and tool names (`AskUserQuestion`, `Bash`) — a target-shaped interface, not a neutral one. The
+icon palette + its SKILL/architecture docs co-own that interface, and `manage-locks/merge_lock.py`
+duplicates the glyph vocabulary. `render-title` already no-ops on OpenCode, and `manage-status`
+persists only the bare state string.
 
-**Required:** confirm (during [02](02-validate-opencode-runtime.md)) that the
-title/statusline path is genuinely no-op on OpenCode end-to-end, and that no non-runtime
-caller feeds Claude hook event names directly. No source change expected if confirmed.
-Separately, the `project_install_hook` *interface* still encodes Claude's hook model — that is
-a seam-shape fix tracked in [07](07-target-extensibility.md), not a call-site migration here.
+**Required:** the composer must take a **target-neutral state** (a phase/status enum), with the
+state→icon (event) mapping owned by `platform-runtime`; retire the Claude hook-event vocabulary
+from the "agnostic" composer and de-duplicate the lock glyphs. Confirm (during
+[02](02-validate-opencode-runtime.md)) the title/statusline path is genuinely no-op on OpenCode
+end-to-end. The `project_install_hook` *interface* encoding Claude's hook model is the related
+seam-shape fix in [07](07-target-extensibility.md).
 
 ## Gap 8 — Authoring / meta tools: make target-aware
 
@@ -284,6 +287,15 @@ layout-resolution operation so both `.claude/skills/**` and the OpenCode layout 
 (2) make frontmatter checks/emission target-aware — `_cmd_apply.py:48` must emit the correct
 shape per target (`model: anthropic/...` + `mode: subagent` for OpenCode vs. `model: sonnet`
 for Claude), and doctor rules must accept both. Test on both targets.
+
+Pass 2 ([08](08-claude-coupling-inventory.md)) sharpened the shape: `plugin-doctor` is **not**
+a target-specific skill (an OpenCode author would lint OpenCode output) — split it into a
+target-agnostic linting **engine** (the structural/notation/bloat/prose rules — the bulk of the
+50+ analyzers stay-agnostic) plus a swappable **Claude rule-pack** (the tool/permission/model-DSL
+rules — `_KNOWN_TOOLS`, comma-vs-array, `agent-task-tool-prohibited`, `hardcoded-model-on-canonical`,
+the `target/claude/` literal at `_analyze_markdown.py:306`). `rule-provenance.md` (which already
+documents the project-vs-Anthropic-schema split) is the natural fork point. The `.claude/skills/**`
+resolver duplicated across 6+ analyzers collapses onto the one Gap-4 op.
 
 ---
 
