@@ -259,6 +259,7 @@ class TestFindMarketplacePathResolutionOrder:
         assert result == anchor / 'marketplace' / 'bundles'
 
 
+@pytest.mark.usefixtures('_route_bundle_cache_to_patched_home')
 class TestGetBasePathResolutionOrder:
     """Regression tests verifying that ``get_base_path`` forwards the
     ``marketplace_root`` override to ``find_marketplace_path`` for the
@@ -331,6 +332,7 @@ class TestGetBasePathResolutionOrder:
             get_base_path('auto', marketplace_root=explicit_anchor)
 
 
+@pytest.mark.usefixtures('_route_bundle_cache_to_patched_home')
 class TestGetPluginCachePath:
     def test_cache_exists(self, tmp_path, monkeypatch):
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
@@ -345,6 +347,25 @@ class TestGetPluginCachePath:
         assert result is None
 
 
+@pytest.fixture
+def _route_bundle_cache_to_patched_home(monkeypatch):
+    """Route the deployed-bundle cache resolver at the patched ``Path.home()``.
+
+    ``get_plugin_cache_path`` now resolves through the memoised platform-runtime
+    ``layout bundle-cache-root`` op. Cache-resolution tests pin ``Path.home()``
+    to a tmp dir; clear the per-process memo and compute the cache root from the
+    (patched) home at call time so cache resolution is deterministic and
+    order-independent under xdist.
+    """
+    monkeypatch.setattr(marketplace_paths, '_BUNDLE_CACHE_ROOTS_CACHE', None)
+    monkeypatch.setattr(
+        marketplace_paths,
+        'get_bundle_cache_roots',
+        lambda: (str(Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH),),
+    )
+
+
+@pytest.mark.usefixtures('_route_bundle_cache_to_patched_home')
 class TestGetBasePath:
     def test_auto_prefers_marketplace(self, tmp_path, monkeypatch):
         bundles = tmp_path / 'marketplace' / 'bundles'
@@ -436,14 +457,7 @@ class TestGetBasePath:
     def test_plugin_cache_scope(self, tmp_path, monkeypatch):
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
-        # The plugin-cache root now routes through the platform-runtime layout op
-        # (memoised). Force the resolved roots to the tmp cache and clear the
-        # per-process memo so this test is order-independent.
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
-        monkeypatch.setattr(marketplace_paths, '_BUNDLE_CACHE_ROOTS_CACHE', None)
-        monkeypatch.setattr(
-            marketplace_paths, 'get_bundle_cache_roots', lambda: (str(cache),)
-        )
         result = get_base_path('plugin-cache')
         assert result == cache
 
