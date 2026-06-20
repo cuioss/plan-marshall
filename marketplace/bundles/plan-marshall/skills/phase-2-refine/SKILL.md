@@ -107,13 +107,13 @@ Recipe-sourced plans skip quality analysis entirely. Check `plan_source` metadat
 
 ### Step 3b: Source Premise Verification
 
-Verify code references in the request narrative against the current codebase before quality analysis. Activates when the request contains verifiable code references (file paths, flags, API names, behavior descriptions). Findings feed into the Correctness dimension in Step 8/10.
+Verify code references in the request narrative against the current codebase before quality analysis. Activates when the request contains verifiable code references (file paths, flags, API names, behavior descriptions). Findings feed into the Correctness dimension scored in the Analyze Request Quality and Evaluate Confidence steps.
 
 For the complete verification procedure, see [source-premise-verification.md](standards/source-premise-verification.md).
 
 ### Step 3c: Proposed-Fix Verification
 
-Challenge whether a proposed fix actually solves the documented symptom before confidence aggregation. Activates via semantic LLM judgment when the request narrative proposes a specific code change (command, regex, function body, config edit) — source-agnostic, not gated on header tokens. Constructs a synthetic "would the proposed fix change behavior in the failure scenario?" probe and emits `CORRECTNESS: ISSUE — Proposed fix incomplete` when the probe exposes a gap. Findings feed the same Correctness dimension as Step 3b.
+Challenge whether a proposed fix actually solves the documented symptom before confidence aggregation. Activates via semantic LLM judgment when the request narrative proposes a specific code change (command, regex, function body, config edit) — source-agnostic, not gated on header tokens. Constructs a synthetic "would the proposed fix change behavior in the failure scenario?" probe and emits `CORRECTNESS: ISSUE — Proposed fix incomplete` when the probe exposes a gap. Findings feed the same Correctness dimension as the Source Premise Verification step.
 
 For the complete procedure (extraction, probe construction, result handling, worked example), see [proposed-fix-verification.md](standards/proposed-fix-verification.md).
 
@@ -185,13 +185,13 @@ Three sub-analyses using `arch_context`:
 
 **Feasibility Check**: Validate request against module boundaries, dependency direction, extension points, and technology fit.
 
-**Scope Size Estimation**: Derive `scope_estimate` from the `module_mapping` using the standard derivation helper (see `standards/refine-workflow-detail.md` Step 9 — Derivation Rules). Allowed values: `none | surgical | single_module | multi_module | broad`. The same enum and rule of thumb is documented in `manage-solution-outline:standards/solution-outline-standard.md` so the value flows unchanged into the solution outline. Persist the derived value to `references.json` via `manage-references set --field scope_estimate` and include it in the Step 13 return TOON.
+**Scope Size Estimation**: Derive `scope_estimate` from the `module_mapping` using the standard derivation helper (see `standards/refine-workflow-detail.md` Step 9 — Derivation Rules). Allowed values: `none | surgical | single_module | multi_module | broad`. The same enum and rule of thumb is documented in `manage-solution-outline:standards/solution-outline-standard.md` so the value flows unchanged into the solution outline. Persist the derived value to `references.json` via `manage-references set --field scope_estimate` and include it in the Persist and Return Results return TOON.
 
 > **Coverage contract**: `scope_estimate` is the *scope* dial of the two-dial coverage contract; its orthogonal partner is *thoroughness* (how completely in-radius items are covered and how deeply their relations are traced). Refine defaults to roughly T2 / change-set unless the request signals otherwise. See the scope × thoroughness ladders, the grade-to-the-floor rule, and the coupling constraint in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).
 
 ### Step 10: Evaluate Confidence
 
-Aggregate the per-dimension scores from Steps 8 / 9 into a single weighted confidence via the deterministic aggregator:
+Aggregate the per-dimension scores from the Analyze Request Quality and Analyze Request in Architecture Context steps into a single weighted confidence via the deterministic aggregator:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
@@ -216,15 +216,15 @@ For batch input, the analyzer can stage the per-dimension scores as JSON at `.pl
 
 The script returns `{confidence, breakdown[]{dimension, score, weight, weighted}, missing_dimensions, persisted}`; with `--persist`, the overall confidence also lands in `status.metadata.confidence` so phase-3-outline and downstream consumers can read it without re-running the math.
 
-If confidence >= `confidence_threshold` → Step 13. Otherwise → Step 11.
+If confidence >= `confidence_threshold` → the Persist and Return Results step. Otherwise → the Clarify with User step.
 
 ### Step 11: Clarify with User
 
-Formulate clarification questions from issues found in Steps 8-9. Use AskUserQuestion with specific options. At most 4 questions per iteration, prioritized: Correctness > Consistency > Completeness > Ambiguity > Duplication.
+Formulate clarification questions from issues found in the Analyze Request Quality and Analyze Request in Architecture Context steps. Use AskUserQuestion with specific options. At most 4 questions per iteration, prioritized: Correctness > Consistency > Completeness > Ambiguity > Duplication.
 
 ### Step 12: Update Request
 
-Record clarifications via the three-step path-allocate flow — **mandatory after every AskUserQuestion round** (Step 11), never optional and never deferred: (1) call `manage-plan-documents request path` to get the canonical artifact path, (2) use Edit/Write to update the `## Clarifications` and `## Clarified Request` sections directly in that file, (3) call `manage-plan-documents request mark-clarified` to record the transition. A `not_clarified` return is a hard error that blocks loop continuation — re-run sub-steps (2) and (3) until `mark-clarified` succeeds. When confidence reaches threshold on the first pass with no clarification round, Step 13 still writes a `## Clarified Request` section so `request.md` always carries a clarified narrative. Loop back to Step 8. See `standards/refine-workflow-detail.md` Step 12 for the full procedure.
+Record clarifications via the three-step path-allocate flow — **mandatory after every AskUserQuestion round** (the Clarify with User step), never optional and never deferred: (1) call `manage-plan-documents request path` to get the canonical artifact path, (2) use Edit/Write to update the `## Clarifications` and `## Clarified Request` sections directly in that file, (3) call `manage-plan-documents request mark-clarified` to record the transition. A `not_clarified` return is a hard error that blocks loop continuation — re-run sub-steps (2) and (3) until `mark-clarified` succeeds. When confidence reaches threshold on the first pass with no clarification round, the Persist and Return Results step still writes a `## Clarified Request` section so `request.md` always carries a clarified narrative. Loop back to the Analyze Request Quality step. See `standards/refine-workflow-detail.md` Step 12 for the full procedure.
 
 ### Step 13: Persist and Return Results
 
@@ -233,7 +233,7 @@ When confidence reaches threshold:
 1. **Persist module mapping** to `work/module_mapping.toon`
 2. **Persist `scope_estimate`** to `references.json` via `manage-references set --field scope_estimate --value {scope_estimate}` (one of `none | surgical | single_module | multi_module | broad`)
 3. **Persist `track`** to `references.json` via `manage-references set --field track --value {track}` (one of `simple | complex`) — symmetric to the `scope_estimate` persist above. The value is **derived from the planning lane**, not from a refine-time classifier: `planning_lane == deep` ⇒ `track = complex` (the deep lane runs the Complex-Track outline); `planning_lane == light` ⇒ `track = simple` (the light lane reuses Simple-Track deliverable authoring by construction). `manage-execution-manifest compose --track` and phase-4-plan read this field as the single source of truth.
-4. **Author and persist a commit-style PR title** to `status.json` metadata via `manage-status metadata --set --field pr_title --value "{authored_title}"` — symmetric to the `scope_estimate` / `track` persists above. Author a concise, conventional-commit-style PR title (≤72 chars, imperative mood, `type(scope): summary` shape consistent with this repo's commit convention) from the **clarified request**. `pr_title` is **distinct from the descriptive top-level `title` field** (the plan's human label authored at init): `title` is the human-readable plan label, while `pr_title` is the commit-style PR title consumed at phase-6-finalize `create-pr.md` as the deterministic `--title` source. The value is also returned in the Step 13 return TOON (item 8 below) so downstream visibility exists.
+4. **Author and persist a commit-style PR title** to `status.json` metadata via `manage-status metadata --set --field pr_title --value "{authored_title}"` — symmetric to the `scope_estimate` / `track` persists above. Author a concise, conventional-commit-style PR title (≤72 chars, imperative mood, `type(scope): summary` shape consistent with this repo's commit convention) from the **clarified request**. `pr_title` is **distinct from the descriptive top-level `title` field** (the plan's human label authored at init): `title` is the human-readable plan label, while `pr_title` is the commit-style PR title consumed at phase-6-finalize `create-pr.md` as the deterministic `--title` source. The value is also returned in the Persist and Return Results return TOON (the **Return output** entry below) so downstream visibility exists.
 5. **Log decisions** to decision.log (scope, domains -- with duplicate guard)
 6. **Run Q-Gate verification checks**: module mapping completeness, track-scope consistency, scope realism, confidence justification
 7. **Signal q-gate-validation activation for the narrative-vs-code-validator** — lesson-derived plans only. When `status.json` reports `plan_source` set to a non-recipe value (i.e., `plan_source` is present and not the literal string `recipe`), the phase sets `qgate_validation_required: true` in its return TOON so the orchestrator (`plan-marshall:plan-marshall/workflow/planning.md`) dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level Task after the phase returns. The phase body cannot dispatch q-gate-validation itself because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. Lesson-derived plans encode the source lesson id directly in `plan_source` (e.g., `2026-05-11-08-004`), so the guard MUST treat any non-null, non-`recipe` value as lesson-derived. The orchestrator aggregates the validator's `qgate_pending_count` into the phase's running count before re-evaluating the existing 3-iteration auto-loop predicate. The validator classifies each code claim as `valid`, `stale`, or `invalid`: a `stale` finding is a low-confidence / outline-confirm-required signal (NOT an outright invalid finding), so refine **preserves** any deliverable carrying a `stale` finding as an outline-depth confirmation signal rather than discarding it — the STALE-vs-INVALID verdict definition lives in [`plan-marshall/workflow/q-gate-validation.md` § 2.14](../plan-marshall/workflow/q-gate-validation.md#214-narrative-vs-code-validator) only. See [`refine-workflow-detail.md` Step 13.5](standards/refine-workflow-detail.md#step-135-dispatch-q-gate-validation--lesson-derived-plans-only) for the activation-guard contract and the STALE-preservation rule. The flag is `false` when `plan_source` is absent or equals `recipe`.
@@ -256,7 +256,7 @@ qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
 ```
 
-`qgate_validation_required` is `true` when the lesson-derived plan path activated at Step 13.5 (`plan_source` set and not `recipe`), `false` otherwise. See Step 13 item 7 for the orchestrator dispatch contract.
+`qgate_validation_required` is `true` when the lesson-derived plan path activated at Step 13.5 (`plan_source` set and not `recipe`), `false` otherwise. See the q-gate-validation activation entry of the Persist and Return Results step for the orchestrator dispatch contract.
 
 **Data Location Reference**:
 - Track/scope decisions: `decision.log` filtered by `(plan-marshall:phase-2-refine)`
@@ -273,7 +273,7 @@ Transition from refine to outline with `manage-status transition --completed 2-r
 
 ## Output
 
-Step 13 (above) is the single source of truth for the return TOON. The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+The Persist and Return Results step (above) is the single source of truth for the return TOON. The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
 
 ```toon
 status: success | error
@@ -282,7 +282,7 @@ display_detail: "<{confidence}% confidence, track {track}, {qgate_pending_count}
 
 `display_detail` shape on success: `"{confidence}% confidence, track {track}, {qgate_pending_count} pending"` (e.g. `"92% confidence, track complex, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
 
-All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `pr_title`, `compatibility`, `compatibility_description`, `simplicity`, `simplicity_description`, `domains`, `qgate_pending_count`) are documented in Step 13 above.
+All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `pr_title`, `compatibility`, `compatibility_description`, `simplicity`, `simplicity_description`, `domains`, `qgate_pending_count`) are documented in the Persist and Return Results step above.
 
 ---
 

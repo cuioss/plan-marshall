@@ -130,7 +130,7 @@ Three step types are supported, distinguished by prefix notation:
 | Type | Notation | Resolution |
 |------|----------|------------|
 | **built-in** | `default:` prefix (e.g., `default:commit-push`) | Strip prefix, read `standards/{name}.md` and follow all steps |
-| **project (dispatched)** | `project:` prefix classified DISPATCHED (e.g., `project:finalize-step-plugin-doctor`) | `Task: execution-context-{level}` with `workflow: {step's own SKILL.md notation}` — see Step 3 item 5 DISPATCHED branch |
+| **project (dispatched)** | `project:` prefix classified DISPATCHED (e.g., `project:finalize-step-plugin-doctor`) | `Task: execution-context-{level}` with `workflow: {step's own SKILL.md notation}` — see the Execute Step Pipeline step's DISPATCHED-step dispatch branch |
 | **project (inline)** | `project:` prefix classified INLINE (e.g., `project:finalize-step-deploy-target`) | `Skill: {notation}` with interface contract parameters |
 | **skill** | fully-qualified `bundle:skill` (e.g., `pm-dev-java:java-post-pr`) | DISPATCHED → `Task: execution-context-{level}`; INLINE → `Skill: {notation}` with interface contract parameters, per the same classification |
 
@@ -183,7 +183,7 @@ they dispatch under `Task: execution-context-{level}` with the step's own SKILL.
 as the `workflow` prompt-body field. Their input contract is the 5-field
 prompt-body shape (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) plus any
 workflow-specific runtime inputs (`--iteration`, `producer`, whitelisted
-`--session-id`). See Step 3 item 5 § "DISPATCHED project/skill step" for the
+`--session-id`). See the Execute Step Pipeline step § "DISPATCHED project/skill step" for the
 dispatch shape.
 
 In both cases the step body can access the plan's context via manage-* scripts (references, status, config).
@@ -1053,7 +1053,7 @@ The conservative default (`loop_back_without_asking=false`) ships an interactive
 
 #### Post-dispatch completion guard
 
-Item 5d above is the deterministic post-dispatch completion guard. It calls the read-only `plan-marshall:manage-status:manage-status assert-step-recorded` verb with `--require-terminal` after every dispatched-step return and converts a missing terminal record into an attributed `failed` outcome plus a pipeline halt. Three placement facts govern its interaction with the rest of Step 3:
+The post-dispatch completion guard sub-step above (the `assert-step-recorded` check inside the dispatch branch) is the deterministic completion guard. It calls the read-only `plan-marshall:manage-status:manage-status assert-step-recorded` verb with `--require-terminal` after every dispatched-step return and converts a missing terminal record into an attributed `failed` outcome plus a pipeline halt. Three placement facts govern its interaction with the rest of the Execute Step Pipeline step:
 
 - **Placement relative to resumable re-entry**: the guard fires at the END of a FOR-loop iteration (after the dispatch and the metrics items 5b/5c), whereas the resumable re-entry check (item 1) runs at the START of each iteration. The `failed` record the guard writes is therefore retried by the start-of-iteration resumability check on the next finalize entry — the guard does not re-fire the step itself; it records the violation and halts, and the existing `failed`→retry path picks it up. This reuses the existing control flow with zero new branches.
 
