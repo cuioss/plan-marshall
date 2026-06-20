@@ -69,6 +69,39 @@ def _strip_default_prefix(step_id: str) -> str:
     return step_id[len(prefix):] if step_id.startswith(prefix) else step_id
 
 
+def _guard_within(candidate: Path, parent_dir: Path, step_id: str) -> Path:
+    """Return ``candidate`` only if it stays within ``parent_dir``.
+
+    ``step_id`` is externally controlled, so a value such as
+    ``project:../../etc/passwd`` would escape the intended parent directory via
+    simple string concatenation. After resolving both paths, this guard verifies
+    the candidate is contained by ``parent_dir`` and fails loud otherwise — there
+    is no silent fallback.
+
+    Args:
+        candidate: The constructed body-doc path (not yet existence-checked).
+        parent_dir: The intended containing directory the candidate must not
+            escape.
+        step_id: The originating step identifier, surfaced in the error message.
+
+    Returns:
+        The resolved candidate path when it is contained by ``parent_dir``.
+
+    Raises:
+        ValueError: When the resolved candidate escapes ``parent_dir`` (path
+            traversal detected).
+    """
+    resolved_candidate = candidate.resolve()
+    resolved_parent = parent_dir.resolve()
+    if not resolved_candidate.is_relative_to(resolved_parent):
+        raise ValueError(
+            f"configurable contract: step id {step_id!r} resolves to "
+            f"{resolved_candidate} which escapes the intended parent directory "
+            f"{resolved_parent} (path traversal rejected)"
+        )
+    return resolved_candidate
+
+
 def resolve_step_doc_path(step_id: str) -> Path:
     """Resolve the body-doc path that declares ``step_id``'s configurable block.
 
@@ -87,17 +120,23 @@ def resolve_step_doc_path(step_id: str) -> Path:
 
     Returns:
         The resolved body-doc path (may not exist on disk).
+
+    Raises:
+        ValueError: When the externally-controlled ``step_id`` resolves to a
+            path that escapes its intended parent directory (path traversal).
     """
     if step_id.startswith('project:'):
         bare = step_id[len('project:'):]
-        return _repo_root() / '.claude' / 'skills' / bare / 'SKILL.md'
+        skills_root = _repo_root() / '.claude' / 'skills'
+        candidate = skills_root / bare / 'SKILL.md'
+        return _guard_within(candidate, skills_root, step_id)
 
     skill_dir = _phase_6_skill_dir()
     bare = _strip_default_prefix(step_id)
-    workflow_path = skill_dir / 'workflow' / f'{bare}.md'
+    workflow_path = _guard_within(skill_dir / 'workflow' / f'{bare}.md', skill_dir, step_id)
     if workflow_path.is_file():
         return workflow_path
-    standards_path = skill_dir / 'standards' / f'{bare}.md'
+    standards_path = _guard_within(skill_dir / 'standards' / f'{bare}.md', skill_dir, step_id)
     if standards_path.is_file():
         return standards_path
     return workflow_path
@@ -238,6 +277,8 @@ def parse_configurable(step_doc_path: str | Path) -> dict[str, dict[str, Any]]:
             - no ``configurable:`` block is present;
             - the ``configurable:`` block declares no entries;
             - an entry is missing any of ``key`` / ``default`` / ``description``;
+            - an entry declares any sub-field outside ``key`` / ``default`` /
+              ``description``;
             - ``key`` or ``description`` is not a string;
             - ``description`` is empty;
             - a ``key`` is declared more than once.
@@ -274,6 +315,13 @@ def parse_configurable(step_doc_path: str | Path) -> dict[str, dict[str, Any]]:
                     f"missing required sub-field '{subfield}' "
                     f"(every entry needs key, default, description)"
                 )
+        extra_keys = set(entry) - set(_REQUIRED_SUBFIELDS)
+        if extra_keys:
+            raise ValueError(
+                f"configurable contract: {path} entry #{index + 1} declares "
+                f"unexpected sub-field(s) {sorted(extra_keys)} "
+                f"(every entry MUST carry exactly key, default, description)"
+            )
         key = entry['key']
         description = entry['description']
         if not isinstance(key, str):

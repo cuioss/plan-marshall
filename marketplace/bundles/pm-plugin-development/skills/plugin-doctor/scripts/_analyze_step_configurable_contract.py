@@ -111,9 +111,18 @@ def _load_contract_parser(marketplace_root: Path) -> ModuleType | None:
     It imports ``marketplace_bundles`` and ``toon_parser`` at module top, both
     of which the executor places on ``sys.path`` for cross-skill imports.
 
-    Returns ``None`` when the module cannot be located or imported (e.g. a
-    synthetic ``tmp_path`` marketplace with no plan-marshall bundle, or a missing
-    cross-skill dependency) — the analyzer is then a no-op for that tree.
+    Returns ``None`` only when the module cannot be *located* by the import
+    machinery — the parser file is absent (a synthetic ``tmp_path`` marketplace
+    with no plan-marshall bundle) or ``spec_from_file_location`` yields no usable
+    spec/loader. In those file-not-found cases the analyzer is legitimately a
+    no-op for that tree.
+
+    When the parser file IS present but ``exec_module`` raises (a syntax error,
+    a broken import, or any other module-load failure), the exception is
+    re-raised rather than swallowed. Returning ``None`` there would silently
+    disable the ``step-configurable-contract`` rule and turn a broken parser
+    into a quality-gate bypass; surfacing the load failure is the correct,
+    fail-loud behaviour.
     """
     parser_path = (
         marketplace_root
@@ -137,12 +146,16 @@ def _load_contract_parser(marketplace_root: Path) -> ModuleType | None:
             'configurable_contract_for_doctor', parser_path
         )
         if spec is None or spec.loader is None:
+            # Import machinery could not produce a usable spec/loader for the
+            # file — treat as "not locatable" (no-op), same as a missing file.
             return None
         module = importlib.util.module_from_spec(spec)
+        # The file IS present: do NOT swallow exec_module failures. A syntax
+        # error or broken import here means the contract parser is broken, and
+        # silently returning None would disable the rule (a quality-gate
+        # bypass). Let the exception propagate to fail loud.
         spec.loader.exec_module(module)
         return module
-    except Exception:
-        return None
     finally:
         if inserted:
             try:

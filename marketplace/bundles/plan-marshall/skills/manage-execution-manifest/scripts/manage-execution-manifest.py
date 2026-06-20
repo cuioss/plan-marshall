@@ -1765,7 +1765,7 @@ def _read_finalize_gates() -> dict[str, str]:
     if marshal_path is not None and marshal_path.exists():
         try:
             data = read_json(marshal_path, default={})
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
             data = {}
         if isinstance(data, dict):
             plan_block = data.get('plan')

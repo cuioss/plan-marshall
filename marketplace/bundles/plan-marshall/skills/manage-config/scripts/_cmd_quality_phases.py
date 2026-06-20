@@ -164,8 +164,9 @@ def _steps_map(raw) -> dict:
     The on-disk schema for ``verification_steps`` / ``steps`` is an id-keyed map
     (``{step_id: {param: value, ...}, ...}``); key insertion order is the
     execution order. This normaliser returns a shallow copy so callers can mutate
-    it without touching the loaded config. A falsy top-level value (the key
-    absent / ``None``) yields an empty dict.
+    it without touching the loaded config. A non-dict top-level value (the key
+    absent / ``None`` / a malformed scalar or list from a hand-edited
+    marshal.json) yields an empty dict.
 
     Per-step values are coerced: an ownerless step now seeds as ``None``
     (serialized as ``null``), but a legacy ``{}`` and a TOON round-tripped ``''``
@@ -183,7 +184,7 @@ def _steps_map(raw) -> dict:
         A new dict mapping step id -> nested param object (``{}`` for ownerless
         steps), in insertion order.
     """
-    if not raw:
+    if not isinstance(raw, dict):
         return {}
     return {
         step_id: (value if isinstance(value, dict) else {})

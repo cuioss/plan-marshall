@@ -423,9 +423,9 @@ def test_write_manifest_serializes_no_empty_dict_for_ownerless_steps(plan_contex
     # the raw serialized manifest carries no empty {} block for ownerless steps
     raw = get_manifest_path('sp-write-no-empty').read_text(encoding='utf-8')
     parsed = _mem.parse_toon(raw)
-    # ownerless steps did not serialize as a non-empty dict
-    assert not parsed['phase_5']['step_params'].get('quality-gate')
-    assert not parsed['phase_6']['step_params'].get('commit-push')
+    # ownerless steps serialized as null (None), not as a {} block
+    assert parsed['phase_5']['step_params'].get('quality-gate') is None
+    assert parsed['phase_6']['step_params'].get('commit-push') is None
     # param-owning step survived
     assert parsed['phase_6']['step_params']['branch-cleanup'] == {'pr_merge_strategy': 'squash'}
 
@@ -468,8 +468,8 @@ def test_compose_then_read_manifest_ownerless_steps_read_as_empty_dict(plan_cont
     raw = get_manifest_path('sp-compose-ownerless').read_text(encoding='utf-8')
     parsed_raw = _mem.parse_toon(raw)
     phase_6_raw = parsed_raw['phase_6']['step_params']
-    # commit-push is ownerless — its on-disk value is falsy (null / ''), not a {} block
-    assert not phase_6_raw.get('commit-push')
+    # commit-push is ownerless — its on-disk value is null (None), not a {} block
+    assert phase_6_raw.get('commit-push') is None
 
     # the read boundary coerces it back to {}
     read_back = read_manifest('sp-compose-ownerless')
