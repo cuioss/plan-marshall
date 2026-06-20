@@ -103,6 +103,37 @@ Apply, in the SAME task that deletes the old field:
 4. Add a read-back assertion (call the new accessor, compare the result against the
    original value) to the migration task's success criteria.
 
+## Rule 4 — A domain-invariant default or schema change migrates ALL THREE config surfaces
+
+Rule 3 governs a field migration *within one* `marshal.json`. This rule governs the
+*reach* of a migration when the change touches a **domain-invariant default**
+(a `DEFAULT_PLAN_*` constant in `_config_defaults.py`) or the **config schema shape**
+(e.g. flattening a step list into an id-keyed map). Such a change is not complete
+until it has migrated EVERY surface that holds a materialised copy of the affected
+config — three surfaces, each a separate consumer of the seeded shape:
+
+1. **External consumer repos' `.plan/marshal.json`** — every downstream repo that
+   ran `init` against an older plan-marshall carries the OLD seeded shape in its
+   committed `marshal.json`. Changing the default in `_config_defaults.py` does NOT
+   reach back into those already-written files; each external consumer repo must be
+   migrated explicitly (additively, preserving its committed overrides per Rule 3).
+2. **The self-hosting repo's own `.plan/marshal.json`** — plan-marshall is itself a
+   consumer of its own config (the "one consumer itself" role in the Framing
+   section). Its committed `marshal.json` holds the old shape exactly as an external
+   repo's does, and is just as easy to forget — migrate it in the same change.
+3. **Any in-flight per-plan execution manifest** — a plan already past phase-4-plan
+   has a composed `execution.toon` that snapshotted the OLD config shape at compose
+   time (the write-time-snapshot model). A default/schema change that lands while
+   such a plan is mid-flight must reconcile the in-flight manifest, or that plan
+   continues running against the stale snapshot.
+
+A migration that updates the `_config_defaults.py` constant but leaves any of the
+three surfaces on the old shape is incomplete: the unmigrated surface silently
+keeps serving the old value (or the old shape) to its consumer. Enumerate all three
+surfaces in the migration deliverable's success criteria and confirm each was
+covered — the meta-project's own `marshal.json` and the external consumer repos are
+the two most-forgotten surfaces.
+
 ## Rule 5 — Placement: a tool's intrinsic property vs workflow policy about using the tool
 
 - **A tool's intrinsic property** — lives with the tool's provider/skill.
