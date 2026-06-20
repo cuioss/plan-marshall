@@ -58,16 +58,23 @@ def _load_pyproject_build_extension():
     Every build skill ships an ``extension.py`` sharing the module basename
     ``extension``; loading via ``spec_from_file_location`` against the explicit
     path avoids the cross-skill ``import extension`` collision.
+
+    Returns the loaded module so tests can patch the EXACT ``marketplace_paths``
+    object the extension bound at import time (a sibling test's
+    ``importlib.reload(marketplace_paths)`` can swap ``sys.modules`` out from
+    under a separately-imported reference, so patching the extension's own bound
+    reference is the order-independent target).
     """
     spec = importlib.util.spec_from_file_location(
         'pyproject_build_extension', EXTENSION_FILE
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.BuildExtension
+    return module
 
 
-BuildExtension = _load_pyproject_build_extension()
+_EXTENSION_MODULE = _load_pyproject_build_extension()
+BuildExtension = _EXTENSION_MODULE.BuildExtension
 
 
 def test_build_extension_subclasses_build_extension_base():
@@ -232,9 +239,13 @@ def test_classify_globs_returns_pyproject_config_route():
 
 def test_classify_globs_enumerates_production_roots_claude(monkeypatch):
     """On the Claude target the project-local-skill root resolves to .claude/skills."""
-    import marketplace_paths  # type: ignore[import-not-found]
-
-    monkeypatch.setattr(marketplace_paths, 'get_project_skill_roots', lambda: ('.claude/skills',))
+    # Patch the EXACT marketplace_paths object the extension bound at import,
+    # immune to a sibling test's importlib.reload swapping sys.modules.
+    monkeypatch.setattr(
+        _EXTENSION_MODULE.marketplace_paths,
+        'get_project_skill_roots',
+        lambda: ('.claude/skills',),
+    )
     ext = BuildExtension()
     routes = ext.classify_globs()
     production_patterns = {pattern for pattern, role in routes if role == 'production'}
@@ -252,10 +263,10 @@ def test_classify_globs_enumerates_production_roots_opencode(monkeypatch):
     User-global (~/-anchored or absolute) roots are dropped — a git-tracked .py
     never lives under a user-global root.
     """
-    import marketplace_paths  # type: ignore[import-not-found]
-
+    # Patch the EXACT marketplace_paths object the extension bound at import,
+    # immune to a sibling test's importlib.reload swapping sys.modules.
     monkeypatch.setattr(
-        marketplace_paths,
+        _EXTENSION_MODULE.marketplace_paths,
         'get_project_skill_roots',
         lambda: (
             '.opencode/skills',

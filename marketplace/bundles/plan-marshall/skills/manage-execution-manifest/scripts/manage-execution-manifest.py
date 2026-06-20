@@ -871,8 +871,8 @@ def _resolve_executor() -> Path | None:
     Delegates to ``file_ops.get_executor_path`` (the ADR-002 uniform cwd rule:
     the executor lives under the ``.plan`` dir of whichever checkout the working
     directory is in) instead of walking up from ``__file__``. The composer is
-    dispatched from the plugin cache (``~/.claude/plugins/cache/...``), which
-    lives OUTSIDE the project tree, so a ``__file__`` walk never found the
+    dispatched from the deployed-bundle cache, which lives OUTSIDE the project
+    tree, so a ``__file__`` walk never found the
     executor — silently breaking the ``execution_tier`` routing that
     subprocesses ``architecture resolve`` through it. Returns ``None`` when the
     plan root is unresolvable or the executor file is absent (e.g. an exotic
@@ -893,7 +893,7 @@ def _emit_decision_log(plan_id: str, message: str) -> None:
 
     The entry is written through ``plan_logging.log_entry`` directly rather than
     shelling back out to ``.plan/execute-script.py``. The composer is dispatched
-    from the plugin cache (``~/.claude/plugins/cache/...``), which lives outside
+    from the deployed-bundle cache, which lives outside
     the project tree, so the former ``_resolve_executor`` walk up from
     ``__file__`` never resolved the executor and silently dropped every compose
     decision-log line — the ``unloggable`` regression the archived-plan audit

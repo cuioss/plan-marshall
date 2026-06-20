@@ -26,11 +26,17 @@ from typing import Any
 # Central configuration
 PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
-# ``CLAUDE_DIR`` is retained ONLY as the ``~/.claude`` plugin-cache and the
-# global/project ``.claude`` settings anchor (Gap 1 / Gap 5 territory). It is no
-# longer a project-local-SKILL anchor — project-local-skill root resolution now
-# routes through ``get_project_skill_roots()`` / the platform-runtime layout op.
+# ``CLAUDE_DIR`` is retained ONLY as the global/project ``.claude`` settings
+# anchor (Gap 1 territory) and to compose the Claude-default fallback roots
+# below. It is no longer a project-local-SKILL or deployed-bundle discovery
+# anchor — project-local-skill root resolution routes through
+# ``get_project_skill_roots()`` and deployed-bundle discovery routes through
+# ``get_bundle_cache_roots()``, both backed by the platform-runtime layout op.
 CLAUDE_DIR = '.claude'
+# ``PLUGIN_CACHE_SUBPATH`` is no longer a standalone Claude-only discovery
+# anchor: live deployed-bundle discovery flows through the layout op
+# (``get_bundle_cache_roots()``). It survives ONLY to compose the Claude-default
+# fallback root used when no runtime is resolvable.
 PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 
 # Fallback project-local-skill root used when the platform-runtime layout op
@@ -44,6 +50,14 @@ _DEFAULT_SKILL_ROOTS = ('.claude/skills',)
 # the layout op is invoked at most once — the documented mitigation for the
 # subprocess/import hop on hot config/manifest paths.
 _SKILL_ROOTS_CACHE: tuple[str, ...] | None = None
+
+# Fallback deployed-bundle cache root used when the platform-runtime layout op
+# cannot be reached. This is the Claude default — every supported environment
+# that lacks a resolvable runtime is a Claude checkout.
+_DEFAULT_BUNDLE_CACHE_ROOTS = (str(Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH),)
+
+# Per-process memoisation cache for the resolved deployed-bundle cache roots.
+_BUNDLE_CACHE_ROOTS_CACHE: tuple[str, ...] | None = None
 
 
 # =============================================================================
@@ -96,13 +110,14 @@ def _find_skills_root() -> Path | None:
     return None
 
 
-def _invoke_layout_op(target: str) -> tuple[str, ...] | None:
-    """Call the platform-runtime ``layout skill-roots`` op for ``target``.
+def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> tuple[str, ...] | None:
+    """Call a platform-runtime layout op for ``target`` and parse its ``roots``.
 
     Imports the platform-runtime scripts in-process (no executor dependency),
-    instantiates the target's ``Runtime`` subclass, and parses the ``roots``
-    list out of the op's TOON. Returns ``None`` on any resolution failure so
-    the caller can fall back to the Claude default.
+    instantiates the target's ``Runtime`` subclass, calls the op named by
+    ``method_name`` (``layout_skill_roots`` or ``layout_bundle_cache_root``),
+    and parses the ``roots`` list out of the op's TOON. Returns ``None`` on any
+    resolution failure so the caller can fall back to the Claude default.
     """
     skills_root = _find_skills_root()
     if skills_root is None:
@@ -124,7 +139,7 @@ def _invoke_layout_op(target: str) -> tuple[str, ...] | None:
             from claude_runtime import ClaudeRuntime  # type: ignore[import-not-found]
 
             runtime = ClaudeRuntime()
-        parsed = parse_toon(runtime.layout_skill_roots())
+        parsed = parse_toon(getattr(runtime, method_name)())
     except Exception:
         return None
 
@@ -155,6 +170,36 @@ def get_project_skill_roots() -> tuple[str, ...]:
     roots = _invoke_layout_op(_read_runtime_target())
     _SKILL_ROOTS_CACHE = roots if roots is not None else _DEFAULT_SKILL_ROOTS
     return _SKILL_ROOTS_CACHE
+
+
+def get_bundle_cache_roots() -> tuple[str, ...]:
+    """Return the deployed-bundle (plugin-cache) discovery root(s) for the target.
+
+    Routes through the platform-runtime ``layout bundle-cache-root`` op,
+    memoised per process. On Claude this is the single
+    ``~/.claude/plugins/cache/plan-marshall`` cache root; on OpenCode it is the
+    ``~``-anchored user-global skill roots (OpenCode has no separate plugin
+    cache). Falls back to the Claude default when no runtime is resolvable.
+
+    The returned roots are absolute (``~``-expanded) paths; callers probe in
+    list order (first existing match wins).
+    """
+    global _BUNDLE_CACHE_ROOTS_CACHE
+    if _BUNDLE_CACHE_ROOTS_CACHE is not None:
+        return _BUNDLE_CACHE_ROOTS_CACHE
+
+    roots = _invoke_layout_op(_read_runtime_target(), 'layout_bundle_cache_root')
+    _BUNDLE_CACHE_ROOTS_CACHE = roots if roots is not None else _DEFAULT_BUNDLE_CACHE_ROOTS
+    return _BUNDLE_CACHE_ROOTS_CACHE
+
+
+def _first_existing_bundle_cache_root() -> Path | None:
+    """Return the first deployed-bundle cache root that exists on disk, else None."""
+    for root in get_bundle_cache_roots():
+        candidate = Path(root).expanduser()
+        if candidate.is_dir():
+            return candidate
+    return None
 
 
 def _resolve_skill_root(root: str, base: Path) -> Path:
@@ -444,9 +489,13 @@ def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
 
 
 def get_plugin_cache_path() -> Path | None:
-    """Get plugin cache path if it exists."""
-    cache_path = Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
-    return cache_path if cache_path.is_dir() else None
+    """Get the deployed-bundle cache path if it exists.
+
+    Routes through the platform-runtime ``layout bundle-cache-root`` op
+    (memoised) and returns the first cache root that exists on disk, or
+    ``None`` when none is materialized.
+    """
+    return _first_existing_bundle_cache_root()
 
 
 def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> Path:
@@ -505,8 +554,8 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
         if cache:
             return cache
         raise FileNotFoundError(
-            f'Neither {MARKETPLACE_BUNDLES_PATH} nor the plugin cache '
-            f'({Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH}) found. '
+            f'Neither {MARKETPLACE_BUNDLES_PATH} nor a deployed-bundle cache '
+            f'({", ".join(get_bundle_cache_roots())}) found. '
             f'Run from marketplace repo root or ensure the plugin is installed.'
         )
 
@@ -528,7 +577,7 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
         if marketplace:
             return marketplace
         raise FileNotFoundError(
-            f'Neither plugin cache ({Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH}) '
+            f'Neither a deployed-bundle cache ({", ".join(get_bundle_cache_roots())}) '
             f'nor {MARKETPLACE_BUNDLES_PATH} found. '
             f'Ensure plugin is installed or run from marketplace repo.'
         )
@@ -543,7 +592,9 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
         cache = get_plugin_cache_path()
         if cache:
             return cache
-        raise FileNotFoundError(f'Plugin cache not found: {Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH}')
+        raise FileNotFoundError(
+            f'Deployed-bundle cache not found: {", ".join(get_bundle_cache_roots())}'
+        )
 
     if scope == 'global':
         return Path.home() / CLAUDE_DIR

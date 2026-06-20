@@ -436,7 +436,14 @@ class TestGetBasePath:
     def test_plugin_cache_scope(self, tmp_path, monkeypatch):
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
+        # The plugin-cache root now routes through the platform-runtime layout op
+        # (memoised). Force the resolved roots to the tmp cache and clear the
+        # per-process memo so this test is order-independent.
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+        monkeypatch.setattr(marketplace_paths, '_BUNDLE_CACHE_ROOTS_CACHE', None)
+        monkeypatch.setattr(
+            marketplace_paths, 'get_bundle_cache_roots', lambda: (str(cache),)
+        )
         result = get_base_path('plugin-cache')
         assert result == cache
 

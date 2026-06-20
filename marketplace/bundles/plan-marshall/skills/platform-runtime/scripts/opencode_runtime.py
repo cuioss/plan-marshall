@@ -144,6 +144,38 @@ class OpenCodeRuntime(Runtime):
             {"target": "opencode", "roots": roots},
         )
 
+    def layout_bundle_cache_root(self) -> str:
+        """Return the OpenCode deployed-bundle cache root(s).
+
+        OpenCode has no separate single plugin-cache directory; deployed
+        bundles live under the project-local-skill discovery roots themselves.
+        Return the ``~``-anchored user-global skill roots (the cross-checkout
+        discovery homes) in priority order, mirroring the executor's discovery
+        order. Callers probe first-match-wins.
+        """
+        import os
+        import pathlib
+
+        home = pathlib.Path.home()
+        roots: list[str] = []
+
+        env_config_dir = os.environ.get("OPENCODE_CONFIG_DIR", "")
+        if env_config_dir:
+            roots.append(str(pathlib.Path(env_config_dir) / "skills"))
+
+        roots.extend(
+            [
+                str(home / ".config" / "opencode" / "skills"),
+                str(home / ".claude" / "skills"),
+                str(home / ".agents" / "skills"),
+            ]
+        )
+
+        return toon_success(
+            "layout bundle-cache-root",
+            {"target": "opencode", "roots": roots},
+        )
+
     # ------------------------------------------------------------------
     # Session operations
     # ------------------------------------------------------------------

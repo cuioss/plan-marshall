@@ -1132,6 +1132,20 @@ class ClaudeRuntime(Runtime):
             {"target": "claude", "roots": [".claude/skills"]},
         )
 
+    def layout_bundle_cache_root(self) -> str:
+        """Return the Claude deployed-bundle cache root.
+
+        ``~/.claude/plugins/cache/plan-marshall`` — the single flat cache root
+        under which installed marketplace bundles live on Claude.
+        """
+        import pathlib
+
+        cache_root = pathlib.Path.home() / ".claude" / "plugins" / "cache" / "plan-marshall"
+        return toon_success(
+            "layout bundle-cache-root",
+            {"target": "claude", "roots": [str(cache_root)]},
+        )
+
     # ------------------------------------------------------------------
     # Session operations
     # ------------------------------------------------------------------

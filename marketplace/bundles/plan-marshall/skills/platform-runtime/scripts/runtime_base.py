@@ -190,6 +190,33 @@ class Runtime(ABC):
             project-local-skill discovery roots for the active target.
         """
 
+    @abstractmethod
+    def layout_bundle_cache_root(self) -> str:
+        """Resolve the deployed-bundle (plugin-cache) root for this target.
+
+        Returns the root directory under which this target deploys installed
+        marketplace bundles for discovery outside the source checkout —
+        i.e. where ``extension.py`` / bundle scripts are found when running
+        from an installed plugin rather than the marketplace repo.
+
+        On Claude: returns the single ``~/.claude/plugins/cache/plan-marshall``
+        cache root.
+
+        On OpenCode: OpenCode has no separate single plugin-cache; deployed
+        bundles live under the project-local-skill discovery roots themselves.
+        The op returns those root(s) so callers can probe them in priority
+        order (first match wins), mirroring ``layout_skill_roots``.
+
+        The result does not change for the lifetime of a process (the target
+        is fixed by ``marshal.json``), so callers memoise it per process.
+
+        Returns:
+            Serialized TOON string carrying ``roots[N]`` — the ordered list of
+            deployed-bundle cache roots for the active target (``~``-anchored
+            absolute paths). Claude returns a single-element list; OpenCode
+            returns its multi-root list.
+        """
+
     # ------------------------------------------------------------------
     # Session operations
     # ------------------------------------------------------------------

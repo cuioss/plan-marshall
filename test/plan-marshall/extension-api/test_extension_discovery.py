@@ -35,7 +35,10 @@ Three flavours of coverage:
 from __future__ import annotations
 
 import fnmatch
+import pathlib
 import subprocess
+
+import pytest
 
 # conftest.py sets up the marketplace PYTHONPATH and exposes module loaders.
 from conftest import (  # type: ignore[import-not-found]
@@ -57,6 +60,7 @@ from extension_base import (  # type: ignore[import-not-found]
 )
 
 _discovery = load_script_module('plan-marshall', 'extension-api', 'extension_discovery.py')
+_marketplace_paths = load_script_module('plan-marshall', 'script-shared', 'marketplace_paths.py')
 
 
 # =============================================================================
@@ -688,3 +692,90 @@ def test_discover_all_extensions_finds_all_production_bundles():
     found_bundles = {ext['bundle'] for ext in extensions}
     for bundle in _PRODUCTION_BUNDLES:
         assert bundle in found_bundles, f'{bundle} not discovered by discover_all_extensions()'
+
+
+# =============================================================================
+# Gap 5 — deployed-bundle cache discovery routes through the layout op
+# =============================================================================
+# extension_discovery.get_plugin_cache_path() and the marketplace_paths
+# bundle-cache resolvers route through the platform-runtime
+# ``layout bundle-cache-root`` op rather than a hardcoded
+# ``~/.claude/plugins/cache/plan-marshall`` literal. These tests assert the
+# Claude single-root and OpenCode multi-root layouts both resolve, the per-process
+# memoisation holds, and the env override / fallback paths still work.
+
+
+@pytest.fixture(autouse=True)
+def _reset_bundle_cache_roots_cache():
+    """Clear the per-process bundle-cache memoisation before and after each test."""
+    _marketplace_paths._BUNDLE_CACHE_ROOTS_CACHE = None
+    yield
+    _marketplace_paths._BUNDLE_CACHE_ROOTS_CACHE = None
+
+
+def test_claude_bundle_cache_root_is_the_dot_claude_plugin_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On Claude, the bundle-cache root is ~/.claude/plugins/cache/plan-marshall."""
+    monkeypatch.setattr(_marketplace_paths, '_read_runtime_target', lambda: 'claude')
+    roots = _marketplace_paths.get_bundle_cache_roots()
+    assert len(roots) == 1
+    assert roots[0].endswith('/.claude/plugins/cache/plan-marshall')
+
+
+def test_opencode_bundle_cache_roots_are_the_user_global_skill_roots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On OpenCode, the bundle-cache roots are the ~-anchored user-global skill roots."""
+    monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
+    monkeypatch.setattr(_marketplace_paths, '_read_runtime_target', lambda: 'opencode')
+    roots = _marketplace_paths.get_bundle_cache_roots()
+    # OpenCode has no single plugin cache — discovery falls back to the user-global
+    # skill roots, in priority order.
+    assert any(r.endswith('/.config/opencode/skills') for r in roots)
+    assert any(r.endswith('/.claude/skills') for r in roots)
+    assert any(r.endswith('/.agents/skills') for r in roots)
+
+
+def test_bundle_cache_roots_is_memoised(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The bundle-cache layout op is invoked at most once per process (memoised)."""
+    calls: list[str] = []
+
+    def _fake_invoke(target: str, method_name: str = 'layout_skill_roots'):
+        calls.append(method_name)
+        return ('/fake/cache',)
+
+    monkeypatch.setattr(_marketplace_paths, '_read_runtime_target', lambda: 'claude')
+    monkeypatch.setattr(_marketplace_paths, '_invoke_layout_op', _fake_invoke)
+
+    first = _marketplace_paths.get_bundle_cache_roots()
+    second = _marketplace_paths.get_bundle_cache_roots()
+    assert first == second == ('/fake/cache',)
+    assert calls == ['layout_bundle_cache_root'], 'op must be invoked once via the bundle-cache method'
+
+
+def test_bundle_cache_roots_falls_back_to_claude_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the layout op is unreachable, the Claude default cache root is used."""
+    monkeypatch.setattr(_marketplace_paths, '_invoke_layout_op', lambda target, method_name=None: None)
+    roots = _marketplace_paths.get_bundle_cache_roots()
+    assert len(roots) == 1
+    assert roots[0].endswith('/.claude/plugins/cache/plan-marshall')
+
+
+def test_extension_discovery_plugin_cache_routes_through_layout_op(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """extension_discovery.get_plugin_cache_path resolves via the routed roots."""
+    monkeypatch.delenv('PLUGIN_CACHE_PATH', raising=False)
+    monkeypatch.setattr(
+        _discovery, 'get_bundle_cache_roots', lambda: ('/routed/cache/root',)
+    )
+    assert _discovery.get_plugin_cache_path() == pathlib.Path('/routed/cache/root')
+
+
+def test_extension_discovery_plugin_cache_honours_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit PLUGIN_CACHE_PATH env var outranks the layout op."""
+    monkeypatch.setenv('PLUGIN_CACHE_PATH', '/explicit/override')
+    assert _discovery.get_plugin_cache_path() == pathlib.Path('/explicit/override')

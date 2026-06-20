@@ -11,6 +11,7 @@ Operations:
     project initial-setup   --project-dir <path>  --target claude|opencode
     project install-hook    --target <settings-file-path>
     layout skill-roots      (no arguments)
+    layout bundle-cache-root (no arguments)
     session capture         --plan-id <id>
     session render-title    (no arguments)
     session push-title-token --plan-id <id>  --icon <glyph>
@@ -267,6 +268,16 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         return runtime.layout_skill_roots()
 
     # ------------------------------------------------------------------
+    # layout bundle-cache-root
+    # ------------------------------------------------------------------
+    if operation == "layout bundle-cache-root":
+        p = argparse.ArgumentParser(
+            allow_abbrev=False, prog="platform_runtime layout bundle-cache-root"
+        )
+        p.parse_args(remaining)
+        return runtime.layout_bundle_cache_root()
+
+    # ------------------------------------------------------------------
     # session capture
     # ------------------------------------------------------------------
     if operation == "session capture":
@@ -431,7 +442,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "unknown_operation",
         f"Unknown operation {operation!r}; "
         "valid operations: project initial-setup, project install-hook, "
-        "layout skill-roots, "
+        "layout skill-roots, layout bundle-cache-root, "
         "session capture, session render-title, session push-title-token, "
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "
