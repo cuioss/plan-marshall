@@ -68,6 +68,28 @@ _NON_INVARIANT_COLUMNS = frozenset(
 HANDSHAKE_FILE = 'handshakes.toon'
 
 
+def _phase_at_or_after_execute(phase: str | None) -> bool:
+    """Return ``True`` when ``phase`` is at or after ``5-execute``.
+
+    Parses the leading integer of the ``N-name`` phase string (e.g.
+    ``5-execute`` -> ``5``) and returns ``int(prefix) >= 5``. Under the
+    ADR-002 deferred-materialization model the worktree is not created until
+    phase-5-execute, so worktree invariants cannot be expected from the plan's
+    metadata before then.
+
+    Returns ``False`` for ``phase is None`` or any unparseable prefix: when the
+    phase ordinal cannot be proven to be at or after 5, the worktree cannot be
+    proven materialized, so worktree invariants are NOT expected.
+    """
+    if phase is None:
+        return False
+    prefix = phase.split('-', 1)[0]
+    try:
+        return int(prefix) >= 5
+    except ValueError:
+        return False
+
+
 def _phase_steps_complete_applies(phase: str) -> bool:
     """Return ``True`` when the phase opts in to required-step tracking.
 
@@ -102,9 +124,7 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
 
 
 def load_status_metadata(plan_dir: Path) -> dict[str, Any]:
-    """Load ``metadata`` from ``status.json`` (or return an empty dict on error).
-
-    Used solely to detect ``worktree_path`` so worktree-only invariants are
+    """Used solely to detect ``worktree_path`` so worktree-only invariants are
     expected for worktree plans.
     """
     json_path = plan_dir / 'status.json'
@@ -175,18 +195,23 @@ def expected_invariants(
 ) -> tuple[str, ...]:
     """Return the tuple of invariants expected for this plan and phase.
 
-    Worktree-only invariants are included whenever the plan is routed
-    through a worktree. Two signals decide this — the captured row's values
-    come first, the plan's current metadata is the fallback:
+    Worktree-only invariants are included when the worktree can be proven
+    materialized for this phase. Two signals decide this — the captured row's
+    values come first, the plan's current metadata is the phase-gated fallback:
 
     1. If ``phase_values`` carries a non-empty ``worktree_sha`` OR
        ``worktree_dirty`` value, the row itself proves the worktree was
        materialized when the phase captured. Include
-       ``_WORKTREE_INVARIANTS``.
-    2. Otherwise, if the plan's current metadata reports ``use_worktree``
-       (a non-empty ``worktree_path`` once phase-5 materializes the
-       worktree), the plan is worktree-routed and an empty captured value
-       represents a real capture gap. Include ``_WORKTREE_INVARIANTS``.
+       ``_WORKTREE_INVARIANTS`` (unconditional — independent of ``phase``).
+    2. Otherwise, if the phase is at or after ``5-execute`` AND the plan's
+       current metadata reports ``use_worktree`` (a non-empty
+       ``worktree_path`` once phase-5 materializes the worktree), the plan is
+       worktree-routed and an empty captured value represents a real capture
+       gap. Include ``_WORKTREE_INVARIANTS``. Under the ADR-002 deferred-
+       materialization model the worktree is not created until phase-5-execute,
+       so phases 1-4 never capture worktree values; Signal 2 is gated off there
+       (and for the un-phased default where ``phase is None``) to avoid a
+       guaranteed false-positive "missing worktree invariant" finding.
 
     ``phase_steps_complete`` is appended only when ``phase`` is provided
     and ``_phase_steps_complete_applies(phase)`` returns ``True`` — i.e.
@@ -206,11 +231,14 @@ def expected_invariants(
                 break
     if (
         not include_worktree
-        and isinstance(metadata, dict)
+        and _phase_at_or_after_execute(phase)
         and (metadata.get('worktree_path') or metadata.get('use_worktree'))
     ):
-        # Signal 2: the plan is worktree-routed → an empty captured value is
-        # a real capture gap.
+        # Signal 2: the plan is worktree-routed AND the phase is at or after
+        # 5-execute, so the worktree is materialized → an empty captured value
+        # is a real capture gap. Phases 1-4 (and the un-phased default) never
+        # capture worktree values under ADR-002 deferred materialization, so
+        # the signal is gated off there to avoid a false-positive finding.
         include_worktree = True
 
     if include_worktree:
