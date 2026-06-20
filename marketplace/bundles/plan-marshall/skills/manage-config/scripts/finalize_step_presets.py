@@ -37,14 +37,14 @@ The ``LOCAL`` / ``STANDARD`` / ``FULL`` presets carry **only** ``default:``
 built-in and opt-in ``bundle:skill`` steps; none reference a ``project:``
 step. This is intentional: presets ship to *consumer* projects, which do not
 have the meta-project's project-local finalize-step skills (the
-``project:finalize-step-*`` skills under ``.claude/skills/``). A preset that
-seeded a ``project:`` step would reference a skill the consumer cannot
-resolve. The meta-project's own ``project:`` finalize steps are therefore
+``project:finalize-step-*`` skills under the project-local-skill roots). A
+preset that seeded a ``project:`` step would reference a skill the consumer
+cannot resolve. The meta-project's own ``project:`` finalize steps are therefore
 **hand-maintained** in its ``phase-6-finalize.steps`` array, NOT preset-driven;
 ``marshall-steward``'s ``determine_mode.py check-missing-finalize-steps``
 surfaces any shipped ``project:`` step dropped from that array (discovered from
-``.claude/skills/finalize-step-*``) so a steward re-run on the meta-project does
-not silently lose them.
+the target's ``finalize-step-*`` project-local skills) so a steward re-run on the
+meta-project does not silently lose them.
 """
 
 from __future__ import annotations

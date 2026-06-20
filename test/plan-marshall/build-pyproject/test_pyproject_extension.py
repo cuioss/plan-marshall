@@ -230,8 +230,11 @@ def test_classify_globs_returns_pyproject_config_route():
     assert ('marshal.json', 'config') not in routes
 
 
-def test_classify_globs_enumerates_four_production_roots():
-    """The four plan-marshall production roots a .py can live under are routed."""
+def test_classify_globs_enumerates_production_roots_claude(monkeypatch):
+    """On the Claude target the project-local-skill root resolves to .claude/skills."""
+    import marketplace_paths  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(marketplace_paths, 'get_project_skill_roots', lambda: ('.claude/skills',))
     ext = BuildExtension()
     routes = ext.classify_globs()
     production_patterns = {pattern for pattern, role in routes if role == 'production'}
@@ -241,6 +244,35 @@ def test_classify_globs_enumerates_four_production_roots():
         'marketplace/bundles/*.py',
         'marketplace/targets/*.py',
     }
+
+
+def test_classify_globs_enumerates_production_roots_opencode(monkeypatch):
+    """On OpenCode every repo-relative project-local-skill root becomes a production glob.
+
+    User-global (~/-anchored or absolute) roots are dropped — a git-tracked .py
+    never lives under a user-global root.
+    """
+    import marketplace_paths  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(
+        marketplace_paths,
+        'get_project_skill_roots',
+        lambda: (
+            '.opencode/skills',
+            '.claude/skills',
+            '.agents/skills',
+            '/home/u/.config/opencode/skills',
+        ),
+    )
+    ext = BuildExtension()
+    routes = ext.classify_globs()
+    production_patterns = {pattern for pattern, role in routes if role == 'production'}
+    assert '.opencode/skills/*.py' in production_patterns
+    assert '.claude/skills/*.py' in production_patterns
+    assert '.agents/skills/*.py' in production_patterns
+    # The user-global root is dropped (no tracked .py lives there).
+    assert '/home/u/.config/opencode/skills/*.py' not in production_patterns
+    assert {'build.py', 'marketplace/bundles/*.py', 'marketplace/targets/*.py'} <= production_patterns
 
 
 def test_classify_globs_declares_test_route():

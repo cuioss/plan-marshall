@@ -20,6 +20,9 @@ from marketplace_bundles import (  # type: ignore[import-not-found]
     resolve_bundle_path,
     resolve_bundles_root,
 )
+from marketplace_paths import (  # type: ignore[import-not-found]
+    resolve_project_skill_path,
+)
 
 # Bundle path for skill description resolution. Resolved by walking up to a
 # plan-marshall bundle ancestor instead of relying on a hard-coded depth.
@@ -168,7 +171,9 @@ def get_skill_description(skill_notation: str) -> str:
 
     Supports two notation formats:
     - Marketplace: "bundle:skill" → bundles/{bundle}/skills/{skill}/SKILL.md
-    - Project-level: "project:skill" → .claude/skills/{skill}/SKILL.md
+    - Project-level: "project:skill" → resolved via the platform-runtime
+      layout op (Claude → .claude/skills/{skill}/SKILL.md; OpenCode → its
+      project-local-skill roots)
 
     Args:
         skill_notation: e.g., "pm-dev-java:java-core" or "project:sync-plugin-cache"
@@ -183,8 +188,8 @@ def get_skill_description(skill_notation: str) -> str:
         prefix, skill = parts
 
         if prefix == 'project':
-            # Project-level skill: resolve from .claude/skills/
-            skill_path = Path('.claude') / 'skills' / skill / 'SKILL.md'
+            # Project-level skill: resolve through the target's layout roots.
+            skill_path = resolve_project_skill_path(f'{skill}/SKILL.md')
         else:
             # Marketplace skill: resolve from bundles directory, handling the
             # versioned plugin-cache layout via resolve_bundle_path.

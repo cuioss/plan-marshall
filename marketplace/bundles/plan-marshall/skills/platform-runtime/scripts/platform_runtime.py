@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Platform router for plan-marshall — dispatches 15 operations to the correct
+Platform router for plan-marshall — dispatches 16 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:
@@ -10,6 +10,7 @@ Usage:
 Operations:
     project initial-setup   --project-dir <path>  --target claude|opencode
     project install-hook    --target <settings-file-path>
+    layout skill-roots      (no arguments)
     session capture         --plan-id <id>
     session render-title    (no arguments)
     session push-title-token --plan-id <id>  --icon <glyph>
@@ -258,6 +259,14 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         )
 
     # ------------------------------------------------------------------
+    # layout skill-roots
+    # ------------------------------------------------------------------
+    if operation == "layout skill-roots":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime layout skill-roots")
+        p.parse_args(remaining)
+        return runtime.layout_skill_roots()
+
+    # ------------------------------------------------------------------
     # session capture
     # ------------------------------------------------------------------
     if operation == "session capture":
@@ -422,6 +431,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "unknown_operation",
         f"Unknown operation {operation!r}; "
         "valid operations: project initial-setup, project install-hook, "
+        "layout skill-roots, "
         "session capture, session render-title, session push-title-token, "
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "
@@ -441,7 +451,7 @@ def _build_operation(argv: list[str]) -> tuple[str, list[str]]:
     Operations are two-word identifiers (e.g. ``project initial-setup``).
     Some are single-hyphenated second words (``health-check``).
 
-    Supported prefix tokens: project, session, permission, metrics, subagent, health-check.
+    Supported prefix tokens: project, layout, session, permission, metrics, subagent, health-check.
     """
     if not argv:
         return ("", [])

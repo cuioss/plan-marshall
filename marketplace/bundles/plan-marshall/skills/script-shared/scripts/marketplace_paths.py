@@ -16,15 +16,216 @@ merge lock (``merge_lock.py``), which always resolves to the main checkout;
 every other resolution in the codebase is cwd-relative.
 """
 
+import json
 import os
 import subprocess
+import sys
 from pathlib import Path
+from typing import Any
 
 # Central configuration
 PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
+# ``CLAUDE_DIR`` is retained ONLY as the ``~/.claude`` plugin-cache and the
+# global/project ``.claude`` settings anchor (Gap 1 / Gap 5 territory). It is no
+# longer a project-local-SKILL anchor — project-local-skill root resolution now
+# routes through ``get_project_skill_roots()`` / the platform-runtime layout op.
 CLAUDE_DIR = '.claude'
 PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
+
+# Fallback project-local-skill root used when the platform-runtime layout op
+# cannot be reached (no marshal.json, no marketplace tree, import failure).
+# This is the Claude default — every supported environment that lacks a
+# resolvable runtime is a Claude checkout.
+_DEFAULT_SKILL_ROOTS = ('.claude/skills',)
+
+# Per-process memoisation cache for the resolved project-local-skill roots.
+# The active target is fixed by marshal.json for the lifetime of a process, so
+# the layout op is invoked at most once — the documented mitigation for the
+# subprocess/import hop on hot config/manifest paths.
+_SKILL_ROOTS_CACHE: tuple[str, ...] | None = None
+
+
+# =============================================================================
+# Project-local-skill root resolution (routes through platform-runtime)
+# =============================================================================
+# The single home for "where do project-local skills live per target" is the
+# platform-runtime ``layout skill-roots`` operation. Consumers that scan for
+# ``project:`` skills (finalize-steps, recipes, verify-steps, domain-attachable
+# skills) MUST route through ``get_project_skill_roots()`` rather than
+# hardcoding ``.claude/skills`` — that literal is now a Claude-only anchor owned
+# by ``claude_runtime.py``.
+
+
+def _read_runtime_target() -> str:
+    """Read ``runtime.target`` from the nearest ``.plan/marshal.json``.
+
+    Walks up from the current working directory; returns ``"claude"`` when the
+    file is absent or malformed (every runtime-less environment is Claude).
+    """
+    cwd = Path.cwd().resolve()
+    for parent in (cwd, *cwd.parents):
+        candidate = parent / PLAN_DIR_NAME / 'marshal.json'
+        if candidate.is_file():
+            try:
+                data = json.loads(candidate.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                return 'claude'
+            if isinstance(data, dict):
+                runtime = data.get('runtime')
+                if isinstance(runtime, dict):
+                    target = runtime.get('target')
+                    if isinstance(target, str) and target:
+                        return target
+            return 'claude'
+    return 'claude'
+
+
+def _find_skills_root() -> Path | None:
+    """Locate the marketplace ``skills/`` root by walking ancestors of this file.
+
+    The root is the first ancestor named ``skills`` whose parent holds a
+    ``.claude-plugin/plugin.json`` bundle manifest. Returns ``None`` when no
+    such ancestor exists (e.g. running from the plugin cache).
+    """
+    for ancestor in Path(__file__).resolve().parents:
+        if ancestor.name == 'skills' and (
+            ancestor.parent / '.claude-plugin' / 'plugin.json'
+        ).is_file():
+            return ancestor
+    return None
+
+
+def _invoke_layout_op(target: str) -> tuple[str, ...] | None:
+    """Call the platform-runtime ``layout skill-roots`` op for ``target``.
+
+    Imports the platform-runtime scripts in-process (no executor dependency),
+    instantiates the target's ``Runtime`` subclass, and parses the ``roots``
+    list out of the op's TOON. Returns ``None`` on any resolution failure so
+    the caller can fall back to the Claude default.
+    """
+    skills_root = _find_skills_root()
+    if skills_root is None:
+        return None
+
+    for lib in ('ref-toon-format', 'platform-runtime'):
+        lib_dir = str(skills_root / lib / 'scripts')
+        if lib_dir not in sys.path:
+            sys.path.append(lib_dir)
+
+    try:
+        from toon_parser import parse_toon  # type: ignore[import-not-found]
+
+        if target == 'opencode':
+            from opencode_runtime import OpenCodeRuntime  # type: ignore[import-not-found]
+
+            runtime: Any = OpenCodeRuntime()
+        else:
+            from claude_runtime import ClaudeRuntime  # type: ignore[import-not-found]
+
+            runtime = ClaudeRuntime()
+        parsed = parse_toon(runtime.layout_skill_roots())
+    except Exception:
+        return None
+
+    roots = parsed.get('roots') if isinstance(parsed, dict) else None
+    if isinstance(roots, list) and roots:
+        return tuple(str(r) for r in roots)
+    return None
+
+
+def get_project_skill_roots() -> tuple[str, ...]:
+    """Return the project-local-skill discovery root(s) for the active target.
+
+    Routes through the platform-runtime ``layout skill-roots`` op, memoised per
+    process. On Claude this is ``('.claude/skills',)``; on OpenCode it is the
+    multi-root list mirroring the executor's discovery order. Falls back to the
+    Claude default when no runtime is resolvable (no marshal.json, no
+    marketplace tree, or an import failure) so build/test environments without a
+    configured runtime keep working.
+
+    The returned roots are relative project-local paths (or ``~``-anchored
+    user-global paths on OpenCode); callers resolve each against the relevant
+    base directory and probe in list order (first match wins).
+    """
+    global _SKILL_ROOTS_CACHE
+    if _SKILL_ROOTS_CACHE is not None:
+        return _SKILL_ROOTS_CACHE
+
+    roots = _invoke_layout_op(_read_runtime_target())
+    _SKILL_ROOTS_CACHE = roots if roots is not None else _DEFAULT_SKILL_ROOTS
+    return _SKILL_ROOTS_CACHE
+
+
+def _resolve_skill_root(root: str, base: Path) -> Path:
+    """Resolve a single layout-op root string against ``base``.
+
+    ``~``-anchored roots (OpenCode user-global) and absolute roots resolve
+    independently of ``base``; relative roots resolve under ``base``.
+    """
+    expanded = Path(root).expanduser()
+    if expanded.is_absolute():
+        return expanded
+    return base / root
+
+
+def resolve_project_skill_path(rel_subpath: str, base: Path | None = None) -> Path:
+    """Resolve a project-local-skill subpath against the active target's roots.
+
+    Probes each project-local-skill root in priority order (first existing
+    match wins) for ``{root}/{rel_subpath}`` under ``base`` (defaulting to the
+    current working directory). Returns the first path that exists on disk, or
+    — when none exists — the path under the FIRST (highest-priority) root, so
+    the caller gets a deterministic non-existent path to report.
+
+    Args:
+        rel_subpath: Subpath beneath a skill root, e.g.
+            ``"sync-plugin-cache/SKILL.md"``.
+        base: Project root to resolve relative roots against; defaults to cwd.
+
+    Returns:
+        The resolved path (first existing match, else the highest-priority
+        candidate).
+    """
+    anchor = base if base is not None else Path.cwd()
+    roots = get_project_skill_roots()
+    first_candidate: Path | None = None
+    for root in roots:
+        candidate = _resolve_skill_root(root, anchor) / rel_subpath
+        if first_candidate is None:
+            first_candidate = candidate
+        if candidate.exists():
+            return candidate
+    # No root matched; return the highest-priority candidate for reporting.
+    assert first_candidate is not None  # get_project_skill_roots is never empty
+    return first_candidate
+
+
+def iter_project_skill_dirs(base: Path | None = None) -> list[Path]:
+    """Return every project-local-skill directory across the active target's roots.
+
+    Iterates each project-local-skill root (in priority order) and collects the
+    immediate child directories of each root that exists. A skill name present
+    under more than one root is yielded once per root in which it appears, in
+    root priority order, so a higher-priority root's copy is encountered first.
+
+    Args:
+        base: Project root to resolve relative roots against; defaults to cwd.
+
+    Returns:
+        A list of skill directory ``Path`` objects (may be empty when no root
+        exists on disk).
+    """
+    anchor = base if base is not None else Path.cwd()
+    dirs: list[Path] = []
+    for root in get_project_skill_roots():
+        root_dir = _resolve_skill_root(root, anchor)
+        if not root_dir.is_dir():
+            continue
+        for child in sorted(root_dir.iterdir()):
+            if child.is_dir():
+                dirs.append(child)
+    return dirs
 
 
 # =============================================================================

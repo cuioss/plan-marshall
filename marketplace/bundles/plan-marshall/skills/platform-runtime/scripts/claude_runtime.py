@@ -1122,6 +1122,17 @@ class ClaudeRuntime(Runtime):
         )
 
     # ------------------------------------------------------------------
+    # Filesystem layout resolution
+    # ------------------------------------------------------------------
+
+    def layout_skill_roots(self) -> str:
+        """Return the Claude project-local-skill root: ``.claude/skills``."""
+        return toon_success(
+            "layout skill-roots",
+            {"target": "claude", "roots": [".claude/skills"]},
+        )
+
+    # ------------------------------------------------------------------
     # Session operations
     # ------------------------------------------------------------------
 

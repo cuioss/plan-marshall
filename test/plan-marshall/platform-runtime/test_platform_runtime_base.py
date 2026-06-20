@@ -123,10 +123,13 @@ def test_toon_noop_distinct_from_error():
 
 
 class _ConcreteRuntime(Runtime):
-    """Minimal concrete subclass that implements all 15 abstract methods."""
+    """Minimal concrete subclass that implements all 16 abstract methods."""
 
     def project_initial_setup(self, project_dir: str, target: str) -> str:
         return toon_success("project initial-setup")
+
+    def layout_skill_roots(self) -> str:
+        return toon_success("layout skill-roots")
 
     def project_install_hook(
         self,
@@ -179,6 +182,7 @@ class _ConcreteRuntime(Runtime):
 ALL_ABSTRACT_METHODS = [
     "project_initial_setup",
     "project_install_hook",
+    "layout_skill_roots",
     "session_capture",
     "session_render_title",
     "session_push_title_token",
@@ -195,16 +199,16 @@ ALL_ABSTRACT_METHODS = [
 ]
 
 
-def test_runtime_has_15_abstract_methods():
-    """Runtime ABC exposes exactly 15 abstract methods."""
+def test_runtime_has_16_abstract_methods():
+    """Runtime ABC exposes exactly 16 abstract methods."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
-    assert len(abstract_methods) == 15, (
-        f"Expected 15 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
+    assert len(abstract_methods) == 16, (
+        f"Expected 16 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
     )
 
 
 def test_all_expected_methods_are_abstract():
-    """Each of the 15 documented operations is abstract on Runtime."""
+    """Each of the 16 documented operations is abstract on Runtime."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
     for method in ALL_ABSTRACT_METHODS:
         assert method in abstract_methods, (
@@ -230,7 +234,7 @@ def test_subclass_missing_one_method_raises(missing_method: str):
 
 
 def test_concrete_subclass_can_be_instantiated():
-    """A subclass implementing all 15 methods can be instantiated without error."""
+    """A subclass implementing all 16 methods can be instantiated without error."""
     runtime = _ConcreteRuntime()
     assert isinstance(runtime, Runtime)
 
@@ -247,6 +251,7 @@ def test_concrete_returns_valid_toon_for_each_method():
     outputs = [
         runtime.project_initial_setup(".", "claude"),
         runtime.project_install_hook(".claude/settings.local.json"),
+        runtime.layout_skill_roots(),
         runtime.session_capture("my-plan"),
         runtime.session_render_title(),
         runtime.session_push_title_token("my-plan", "⏳"),
@@ -262,7 +267,7 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.health_check("all"),
     ]
 
-    assert len(outputs) == 15, "Expected output for each of the 15 methods"
+    assert len(outputs) == 16, "Expected output for each of the 16 methods"
     for output in outputs:
         result = parse_toon(output)
         assert result.get("status") == "success", (

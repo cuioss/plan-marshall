@@ -41,6 +41,9 @@ from extension_discovery import (  # type: ignore[import-not-found]
     discover_all_extensions,
     discover_applicable_extensions,
 )
+from marketplace_paths import (  # type: ignore[import-not-found]
+    iter_project_skill_dirs,
+)
 
 
 def _read_frontmatter_order(path: Path) -> int | None:
@@ -167,13 +170,13 @@ def discover_project_skills() -> list[dict]:
     Returns:
         List of dicts: [{notation: "project:{name}", name: str, description: str}]
     """
-    claude_skills = Path('.claude/skills')
-    if not claude_skills.is_dir():
-        return []
-
     skills: list[dict] = []
-    for skill_dir in sorted(claude_skills.iterdir()):
-        if not skill_dir.is_dir() or skill_dir.name.startswith('.'):
+    seen: set[str] = set()
+    # Iterate the target's project-local-skill roots in priority order; a skill
+    # surfaced under more than one root (OpenCode multi-root) is taken from the
+    # highest-priority root only.
+    for skill_dir in iter_project_skill_dirs():
+        if skill_dir.name.startswith('.') or skill_dir.name in seen:
             continue
         # Skip dirs owned by a dedicated prefix discovery — they are not
         # domain-attachable. Mirrors the `.startswith()` filter shape used by the
@@ -184,6 +187,7 @@ def discover_project_skills() -> list[dict]:
         if not skill_md.exists():
             continue
 
+        seen.add(skill_dir.name)
         notation = f'project:{skill_dir.name}'
         description = get_skill_description(notation)
         # If get_skill_description returns the notation itself, use the name as fallback
@@ -468,32 +472,32 @@ def _discover_all_verify_steps() -> list[dict]:
             }
         )
 
-    # Source 2: Project verify-step-* skills
-    claude_skills = Path('.claude/skills')
-    if claude_skills.is_dir():
-        for skill_dir in sorted(claude_skills.iterdir()):
-            if not skill_dir.is_dir() or not skill_dir.name.startswith('verify-step-'):
-                continue
-            skill_md = skill_dir / 'SKILL.md'
-            if not skill_md.exists():
-                continue
+    # Source 2: Project verify-step-* skills (across the target's layout roots)
+    seen_verify: set[str] = set()
+    for skill_dir in iter_project_skill_dirs():
+        if not skill_dir.name.startswith('verify-step-') or skill_dir.name in seen_verify:
+            continue
+        skill_md = skill_dir / 'SKILL.md'
+        if not skill_md.exists():
+            continue
 
-            content = skill_md.read_text()
-            description = ''
-            fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
-            if fm_match:
-                description = fm_match.group(1).strip()
+        seen_verify.add(skill_dir.name)
+        content = skill_md.read_text()
+        description = ''
+        fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
+        if fm_match:
+            description = fm_match.group(1).strip()
 
-            step_ref = f'project:{skill_dir.name}'
-            all_steps.append(
-                {
-                    'name': step_ref,
-                    'description': description or skill_dir.name,
-                    'type': 'project',
-                    'source': 'project',
-                    'order': _read_frontmatter_order(skill_md),
-                }
-            )
+        step_ref = f'project:{skill_dir.name}'
+        all_steps.append(
+            {
+                'name': step_ref,
+                'description': description or skill_dir.name,
+                'type': 'project',
+                'source': 'project',
+                'order': _read_frontmatter_order(skill_md),
+            }
+        )
 
     # Source 3: Extension provides_verify_steps()
     extensions = discover_all_extensions()

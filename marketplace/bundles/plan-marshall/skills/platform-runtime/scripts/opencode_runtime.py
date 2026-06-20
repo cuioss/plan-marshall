@@ -107,6 +107,44 @@ class OpenCodeRuntime(Runtime):
         )
 
     # ------------------------------------------------------------------
+    # Filesystem layout resolution
+    # ------------------------------------------------------------------
+
+    def layout_skill_roots(self) -> str:
+        """Return the OpenCode project-local-skill roots (executor's root order).
+
+        Mirrors ``generate_executor.py``'s OpenCode discovery-root list: the
+        ``$OPENCODE_CONFIG_DIR`` override (when set), the project-local roots,
+        and the ``~``-anchored user-global roots. The list is returned in
+        priority order; callers probe first-match-wins.
+        """
+        import os
+        import pathlib
+
+        home = pathlib.Path.home()
+        roots: list[str] = []
+
+        env_config_dir = os.environ.get("OPENCODE_CONFIG_DIR", "")
+        if env_config_dir:
+            roots.append(str(pathlib.Path(env_config_dir) / "skills"))
+
+        roots.extend(
+            [
+                ".opencode/skills",
+                ".claude/skills",
+                ".agents/skills",
+                str(home / ".config" / "opencode" / "skills"),
+                str(home / ".claude" / "skills"),
+                str(home / ".agents" / "skills"),
+            ]
+        )
+
+        return toon_success(
+            "layout skill-roots",
+            {"target": "opencode", "roots": roots},
+        )
+
+    # ------------------------------------------------------------------
     # Session operations
     # ------------------------------------------------------------------
 

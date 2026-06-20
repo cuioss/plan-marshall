@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for opencode_runtime.py — OpenCode implementation of all 15 operations.
+"""Tests for opencode_runtime.py — OpenCode implementation of all 16 operations.
 
 Asserts the no-op contract for session/display operations that OpenCode does not
 support, success paths for permission and metrics operations, and error paths for
-invalid arguments across all 15 operations defined in the Runtime ABC.
+invalid arguments across all 16 operations defined in the Runtime ABC.
 """
 
 import json  # noqa: I001

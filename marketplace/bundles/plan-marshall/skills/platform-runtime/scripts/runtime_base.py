@@ -2,7 +2,7 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 15 platform operations. Concrete subclasses
+Defines the Runtime ABC with all 16 platform operations. Concrete subclasses
 (ClaudeRuntime, OpenCodeRuntime) implement each operation for their target.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
@@ -156,6 +156,38 @@ class Runtime(ABC):
             ``target``, ``hook_installed``, ``already_present``,
             ``installed_events``, ``already_present_events``,
             ``statusLine_status``, and ``env_status`` fields.
+        """
+
+    # ------------------------------------------------------------------
+    # Filesystem layout resolution
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def layout_skill_roots(self) -> str:
+        """Resolve the project-local-skill discovery root(s) for this target.
+
+        Returns the ordered list of directory paths (relative to a project
+        root, or ``~``-anchored for user-global roots) where ``project:``
+        skills — finalize-steps, recipes, verify-steps, domain-attachable
+        skills — are discovered on this target. Callers resolve each returned
+        root against the relevant base directory and probe in list order
+        (first match wins).
+
+        On Claude: returns the single ``.claude/skills`` root.
+
+        On OpenCode: returns the multi-root list mirroring the executor's
+        discovery order (``$OPENCODE_CONFIG_DIR/skills``, ``.opencode/skills``,
+        ``.claude/skills``, ``.agents/skills`` and the ``~``-anchored
+        user-global variants).
+
+        The result does not change for the lifetime of a process (the target
+        is fixed by ``marshal.json``), so callers memoise it per process —
+        this is the documented mitigation for the subprocess hop on hot
+        config/manifest paths.
+
+        Returns:
+            Serialized TOON string carrying ``roots[N]`` — the ordered list of
+            project-local-skill discovery roots for the active target.
         """
 
     # ------------------------------------------------------------------

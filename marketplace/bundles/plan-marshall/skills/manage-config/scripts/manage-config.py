@@ -216,7 +216,7 @@ def main() -> int:
     sd_configure = sd_sub.add_parser('configure', help='Configure selected domains', allow_abbrev=False)
     sd_configure.add_argument('--domains', required=True, help='Comma-separated domain names to enable')
 
-    sd_sub.add_parser('discover-project', help='Discover project-level skills from .claude/skills/', allow_abbrev=False)
+    sd_sub.add_parser('discover-project', help="Discover project-level skills from the target's project-local-skill roots", allow_abbrev=False)
 
     sd_attach = sd_sub.add_parser('attach-project', help='Attach project-level skills to a domain', allow_abbrev=False)
     add_domain_arg(sd_attach)

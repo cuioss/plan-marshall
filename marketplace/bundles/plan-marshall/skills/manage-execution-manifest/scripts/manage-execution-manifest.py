@@ -50,6 +50,9 @@ from marketplace_bundles import (  # type: ignore[import-not-found]
     resolve_bundles_root,
     resolve_skills_root,
 )
+from marketplace_paths import (  # type: ignore[import-not-found]
+    resolve_project_skill_path,
+)
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 # =============================================================================
@@ -3215,8 +3218,9 @@ def _resolve_step_order(step_id: str) -> int | None:
     - Built-in steps (bare or ``default:``-prefixed): resolve the standards /
       workflow doc via ``_resolve_standards_path`` and read its ``order:``
       frontmatter.
-    - ``project:``-prefixed steps: resolve ``.claude/skills/{bare-name}/SKILL.md``
-      relative to the repo root and read its ``order:`` frontmatter.
+    - ``project:``-prefixed steps: resolve the project-local-skill
+      ``{bare-name}/SKILL.md`` via the target's layout roots (relative to the
+      repo root) and read its ``order:`` frontmatter.
     - Other external steps (``bundle:skill``): no resolvable project-local
       source file — return ``None``.
 
@@ -3226,7 +3230,7 @@ def _resolve_step_order(step_id: str) -> int | None:
     """
     if step_id.startswith('project:'):
         bare = step_id[len('project:') :]
-        skill_path = _REPO_ROOT / '.claude' / 'skills' / bare / 'SKILL.md'
+        skill_path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_REPO_ROOT)
         return _read_frontmatter_order(skill_path)
     if _is_external_step(step_id):
         # bundle:skill external steps have no project-local source file.
