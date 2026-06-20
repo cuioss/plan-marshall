@@ -52,6 +52,8 @@ The in-manifest `verification_steps` / `steps` arrays carry the ordered step-id 
 
 A step with no marshal-side params (e.g. a verify step) snapshots as the empty object `{}`. Only steps that survive selection into the manifest step list are snapshotted.
 
+**Key-normalization invariant for the id-keyed accessor family.** The `step_params` map is keyed by the **bare** step id — the `default:` prefix is stripped before lookup, so `commit-push` and `default:commit-push` resolve to the same entry (the same normalization the step-id notation applies above). Every member of the id-keyed accessor family (`step-params get`, `step-params set`, `record-step`, and any future verb that keys into this map) MUST apply this SAME key-normalization before reading or writing. A newly-added accessor that keys the map by the raw, un-normalized step id silently misses the entry written under the bare key (or writes a duplicate entry under the prefixed key), so a `default:`-prefixed caller and a bare caller diverge. When adding a member to this id-keyed family, normalize the incoming step id the same way the existing members do — the normalization is a property of the family, not of any single verb.
+
 ## Default phase-6 step set
 
 Composed from `DEFAULT_PHASE_6_STEPS` in

@@ -13,6 +13,7 @@ from self_review import (  # type: ignore[import-not-found]
     _detect_flag_guard_pairs,
     _detect_keep_markers,
     _detect_markdown_sections,
+    _detect_ordinal_references,
     _detect_producer_consumer,
     _detect_regexes,
     _detect_same_document_consistency,
@@ -1512,6 +1513,193 @@ class TestDetectCountProse:
 
 
 # =============================================================================
+# Test: _detect_ordinal_references (same-document ordinal cross-references)
+# =============================================================================
+
+
+class TestDetectOrdinalReferences:
+    @staticmethod
+    def _write_md(root: Path, body: str) -> str:
+        """Write a doc.md under ``root`` and return its repo-relative path."""
+        md = root / 'doc.md'
+        md.write_text(body, encoding='utf-8')
+        return 'doc.md'
+
+    def test_item_reference_into_touched_list_surfaces_candidate(self, tmp_path: Path):
+        # Post-image: an ordered list (lines 1-3) plus a reference line (line 5).
+        body = (
+            '1. First item\n'
+            '2. Second item\n'
+            '3. Third item\n'
+            '\n'
+            'See item 2 for details.\n'
+        )
+        rel = self._write_md(tmp_path, body)
+        # The diff touched both the reference line and a list line (line 2),
+        # so the referenced block counts as touched.
+        added = [(rel, 2, '2. Second item'), (rel, 5, 'See item 2 for details.')]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert len(out) == 1
+        entry = out[0]
+        assert entry['file'] == rel
+        assert entry['line'] == 5
+        assert entry['text'] == 'See item 2 for details.'
+        # list_line resolves to the post-image line of item 2.
+        assert entry['list_line'] == 2
+
+    def test_step_reference_form_is_recognized(self, tmp_path: Path):
+        body = (
+            '1. Configure\n'
+            '2. Build\n'
+            '3. Verify\n'
+            '\n'
+            'Re-run step 3 if it fails.\n'
+        )
+        rel = self._write_md(tmp_path, body)
+        added = [(rel, 3, '3. Verify'), (rel, 5, 'Re-run step 3 if it fails.')]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert len(out) == 1
+        assert out[0]['list_line'] == 3
+
+    def test_bare_parenthesized_ordinal_is_recognized(self, tmp_path: Path):
+        body = (
+            '1. Alpha\n'
+            '2. Beta\n'
+            '\n'
+            'The guard described in (1) runs first.\n'
+        )
+        rel = self._write_md(tmp_path, body)
+        added = [(rel, 1, '1. Alpha'), (rel, 4, 'The guard described in (1) runs first.')]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert len(out) == 1
+        assert out[0]['list_line'] == 1
+
+    def test_reference_into_untouched_list_surfaces_nothing(self, tmp_path: Path):
+        # The ordered list exists in the post-image but the diff did NOT touch
+        # any of its lines — only the reference line was added.
+        body = (
+            '1. First item\n'
+            '2. Second item\n'
+            '\n'
+            'See item 2 for details.\n'
+        )
+        rel = self._write_md(tmp_path, body)
+        added = [(rel, 4, 'See item 2 for details.')]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert out == []
+
+    def test_reference_to_nonexistent_ordinal_surfaces_nothing(self, tmp_path: Path):
+        # 'item 9' points at an ordinal absent from any ordered-list block.
+        body = (
+            '1. First item\n'
+            '2. Second item\n'
+            '\n'
+            'See item 9 for details.\n'
+        )
+        rel = self._write_md(tmp_path, body)
+        added = [(rel, 1, '1. First item'), (rel, 4, 'See item 9 for details.')]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert out == []
+
+    def test_non_ordinal_numeric_token_surfaces_nothing(self, tmp_path: Path):
+        # A bare digit not in an 'item/step/point N' or '(N)' shape, plus a
+        # version-style number, must not fire even with a touched list present.
+        body = (
+            '1. First item\n'
+            '2. Second item\n'
+            '\n'
+            'This is version 2 built in 2026 with 2 retries.\n'
+        )
+        rel = self._write_md(tmp_path, body)
+        added = [
+            (rel, 2, '2. Second item'),
+            (rel, 4, 'This is version 2 built in 2026 with 2 retries.'),
+        ]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert out == []
+
+    def test_word_boundary_discipline_no_false_positive(self, tmp_path: Path):
+        # 'itemize' / 'stepwise' must not be read as 'item'/'step' references,
+        # and a decimal like '(1.5)' must not match the bare-(N) form.
+        body = (
+            '1. First item\n'
+            '2. Second item\n'
+            '\n'
+            'The itemized list and stepwise plan tolerate (1.5) ratios.\n'
+        )
+        rel = self._write_md(tmp_path, body)
+        added = [
+            (rel, 1, '1. First item'),
+            (rel, 4, 'The itemized list and stepwise plan tolerate (1.5) ratios.'),
+        ]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert out == []
+
+    def test_skips_non_markdown_files(self, tmp_path: Path):
+        added = [('mod.py', 1, '# See item 1 below')]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert out == []
+
+    def test_deduplicates_per_file_line_ordinal(self, tmp_path: Path):
+        # The same 'item 2' reference appearing twice on one added line yields a
+        # single candidate.
+        body = (
+            '1. First item\n'
+            '2. Second item\n'
+            '\n'
+            'See item 2; yes item 2 again.\n'
+        )
+        rel = self._write_md(tmp_path, body)
+        added = [(rel, 2, '2. Second item'), (rel, 4, 'See item 2; yes item 2 again.')]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert len(out) == 1
+
+    def test_multiple_lists_same_ordinal_resolves_by_proximity(self, tmp_path: Path):
+        # Two separate ordered-list blocks both contain ordinals 1 and 2.
+        # A reference to 'item 1' on line 10 (near the second block) must resolve
+        # to the second block, not the first, even though both contain ordinal 1.
+        body = (
+            '1. Alpha\n'      # line 1  — block A
+            '2. Beta\n'       # line 2  — block A
+            '\n'
+            'Some text here.\n'  # line 4  — separator
+            '\n'
+            '1. Gamma\n'      # line 6  — block B
+            '2. Delta\n'      # line 7  — block B
+            '\n'
+            'See item 1 for details.\n'  # line 9 — reference
+        )
+        rel = self._write_md(tmp_path, body)
+        # Diff touched block B (line 6) and the reference line (line 9).
+        added = [(rel, 6, '1. Gamma'), (rel, 9, 'See item 1 for details.')]
+        out = _detect_ordinal_references(added, tmp_path)
+        # Must surface exactly one candidate, resolving to block B (list_line=6).
+        assert len(out) == 1
+        assert out[0]['list_line'] == 6
+
+    def test_separator_blank_after_list_does_not_keep_block_open(self, tmp_path: Path):
+        # A blank line followed by non-list content must close the list block.
+        # Touching only that trailing blank line must NOT surface the block's
+        # ordinal references as candidates (the block is untouched aside from
+        # the closing blank, which is not part of the block).
+        body = (
+            '1. First item\n'   # line 1
+            '2. Second item\n'  # line 2
+            '\n'                # line 3 — separator blank (closes block)
+            'Not a list item.\n'  # line 4
+            '\n'
+            'See item 2 for more.\n'  # line 6 — reference
+        )
+        rel = self._write_md(tmp_path, body)
+        # Diff touches only the separator blank (line 3) and the reference (line 6).
+        # Since line 3 is NOT inside the block (it closes the block), the block
+        # is untouched — no candidate should surface.
+        added = [(rel, 3, ''), (rel, 6, 'See item 2 for more.')]
+        out = _detect_ordinal_references(added, tmp_path)
+        assert out == []
+
+
+# =============================================================================
 # Test: _iter_changed_line_pairs (Facet 3 diff walk)
 # =============================================================================
 
@@ -1872,3 +2060,38 @@ class TestCountsTotalInvariant:
             if k != 'total' and k not in self._REVIEW_ANCHOR_LISTS
         )
         assert int(counts['total']) == included_sum
+
+    def test_ordinal_references_included_in_total(self, tmp_path):
+        # An uncommitted .md diff that adds an ordered list AND a same-document
+        # ordinal reference into it triggers the ordinal_references detector,
+        # which IS summed into counts.total (unlike the review-anchor lists).
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'guide.md').write_text(
+            '1. First item\n'
+            '2. Second item\n'
+            '3. Third item\n'
+            '\n'
+            'See item 2 for the prerequisite.\n'
+        )
+        _git(repo, 'add', 'guide.md')
+
+        data = self._surface(repo)
+
+        # The new detector fired and populated its own list.
+        assert int(data['counts']['ordinal_references']) >= 1
+        assert len(data['ordinal_references']) >= 1
+
+        # ordinal_references is NOT a review-anchor list — it is summed into
+        # total. The invariant (total == sum of included lists) therefore still
+        # holds, and the included sum carries the ordinal_references count.
+        counts = data['counts']
+        included_sum = sum(
+            int(v)
+            for k, v in counts.items()
+            if k != 'total' and k not in self._REVIEW_ANCHOR_LISTS
+        )
+        assert int(counts['total']) == included_sum
+        assert 'ordinal_references' not in self._REVIEW_ANCHOR_LISTS

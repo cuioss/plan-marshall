@@ -4,7 +4,7 @@
 
 ## Overview
 
-Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying seventeen candidate sub-lists for the LLM cognitive review pass to consume.
+Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying eighteen candidate sub-lists for the LLM cognitive review pass to consume.
 
 The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Consumer projects (Java, frontend, application code) MAY contribute their own implementor by following the contract below.
 
@@ -32,7 +32,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 | Subcommand | Description |
 |------------|-------------|
-| `surface` | Emit the seventeen candidate sub-lists from the worktree diff as TOON. |
+| `surface` | Emit the eighteen candidate sub-lists from the worktree diff as TOON. |
 
 ## Runtime Invocation Contract
 
@@ -52,7 +52,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 ### Post-Conditions
 
-- TOON to stdout carrying the seventeen candidate sub-lists below (some MAY be empty).
+- TOON to stdout carrying the eighteen candidate sub-lists below (some MAY be empty).
 - Non-zero exit on git-unavailable, base-branch-missing, or plan-not-found.
 
 ### Output Schema
@@ -80,7 +80,8 @@ counts:
   count_prose: N15
   touched_claims: N16
   advertised_form_help_strings: N17
-  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16
+  ordinal_references: N18
+  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16+N18
 
 regexes[N1]{file,line,pattern}:
   ...
@@ -133,13 +134,16 @@ touched_claims[N16]{file,line,text}:
 
 advertised_form_help_strings[N17]{file,line,arg,help_text,raw_pass_line}:
   ...
+
+ordinal_references[N18]{file,line,text,list_line}:
+  ...
 ```
 
-The `total` count covers the twelve line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`) only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories not summed into `total`; `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` and likewise does not contribute.
+The `total` count covers the thirteen line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`) only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories not summed into `total`; `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` and likewise does not contribute.
 
 ### Required Candidate Sub-Lists
 
-All seventeen keys MUST appear in the output (possibly with empty payloads). The twelve LLM cognitive checks consume:
+All eighteen keys MUST appear in the output (possibly with empty payloads). The thirteen LLM cognitive checks consume:
 
 | Sub-list | Purpose | Consumed By |
 |----------|---------|-------------|
@@ -159,12 +163,13 @@ All seventeen keys MUST appear in the output (possibly with empty payloads). The
 | `count_prose` | Count-prose (a digit or number word adjacent to a cardinality noun) in every `SKILL.md` of a modified file's skill directory, for count-correctness re-check | Check 11 (stale count-prose) |
 | `touched_claims` | The `+` line of a `-`/`+` hunk pair differing by exactly one token, surfaced for whole-line claim re-verification | Check 12 (touched-claim re-check) |
 | `advertised_form_help_strings` | A multi-form argparse `help=` string paired with a raw `args.<dest>` pass-through that does no normalization — advertised-input-form normalization cross-check | Check 5 (contract drift) |
+| `ordinal_references` | Added same-document ordinal references (`item N` / `step N` / bare `(N)`) pointing into an ordered-list block the same diff touched, surfaced so the reviewer confirms each ordinal still resolves to its intended item after the renumber | Check 13 (same-document ordinal-reference re-check) |
 
-Each entry MUST carry `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — these are the primary navigation fields the LLM cognitive review consumes. Two entry shapes extend or replace this pair: the `source_of_truth` entry carries `name`/`files`/`values` rather than a single `file`/`line`, and the `advertised_form_help_strings` entry carries a second navigational coordinate `raw_pass_line` (the line of the raw `args.<dest>` pass-through) alongside its `file`/`line`, which Check 5's advertised-form sub-check consumes to navigate to the unnormalized-use site. The `count_prose`, `unguarded_boundaries`, and `touched_claims` entries all carry `file`+`line`. Additional per-domain sub-lists beyond the seventeen canonical keys are allowed and ignored by the twelve canonical checks.
+Each entry MUST carry `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — these are the primary navigation fields the LLM cognitive review consumes. Two entry shapes extend or replace this pair: the `source_of_truth` entry carries `name`/`files`/`values` rather than a single `file`/`line`, and the `advertised_form_help_strings` entry carries a second navigational coordinate `raw_pass_line` (the line of the raw `args.<dest>` pass-through) alongside its `file`/`line`, which Check 5's advertised-form sub-check consumes to navigate to the unnormalized-use site. The `count_prose`, `unguarded_boundaries`, and `touched_claims` entries all carry `file`+`line`. Additional per-domain sub-lists beyond the eighteen canonical keys are allowed and ignored by the thirteen canonical checks.
 
 ### Detection Rules (Plan-Marshall Domain Reference)
 
-The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) (sixteen numbered detection rules covering regex literals, user-facing strings, markdown headings, symmetric-pair function names, flag-guard pairs, contract-source skills, schema-bearing markdown files, `self-review: keep <id>` HTML-comment markers (the literal `keep`-marker syntax is specified verbatim in the implementor's § Keep-Identifier Markers), producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone unguarded boundaries, stale count-prose, near-identical-hunk touched claims, and advertised-form help strings). Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
+The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) (eighteen numbered detection rules covering regex literals, user-facing strings, markdown headings, symmetric-pair function names, flag-guard pairs, contract-source skills, schema-bearing markdown files, `self-review: keep <id>` HTML-comment markers (the literal `keep`-marker syntax is specified verbatim in the implementor's § Keep-Identifier Markers), producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone unguarded boundaries, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, and same-document ordinal references). Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
 
 ## Failure Mode Contract
 

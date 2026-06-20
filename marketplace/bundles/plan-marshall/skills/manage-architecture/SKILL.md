@@ -21,6 +21,8 @@ scope: hybrid
 - Enrichment must cover every discovered module before completion
 - Discovery must run before enrichment (Step 1 before Steps 4-8)
 
+**Migration completeness — enumerate every read path before declaring a derivation migration done.** This skill exposes derived structures (the `build_map` behind `derive-verification`, the `resolve` command envelope, the files/graph inventories) that multiple consumers read. When a change reshapes any such derivation — its schema, its command mapping, or the canonical accessor — the migration is NOT complete until EVERY read path of that derivation has been enumerated and updated. An incomplete fix that migrates the primary accessor while leaving a parallel raw-read consumer on the old shape is a defect, not a partial success: the unmigrated read path silently returns the old structure and corrupts its downstream branch. Before declaring such a migration done, enumerate every reader of the derivation (`architecture find` first, grep fallback for sub-module call sites) and confirm each one was migrated — a single surviving raw read of the pre-change shape fails the gate.
+
 ---
 
 ## Scripts

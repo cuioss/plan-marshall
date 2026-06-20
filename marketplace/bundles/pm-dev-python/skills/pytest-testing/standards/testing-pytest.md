@@ -293,6 +293,15 @@ def test_script_returns_structured_data():
     assert len(data["items"]) > 0
 ```
 
+### Assert the returncode BEFORE parsing stdout
+
+A subprocess-driven test **MUST** assert `result.returncode == 0` (or the expected non-zero code) **before** parsing or asserting on `result.stdout`. This ordering is not stylistic — it is the difference between a test that reports the real failure and one that masks it:
+
+- When a script **crashes** (uncaught exception, argparse rejection, import error), it commonly writes a partial or differently-shaped payload to stdout AND a non-zero returncode plus a traceback to stderr. A test that parses stdout first then sees a `KeyError`, a `json.JSONDecodeError`, or a failed content assertion — surfacing a confusing *content* failure that hides the actual *crash*. The returncode (and the `stderr` captured in the assertion message) is the signal that names the real fault.
+- The returncode assertion MUST carry the `stderr` in its failure message (`assert result.returncode == 0, f"...: {result.stderr}"`) so a crash surfaces its traceback directly in the test report instead of an opaque exit-code mismatch.
+
+Apply the same discipline to the negative path: a test asserting a script *fails* must assert the non-zero returncode first, then (optionally) assert on the error payload — never assert only on stdout content for a failure case, since a script that crashes for the *wrong* reason can still emit the expected error substring.
+
 ### PYTHONPATH for Shared Libraries
 
 Scripts that import shared modules (e.g., `toon_parser`) need PYTHONPATH set:

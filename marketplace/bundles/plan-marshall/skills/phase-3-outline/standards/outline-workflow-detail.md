@@ -439,6 +439,8 @@ Without the gloss, a downstream agent could read `check-coverage` as "verify a c
 
 The sweep ensures every cross-bundle consumer of the deleted/renamed symbol becomes an explicit entry under the deliverable's `**Affected files:**` list before the outline is written. Run the sweep BEFORE resolving verification commands and writing the deliverable to `solution_outline.md`. When the trigger heuristic does not fire, skip silently (no log entry required).
 
+**Shared-symbol-migration completeness**: the sweep trigger is not limited to outright delete/rename — it applies equally to any deliverable that **refactors a shared symbol or a shared derivation** (a constant, helper, or computed value read from more than one site). When a deliverable changes how a shared derivation is produced or shaped, EVERY read path of that derivation MUST be enumerated and migrated within the same deliverable; migrating one consumer while leaving a parallel read path on the old shape is an incomplete refactor that ships a latent defect. Treat "refactor a shared derivation" as a sweep trigger on the same footing as delete/rename: enumerate the read paths (`architecture find` first, grep fallback) and fold each into the deliverable's `**Affected files:**` list so the refactor and all its consumer migrations form one atomic deliverable.
+
 **Resolve verification command** for each deliverable before writing:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \

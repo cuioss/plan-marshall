@@ -1,6 +1,6 @@
 ---
 name: ext-self-review-plan-marshall
-description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings) for pre-submission structural self-review.
+description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references) for pre-submission structural self-review.
 user-invocable: false
 mode: script-executor
 implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing
@@ -8,7 +8,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 # Self-Review Candidate Surfacing — plan-marshall domain
 
-**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the twelve structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check) against a bounded surface, not an unbounded read of the whole diff.
+**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the thirteen structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check) against a bounded surface, not an unbounded read of the whole diff.
 
 ## Enforcement
 
@@ -49,7 +49,7 @@ The marker is a pure structural signal — no LLM call is added to the surface s
 
 ## Subcommand: `surface`
 
-Surfaces seventeen candidate lists from the worktree's staged diff against the base branch.
+Surfaces eighteen candidate lists from the worktree's staged diff against the base branch.
 
 ### Inputs
 
@@ -87,7 +87,8 @@ counts:
   count_prose: N15
   touched_claims: N16
   advertised_form_help_strings: N17
-  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16
+  ordinal_references: N18
+  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16+N18
 
 regexes[N1]{file,line,pattern}:
   {repo-relative-path},{line},{regex-pattern-string}
@@ -139,9 +140,12 @@ touched_claims[N16]{file,line,text}:
 
 advertised_form_help_strings[N17]{file,line,arg,help_text,raw_pass_line}:
   {repo-relative-py-path},{line},{argparse-dest},{multi-form-help-text},{raw-pass-line}
+
+ordinal_references[N18]{file,line,text,list_line}:
+  {repo-relative-md-path},{line},{ordinal-reference-line-text},{referenced-ordered-list-line}
 ```
 
-> The `total` count covers the twelve line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`) only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories with their own counts; they are not summed into `total` — `contract_sources` and `schema_bearing_files` because each modified file contributes at most one entry whose payload is references rather than candidates, `count_prose` because it anchors a sibling-SKILL.md re-check rather than flagging an added line, and `advertised_form_help_strings` because it anchors a contract-drift sub-check rather than flagging a standalone line-level defect. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
+> The `total` count covers the thirteen line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`) only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories with their own counts; they are not summed into `total` — `contract_sources` and `schema_bearing_files` because each modified file contributes at most one entry whose payload is references rather than candidates, `count_prose` because it anchors a sibling-SKILL.md re-check rather than flagging an added line, and `advertised_form_help_strings` because it anchors a contract-drift sub-check rather than flagging a standalone line-level defect. `ordinal_references` IS summed into `total` because it flags a specific added line (the ordinal cross-reference whose referenced list the same change touched), like the other line-level heuristics. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
 
 ### Detection Rules
 
@@ -197,6 +201,8 @@ advertised_form_help_strings[N17]{file,line,arg,help_text,raw_pass_line}:
 
 16. **Advertised-form help strings** — added `.py` lines on an `add_argument` call whose `help=` string advertises MORE THAN ONE accepted input form (e.g. "Issue number or URL"), paired with a raw-value pass-through of that argument in the SAME handler. The detector resolves the argparse destination (from an explicit `dest=` kwarg, else from the long `--flag` with dashes mapped to underscores) and searches the same file's added lines for a raw pass-through of `args.<dest>` — `str(args.<dest>)`, a bare `args.<dest>` read, or an f-string interpolation of it — that carries NO normalization call. A candidate is surfaced only when both the multi-form help AND a raw-pass site are present in the diff. The advertised contract ("this argument accepts every advertised form") drifts from the handler behaviour when only the form the raw value happens to be in actually works. Each entry carries `file`, `line` (the help-string line), `arg` (the resolved destination), `help_text` (the truncated help string), and `raw_pass_line` (the post-image line number of the raw pass-through). The list is a **review anchor** excluded from `total` (alongside `contract_sources`, `schema_bearing_files`, and `count_prose`). The cognitive review's check 5 (contract drift) reads the `help_text` and `raw_pass_line` site in context to decide whether the advertised-form promise is a real defect.
 
+17. **Same-document ordinal references** — added `.md` lines carrying an ordinal cross-reference into a numbered list BY ITS POSITION: an `item N` / `step N` / `point N` form-noun reference, or a bare parenthesized ordinal `(N)`. The reference is surfaced only when, in the same document's post-image, the ordered-list block containing item `N` was ITSELF touched by the diff (at least one of the block's lines is among the file's added lines). That conjunction is the staleness signal: inserting or reordering a numbered-list item shifts the ordinals its positional cross-references point at, so any ordinal reference into a list the same change just edited is a re-verification candidate. Word-boundary discipline excludes `itemize`/`stepwise` and decimal `(1.5)` tokens; a reference whose ordinal resolves to no ordered-list block, or to an untouched block, surfaces nothing. Each entry carries `file`, `line` (the reference's post-image line), `text` (the truncated reference line), and `list_line` (the 1-based post-image line of the referenced ordered-list block — the line of item `N` when it resolves, else the block's first item line), deduplicated per `(file, line, ordinal)`. Unlike the review-anchor lists, this list IS summed into `total` because it flags a specific added line. The cognitive review's check 13 re-checks the surfaced ordinal against the touched list and surfaces a drift when the position no longer matches.
+
 ### Errors
 
 | Condition | Output |
@@ -234,6 +240,7 @@ This script is a **worktree-scoped (Bucket B)** script (per `tools-script-execut
 - Stale count-prose detection: a modified sibling file plus a SKILL.md whose prose carries `twelve fields` / `5 rules` surfaces those count-prose lines (positive); a digit NOT adjacent to a cardinality noun surfaces nothing; a modified file outside any skill directory surfaces nothing; the same skill dir reached via two modified siblings deduplicates per `(file, line)`
 - Near-identical-hunk touched-claim detection: the diff-pair walk (`_iter_changed_line_pairs`) yields `(file, post_line, removed, added)` for adjacent `-`/`+` pairs and ignores unpaired lines and context-broken pairs; a `-`/`+` pair differing by exactly one token surfaces the `+` line as a `touched_claim` (positive); a many-token difference, an identical pair, and a differing-token-count pair each surface nothing (negative)
 - Advertised-form help-string detection: a multi-form `help=` string (e.g. "Issue number or URL") paired with a raw `args.<dest>` pass-through surfaces a candidate (positive); `dest=` kwarg override and dash-to-underscore dest derivation resolve correctly; single-form help, an already-normalized handler, no diff'd raw-pass site, and non-Python files each surface nothing (negative); identifier word-boundary discipline (`args.issue` does not match `args.issue_url`); and the `counts.total` review-anchor exclusion invariant holds end-to-end (the new list is excluded from `total` whether or not it fires)
+- Same-document ordinal-reference detection: an `item N` / `step N` / `(N)` reference into an ordered-list block the diff touched surfaces a candidate with correct `{file, line, text, list_line}` (positive); a reference into an untouched list, a reference to a non-existent ordinal, a non-ordinal numeric token (`version 2`, `2026`), and a non-`.md` file each surface nothing (negative); word-boundary discipline excludes `itemize`/`stepwise`/`(1.5)`; references dedupe per `(file, line, ordinal)`; and the `counts.total` inclusion invariant holds end-to-end (the new list IS summed into `total`, distinguishing it from the review-anchor lists)
 
 ## Canonical invocations
 

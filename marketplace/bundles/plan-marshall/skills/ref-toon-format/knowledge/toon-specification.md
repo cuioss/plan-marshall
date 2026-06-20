@@ -187,6 +187,7 @@ from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-fo
 - **Indentation**: Only 2-space indentation is supported (not tabs or 4-space)
 - **Percentage values**: `'95%'` is parsed as `95` (int) — lossy round-trip
 - **[N] count**: The parser does not validate that declared row count matches actual rows
+- **Empty dict/block**: An empty object value serializes as an **empty string**, not as `{}`. A key whose value is an empty mapping round-trips back as `key: ""` (or a key with no nested body), so the read side parses it as the empty string, NOT as an empty dict. Consumers that expect a dict at that key MUST defend against this — treat a missing or empty-string value as the empty mapping (e.g. `value or {}`) rather than assuming a dict is always present. Code that does `result['key'].items()` on a key that was serialized empty will fail; normalize the empty-string-to-`{}` case before any dict operation.
 
 ## Performance Characteristics
 
