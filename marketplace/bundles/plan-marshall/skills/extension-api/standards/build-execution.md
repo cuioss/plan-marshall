@@ -151,15 +151,16 @@ Using `.plan/temp/` ensures:
 
 ### R2: Wrapper Preference
 
-Extensions **must** prefer project-local wrappers over system installations.
+Extensions **must** prefer project-local wrappers over system installations. When `require_wrapper` is true (the default for maven, gradle, and pyproject), a missing wrapper is a **hard error** — the shared factory raises `FileNotFoundError` rather than falling through to a system binary. The `build.{tool}.require_wrapper` knob in marshal.json is the escape valve: setting it `false` restores the system fallback for a repo that genuinely lacks a checked-in wrapper.
 
-| Build System | Wrapper Priority |
-|--------------|------------------|
-| Maven | `./mvnw` → `mvn` |
-| Gradle | `./gradlew` → `gradle` |
-| npm | `npx` → `npm` |
+| Build System | Wrapper Priority | Missing-wrapper behaviour (default) |
+|--------------|------------------|-------------------------------------|
+| Maven | `./mvnw` → `mvn` | `require_wrapper=true` → hard error; `false` → system `mvn` |
+| Gradle | `./gradlew` → `gradle` | `require_wrapper=true` → hard error; `false` → system `gradle` |
+| pyproject | `./pw` → `pw.bat` | `require_wrapper=true` → hard error; `false` → system `pwx` |
+| npm | `npx` → `npm` | no wrapper concept; `require_wrapper` N-A |
 
-**Rationale**: Project wrappers ensure consistent versions across environments.
+**Rationale**: Project wrappers ensure consistent versions across environments. Defaulting `require_wrapper` on closes the local-vs-CI divergence where a missing wrapper silently fell through to a globally-installed binary, so a build that passes locally can still break the whole-repo CI run.
 
 ### R3: Timeout Learning
 
