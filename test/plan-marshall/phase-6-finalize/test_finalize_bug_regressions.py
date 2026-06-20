@@ -281,12 +281,13 @@ class TestSimplifyComposesAfterCommitPush:
         # The reorder invariant — fails if Deliverable 1 is reverted.
         assert steps.index('finalize-step-simplify') > steps.index('commit-push')
 
-    def test_compose_rejects_simplify_ahead_of_commit_push(self, plan_context):
-        # Defense-in-depth: even if a candidate set re-orders simplify ahead of
-        # commit-push (the reverted-reorder shape), the compose-time
-        # may-mutate placement validator rejects the manifest rather than
-        # emitting an order that would loop-back at finalize.
-        plan_id = 'regr-simplify-ahead-rejected'
+    def test_compose_reorders_simplify_ahead_of_commit_push(self, plan_context):
+        # Auto-reorder: even if a candidate set re-orders simplify ahead of
+        # commit-push (the reverted-reorder shape), the compose-time may-mutate
+        # auto-reorder moves the offending step after commit-push and composes
+        # successfully — rather than emitting an order that would loop-back at
+        # finalize, or rejecting the manifest.
+        plan_id = 'regr-simplify-ahead-reordered'
         result = _manifest.cmd_compose(
             Namespace(
                 plan_id=plan_id,
@@ -303,11 +304,12 @@ class TestSimplifyComposesAfterCommitPush:
             )
         )
 
-        assert result['status'] == 'error', f'expected rejection, got {result!r}'
-        assert result['error'] == 'may_mutate_placement_violation'
-        assert 'finalize-step-simplify' in result['message']
-        assert 'commit-push' in result['message']
-        assert _manifest.read_manifest(plan_id) is None
+        assert result['status'] == 'success', f'expected success, got {result!r}'
+        manifest = _manifest.read_manifest(plan_id)
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # The offending may-mutate step is reordered after commit-push.
+        assert steps.index('finalize-step-simplify') > steps.index('commit-push')
 
 
 # ===========================================================================
