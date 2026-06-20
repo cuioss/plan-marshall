@@ -196,8 +196,17 @@ class TestDriftDetection:
 
 
 class TestExpectedInvariants:
-    def test_worktree_plan_expects_worktree_invariants(self, tmp_path, monkeypatch):
-        """When metadata.worktree_path is set, worktree invariants are expected."""
+    def test_worktree_plan_omits_worktree_invariants_in_unphased_default(self, tmp_path, monkeypatch):
+        """The top-level ``expected_invariants`` (un-phased default) omits worktree invariants.
+
+        Even when ``metadata.worktree_path`` is set, the top-level
+        ``expected_invariants`` TOON field is computed without a phase
+        (``expected_invariants(metadata)`` with ``phase is None``). Under the
+        ADR-002 gate, Signal 2 only fires at ``phase >= 5-execute``, so the
+        un-phased default never carries worktree invariants — they surface in
+        the per-phase expectation instead (see
+        ``TestWorktreeInvariantGating`` and the integration test below).
+        """
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         status_path = plan_dir / 'status.json'
         status = json.loads(status_path.read_text())
@@ -208,8 +217,10 @@ class TestExpectedInvariants:
         assert result.success, result.stderr
         data = result.toon()
         expected = data['expected_invariants']
-        assert 'worktree_sha' in expected
-        assert 'worktree_dirty' in expected
+        assert 'worktree_sha' not in expected, expected
+        assert 'worktree_dirty' not in expected, expected
+        # Core invariants are always present in the un-phased default.
+        assert 'main_sha' in expected
 
     def test_non_worktree_plan_omits_worktree_invariants(self, tmp_path, monkeypatch):
         """Without worktree_path, worktree_* invariants are not in expected."""
@@ -316,34 +327,41 @@ class TestConditionalPhaseStepsExpectation:
 
 
 class TestWorktreeInvariantGating:
-    """Pin the B-strip contract for worktree-state invariants in
-    ``expected_invariants``.
+    """Pin the contract for worktree-state invariants in ``expected_invariants``.
 
-    Under the no-sentinel model the worktree-state invariants
-    (``worktree_sha`` / ``worktree_dirty``) are expected whenever the plan is
-    routed through a worktree — signalled either by a non-empty worktree value
-    on the captured row (Signal 1) or by ``use_worktree`` / ``worktree_path``
-    in the plan's current metadata (Signal 2). There is no deferred-
-    materialization window that exempts the planning-phase boundaries.
+    The worktree-state invariants (``worktree_sha`` / ``worktree_dirty``) are
+    expected when the plan is routed through a worktree, signalled one of two
+    ways:
+
+    - **Signal 1** (unconditional): a non-empty worktree value on the captured
+      row proves the worktree was materialized when the phase captured —
+      independent of the phase ordinal.
+    - **Signal 2** (phase-gated): ``use_worktree`` / ``worktree_path`` in the
+      plan's current metadata. Under the ADR-002 deferred-materialization model
+      the worktree is not created until phase-5-execute, so Signal 2 is gated
+      on ``phase >= 5-execute``. For phases 1-4 (and the un-phased default
+      where ``phase is None``) Signal 2 is suppressed: the worktree is not yet
+      materialized, so an empty captured worktree value is expected — not a
+      missing invariant.
     """
 
-    def test_expected_invariants_includes_worktree_when_metadata_worktree_routed(self):
-        """Signal 2: worktree-routed metadata → worktree invariants at any phase."""
+    def test_expected_invariants_includes_worktree_when_metadata_worktree_routed_at_execute(self):
+        """Signal 2 at phase >= 5-execute: worktree-routed metadata → worktree invariants."""
         metadata = {'worktree_path': '/some/worktree'}
         phase_values = {'main_sha': 'abc123', 'worktree_sha': None, 'worktree_dirty': ''}
 
-        expected = _summarize.expected_invariants(metadata, '3-outline', phase_values)
+        expected = _summarize.expected_invariants(metadata, '5-execute', phase_values)
 
         assert 'worktree_sha' in expected
         assert 'worktree_dirty' in expected
         assert 'main_sha' in expected
 
-    def test_expected_invariants_includes_worktree_on_use_worktree_flag(self):
-        """Signal 2 fires on ``use_worktree`` alone (no worktree_path yet)."""
+    def test_expected_invariants_includes_worktree_on_use_worktree_flag_at_execute(self):
+        """Signal 2 fires on ``use_worktree`` alone (no worktree_path yet) at phase >= 5-execute."""
         metadata = {'use_worktree': True}
         phase_values = {'main_sha': 'abc123'}
 
-        expected = _summarize.expected_invariants(metadata, '2-refine', phase_values)
+        expected = _summarize.expected_invariants(metadata, '5-execute', phase_values)
 
         assert 'worktree_sha' in expected
         assert 'worktree_dirty' in expected
@@ -368,6 +386,68 @@ class TestWorktreeInvariantGating:
         assert 'worktree_sha' not in expected
         assert 'worktree_dirty' not in expected
         assert 'main_sha' in expected
+
+    def test_signal2_suppressed_for_pre_execute_phases(self):
+        """Regression: Signal 2 is gated off for phases 1-4.
+
+        A worktree-routed plan (``worktree_path`` / ``use_worktree`` set) whose
+        captured row carries no worktree value must NOT expect worktree
+        invariants while the phase is below ``5-execute`` — the worktree is not
+        yet materialized under ADR-002, so an empty captured value is expected,
+        not a missing invariant. Exercises every pre-5 planning phase to pin
+        the gate boundary.
+        """
+        metadata = {'worktree_path': '/some/worktree', 'use_worktree': True}
+        phase_values = {'main_sha': 'abc123', 'worktree_sha': '', 'worktree_dirty': ''}
+
+        for phase in ('1-init', '2-refine', '3-outline', '4-plan'):
+            expected = _summarize.expected_invariants(metadata, phase, phase_values)
+            assert 'worktree_sha' not in expected, (
+                f'Signal 2 must be suppressed for {phase} (< 5-execute), got {expected}'
+            )
+            assert 'worktree_dirty' not in expected, (
+                f'Signal 2 must be suppressed for {phase} (< 5-execute), got {expected}'
+            )
+            # Core invariants are still expected regardless of the gate.
+            assert 'main_sha' in expected
+
+    def test_signal2_suppressed_for_unphased_default(self):
+        """Regression: Signal 2 is gated off for the un-phased default.
+
+        The no-handshakes fallback path calls ``expected_invariants`` with
+        ``phase is None``. ``_phase_at_or_after_execute(None)`` is ``False``, so
+        a worktree-routed plan must not expect worktree invariants in the
+        un-phased default set — otherwise the top-level ``expected_invariants``
+        TOON field would carry a guaranteed false-positive.
+        """
+        metadata = {'worktree_path': '/some/worktree', 'use_worktree': True}
+
+        expected = _summarize.expected_invariants(metadata)
+
+        assert 'worktree_sha' not in expected, expected
+        assert 'worktree_dirty' not in expected, expected
+        assert 'main_sha' in expected
+
+    def test_signal2_emitted_for_phase_at_or_after_execute(self):
+        """Regression: Signal 2 fires for every phase >= 5-execute.
+
+        Counterpart to the suppression tests above — a worktree-routed plan
+        whose captured row carries no worktree value DOES expect worktree
+        invariants once the phase ordinal reaches 5, because the worktree is
+        materialized at phase-5-execute and an empty captured value is then a
+        real capture gap.
+        """
+        metadata = {'worktree_path': '/some/worktree', 'use_worktree': True}
+        phase_values = {'main_sha': 'abc123', 'worktree_sha': '', 'worktree_dirty': ''}
+
+        for phase in ('5-execute', '6-finalize'):
+            expected = _summarize.expected_invariants(metadata, phase, phase_values)
+            assert 'worktree_sha' in expected, (
+                f'Signal 2 must fire for {phase} (>= 5-execute), got {expected}'
+            )
+            assert 'worktree_dirty' in expected, (
+                f'Signal 2 must fire for {phase} (>= 5-execute), got {expected}'
+            )
 
     def test_run_includes_worktree_invariants_for_worktree_routed_plan(
         self, tmp_path, monkeypatch
