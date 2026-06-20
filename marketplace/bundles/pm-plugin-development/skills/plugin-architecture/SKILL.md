@@ -89,6 +89,7 @@ Load references progressively based on current task. **Never load all references
 | 12 | Minimal Wrapper Pattern | `references/minimal-wrapper-pattern.md` | Thin orchestrators (<150 lines), agent-to-skill delegation, fat agent migration |
 | 13 | User-Facing Output | `references/user-facing-output.md` | Output filtering, status messages, anti-patterns (no step numbers, no diffs) |
 | 14 | AskUserQuestion Patterns | `references/askuserquestion-patterns.md` | Interactive workflows, free-text input, multi-select, UI constraints |
+| 15 | Domain-Knowledge Authoring | `references/domain-knowledge-authoring.md` | Authoring new domain-knowledge content — security explanations, "why-WRONG" examples, best-practice rules |
 
 ### Examples
 
@@ -117,6 +118,7 @@ Load references progressively based on current task. **Never load all references
 | Designing thin wrappers | minimal-wrapper-pattern.md |
 | Designing user output | user-facing-output.md |
 | Designing user interactions | askuserquestion-patterns.md |
+| Authoring domain-knowledge content | domain-knowledge-authoring.md |
 
 ### Step 2: Apply and Validate
 
