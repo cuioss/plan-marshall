@@ -53,9 +53,16 @@ See `marketplace/bundles/plan-marshall/skills/platform-runtime/standards/no-op-p
 
 - Claude Code format in `marketplace/bundles/` is the only editable source
 - Target outputs (`.opencode/`, `.cursor-plugin/`) are **generated artifacts**
-- Body text is emitted **verbatim except for the bounded mechanical line-level transforms documented in `marketplace/targets/opencode/transforms.md`** (today: `Skill:` directive rewrite + `/skill-name` slash rewrite)
-- Frontmatter, manifests, and those bounded body transforms are the only build-time rewrites
-- Adding a new body transform is a deliberate spec change in `transforms.md`, not a silent emitter behaviour
+- Body text is emitted **verbatim except for bounded mechanical line-level transforms**.
+  Each target declares its transform rules as **data** (its `mapping.json` / `transforms`
+  config); a **shared engine** applies them. The Claude target declares no body transforms,
+  so its output is verbatim.
+- The set of Claude source idioms a target may rewrite (tool names like `AskUserQuestion`,
+  `Task:`; the `Skill:` directive; `/slash` commands) is a **registered vocabulary**. A
+  target maps the subset it renames; the build **fails closed** on any source idiom in that
+  vocabulary that a non-verbatim target leaves unmapped (cf. `UnmappedToolError`).
+- Frontmatter, manifests, and those data-driven body transforms are the only build-time rewrites
+- Adding a transform rule is a data change in a target's config, not new emitter code
 
 ---
 
@@ -72,7 +79,40 @@ Not in the body text itself.
 
 ---
 
-## 6. Terminology
+## 6. Open to Further Targets
+
+The design is built for *N* targets (Claude Code, OpenCode, and future adapters — Cursor,
+Windsurf, …), not a Claude-vs-OpenCode binary. The governing test:
+
+> **Adding a target costs: implement two contracts + a data file, register once, and edit
+> zero general skill bodies, shared runtime scripts, or other targets.**
+
+The two contracts are `Runtime` (runtime behaviour + layout resolution) and `TargetBase`
+(build emission). Both are registry-dispatched; the data file is the target's
+`mapping.json` / transform config.
+
+Anti-patterns (a new target must never require these):
+
+- **Target enumeration in core or contracts** — no `if target == "claude"/"opencode"` in a
+  general skill, shared script, or an ABC docstring. The ABC states *intent* + the no-op
+  fallback; per-target behaviour lives in the concrete `*_runtime` / `*Target` class.
+- **Target-shaped interfaces** — an operation's signature must not encode one target's model
+  (e.g. an "install hook" op naming another platform's hook events). Operations are
+  target-opaque; specifics live behind the implementation.
+- **Per-target code where data suffices** — tool/model/directive mappings and layout roots
+  are declared as data, applied by shared engines.
+- **Core-owned target tables** — a target declares its own roots/mappings inside its
+  implementation; the core does not maintain a growing per-target table.
+
+A target declines any capability it lacks via the [No-Op Policy](#3-no-op-policy) — it never
+fakes success and never blocks a workflow.
+
+See [07-target-extensibility.md](07-target-extensibility.md) for the seam audit and the
+structural work to reach this bar.
+
+---
+
+## 7. Terminology
 
 | Use | Do Not Use |
 |-----|-----------|
@@ -85,7 +125,7 @@ Not in the body text itself.
 
 ---
 
-## 7. Document Hygiene
+## 8. Document Hygiene
 
 - No version numbers or changelogs in any document
 - No "Status", "Created", "Last updated" metadata

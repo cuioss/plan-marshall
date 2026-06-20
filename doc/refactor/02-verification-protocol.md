@@ -158,6 +158,12 @@ python3 .plan/execute-script.py plan-marshall:execution-context-level-3:executio
 | 2.2c | TOON return | Sub-agent returns structured output that the parent can parse | FAIL — OpenCode subagent returns different format | HUMAN |
 | 2.2d | `level-N` variant resolution | The specific `-level-3` variant is used, not a default | FAIL — effort variants not resolved | HUMAN |
 
+> **Precondition for 2.2d**: the OpenCode target does not yet emit `execution-context-level-N`
+> variants (no OpenCode variant emitter exists). Until the variant-emitter task in
+> [06-execution-context-cross-target.md](06-execution-context-cross-target.md) lands, 2.2d
+> necessarily fails — the canonical agent is dispatched regardless of level. Build that
+> emitter first, then run 2.2d.
+
 **Remediation if FAIL**: Document the divergence in the runtime contract. Consider a script-based fallback where the orchestrator runs the workflow inline instead of dispatching.
 
 ### 2.3 `skill`-tool loading
@@ -311,9 +317,9 @@ python3 .plan/execute-script.py \
 
 ### 4.1 Generation check in CI
 
-A workflow file `.github/workflows/opencode-generate-check.yml` exists (created 2026-06-19).
-It runs on every PR touching `marketplace/bundles/**` or `marketplace/targets/**` and fails
-on any generator exit code != 0.
+A workflow file `.github/workflows/opencode-generate-check.yml` exists. It runs on every PR
+touching `marketplace/bundles/**` or `marketplace/targets/**` and fails on any generator
+exit code != 0.
 
 ```yaml
 name: OpenCode Generation Gate
@@ -346,8 +352,6 @@ jobs:
 | 4.1c | PR with unmapped agent tool | CI fails with clear error message | FAIL — UnmappedToolError not surfaced |
 | 4.1d | PR with `user-invocable: true` skill missing `description` | CI fails | FAIL — validation gap |
 | 4.1e | Workflow only triggers on relevant paths | Changing an unrelated file does not trigger | FAIL — too broad trigger |
-
-**Note**: The existing `claude-distribute.yml` line 60 claim about a "Claude drift/equality gate" is inaccurate — that workflow only regenerates-before-publish (no equality check). This OpenCode gate should be a proper generation-validity gate that fails CI on emitter errors.
 
 ---
 

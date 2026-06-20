@@ -3,58 +3,40 @@
 ## Objective
 
 Publish the OpenCode artifact tree the same way the Claude tree is already published —
-through the existing target-parametrized CI matrix. This workstream is small **because
-the distribution design already anticipated it.**
+through the existing target-parametrized CI matrix. This workstream is small because the
+distribution design already anticipated it.
 
-## Current state
+## Already in place (foundation)
 
-`.github/workflows/claude-distribute.yml` publishes via a `strategy.matrix` where each
-entry defines a target's branch (`dist-{name}`), dist-tag prefix (`{name}/`), publish
-directory (`target/{name}`), and generator flag (`--target {name}`). The matrix has one
-entry today (`claude`). `doc/developer/distribution.adoc` already documents that adding a
-target is "a config-only change — one line appended to the matrix list" producing a
-`dist-opencode` branch plus `opencode/v*` dist tags from the same source `v{x.y.z}` tag.
+- The `opencode` entry exists in the `claude-distribute.yml` `strategy.matrix`
+  (`target_name: opencode`, `--target opencode`, publish dir `target/opencode`, branch
+  `dist-opencode`, tag prefix `opencode/`). A push to `main` updates the `dist-opencode`
+  snapshot branch; a `v{x.y.z}` source tag produces an immutable `opencode/v{x.y.z}` dist
+  tag. Versioning stays unified — one source tag drives every target.
+- A generation gate (`.github/workflows/opencode-generate-check.yml`) runs
+  `generate.py --target opencode` on every PR touching `marketplace/bundles/**` or
+  `marketplace/targets/**` and fails on any emitter error, so a broken emit never publishes.
 
-**The retired plan's distribution design (move `marketplace.json` to the repo root,
-GitHub Pages hosting, release tarballs, `opencode-marketplace install` from a Pages URL)
-is obsolete.** Do not implement it.
+The retired plan's distribution design (move `marketplace.json` to the repo root, GitHub
+Pages hosting, release tarballs, `opencode-marketplace install` from a Pages URL) is
+obsolete — do not implement it.
 
-## Tasks
+## Open work
 
-1. **Add the `opencode` matrix entry** to the distribute workflow: `target_name:
-   opencode`, `generator_target_flag: opencode`, publish dir `target/opencode`, branch
-   `dist-opencode`, tag prefix `opencode/`. Confirm the generated tree's root holds
-   whatever manifest an OpenCode client's "add marketplace" path expects.
-   **Status: DONE** — entry added to `claude-distribute.yml` strategy.matrix (2026-06-19).
-
-2. **Confirm the OpenCode consumption path** against the published `dist-opencode` ref.
-   Determine, by testing on a live OpenCode client, which install path actually works
-   (git-ref add, `opencode-marketplace install <ref>`, or a deploy into
-   `~/.config/opencode/`), and pin that as the documented primary path. The original
-   plan's assumptions about `opencode-marketplace` accepting static URLs are unverified —
-   validate before documenting.
-   **Status: OPEN** — requires a PR merge and live OpenCode test.
-
-3. **Gate the publish on the OpenCode generation check** from
-   [02](02-validate-opencode-runtime.md) so a broken emitter never publishes a
-   `dist-opencode` snapshot.
-   **Status: DONE** — `opencode-generate-check.yml` created (2026-06-19). Runs on every
-   PR touching marketplace/bundles/ or marketplace/targets/.
-
-4. **Versioning stays unified.** The single source `v{x.y.z}` tag drives every target;
-   the OpenCode dist tag is `opencode/v{x.y.z}`. No per-bundle or per-target version
-   channel.
-   **Status: No change needed** — the matrix entry naturally follows the existing pattern.
+**Confirm the OpenCode consumption path on a live client.** It is not yet verified which
+install path against the published `dist-opencode` ref actually works — git-ref add,
+`opencode-marketplace install <ref>`, or a deploy into `~/.config/opencode/`. The old
+plan's assumption that `opencode-marketplace` accepts static URLs is unverified. Test on a
+live OpenCode client, then pin and document the working path as the primary one (in
+[05](05-opencode-documentation.md)). Confirm the generated tree's root holds whatever
+manifest the chosen "add marketplace" path expects.
 
 ## Acceptance
 
-- A push to `main` updates a `dist-opencode` snapshot branch; a `v*` tag creates an
-  immutable `opencode/v*` dist tag.
-- The documented OpenCode install path is verified end-to-end on a live client.
-- A broken OpenCode emit fails CI before publish.
+- The documented OpenCode install path is verified end-to-end on a live client and recorded
+  in [05](05-opencode-documentation.md).
 
 ## Dependencies
 
-- [02 — Validate the OpenCode runtime](02-validate-opencode-runtime.md) — do not publish
-  an installable artifact for a runtime that has not been proven.
-- The Claude distribution pipeline and matrix already exist; this extends them.
+- [02 — Validate the OpenCode runtime](02-validate-opencode-runtime.md) — do not pin an
+  installable path for a runtime that has not been proven.
