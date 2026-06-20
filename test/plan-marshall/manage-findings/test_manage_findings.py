@@ -61,6 +61,8 @@ def _add_ns(
     module=None,
     rule=None,
     severity=None,
+    author=None,
+    kind=None,
 ):
     return Namespace(
         plan_id=plan_id,
@@ -73,10 +75,21 @@ def _add_ns(
         module=module,
         rule=rule,
         severity=severity,
+        author=author,
+        kind=kind,
     )
 
 
-def _query_ns(plan_id='test-plan', type=None, resolution=None, promoted=None, file_pattern=None, include_qgate=False):
+def _query_ns(
+    plan_id='test-plan',
+    type=None,
+    resolution=None,
+    promoted=None,
+    file_pattern=None,
+    include_qgate=False,
+    author=None,
+    kind=None,
+):
     return Namespace(
         plan_id=plan_id,
         type=type,
@@ -84,6 +97,8 @@ def _query_ns(plan_id='test-plan', type=None, resolution=None, promoted=None, fi
         promoted=promoted,
         file_pattern=file_pattern,
         include_qgate=include_qgate,
+        author=author,
+        kind=kind,
     )
 
 
@@ -235,6 +250,109 @@ def test_finding_query_by_resolution(plan_context):
 
     result = cmd_query(_query_ns(resolution='fixed'))
     assert result['filtered_count'] == 1
+
+
+# =============================================================================
+# Test: pr-comment author / kind first-class fields (CLI layer)
+# =============================================================================
+
+
+def test_finding_add_pr_comment_with_author_and_kind(plan_context):
+    """cmd_add forwards author and kind onto a pr-comment finding."""
+    result = cmd_add(
+        _add_ns(
+            type='pr-comment',
+            title='Reviewer nit',
+            detail='Rename for clarity',
+            author='octocat',
+            kind='inline',
+        )
+    )
+    assert result['status'] == 'success'
+    assert result['type'] == 'pr-comment'
+
+    query = cmd_query(_query_ns(type='pr-comment'))
+    assert query['filtered_count'] == 1
+    record = query['findings'][0]
+    assert record['author'] == 'octocat'
+    assert record['kind'] == 'inline'
+
+
+def test_finding_query_by_author(plan_context):
+    """cmd_query filters pr-comment findings by author."""
+    cmd_add(_add_ns(type='pr-comment', title='C1', detail='d', author='alice', kind='inline'))
+    cmd_add(_add_ns(type='pr-comment', title='C2', detail='d', author='bob', kind='inline'))
+
+    result = cmd_query(_query_ns(author='alice'))
+    assert result['filtered_count'] == 1
+    assert result['findings'][0]['title'] == 'C1'
+
+
+def test_finding_query_by_kind(plan_context):
+    """cmd_query filters pr-comment findings by kind."""
+    cmd_add(_add_ns(type='pr-comment', title='C1', detail='d', author='alice', kind='inline'))
+    cmd_add(_add_ns(type='pr-comment', title='C2', detail='d', author='bob', kind='review_body'))
+
+    result = cmd_query(_query_ns(kind='review_body'))
+    assert result['filtered_count'] == 1
+    assert result['findings'][0]['title'] == 'C2'
+
+
+def test_finding_add_without_author_kind_still_succeeds(plan_context):
+    """Existing add shape (no author/kind) keeps working and omits the keys."""
+    result = cmd_add(_add_ns(type='bug', title='Plain bug', detail='d'))
+    assert result['status'] == 'success'
+
+    query = cmd_query(_query_ns(type='bug'))
+    record = query['findings'][0]
+    assert 'author' not in record
+    assert 'kind' not in record
+
+
+def test_cli_pr_comment_author_kind_roundtrip(plan_context):
+    """CLI plumbing: add a pr-comment with --author/--kind and read them back."""
+    pid = 'cli-prc-rt'
+    add_result = run_script(
+        SCRIPT_PATH,
+        'add',
+        '--plan-id',
+        pid,
+        '--type',
+        'pr-comment',
+        '--title',
+        'CLI reviewer comment',
+        '--detail',
+        'd',
+        '--author',
+        'octocat',
+        '--kind',
+        'inline',
+    )
+    assert add_result.success, f'Script failed: {add_result.stderr}'
+
+    list_result = run_script(SCRIPT_PATH, 'list', '--plan-id', pid, '--author', 'octocat', '--kind', 'inline')
+    assert list_result.success, f'Script failed: {list_result.stderr}'
+    data = parse_toon(list_result.stdout)
+    assert data['filtered_count'] == 1
+
+
+def test_cli_pr_comment_invalid_kind_rejected(plan_context):
+    """CLI plumbing: --kind outside the allowed set is rejected by argparse."""
+    result = run_script(
+        SCRIPT_PATH,
+        'add',
+        '--plan-id',
+        'cli-prc-badkind',
+        '--type',
+        'pr-comment',
+        '--title',
+        'Bad kind',
+        '--detail',
+        'd',
+        '--kind',
+        'not-a-kind',
+    )
+    assert not result.success
 
 
 # =============================================================================

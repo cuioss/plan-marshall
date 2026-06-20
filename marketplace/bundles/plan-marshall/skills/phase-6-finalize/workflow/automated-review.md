@@ -72,7 +72,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 ### Producer: stage PR comments as findings (entry-point)
 
-Call the producer-side comments-stage subcommand once. It fetches PR review comments, applies pre-filters (resolved threads, plan author's own replies, etc.), and writes one `pr-comment` finding per surviving comment into the per-plan findings store.
+Call the producer-side comments-stage subcommand once. It fetches PR review comments, applies pre-filters (already-resolved threads, obvious text noise, and cross-iteration duplicate comments), and writes one `pr-comment` finding per surviving comment into the per-plan findings store.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
