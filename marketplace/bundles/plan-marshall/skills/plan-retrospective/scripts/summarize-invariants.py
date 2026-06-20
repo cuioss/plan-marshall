@@ -234,7 +234,6 @@ def expected_invariants(
     if (
         not include_worktree
         and _phase_at_or_after_execute(phase)
-        and isinstance(metadata, dict)
         and (metadata.get('worktree_path') or metadata.get('use_worktree'))
     ):
         # Signal 2: the plan is worktree-routed AND the phase is at or after
