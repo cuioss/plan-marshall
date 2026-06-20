@@ -166,9 +166,9 @@ Tasks use sequential numbering with zero-padded format:
 ```
 pending ──► in_progress ──► done
    │             │
-   ├──────► blocked ◄──────┤
+   ├──────► blocked
    │             │
-   └──────► infeasible ◄───┘
+   └─────────────┴──► infeasible
 ```
 
 `infeasible` has incoming edges from both `pending` (pre-work discovery — the
