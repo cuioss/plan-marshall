@@ -1092,7 +1092,14 @@ def cmd_boundary_status(args: argparse.Namespace) -> dict:
     if guard_error is not None:
         return guard_error
 
-    data = read_metrics_raw(plan_id)
+    try:
+        data = read_metrics_raw(plan_id)
+    except OSError as exc:
+        return {
+            'status': 'error',
+            'error': 'read_failed',
+            'message': f'Failed to read metrics file: {exc}',
+        }
     phases = data.get('phases', {})
 
     prev_data = phases.get(prev_phase) if prev_phase is not None else None
