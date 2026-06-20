@@ -642,6 +642,22 @@ BUILD_SYSTEM_DEFAULTS = {
 # operator-visible and editable directly in marshal.json.
 DEFAULT_BUILD_QUEUE = {'max_slots': 5, 'max_retries': 10, 'upper_limit_seconds': 600}
 
+# Per-build-system wrapper-policy defaults. Each block lives under the top-level
+# `build` block (peer to `build.queue` / `build.map`) because wrapper policy is a
+# project-wide, per-build-system resource. The value is the operator escape valve
+# consumed by `_build_execute_factory._read_require_wrapper_override`: a consumer
+# repo genuinely lacking a checked-in wrapper sets `build.{tool}.require_wrapper`
+# to false WITHOUT editing marketplace code. Defaults match the per-build-system
+# static `ExecuteConfig.require_wrapper` values — True for maven/gradle/pyproject
+# (the wrapper is required, no silent system-binary fallback), False for npm
+# (no wrapper concept).
+DEFAULT_BUILD_REQUIRE_WRAPPER = {
+    'maven': {'require_wrapper': True},
+    'gradle': {'require_wrapper': True},
+    'pyproject': {'require_wrapper': True},
+    'npm': {'require_wrapper': False},
+}
+
 
 def get_default_config() -> dict:
     """Get complete default marshal.json configuration.
@@ -680,7 +696,10 @@ def get_default_config() -> dict:
         'providers': [],
         'project': copy.deepcopy(DEFAULT_PROJECT),
         'skill_domains': {'system': system_domain},
-        'build': {'queue': copy.deepcopy(DEFAULT_BUILD_QUEUE)},
+        'build': {
+            'queue': copy.deepcopy(DEFAULT_BUILD_QUEUE),
+            **copy.deepcopy(DEFAULT_BUILD_REQUIRE_WRAPPER),
+        },
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
         'plan': {
             # Plan-wide effort fallback (string at plan.effort). Resolves a

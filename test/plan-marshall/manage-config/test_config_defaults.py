@@ -1479,6 +1479,21 @@ def test_get_default_config_surfaces_build_queue_upper_limit_seconds_default_600
     assert config['build']['queue'].get('upper_limit_seconds') == 600
 
 
+def test_default_config_seeds_build_require_wrapper():
+    """get_default_config() must seed build.{tool}.require_wrapper with the
+    documented per-system defaults (true for maven/gradle/pyproject, false for
+    npm), peer to the build.queue block (no regression of that peer block)."""
+    config = _config_defaults_mod.get_default_config()
+    build = config.get('build', {})
+
+    assert build.get('maven', {}).get('require_wrapper') is True
+    assert build.get('gradle', {}).get('require_wrapper') is True
+    assert build.get('pyproject', {}).get('require_wrapper') is True
+    assert build.get('npm', {}).get('require_wrapper') is False
+    # The peer build.queue block is still present (additive seeding).
+    assert 'queue' in build
+
+
 def test_marshal_build_queue_max_slots_override_wins(plan_context, monkeypatch):
     """An explicit marshal.json build.queue.max_slots overrides the default of 5.
 

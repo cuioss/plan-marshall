@@ -8,7 +8,7 @@ implements: plan-marshall:extension-api/standards/ext-point-build
 
 # Build Gradle
 
-Gradle build execution with output parsing, module discovery, and wrapper detection.
+Gradle build execution with output parsing, module discovery, and wrapper detection. The project wrapper (`gradlew`) is **required by default** (`build.gradle.require_wrapper`, default `true`): a build with no checked-in wrapper errors early instead of falling through to a system `gradle`. See [`build-api-reference.md`](../extension-api/standards/build-api-reference.md) § Wrapper Detection for the detection table and [`manage-config` SKILL.md](../manage-config/SKILL.md) § Build Wrapper-Policy Settings for the `build.gradle.require_wrapper=false` escape valve.
 
 ## Enforcement
 

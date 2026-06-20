@@ -620,6 +620,19 @@ The `build.queue` block lives under the top-level `build` block in marshal.json 
 
 Edit both keys directly in marshal.json — they are operator-visible JSON integers at the top level.
 
+### Build Wrapper-Policy Settings
+
+The `build.{maven|gradle|pyproject|npm}.require_wrapper` knob lives under the top-level `build` block (peer to `build.queue` / `build.map`). It is read at the build invocation boundary by the shared factory's `_resolve_wrapper` gate. Seeded into a fresh marshal.json by `init` and back-filled into existing projects by `sync-defaults`.
+
+| Build system | Default | Meaning |
+|--------------|---------|---------|
+| `maven` | `true` | A Maven build with no checked-in `mvnw` errors early (structured `status: error`) instead of silently falling through to a system `mvn` that diverges from CI. |
+| `gradle` | `true` | Same gate for `gradlew` — no silent system-`gradle` fallback. |
+| `pyproject` | `true` | The project wrapper (`pw`/`pw.bat`) is required; a missing wrapper is a hard error. |
+| `npm` | `false` | npm has no wrapper concept, so the gate is N-A and stays off. |
+
+Set `build.{tool}.require_wrapper` to `false` as the escape valve for a repo that genuinely lacks a checked-in wrapper — this is the operator-visible JSON bool a consumer repo edits directly in marshal.json, WITHOUT editing marketplace code.
+
 ---
 
 ## Standard Domains

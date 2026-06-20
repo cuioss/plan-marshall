@@ -1294,6 +1294,83 @@ def test_plan_marshall_no_nested_gradle_when_maven_at_same_path():
         assert nested == [], f'co-located build.gradle at a Maven path must not be re-added, got {nested}'
 
 
+def test_plan_marshall_nested_gradle_discovered_at_non_maven_path(monkeypatch):
+    """Binary-present/descriptor-present positive branch: a build.gradle at a
+    non-Maven, non-gradle module path IS appended as a nested module.
+
+    This is the complement of test_plan_marshall_no_nested_gradle_when_maven_at_same_path
+    (the suppress branch): when the co-located module is NOT Maven and NOT already
+    Gradle, the nested-gradle arm must add the discovered Gradle descriptor.
+
+    Gradle metadata discovery (``discover_gradle_modules``) is stubbed to return a
+    fully-formed module — the binary-present path — so the test asserts the
+    nested-arm ADD branch deterministically without depending on a real gradle
+    binary (and without coupling to the require_wrapper gate, which would make a
+    wrapper-less temp dir produce a paths-less error structure).
+    """
+    ext = load_extension('plan-marshall')
+    # The nested arm does a function-local `from _gradle_cmd_discover import
+    # discover_gradle_modules`, so patch the source module attribute (the binary-
+    # present simulation) — the local import then resolves the stubbed callable.
+    import _gradle_cmd_discover
+
+    monkeypatch.setattr(
+        _gradle_cmd_discover,
+        'discover_gradle_modules',
+        lambda _project_root: [
+            {'name': 'jvm-tooling', 'build_systems': ['gradle'], 'paths': {'module': 'jvm-tooling'}}
+        ],
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        sub = root / 'jvm-tooling'
+        sub.mkdir()
+        (sub / 'build.gradle').write_text('apply plugin: "java"')
+
+        # An existing non-Maven, non-gradle module occupies the path (e.g. a
+        # python-tooling module), so the path is in non_gradle_paths but NOT in
+        # gradle_paths or maven_paths.
+        existing_modules = [
+            {
+                'name': 'jvm-tooling',
+                'build_systems': ['python'],
+                'paths': {'module': 'jvm-tooling'},
+            },
+        ]
+
+        nested = ext._discover_nested_descriptors(str(root), existing_modules)
+
+        assert len(nested) == 1, f'a build.gradle at a non-Maven path must be appended, got {nested}'
+        assert nested[0]['build_systems'] == ['gradle']
+        assert nested[0]['paths']['module'] == 'jvm-tooling'
+
+
+def test_plan_marshall_no_nested_gradle_when_already_gradle():
+    """Binary-absent suppression branch: a build.gradle at a path already in
+    gradle_paths is skipped (the module is already a Gradle module)."""
+    ext = load_extension('plan-marshall')
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        sub = root / 'jvm-app'
+        sub.mkdir()
+        (sub / 'build.gradle').write_text('apply plugin: "java"')
+
+        # The path is already a discovered Gradle module — the nested arm must
+        # not re-add it (mod_path in gradle_paths short-circuits).
+        existing_modules = [
+            {
+                'name': 'jvm-app',
+                'build_systems': ['gradle'],
+                'paths': {'module': 'jvm-app'},
+            },
+        ]
+
+        nested = ext._discover_nested_descriptors(str(root), existing_modules)
+
+        assert nested == [], f'a build.gradle at an already-Gradle path must not be re-added, got {nested}'
+
+
 # =============================================================================
 # Cross-Bundle Validation Tests
 # =============================================================================
