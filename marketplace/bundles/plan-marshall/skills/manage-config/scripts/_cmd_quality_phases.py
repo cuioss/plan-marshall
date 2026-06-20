@@ -254,6 +254,15 @@ def cmd_phase(args, phase_section: str) -> dict:
 
     elif args.verb == 'set' and phase_section in (SCALAR_PHASES | LIST_STEP_PHASES):
         field = args.field
+        # Guard: the phase's keyed step-map field (`steps` for phase-6-finalize,
+        # `verification_steps` for phase-5-execute) is a structured keyed map, not
+        # a scalar — routing it through `_coerce_value` would string-corrupt the
+        # map. Reject and direct the caller to the keyed-map verbs instead.
+        if phase_section in LIST_STEP_PHASES and field == LIST_STEP_KEYS[phase_section]:
+            return error_exit(
+                f"Field '{field}' is a keyed step-map and cannot be set via "
+                "'set --field'. Use: set-steps, add-step, remove-step, or step set."
+            )
         # per_deliverable_build is a LIST of 'default:verify:{canonical}' step
         # IDs — parse the comma-separated --value into a list (empty string ->
         # empty list, which disables the per-deliverable build) and validate the

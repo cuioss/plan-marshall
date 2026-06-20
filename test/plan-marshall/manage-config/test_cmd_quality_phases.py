@@ -787,6 +787,76 @@ def test_phase_5_execute_set_per_deliverable_build_empty_disables(plan_context):
     assert config['plan']['phase-5-execute']['per_deliverable_build'] == []
 
 
+def test_phase_6_finalize_set_steps_rejected_and_config_unchanged(plan_context):
+    """`set --field steps` on phase-6-finalize is rejected without string-corrupting the keyed map."""
+    create_marshal_json(plan_context.fixture_dir)
+    before = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    before_steps = before['plan']['phase-6-finalize']['steps']
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='set',
+            field='steps',
+            value='default:commit-push',
+        )
+    )
+
+    assert result['status'] == 'error'
+    # Message names the keyed step-map and the correct alternative verbs.
+    assert 'keyed step-map' in result['error']
+    assert 'set-steps' in result['error']
+    assert 'add-step' in result['error']
+    assert 'remove-step' in result['error']
+    assert 'step set' in result['error']
+    # The on-disk keyed map is left exactly as seeded (no string corruption).
+    after = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert after['plan']['phase-6-finalize']['steps'] == before_steps
+    assert isinstance(after['plan']['phase-6-finalize']['steps'], dict)
+
+
+def test_phase_5_execute_set_verification_steps_rejected_and_config_unchanged(plan_context):
+    """`set --field verification_steps` on phase-5-execute is rejected without corrupting the keyed map."""
+    create_marshal_json(plan_context.fixture_dir)
+    before = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    before_steps = before['plan']['phase-5-execute']['verification_steps']
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set',
+            field='verification_steps',
+            value='default:verify:quality-gate',
+        )
+    )
+
+    assert result['status'] == 'error'
+    assert 'keyed step-map' in result['error']
+    assert 'set-steps' in result['error']
+    # The on-disk keyed map is unchanged.
+    after = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert after['plan']['phase-5-execute']['verification_steps'] == before_steps
+    assert isinstance(after['plan']['phase-5-execute']['verification_steps'], dict)
+
+
+def test_phase_5_execute_set_scalar_field_still_succeeds(plan_context):
+    """The keyed-step-map guard must not over-reject a normal scalar `set --field`."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set',
+            field='commit_and_push',
+            value='false',
+        )
+    )
+
+    assert result['status'] == 'success'
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert config['plan']['phase-5-execute']['commit_and_push'] is False
+
+
 def test_phase_5_execute_set_per_deliverable_build_rejects_retired_enum(plan_context):
     """Test plan phase-5-execute set rejects the retired per_deliverable_build enum strings."""
     create_marshal_json(plan_context.fixture_dir)
