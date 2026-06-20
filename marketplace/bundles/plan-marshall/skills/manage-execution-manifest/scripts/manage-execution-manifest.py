@@ -144,6 +144,7 @@ DEFAULT_PHASE_6_STEPS = (
     'archive-plan',
 )
 
+
 def _strip_default_prefix(step: str) -> str:
     """Return the bare step name regardless of the optional ``default:`` prefix."""
     return step[len('default:') :] if step.startswith('default:') else step
@@ -2264,6 +2265,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #      when the live footprint is empty.
     #   4. simplify_inactive — drop finalize-step-simplify when
     #      change_type ∉ {feature, bug_fix, tech_debt} OR affected_files_count == 0.
+    #   5. scope_gated_finalize — drop heavyweight phase-6 review/audit steps by
+    #      scope_estimate; automated-review suppressed ONLY via the explicit
+    #      drop_review_on_scope_gate opt-in.
     # Each pre-filter returns (filtered_candidates, fired_flag); we log a
     # dedicated decision-log line per fired pre-filter in addition to the row
     # log line emitted by _log_decision below.
