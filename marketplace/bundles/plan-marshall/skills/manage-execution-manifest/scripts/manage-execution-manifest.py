@@ -1955,8 +1955,8 @@ def _resolve_may_mutate_worktree_steps() -> frozenset[str]:
     PYTHONPATH cross-skill mechanism rather than re-declaring it, so the two
     sources can never drift. On import failure — a partial environment where
     the ``manage-status`` ``scripts/`` dir is not on ``sys.path`` — degrade to
-    the empty set, which makes :func:`_validate_may_mutate_placement` a no-op
-    (consistent with the composer's "missing data → rule does not fire"
+    the empty set, which makes :func:`_reorder_may_mutate_after_commit_push` a
+    no-op (consistent with the composer's "missing data → rule does not fire"
     convention).
     """
     try:
@@ -1968,8 +1968,10 @@ def _resolve_may_mutate_worktree_steps() -> frozenset[str]:
     return frozenset(MAY_MUTATE_WORKTREE_STEPS)
 
 
-def _validate_may_mutate_placement(phase_6_steps: list[str]) -> str | None:
-    """Compose-time placement check for ``MAY_MUTATE_WORKTREE_STEPS`` ordering.
+def _reorder_may_mutate_after_commit_push(
+    phase_6_steps: list[str],
+) -> tuple[list[str], list[str]]:
+    """Compose-time auto-reorder for ``MAY_MUTATE_WORKTREE_STEPS`` ordering.
 
     Every member of ``MAY_MUTATE_WORKTREE_STEPS`` (``automated-review``,
     ``sonar-roundtrip``, ``finalize-step-simplify``) MUST run *after*
@@ -1978,27 +1980,33 @@ def _validate_may_mutate_placement(phase_6_steps: list[str]) -> str | None:
     ahead of ``commit-push`` runs against that dirty tree, hits the
     ``dirty_worktree_done_refused`` guard in ``mark-step-done``, and emits
     ``loop_back`` instead of ``done`` — forcing an orchestrator commit-first
-    recovery detour. This validator catches such a misordering at compose time
-    rather than at finalize-time loop-back thrash.
+    recovery detour. Rather than rejecting the manifest (which historically
+    pushed recovery onto the orchestrator and led to global ``marshal.json``
+    mutation), this helper deterministically moves each offending MAY_MUTATE
+    step to the first valid position immediately after ``commit-push``,
+    preserving relative order among the moved steps and among the non-moved
+    steps. The corrected ordering is written into the plan-scoped manifest
+    (``execution.toon``) only — ``marshal.json`` is never read or written here.
 
     The MAY_MUTATE set is imported from its single owner
     (:func:`_resolve_may_mutate_worktree_steps`); it is not re-declared here.
     Both the bare step names and their ``default:`` forms are detected so a
-    re-prefixed candidate cannot slip past the check.
+    re-prefixed candidate cannot slip past the reorder.
 
-    Returns ``None`` when:
+    Returns ``(reordered_steps, reordered_names)`` where ``reordered_steps`` is
+    the corrected ordering and ``reordered_names`` is the bare names of the
+    steps that were moved (in their original relative order). The input list is
+    returned unchanged with an empty ``reordered_names`` when:
 
     - ``commit-push`` is absent (a no-push / ``commit_push_omitted`` plan has
       nothing to order against — the carve-out).
-    - Every MAY_MUTATE step appears at an index later than ``commit-push``.
+    - Every MAY_MUTATE step already appears at an index later than
+      ``commit-push``.
     - The MAY_MUTATE set could not be imported (degraded no-op).
-
-    Otherwise returns a diagnostic string naming the first MAY_MUTATE step that
-    precedes ``commit-push`` and both offending indexes.
     """
     may_mutate = _resolve_may_mutate_worktree_steps()
     if not may_mutate:
-        return None
+        return phase_6_steps, []
 
     commit_push_index: int | None = None
     for index, step in enumerate(phase_6_steps):
@@ -2006,18 +2014,32 @@ def _validate_may_mutate_placement(phase_6_steps: list[str]) -> str | None:
             commit_push_index = index
             break
     if commit_push_index is None:
-        return None
+        return phase_6_steps, []
 
+    offending_indices: list[int] = []
+    offending_steps: list[str] = []
+    reordered_names: list[str] = []
     for index, step in enumerate(phase_6_steps):
         if index >= commit_push_index:
             break
         bare = _strip_default_prefix(step)
         if bare in may_mutate:
-            return (
-                f'{bare} at index {index} must follow commit-push at '
-                f'index {commit_push_index}'
-            )
-    return None
+            offending_indices.append(index)
+            offending_steps.append(step)
+            reordered_names.append(bare)
+
+    if not offending_steps:
+        return phase_6_steps, []
+
+    # Remove the offending steps by index (not by value) so that any occurrence
+    # of the same step name after ``commit-push`` is preserved.
+    offending_index_set = set(offending_indices)
+    remaining = [s for i, s in enumerate(phase_6_steps) if i not in offending_index_set]
+    insert_at = next(
+        i for i, s in enumerate(remaining) if s in {'commit-push', 'default:commit-push'}
+    ) + 1
+    reordered = remaining[:insert_at] + offending_steps + remaining[insert_at:]
+    return reordered, reordered_names
 
 
 # =============================================================================
@@ -2632,26 +2654,35 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': placement_diagnostic,
         }
 
-    # Compose-time MAY_MUTATE placement validator (defense-in-depth): reject the
-    # manifest if any ``MAY_MUTATE_WORKTREE_STEPS`` member (``automated-review``,
-    # ``sonar-roundtrip``, ``finalize-step-simplify``) sits at an index earlier
-    # than ``commit-push``. Phase-5 leaves defer commits, so the tree is dirty at
-    # the first finalize step; a MAY_MUTATE step ahead of ``commit-push`` hits the
-    # ``dirty_worktree_done_refused`` guard in ``mark-step-done`` and loop-backs.
-    # The check runs on the final ordering (after the bot-enforcement guards) and
-    # is inert on no-push plans where ``commit-push`` is absent.
-    may_mutate_diagnostic = _validate_may_mutate_placement(final_phase_6_steps)
-    if may_mutate_diagnostic is not None:
-        _emit_decision_log(
-            plan_id,
-            f'(plan-marshall:manage-execution-manifest:compose) may_mutate_placement violation — {may_mutate_diagnostic}',
+    # Compose-time MAY_MUTATE placement auto-reorder: any ``MAY_MUTATE_WORKTREE_STEPS``
+    # member (``automated-review``, ``sonar-roundtrip``, ``finalize-step-simplify``)
+    # that sits at an index earlier than ``commit-push`` is deterministically moved
+    # to the first position after ``commit-push``. Phase-5 leaves defer commits, so
+    # the tree is dirty at the first finalize step; a MAY_MUTATE step ahead of
+    # ``commit-push`` hits the ``dirty_worktree_done_refused`` guard in
+    # ``mark-step-done`` and loop-backs. The reorder corrects the ordering in the
+    # plan-scoped ``execution.toon`` only (``marshal.json`` is never touched), runs
+    # on the final ordering (after the bot-enforcement guards), and is inert on
+    # no-push plans where ``commit-push`` is absent.
+    reordered_phase_6_steps, may_mutate_reordered = _reorder_may_mutate_after_commit_push(
+        final_phase_6_steps
+    )
+    if may_mutate_reordered:
+        body['phase_6']['steps'] = reordered_phase_6_steps
+        final_phase_6_steps = body['phase_6']['steps']
+        new_commit_push_index = next(
+            i
+            for i, s in enumerate(reordered_phase_6_steps)
+            if s in {'commit-push', 'default:commit-push'}
         )
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'may_mutate_placement_violation',
-            'message': may_mutate_diagnostic,
-        }
+        for offset, reordered_name in enumerate(may_mutate_reordered):
+            _emit_decision_log(
+                plan_id,
+                f'(plan-marshall:manage-execution-manifest:compose) may_mutate_placement '
+                f'auto-reorder — moved {reordered_name} to index '
+                f'{new_commit_push_index + 1 + offset} (after commit-push at index '
+                f'{new_commit_push_index})',
+            )
 
     # Snapshot the resolved per-step params for the FINAL selected steps into the
     # manifest body (write-time snapshot — the same model that governs the step
