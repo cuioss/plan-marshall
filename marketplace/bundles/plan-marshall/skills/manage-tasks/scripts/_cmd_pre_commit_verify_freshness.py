@@ -39,6 +39,23 @@ Outcomes:
                      ``phase_5.verification_steps`` list is empty; an absent
                      manifest or a non-empty step list falls through to the
                      ledger scan below.
+- ``fresh`` / ``lint_only`` — a lint-only plan composes a non-empty
+                     ``phase_5.verification_steps`` whose every entry is a
+                     structural-lint (``quality-gate``) step and none is a
+                     build/test step. Structural lint never stamps a
+                     ``kind=build`` ledger entry, so — exactly like a
+                     documentation-only plan — the plan legitimately runs no
+                     build and needs no freshness proof. The gate short-circuits
+                     to ``status: fresh`` with ``reason: lint_only`` BEFORE the
+                     ledger scan. The predicate classifies each step by the
+                     trailing ``:``-segment of its ID (so ``verify:quality-gate``
+                     and ``default:verify:quality-gate`` both resolve to
+                     ``quality-gate``) and fires only when the list is non-empty,
+                     every step resolves to ``quality-gate``, and NO step
+                     resolves to a build/test role (``module-tests``,
+                     ``coverage``, or the bare ``verify`` alias). Any build/test
+                     step in the list disables the exemption and the plan falls
+                     through to the ledger scan below.
 - ``fresh``        — a ``kind=build`` entry with ``exit_code == 0`` and a
                      matching ``worktree_sha`` exists; a successful build has
                      been observed against the current on-disk state, so the
@@ -78,6 +95,14 @@ from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
 # manage-execution-manifest (MANIFEST_FILENAME); duplicated here as a literal
 # to keep this command inside the manage-tasks sys.path island.
 _MANIFEST_FILENAME = 'execution.toon'
+
+# Structural-lint role(s) — the phase-5 verification roles that run static
+# analysis only and never stamp a kind=build ledger entry. Classified by the
+# trailing ':'-segment of a step ID, so 'verify:quality-gate' and
+# 'default:verify:quality-gate' both resolve to 'quality-gate'. A step whose
+# role is NOT in this set (e.g. 'module-tests', 'coverage', or the bare
+# 'verify' alias) is a build/test step and disables the lint-only exemption.
+_LINT_ONLY_ROLES = frozenset({'quality-gate'})
 
 
 def _read_status_metadata(plan_id: str) -> dict:
@@ -128,28 +153,74 @@ def _is_documentation_only(plan_id: str) -> bool:
     ``kind=build`` ledger entry. The freshness gate must exempt such plans
     rather than fail closed on the missing build proof.
 
-    Reads ``execution.toon`` directly via the same plan-dir resolution the
-    command already uses for ``status.json``, parsing TOON to stay inside the
-    manage-tasks sys.path island. Returns ``False`` (no exemption — fall
-    through to the ledger scan) when the manifest is absent, unreadable, or
-    when ``phase_5.verification_steps`` is present and non-empty. Returns
-    ``True`` only when the manifest parses AND its ``phase_5.verification_steps``
-    is an empty list.
+    Reads ``execution.toon`` via ``_read_verification_steps`` (the shared
+    plan-dir resolution + TOON parse inside the manage-tasks sys.path island).
+    Returns ``False`` (no exemption — fall through to the ledger scan) when the
+    manifest is absent, unreadable, or when ``phase_5.verification_steps`` is
+    present and non-empty. Returns ``True`` only when the manifest parses AND
+    its ``phase_5.verification_steps`` is an empty list.
+    """
+    verification_steps = _read_verification_steps(plan_id)
+    return verification_steps is not None and len(verification_steps) == 0
+
+
+def _read_verification_steps(plan_id: str) -> list | None:
+    """Return the plan's ``phase_5.verification_steps`` list, or ``None``.
+
+    Reads ``execution.toon`` directly via the same plan-dir resolution
+    ``_is_documentation_only`` uses, parsing TOON to stay inside the
+    manage-tasks sys.path island. Returns ``None`` (signalling no usable
+    manifest) when the manifest is absent, unreadable, malformed, or when
+    ``phase_5.verification_steps`` is not a list. Returns the list verbatim
+    otherwise (which MAY be empty).
     """
     manifest_path = get_plan_dir(plan_id) / _MANIFEST_FILENAME
     if not manifest_path.is_file():
-        return False
+        return None
     try:
         manifest = parse_toon(manifest_path.read_text(encoding='utf-8'))
-    except Exception:  # noqa: BLE001 — degrade to no-exemption on any parse error
-        return False
+    except Exception:  # noqa: BLE001 — degrade to no-manifest on any parse error
+        return None
     if not isinstance(manifest, dict):
-        return False
+        return None
     phase_5 = manifest.get('phase_5', {})
     if not isinstance(phase_5, dict):
-        return False
+        return None
     verification_steps = phase_5.get('verification_steps', None)
-    return isinstance(verification_steps, list) and len(verification_steps) == 0
+    if not isinstance(verification_steps, list):
+        return None
+    return verification_steps
+
+
+def _is_lint_only(plan_id: str) -> bool:
+    """Return True when every phase-5 step is structural lint and none builds.
+
+    A lint-only plan composes a non-empty ``phase_5.verification_steps`` whose
+    every entry resolves to a structural-lint role (``quality-gate``) and none
+    resolves to a build/test role. Structural lint never stamps a
+    ``kind=build`` ledger entry, so — like a documentation-only plan — such a
+    plan legitimately runs no build and needs no freshness proof.
+
+    Step IDs are role-suffixed and optionally ``default:``-prefixed, e.g.
+    ``verify:quality-gate`` and ``default:verify:quality-gate`` both resolve to
+    ``quality-gate`` via the trailing ``:``-segment. A bare step ID with no
+    ``:`` resolves to itself.
+
+    Mirrors ``_is_documentation_only``'s manifest-read discipline: reads
+    ``execution.toon`` inside the manage-tasks sys.path island and degrades to
+    ``False`` (no exemption — fall through to the ledger scan) on any
+    parse/shape error. Returns ``True`` only when the step list is non-empty,
+    every step's role is in ``_LINT_ONLY_ROLES``, and no step carries a
+    build/test role. Any non-lint step (``module-tests``, ``coverage``, the
+    bare ``verify`` alias) disables the exemption.
+    """
+    verification_steps = _read_verification_steps(plan_id)
+    if not verification_steps:
+        return False
+    return all(
+        isinstance(step, str) and step.rsplit(':', 1)[-1] in _LINT_ONLY_ROLES
+        for step in verification_steps
+    )
 
 
 def cmd_pre_commit_verify_freshness(args) -> dict:
@@ -175,6 +246,25 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
                 'Plan composes an empty phase_5.verification_steps '
                 '(documentation-only); no build step runs, so no freshness '
                 'proof is required. Gate permitted without a ledger scan.'
+            ),
+        }
+
+    # Lint-only short-circuit: a plan whose phase_5.verification_steps are all
+    # structural-lint (quality-gate) steps runs no build and therefore stamps no
+    # kind=build ledger entry — exactly like a documentation-only plan. Exempt it
+    # BEFORE the ledger scan with reason: lint_only. Fires only when the list is
+    # non-empty and every step is a quality-gate step; any build/test step
+    # (module-tests, coverage, the bare verify alias) disables the exemption and
+    # falls through to the ledger scan below.
+    if _is_lint_only(plan_id):
+        return {
+            'status': 'fresh',
+            'plan_id': plan_id,
+            'reason': 'lint_only',
+            'message': (
+                'Plan composes a phase_5.verification_steps of structural lint '
+                '(quality-gate) only; no build step runs, so no freshness proof '
+                'is required. Gate permitted without a ledger scan.'
             ),
         }
 
