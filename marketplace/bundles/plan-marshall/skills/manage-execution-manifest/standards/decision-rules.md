@@ -332,27 +332,27 @@ When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-revie
 
 **The invariant**: every step in the `MAY_MUTATE_WORKTREE_STEPS` set — `automated-review`, `sonar-roundtrip`, and `finalize-step-simplify` — MUST appear at a `phase_6.steps` index *later* than `commit-push`.
 
-**Type**: Composition-time placement validator (defense-in-depth, NOT a pre-filter, NOT a remediation). Runs *after* the seven-row matrix, the `ceremony_finalize_selection` and `execution_tier` transforms, the `bot_enforcement_guard`, AND the `automated-review` placement validator have produced the final `phase_6.steps` ordering — so it sees the ordering exactly as it will be persisted. It is the last placement check before the manifest is written.
+**Type**: Composition-time placement auto-reorder (deterministic, NOT a pre-filter, NOT a rejection). Runs *after* the seven-row matrix, the `ceremony_finalize_selection` and `execution_tier` transforms, the `bot_enforcement_guard`, AND the `automated-review` placement validator have produced the final `phase_6.steps` ordering — so it sees the ordering exactly as it will be persisted. It is the last placement transform before the manifest is written.
 
-**Why the ordering is mandatory**: Phase-5 leaves defer their per-deliverable commits, so the worktree is dirty at the first finalize step. The script-layer dirty-worktree `done` guard in `manage-status mark-step-done` refuses `--outcome done` for any `MAY_MUTATE_WORKTREE_STEPS` member while the resolved worktree is dirty (`git status --porcelain` non-empty), returning `error: dirty_worktree_done_refused`. A MAY_MUTATE step ordered ahead of `commit-push` therefore runs against that dirty tree, hits the refusal, and emits `loop_back` instead of `done` — forcing an orchestrator commit-first recovery detour. This validator catches such a misordering at compose time rather than at finalize-time loop-back thrash.
+**Why the ordering is mandatory**: Phase-5 leaves defer their per-deliverable commits, so the worktree is dirty at the first finalize step. The script-layer dirty-worktree `done` guard in `manage-status mark-step-done` refuses `--outcome done` for any `MAY_MUTATE_WORKTREE_STEPS` member while the resolved worktree is dirty (`git status --porcelain` non-empty), returning `error: dirty_worktree_done_refused`. A MAY_MUTATE step ordered ahead of `commit-push` therefore runs against that dirty tree, hits the refusal, and emits `loop_back` instead of `done` — forcing an orchestrator commit-first recovery detour. The auto-reorder corrects such a misordering at compose time rather than leaving it for finalize-time loop-back thrash.
 
-**Single source of truth for the set**: the `MAY_MUTATE_WORKTREE_STEPS` set is owned by `manage-status/scripts/_cmd_mark_step.py` (the dirty-worktree `done` guard). The composer imports it via the existing PYTHONPATH cross-skill mechanism (`_resolve_may_mutate_worktree_steps`) rather than re-declaring it inline, so the compose-time check and the script-layer refusal can never drift. Both the bare step names and their `default:`-prefixed forms are detected, so a re-prefixed candidate cannot slip past the check.
+**Single source of truth for the set**: the `MAY_MUTATE_WORKTREE_STEPS` set is owned by `manage-status/scripts/_cmd_mark_step.py` (the dirty-worktree `done` guard). The composer imports it via the existing PYTHONPATH cross-skill mechanism (`_resolve_may_mutate_worktree_steps`) rather than re-declaring it inline, so the compose-time reorder and the script-layer refusal can never drift. Both the bare step names and their `default:`-prefixed forms are detected, so a re-prefixed candidate cannot slip past the reorder.
 
-**Carve-outs (validator returns `None`, manifest is accepted)**:
+**Carve-outs (reorder is a no-op, manifest is accepted unchanged)**:
 
 - `commit-push` is absent — a no-push / `commit_push_omitted` plan has nothing to order against.
 - Every MAY_MUTATE step already appears at an index later than `commit-push`.
 - The MAY_MUTATE set could not be imported (degraded environment) — consistent with the composer's "missing data → rule does not fire" convention.
 
-**Effect on violation**: the composer emits the decision-log line below and returns a `may_mutate_placement_violation` error TOON instead of writing the manifest. The diagnostic names the first offending MAY_MUTATE step and both offending indexes.
+**Effect on detection**: when any MAY_MUTATE step precedes `commit-push`, the composer deterministically moves each offending step to the first position after `commit-push` (preserving relative order among the moved steps and among the non-moved steps), emits one decision-log entry per reordered step, and **continues composing successfully** — the manifest IS written, with the corrected ordering. The reorder writes into the plan-scoped `execution.toon` only and never reads or writes `marshal.json`.
 
-**Decision log line** (emitted only on violation):
+**Decision log line** (emitted once per reordered step):
 
 ```
-(plan-marshall:manage-execution-manifest:compose) may_mutate_placement violation — {bare} at index {N} must follow commit-push at index {M}
+(plan-marshall:manage-execution-manifest:compose) may_mutate_placement auto-reorder — moved {bare} to index {N} (after commit-push at index {M})
 ```
 
-When no violation is detected (any carve-out holds, or the ordering is correct), the validator is a no-op and emits no log entry.
+When no reorder is needed (any carve-out holds, or the ordering is already correct), the transform is a no-op and emits no log entry.
 
 ## execution_tier Routing
 
