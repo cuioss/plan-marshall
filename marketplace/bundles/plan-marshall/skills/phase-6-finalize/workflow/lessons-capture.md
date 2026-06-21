@@ -188,8 +188,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ```toon
 status: success | error
-display_detail: "<{N} lessons recorded or `no lessons recorded`>"
+display_detail: "<{N} lessons recorded or `no lessons recorded` or `{N} fact(s) routed to architecture`>"
 lessons_recorded: {N}
+facts_routed: {N}
 ```
 
-The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded verbatim via `mark-step-done --display-detail` above.
+`lessons_recorded` is the count of `manage-lessons add` calls made in this step (Branch A); it is `0` for Branches B, B2, and B3. `facts_routed` is the count of `architecture enrich` calls made in this step (Branch B3); it is `0` when no KNOWLEDGE signals were processed. Downstream consumers MUST check `facts_routed` to distinguish a B3 (all-KNOWLEDGE) outcome from a B/B2 (nothing lesson-worthy) outcome — both set `lessons_recorded: 0` but only B3 sets a non-zero `facts_routed`. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded verbatim via `mark-step-done --display-detail` above.
