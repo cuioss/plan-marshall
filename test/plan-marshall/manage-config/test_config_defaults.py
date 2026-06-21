@@ -87,47 +87,32 @@ _cmd_effort_mod = _load_module(
 
 
 # =============================================================================
-# LIST serial-form helpers
+# Keyed-map serial-form helpers
 # =============================================================================
 #
 # `plan.phase-6-finalize.steps` and `plan.phase-5-execute.verification_steps`
-# serialize on disk as the canonical LIST form: a JSON array whose elements are
-# bare strings (ownerless steps) or single-key objects `{step_id: {params}}`
-# (param-bearing steps). Array order is the execution order. These helpers
-# extract the ordered id list and a single step's nested param object from that
-# list form so the assertions read the same regardless of which element shape a
-# step carries.
+# serialize on disk as the canonical keyed map: an id-keyed object
+# `{step_id: {params}}` (`{}` for a config-less step) whose key insertion order
+# is the execution order. These helpers extract the ordered id list and a
+# single step's nested param object from that keyed map.
 
 
-def _step_ids(steps_list: list) -> list:
-    """Return the ordered step-id list from a LIST-form steps array.
+def _step_ids(steps_map: dict) -> list:
+    """Return the ordered step-id list from a keyed-map steps object.
 
-    A bare-string element contributes its own value; a single-key object
-    contributes its sole key. Array order is preserved (= execution order).
+    Key insertion order is preserved (= execution order).
     """
-    ids = []
-    for element in steps_list:
-        if isinstance(element, str):
-            ids.append(element)
-        elif isinstance(element, dict) and len(element) == 1:
-            ids.append(next(iter(element)))
-    return ids
+    return list(steps_map.keys())
 
 
-def _params_for(steps_list: list, step_id: str):
-    """Return a step's params from a LIST-form steps array.
+def _params_for(steps_map: dict, step_id: str):
+    """Return a step's params from a keyed-map steps object.
 
-    Returns the nested param dict for a param-bearing single-key object, or
-    ``None`` for an ownerless bare-string element. Raises ``KeyError`` when the
-    step id is absent so a wrong-id assertion fails loudly rather than silently
-    returning ``None``.
+    Returns the step's nested param object (``{}`` for a config-less step).
+    Raises ``KeyError`` when the step id is absent so a wrong-id assertion fails
+    loudly rather than silently returning ``None``.
     """
-    for element in steps_list:
-        if isinstance(element, str) and element == step_id:
-            return None
-        if isinstance(element, dict) and len(element) == 1 and step_id in element:
-            return element[step_id]
-    raise KeyError(step_id)
+    return steps_map[step_id]
 
 
 def test_finalize_step_params_constant_is_deleted():
@@ -146,10 +131,10 @@ def test_finalize_step_params_constant_is_deleted():
 def test_default_plan_finalize_includes_final_merge_without_asking():
     """final_merge_without_asking nests under default:branch-cleanup with default False.
 
-    The knob is a step-owned param of `default:branch-cleanup` in the LIST-form
+    The knob is a step-owned param of `default:branch-cleanup` in the keyed-map
     `steps` structure (no longer a flat sibling of `steps`). It is resolved via
     the configurable_contract parser delegation, folded into the step's
-    single-key object by the get_default_config() finalize-step seed.
+    nested param object by the get_default_config() finalize-step seed.
     """
     config = _config_defaults_mod.get_default_config()
     branch_cleanup = _params_for(
@@ -185,7 +170,7 @@ def test_default_plan_finalize_simplify_defaults_to_auto():
     assert 'simplify' not in finalize, (
         'simplify must NOT survive as a flat phase-level field'
     )
-    # It is nested under the owning step in the seeded LIST `steps` form (the
+    # It is nested under the owning step in the seeded keyed-map `steps` form (the
     # module-level DEFAULT_PLAN_FINALIZE['steps'] is a None placeholder filled
     # lazily by get_default_config()).
     config = _config_defaults_mod.get_default_config()
@@ -220,7 +205,7 @@ def test_default_plan_finalize_carries_all_finalize_gates():
     assert finalize.get('qgate') == 'auto', (
         'plan.phase-6-finalize.qgate default must be auto'
     )
-    # simplify folds under its owning step in the seeded LIST `steps` form.
+    # simplify folds under its owning step in the seeded keyed-map `steps` form.
     config = _config_defaults_mod.get_default_config()
     seeded_steps = config['plan']['phase-6-finalize']['steps']
     assert _params_for(seeded_steps, 'default:finalize-step-simplify')['simplify'] == 'auto'
@@ -911,35 +896,34 @@ def test_built_in_finalize_steps_orders_commit_then_simplify():
 
 
 # =============================================================================
-# LIST serial-form step structure with nested params (this plan)
+# Keyed-map serial-form step structure with nested params (this plan)
 # =============================================================================
 #
 # `plan.phase-6-finalize.steps` and `plan.phase-5-execute.verification_steps`
-# serialize as the canonical LIST form (not an id-keyed map, not a flat list of
-# ids). Each element is a bare string (ownerless step) or a single-key object
-# `{step_id: {params}}` (param-bearing step). Array order is the execution
-# order. The sonar params are prefix-stripped within the
-# `default:sonar-roundtrip` single-key object. These regression tests pin the
-# exact LIST structure so any future shape drift is caught immediately.
+# serialize as the canonical keyed map (an id-keyed object, not a list). Each
+# value is the step's nested param object (`{}` for a config-less step). Key
+# insertion order is the execution order. The sonar params are prefix-stripped
+# within the `default:sonar-roundtrip` value. These regression tests pin the
+# exact keyed-map structure so any future shape drift is caught immediately.
 
 
-def test_default_plan_finalize_steps_is_list_serial_form():
-    """The seeded finalize steps must be the LIST serial form, not an id-keyed dict.
+def test_default_plan_finalize_steps_is_keyed_map_form():
+    """The seeded finalize steps must be the keyed-map form, not a list.
 
     The module-level DEFAULT_PLAN_FINALIZE['steps'] is a None placeholder; the
-    LIST form is materialized lazily by get_default_config() via the
-    configurable_contract parser delegation + keyed_map_to_list_form serializer.
+    keyed map is materialized lazily by get_default_config() via the
+    configurable_contract parser delegation.
     """
     config = _config_defaults_mod.get_default_config()
     steps = config['plan']['phase-6-finalize']['steps']
 
-    assert isinstance(steps, list), 'steps must be the LIST serial form, not a dict'
-    # array order preserves the BUILT_IN_FINALIZE_STEPS execution order
+    assert isinstance(steps, dict), 'steps must be the keyed-map form, not a list'
+    # key insertion order preserves the BUILT_IN_FINALIZE_STEPS execution order
     assert _step_ids(steps) == _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
 
 
 def test_default_plan_finalize_steps_nests_step_owned_params():
-    """Step-owned params nest in their owning step's single-key object; ownerless steps are bare strings."""
+    """Step-owned params nest in their owning step's value; config-less steps map to {}."""
     config = _config_defaults_mod.get_default_config()
     steps = config['plan']['phase-6-finalize']['steps']
 
@@ -968,18 +952,16 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
         'merge_queue_wait_budget_seconds': 1800,
     }
 
-    # a step that owns no params is a bare string element — no noisy
-    # {step_id: null} object is written; the read path coerces it to {}.
+    # a step that owns no params maps to an empty {} param object.
     assert 'default:create-pr' in steps
-    assert _params_for(steps, 'default:create-pr') is None
+    assert _params_for(steps, 'default:create-pr') == {}
 
 
-def test_default_plan_finalize_ownerless_steps_are_bare_strings_not_objects():
-    """Every ownerless finalize step is a bare string; param-owning steps are single-key objects.
+def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
+    """Every config-less finalize step maps to {}; param-owning steps carry a non-empty dict.
 
-    LIST serial form: an ownerless step is a bare ``"step_id"`` string (no
-    ``{step_id: null}`` and no ``{step_id: {}}`` object), and a param-owning step
-    is a single-key ``{step_id: {params}}`` object with a non-empty param dict.
+    Keyed-map serial form: a config-less step's value is an empty ``{}`` object,
+    and a param-owning step's value is a non-empty param dict.
     """
     config = _config_defaults_mod.get_default_config()
     steps = config['plan']['phase-6-finalize']['steps']
@@ -991,26 +973,14 @@ def test_default_plan_finalize_ownerless_steps_are_bare_strings_not_objects():
         # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
         'default:finalize-step-simplify',
     }
-    for element in steps:
-        if isinstance(element, dict):
-            assert len(element) == 1, 'a param-bearing element must be a single-key object'
-            step_id, params = next(iter(element.items()))
-            assert step_id in param_owning, (
-                f'only param-owning steps may be single-key objects; got {step_id!r}'
-            )
-            assert isinstance(params, dict) and params, (
-                f'param-owning step {step_id!r} must carry a non-empty nested dict'
-            )
+    for step_id, params in steps.items():
+        assert isinstance(params, dict), f'every step value must be a dict; got {params!r}'
+        if step_id in param_owning:
+            assert params, f'param-owning step {step_id!r} must carry a non-empty nested dict'
         else:
-            assert isinstance(element, str), 'an ownerless element must be a bare string'
-            assert element not in param_owning, (
-                f'param-owning step {element!r} must be a single-key object, not a bare string'
+            assert params == {}, (
+                f'config-less step {step_id!r} must map to {{}}, not {params!r}'
             )
-    # the suppression contract is structural: no element is a {step_id: null} or
-    # {step_id: {}} object — every ownerless step is a bare string.
-    assert all(
-        next(iter(element.values())) for element in steps if isinstance(element, dict)
-    ), 'no element may be a {step_id: null} or {step_id: {}} object'
 
 
 def test_default_plan_finalize_drops_flat_step_owned_knobs():
@@ -1042,72 +1012,65 @@ def test_default_plan_finalize_drops_flat_step_owned_knobs():
     assert finalize['qgate'] == 'auto'
 
 
-def test_default_plan_execute_verification_steps_is_ownerless_list_form():
-    """DEFAULT_PLAN_EXECUTE['verification_steps'] must be the LIST form of ownerless bare strings."""
+def test_default_plan_execute_verification_steps_is_keyed_map_form():
+    """DEFAULT_PLAN_EXECUTE['verification_steps'] must be the keyed map of config-less steps."""
     verification_steps = _config_defaults_mod.DEFAULT_PLAN_EXECUTE['verification_steps']
 
-    assert isinstance(verification_steps, list), (
-        'verification_steps must be the LIST serial form, not a dict'
+    assert isinstance(verification_steps, dict), (
+        'verification_steps must be the keyed-map form, not a list'
     )
-    # array order preserves the BUILT_IN_VERIFY_STEPS execution order
+    # key insertion order preserves the BUILT_IN_VERIFY_STEPS execution order
     assert _step_ids(verification_steps) == _config_defaults_mod.BUILT_IN_VERIFY_STEPS
-    # verification steps own no params — every element is a bare string, NOT a
-    # {step_id: null} / {step_id: {}} object (empty-{} suppression). The read path
-    # coerces each to {}.
-    assert all(isinstance(element, str) for element in verification_steps)
+    # verification steps own no params — every value is an empty {} param object.
+    assert all(params == {} for params in verification_steps.values())
 
 
-def test_get_default_config_finalize_steps_list_form_shape():
-    """get_default_config() must surface the LIST-form finalize steps with nested params."""
+def test_get_default_config_finalize_steps_keyed_map_form_shape():
+    """get_default_config() must surface the keyed-map finalize steps with nested params."""
     config = _config_defaults_mod.get_default_config()
 
     steps = config['plan']['phase-6-finalize']['steps']
-    assert isinstance(steps, list)
+    assert isinstance(steps, dict)
     assert _step_ids(steps) == _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
     assert _params_for(steps, 'default:sonar-roundtrip')['touched_file_cleanup'] == 'new_code_only'
     assert _params_for(steps, 'default:branch-cleanup')['pr_merge_strategy'] == 'squash'
 
 
-def test_get_default_config_verification_steps_list_form_shape():
-    """get_default_config() must surface the LIST-form verification steps with ownerless bare strings."""
+def test_get_default_config_verification_steps_keyed_map_form_shape():
+    """get_default_config() must surface the keyed-map verification steps with config-less values."""
     config = _config_defaults_mod.get_default_config()
 
     verification_steps = config['plan']['phase-5-execute']['verification_steps']
-    assert isinstance(verification_steps, list)
+    assert isinstance(verification_steps, dict)
     assert _step_ids(verification_steps) == _config_defaults_mod.BUILT_IN_VERIFY_STEPS
-    # ownerless verify steps surface as bare strings (no {step_id: null} object);
-    # the read path coerces each to {}.
-    assert all(isinstance(element, str) for element in verification_steps)
+    # config-less verify steps surface with empty {} param objects.
+    assert all(params == {} for params in verification_steps.values())
 
 
 # =============================================================================
-# Read-path coercion (dual-form): both the LIST form and the legacy keyed-map
-# normalize to the same internal id-keyed dict
+# Read-path coercion: the keyed map normalizes to the internal id-keyed dict
 # =============================================================================
 #
-# `_steps_map` (the `_cmd_quality_phases` read boundary) is a dual-form reader.
-# It accepts BOTH the canonical LIST form (bare strings + single-key objects)
-# and the legacy keyed-map form, normalizing both to the same internal id-keyed
-# dict. Every per-step value that is not a non-empty dict — a bare-string list
-# element, None (the legacy ownerless seed), the legacy empty {}, and the
-# TOON-round-tripped '' — coerces back to an empty dict, so an ownerless step
-# reads identically no matter which on-disk representation it carries. A
-# param-owning step keeps its nested object.
+# `_steps_map` (the `_cmd_quality_phases` read boundary) reads the canonical
+# keyed-map on-disk form. Every per-step value that is not a dict — None, the
+# empty {}, and the TOON-round-tripped '' — coerces back to an empty dict, so a
+# config-less step reads identically no matter which empty representation it
+# carries on disk. A param-owning step keeps its nested object. A non-dict
+# top-level value (the key absent / a malformed scalar / a stray list) yields an
+# empty dict.
 
 
-def test_steps_map_reads_list_form_to_internal_id_keyed_dict():
-    """The LIST form (bare strings + single-key objects) reads to the internal id-keyed dict.
+def test_steps_map_reads_keyed_map_to_internal_id_keyed_dict():
+    """The keyed map reads to the internal id-keyed dict, preserving insertion order.
 
-    The new canonical on-disk form: an ownerless step is a bare string, a
-    param-bearing step is a single-key object. Both normalize to the same
-    internal map — ownerless → {}, param-bearing → its nested object —
-    preserving array (= execution) order.
+    A config-less step's value (None / {} / '') coerces to {}; a param-bearing
+    step keeps its nested object. Key insertion (= execution) order is preserved.
     """
-    raw = [
-        'default:commit-push',
-        {'default:branch-cleanup': {'pr_merge_strategy': 'squash'}},
-        'default:create-pr',
-    ]
+    raw = {
+        'default:commit-push': {},
+        'default:branch-cleanup': {'pr_merge_strategy': 'squash'},
+        'default:create-pr': {},
+    }
 
     result = _cmd_quality_phases_mod._steps_map(raw)
 
@@ -1116,35 +1079,12 @@ def test_steps_map_reads_list_form_to_internal_id_keyed_dict():
         'default:branch-cleanup': {'pr_merge_strategy': 'squash'},
         'default:create-pr': {},
     }
-    # array order is preserved as insertion order in the normalized dict
+    # key insertion order is preserved in the normalized dict
     assert list(result.keys()) == ['default:commit-push', 'default:branch-cleanup', 'default:create-pr']
 
 
-def test_steps_map_list_and_keyed_map_normalize_identically():
-    """The LIST form and the equivalent legacy keyed-map produce the same internal dict.
-
-    Dual-form invariant: a migrated LIST-form config and the legacy keyed-map it
-    was migrated FROM must read to byte-identical internal dicts, so every
-    downstream consumer is unaffected by which form was read.
-    """
-    list_form = [
-        'default:commit-push',
-        {'default:branch-cleanup': {'pr_merge_strategy': 'squash'}},
-        'default:create-pr',
-    ]
-    keyed_map_form = {
-        'default:commit-push': None,
-        'default:branch-cleanup': {'pr_merge_strategy': 'squash'},
-        'default:create-pr': {},
-    }
-
-    assert _cmd_quality_phases_mod._steps_map(list_form) == _cmd_quality_phases_mod._steps_map(
-        keyed_map_form
-    )
-
-
 def test_steps_map_coerces_none_value_to_empty_dict():
-    """A None per-step value (the new ownerless seed) coerces to {}."""
+    """A None per-step value (a config-less step) coerces to {}."""
     raw = {'default:commit-push': None, 'default:create-pr': None}
 
     result = _cmd_quality_phases_mod._steps_map(raw)
@@ -1152,8 +1092,8 @@ def test_steps_map_coerces_none_value_to_empty_dict():
     assert result == {'default:commit-push': {}, 'default:create-pr': {}}
 
 
-def test_steps_map_coerces_legacy_empty_dict_to_empty_dict():
-    """A legacy empty {} per-step value coerces to {} (idempotent)."""
+def test_steps_map_coerces_empty_dict_to_empty_dict():
+    """An empty {} per-step value coerces to {} (idempotent)."""
     raw = {'default:commit-push': {}, 'default:create-pr': {}}
 
     result = _cmd_quality_phases_mod._steps_map(raw)
@@ -1174,12 +1114,12 @@ def test_steps_map_coerces_toon_empty_string_to_empty_dict():
     assert result == {'default:commit-push': {}, 'default:create-pr': {}}
 
 
-def test_steps_map_mixed_shapes_read_identically_for_ownerless_steps():
-    """All of {absent, None, {}, ''} read identically as {} for ownerless steps.
+def test_steps_map_mixed_shapes_read_identically_for_config_less_steps():
+    """All of {None, {}, ''} read identically as {} for config-less steps.
 
-    The full absent-or-empty representation set coerces to the same {} so the
-    two on-disk shapes (legacy {} vs new null) read identically, while a
-    param-owning step keeps its nested object.
+    The full empty-value representation set coerces to the same {} so a
+    config-less step reads identically no matter which empty representation it
+    carries, while a param-owning step keeps its nested object.
     """
     raw = {
         'default:commit-push': None,
@@ -1190,7 +1130,7 @@ def test_steps_map_mixed_shapes_read_identically_for_ownerless_steps():
 
     result = _cmd_quality_phases_mod._steps_map(raw)
 
-    # every ownerless representation reads back as the empty dict
+    # every config-less representation reads back as the empty dict
     assert result['default:commit-push'] == {}
     assert result['default:create-pr'] == {}
     assert result['default:lessons-capture'] == {}
@@ -1198,83 +1138,11 @@ def test_steps_map_mixed_shapes_read_identically_for_ownerless_steps():
     assert result['default:branch-cleanup'] == {'pr_merge_strategy': 'squash'}
 
 
-def test_steps_map_falsy_top_level_yields_empty_dict():
-    """A falsy top-level value (None / absent key) yields an empty dict."""
+def test_steps_map_non_dict_top_level_yields_empty_dict():
+    """A non-dict top-level value (None / absent key / a stray list) yields an empty dict."""
     assert _cmd_quality_phases_mod._steps_map(None) == {}
     assert _cmd_quality_phases_mod._steps_map({}) == {}
-
-
-def test_keyed_map_to_list_form_emits_list_serial_form():
-    """The write-side serializer emits the LIST form: bare strings + single-key objects.
-
-    `keyed_map_to_list_form` is applied right before persisting any mutated
-    map (step set / set-steps / add-step / remove-step), so marshal.json carries
-    the canonical LIST form — an ownerless step is a bare string (no noisy
-    {step_id: null} / {step_id: {}} object), a param-owning step is a single-key
-    object. List order is the input map's insertion (= execution) order.
-    """
-    steps = {
-        'default:commit-push': {},
-        'default:branch-cleanup': {'pr_merge_strategy': 'squash'},
-        'default:create-pr': {},
-    }
-
-    result = _config_core_mod.keyed_map_to_list_form(steps)
-
-    # the LIST form: ownerless steps are bare strings, param-owning steps are
-    # single-key objects, in insertion order
-    assert result == [
-        'default:commit-push',
-        {'default:branch-cleanup': {'pr_merge_strategy': 'squash'}},
-        'default:create-pr',
-    ]
-    # no element is a {step_id: null} / {step_id: {}} object
-    assert all(
-        next(iter(element.values())) for element in result if isinstance(element, dict)
-    )
-
-
-def test_keyed_map_to_list_form_then_steps_map_round_trips_ownerless_to_empty_dict():
-    """The write→read round-trip of an ownerless step yields {} (write bare string, read {})."""
-    steps = {'default:commit-push': {}, 'default:branch-cleanup': {'pr_merge_strategy': 'squash'}}
-
-    # write side: ownerless step serializes to a bare string in the LIST form
-    written = _config_core_mod.keyed_map_to_list_form(steps)
-    # read side: the dual-form reader normalizes the LIST form back to the dict
-    read_back = _cmd_quality_phases_mod._steps_map(written)
-
-    assert read_back == {'default:commit-push': {}, 'default:branch-cleanup': {'pr_merge_strategy': 'squash'}}
-
-
-def test_keyed_map_to_list_form_round_trips_through_dual_form_reader():
-    """The shared serializer round-trips: keyed_map_to_list_form → _steps_map is identity.
-
-    `keyed_map_to_list_form` (the single write-side serial-form function in
-    `_config_core`, shared by the seeder and the config-write verbs) emits the
-    LIST form, and the dual-form reader `_steps_map` normalizes it back to the
-    SAME internal id-keyed dict (ownerless → {}). The round-trip is the
-    structural contract that ties the write side to the read side.
-    """
-    keyed_map = {
-        'default:commit-push': {},
-        'default:sonar-roundtrip': {'touched_file_cleanup': 'new_code_only'},
-        'default:create-pr': None,
-    }
-    expected_internal = {
-        'default:commit-push': {},
-        'default:sonar-roundtrip': {'touched_file_cleanup': 'new_code_only'},
-        'default:create-pr': {},
-    }
-
-    list_form = _config_core_mod.keyed_map_to_list_form(keyed_map)
-    # write side emits the LIST form: bare strings + single-key objects
-    assert list_form == [
-        'default:commit-push',
-        {'default:sonar-roundtrip': {'touched_file_cleanup': 'new_code_only'}},
-        'default:create-pr',
-    ]
-    # read side normalizes back to the internal id-keyed dict
-    assert _cmd_quality_phases_mod._steps_map(list_form) == expected_internal
+    assert _cmd_quality_phases_mod._steps_map(['default:commit-push']) == {}
 
 
 def test_default_plan_coverage_is_inherit_inherit():

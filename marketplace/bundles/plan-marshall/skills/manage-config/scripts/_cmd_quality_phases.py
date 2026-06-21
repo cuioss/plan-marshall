@@ -13,7 +13,6 @@ from _config_core import (
     MarshalNotInitializedError,
     _coerce_value,
     error_exit,
-    keyed_map_to_list_form,
     load_config,
     require_initialized,
     save_config,
@@ -28,13 +27,16 @@ from constants import PHASES  # type: ignore[import-not-found]
 # Valid phase sections - derived from centralized PHASES with 'phase-' prefix for marshal.json keys
 PHASE_SECTIONS = {f'phase-{p}' for p in PHASES}
 
-# Phases that use ordered steps list (set-steps, add-step, remove-step, set-max-iterations)
-LIST_STEP_PHASES = {'phase-5-execute', 'phase-6-finalize'}
+# Phases that carry an ordered keyed step-map (set-steps, add-step, remove-step,
+# set-max-iterations). The on-disk form is a keyed map whose key insertion order
+# is the execution order — these are the phases whose config holds that structure.
+STEP_PHASES = {'phase-5-execute', 'phase-6-finalize'}
 
-# Per-phase config key holding the ordered step list. phase-5-execute stores its
-# verify-step list under `verification_steps` (the self-describing name decoupling
-# it from phase-6-finalize's generic `steps`); phase-6-finalize keeps `steps`.
-LIST_STEP_KEYS = {
+# Per-phase config key holding the ordered keyed step-map. phase-5-execute stores
+# its verify-step map under `verification_steps` (the self-describing name
+# decoupling it from phase-6-finalize's generic `steps`); phase-6-finalize keeps
+# `steps`.
+STEP_KEYS = {
     'phase-5-execute': 'verification_steps',
     'phase-6-finalize': 'steps',
 }
@@ -162,47 +164,29 @@ def _resolve_step_orders(
 def _steps_map(raw) -> dict:
     """Return the step structure as a fresh ordered id-keyed dict.
 
-    Two on-disk serial forms for ``verification_steps`` / ``steps`` are accepted
-    (dual-form reader, the transition affordance for consumer repos still
-    carrying the legacy keyed-map):
+    The on-disk serial form for ``verification_steps`` / ``steps`` is the
+    canonical keyed map: ``{step_id: {param: value, ...}, ...}``, with key
+    insertion order as the execution order and each value the step's nested
+    param object (``{}`` for a config-less step). This is the sole accepted
+    on-disk shape — there is no list / dual-form tolerance.
 
-    * The new canonical LIST form: a JSON array whose elements are either bare
-      strings (ownerless steps) or single-key objects ``{step_id: {params}}``
-      (param-bearing steps). Array order is the execution order.
-    * The legacy keyed-map form: ``{step_id: {param: value, ...}, ...}``; key
-      insertion order is the execution order.
+    This normaliser returns a fresh dict so callers (read / modify / write
+    verbs) can mutate it without touching the loaded config. A top-level value
+    that is not a dict (the key absent / ``None`` / a malformed scalar) yields
+    an empty dict.
 
-    Both forms normalize to the SAME internal id-keyed dict, so callers (read /
-    modify / write verbs) are unaffected by which on-disk form was read. This
-    normaliser returns a fresh dict so callers can mutate it without touching
-    the loaded config. A top-level value that is neither a list nor a dict (the
-    key absent / ``None`` / a malformed scalar) yields an empty dict.
-
-    Per-step values are coerced: every value that is not a non-empty dict
-    (``None`` / ``{}`` / ``''`` / a bare-string list element / any non-dict) is
-    coerced to an empty dict, so ``_cmd_step get`` returns ``{}`` for an
-    ownerless step regardless of its on-disk representation. A param-owning step
-    keeps its nested object.
+    Per-step values are coerced: a value that is not a dict (``None`` / ``''`` /
+    any non-dict) is coerced to an empty dict, so ``_cmd_step get`` returns
+    ``{}`` for a config-less step. A param-owning step keeps its nested object.
 
     Args:
-        raw: The value read from ``section[list_key]`` — the LIST form, the
-            legacy keyed-map dict, or ``None`` when the key is absent.
+        raw: The value read from ``section[step_key]`` — the keyed map, or
+            ``None`` when the key is absent.
 
     Returns:
-        A new dict mapping step id -> nested param object (``{}`` for ownerless
+        A new dict mapping step id -> nested param object (``{}`` for config-less
         steps), in input order.
     """
-    if isinstance(raw, list):
-        result: dict = {}
-        for element in raw:
-            if isinstance(element, str):
-                if element:
-                    result[element] = {}
-            elif isinstance(element, dict) and len(element) == 1:
-                step_id, value = next(iter(element.items()))
-                if isinstance(step_id, str) and step_id:
-                    result[step_id] = value if isinstance(value, dict) else {}
-        return result
     if not isinstance(raw, dict):
         return {}
     return {
@@ -218,7 +202,7 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
     ``step get --step-id {id}`` returns the complete nested param object for a
     step in a single call; ``step set --step-id {id} --param {k} --value {v}``
     writes one step-owned param into the step's nested object (value-coerced).
-    Both operate on the keyed-map step structure under the phase's list key. An
+    Both operate on the keyed-map step structure under the phase's step key. An
     absent step id is an explicit error.
 
     Args:
@@ -229,9 +213,9 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
         plan_config: The mutable ``config['plan']`` subtree.
         config: The full loaded config (persisted on a successful set).
     """
-    list_key = LIST_STEP_KEYS[phase_section]
+    step_key = STEP_KEYS[phase_section]
     step_id = args.step_id
-    steps = _steps_map(section.get(list_key))
+    steps = _steps_map(section.get(step_key))
 
     if args.step_verb == 'get':
         if step_id not in steps:
@@ -248,9 +232,8 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
         params = dict(steps[step_id])
         params[param] = value
         steps[step_id] = params
-        # Persist in the canonical LIST serial form (ownerless steps as bare
-        # strings, param-owning steps as single-key objects).
-        section[list_key] = keyed_map_to_list_form(steps)
+        # Persist the keyed map directly (the sole on-disk shape).
+        section[step_key] = steps
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -287,13 +270,13 @@ def cmd_phase(args, phase_section: str) -> dict:
             return success_exit({'phase': phase_section, 'field': field, 'value': section[field]})
         return success_exit({'phase': phase_section, **section})
 
-    elif args.verb == 'set' and phase_section in (SCALAR_PHASES | LIST_STEP_PHASES):
+    elif args.verb == 'set' and phase_section in (SCALAR_PHASES | STEP_PHASES):
         field = args.field
         # Guard: the phase's keyed step-map field (`steps` for phase-6-finalize,
         # `verification_steps` for phase-5-execute) is a structured keyed map, not
         # a scalar — routing it through `_coerce_value` would string-corrupt the
         # map. Reject and direct the caller to the keyed-map verbs instead.
-        if phase_section in LIST_STEP_PHASES and field == LIST_STEP_KEYS[phase_section]:
+        if phase_section in STEP_PHASES and field == STEP_KEYS[phase_section]:
             return error_exit(
                 f"Field '{field}' is a keyed step-map and cannot be set via "
                 "'set --field'. Use: set-steps, add-step, remove-step, or step set."
@@ -317,7 +300,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         save_config(config)
         return success_exit({'phase': phase_section, 'field': field, 'value': value})
 
-    elif args.verb == 'set-max-iterations' and phase_section in LIST_STEP_PHASES:
+    elif args.verb == 'set-max-iterations' and phase_section in STEP_PHASES:
         value = int(args.value)
         key = 'max_iterations'
         section[key] = value
@@ -326,15 +309,15 @@ def cmd_phase(args, phase_section: str) -> dict:
         save_config(config)
         return success_exit({'phase': phase_section, key: value})
 
-    elif args.verb == 'step' and phase_section in LIST_STEP_PHASES:
+    elif args.verb == 'step' and phase_section in STEP_PHASES:
         # One-stop step verb: `step get` / `step set` against the keyed-map step
         # structure. `step get --step-id {id}` returns the complete nested param
         # object for a step in a single call; `step set --step-id {id} --param {k}
         # --value {v}` writes one step-owned param into the step's nested object.
         return _cmd_step(args, phase_section, section, plan_config, config)
 
-    elif args.verb == 'set-steps' and phase_section in LIST_STEP_PHASES:
-        list_key = LIST_STEP_KEYS[phase_section]
+    elif args.verb == 'set-steps' and phase_section in STEP_PHASES:
+        step_key = STEP_KEYS[phase_section]
         steps_str = args.steps  # comma-separated
         steps = [s.strip() for s in steps_str.split(',') if s.strip()]
         if not steps:
@@ -344,24 +327,23 @@ def cmd_phase(args, phase_section: str) -> dict:
         if err is not None:
             return err
 
-        existing = _steps_map(section.get(list_key))
+        existing = _steps_map(section.get(step_key))
         sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
         # Build the ordered keyed map, preserving any existing per-step params.
         sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
-        # Persist in the canonical LIST serial form (ownerless steps as bare
-        # strings, param-owning steps as single-key objects).
-        section[list_key] = keyed_map_to_list_form(sorted_map)
+        # Persist the keyed map directly (the sole on-disk shape).
+        section[step_key] = sorted_map
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
         return success_exit(
-            {'phase': phase_section, list_key: sorted_map, 'count': len(sorted_map)}
+            {'phase': phase_section, step_key: sorted_map, 'count': len(sorted_map)}
         )
 
-    elif args.verb == 'add-step' and phase_section in LIST_STEP_PHASES:
-        list_key = LIST_STEP_KEYS[phase_section]
+    elif args.verb == 'add-step' and phase_section in STEP_PHASES:
+        step_key = STEP_KEYS[phase_section]
         step = args.step
-        existing = _steps_map(section.get(list_key))
+        existing = _steps_map(section.get(step_key))
         if step in existing:
             return error_exit(f"Step '{step}' already exists in {phase_section}")
 
@@ -372,32 +354,30 @@ def cmd_phase(args, phase_section: str) -> dict:
         sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
         # Preserve existing per-step params; the new key starts with empty params.
         sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
-        # Persist in the canonical LIST serial form (ownerless steps as bare
-        # strings, param-owning steps as single-key objects).
-        section[list_key] = keyed_map_to_list_form(sorted_map)
+        # Persist the keyed map directly (the sole on-disk shape).
+        section[step_key] = sorted_map
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
         return success_exit(
-            {'phase': phase_section, 'step': step, list_key: sorted_map, 'count': len(sorted_map)}
+            {'phase': phase_section, 'step': step, step_key: sorted_map, 'count': len(sorted_map)}
         )
 
-    elif args.verb == 'remove-step' and phase_section in LIST_STEP_PHASES:
-        list_key = LIST_STEP_KEYS[phase_section]
+    elif args.verb == 'remove-step' and phase_section in STEP_PHASES:
+        step_key = STEP_KEYS[phase_section]
         step = args.step
-        existing = _steps_map(section.get(list_key))
+        existing = _steps_map(section.get(step_key))
         if step not in existing:
             return error_exit(f"Step '{step}' not found in {phase_section}")
 
         del existing[step]
-        # Persist in the canonical LIST serial form (ownerless steps as bare
-        # strings, param-owning steps as single-key objects).
-        section[list_key] = keyed_map_to_list_form(existing)
+        # Persist the keyed map directly (the sole on-disk shape).
+        section[step_key] = existing
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
         return success_exit(
-            {'phase': phase_section, 'step': step, list_key: existing, 'count': len(existing)}
+            {'phase': phase_section, 'step': step, step_key: existing, 'count': len(existing)}
         )
 
     elif args.verb == 'remove-field':

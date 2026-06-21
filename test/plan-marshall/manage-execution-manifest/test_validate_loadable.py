@@ -508,12 +508,11 @@ class TestCheckSeedMode:
             'default:verify:coverage',
         ]
 
-    def test_read_marshal_phase_steps_accepts_list_shape(self, plan_context):
-        """_read_marshal_phase_steps accepts the LIST shape (dual-form reader).
+    def test_read_marshal_phase_steps_rejects_list_shape(self, plan_context):
+        """_read_marshal_phase_steps rejects the LIST shape — the keyed map is the sole form.
 
-        The LIST serial form is the new canonical on-disk shape; the dual-form
-        reader normalizes it to the same internal step-id ordering as the legacy
-        keyed-map, so the ordered step-id list is returned (not ``None``).
+        The canonical on-disk shape is the keyed map; a list value is not a valid
+        on-disk form, so the reader returns ``None`` (no dual-form tolerance).
         """
         import json
 
@@ -530,10 +529,7 @@ class TestCheckSeedMode:
         }
         marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
-        assert _mem._read_marshal_phase_steps('phase-6-finalize') == [
-            'default:commit-push',
-            'default:automated-review',
-        ]
+        assert _mem._read_marshal_phase_steps('phase-6-finalize') is None
 
     def test_check_seed_is_mutually_exclusive_with_step_id(self, plan_context):
         """Supplying both --step-id and --check-seed is an invalid_arguments error."""

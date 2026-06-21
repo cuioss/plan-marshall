@@ -42,21 +42,15 @@ from conftest import run_script  # noqa: E402, I001
 
 
 # `plan.phase-6-finalize.steps` and `plan.phase-5-execute.verification_steps`
-# serialize on disk as the canonical LIST form: a JSON array whose elements are
-# bare strings (ownerless steps) or single-key objects `{step_id: {params}}`
-# (param-bearing steps). Array order is the execution order. This helper extracts
-# the ordered id list from that LIST form.
+# serialize on disk as the canonical keyed map: an id-keyed object
+# `{step_id: {params}}` (`{}` for a config-less step) whose key insertion order
+# is the execution order. This helper extracts the ordered id list from that
+# keyed map.
 
 
-def _step_ids(steps_list: list) -> list:
-    """Return the ordered step-id list from a LIST-form steps array."""
-    ids = []
-    for element in steps_list:
-        if isinstance(element, str):
-            ids.append(element)
-        elif isinstance(element, dict) and len(element) == 1:
-            ids.append(next(iter(element)))
-    return ids
+def _step_ids(steps_map: dict) -> list:
+    """Return the ordered step-id list from a keyed-map steps object."""
+    return list(steps_map.keys())
 
 # =============================================================================
 # Init Command Tests (Tier 2 - direct import)
@@ -188,17 +182,16 @@ def test_init_includes_verification_in_phase_5_execute(plan_context):
     assert 'phase-6-verify' not in plan, 'Should NOT have plan.phase-6-verify section'
     execute = plan['phase-5-execute']
     assert execute['max_iterations'] == 5
-    # verification_steps is the canonical LIST serial form; array order is the
-    # execution order. Verify steps own no params, so each ownerless step is a
-    # bare string, NOT a {step_id: null} / {step_id: {}} object (empty-{}
-    # suppression). The read path coerces each to {}.
-    assert isinstance(execute['verification_steps'], list)
+    # verification_steps is the canonical keyed-map form; key insertion order is
+    # the execution order. Verify steps own no params, so each config-less step
+    # maps to an empty {} param object.
+    assert isinstance(execute['verification_steps'], dict)
     assert _step_ids(execute['verification_steps']) == [
         'default:verify:quality-gate',
         'default:verify:module-tests',
         'default:verify:coverage',
     ]
-    assert all(isinstance(element, str) for element in execute['verification_steps'])
+    assert all(params == {} for params in execute['verification_steps'].values())
 
 
 def test_init_includes_phase_6_finalize(plan_context):
@@ -212,10 +205,10 @@ def test_init_includes_phase_6_finalize(plan_context):
     assert 'phase-6-finalize' in plan, 'Should have plan.phase-6-finalize section'
     finalize = plan['phase-6-finalize']
     assert finalize['max_iterations'] == 3
-    assert 'steps' in finalize, 'Should have steps list'
-    # steps is the canonical LIST serial form; membership checks operate on the
-    # ordered step-id list extracted from the bare-string / single-key elements.
-    assert isinstance(finalize['steps'], list)
+    assert 'steps' in finalize, 'Should have steps map'
+    # steps is the canonical keyed-map form; membership checks operate on the
+    # ordered step-id list extracted from the keyed map's keys.
+    assert isinstance(finalize['steps'], dict)
     step_ids = _step_ids(finalize['steps'])
     assert 'default:commit-push' in step_ids
     assert 'default:record-metrics' in step_ids

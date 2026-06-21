@@ -186,7 +186,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ### Manage Verification Steps
 
-> **Step-list fields reject `set --field`.** The phase's ordered step-list field — `verification_steps` for `phase-5-execute` and `steps` for `phase-6-finalize` — serializes on disk as the LIST serial form (a JSON array), NOT a scalar. The scalar `set --field` verb rejects these two fields with a structured error (`Field '{field}' is a keyed step-map and cannot be set via 'set --field'. Use: set-steps, add-step, remove-step, or step set.`) and mutates nothing. Use the step-list verbs below (`set-steps` / `add-step` / `remove-step`) to manage the step list, and `step get`/`step set` to read or write a step's nested params. The dual-form reader normalizes the canonical LIST form and the legacy id-keyed map (read only during the migration window) to an internal id-keyed dict — but the LIST is the only on-disk form anything writes. Only genuine scalar fields (e.g. `commit_and_push`, `max_iterations`, `finalize_without_asking`) are settable via `set --field`.
+> **Step-map fields reject `set --field`.** The phase's keyed step-map field — `verification_steps` for `phase-5-execute` and `steps` for `phase-6-finalize` — serializes on disk as the keyed-map serial form (a JSON object keyed by step id), NOT a scalar. The scalar `set --field` verb rejects these two fields with a structured error (`Field '{field}' is a keyed step-map and cannot be set via 'set --field'. Use: set-steps, add-step, remove-step, or step set.`) and mutates nothing. Use the step verbs below (`set-steps` / `add-step` / `remove-step`) to manage the step map, and `step get`/`step set` to read or write a step's nested params. The reader consumes the keyed map directly — it is the sole on-disk shape both read and written. Only genuine scalar fields (e.g. `commit_and_push`, `max_iterations`, `finalize_without_asking`) are settable via `set --field`.
 
 `set-steps` and `add-step` resolve each step's `order` from its authoritative source (frontmatter on built-in standards docs, frontmatter on project-local `SKILL.md` for `project:` steps, return-dict `order` field for extension-contributed skills) and persist the steps list sorted ascending by that value. They return `error: missing_order` or `error: order_collision` when a step has no declared order or two steps share the same value — fix the offending step's authoritative source.
 
@@ -533,40 +533,34 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "commit_and_push": true,
       "max_iterations": 5,
       "per_deliverable_build": ["default:verify:compile", "default:verify:module-tests"],
-      "verification_steps": [
-        "default:verify:quality-gate",
-        "default:verify:module-tests",
-        "default:verify:coverage"
-      ]
+      "verification_steps": {
+        "default:verify:quality-gate": {},
+        "default:verify:module-tests": {},
+        "default:verify:coverage": {}
+      }
     },
     "phase-6-finalize": {
       "max_iterations": 3,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "self_review": "auto",
       "qgate": "auto",
-      "simplify": "auto",
-      "steps": [
-        "default:commit-push",
-        "default:create-pr",
-        { "default:automated-review": { "review_bot_buffer_seconds": 180 } },
-        {
-          "default:sonar-roundtrip": {
-            "touched_file_cleanup": "new_code_only",
-            "do_transition": false,
-            "ce_wait_timeout_seconds": 600
-          }
+      "steps": {
+        "default:commit-push": {},
+        "default:create-pr": {},
+        "default:automated-review": { "review_bot_buffer_seconds": 180 },
+        "default:sonar-roundtrip": {
+          "touched_file_cleanup": "new_code_only",
+          "do_transition": false,
+          "ce_wait_timeout_seconds": 600
         },
-        "default:lessons-capture",
-        {
-          "default:branch-cleanup": {
-            "pr_merge_strategy": "squash",
-            "final_merge_without_asking": false,
-            "auto_rebase_threshold": "no_overlap_only"
-          }
+        "default:lessons-capture": {},
+        "default:branch-cleanup": {
+          "pr_merge_strategy": "squash",
+          "final_merge_without_asking": false,
+          "auto_rebase_threshold": "no_overlap_only"
         },
-        "default:archive-plan"
-      ]
+        "default:archive-plan": {}
+      }
     }
   }
 }
@@ -597,7 +591,7 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 
 (`final_merge_without_asking` is NOT flat — it is a step-owned param nested under the `default:branch-cleanup` step; see the step-owned param tables below.)
 
-**Step-owned params (nested under their owning step in the `phase-6-finalize.steps` LIST):**
+**Step-owned params (nested under their owning step in the `phase-6-finalize.steps` keyed map):**
 
 `default:sonar-roundtrip` (the `sonar_` prefix is dropped within the scoped object):
 
@@ -609,7 +603,7 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 
 `default:automated-review`: `review_bot_buffer_seconds` (int, default `180`) — max-wait ceiling for `pr wait-for-comments`. `default:branch-cleanup`: `pr_merge_strategy` (default `squash`), `final_merge_without_asking` (bool, default `false`), `auto_rebase_threshold` (default `no_overlap_only`).
 
-**Access shape.** Read/write each FLAT knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate`, `plan phase-6-finalize get --field finalize_without_asking`. Read/write each STEP-OWNED param through the one-stop `plan phase-6-finalize step get/set --step-id {step} [--param {k} --value {v}]` verb against the marshal.json LIST serial form (the global-config default + wizard write target), or via the plan-local manifest snapshot `manage-execution-manifest step-params get/set` (the per-plan runtime read/override). See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
+**Access shape.** Read/write each FLAT knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate`, `plan phase-6-finalize get --field finalize_without_asking`. Read/write each STEP-OWNED param through the one-stop `plan phase-6-finalize step get/set --step-id {step} [--param {k} --value {v}]` verb against the marshal.json keyed-map serial form (the global-config default + wizard write target), or via the plan-local manifest snapshot `manage-execution-manifest step-params get/set` (the per-plan runtime read/override). See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
 
 **Default source.** The `Default` column above is not held in any centralized constant. Each param-owning step declares its params self-describingly in the `configurable:` block of its body-doc frontmatter; the finalize-step defaults seed (`get_default_config()`) materializes them by delegating each built-in step id through the `plan-marshall:extension-api:configurable_contract` parser (`resolve_step_defaults_optional`, ownerless steps → `null`). The parser is the single fail-loud source of truth for a valid step-param declaration — see [`extension-api` SKILL.md § Configurable step-param contract](../extension-api/SKILL.md#configurable-step-param-contract).
 
@@ -894,7 +888,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan {
 The scalar `set` verb rejects the keyed step-map field of `phase-5-execute`
 (`--field verification_steps`) and `phase-6-finalize` (`--field steps`) with a
 structured error and no mutation — those fields are keyed step-maps, not
-scalars. Use `set-steps` / `add-step` / `remove-step` to manage the step list
+scalars. Use `set-steps` / `add-step` / `remove-step` to manage the step map
 and `step get` / `step set` for a step's nested params.
 
 ### plan phase-5-execute set-max-iterations / plan phase-6-finalize set-max-iterations

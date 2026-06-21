@@ -67,31 +67,19 @@ _cmd_init_mod = _load_module('_cmd_init_for_dissolution_test', '_cmd_init.py')
 import conftest  # noqa: E402, F401
 
 
-def _params_for(steps_list: list, step_id: str):
-    """Return a step's params from the LIST serial form of steps.
+def _params_for(steps_map: dict, step_id: str):
+    """Return a step's params from the keyed-map form of steps.
 
-    `plan.phase-6-finalize.steps` serializes as the canonical LIST form: bare
-    strings (ownerless steps) or single-key objects `{step_id: {params}}`. Returns
-    the nested param dict for a param-bearing step, or ``None`` for an ownerless
-    one. Raises ``KeyError`` when the step id is absent.
+    `plan.phase-6-finalize.steps` serializes as the canonical keyed map:
+    `{step_id: {params}}` (`{}` for a config-less step). Returns the step's nested
+    param object, or ``None`` when the step id is absent.
     """
-    for element in steps_list:
-        if isinstance(element, str) and element == step_id:
-            return None
-        if isinstance(element, dict) and len(element) == 1 and step_id in element:
-            return element[step_id]
-    raise KeyError(step_id)
+    return steps_map.get(step_id)
 
 
-def _step_ids(steps_list: list) -> list:
-    """Return the ordered step-id list from the LIST serial form of steps."""
-    ids = []
-    for element in steps_list:
-        if isinstance(element, str):
-            ids.append(element)
-        elif isinstance(element, dict) and len(element) == 1:
-            ids.append(next(iter(element)))
-    return ids
+def _step_ids(steps_map: dict) -> list:
+    """Return the ordered step-id list from the keyed-map form of steps."""
+    return list(steps_map.keys())
 
 # The distributed run-at-all gates that stay FLAT phase-level siblings, and the
 # phase block each lives under. The two finalize gates that fold under their

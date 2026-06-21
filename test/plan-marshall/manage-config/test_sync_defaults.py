@@ -4,8 +4,7 @@
 Covers the non-destructive deep-merge contract:
 - empty marshal.json gains all defaults
 - user-set keys are preserved while missing ones are added
-- deeply-nested missing sub-keys are added
-- lists are treated as atomic (user's list survives)
+- deeply-nested missing sub-keys are added (including the keyed-map step structure)
 - idempotency (re-running adds nothing)
 - TOON output enumerates added dotted paths correctly
 """
@@ -46,41 +45,24 @@ cmd_sync_defaults = _sync_mod.cmd_sync_defaults
 
 
 # =============================================================================
-# LIST serial-form helpers
+# Keyed-map serial-form helpers
 # =============================================================================
 #
 # `plan.phase-6-finalize.steps` and `plan.phase-5-execute.verification_steps`
-# serialize on disk as the canonical LIST form: a JSON array whose elements are
-# bare strings (ownerless steps) or single-key objects `{step_id: {params}}`
-# (param-bearing steps). The default seed is therefore a LIST, which the
-# deep-merge treats as an ATOMIC value — it is copied wholesale when the key is
-# absent and preserved verbatim when present (no per-step dict recursion).
+# serialize on disk as the canonical keyed map: an id-keyed object
+# `{step_id: {params}}` (`{}` for a config-less step). The default seed is
+# therefore a dict, which the deep-merge recurses into: a present step key keeps
+# its value while missing sibling step keys (and missing per-step params) are
+# back-filled from the default keyed map.
 
 
-def _step_ids(steps_list: list) -> list:
-    """Return the ordered step-id list from a LIST-form steps array."""
-    ids = []
-    for element in steps_list:
-        if isinstance(element, str):
-            ids.append(element)
-        elif isinstance(element, dict) and len(element) == 1:
-            ids.append(next(iter(element)))
-    return ids
+def _params_for(steps_map: dict, step_id: str):
+    """Return a step's params from a keyed-map steps object.
 
-
-def _params_for(steps_list: list, step_id: str):
-    """Return a step's params from a LIST-form steps array.
-
-    Returns the nested param dict for a param-bearing single-key object, or
-    ``None`` for an ownerless bare-string element. Raises ``KeyError`` when the
-    step id is absent.
+    Returns the step's nested param object (``{}`` for a config-less step).
+    Raises ``KeyError`` when the step id is absent.
     """
-    for element in steps_list:
-        if isinstance(element, str) and element == step_id:
-            return None
-        if isinstance(element, dict) and len(element) == 1 and step_id in element:
-            return element[step_id]
-    raise KeyError(step_id)
+    return steps_map[step_id]
 
 
 def _write_marshal(fixture_dir: Path, config: dict) -> Path:
@@ -111,10 +93,10 @@ def test_sync_defaults_empty_marshal_gains_all_defaults(plan_context):
     assert result['status'] == 'success'
     assert result['added_count'] > 0
     config = _read_marshal(plan_context.fixture_dir)
-    # the steps default is the LIST serial form; auto_rebase_threshold nests in
-    # the single-key object for default:branch-cleanup
+    # the steps default is the keyed-map form; auto_rebase_threshold nests in
+    # the nested param object for default:branch-cleanup
     steps = config['plan']['phase-6-finalize']['steps']
-    assert isinstance(steps, list)
+    assert isinstance(steps, dict)
     branch_cleanup = _params_for(steps, 'default:branch-cleanup')
     assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only'
     assert config['project']['default_base_branch'] == 'main'
@@ -123,20 +105,17 @@ def test_sync_defaults_empty_marshal_gains_all_defaults(plan_context):
     assert 'project' in result['added']
 
 
-def test_sync_defaults_preserves_user_set_list_steps_atomically(plan_context):
-    """A user-set LIST-form steps value survives the sync verbatim (lists are atomic).
+def test_sync_defaults_preserves_user_set_param_in_keyed_map(plan_context):
+    """A user-set per-step param survives the sync; missing siblings are back-filled.
 
-    The steps default is now the LIST serial form, which the deep-merge treats as
-    an ATOMIC value: a present `steps` key is preserved verbatim with NO per-step
-    recursion. A user who pinned pr_merge_strategy via a single-key object keeps
-    that override, and the default list does NOT overwrite or deep-merge missing
-    siblings into it.
+    The steps default is the keyed map, which the deep-merge recurses into: a
+    present step key keeps its pinned param, while missing sibling params (and
+    missing sibling steps) are back-filled from the default keyed map.
     """
-    # user pinned pr_merge_strategy via the LIST form's single-key object
-    user_steps = [{'default:branch-cleanup': {'pr_merge_strategy': 'merge'}}]
+    # user pinned pr_merge_strategy on the branch-cleanup step
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'steps': user_steps}}},
+        {'plan': {'phase-6-finalize': {'steps': {'default:branch-cleanup': {'pr_merge_strategy': 'merge'}}}}},
     )
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
@@ -144,31 +123,27 @@ def test_sync_defaults_preserves_user_set_list_steps_atomically(plan_context):
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
-    # the user's LIST is preserved verbatim — atomic, no per-step merge
-    assert steps == user_steps
+    assert isinstance(steps, dict)
     branch_cleanup = _params_for(steps, 'default:branch-cleanup')
+    # the user's pinned param survives the deep-merge
     assert branch_cleanup['pr_merge_strategy'] == 'merge'
-    # no missing sibling is deep-merged into the user's single-key object
-    assert 'auto_rebase_threshold' not in branch_cleanup
-    # the atomic steps key is not reported as added (it was present)
-    assert 'plan.phase-6-finalize.steps' not in result['added']
-    # and no per-step dotted path is reported (no recursion into the list)
-    assert not any(p.startswith('plan.phase-6-finalize.steps.') for p in result['added'])
+    # the missing sibling param is back-filled from the default keyed map
+    assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only'
+    # the per-step dotted path is reported for the back-filled sibling
+    assert 'plan.phase-6-finalize.steps.default:branch-cleanup.auto_rebase_threshold' in result['added']
 
 
-def test_sync_defaults_preserves_user_set_true_in_list_form(plan_context):
-    """A user-set True survives even though the default value is False (LIST atomic).
+def test_sync_defaults_preserves_user_set_true_in_keyed_map(plan_context):
+    """A user-set True survives even though the default value is False (keyed-map merge).
 
     final_merge_without_asking is a nested param of default:branch-cleanup in the
-    LIST form. The deep-merge preserves the present `steps` key (the whole list)
-    verbatim, so an explicit True survives the False default and the list is not
-    reported as added.
+    keyed map. The deep-merge preserves the present param key, so an explicit True
+    survives the False default.
     """
-    # user explicitly opted into merge-without-asking (default is False) via the LIST form
-    user_steps = [{'default:branch-cleanup': {'final_merge_without_asking': True}}]
+    # user explicitly opted into merge-without-asking (default is False)
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'steps': user_steps}}},
+        {'plan': {'phase-6-finalize': {'steps': {'default:branch-cleanup': {'final_merge_without_asking': True}}}}},
     )
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
@@ -176,26 +151,24 @@ def test_sync_defaults_preserves_user_set_true_in_list_form(plan_context):
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
-    # the user's LIST is preserved verbatim — the True override survives
-    assert steps == user_steps
+    # the user's True override survives the deep-merge
     assert _params_for(steps, 'default:branch-cleanup')['final_merge_without_asking'] is True
-    # the present atomic steps key is not re-added
-    assert 'plan.phase-6-finalize.steps' not in result['added']
+    # the present param key is not re-added
+    assert 'plan.phase-6-finalize.steps.default:branch-cleanup.final_merge_without_asking' not in result['added']
 
 
-def test_sync_defaults_does_not_deep_merge_into_list_steps(plan_context):
-    """The default LIST does NOT deep-merge missing siblings into a present user LIST.
+def test_sync_defaults_deep_merges_missing_siblings_into_keyed_map_steps(plan_context):
+    """The default keyed map deep-merges missing siblings into a present user keyed map.
 
-    Under the LIST atomic contract, a user `steps` list that omits a sibling param
-    keeps it omitted — the merge never recurses into the list to back-fill
-    per-step params. This pins the behavioral consequence of the serial-form
-    change (the former keyed-map deep-merge of per-step params is gone).
+    Under the keyed-map merge, a user `steps` map that omits a sibling param gets
+    it back-filled from the default — the merge recurses into the keyed map. This
+    pins the behavioral consequence of restoring the keyed-map form (the LIST
+    atomic-merge is gone).
     """
-    # the branch-cleanup step is present (LIST form) but lacks auto_rebase_threshold
-    user_steps = [{'default:branch-cleanup': {'pr_merge_strategy': 'squash'}}]
+    # the branch-cleanup step is present but lacks auto_rebase_threshold
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'steps': user_steps}}},
+        {'plan': {'phase-6-finalize': {'steps': {'default:branch-cleanup': {'pr_merge_strategy': 'squash'}}}}},
     )
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
@@ -205,32 +178,35 @@ def test_sync_defaults_does_not_deep_merge_into_list_steps(plan_context):
     steps = config['plan']['phase-6-finalize']['steps']
     branch_cleanup = _params_for(steps, 'default:branch-cleanup')
     assert branch_cleanup['pr_merge_strategy'] == 'squash'
-    # the missing sibling is NOT added — the list is atomic, no per-step recursion
-    assert 'auto_rebase_threshold' not in branch_cleanup
-    assert not any(p.startswith('plan.phase-6-finalize.steps.') for p in result['added'])
+    # the missing sibling IS back-filled — the keyed map recurses per-step
+    assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only'
+    assert 'plan.phase-6-finalize.steps.default:branch-cleanup.auto_rebase_threshold' in result['added']
 
 
-def test_sync_defaults_pruned_list_steps_are_atomic(plan_context):
-    """A user's pruned single-element steps list is kept verbatim (lists are atomic).
+def test_sync_defaults_backfills_missing_steps_into_pruned_keyed_map(plan_context):
+    """A user's pruned single-entry steps map gains the missing default steps.
 
-    The schema default is now the LIST serial form, and the deep-merge treats a
-    user-supplied list value as atomic (no recursion), so a user who pruned steps
-    to a single bare-string element keeps it verbatim and the default list does
-    not overwrite it.
+    The schema default is the keyed map, and the deep-merge recurses into it, so a
+    user who pruned steps to a single entry gets the missing default step keys
+    back-filled (each as a new top-level step key).
     """
-    # user pruned the finalize steps to a single bare-string element
+    # user pruned the finalize steps to a single config-less entry
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'steps': ['default:commit-push']}}},
+        {'plan': {'phase-6-finalize': {'steps': {'default:commit-push': {}}}}},
     )
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
-    # list preserved verbatim (atomic — not merged against the default list)
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
-    assert config['plan']['phase-6-finalize']['steps'] == ['default:commit-push']
-    assert 'plan.phase-6-finalize.steps' not in result['added']
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert isinstance(steps, dict)
+    # the user's pruned entry survives
+    assert 'default:commit-push' in steps
+    # a missing default step is back-filled and reported as a new step key
+    assert 'default:archive-plan' in steps
+    assert 'plan.phase-6-finalize.steps.default:archive-plan' in result['added']
 
 
 def test_sync_defaults_is_idempotent(plan_context):
@@ -260,20 +236,18 @@ def test_sync_defaults_reports_added_paths_sorted(plan_context):
 
 
 # =============================================================================
-# LIST serial-form back-fill on sync (steps / verification_steps copied atomically)
+# Keyed-map back-fill on sync (steps / verification_steps copied as a keyed map)
 # =============================================================================
 #
-# The steps / verification_steps defaults are now the LIST serial form (bare
-# strings for ownerless steps, single-key objects for param-bearing steps). The
-# deep-merge treats a missing `steps` / `verification_steps` key as an atomic
-# back-fill: the whole default LIST is copied wholesale and reported as a single
-# added dotted path, with NO per-step recursion. Ownerless steps land as bare
-# strings (never a {step_id: null} / {step_id: {}} object); param-owning steps
-# land as their single-key object.
+# The steps / verification_steps defaults are the keyed-map form (`{}` for
+# config-less steps, a non-empty param object for param-owning steps). When the
+# whole `plan` block is absent, the default keyed map is copied wholesale under
+# the top-level `plan` path. Config-less steps land as `{}`; param-owning steps
+# land with their nested param object.
 
 
-def test_sync_defaults_backfills_verification_steps_as_list_of_bare_strings(plan_context):
-    """Syncing an empty marshal.json back-fills verification_steps as a LIST of bare strings."""
+def test_sync_defaults_backfills_verification_steps_as_keyed_map(plan_context):
+    """Syncing an empty marshal.json back-fills verification_steps as a keyed map of {}."""
     _write_marshal(plan_context.fixture_dir, {})
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
@@ -281,26 +255,20 @@ def test_sync_defaults_backfills_verification_steps_as_list_of_bare_strings(plan
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     verification_steps = config['plan']['phase-5-execute']['verification_steps']
-    # the whole LIST is copied atomically; ownerless verify steps are bare strings
-    assert isinstance(verification_steps, list)
+    # the whole keyed map is copied; config-less verify steps map to {}
+    assert isinstance(verification_steps, dict)
     assert verification_steps, 'verification_steps backfill should not be empty'
-    assert all(isinstance(element, str) for element in verification_steps), (
-        f'ownerless verify steps must be bare strings, got {verification_steps!r}'
-    )
-    # the LIST is never split into per-step dotted paths (atomic, no recursion);
-    # when the whole `plan` block is absent it is added as the top-level `plan`
-    # path, so no per-step verification_steps path is ever reported
-    assert not any(
-        p.startswith('plan.phase-5-execute.verification_steps.') for p in result['added']
+    assert all(params == {} for params in verification_steps.values()), (
+        f'config-less verify steps must map to {{}}, got {verification_steps!r}'
     )
 
 
-def test_sync_defaults_backfills_finalize_steps_as_list_serial_form(plan_context):
-    """Syncing an empty marshal.json back-fills finalize steps as the LIST serial form.
+def test_sync_defaults_backfills_finalize_steps_as_keyed_map_form(plan_context):
+    """Syncing an empty marshal.json back-fills finalize steps as the keyed-map form.
 
     Param-owning steps (sonar-roundtrip / automated-review / branch-cleanup /
-    finalize-step-simplify) land as single-key objects with a non-empty param
-    dict; the remaining ownerless steps land as bare strings.
+    finalize-step-simplify) land with a non-empty nested param object; the
+    remaining config-less steps map to {}.
     """
     _write_marshal(plan_context.fixture_dir, {})
 
@@ -309,7 +277,7 @@ def test_sync_defaults_backfills_finalize_steps_as_list_serial_form(plan_context
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
-    assert isinstance(steps, list)
+    assert isinstance(steps, dict)
 
     param_owning = {
         'default:sonar-roundtrip',
@@ -318,45 +286,28 @@ def test_sync_defaults_backfills_finalize_steps_as_list_serial_form(plan_context
         # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
         'default:finalize-step-simplify',
     }
-    seen_param_owning: set[str] = set()
-    for element in steps:
-        if isinstance(element, dict):
-            assert len(element) == 1, 'a param-bearing element must be a single-key object'
-            step_id, params = next(iter(element.items()))
-            assert step_id in param_owning, (
-                f'only param-owning steps may be single-key objects; got {step_id!r}'
-            )
-            seen_param_owning.add(step_id)
-            assert isinstance(params, dict) and params, (
-                f'param-owning step {step_id!r} must carry a non-empty nested dict'
-            )
+    for step_id, params in steps.items():
+        assert isinstance(params, dict), f'every step value must be a dict; got {params!r}'
+        if step_id in param_owning:
+            assert params, f'param-owning step {step_id!r} must carry a non-empty nested dict'
         else:
-            assert isinstance(element, str), 'an ownerless element must be a bare string'
-            assert element not in param_owning, (
-                f'param-owning step {element!r} must be a single-key object, not a bare string'
-            )
-    assert seen_param_owning == param_owning, (
-        f'all param-owning steps must appear as single-key objects; '
-        f'missing: {param_owning - seen_param_owning!r}'
+            assert params == {}, f'config-less step {step_id!r} must map to {{}}, got {params!r}'
+    assert param_owning <= set(steps), (
+        f'all param-owning steps must appear in the keyed map; '
+        f'missing: {param_owning - set(steps)!r}'
     )
-    # the LIST is never split into per-step dotted paths (atomic, no recursion);
-    # when the whole `plan` block is absent it is added as the top-level `plan`
-    # path, so no per-step steps path is ever reported
-    assert not any(p.startswith('plan.phase-6-finalize.steps.') for p in result['added'])
 
 
-def test_sync_defaults_preserves_present_steps_list_untouched(plan_context):
-    """A present `steps` LIST is preserved verbatim (present-key, atomic, no rewrite).
+def test_sync_defaults_preserves_present_steps_map_untouched(plan_context):
+    """A present `steps` map's existing keys are preserved; missing default keys are back-filled.
 
-    The deep-merge preserves a present key by key-existence (no recursion into the
-    list), so a user-supplied LIST survives the sync verbatim and the default
-    LIST does not overwrite it.
+    The deep-merge recurses into a present keyed map: a user-supplied step key is
+    preserved verbatim, while every missing default step key is back-filled.
     """
-    # a marshal.json whose finalize steps already carry a pruned LIST
-    user_steps = ['default:create-pr']
+    # a marshal.json whose finalize steps already carry a pruned keyed map
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'steps': user_steps}}},
+        {'plan': {'phase-6-finalize': {'steps': {'default:create-pr': {}}}}},
     )
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
@@ -364,31 +315,33 @@ def test_sync_defaults_preserves_present_steps_list_untouched(plan_context):
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
-    # the pre-existing LIST is preserved verbatim (present-key, no rewrite)
-    assert steps == user_steps
-    # the present atomic steps key is NOT reported as added
-    assert 'plan.phase-6-finalize.steps' not in result['added']
+    # the pre-existing entry is preserved
+    assert 'default:create-pr' in steps
+    # the present step key is NOT reported as added
+    assert 'plan.phase-6-finalize.steps.default:create-pr' not in result['added']
+    # a missing default step key IS back-filled
+    assert 'default:archive-plan' in steps
 
 
-def test_sync_defaults_is_idempotent_against_list_form_steps(plan_context):
-    """A second sync adds nothing — the LIST-form back-fill is idempotent.
+def test_sync_defaults_is_idempotent_against_keyed_map_steps(plan_context):
+    """A second sync adds nothing — the keyed-map back-fill is idempotent.
 
-    The first sync copies the atomic default LIST; the second observes the
+    The first sync copies the default keyed map; the second observes the
     `steps` / `verification_steps` keys already present and re-adds nothing,
-    proving the merge is stable against the LIST form it just wrote.
+    proving the merge is stable against the keyed map it just wrote.
     """
     _write_marshal(plan_context.fixture_dir, {})
     first = cmd_sync_defaults(Namespace(audit_plan_id=None))
     assert first['status'] == 'success'
 
-    # second run observes the back-filled LIST values and adds nothing
+    # second run observes the back-filled keyed map and adds nothing
     second = cmd_sync_defaults(Namespace(audit_plan_id=None))
 
     assert second['status'] == 'success'
     assert second['added'] == []
     assert second['added_count'] == 0
-    # the verify steps remain the LIST of bare strings after the idempotent re-sync
+    # the verify steps remain the keyed map of {} after the idempotent re-sync
     config = _read_marshal(plan_context.fixture_dir)
     verification_steps = config['plan']['phase-5-execute']['verification_steps']
-    assert isinstance(verification_steps, list)
-    assert all(isinstance(element, str) for element in verification_steps)
+    assert isinstance(verification_steps, dict)
+    assert all(params == {} for params in verification_steps.values())

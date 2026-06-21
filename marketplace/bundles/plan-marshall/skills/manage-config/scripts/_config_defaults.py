@@ -8,7 +8,6 @@ project initialization and detection.
 # Direct import - PYTHONPATH set by executor. The branch-prefix literals live
 # in constants.py exactly once; this module imports them to build
 # DEFAULT_PROJECT['working_prefixes'] (the fail-closed fallback seed).
-from _config_core import keyed_map_to_list_form
 from constants import (  # type: ignore[import-not-found]
     DEFAULT_BRANCH_PREFIX_WORKING,
 )
@@ -389,16 +388,13 @@ DEFAULT_PLAN_EXECUTE = {
     # plan time. The 400K default leaves headroom below a typical context window.
     # Registering it here makes the packing budget operator-visible in marshal.json.
     'per_envelope_budget_tokens': '400K',
-    # Verification steps as the canonical LIST serial form: a JSON array whose
-    # elements are bare strings (ownerless steps) or single-key objects
-    # `{step_id: {params}}` (param-bearing steps); array order is the execution
-    # order. Verification steps own no params, so every built-in verify step
-    # seeds as a bare string — no noisy `{step_id: null}` object is written. The
-    # dual-form reader (`_steps_map` / `_read_marshal_phase_step_map`) normalizes
-    # this list back to an id-keyed map for downstream consumers; both the LIST
-    # form and the legacy keyed-map are accepted on read, but the LIST form is
-    # the single shape this seed emits.
-    'verification_steps': keyed_map_to_list_form(dict.fromkeys(BUILT_IN_VERIFY_STEPS)),
+    # Verification steps as the canonical keyed-map form: an id-keyed object
+    # `{step_id: {params}}` whose key insertion order is the execution order.
+    # Verification steps own no params, so every built-in verify step seeds with
+    # an empty `{}` param object (config-less). The reader
+    # (`_steps_map` / `_read_marshal_phase_step_map`) consumes this keyed map
+    # directly — it is the sole on-disk shape both read and written.
+    'verification_steps': {step_id: {} for step_id in BUILT_IN_VERIFY_STEPS},
     # Per-phase effort default (seeded at init; balanced-preset baseline). The
     # phase-5-execute role group has the `default` (per-task implementation) and
     # `verification-feedback` (build-runner triage) subkeys, so the on-disk shape
@@ -511,37 +507,35 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 # effort, …) stay flat siblings of `steps`.
 
 
-def _seed_finalize_steps() -> list:
-    """Build the finalize-step defaults seed in the canonical LIST serial form.
+def _seed_finalize_steps() -> dict:
+    """Build the finalize-step defaults seed in the canonical keyed-map form.
 
     Iterates :data:`BUILT_IN_FINALIZE_STEPS` in order, delegating each step id to
     ``configurable_contract.resolve_step_defaults_optional``. A param-owning step
     resolves to its ``{param_key: default}`` object; an ownerless step resolves
-    to ``None`` (no params). The resolved id-keyed map is then serialized to the
-    canonical LIST form via :func:`keyed_map_to_list_form`: a param-owning step
-    becomes a single-key object ``{step_id: {param_key: default}}`` and an
-    ownerless step becomes a bare ``"step_id"`` string — no noisy
-    ``{step_id: null}`` object is written. List order is the execution order.
+    to ``None`` (no params), which is normalized to an empty ``{}`` object
+    (config-less). The result is the id-keyed map ``{step_id: param-object}`` —
+    the sole on-disk shape both read and written — with key insertion order as
+    the execution order.
 
     The cross-bundle parser is imported lazily here (not at module top level) so
     importing ``_config_defaults`` never pulls in the extension-api parser — the
     seed is only materialized when :func:`get_default_config` runs.
 
     Returns:
-        The LIST serial form: a list of bare strings (ownerless steps) and
-        single-key objects ``{step_id: {param_key: default}}`` (param-bearing
-        steps), in execution order.
+        The keyed-map serial form: an id-keyed dict mapping each step id to its
+        ``{param_key: default}`` object (``{}`` for config-less steps), in
+        execution order.
     """
     # Lazy import — executor sets PYTHONPATH for cross-skill imports.
     from configurable_contract import (  # type: ignore[import-not-found]
         resolve_step_defaults_optional,
     )
 
-    resolved = {
-        step_id: resolve_step_defaults_optional(step_id)
+    return {
+        step_id: (resolve_step_defaults_optional(step_id) or {})
         for step_id in BUILT_IN_FINALIZE_STEPS
     }
-    return keyed_map_to_list_form(resolved)
 
 
 DEFAULT_PLAN_FINALIZE = {
@@ -583,15 +577,14 @@ DEFAULT_PLAN_FINALIZE = {
     # runners without hiding a genuinely stuck pipeline behind an excessive
     # ceiling.
     'checks_wait_timeout_seconds': 600,
-    # Finalize steps as the canonical LIST serial form: a JSON array whose
-    # elements are bare strings (ownerless steps) or single-key objects
-    # `{step_id: {params}}` (param-bearing steps); array order is the execution
-    # order. No noisy `{step_id: null}` object is written for an ownerless step.
+    # Finalize steps as the canonical keyed-map form: an id-keyed object
+    # `{step_id: {params}}` whose key insertion order is the execution order. A
+    # config-less (ownerless) step carries an empty `{}` param object.
     # Step-owned params (sonar params under `default:sonar-roundtrip`;
     # `review_bot_buffer_seconds` under `default:automated-review`;
     # `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`
     # under `default:branch-cleanup`; `simplify` under
-    # `default:finalize-step-simplify`) fold into the owning step's single-key
+    # `default:finalize-step-simplify`) live in the owning step's nested param
     # object. Each step's params are declared self-describingly in the step's
     # body-doc `configurable:` frontmatter and read by `configurable_contract.py`;
     # the `self_review` / `drop_review_on_scope_gate` knobs own the opt-in
@@ -599,11 +592,9 @@ DEFAULT_PLAN_FINALIZE = {
     # built-in candidate (not in BUILT_IN_FINALIZE_STEPS / DEFAULT_PHASE_6_STEPS),
     # so the default seed does NOT include it — a fresh project's candidate list is
     # unchanged. Their defaults (`auto` / `False`) are supplied by the reader's
-    # default-merge when the project step is absent from marshal.json. The
-    # dual-form reader (`_steps_map` / `_read_marshal_phase_step_map`) normalizes
-    # this list back to an id-keyed map for downstream consumers; both the LIST
-    # form and the legacy keyed-map are accepted on read, but the LIST form is the
-    # single shape this seed emits.
+    # default-merge when the project step is absent from marshal.json. The reader
+    # (`_steps_map` / `_read_marshal_phase_step_map`) consumes this keyed map
+    # directly — it is the sole on-disk shape both read and written.
     #
     # Seeded lazily by `_seed_finalize_steps()` inside `get_default_config()` (the
     # parser delegation cannot run at module import without a hard cross-bundle
