@@ -63,11 +63,11 @@ JSON structure and field definitions for project configuration.
         "XL": "260K"
       },
       "per_envelope_budget_tokens": "400K",
-      "verification_steps": {
-        "default:verify:quality-gate": {},
-        "default:verify:module-tests": {},
-        "default:verify:coverage": {}
-      }
+      "verification_steps": [
+        "default:verify:quality-gate",
+        "default:verify:module-tests",
+        "default:verify:coverage"
+      ]
     },
     "phase-6-finalize": {
       "max_iterations": 3,
@@ -75,29 +75,35 @@ JSON structure and field definitions for project configuration.
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
       "qgate": "auto",
-      "steps": {
-        "default:commit-push": {},
-        "default:finalize-step-simplify": { "simplify": "auto" },
-        "default:create-pr": {},
-        "default:automated-review": { "review_bot_buffer_seconds": 180 },
-        "default:sonar-roundtrip": {
-          "touched_file_cleanup": "new_code_only",
-          "do_transition": false,
-          "ce_wait_timeout_seconds": 600
+      "steps": [
+        "default:commit-push",
+        { "default:finalize-step-simplify": { "simplify": "auto" } },
+        "default:create-pr",
+        { "default:automated-review": { "review_bot_buffer_seconds": 180 } },
+        {
+          "default:sonar-roundtrip": {
+            "touched_file_cleanup": "new_code_only",
+            "do_transition": false,
+            "ce_wait_timeout_seconds": 600
+          }
         },
-        "default:lessons-capture": {},
-        "default:branch-cleanup": {
-          "pr_merge_strategy": "squash",
-          "final_merge_without_asking": false,
-          "auto_rebase_threshold": "no_overlap_only"
+        "default:lessons-capture",
+        {
+          "default:branch-cleanup": {
+            "pr_merge_strategy": "squash",
+            "final_merge_without_asking": false,
+            "auto_rebase_threshold": "no_overlap_only"
+          }
         },
-        "default:record-metrics": {},
-        "default:archive-plan": {},
-        "project:finalize-step-pre-submission-self-review": {
-          "self_review": "auto",
-          "drop_review_on_scope_gate": false
+        "default:record-metrics",
+        "default:archive-plan",
+        {
+          "project:finalize-step-pre-submission-self-review": {
+            "self_review": "auto",
+            "drop_review_on_scope_gate": false
+          }
         }
-      }
+      ]
     }
   },
   "build": {
@@ -367,7 +373,7 @@ These fields live directly under `plan`, outside any phase block.
 
 ### phase-5-execute
 
-Execute phase with integrated verification pipeline. Contains the `commit_and_push` boolean, iteration limits, and an id-keyed `verification_steps` map for verification. `verification_steps` is a step-id-keyed map: each key is a verify step id, each value is that step's nested param object. Verification steps own no params, so every value is the empty object `{}`. Key insertion order is the execution order — the keyed-map shape (not a flat list) is the single on-disk schema; readers iterate `.keys()` for the ordered step ids.
+Execute phase with integrated verification pipeline. Contains the `commit_and_push` boolean, iteration limits, and a `verification_steps` list for verification. `verification_steps` serializes on disk as an ordered LIST (a JSON array of bare step-id strings — verify steps own no params, so no single-key object form is used). Array order is the execution order. The dual-form reader normalizes both the canonical LIST form and the legacy id-keyed map (read only during the migration window) to the same internal id-keyed dict for downstream consumers.
 
 ```json
 {
@@ -386,11 +392,11 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
         "XL": "260K"
       },
       "per_envelope_budget_tokens": "400K",
-      "verification_steps": {
-        "default:verify:quality-gate": {},
-        "default:verify:module-tests": {},
-        "default:verify:coverage": {}
-      }
+      "verification_steps": [
+        "default:verify:quality-gate",
+        "default:verify:module-tests",
+        "default:verify:coverage"
+      ]
     }
   }
 }
@@ -410,23 +416,23 @@ Both `verification_steps` and `per_deliverable_build` reference verify steps by 
 
 #### Verification Steps
 
-The `verification_steps` map is an id-keyed map of verification step references (key insertion order = execution order); each value is the step's nested param object (`{}` for verify steps, which own no params). Two key types:
+The `verification_steps` field serializes on disk as an ordered LIST (a JSON array). Verify steps own no params, so every element is a bare step-id string. Array order is the execution order. The dual-form reader normalizes the canonical LIST form and the legacy id-keyed map to the same internal id-keyed dict so downstream consumers are unaffected. Two element types:
 
 - **Built-in steps** (`default:verify:{canonical}`): the parameterized canonical-verify step — e.g. `default:verify:quality-gate` (run quality-gate), `default:verify:module-tests` (run full test suite), `default:verify:coverage` (coverage threshold).
 - **Extension steps** (colon notation): Fully-qualified skill references from domain bundles (e.g., `my-bundle:my-verify-step`)
 
 Built-in step keys are always first in the default map. Extension step keys are appended by `skill-domains configure` from `provides_verify_steps()` in each domain's `extension.py`. See [extension-contract.md](../../extension-api/standards/extension-contract.md) for the complete contract.
 
-Managed via (the step-list verbs operate on the keyed map's keys, preserving insertion order and any existing per-step params):
+Managed via (the step-list verbs operate on the LIST elements, preserving array order and any existing per-step params):
 - `plan phase-5-execute set-steps --steps default:verify:quality-gate,default:verify:module-tests`
 - `plan phase-5-execute add-step --step my-bundle:my-verify-step`
 - `plan phase-5-execute remove-step --step default:verify:quality-gate`
 - `plan phase-5-execute step get --step-id default:verify:quality-gate` (returns the step's complete nested param object in one call)
-- `plan phase-5-execute step set --step-id {id} --param {k} --value {v}` (writes one step-owned param into the keyed map — the compose-time default + wizard global-config write target)
+- `plan phase-5-execute step set --step-id {id} --param {k} --value {v}` (writes one step-owned param into the step's nested object — the compose-time default + wizard global-config write target)
 - `plan phase-5-execute set --field per_deliverable_build --value default:verify:compile,default:verify:module-tests` (comma-separated list; empty value disables the focused build)
 - `plan phase-5-execute remove-field --field steps` (delete an arbitrary persisted key under the phase section — e.g. removing the legacy `steps` key; see [remove-field](#remove-field) below)
 
-The keyed map (`marshal.json`) is the **compose-time default + wizard global-config write target**. The **plan-local runtime source** is the execution manifest: the composer snapshots each selected step's resolved params into the manifest body at compose time, and phase-5/6 runtime consumers read params via `manage-execution-manifest step-params get` (plan-local, per-plan overridable via `step-params set`), NOT from `marshal.json`. See [manage-execution-manifest/standards/manifest-schema.md](../../manage-execution-manifest/standards/manifest-schema.md) § `step_params`.
+The LIST serial form in `marshal.json` is the **compose-time default + wizard global-config write target**. The **plan-local runtime source** is the execution manifest: the composer snapshots each selected step's resolved params into the manifest body at compose time, and phase-5/6 runtime consumers read params via `manage-execution-manifest step-params get` (plan-local, per-plan overridable via `step-params set`), NOT from `marshal.json`. See [manage-execution-manifest/standards/manifest-schema.md](../../manage-execution-manifest/standards/manifest-schema.md) § `step_params`.
 
 #### remove-field
 
@@ -444,7 +450,7 @@ plan phase-5-execute remove-field --field steps
 
 ### phase-6-finalize
 
-Finalize pipeline with an id-keyed `steps` map. `steps` is a step-id-keyed map: each key is a finalize step id, each value is that step's nested param object (`{}` when the step owns no params). Step-owned params (`review_bot_buffer_seconds` under `default:automated-review`; `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds` under `default:sonar-roundtrip`; `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold` under `default:branch-cleanup`; `simplify` under `default:finalize-step-simplify`; `self_review` / `drop_review_on_scope_gate` under `project:finalize-step-pre-submission-self-review`) nest under their owning step. Key insertion order is the execution order. The one finalize run-at-all gate that has no single owning step body is `qgate` — it stays a flat phase-level sibling, alongside the other ownerless phase-level knobs (`checks_wait_timeout_seconds`, `max_iterations`, the two automation knobs). The opt-in `project:finalize-step-pre-submission-self-review` step is NOT a built-in candidate, so its `self_review` / `drop_review_on_scope_gate` knobs are only stored under the step when a consumer opts the step into `steps`; their defaults (`auto` / `false`) otherwise apply via the consumer's default-merge.
+Finalize pipeline with a `steps` LIST. `steps` serializes on disk as an ordered JSON array: ownerless steps are bare step-id strings; param-bearing steps are single-key objects whose lone key is the step id and whose value is the nested param object. Step-owned params (`review_bot_buffer_seconds` under `default:automated-review`; `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds` under `default:sonar-roundtrip`; `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold` under `default:branch-cleanup`; `simplify` under `default:finalize-step-simplify`; `self_review` / `drop_review_on_scope_gate` under `project:finalize-step-pre-submission-self-review`) nest inside their owning step's single-key object. Array order is the execution order. The dual-form reader normalizes both the canonical LIST form and the legacy id-keyed map (read only during the migration window) to the same internal id-keyed dict for downstream consumers. The one finalize run-at-all gate that has no single owning step body is `qgate` — it stays a flat phase-level sibling, alongside the other ownerless phase-level knobs (`checks_wait_timeout_seconds`, `max_iterations`, the two automation knobs). The opt-in `project:finalize-step-pre-submission-self-review` step is NOT a built-in candidate, so its `self_review` / `drop_review_on_scope_gate` knobs are only stored under the step when a consumer opts the step into `steps`; their defaults (`auto` / `false`) otherwise apply via the consumer's default-merge.
 
 ```json
 {
@@ -455,29 +461,35 @@ Finalize pipeline with an id-keyed `steps` map. `steps` is a step-id-keyed map: 
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
       "qgate": "auto",
-      "steps": {
-        "default:commit-push": {},
-        "default:finalize-step-simplify": { "simplify": "auto" },
-        "default:create-pr": {},
-        "default:automated-review": { "review_bot_buffer_seconds": 180 },
-        "default:sonar-roundtrip": {
-          "touched_file_cleanup": "new_code_only",
-          "do_transition": false,
-          "ce_wait_timeout_seconds": 600
+      "steps": [
+        "default:commit-push",
+        { "default:finalize-step-simplify": { "simplify": "auto" } },
+        "default:create-pr",
+        { "default:automated-review": { "review_bot_buffer_seconds": 180 } },
+        {
+          "default:sonar-roundtrip": {
+            "touched_file_cleanup": "new_code_only",
+            "do_transition": false,
+            "ce_wait_timeout_seconds": 600
+          }
         },
-        "default:lessons-capture": {},
-        "default:branch-cleanup": {
-          "pr_merge_strategy": "squash",
-          "final_merge_without_asking": false,
-          "auto_rebase_threshold": "no_overlap_only"
+        "default:lessons-capture",
+        {
+          "default:branch-cleanup": {
+            "pr_merge_strategy": "squash",
+            "final_merge_without_asking": false,
+            "auto_rebase_threshold": "no_overlap_only"
+          }
         },
-        "default:record-metrics": {},
-        "default:archive-plan": {},
-        "project:finalize-step-pre-submission-self-review": {
-          "self_review": "auto",
-          "drop_review_on_scope_gate": false
+        "default:record-metrics",
+        "default:archive-plan",
+        {
+          "project:finalize-step-pre-submission-self-review": {
+            "self_review": "auto",
+            "drop_review_on_scope_gate": false
+          }
         }
-      }
+      ]
     }
   }
 }
@@ -493,7 +505,7 @@ Finalize pipeline with an id-keyed `steps` map. `steps` is a step-id-keyed map: 
 | `loop_back_without_asking` | bool | false | Reverse auto-continuation: auto-re-enter execute on a `phase-6-finalize` `loop_back` outcome. `false` (default) halts at every loop_back and returns control to the user; `true` opts into the full unattended cycle, capped by `max_iterations`. |
 | `qgate` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the finalize blocking-findings re-capture (`pre-push-quality-gate`). **Highest-risk gate** — `never` can mask real build/test failures and push a red tree. The one finalize run-at-all gate that stays flat (it is consumed as a phase-level gate, not a param the owning step body reads). Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | — (pre-push-quality-gate activation) | derived | — | The `default:pre-push-quality-gate` finalize step's activation is **derived from `build.map`** — no dedicated config key. The manifest composer activates the step when the live footprint touches any `glob` registered in `build.map`; an absent build_map or no footprint match leaves the step inactive. |
-| `steps` | map | (see below) | Id-keyed map of step references to execute (key insertion order = execution order), persisted sorted ascending by each step's authoritative `order` value. Each value is the step's nested param object. |
+| `steps` | list | (see below) | Ordered LIST of step references to execute (array order = execution order), persisted sorted ascending by each step's authoritative `order` value. Ownerless steps are bare strings; param-bearing steps are single-key objects. The internal normalized representation is an id-keyed dict; the on-disk serial form is the LIST. |
 
 **Step-owned params (nested under their owning step in the `steps` map):**
 
@@ -532,14 +544,14 @@ Finalize pipeline with an id-keyed `steps` map. `steps` is a step-id-keyed map: 
 | `self_review` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the pre-submission structural + cognitive self-review (canonical step `default:pre-submission-self-review`). `always` overrides the manifest composer's `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | `drop_review_on_scope_gate` | bool | false | Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter. `false` (default) keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated (surgical / single_module) plans. The self-review step owns this knob because it is the primary review step the scope gate suppresses. |
 
-**Two-tier source for step params**: the `steps` keyed map in `marshal.json` is the **compose-time default + wizard global-config write target** (read/written via `step get` / `step set`). The **plan-local runtime source** is the execution manifest — the composer snapshots each selected step's resolved params into the manifest body at compose time, and phase-5/6 runtime consumers read params via `manage-execution-manifest step-params get` (plan-local, per-plan overridable via `step-params set`), NOT from `marshal.json`. See [manage-execution-manifest/standards/manifest-schema.md](../../manage-execution-manifest/standards/manifest-schema.md) § `step_params`.
+**Two-tier source for step params**: the `steps` LIST in `marshal.json` is the **compose-time default + wizard global-config write target** (read/written via `step get` / `step set`). The **plan-local runtime source** is the execution manifest — the composer snapshots each selected step's resolved params into the manifest body at compose time, and phase-5/6 runtime consumers read params via `manage-execution-manifest step-params get` (plan-local, per-plan overridable via `step-params set`), NOT from `marshal.json`. The execution manifest's `step_params` block is an id-keyed dict — internal plumbing unchanged by the LIST migration. See [manage-execution-manifest/standards/manifest-schema.md](../../manage-execution-manifest/standards/manifest-schema.md) § `step_params`.
 
-Managed via (the step-list verbs operate on the keyed map's keys, preserving insertion order and existing per-step params):
+Managed via (the step-list verbs operate on the LIST elements, preserving array order and existing per-step params):
 - `plan phase-6-finalize set-steps --steps default:commit-push,default:create-pr,…`
 - `plan phase-6-finalize add-step --step my-bundle:my-finalize-step`
 - `plan phase-6-finalize remove-step --step default:sonar-roundtrip`
 - `plan phase-6-finalize step get --step-id default:branch-cleanup` (returns the step's complete nested param object in one call)
-- `plan phase-6-finalize step set --step-id default:branch-cleanup --param pr_merge_strategy --value rebase` (writes one step-owned param into the keyed map — the global-config write target)
+- `plan phase-6-finalize step set --step-id default:branch-cleanup --param pr_merge_strategy --value rebase` (writes one step-owned param into the step's nested object — the global-config write target)
 
 Default steps: `default:commit-push`, `default:create-pr`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 

@@ -3002,6 +3002,195 @@ def test_compose_snapshots_resolved_step_params_from_keyed_map(plan_context):
 
 
 # =============================================================================
+# LIST serial-form marshal.json read-through (dual-form reader)
+#
+# ``_read_marshal_phase_step_map`` / ``_read_marshal_phase_steps`` are dual-form
+# readers: they accept BOTH the canonical LIST serial form (bare strings +
+# single-key objects) and the legacy keyed-map form, normalizing both to the
+# same internal id-keyed map. These tests feed the migrated LIST form through
+# the composer end-to-end and assert the manifest is identical to what the
+# legacy keyed-map form produces — proving the migrated on-disk marshal.json
+# round-trips correctly. (The keyed-map snapshot assertion above stays as the
+# legacy-form regression; the manifest's own ``step_params`` snapshot remains an
+# id-keyed dict — only the marshal.json on-disk form changed to a LIST.)
+# =============================================================================
+
+
+def _write_full_marshal_list_form(
+    fixture_dir: Path,
+    *,
+    phase_6_steps: list[str],
+    phase_5_steps: list[str] | None = None,
+) -> None:
+    """Write a marshal.json with phase-5/6 steps in the canonical LIST serial form.
+
+    The id lists are emitted as the LIST form (bare strings for ownerless steps),
+    matching the migrated on-disk shape the dual-form reader accepts. Prefixes are
+    preserved. No CI provider is declared, so the bot-enforcement guard is a no-op.
+    """
+    marshal_path = fixture_dir / 'marshal.json'
+    plan_block: dict = {'phase-6-finalize': {'steps': list(phase_6_steps)}}
+    if phase_5_steps is not None:
+        plan_block['phase-5-execute'] = {'verification_steps': list(phase_5_steps)}
+    data = {'plan': plan_block}
+    marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+
+def test_compose_reads_list_form_marshal_same_as_keyed_map(plan_context):
+    """A LIST-form marshal.json composes to the same manifest as the legacy keyed-map.
+
+    Feeds the identical step set once as the LIST form and once as the keyed-map
+    form, and asserts both manifests carry the same phase_6.steps and
+    phase_5.verification_steps — the dual-form reader normalizes both to the same
+    internal map, so the migrated LIST form is behavior-preserving.
+    """
+    phase_6 = [
+        'default:commit-push',
+        'project:finalize-step-deploy-target',
+        'default:create-pr',
+        'default:lessons-capture',
+        'default:branch-cleanup',
+        'default:record-metrics',
+        'default:archive-plan',
+    ]
+    phase_5 = ['verify:quality-gate', 'verify:module-tests']
+
+    # LIST form.
+    _write_full_marshal_list_form(
+        plan_context.fixture_dir, phase_6_steps=phase_6, phase_5_steps=phase_5
+    )
+    cmd_compose(
+        _compose_ns(
+            plan_id='list-form-marshal',
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=11,
+        )
+    )
+    list_manifest = read_manifest('list-form-marshal')
+    assert list_manifest is not None
+
+    # Legacy keyed-map form (the existing _write_full_marshal helper).
+    _write_full_marshal(
+        plan_context.fixture_dir, phase_6_steps=phase_6, phase_5_steps=phase_5
+    )
+    cmd_compose(
+        _compose_ns(
+            plan_id='keyed-map-marshal',
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=11,
+        )
+    )
+    keyed_manifest = read_manifest('keyed-map-marshal')
+    assert keyed_manifest is not None
+
+    # both on-disk forms read to the same composed step sets
+    assert list_manifest['phase_6']['steps'] == keyed_manifest['phase_6']['steps']
+    assert (
+        list_manifest['phase_5']['verification_steps']
+        == keyed_manifest['phase_5']['verification_steps']
+    )
+    # the project: prefix survives the LIST-form read (only default: is stripped)
+    assert 'project:finalize-step-deploy-target' in list_manifest['phase_6']['steps']
+
+
+def test_compose_snapshots_step_params_from_list_form(plan_context):
+    """compose snapshots resolved params from a LIST-form marshal.json.
+
+    Seeds a marshal.json whose phase-6-finalize steps are the LIST serial form
+    with param-bearing single-key objects on branch-cleanup and sonar-roundtrip.
+    The dual-form reader normalizes the LIST to the internal map, so the composer
+    snapshots the same resolved params into body.phase_6.step_params (keyed by the
+    bare in-manifest step id) as the keyed-map form would. Ownerless bare-string
+    steps snapshot as {}.
+    """
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    phase_6_list = [
+        'default:commit-push',
+        'default:create-pr',
+        {'default:automated-review': {'review_bot_buffer_seconds': 240}},
+        {
+            'default:sonar-roundtrip': {
+                'touched_file_cleanup': 'touched_files_zero',
+                'do_transition': True,
+                'ce_wait_timeout_seconds': 720,
+            }
+        },
+        'default:lessons-capture',
+        {
+            'default:branch-cleanup': {
+                'pr_merge_strategy': 'rebase',
+                'final_merge_without_asking': True,
+                'auto_rebase_threshold': 'no_overlap_only',
+            }
+        },
+        'default:record-metrics',
+        'default:archive-plan',
+    ]
+    data = {'plan': {'phase-6-finalize': {'steps': phase_6_list}}}
+    marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='snapshot-params-list',
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=11,
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+
+    manifest = read_manifest('snapshot-params-list')
+    assert manifest is not None
+    step_params = manifest['phase_6']['step_params']
+    # the snapshot is keyed by the bare in-manifest step id (default: stripped)
+    assert step_params['branch-cleanup'] == {
+        'pr_merge_strategy': 'rebase',
+        'final_merge_without_asking': True,
+        'auto_rebase_threshold': 'no_overlap_only',
+    }
+    assert step_params['sonar-roundtrip'] == {
+        'touched_file_cleanup': 'touched_files_zero',
+        'do_transition': True,
+        'ce_wait_timeout_seconds': 720,
+    }
+    assert step_params['automated-review'] == {'review_bot_buffer_seconds': 240}
+    # an ownerless bare-string selected step snapshots as the empty param object
+    assert step_params['commit-push'] == {}
+    # every in-manifest step has a snapshot entry
+    assert set(step_params.keys()) == set(manifest['phase_6']['steps'])
+
+
+def test_compose_reads_list_form_phase_5_verification_steps(plan_context):
+    """The LIST-form read-through applies to phase-5 verification_steps as well.
+
+    Mirrors the phase-6 read-through for the phase-5 verification_steps key —
+    marshal.json is the source of truth over the agent CSV, and the LIST form is
+    read identically to the keyed-map form.
+    """
+    phase_5 = ['verify:quality-gate', 'verify:module-tests', 'verify:coverage']
+    _write_full_marshal_list_form(
+        plan_context.fixture_dir,
+        phase_6_steps=list(DEFAULT_PHASE_6_STEPS),
+        phase_5_steps=phase_5,
+    )
+    cmd_compose(
+        _compose_ns(
+            plan_id='list-form-phase-5',
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=8,
+            phase_5_steps='WRONG,STUFF',  # noise — marshal.json LIST should win
+        )
+    )
+    manifest = read_manifest('list-form-phase-5')
+    assert manifest is not None
+    # marshal.json LIST form wins over the agent CSV
+    assert manifest['phase_5']['verification_steps'] == phase_5
+
+
+# =============================================================================
 # Role-loader and role-based intersection (deliverable 2)
 #
 # The composer derives a phase-5 candidate step's ``role:`` purely in-code from

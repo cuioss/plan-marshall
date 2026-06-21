@@ -923,14 +923,23 @@ def _read_marshal_phase_step_map(phase_key: str) -> dict[str, dict] | None:
     ``phase_key`` is the marshal.json key (e.g. ``'phase-5-execute'`` or
     ``'phase-6-finalize'``). The map-field read under that key is phase-aware:
     ``phase-5-execute`` reads ``verification_steps`` while ``phase-6-finalize``
-    (and any other phase) reads ``steps``. The on-disk schema is an id-keyed
-    map (``{step_id: {param: value, ...}, ...}``); key insertion order is the
-    execution order and each value is that step's nested param object.
+    (and any other phase) reads ``steps``.
 
-    Returns the keyed map (step id -> param object) as declared in marshal.json
-    (prefixes preserved), or ``None`` when the marshal file is missing, the keys
-    are absent, or the value is not a dict. Clean-slate: there is NO list-shape
-    fallback — the keyed map is the single on-disk schema.
+    Two on-disk serial forms are accepted (dual-form reader, the transition
+    affordance for consumer repos still carrying the legacy keyed-map):
+
+    * The new canonical LIST form: a JSON array whose elements are either bare
+      strings (ownerless steps) or single-key objects ``{step_id: {params}}``
+      (param-bearing steps). Array order is the execution order.
+    * The legacy keyed-map form: ``{step_id: {param: value, ...}, ...}``; key
+      insertion order is the execution order and each value is that step's
+      nested param object.
+
+    Both forms normalize to the SAME internal id-keyed dict
+    (``{step_id: param-object}``, ``{}`` for ownerless steps), so every
+    downstream consumer is unaffected by which on-disk form was read. Returns
+    that internal dict (prefixes preserved), or ``None`` when the marshal file
+    is missing, the keys are absent, or the value is neither a list nor a dict.
     """
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
@@ -949,23 +958,33 @@ def _read_marshal_phase_step_map(phase_key: str) -> dict[str, dict] | None:
         return None
     field = 'verification_steps' if phase_key == 'phase-5-execute' else 'steps'
     steps = phase.get(field)
-    if not isinstance(steps, dict):
-        return None
-    return {
-        step_id: (params if isinstance(params, dict) else {})
-        for step_id, params in steps.items()
-        if isinstance(step_id, str) and step_id
-    }
+    if isinstance(steps, list):
+        result: dict[str, dict] = {}
+        for element in steps:
+            if isinstance(element, str):
+                if element:
+                    result[element] = {}
+            elif isinstance(element, dict) and len(element) == 1:
+                step_id, params = next(iter(element.items()))
+                if isinstance(step_id, str) and step_id:
+                    result[step_id] = params if isinstance(params, dict) else {}
+        return result
+    if isinstance(steps, dict):
+        return {
+            step_id: (params if isinstance(params, dict) else {})
+            for step_id, params in steps.items()
+            if isinstance(step_id, str) and step_id
+        }
+    return None
 
 
 def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     """Read the ordered step-id list for ``phase_key`` from marshal.json.
 
-    Reads the id-keyed step map (see :func:`_read_marshal_phase_step_map`) and
-    returns ``list(map.keys())`` preserving insertion order (= execution order),
-    or ``None`` when the map is absent / malformed. Clean-slate: the list/
-    ``steps``-key dual-read fallback is removed — the keyed map is the single
-    on-disk schema.
+    Reads the normalized step map (see :func:`_read_marshal_phase_step_map`,
+    which accepts both the LIST and legacy keyed-map on-disk forms) and returns
+    ``list(map.keys())`` preserving insertion order (= execution order), or
+    ``None`` when the map is absent / malformed.
 
     The composer prefers this source over the agent-supplied
     ``--phase-{5,6}-steps`` CSV because marshal.json is the authoritative

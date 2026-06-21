@@ -36,6 +36,22 @@ def _load_module(name: str, filename: str):
 _config_defaults = _load_module('_config_defaults', '_config_defaults.py')
 
 
+def _params_for(steps_list: list, step_id: str):
+    """Return a step's params from the LIST serial form of steps.
+
+    ``plan.phase-6-finalize.steps`` serializes as the canonical LIST form: bare
+    strings (ownerless steps) or single-key objects ``{step_id: {params}}``.
+    Returns the nested param dict for a param-bearing step, or ``None`` for an
+    ownerless one. Raises ``KeyError`` when the step id is absent.
+    """
+    for element in steps_list:
+        if isinstance(element, str) and element == step_id:
+            return None
+        if isinstance(element, dict) and len(element) == 1 and step_id in element:
+            return element[step_id]
+    raise KeyError(step_id)
+
+
 class TestLoopBackWithoutAskingDefault:
     """``loop_back_without_asking`` is the reverse-direction symmetric
     counterpart of ``finalize_without_asking``. Both are flat knobs under
@@ -120,8 +136,8 @@ class TestFinalMergeWithoutAskingDefault:
         ``final_merge_without_asking == False`` nested under
         ``plan.phase-6-finalize.steps['default:branch-cleanup']``."""
         cfg = _config_defaults.get_default_config()
-        branch_cleanup = (
-            cfg['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+        branch_cleanup = _params_for(
+            cfg['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
         )
         assert branch_cleanup['final_merge_without_asking'] is False, (
             'get_default_config() steps[default:branch-cleanup]'
@@ -151,7 +167,7 @@ class TestFinalMergeWithoutAskingDefault:
         It must NOT survive as a flat sibling of ``steps``."""
         cfg = _config_defaults.get_default_config()
         finalize = cfg['plan']['phase-6-finalize']
-        branch_cleanup = finalize['steps']['default:branch-cleanup']
+        branch_cleanup = _params_for(finalize['steps'], 'default:branch-cleanup')
         assert 'final_merge_without_asking' in branch_cleanup, (
             'Fresh-project bootstrap must seed final_merge_without_asking '
             'explicitly under steps[default:branch-cleanup]'
@@ -399,7 +415,7 @@ class TestSonarConfigKnobsDefaults:
 
     @staticmethod
     def _sonar_params(cfg: dict) -> dict:
-        return cfg['plan']['phase-6-finalize']['steps']['default:sonar-roundtrip']
+        return _params_for(cfg['plan']['phase-6-finalize']['steps'], 'default:sonar-roundtrip')
 
     def test_touched_file_cleanup_default_is_new_code_only(self) -> None:
         """``get_default_config()`` MUST expose ``touched_file_cleanup ==

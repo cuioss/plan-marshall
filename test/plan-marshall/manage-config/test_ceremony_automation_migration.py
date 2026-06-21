@@ -84,6 +84,22 @@ _MIGRATED_KNOBS = (
 _STEP_OWNED_KNOB = ('default:branch-cleanup', 'final_merge_without_asking', False)
 
 
+def _params_for(steps_list: list, step_id: str):
+    """Return a step's params from the LIST serial form of steps.
+
+    `plan.phase-6-finalize.steps` serializes as the canonical LIST form: bare
+    strings (ownerless steps) or single-key objects `{step_id: {params}}`. Returns
+    the nested param dict for a param-bearing step, or ``None`` for an ownerless
+    one. Raises ``KeyError`` when the step id is absent.
+    """
+    for element in steps_list:
+        if isinstance(element, str) and element == step_id:
+            return None
+        if isinstance(element, dict) and len(element) == 1 and step_id in element:
+            return element[step_id]
+    raise KeyError(step_id)
+
+
 def _hash_marshal(fixture_dir):
     return hashlib.sha256((fixture_dir / 'marshal.json').read_bytes()).hexdigest()
 
@@ -175,7 +191,7 @@ def test_get_default_config_homes_step_owned_knob_under_branch_cleanup():
     """get_default_config() must nest final_merge_without_asking under default:branch-cleanup."""
     cfg = _config_defaults.get_default_config()
     step_id, param, expected = _STEP_OWNED_KNOB
-    branch_cleanup = cfg['plan']['phase-6-finalize']['steps'][step_id]
+    branch_cleanup = _params_for(cfg['plan']['phase-6-finalize']['steps'], step_id)
     assert branch_cleanup.get(param) is expected, (
         f'steps[{step_id}].{param} must default to {expected}'
     )
