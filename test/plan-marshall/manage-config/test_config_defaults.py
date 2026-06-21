@@ -227,6 +227,39 @@ def test_get_default_config_includes_auto_rebase_threshold():
     assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only'
 
 
+def test_default_plan_finalize_includes_merge_queue_wait_budget_seconds():
+    """merge_queue_wait_budget_seconds nests under default:branch-cleanup with default 1800.
+
+    The knob is a step-owned param of `default:branch-cleanup`, declared in that
+    step's `configurable:` body-doc frontmatter (PR #716 removed the centralized
+    _FINALIZE_STEP_PARAMS) and surfaced through get_default_config() via
+    resolve_step_defaults_optional. It bounds (in seconds, ~30 min) the Pre-Merge
+    Gate FIFO merge-queue poll loop before the last-resort AskUserQuestion.
+    """
+    config = _config_defaults_mod.get_default_config()
+    branch_cleanup = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+
+    assert 'merge_queue_wait_budget_seconds' in branch_cleanup, (
+        'merge_queue_wait_budget_seconds must nest under default:branch-cleanup in the seeded steps map'
+    )
+    assert branch_cleanup['merge_queue_wait_budget_seconds'] == 1800, (
+        'merge_queue_wait_budget_seconds default must be 1800 (~30 min, the merge-queue wait budget)'
+    )
+    # not a flat sibling of steps anymore
+    assert 'merge_queue_wait_budget_seconds' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+
+
+def test_get_default_config_includes_merge_queue_wait_budget_seconds():
+    """get_default_config() surfaces merge_queue_wait_budget_seconds nested under default:branch-cleanup."""
+    config = _config_defaults_mod.get_default_config()
+
+    branch_cleanup = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+    assert 'merge_queue_wait_budget_seconds' in branch_cleanup, (
+        'merge_queue_wait_budget_seconds must round-trip through the keyed-map steps under default:branch-cleanup'
+    )
+    assert branch_cleanup['merge_queue_wait_budget_seconds'] == 1800
+
+
 def test_default_plan_execute_omits_retired_per_task_budget_reserve_tokens():
     """DEFAULT_PLAN_EXECUTE must NOT carry the retired per_task_budget_reserve_tokens key.
 
@@ -772,10 +805,10 @@ def test_built_in_finalize_steps_places_simplify_after_commit_push():
     """default:finalize-step-simplify sits AFTER default:commit-push in BUILT_IN_FINALIZE_STEPS.
 
     simplify is a post-commit-push MAY_MUTATE step (PR #688). The canonical head
-    order is default:pre-push-quality-gate (index 0),
-    default:finalize-step-whole-tree-gate (index 1), default:commit-push (index 2),
-    then default:finalize-step-simplify (index 3) — matching the MAY_MUTATE-after-
-    commit-push invariant the compose-time placement guard enforces.
+    order is default:pre-push-quality-gate (index 0), default:commit-push
+    (index 1), then default:finalize-step-simplify (index 2) — matching the
+    MAY_MUTATE-after-commit-push invariant the compose-time placement guard
+    enforces.
     """
     steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
 
@@ -784,9 +817,8 @@ def test_built_in_finalize_steps_places_simplify_after_commit_push():
         'default:finalize-step-simplify must be seeded into BUILT_IN_FINALIZE_STEPS'
     )
     assert steps[0] == 'default:pre-push-quality-gate'
-    assert steps[1] == 'default:finalize-step-whole-tree-gate'
-    assert steps[2] == 'default:commit-push'
-    assert steps[3] == 'default:finalize-step-simplify'
+    assert steps[1] == 'default:commit-push'
+    assert steps[2] == 'default:finalize-step-simplify'
 
 
 def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
@@ -805,52 +837,20 @@ def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
     )
 
 
-def test_built_in_finalize_steps_orders_gate_then_commit_then_simplify():
-    """Canonical order: whole-tree-gate before commit-push, simplify after commit-push.
+def test_built_in_finalize_steps_orders_commit_then_simplify():
+    """Canonical order: simplify after commit-push.
 
-    The whole-tree-gate must run pre-commit so a surviving deleted-symbol
-    reference BLOCKS the push — mirroring the pre-push-quality-gate ordering
-    rationale. simplify is a post-commit-push MAY_MUTATE step (PR #688), so it
-    must follow commit-push. The canonical chain is therefore
-    whole-tree-gate < commit-push < simplify.
+    simplify is a post-commit-push MAY_MUTATE step (PR #688), so it must follow
+    commit-push. The canonical chain is therefore commit-push < simplify.
     """
     steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
 
-    # presence and ordinal placement
-    assert 'default:finalize-step-whole-tree-gate' in steps, (
-        'default:finalize-step-whole-tree-gate must be seeded into BUILT_IN_FINALIZE_STEPS'
-    )
-    gate_index = steps.index('default:finalize-step-whole-tree-gate')
     commit_index = steps.index('default:commit-push')
     simplify_index = steps.index('default:finalize-step-simplify')
-    assert gate_index < commit_index < simplify_index, (
-        'finalize-step-whole-tree-gate must run before commit-push (pre-commit gate) '
-        'and finalize-step-simplify must run after commit-push (post-commit-push MAY_MUTATE)'
-    )
     # direct mirror of the request mandate: simplify follows commit-push
     assert simplify_index > commit_index, (
         'finalize-step-simplify must follow commit-push'
     )
-
-
-def test_built_in_finalize_step_descriptions_includes_whole_tree_gate():
-    """default:finalize-step-whole-tree-gate must carry a non-empty description entry."""
-    descriptions = _config_defaults_mod.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
-
-    assert 'default:finalize-step-whole-tree-gate' in descriptions, (
-        'default:finalize-step-whole-tree-gate must have a BUILT_IN_FINALIZE_STEP_DESCRIPTIONS entry'
-    )
-    assert descriptions['default:finalize-step-whole-tree-gate'], (
-        'default:finalize-step-whole-tree-gate description must be non-empty'
-    )
-
-
-def test_get_default_config_seeds_whole_tree_gate_in_finalize_steps():
-    """get_default_config() must surface finalize-step-whole-tree-gate in the default candidate set."""
-    config = _config_defaults_mod.get_default_config()
-
-    steps = config['plan']['phase-6-finalize']['steps']
-    assert 'default:finalize-step-whole-tree-gate' in steps
 
 
 # =============================================================================
@@ -903,6 +903,7 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
         'pr_merge_strategy': 'squash',
         'final_merge_without_asking': False,
         'auto_rebase_threshold': 'no_overlap_only',
+        'merge_queue_wait_budget_seconds': 1800,
     }
 
     # a step that owns no params seeds as None (serialized as null) — no noisy
@@ -955,6 +956,7 @@ def test_default_plan_finalize_drops_flat_step_owned_knobs():
         'pr_merge_strategy',
         'final_merge_without_asking',
         'auto_rebase_threshold',
+        'merge_queue_wait_budget_seconds',
     ):
         assert knob not in finalize, f'flat step-owned knob {knob!r} must not survive'
 
@@ -1477,6 +1479,21 @@ def test_get_default_config_surfaces_build_queue_upper_limit_seconds_default_600
         'build.queue must live under the top-level build block in get_default_config()'
     )
     assert config['build']['queue'].get('upper_limit_seconds') == 600
+
+
+def test_default_config_seeds_build_require_wrapper():
+    """get_default_config() must seed build.{tool}.require_wrapper with the
+    documented per-system defaults (true for maven/gradle/pyproject, false for
+    npm), peer to the build.queue block (no regression of that peer block)."""
+    config = _config_defaults_mod.get_default_config()
+    build = config.get('build', {})
+
+    assert build.get('maven', {}).get('require_wrapper') is True
+    assert build.get('gradle', {}).get('require_wrapper') is True
+    assert build.get('pyproject', {}).get('require_wrapper') is True
+    assert build.get('npm', {}).get('require_wrapper') is False
+    # The peer build.queue block is still present (additive seeding).
+    assert 'queue' in build
 
 
 def test_marshal_build_queue_max_slots_override_wins(plan_context, monkeypatch):

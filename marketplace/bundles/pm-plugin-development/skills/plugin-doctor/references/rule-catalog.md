@@ -257,7 +257,7 @@ Detection lives in `_analyze_markdown.py::check_mark_step_done_violations`; find
 
 ## Rule Pack: Plugin-doctor lint guards
 
-Seven forward-looking lint rules.
+Forward-looking lint rules.
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
@@ -266,6 +266,8 @@ Seven forward-looking lint rules.
 | `resolution-branch-side-effect-undocumented` | Require `## Resolution` branches in standards to document at least one observable side effect | Allowlist-gated branch names; non-allowlist headings ignored | Add a log/metadata/status/artifact mention to the branch body |
 | `executor-path-in-production` | Detect `.plan/execute-script.py` in production Python scripts outside whitelisted categories | Whitelist covers generator, lint analyzers, permission tooling | Add path to whitelist in `_analyze_executor_path_in_production.py` |
 | `plan-path-in-scripts` | Detect code-literal `.plan/plans/` occurrences in marketplace Python scripts outside whitelisted categories — the canonical path is `.plan/local/plans/` (resolved via `tools-file-ops:file_ops.get_plan_dir`) | Whitelist covers only the analyzer's own self-referential occurrence; docstring-only hits (inside `"""..."""` / `'''...'''`) are structurally exempt | Add path to whitelist in `_analyze_plan_path_in_scripts.py` with a rationale comment, or route the call site through `get_plan_dir(plan_id)` |
+| `fail-closed-gate-read` | Detect a file read (`.read_text`, `open`, `json.load`, `parse_toon(...read_text())`) inside a read-only gate/boundary verb that is NOT enclosed in a `try` catching `OSError` — the verdict path must fail closed (structured error), never crash on an I/O-boundary failure | Only gate-verb-named functions (`cmd_*` / `*_status` / `assert_*` / `*_verify` / `*_validate` / `check_*` / `load_*`); a read covered by a try catching `OSError` / `Exception` / bare-except is exempt; `tools-file-ops:file_ops.py` (the canonical fail-closed read) and the analyzer's own file are whitelisted | Wrap the read in `try/except OSError` returning a structured error, or add the file to the whitelist in `_analyze_fail_closed_gate_reads.py` with a rationale comment |
+| `redundant-contract-typed-isinstance` | Detect an `isinstance(param, Cls)` guard where `param` is a function parameter already annotated with that concrete contract type (e.g. `metadata: dict[str, Any]` then `isinstance(metadata, dict)`) — defensive theatre the signature already pins | Only concrete builtin contract types (`dict`/`list`/`str`/...); `Any`/union/`Optional` annotations and ingestion-boundary checks are not flagged | Remove the redundant guard, or widen the parameter annotation if the value is genuinely polymorphic |
 | `file-bloat-ack` | Allow explicitly acknowledged bloated files to suppress the `file-bloat` finding | Ack tag must match `^ack-[a-z0-9_-]+$`; bare `ack-` or generic values do not suppress | Add `quality.file-bloat: ack-<rationale>` to the file's YAML frontmatter |
 | `orphan-argparse-flag` | Flag argparse flags declared but never read in their handler | Conservative: `vars(args)`, `**kwargs`, or `getattr` usage suppresses the check | Read the flag in the handler, or remove the declaration |
 | `cmd-root-anchoring-missing` | Require `cmd_*` dispatcher functions to call `find_marketplace_root(...)` and declare `--marketplace-root` | Dispatcher-heuristic gated: only fires for scripts with `set_defaults(func=cmd_*)` | Add both the prelude call and the `--marketplace-root` flag to the subparser |
@@ -729,6 +731,55 @@ Only `SKILL.md` is scanned — the numbering-discipline rule is a property of a 
 **Recommended fix**: Replace the hand-rolled resolver with `from file_ops import get_plan_dir` and use `get_plan_dir(plan_id)` directly. The helper returns `<repo>/.plan/local/plans/{plan_id}` and is the single source of truth for plan-directory resolution.
 
 **Suppression mechanism**: Add the file to the whitelist inside `_analyze_plan_path_in_scripts.py` with a comment explaining the rationale. Suppression should be rare; the canonical alternative (`get_plan_dir`) covers nearly every legitimate use case.
+
+---
+
+### fail-closed-gate-read
+
+**Rule ID**: `fail-closed-gate-read`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_fail_closed_gate_reads.py`
+
+**Scope**: `marketplace/bundles/**/scripts/**/*.py`.
+
+**Fixable**: `false`.
+
+**Intent**: A read-only gate or boundary verb — a function that forms a verdict by reading a file without mutating state — must fail closed. A file read guarded only by a prior `.exists()` check can still raise `OSError` (permission denied, the path resolving to a directory, a mid-read deletion race). An uncaught `OSError` crashes the verdict path, which is strictly worse than a structured error: the caller cannot distinguish "the invariant could not be evaluated" from a hard process death and may silently advance past an unverified gate. The read must be enclosed in a `try` whose handler catches `OSError` and convert the failure into a structured error status.
+
+**Detection**: A file-read call — `<x>.read_text(...)` / `<x>.read_bytes(...)`, `open(...)`, `json.load(...)`, or `json.loads(...)` / `parse_toon(...)` wrapping a read — inside a function whose name matches the gate-verb pattern (`cmd_*`, `*_status`, `assert_*`, `*_verify` / `verify_*`, `*_validate` / `validate_*`, `check_*`, `load_*`) that is NOT lexically enclosed by a `try` in that function whose `except` catches `OSError`, `Exception`, `BaseException`, or is a bare `except`.
+
+**Whitelist categories** (path-component-anchored, not substring):
+
+- `_analyze_fail_closed_gate_reads.py` — the analyzer's own file (self-referential).
+- `tools-file-ops/scripts/file_ops.py` — the canonical fail-closed read implementation (`read_json` etc.).
+
+**Finding categories**: `production_script` (test files are not scanned).
+
+**Recommended fix**: Wrap the read in `try/except OSError` and convert the failure into the verb's documented fail-closed sentinel — a structured `status: error` verdict, an empty-result sentinel, or a `ValueError` carrying the OSError context — never an uncaught exception.
+
+**Suppression mechanism**: Add the file to the whitelist inside `_analyze_fail_closed_gate_reads.py` with a comment explaining the rationale. Suppression should be rare; wrapping the read is almost always the correct response.
+
+---
+
+### redundant-contract-typed-isinstance
+
+**Rule ID**: `redundant-contract-typed-isinstance`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_fail_closed_gate_reads.py`
+
+**Scope**: `marketplace/bundles/**/scripts/**/*.py`.
+
+**Fixable**: `false`.
+
+**Intent**: When a conditional accesses a parameter already annotated with a concrete contract type (e.g. `metadata: dict[str, Any]`), wrapping the access in a runtime type guard (`isinstance(metadata, dict)`) is defensive theatre: the annotation is the contract, so in correct code the guard can never be false, and it misleads the next reader into thinking the value is polymorphic. Runtime type checks are reserved for genuine polymorphism (`Any` / union runtime types) or untrusted-input ingestion boundaries. This is the inverse of `fail-closed-gate-read`: a superfluous guard on a contract-typed value versus a missing guard at an I/O boundary.
+
+**Detection**: An `isinstance(param, Cls)` call where `param` is a parameter of the enclosing function annotated with a concrete builtin contract type whose base is exactly `Cls` — bare (`dict`) or subscripted (`dict[str, Any]`). Only concrete builtins are eligible (`dict`, `list`, `str`, `int`, `float`, `bool`, `set`, `tuple`, `bytes`, `frozenset`); `Any`, `X | Y` unions, `Optional[X]`, and `Union[...]` annotations are NOT flagged.
+
+**Finding categories**: `production_script` (test files are not scanned).
+
+**Recommended fix**: Remove the redundant `isinstance` guard. If the value is genuinely polymorphic, widen the parameter annotation to the real union or `Any` so the signature reflects the contract the guard is enforcing.
+
+**Suppression mechanism**: Add the file to the whitelist inside `_analyze_fail_closed_gate_reads.py` with a comment explaining the rationale.
 
 ---
 

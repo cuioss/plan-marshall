@@ -97,7 +97,18 @@ def load_manifest(plan_dir: Path) -> dict[str, Any] | None:
     manifest_path = plan_dir / MANIFEST_FILENAME
     if not manifest_path.exists():
         return None
-    parsed = parse_toon(manifest_path.read_text(encoding='utf-8'))
+    try:
+        raw = manifest_path.read_text(encoding='utf-8')
+    except OSError:
+        # Fail closed on an I/O-boundary read failure: a manifest that passed
+        # .exists() but raises on read (permission denied, the path resolves to
+        # a directory, a mid-read deletion race) degrades to the same skip
+        # sentinel as a missing manifest rather than crashing the verdict path.
+        # The deliberate "corrupt manifest bubbles as ValueError" parse-failure
+        # contract below is preserved — only the OSError is caught here, so a
+        # parse_toon ValueError still bubbles.
+        return None
+    parsed = parse_toon(raw)
     if not isinstance(parsed, dict):
         raise ValueError(f'{MANIFEST_FILENAME} must parse to a top-level dict')
     return parsed
@@ -114,8 +125,15 @@ def load_decision_log_entries(plan_dir: Path) -> list[str]:
         log_path = log_path / segment
     if not log_path.exists():
         return []
+    try:
+        raw = log_path.read_text(encoding='utf-8')
+    except OSError:
+        # Fail closed: a decision log that passed .exists() but raises on read
+        # degrades to the empty-matches sentinel (the same value returned when
+        # the log is absent) rather than crashing the verdict path.
+        return []
     matches: list[str] = []
-    for line in log_path.read_text(encoding='utf-8').splitlines():
+    for line in raw.splitlines():
         if _DECISION_TAG in line:
             matches.append(line)
     return matches
@@ -133,7 +151,17 @@ def load_diff_files(diff_file: str | None, base_ref: str | None) -> tuple[list[s
         path = Path(diff_file)
         if not path.exists():
             raise ValueError(f'Diff file does not exist: {diff_file}')
-        return _split_diff_lines(path.read_text(encoding='utf-8')), f'file:{path.name}'
+        try:
+            raw = path.read_text(encoding='utf-8')
+        except OSError as e:
+            # Fail closed on the explicit --diff-file path: a diff file that
+            # passed .exists() but raises on read converts to a ValueError
+            # carrying the OSError context, consistent with the
+            # "Diff file does not exist" ValueError above — an explicitly
+            # supplied diff that cannot be read is a caller error, not a
+            # silently-empty diff.
+            raise ValueError(f'Diff file could not be read: {diff_file}: {e}') from e
+        return _split_diff_lines(raw), f'file:{path.name}'
 
     if not base_ref:
         return [], 'unknown'

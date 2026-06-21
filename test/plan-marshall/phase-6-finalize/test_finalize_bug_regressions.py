@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 # ruff: noqa: I001, E402
-"""Regression tests for the two phase-6-finalize convergence bugs.
+"""Regression tests for the phase-6-finalize simplify-convergence bug and the create-pr title/body grounding.
 
-These tests lock in the two bug fixes shipped by this plan from the
+These tests lock in the bug fixes shipped by this plan from the
 regression-defense angle — each test asserts the *converged* behaviour the fix
-guarantees, so a future revert of either fix re-breaks a named test here. The
-mechanics of each touched surface already have exhaustive unit coverage
-elsewhere (``test_mark_step_done.py`` for the dirty-worktree guard,
-``test_whole_tree_gate.py`` for the facet machinery,
-``test_manage_execution_manifest_compose.py`` for the trigger arm); this module
-is deliberately the small high-signal regression suite that ties each fix to
-the user-visible symptom it cured.
+guarantees, so a future revert re-breaks a named test here. The mechanics of
+each touched surface already have exhaustive unit coverage elsewhere
+(``test_mark_step_done.py`` for the dirty-worktree guard,
+``test_manage_execution_manifest_compose.py`` for the compose ordering); this
+module is deliberately the small high-signal regression suite that ties each
+fix to the user-visible symptom it cured.
 
 Bug 1 — simplify loop-back thrash
 =================================
@@ -28,36 +27,15 @@ the worktree is clean at ``mark-step-done`` and the guard is never reached on
 the normal path. Regression assertion: a ``finalize-step-simplify`` ``done``
 against a CLEAN tree succeeds and persists ``outcome: done`` — no
 ``dirty_worktree_done_refused``, hence no forced ``loop_back``.
-
-Bug 2 — content-drift facet
-===========================
-Symptom: the whole-tree gate carried a third ``generator/drift`` facet/trigger
-category whose globs (``marketplace/targets/**``, ``marketplace/bundles/**``)
-matched essentially every marketplace plan — including paths under the
-gitignored generated ``target/claude`` tree — and the facet's import path
-failed from inside a worktree, blocking finalize convergence.
-
-Fix: the third trigger category and its facet were removed. The gate now
-surfaces exactly two facets (``doctor`` / ``sweep_test``), and the composer's
-``_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS`` no longer carries the drift globs.
-Regression assertions: (1) ``whole_tree_gate.scan`` returns a ``facets`` block
-keyed by exactly ``{doctor, sweep_test}`` — no ``content_drift`` /
-``generator`` / ``drift`` key; (2) the composer trigger-glob constant carries
-neither ``marketplace/targets/**`` nor the bare ``marketplace/bundles/**``
-drift glob; (3) ``scan`` converges (status ``success``, no import-fail) on a
-changed set that touches ``marketplace/bundles/**`` — the removed facet no
-longer fires for an ordinary bundle change.
 """
 
 from __future__ import annotations
 
-import importlib.util
 from argparse import Namespace
 
 import pytest
 from conftest import (  # type: ignore[import-not-found]
     MARKETPLACE_ROOT,
-    PlanContext,
     load_script_module,
 )
 
@@ -81,23 +59,7 @@ cmd_mark_step_done = _mark_step.cmd_mark_step_done
 cmd_create = _lifecycle.cmd_create
 read_status = _status_core.read_status
 
-# Bug 2 surface: the whole-tree gate surfacer (hyphenated skill dir -> importlib).
-_GATE_SCRIPT = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'scripts'
-    / 'whole_tree_gate.py'
-)
-_spec = importlib.util.spec_from_file_location('whole_tree_gate_regr', str(_GATE_SCRIPT))
-assert _spec is not None
-gate = importlib.util.module_from_spec(_spec)
-assert _spec.loader is not None
-_spec.loader.exec_module(gate)
-
-# Bug 2 surface: the manifest composer carrying the trigger-glob constant.
-# Also the Bug-1 ordering surface (cmd_compose / read_manifest) used by
+# Bug-1 ordering surface (cmd_compose / read_manifest) used by
 # TestSimplifyComposesAfterCommitPush below.
 _manifest = load_script_module(
     'plan-marshall',
@@ -310,118 +272,6 @@ class TestSimplifyComposesAfterCommitPush:
         steps = manifest['phase_6']['steps']
         # The offending may-mutate step is reordered after commit-push.
         assert steps.index('finalize-step-simplify') > steps.index('commit-push')
-
-
-# ===========================================================================
-# Bug 2 — content-drift facet is gone; finalize converges
-# ===========================================================================
-
-
-def _make_marketplace_tree(root, files):
-    """Materialize a ``{root}/marketplace`` subtree from {rel_path: content}."""
-    for rel, content in files.items():
-        target = root / 'marketplace' / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding='utf-8')
-    return root
-
-
-class TestContentDriftFacetRemoved:
-    """The third generator/content-drift facet and its trigger globs are gone.
-
-    The facet's import path failed from inside a worktree, and its globs matched
-    nearly every marketplace plan (including gitignored ``target/claude`` paths),
-    so it blocked finalize convergence. The fix removed the facet and the trigger
-    category entirely.
-    """
-
-    def test_scan_surfaces_exactly_two_facets(self, tmp_path):
-        # A minimal tree; the changed set hits no facet trigger so the
-        # facet block is computed but every facet is vacuously clean.
-        root = _make_marketplace_tree(tmp_path, {'bundles/b/skills/s/x.py': '\n'})
-
-        with PlanContext(plan_id='regr-drift-two-facets') as ctx:
-            (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
-
-            result = gate.scan(
-                'regr-drift-two-facets',
-                worktree_path=str(root),
-                base_ref='main',
-                diff_runner=lambda _wt, _ref: '',
-                diff_names_runner=lambda _wt, _ref: [],
-            )
-
-        # Exactly the two surviving facets, no content_drift/generator.
-        assert result['status'] == 'success'
-        assert set(result['facets'].keys()) == {'doctor', 'sweep_test'}
-        for removed in ('content_drift', 'generator', 'drift', 'generator_drift'):
-            assert removed not in result['facets']
-
-    def test_trigger_glob_constant_drops_the_drift_category(self):
-        # Read the composer's single source-of-truth constant.
-        globs = _manifest._WHOLE_TREE_INVARIANT_TRIGGER_GLOBS
-
-        # Neither drift glob survives. The doctor / sweep-test globs DO
-        # survive (proving the constant was trimmed, not emptied).
-        assert 'marketplace/targets/**' not in globs
-        assert 'marketplace/bundles/**' not in globs
-        assert any('plugin-doctor' in g for g in globs)
-        assert any('sweep' in g for g in globs)
-
-    def test_bundle_source_change_no_longer_triggers_a_facet(self, tmp_path):
-        # A changed set touching ONLY a bundle SKILL.md. Pre-fix this
-        # path matched the ``marketplace/bundles/**`` drift glob and fired the
-        # content-drift facet; post-fix it must fire NO facet, and scan must
-        # converge with status success (no import-fail).
-        root = _make_marketplace_tree(tmp_path, {'bundles/b/skills/s/x.py': '\n'})
-        bundle_change = 'marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md'
-
-        with PlanContext(plan_id='regr-drift-bundle-change') as ctx:
-            (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
-
-            # The facet seams MUST NOT run — a bundle-source change is not a
-            # doctor / sweep-test trigger, and the drift facet no longer exists.
-            result = gate.scan(
-                'regr-drift-bundle-change',
-                worktree_path=str(root),
-                base_ref='main',
-                diff_runner=lambda _wt, _ref: '',
-                diff_names_runner=lambda _wt, _ref: [bundle_change],
-                doctor_runner=lambda _wt: pytest.fail('doctor facet must not fire for a bundle change'),
-                sweep_runner=lambda _wt: pytest.fail('sweep facet must not fire for a bundle change'),
-            )
-
-        # Convergence: success, both surviving facets untriggered/clean.
-        assert result['status'] == 'success'
-        assert result['facets']['doctor']['triggered'] is False
-        assert result['facets']['sweep_test']['triggered'] is False
-        assert result['facets']['doctor']['passed'] is True
-        assert result['facets']['sweep_test']['passed'] is True
-
-    def test_gitignored_target_claude_path_does_not_trigger_a_facet(self, tmp_path):
-        # A path under the gitignored generated target tree. Pre-fix the
-        # bare ``marketplace/**`` / ``marketplace/bundles/**`` drift glob shape
-        # made generated-tree churn fire the facet; post-fix nothing fires.
-        root = _make_marketplace_tree(tmp_path, {'bundles/b/skills/s/x.py': '\n'})
-        generated_change = 'target/claude/plan-marshall/skills/manage-status/SKILL.md'
-
-        with PlanContext(plan_id='regr-drift-target-claude') as ctx:
-            (ctx.plan_dir / 'request.md').write_text('noop\n', encoding='utf-8')
-
-            result = gate.scan(
-                'regr-drift-target-claude',
-                worktree_path=str(root),
-                base_ref='main',
-                diff_runner=lambda _wt, _ref: '',
-                diff_names_runner=lambda _wt, _ref: [generated_change],
-                doctor_runner=lambda _wt: pytest.fail('doctor facet must not fire for target/claude churn'),
-                sweep_runner=lambda _wt: pytest.fail('sweep facet must not fire for target/claude churn'),
-            )
-
-        # Convergence with no facet fired.
-        assert result['status'] == 'success'
-        assert result['facets']['doctor']['triggered'] is False
-        assert result['facets']['sweep_test']['triggered'] is False
 
 
 _CREATE_PR_DOC = (

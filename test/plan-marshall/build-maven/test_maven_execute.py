@@ -15,6 +15,8 @@ sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_valu
 
 _maven_execute_mod = load_script_module('plan-marshall', 'build-maven', '_maven_execute.py', '_maven_execute')
 
+import _build_execute_factory as _factory  # noqa: E402
+
 _CONFIG = _maven_execute_mod._CONFIG
 execute_direct = _maven_execute_mod.execute_direct
 
@@ -116,20 +118,46 @@ def test_build_command_fn_with_module():
 # =============================================================================
 
 
+def test_config_require_wrapper_default_on():
+    """Maven defaults to require_wrapper=True — no silent system-mvn fallback."""
+    assert _CONFIG.require_wrapper is True
+
+
 def test_execute_direct_error_on_nonexistent_project(tmp_path, monkeypatch):
-    """execute_direct returns error when running in empty directory without wrapper."""
+    """execute_direct returns the wrapper-not-found error when running in an
+    empty directory: with require_wrapper=True the factory gate raises rather
+    than falling through to a system mvn."""
     # Pin PLAN_BASE_DIR so the shared learned-timeout machinery
     # (run_config.timeout_set) writes into tmp_path, not the real repo-local
     # run-configuration.json.
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
-    # Empty tmp_path has no mvnw — if system mvn exists, it will fail on missing pom.xml
+    # Empty tmp_path has no mvnw — the require_wrapper=True gate raises and the
+    # except-arm converts it to a structured error. NO system mvn is invoked.
     result = execute_direct(
         args='verify',
         command_key='maven:verify',
         project_dir=str(tmp_path),
     )
-    # Either wrapper not found (status=error, exit_code=-1) or
-    # maven runs but fails on missing pom.xml (status=error, exit_code=1)
     assert result['status'] == 'error'
-    assert result['exit_code'] != 0
+    assert result['exit_code'] == -1
+    assert 'No maven wrapper found' in result['error']
+
+
+def test_execute_direct_resolves_present_wrapper(tmp_path, monkeypatch):
+    """With a present mvnw, the gate passes and the build attempts ./mvnw."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
+
+    calls = []
+
+    def _recorder(**kwargs):
+        calls.append(kwargs)
+        return {'status': 'success', 'exit_code': 0, 'duration_seconds': 0, 'log_file': '', 'command': './mvnw verify'}
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    result = execute_direct(args='verify', command_key='maven:verify', project_dir=str(tmp_path))
+
+    assert result['status'] == 'success'
+    assert calls[0]['wrapper'] == './mvnw'

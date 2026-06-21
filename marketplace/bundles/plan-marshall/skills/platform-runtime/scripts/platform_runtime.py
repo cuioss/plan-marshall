@@ -9,7 +9,7 @@ Usage:
 
 Operations:
     project initial-setup   --project-dir <path>  --target claude|opencode
-    project install-hook    --target <settings-file-path>
+    project install-hook    --target <settings-file-path>  [--enforcement]
     layout skill-roots      (no arguments)
     layout bundle-cache-root (no arguments)
     session capture         --plan-id <id>
@@ -253,11 +253,15 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
                        help="Overwrite an existing statusLine whose command differs from the renderer")
         p.add_argument("--overwrite-env-disable", action="store_true",
                        help="Overwrite an existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE that is not '1'")
+        p.add_argument("--enforcement", action="store_true",
+                       help="Install ONLY the orthogonal PreToolUse enforcement hook entry "
+                            "(does not install the terminal-title bundle)")
         ns = p.parse_args(remaining)
         return runtime.project_install_hook(
             ns.target,
             overwrite_statusline=ns.overwrite_statusline,
             overwrite_env_disable=ns.overwrite_env_disable,
+            enforcement=ns.enforcement,
         )
 
     # ------------------------------------------------------------------

@@ -21,7 +21,6 @@ import logging
 from pathlib import Path
 
 from _build_execute import CaptureStrategy
-from _build_execute import detect_wrapper as _detect_wrapper
 from _build_execute_factory import (
     ExecuteConfig,
     _emit_queue_timeout,
@@ -36,14 +35,6 @@ from _build_shared import DEFAULT_BUILD_TIMEOUT, cmd_run_common
 from _pyproject_cmd_parse import parse_log
 
 logger = logging.getLogger(__name__)
-
-
-def _python_wrapper_resolve_fn(project_dir: str) -> str:
-    """Detect pyprojectx wrapper, raising FileNotFoundError if missing."""
-    wrapper = _detect_wrapper(project_dir, 'pw', 'pw.bat', 'pwx')
-    if wrapper is None:
-        raise FileNotFoundError('No pyprojectx wrapper found (pw, pw.bat, or pwx)')
-    return str(wrapper)
 
 
 def _python_scope_fn(args: str) -> str:
@@ -67,7 +58,7 @@ _CONFIG = ExecuteConfig(
     scope_fn=_python_scope_fn,
     command_key_fn=default_command_key_fn,
     default_timeout=DEFAULT_BUILD_TIMEOUT,
-    wrapper_resolve_fn=_python_wrapper_resolve_fn,
+    require_wrapper=True,
     extra_result_fn=_python_extra_result_fn,
 )
 

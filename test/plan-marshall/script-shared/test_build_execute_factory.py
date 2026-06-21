@@ -19,7 +19,9 @@ zero queue interaction).
 """
 
 import argparse
+import json
 
+import _build_execute as build_execute
 import _build_execute_factory as factory
 import _build_queue_slot as bqs
 import pytest
@@ -418,18 +420,33 @@ def _no_sleep(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bqs.time, 'sleep', lambda _s: None)
 
 
-def _make_config() -> factory.ExecuteConfig:
-    """A minimal config whose wrapper resolution never touches the filesystem."""
+def _make_config(
+    *,
+    require_wrapper: bool = False,
+    with_resolve_fn: bool = True,
+    tool_name: str = 'python',
+    unix_wrapper: str = 'pw',
+    windows_wrapper: str = 'pw.bat',
+    system_fallback: str = 'pwx',
+) -> factory.ExecuteConfig:
+    """A minimal config for factory tests.
+
+    By default ``with_resolve_fn=True`` installs an npm-style bypass
+    (``wrapper_resolve_fn`` returning 'pw') so the queue-integration tests never
+    touch the filesystem. Gate tests pass ``with_resolve_fn=False`` to exercise
+    the default detection + gate path, optionally with ``require_wrapper=True``.
+    """
     return factory.ExecuteConfig(
-        tool_name='python',
-        unix_wrapper='pw',
-        windows_wrapper='pw.bat',
-        system_fallback='pwx',
+        tool_name=tool_name,
+        unix_wrapper=unix_wrapper,
+        windows_wrapper=windows_wrapper,
+        system_fallback=system_fallback,
         capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
         build_command_fn=factory.default_build_command_fn,
         scope_fn=lambda _a: 'default',
         command_key_fn=factory.default_command_key_fn,
-        wrapper_resolve_fn=lambda _project_dir: 'pw',
+        wrapper_resolve_fn=(lambda _project_dir: 'pw') if with_resolve_fn else None,
+        require_wrapper=require_wrapper,
     )
 
 
@@ -557,3 +574,132 @@ class TestFactoryCmdRunPlanIdAbsentPassthrough:
         assert rc == 0
         assert len(exec_recorder.calls) == 1
         assert double.acquire_calls == []
+        assert double.release_calls == []
+
+
+def _no_marshal(monkeypatch: pytest.MonkeyPatch):
+    """Force the override read to find no marshal.json so the static default wins.
+
+    ``_resolve_marshal_path`` is pointed at a non-existent path, so
+    ``_read_require_wrapper_override`` always returns the passed default. Gate
+    tests that want the static ``ExecuteConfig.require_wrapper`` to drive the
+    behaviour install this first.
+    """
+    monkeypatch.setattr(
+        factory, '_resolve_marshal_path', lambda _project_dir: factory.Path('/nonexistent/.plan/marshal.json')
+    )
+
+
+class TestResolveWrapperGate:
+    """The factory-level require_wrapper gate (D1).
+
+    Drives the generated ``execute_direct`` directly (no queue), asserting the
+    four gate behaviours plus the npm-style ``wrapper_resolve_fn`` bypass.
+    ``execute_direct_base`` is stubbed by a recorder so a resolved wrapper never
+    spawns a real subprocess.
+    """
+
+    def _handlers(self, config):
+        return factory.create_execute_handlers(config, lambda *_a, **_k: ([], None, 'SUCCESS'))
+
+    def test_require_true_no_wrapper_returns_structured_error(self, monkeypatch, tmp_path):
+        """(a) require_wrapper=True + empty dir → status:error, exit_code -1,
+        error string carries the canonical 'No python wrapper found' message."""
+        _no_marshal(monkeypatch)
+        config = _make_config(require_wrapper=True, with_resolve_fn=False)
+        execute_direct, _ = self._handlers(config)
+
+        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+
+        assert result['status'] == 'error'
+        assert result['exit_code'] == -1
+        assert 'No python wrapper found' in result['error']
+        assert '(pw or pw.bat)' in result['error']
+
+    def test_require_true_present_wrapper_runs_build(self, monkeypatch, tmp_path):
+        """(b) require_wrapper=True + a present pw file → wrapper resolves to
+        ./pw and the build body runs."""
+        _no_marshal(monkeypatch)
+        (tmp_path / 'pw').write_text('#!/bin/sh\n')
+        recorder = _ExecRecorder()
+        monkeypatch.setattr(factory, 'execute_direct_base', recorder)
+        config = _make_config(require_wrapper=True, with_resolve_fn=False)
+        execute_direct, _ = self._handlers(config)
+
+        execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+
+        assert recorder.ran is True
+        assert recorder.calls[0]['wrapper'] == './pw'
+
+    def test_require_false_no_wrapper_falls_back_to_system(self, monkeypatch, tmp_path):
+        """(c) require_wrapper=False + no wrapper but system_fallback on PATH →
+        resolves to system_fallback, no raise."""
+        _no_marshal(monkeypatch)
+        monkeypatch.setattr(build_execute.shutil, 'which', lambda cmd: '/usr/bin/' + cmd)
+        recorder = _ExecRecorder()
+        monkeypatch.setattr(factory, 'execute_direct_base', recorder)
+        config = _make_config(require_wrapper=False, with_resolve_fn=False)
+        execute_direct, _ = self._handlers(config)
+
+        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+
+        assert result['status'] == 'success'
+        assert recorder.calls[0]['wrapper'] == 'pwx'
+
+    def test_wrapper_resolve_fn_bypasses_gate_even_when_required(self, monkeypatch, tmp_path):
+        """(e) an npm-style wrapper_resolve_fn config bypasses the gate entirely
+        even when require_wrapper=True."""
+        _no_marshal(monkeypatch)
+        recorder = _ExecRecorder()
+        monkeypatch.setattr(factory, 'execute_direct_base', recorder)
+        config = _make_config(require_wrapper=True, with_resolve_fn=True)
+        execute_direct, _ = self._handlers(config)
+
+        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+
+        assert result['status'] == 'success'
+        # wrapper_resolve_fn returns 'pw' unconditionally; no FileNotFoundError.
+        assert recorder.calls[0]['wrapper'] == 'pw'
+
+
+class TestReadRequireWrapperOverride:
+    """(d) ``_read_require_wrapper_override`` reads build.{tool}.require_wrapper
+    from marshal.json with graceful degradation to the passed default."""
+
+    def _write_marshal(self, tmp_path, build_block):
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'marshal.json').write_text(json.dumps({'build': build_block}))
+        return str(tmp_path)
+
+    def test_reads_true(self, tmp_path):
+        project_dir = self._write_marshal(tmp_path, {'maven': {'require_wrapper': True}})
+        assert factory._read_require_wrapper_override('maven', project_dir, default=False) is True
+
+    def test_reads_false(self, tmp_path):
+        project_dir = self._write_marshal(tmp_path, {'maven': {'require_wrapper': False}})
+        assert factory._read_require_wrapper_override('maven', project_dir, default=True) is False
+
+    def test_reads_pyproject_key(self, tmp_path):
+        # pyproject builds map config.tool_name 'python' -> 'pyproject' before
+        # the override lookup, so the documented build.pyproject.require_wrapper
+        # key is the one read (CodeRabbit finding 75ab08).
+        project_dir = self._write_marshal(tmp_path, {'pyproject': {'require_wrapper': False}})
+        assert factory._read_require_wrapper_override('pyproject', project_dir, default=True) is False
+
+    def test_missing_tool_block_returns_default(self, tmp_path):
+        project_dir = self._write_marshal(tmp_path, {'gradle': {'require_wrapper': False}})
+        assert factory._read_require_wrapper_override('maven', project_dir, default=True) is True
+
+    def test_missing_require_wrapper_key_returns_default(self, tmp_path):
+        project_dir = self._write_marshal(tmp_path, {'maven': {'something_else': 1}})
+        assert factory._read_require_wrapper_override('maven', project_dir, default=True) is True
+
+    def test_non_bool_value_returns_default(self, tmp_path):
+        project_dir = self._write_marshal(tmp_path, {'maven': {'require_wrapper': 'yes'}})
+        assert factory._read_require_wrapper_override('maven', project_dir, default=True) is True
+
+    def test_missing_file_returns_default(self, tmp_path, monkeypatch):
+        # No marshal.json anywhere; both resolution paths point at a non-file.
+        monkeypatch.setattr(factory, 'get_marshal_path', lambda: factory.Path('/nonexistent/.plan/marshal.json'))
+        assert factory._read_require_wrapper_override('maven', str(tmp_path), default=True) is True

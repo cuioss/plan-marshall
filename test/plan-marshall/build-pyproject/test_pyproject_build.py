@@ -9,8 +9,6 @@ Tests the Python build operations including:
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import BuildContext, load_script_module
 
@@ -71,39 +69,6 @@ _pyproject_execute_mod = load_script_module('plan-marshall', 'build-pyproject', 
 
 parse_log = _pyproject_cmd_parse_mod.parse_log
 execute_direct = _pyproject_execute_mod.execute_direct
-
-
-def test_wrapper_resolution_finds_local_pw():
-    """Wrapper resolution finds ./pw when pw exists in project root."""
-    from _pyproject_execute import _python_wrapper_resolve_fn
-
-    with BuildContext() as ctx:
-        pw = ctx.temp_dir / 'pw'
-        pw.write_text('#!/bin/bash\necho "pw"')
-        pw.chmod(0o755)
-
-        result = _python_wrapper_resolve_fn(str(ctx.temp_dir))
-        assert result == './pw'
-
-
-def test_wrapper_resolution_falls_back_to_system_pwx():
-    """Wrapper resolution returns pwx when no local pw but pwx is in PATH."""
-    from _pyproject_execute import _python_wrapper_resolve_fn
-
-    with BuildContext() as ctx:
-        with patch('shutil.which', return_value='/usr/local/bin/pwx'):
-            result = _python_wrapper_resolve_fn(str(ctx.temp_dir))
-            assert result == 'pwx'
-
-
-def test_wrapper_resolution_raises_when_no_wrapper():
-    """Wrapper resolution raises FileNotFoundError when no wrapper available."""
-    from _pyproject_execute import _python_wrapper_resolve_fn
-
-    with BuildContext() as ctx:
-        with patch('shutil.which', return_value=None):
-            with pytest.raises(FileNotFoundError, match='No pyprojectx wrapper found'):
-                _python_wrapper_resolve_fn(str(ctx.temp_dir))
 
 
 def test_parse_log_parses_mypy_errors():
@@ -212,7 +177,7 @@ def test_execute_direct_returns_error_when_no_wrapper():
 
             assert result['status'] == 'error'
             assert result['exit_code'] == -1
-            assert 'No pyprojectx wrapper found' in result['error']
+            assert 'No python wrapper found' in result['error']
 
 
 def test_execute_direct_returns_success_on_zero_exit():

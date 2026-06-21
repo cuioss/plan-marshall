@@ -87,6 +87,10 @@ Each line in a `findings/{type}.jsonl` file is a JSON object:
 | `component` | string | Component identifier |
 | `module` | string | Module name |
 | `rule` | string | Rule identifier (e.g., linter rule, Sonar rule) |
+| `author` | string | Reviewer/comment-author login (e.g. coderabbitai, gemini-code-assist) — indexed/queryable; primary attribution field for pr-comment findings |
+| `kind` | string | pr-comment structure discriminator: inline / review_body / issue_comment — indexed/queryable; drives the actionable-vs-meta classification in the review retrospective |
+
+For `pr-comment` findings, the queryable `author` and `kind` fields are the source of truth for reviewer identity and comment structure; the author/kind lines written into the `detail` blob are retained for human readability only.
 
 ### Resolution semantics
 

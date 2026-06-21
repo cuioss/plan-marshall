@@ -287,11 +287,13 @@ Parse `depends` field for each deliverable:
 - Identify dependency chains
 - Detect cycles (INVALID - reject with error)
 
+**`depends_on` is the dependency surface, not `execution_order` (NORMATIVE)**: A functional compile-order / build-order dependency between deliverables — deliverable B cannot compile, build, or pass verification until deliverable A's edit lands — MUST be encoded as a `depends_on` edge on the derived task. It MUST NOT be expressed only through `execution_order` parallel-group placement. `execution_order` grouping (Step 7) is a parallelism schedule DERIVED FROM the `depends_on` graph; it is not a substitute for declaring the dependency. Relying on group placement alone leaves the dependency invisible to the executor's ordering and to the breaking-refactor planned-failure exception, both of which read `depends_on` directly. This rule is cross-referenced from Step 7 (Determine Execution Order) so the two surfaces stay consistent.
+
 ### Step 5: Create Tasks from Profiles (1:N Mapping)
 
 For each deliverable, create one task per profile in its `profiles` list:
 
-**Verification-Only Guard**: Before iterating profiles, check if the deliverable is verification-only (`change_type: verification` or empty `affected_files`). If so, override `D.profiles` to `[verification]` — **except** when `D.profiles` explicitly contains `implementation`. The explicit `Profiles` list declared on the deliverable is authoritative over `change_type`: if the outline says the deliverable involves `implementation`, the guard is a no-op and the declared profile set flows through unchanged. Log a warning when the override fires and the original profiles differed:
+**Verification-Only Guard**: Before iterating profiles, check whether the deliverable is verification-only. The authoritative signal is the deliverable's per-file **write-intent set**, sourced from `affected_files[N].intent` (the same closed intent enum — `read` / `write-new` / `write-replace` / `delete` — surfaced by `manage-solution-outline list-deliverables`), NOT the explicit `implementation` profile. A deliverable is **write-bearing** when ANY entry in its `affected_files` carries an `intent` in `{write-new, write-replace, delete}`. The guard fires (override `D.profiles` to `[verification]`) ONLY when the deliverable is read-only: `affected_files` is empty OR every entry's `intent == read`. Any write-intent affected file forces an implementation-capable task (`implementation` or `module_testing`) and is never collapsed to verification-only — even when `D.change_type == verification`. Log a warning when the override fires and the original profiles differed:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -305,11 +307,11 @@ For each unique D.module in deliverables:
   Pre-fetch: architecture module --module {D.module}  → cache as arch_cache[D.module]
 
 For each deliverable D:
-  IF (D.change_type == verification OR D.affected_files is empty) AND "implementation" NOT IN D.profiles:
+  IF D.affected_files is empty OR (D.change_type == verification AND every affected_files entry has intent == read):
     IF D.profiles != [verification]:
       Log warning (see above)
     D.profiles = [verification]
-  # else: explicit Profiles list wins — guard is a no-op
+  # else: any write-intent affected file blocks the override — declared profiles flow through unchanged
   1. Use cached architecture: arch_cache[D.module]  (do NOT re-query)
   For each profile P in D.profiles:
     IF P = verification:
@@ -627,6 +629,8 @@ execution_order:
 - Tasks with no `depends_on` go in first group
 - Tasks depending on same prior tasks can run in parallel
 - Sequential dependencies remain sequential
+
+A functional compile-order / build-order dependency MUST be declared as a `depends_on` edge — see Step 4 § "`depends_on` is the dependency surface, not `execution_order`". Placing the dependent task in a later group without the edge leaves the dependency invisible to the executor and is prohibited.
 
 ### Step 7a: Pack Tasks into Execution Envelopes
 

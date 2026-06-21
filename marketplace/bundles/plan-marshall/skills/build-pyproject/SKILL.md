@@ -8,7 +8,7 @@ implements: plan-marshall:extension-api/standards/ext-point-build
 
 # Build Pyproject
 
-Python build execution via pyprojectx (`./pw` wrapper) with output parsing for mypy, ruff, and pytest.
+Python build execution via pyprojectx (`./pw` wrapper) with output parsing for mypy, ruff, and pytest. The project wrapper (`pw`) is **required by default** (`build.pyproject.require_wrapper`, default `true`): a build with no checked-in wrapper errors early instead of falling through to a system `pwx`. See [`build-api-reference.md`](../extension-api/standards/build-api-reference.md) § Wrapper Detection for the detection table and [`manage-config` SKILL.md](../manage-config/SKILL.md) § Build Wrapper-Policy Settings for the `build.pyproject.require_wrapper=false` escape valve.
 
 ## Enforcement
 

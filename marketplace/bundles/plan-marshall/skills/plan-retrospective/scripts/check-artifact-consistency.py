@@ -271,6 +271,8 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     details: dict[str, Any] = {}
 
     solution_path = plan_dir / 'solution_outline.md'
+    deliverables: list[dict[str, str]] = []
+    solution_content = ''
     if not solution_path.exists():
         checks.append(
             {
@@ -280,19 +282,36 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
         findings.append({'severity': 'error', 'message': 'solution_outline.md missing'})
-        deliverables: list[dict[str, str]] = []
-        solution_content = ''
     else:
-        solution_content = solution_path.read_text(encoding='utf-8')
-        status, message = check_solution_outline_sections(solution_content)
-        checks.append({'name': 'solution_outline_sections', 'status': status, 'message': message})
-        if status == 'fail':
-            findings.append({'severity': 'error', 'message': message})
+        try:
+            solution_content = solution_path.read_text(encoding='utf-8')
+        except OSError as e:
+            # Fail closed: a file that passed .exists() but raises on read
+            # (permission denied, the path resolves to a directory, a mid-read
+            # deletion race) must surface as a structured verdict, never an
+            # uncaught exception that crashes the consistency gate. Degrade
+            # solution_content to '' so the remaining checks run against the
+            # fail-closed state.
+            checks.append(
+                {
+                    'name': 'solution_outline_present',
+                    'status': 'fail',
+                    'message': f'solution_outline.md read_failed: {e}',
+                }
+            )
+            findings.append(
+                {'severity': 'error', 'message': f'solution_outline.md read_failed: {e}'}
+            )
+        else:
+            status, message = check_solution_outline_sections(solution_content)
+            checks.append({'name': 'solution_outline_sections', 'status': status, 'message': message})
+            if status == 'fail':
+                findings.append({'severity': 'error', 'message': message})
 
-        d_status, d_message, deliverables = check_deliverable_count(solution_content)
-        checks.append({'name': 'deliverable_count', 'status': d_status, 'message': d_message})
-        if d_status == 'fail':
-            findings.append({'severity': 'error', 'message': d_message})
+            d_status, d_message, deliverables = check_deliverable_count(solution_content)
+            checks.append({'name': 'deliverable_count', 'status': d_status, 'message': d_message})
+            if d_status == 'fail':
+                findings.append({'severity': 'error', 'message': d_message})
 
     # Task-deliverable match
     tm_status, tm_message = check_task_deliverable_match(deliverables, plan_dir / 'tasks')

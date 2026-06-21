@@ -128,6 +128,7 @@ class Runtime(ABC):
         target: str,
         overwrite_statusline: bool = False,
         overwrite_env_disable: bool = False,
+        enforcement: bool = False,
     ) -> str:
         """Install the full terminal-title hook wiring into a named settings file.
 
@@ -150,12 +151,19 @@ class Runtime(ABC):
                 can prompt.
             overwrite_env_disable: Same semantics for
                 ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``.
+            enforcement: When True, install ONLY the orthogonal PreToolUse
+                enforcement hook entry and skip the terminal-title bundle
+                entirely. The two install modes are independent: neither
+                disturbs the other's entries.
 
         Returns:
-            Serialized TOON string (success, error, or no-op) carrying
-            ``target``, ``hook_installed``, ``already_present``,
-            ``installed_events``, ``already_present_events``,
-            ``statusLine_status``, and ``env_status`` fields.
+            Serialized TOON string (success, error, or no-op). The
+            terminal-title path carries ``target``, ``hook_installed``,
+            ``already_present``, ``installed_events``,
+            ``already_present_events``, ``statusLine_status``, and
+            ``env_status``; the ``enforcement`` path carries ``target``,
+            ``enforcement_installed``, ``enforcement_status``, and
+            ``already_present``.
         """
 
     # ------------------------------------------------------------------

@@ -126,6 +126,69 @@ class TestFaultInjection:
         assert int(details['found']) == 1
 
 
+class TestGateVerbReadFailClosed:
+    """The artifact-consistency gate verb must fail closed on an I/O-boundary
+    read failure: a ``solution_outline.md`` that passes ``.exists()`` but raises
+    ``OSError`` on ``read_text()`` (permission denied, the path resolves to a
+    directory, a mid-read deletion race) must surface a structured
+    ``solution_outline_present`` FAIL verdict and a corresponding error finding —
+    never an uncaught exception that crashes the consistency gate.
+
+    OSError is injected portably by replacing ``solution_outline.md`` with a
+    directory of the same name: ``Path.exists()`` returns ``True`` for a
+    directory while ``Path.read_text()`` raises ``IsADirectoryError`` (an
+    ``OSError`` subclass). This needs no permission bits and behaves identically
+    for root and non-root test runners.
+    """
+
+    def test_unreadable_solution_outline_fails_closed(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        # Replace the regular file with a directory of the same name so the
+        # production read_text() raises IsADirectoryError (an OSError) while
+        # .exists() still passes.
+        outline_path = plan_dir / 'solution_outline.md'
+        outline_path.unlink()
+        outline_path.mkdir()
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        # Fail closed: the gate returns a structured success-status TOON with a
+        # FAIL check, NOT a crash. The script process must still exit cleanly.
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+
+        present = _check_by_name(data['checks'], 'solution_outline_present')
+        assert present is not None
+        assert present['status'] == 'fail'
+        assert 'read_failed' in present['message']
+
+        # The fail-closed read failure must also surface as an error finding so
+        # the retrospective synthesizer flags the corrupt plan state.
+        findings = data['findings']
+        assert any('read_failed' in f.get('message', '') for f in findings), (
+            f'Expected a read_failed finding, got {findings}'
+        )
+
+    def test_read_failure_does_not_emit_uncaught_exception(self, tmp_path, monkeypatch):
+        """Regression sentinel: the OSError must be caught, not propagated.
+
+        Before the fail-closed wrap, an unreadable ``solution_outline.md`` raised
+        an uncaught ``OSError`` that ``safe_main`` would render as an
+        ``internal_error`` TOON with a non-zero exit. This test pins the new
+        behavior: clean exit, ``status: success``, no ``internal_error`` code.
+        """
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        outline_path = plan_dir / 'solution_outline.md'
+        outline_path.unlink()
+        outline_path.mkdir()
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data.get('error') != 'internal_error'
+
+
 class TestArchivedMode:
     def test_archived_plan_checks_pass(self, tmp_path):
         archived = setup_archived_plan(tmp_path)

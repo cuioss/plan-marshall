@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _findings_core import (
     CERTAINTY_VALUES,
     FINDING_TYPES,
+    PR_COMMENT_KINDS,
     QGATE_PHASES,
     QGATE_SOURCES,
     RESOLUTIONS,
@@ -75,6 +76,8 @@ def cmd_add(args: argparse.Namespace) -> dict:
         module=args.module,
         rule=args.rule,
         severity=args.severity,
+        author=args.author,
+        kind=args.kind,
     )
 
 
@@ -91,6 +94,8 @@ def cmd_query(args: argparse.Namespace) -> dict:
         resolution=args.resolution,
         promoted=promoted,
         file_pattern=args.file_pattern,
+        author=args.author,
+        kind=args.kind,
     )
 
 
@@ -224,6 +229,8 @@ def main() -> int:
     add_module_arg(add_parser, required=False)
     add_parser.add_argument('--rule', help='Rule ID (for lint/sonar)')
     add_parser.add_argument('--severity', choices=SEVERITIES, help='Severity level')
+    add_parser.add_argument('--author', help='Comment-author login (for pr-comment findings)')
+    add_parser.add_argument('--kind', choices=PR_COMMENT_KINDS, help='pr-comment structure discriminator')
     add_parser.set_defaults(func=cmd_add)
 
     # query
@@ -233,6 +240,8 @@ def main() -> int:
     query_parser.add_argument('--resolution', choices=RESOLUTIONS, help='Filter by resolution')
     query_parser.add_argument('--promoted', help='Filter by promoted (true/false)')
     query_parser.add_argument('--file-pattern', help='Glob pattern for file_path')
+    query_parser.add_argument('--author', help='Filter by comment-author login')
+    query_parser.add_argument('--kind', choices=PR_COMMENT_KINDS, help='Filter by pr-comment kind')
     query_parser.add_argument(
         '--include-qgate',
         action='store_true',

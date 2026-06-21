@@ -229,3 +229,33 @@ function processOrder(order) {
     // trust that order is well-formed at this point
 }
 ```
+
+## Fail-Closed Read-Only Gate Verbs
+
+A read-only gate or boundary verb — a function that forms a *verdict* by reading a file without mutating state (a `*-status` / `assert-*` / `verify` / `*-validate` / `qgate`-class check, or a consistency-check helper that reads an artifact to decide pass/fail) — MUST catch `OSError` on that read and convert it to a structured error status. A file that passed an `.exists()` probe can still raise on the subsequent read: permission denied, the path resolving to a directory, or a mid-read deletion race. Letting that `OSError` escape crashes the verdict path.
+
+"I could not evaluate the invariant" is itself an answer the caller needs. A gate that crashes on an I/O error has strictly worse failure semantics than one that returns an error, because the caller cannot distinguish "the invariant could not be evaluated" from a hard process death — and may silently advance past an unverified gate. Deliver the failure as a structured `status: error` (or the verb's documented fail-closed sentinel), never a stack trace.
+
+```text
+// BAD — .exists() guard, but the read can still raise OSError
+function checkConsistency(planDir) {
+    path = planDir / "outline.md"
+    if (path.exists()) {
+        content = path.readText()  // raises on a directory / perms / delete race
+    }
+    return evaluate(content)  // verdict path crashes on the uncaught OSError
+}
+
+// GOOD — fail closed: the read failure is itself a structured verdict
+function checkConsistency(planDir) {
+    path = planDir / "outline.md"
+    try {
+        content = path.readText()
+    } catch (OSError e) {
+        return verdict(status="error", message="outline read_failed: " + e)
+    }
+    return evaluate(content)
+}
+```
+
+This is the inverse of the redundant runtime type guard documented in `code-organization.md` (§ "Do Not Guard Contract-Typed Values"): the fail-closed rule adds a *missing* guard at an I/O boundary, while that rule removes a *superfluous* guard on a value the type signature already pins.

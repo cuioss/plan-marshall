@@ -101,15 +101,16 @@ def test_build_command_fn_with_module():
     assert cmd_parts == ['./pw', 'module-tests', 'core']
 
 
-def test_wrapper_resolve_raises_when_missing(tmp_path):
-    """Raises FileNotFoundError when no wrapper found."""
-    with patch('_build_execute.shutil.which', return_value=None):
-        with pytest.raises(FileNotFoundError, match='No pyprojectx wrapper found'):
-            _CONFIG.wrapper_resolve_fn(str(tmp_path))
+def test_config_require_wrapper_default_on():
+    """pyproject migrated to the factory gate: require_wrapper=True and the old
+    per-resolver wrapper_resolve_fn is removed."""
+    assert _CONFIG.require_wrapper is True
+    assert _CONFIG.wrapper_resolve_fn is None
 
 
 def test_execute_direct_error_on_missing_wrapper(tmp_path):
-    """execute_direct returns error result when wrapper not found."""
+    """execute_direct returns error result when wrapper not found, anchored on
+    the canonical factory-gate message."""
     with patch('_build_execute.shutil.which', return_value=None):
         result = execute_direct(
             args='verify',
@@ -118,6 +119,7 @@ def test_execute_direct_error_on_missing_wrapper(tmp_path):
         )
         assert result['status'] == 'error'
         assert result['exit_code'] == -1
+        assert 'No python wrapper found' in result['error']
 
 
 def _make_log(tmp_path: Path, text: str) -> str:

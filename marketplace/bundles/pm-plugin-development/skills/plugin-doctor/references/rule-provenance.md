@@ -252,6 +252,13 @@ registered_rule_ids(real_tree) − fired_in_suite − EXEMPT_RULE_IDS == ∅
 
 enforced by `test_zero_match_suite_coverage.py` (`registered_rule_ids` and the `fired_in_suite` derivation live in the plugin-doctor tests' `_fixtures.py`; `EXEMPT_RULE_IDS` lives in `test_zero_match_suite_coverage.py`). A registered rule that neither fires against a positive fixture nor appears in the per-entry-justified `EXEMPT_RULE_IDS` is a real coverage gap — the failing assertion names it, and the fix is a genuine positive unit test for that rule (or, only when the rule structurally cannot fire on a static positive fixture, a justified `EXEMPT_RULE_IDS` entry). Coverage is proven from the test suite itself, over the full registered population minus the exempt set — never from a parallel hand-curated corpus that duplicates the positive tests.
 
+### Fail-closed gate-read invariant
+
+| Rule ID | Class | Emitter | Source |
+|---------|-------|---------|--------|
+| `fail-closed-gate-read` | safety | `_analyze_fail_closed_gate_reads.py` | A read-only gate/boundary verb (a `cmd_*` / `*-status` / `assert-*` / `verify` / `*-validate` / `check_*` / `load_*` handler that forms a verdict by reading a file) that reads with only a prior `.exists()` guard can still raise `OSError` (permission denied, the path resolving to a directory, a mid-read deletion race). An uncaught `OSError` crashes the verdict path — strictly worse than a structured error, since the caller cannot distinguish "the invariant could not be evaluated" from a hard process death and may silently advance past an unverified gate. The read must be enclosed in a `try` catching `OSError`. Whitelist: the analyzer's own file and `tools-file-ops:file_ops.py` (the canonical fail-closed read). |
+| `redundant-contract-typed-isinstance` | structural | `_analyze_fail_closed_gate_reads.py` | The inverse anti-pattern of `fail-closed-gate-read`. An `isinstance(param, Cls)` guard on a parameter already annotated with that concrete contract type (e.g. `metadata: dict[str, Any]` then `isinstance(metadata, dict)`) is defensive theatre: the annotation is the contract, the guard can never be false in correct code, and it misleads the next reader. Only concrete builtin contract types are eligible; `Any` / union / `Optional` annotations and untrusted-input ingestion boundaries are out of scope. |
+
 ## Provenance contract for new rules
 
 Before adding a new rule, the author MUST complete a corpus-feasibility check and record its result:

@@ -231,20 +231,51 @@ The guiding principle: implement the minimum that satisfies the present requirem
 
 * **Required (keep / add).** Error handling at a real failure path that can occur in production: an unguarded parse of an external file (`json.loads` on a file the program does not write — config, manifest, network payload), a missing type-guard on externally-sourced data (`.items()` / `.attr` on a value sourced from user config or an external API without an `isinstance` check), a missing envelope on a network / filesystem boundary that can fail. These are not "defensive complexity" — they are the correct handling of a failure mode the boundary genuinely produces, and removing them reintroduces a latent crash.
 * **Speculative (strip — YAGNI).** Guards for failures that cannot occur given the call graph (a re-check of an invariant a caller already guarantees, a `try/except` around code that cannot raise), configurability for callers that do not exist, and abstraction for a second implementation that is not planned. These remain surplus and are removed.
+* **Surplus-despite-real-boundary (strip).** A guard at a real callable-execution boundary that genuinely CAN raise is **still surplus and MUST be stripped** when the surrounding code's reason to exist is to surface that very crash loudly — a synthetic test fixture whose job is to PROVE a callable runs, a meta-test, or a self-check harness. "Real boundary" alone does not earn Required status; a guard that swallows the failure its own surrounding code exists to expose defeats that code's purpose. Example: a coverage fixture that executes each analyzer to prove it runs, then wraps that call in `except Exception`, masks the exact failure the fixture exists to surface — strip the guard and let the crash propagate, so a broken analyzer fails the fixture loudly instead of passing silently.
 
-The test is the failure's reality, not the guard's presence: *can the boundary actually produce this failure?* If yes, the guard is required; if the state is impossible, the guard is speculative. The catalogue's "Defensive try/except" anti-pattern below targets the speculative case only — it never licenses deleting a real-boundary guard.
+The test has two parts, not one: *(1) can the boundary actually produce this failure?* and *(2) does the guard defeat the surrounding code's reason to exist?* A guard is Required only when (1) is yes AND (2) is no. If the state is impossible, the guard is Speculative; if the boundary is real but the guard masks a failure the surrounding code exists to surface, the guard is Surplus-despite-real-boundary. The catalogue's "Defensive try/except" anti-pattern below targets the second and third cases — it never licenses deleting a guard at a real boundary whose failure the surrounding code is meant to handle rather than expose.
 
 **Detection:**
 
 * **Unused parameters preserved for future use.** A parameter that no code path reads, kept "because a caller might need it later". Remove it; add it back when a real caller needs it.
 * **Thin/backward-compat re-exports with <= 1 live caller.** A module that exists only to re-export a symbol from another module, with at most one importer. Inline the import at the single call site and delete the shim.
-* **Defensive try/except around already-handled or should-fail-loudly failures.** A guard that swallows or re-wraps an exception the caller already handles, or that masks a programming error that should crash loudly. Let it propagate. *This anti-pattern is the speculative case only — it does NOT license removing required error handling at a real I/O / external-input boundary (see the required-vs-speculative carve-out above).*
+* **Defensive try/except around already-handled or should-fail-loudly failures.** A guard that swallows or re-wraps an exception the caller already handles, or that masks a programming error that should crash loudly — including the case where the boundary is real but the surrounding code's purpose is to surface that crash (a test fixture, meta-test, or self-check harness that wraps the very callable it exists to exercise). Let it propagate. *This anti-pattern applies to the speculative and surplus-despite-real-boundary cases only — it does NOT license removing required error handling at a real I/O / external-input boundary whose failure the surrounding code is meant to handle rather than expose (see the required-vs-speculative carve-out above).*
 * **Multiple near-identical helpers where one parameterised function suffices.** Two or more functions differing only in a constant or a branch. Collapse into one function with a parameter.
 * **Signature-restating docstrings/comments.** A docstring or comment that names the parameters and return type without adding intent ("WHY") beyond what the signature already states. Delete it or replace it with a rationale.
 * **Config keys/flags with a single hard-coded caller.** A configuration knob, feature flag, or setting read in exactly one place and never varied. Inline the constant and remove the key.
 * **Speculative abstraction for extensibility with no second implementation.** An interface, base class, strategy, or plugin seam introduced for a hypothetical second implementation that does not yet exist. Code the concrete case directly; introduce the seam when the second implementation arrives.
 
 **Action:** Delete the surplus structure and verify nothing breaks. For each anti-pattern above, the resolution is removal or inlining — never "keep it but document the intent". When the surplus is a public/protected element or could plausibly serve an imminent requirement, ask the user before removing (mirrors the [Unused Code](#unused-code) "Do NOT remove when" exceptions). This section is the constructive counterpart to [Over-Abstraction](#over-abstraction): Over-Abstraction targets indirection layers after they exist; Minimum Viable Code prevents the surplus from being written in the first place. The two reinforce each other — apply Minimum Viable Code at authoring time, Over-Abstraction at refactoring time.
+
+### Do Not Guard Contract-Typed Values
+
+**Trigger**: A new conditional accesses a parameter (or other value) that is *already annotated with a concrete contract type*, wrapped in a redundant runtime type guard.
+
+When a parameter is annotated with a concrete type — `metadata: dict[str, Any]`, `names: list[str]`, `count: int` — that annotation IS the contract. Adding `isinstance(metadata, dict)` before using it is defensive theatre: in correct code the guard can never be false, so it adds a dead branch and, worse, misleads the next reader into believing the value is polymorphic when the signature says it is not.
+
+```text
+// BAD -- redundant guard on a value the signature already pins
+function merge(metadata: dict[str, Any]) -> dict {
+    if (isinstance(metadata, dict)) {   // can never be false in correct code
+        return metadata
+    }
+    return {}
+}
+
+// GOOD -- trust the contract; the annotation is the guarantee
+function merge(metadata: dict[str, Any]) -> dict {
+    return metadata
+}
+```
+
+**Reserve runtime type checks for the two cases where the static type genuinely does not pin the value:**
+
+* **Genuine polymorphism** — the parameter is `Any`, a union (`dict | list`), or `Optional[...]`, so the runtime type really is unknown and the branch is load-bearing. If you find yourself needing the guard, widen the annotation to the real union so the signature reflects the contract the guard enforces.
+* **Untrusted-input ingestion boundary** — the value crossed a trust boundary (parsed from an external file, a network payload, user config) where the declared type is an *assumption* the data may violate. There the `isinstance` check is required, not redundant (see the required-vs-speculative carve-out under [Minimum Viable Code](#minimum-viable-code)).
+
+This is the inverse of the fail-closed gate-read rule in `error-handling.md` (§ "Fail-Closed Read-Only Gate Verbs"): that rule adds a *missing* guard at a real I/O boundary, while this rule removes a *superfluous* guard on a value the type signature already guarantees. The discriminator is identical — *can this value actually be the wrong type here?* If yes (polymorphism / ingestion boundary), keep the guard; if the annotation already pins it, strip the guard.
+
+**Action:** Remove the redundant guard. If the value is genuinely polymorphic, widen the annotation instead of keeping the guard against a too-narrow type.
 
 ## Unused Code
 

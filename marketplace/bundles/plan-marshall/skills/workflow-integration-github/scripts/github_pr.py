@@ -296,6 +296,8 @@ def cmd_comments_stage(args):
             detail=detail,
             file_path=path or None,
             line=line_arg,
+            author=author,
+            kind=kind,
         )
         if add_result.get('status') == 'success':
             stored_hashes.append(add_result.get('hash_id', ''))

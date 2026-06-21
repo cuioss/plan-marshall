@@ -52,6 +52,13 @@ def test_config_parser_needs_command():
     assert _CONFIG.parser_needs_command is True
 
 
+def test_config_require_wrapper_off():
+    """npm has no wrapper concept, so the factory gate is N-A: require_wrapper is
+    False and the npm-style wrapper_resolve_fn is retained (the gate bypass)."""
+    assert _CONFIG.require_wrapper is False
+    assert _CONFIG.wrapper_resolve_fn is _npm_execute_mod._npm_wrapper_resolve_fn
+
+
 def test_detect_npm_for_run():
     """'run test' uses npm."""
     assert detect_command_type('run test') == 'npm'

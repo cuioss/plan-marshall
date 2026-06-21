@@ -369,6 +369,7 @@ class TestDispatch:
             ".claude/settings.local.json",
             overwrite_statusline=False,
             overwrite_env_disable=False,
+            enforcement=False,
         )
 
     def test_dispatch_project_install_hook_with_overwrite_flags(self, rt):
@@ -387,6 +388,21 @@ class TestDispatch:
             ".claude/settings.local.json",
             overwrite_statusline=True,
             overwrite_env_disable=True,
+            enforcement=False,
+        )
+
+    def test_dispatch_project_install_hook_with_enforcement_flag(self, rt):
+        """project install-hook forwards enforcement=True when --enforcement is supplied."""
+        _dispatch(
+            rt,
+            "project install-hook",
+            ["--target", ".claude/settings.local.json", "--enforcement"],
+        )
+        rt.project_install_hook.assert_called_once_with(
+            ".claude/settings.local.json",
+            overwrite_statusline=False,
+            overwrite_env_disable=False,
+            enforcement=True,
         )
 
     def test_dispatch_project_install_hook_missing_target_rejected(self, rt):
