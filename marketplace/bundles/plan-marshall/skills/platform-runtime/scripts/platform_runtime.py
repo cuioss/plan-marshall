@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Platform router for plan-marshall — dispatches 17 operations to the correct
+Platform router for plan-marshall — dispatches 18 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:

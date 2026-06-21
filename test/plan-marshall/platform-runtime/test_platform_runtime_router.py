@@ -7,7 +7,7 @@ Covers:
   - _resolve_target: runtime.target extraction from marshal data
   - _make_runtime: registry lookup and unknown target handling
   - _parse_json_list / _parse_context: JSON helpers
-  - _dispatch: correct routing and argparse for all 16 operations
+  - _dispatch: correct routing and argparse for all 18 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
 from __future__ import annotations  # noqa: I001
@@ -336,7 +336,7 @@ class TestParseContext:
 
 
 # =============================================================================
-# Test: _dispatch — all 16 operations
+# Test: _dispatch — all 18 operations
 # =============================================================================
 
 
