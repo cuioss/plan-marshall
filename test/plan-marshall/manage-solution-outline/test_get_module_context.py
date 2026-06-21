@@ -11,7 +11,7 @@ Covers two branches:
 * **happy path** — at least two modules with mixed enrichment fields, asserting
   the returned ``modules`` list pins the documented shape (``name``, ``path``,
   ``purpose``, ``responsibility``, plus the optional ``key_packages``,
-  ``tips``, ``insights``, ``skills_by_profile`` fields).
+  ``tips``, ``insights``, ``best_practices``, ``skills_by_profile`` fields).
 * **not_found** — ``_project.json`` is absent, so the command returns the
   documented ``not_found`` status with a remediation suggestion.
 """
@@ -76,8 +76,8 @@ def _seed_two_module_project(project_dir: Path) -> None:
     """Seed a per-module layout with two modules at ``project_dir``.
 
     ``core`` carries the full optional-field set (``key_packages``, ``tips``,
-    ``insights``, ``skills_by_profile``); ``web`` carries only the required
-    fields, exercising the optional-field omission path.
+    ``insights``, ``best_practices``, ``skills_by_profile``); ``web`` carries
+    only the required fields, exercising the optional-field omission path.
     """
     save_project_meta(
         {
@@ -110,6 +110,7 @@ def _seed_two_module_project(project_dir: Path) -> None:
             },
             'tips': ['Keep entities free of framework annotations'],
             'insights': ['Repository abstractions live in service layer'],
+            'best_practices': ['Prefer immutable value objects over mutable DTOs'],
             'skills_by_profile': {
                 'implementation': ['pm-dev-java:java-core'],
                 'unit-testing': ['pm-dev-java:junit-core'],
@@ -167,8 +168,8 @@ def test_get_module_context_pins_optional_field_shape(tmp_path):
 
     ``core`` carries every optional field; the test pins the shape the script
     documents — ``key_packages`` is a list of package names (the dict keys),
-    while ``tips``, ``insights`` and ``skills_by_profile`` flow through
-    untouched.
+    while ``tips``, ``insights``, ``best_practices`` and ``skills_by_profile``
+    flow through untouched.
     """
     _seed_two_module_project(tmp_path)
 
@@ -184,6 +185,7 @@ def test_get_module_context_pins_optional_field_shape(tmp_path):
     assert core['key_packages'] == ['de.cuioss.core.domain', 'de.cuioss.core.value']
     assert core['tips'] == ['Keep entities free of framework annotations']
     assert core['insights'] == ['Repository abstractions live in service layer']
+    assert core['best_practices'] == ['Prefer immutable value objects over mutable DTOs']
     assert core['skills_by_profile'] == {
         'implementation': ['pm-dev-java:java-core'],
         'unit-testing': ['pm-dev-java:junit-core'],
@@ -206,8 +208,84 @@ def test_get_module_context_omits_optionals_when_enrichment_lacks_them(tmp_path)
     assert web['path'] == 'web'
     assert web['purpose'] == 'HTTP entry points'
     assert web['responsibility'] == 'Expose REST endpoints and translate DTOs'
-    for optional_key in ('key_packages', 'tips', 'insights', 'skills_by_profile'):
+    for optional_key in ('key_packages', 'tips', 'insights', 'best_practices', 'skills_by_profile'):
         assert optional_key not in web, f"web entry should omit '{optional_key}' when absent"
+
+
+def test_get_module_context_surfaces_best_practices_when_populated(tmp_path):
+    """``best_practices`` flows into the entry when the enriched store carries it.
+
+    Pins the D1 contract directly: a module whose ``enriched.json`` declares a
+    non-empty ``best_practices`` list surfaces that list verbatim alongside
+    ``tips`` and ``insights`` (architecture-enriched hints reach the outline).
+    """
+    save_project_meta(
+        {
+            'name': 'hints-project',
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {'default': {}},
+        },
+        str(tmp_path),
+    )
+    save_module_derived('default', {'name': 'default', 'paths': {'module': '.'}}, str(tmp_path))
+    save_module_enriched(
+        'default',
+        {
+            'purpose': 'Root project module',
+            'responsibility': 'Cross-cutting project facts',
+            'best_practices': [
+                'Resolve build commands via architecture, never hard-code ./pw',
+                'Route .plan/ access through manage-* scripts',
+            ],
+        },
+        str(tmp_path),
+    )
+
+    result = cmd_get_module_context(_ns(str(tmp_path)))
+
+    assert result['status'] == 'success'
+    entry = result['modules'][0]
+    assert entry['best_practices'] == [
+        'Resolve build commands via architecture, never hard-code ./pw',
+        'Route .plan/ access through manage-* scripts',
+    ]
+
+
+def test_get_module_context_omits_best_practices_when_empty(tmp_path):
+    """An empty ``best_practices`` list is omitted from the entry.
+
+    Parity with the ``tips``/``insights`` truthiness guard: the key is absent
+    (not defaulted to ``[]``) so callers branch on presence, leaving the
+    required-section contract of consumers unaffected.
+    """
+    save_project_meta(
+        {
+            'name': 'empty-hints-project',
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {'default': {}},
+        },
+        str(tmp_path),
+    )
+    save_module_derived('default', {'name': 'default', 'paths': {'module': '.'}}, str(tmp_path))
+    save_module_enriched(
+        'default',
+        {
+            'purpose': 'Root project module',
+            'responsibility': 'Cross-cutting project facts',
+            'best_practices': [],
+        },
+        str(tmp_path),
+    )
+
+    result = cmd_get_module_context(_ns(str(tmp_path)))
+
+    assert result['status'] == 'success'
+    entry = result['modules'][0]
+    assert 'best_practices' not in entry
 
 
 def test_get_module_context_uses_default_path_when_module_lacks_paths(tmp_path):
