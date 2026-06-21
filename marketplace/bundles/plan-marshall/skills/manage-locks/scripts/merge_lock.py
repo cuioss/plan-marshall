@@ -21,10 +21,11 @@ layers a FIFO admission queue (``merge-queue.json``, managed through the SAME
 shared :func:`_locks_core.rmw_json` TOCTOU-safe read-modify-write the build queue
 uses) onto the lock so the longest-waiting plan merges next. ``acquire`` first
 FIFO-enqueues ``--plan-id`` into ``merge-queue.json`` (idempotently — a plan
-already in the queue KEEPS its FIFO position by admit-``ts``, never re-appended to
-the back, mirroring ``build_queue.run_acquire``'s idempotent fast-path). A plan is
-admission-eligible ONLY when it is the FIFO front (the oldest entry by admit-``ts``);
-when eligible it attempts the existing ``O_EXCL`` create and on success returns
+already in the queue KEEPS its FIFO position (its existing list slot), never
+re-appended to the back, mirroring ``build_queue.run_acquire``'s idempotent
+fast-path). A plan is admission-eligible ONLY when it is the FIFO front (the first
+entry in serialized arrival order — list position, not admit-``ts``, see
+``_fifo_front``); when eligible it attempts the existing ``O_EXCL`` create and on success returns
 ``admission: admitted``. A non-front plan, or a front plan that loses the
 ``O_EXCL`` create, returns ``admission: blocked`` — a structured re-poll signal,
 NOT an error and NOT an internal wait. Re-polling is the CONSUMER's job (the
@@ -269,11 +270,12 @@ def _queue_waiting(state: dict[str, Any]) -> list[dict[str, Any]]:
     A corrupt or absent ``waiting`` value (missing, non-list, or holding entries
     without a string ``plan_id``) degrades to an empty list so a malformed
     ``merge-queue.json`` is rebuilt from scratch rather than crashing the mutator.
-    Each retained entry must carry a string ``plan_id`` (the FIFO identity) and is
-    ordered by its admit-``ts`` for FIFO-front selection.  A non-numeric ``ts``
-    value (e.g., a string from a manually edited state file) is coerced to ``0.0``
-    so it sorts as the oldest entry rather than raising ``TypeError`` in
-    ``_fifo_front``'s ``min()`` call.
+    Each retained entry must carry a string ``plan_id`` (the FIFO identity); the
+    list order is the arrival order and the sole FIFO-front key (see
+    :func:`_fifo_front`).  The admit-``ts`` is retained as an informational
+    enqueue timestamp only; a non-numeric ``ts`` value (e.g., a string from a
+    manually edited state file) is coerced to ``0.0`` so the field stays a float
+    rather than tripping later numeric consumers.
     """
     raw = state.get('waiting')
     if not isinstance(raw, list):
@@ -306,16 +308,23 @@ def _prune_dead_waiting(waiting: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _fifo_front(waiting: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Return the FIFO-front entry (oldest by admit-``ts``), or None when empty.
+    """Return the FIFO-front entry (first by serialized arrival order), or None when empty.
 
-    FIFO order is by admit-``ts`` (the wall-clock enqueue time), so the
-    longest-waiting plan is the front and is the only admission-eligible plan. An
-    entry with no ``ts`` sorts as ``0.0`` (oldest) — a defensive default that can
-    only make a malformed entry MORE eligible, never starve a well-formed one.
+    The ``waiting`` list order IS the arrival order: every enqueue/dequeue mutation
+    runs inside the serialized :func:`_locks_core.rmw_json` critical section, so the
+    list records plans in the exact order their enqueues were serialized. The front
+    (the first list entry) is therefore the longest-waiting plan and the only
+    admission-eligible one. List position — NOT the informational admit-``ts`` field
+    — is the single ordering key: ``ts`` is sampled per call from the wall clock and
+    under concurrent enqueue can disagree with serialization order (a ``ts`` sampled
+    before the rmw section does not reflect when the append actually landed), so
+    selecting the front by ``min(ts)`` could pick a different entry than the file's
+    first and split the queue's notion of "front" — the no-double-grant drain race.
+    Using list position keeps one source of truth for arrival order.
     """
     if not waiting:
         return None
-    return min(waiting, key=lambda e: e.get('ts', 0.0))
+    return waiting[0]
 
 
 def _enqueue_fifo(plan_id: str, ts: float) -> dict[str, Any]:
