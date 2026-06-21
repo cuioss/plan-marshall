@@ -1369,8 +1369,8 @@ def test_steps_map_returns_fresh_dict_callers_can_mutate():
 # `create_marshal_json` seeds `verification_steps` / `steps` on disk in the
 # LEGACY keyed-map serial form (a JSON object). The dual-form reader
 # (`_steps_map`) normalizes that to the internal id-keyed map, and every
-# config WRITE verb re-serializes through `_serialize_steps_for_write`
-# (`keyed_map_to_list_form`) so the on-disk value is rewritten in the canonical
+# config WRITE verb re-serializes through `keyed_map_to_list_form` so the
+# on-disk value is rewritten in the canonical
 # LIST form. These tests assert the full read-modify-write cycle is LIST-native:
 # the first write verb MIGRATES the legacy keyed map to a LIST, and a second
 # write verb operating on the now-LIST on-disk value is IDEMPOTENT (stays a

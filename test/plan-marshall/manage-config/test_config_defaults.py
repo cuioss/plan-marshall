@@ -1200,10 +1200,10 @@ def test_steps_map_falsy_top_level_yields_empty_dict():
     assert _cmd_quality_phases_mod._steps_map({}) == {}
 
 
-def test_serialize_steps_for_write_emits_list_serial_form():
+def test_keyed_map_to_list_form_emits_list_serial_form():
     """The write-side serializer emits the LIST form: bare strings + single-key objects.
 
-    `_serialize_steps_for_write` is applied right before persisting any mutated
+    `keyed_map_to_list_form` is applied right before persisting any mutated
     map (step set / set-steps / add-step / remove-step), so marshal.json carries
     the canonical LIST form — an ownerless step is a bare string (no noisy
     {step_id: null} / {step_id: {}} object), a param-owning step is a single-key
@@ -1215,7 +1215,7 @@ def test_serialize_steps_for_write_emits_list_serial_form():
         'default:create-pr': {},
     }
 
-    result = _cmd_quality_phases_mod._serialize_steps_for_write(steps)
+    result = _config_core_mod.keyed_map_to_list_form(steps)
 
     # the LIST form: ownerless steps are bare strings, param-owning steps are
     # single-key objects, in insertion order
@@ -1230,12 +1230,12 @@ def test_serialize_steps_for_write_emits_list_serial_form():
     )
 
 
-def test_serialize_then_steps_map_round_trips_ownerless_to_empty_dict():
+def test_keyed_map_to_list_form_then_steps_map_round_trips_ownerless_to_empty_dict():
     """The write→read round-trip of an ownerless step yields {} (write bare string, read {})."""
     steps = {'default:commit-push': {}, 'default:branch-cleanup': {'pr_merge_strategy': 'squash'}}
 
     # write side: ownerless step serializes to a bare string in the LIST form
-    written = _cmd_quality_phases_mod._serialize_steps_for_write(steps)
+    written = _config_core_mod.keyed_map_to_list_form(steps)
     # read side: the dual-form reader normalizes the LIST form back to the dict
     read_back = _cmd_quality_phases_mod._steps_map(written)
 

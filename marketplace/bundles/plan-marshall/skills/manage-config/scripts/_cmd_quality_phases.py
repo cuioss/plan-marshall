@@ -211,25 +211,6 @@ def _steps_map(raw) -> dict:
     }
 
 
-def _serialize_steps_for_write(steps: dict) -> list:
-    """Serialize an id-keyed step map to the canonical LIST serial form for write.
-
-    The write-side inverse of :func:`_steps_map`'s read normalization: an
-    ownerless step (its param value is an empty dict ``{}`` / a falsy value) is
-    written as a bare ``"step_id"`` string, and a param-owning step is written as
-    a single-key object ``{step_id: {params}}``. List order is the input map's
-    insertion (= execution) order. Applied right before persisting any mutated
-    map (``step set`` / ``set-steps`` / ``add-step`` / ``remove-step``), so every
-    config-write path emits the single canonical LIST form; the read path
-    (:func:`_steps_map`) accepts both the LIST form and the legacy keyed-map and
-    normalizes both back to the internal id-keyed map.
-
-    Delegates to the shared :func:`_config_core.keyed_map_to_list_form` so the
-    write-side serial form is defined once and shared with the defaults seeder
-    (``_config_defaults._seed_finalize_steps`` / ``verification_steps`` seed).
-    """
-    return keyed_map_to_list_form(steps)
-
 
 def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config: dict) -> dict:
     """Handle the one-stop ``step get`` / ``step set`` verb.
@@ -269,7 +250,7 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
         steps[step_id] = params
         # Persist in the canonical LIST serial form (ownerless steps as bare
         # strings, param-owning steps as single-key objects).
-        section[list_key] = _serialize_steps_for_write(steps)
+        section[list_key] = keyed_map_to_list_form(steps)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -369,7 +350,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
         # Persist in the canonical LIST serial form (ownerless steps as bare
         # strings, param-owning steps as single-key objects).
-        section[list_key] = _serialize_steps_for_write(sorted_map)
+        section[list_key] = keyed_map_to_list_form(sorted_map)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -393,7 +374,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
         # Persist in the canonical LIST serial form (ownerless steps as bare
         # strings, param-owning steps as single-key objects).
-        section[list_key] = _serialize_steps_for_write(sorted_map)
+        section[list_key] = keyed_map_to_list_form(sorted_map)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -411,7 +392,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         del existing[step]
         # Persist in the canonical LIST serial form (ownerless steps as bare
         # strings, param-owning steps as single-key objects).
-        section[list_key] = _serialize_steps_for_write(existing)
+        section[list_key] = keyed_map_to_list_form(existing)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
